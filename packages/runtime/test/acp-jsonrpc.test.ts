@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  AcpJsonRpcPeer,
-  encodeJsonRpcLine,
-  parseJsonRpcLine,
-} from "../src/acp-jsonrpc";
+import { AcpJsonRpcPeer, encodeJsonRpcLine, parseJsonRpcLine } from "../src/acp-jsonrpc";
 
 test("encodeJsonRpcLine appends newline", () => {
   const line = encodeJsonRpcLine({ jsonrpc: "2.0", method: "ping" });
@@ -354,7 +350,13 @@ test("idle timeout does not fire while a tool call is active", async () => {
   // Race the promise against a 120ms timer — if it rejects before the timer, the
   // test fails (the idle timeout fired while the tool was still "active").
   const timer = new Promise((resolve) => setTimeout(() => resolve("timer"), 120));
-  const winner = await Promise.race([pending.then(() => "resolved", () => "rejected"), timer]);
+  const winner = await Promise.race([
+    pending.then(
+      () => "resolved",
+      () => "rejected",
+    ),
+    timer,
+  ]);
   expect(winner).toBe("timer");
   // Clear the signal — the next tick should fire the normal idle timeout.
   peer.setToolActiveSignal(() => false, 200);

@@ -1,17 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import {
-  DEFAULT_UPSTREAM_USER_AGENT,
-  applyUpstreamUserAgent,
-} from "../src/upstream/user-agent.js";
+import { applyUpstreamUserAgent, DEFAULT_UPSTREAM_USER_AGENT } from "../src/upstream/user-agent.js";
 
 describe("applyUpstreamUserAgent", () => {
   test("global override wins over client UA", () => {
     const headers: Record<string, string> = {};
-    applyUpstreamUserAgent(
-      headers,
-      new Headers({ "user-agent": "codex/1" }),
-      "custom-gateway/9",
-    );
+    applyUpstreamUserAgent(headers, new Headers({ "user-agent": "codex/1" }), "custom-gateway/9");
     expect(headers["user-agent"]).toBe("custom-gateway/9");
   });
 

@@ -1,8 +1,5 @@
 /** Upstream API surface used for chat and connection tests. */
-export type UpstreamApiCompat =
-  | "anthropic"
-  | "openai_responses"
-  | "openai_chat_completions";
+export type UpstreamApiCompat = "anthropic" | "openai_responses" | "openai_chat_completions";
 
 export const API_COMPAT_THEME: Record<UpstreamApiCompat, { label: string; color: string }> = {
   anthropic: {

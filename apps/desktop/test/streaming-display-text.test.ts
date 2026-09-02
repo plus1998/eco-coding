@@ -9,27 +9,21 @@ test("resolveStreamingDisplaySnapshot passes through completed text when not str
 });
 
 test("resolveStreamingDisplaySnapshot streams incomplete fenced code blocks immediately", () => {
-  expect(
-    resolveStreamingDisplaySnapshot("intro\n```bash\necho hi", true),
-  ).toEqual({
+  expect(resolveStreamingDisplaySnapshot("intro\n```bash\necho hi", true)).toEqual({
     displayText: "intro\n```bash\necho hi",
     pendingBlock: false,
   });
 });
 
 test("resolveStreamingDisplaySnapshot releases completed fenced blocks", () => {
-  expect(
-    resolveStreamingDisplaySnapshot("intro\n```bash\necho hi\n```\n", true),
-  ).toEqual({
+  expect(resolveStreamingDisplaySnapshot("intro\n```bash\necho hi\n```\n", true)).toEqual({
     displayText: "intro\n```bash\necho hi\n```\n",
     pendingBlock: false,
   });
 });
 
 test("resolveStreamingDisplaySnapshot holds incomplete SEARCH/REPLACE blocks", () => {
-  expect(
-    resolveStreamingDisplaySnapshot("before\n<<<<<<< SEARCH\nold", true),
-  ).toEqual({
+  expect(resolveStreamingDisplaySnapshot("before\n<<<<<<< SEARCH\nold", true)).toEqual({
     displayText: "before\n",
     pendingBlock: true,
   });

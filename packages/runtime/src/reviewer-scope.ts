@@ -1,5 +1,5 @@
-import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "./claude-agent-sdk";
 import type { SdkToolPermissionHandler } from "./ask-user-question";
+import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "./claude-agent-sdk";
 import { normalizeAgentToolInputSubagentType } from "./subagent-resume.js";
 
 export const REVIEWER_SCOPE_SECTION_TITLE = "## Changed files (this session)";
@@ -12,16 +12,10 @@ export function formatReviewerScopeAppend(changedFiles: readonly string[]): stri
       ? paths.map((file) => `- ${file}`).join("\n")
       : "- (none — workspace matches HEAD; confirm coders finished before PASS)";
 
-  return [
-    REVIEWER_SCOPE_SECTION_TITLE,
-    list,
-  ].join("\n");
+  return [REVIEWER_SCOPE_SECTION_TITLE, list].join("\n");
 }
 
-export function appendReviewerScopeToPrompt(
-  prompt: string,
-  changedFiles: readonly string[],
-): string {
+export function appendReviewerScopeToPrompt(prompt: string, changedFiles: readonly string[]): string {
   const scopeBlock = formatReviewerScopeAppend(changedFiles);
   const trimmed = prompt.trim();
   return trimmed ? `${scopeBlock}\n\n${trimmed}` : scopeBlock;

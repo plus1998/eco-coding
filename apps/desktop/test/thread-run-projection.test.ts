@@ -1,11 +1,7 @@
 import { expect, test } from "bun:test";
 import { buildThreadRunProjection } from "../src/main/thread-run-projection";
 import type { AgentInstanceRecord, RunAttemptRecord } from "../src/main/usage-ledger";
-import type {
-  ThreadBillingSnapshot,
-  ThreadContextSnapshot,
-  ThreadRunEvent,
-} from "../src/shared/ipc";
+import type { ThreadBillingSnapshot, ThreadContextSnapshot, ThreadRunEvent } from "../src/shared/ipc";
 
 const attempt: RunAttemptRecord = {
   threadId: "thr_projection",
@@ -563,10 +559,7 @@ test("buildThreadRunProjection tracks retry attempts and terminal request states
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
     status: "failed",
-    attempts: [
-      { ...attempt, status: "failed", endedAt: "2026-01-01T00:00:03.000Z" },
-      retryAttempt,
-    ],
+    attempts: [{ ...attempt, status: "failed", endedAt: "2026-01-01T00:00:03.000Z" }, retryAttempt],
     agents: [agent({ agentId: "coder_a" })],
     events: [
       event({
@@ -1090,9 +1083,7 @@ test("buildThreadRunProjection promotes orphan agent-scoped messages to main fee
 
   expect(projection.agents).toHaveLength(1);
   expect(projection.agents[0]?.agentId).toBe(realGeneral);
-  expect(projection.agents[0]?.timeline.map((item) => item.text)).toContain(
-    "最终审计未发现未解决的阻断项。",
-  );
+  expect(projection.agents[0]?.timeline.map((item) => item.text)).toContain("最终审计未发现未解决的阻断项。");
   expect(projection.agents.some((row) => row.agentId === mainCodexId)).toBe(false);
 });
 

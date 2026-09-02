@@ -3,9 +3,7 @@ import path from "node:path";
 import { extractPlanningDeliverables, findPlanSectionStart } from "./phase-deliverable.js";
 
 /** Only an explicit plan section counts; arbitrary assistant text is not a plan. */
-function extractExplicitPlanningDeliverables(
-  text: string,
-): { analysis: string; plan: string } | undefined {
+function extractExplicitPlanningDeliverables(text: string): { analysis: string; plan: string } | undefined {
   if (findPlanSectionStart(text.trim()) < 0) {
     return undefined;
   }
@@ -105,9 +103,7 @@ export async function readPlanFromSdkTranscriptPath(
             assistantParts.push(text);
           }
         }
-      } catch {
-        continue;
-      }
+      } catch {}
     }
     return extractExplicitPlanningDeliverables(assistantParts.join("\n\n"));
   } catch {

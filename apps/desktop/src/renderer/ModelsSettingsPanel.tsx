@@ -22,6 +22,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { isOpenAICompat } from "../shared/api-compat";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import type {
   AuxiliaryModelSelection,
   CandidateModelView,
@@ -38,15 +39,26 @@ import type {
   SkillsListResult,
   VisionModelSelection,
 } from "../shared/ipc";
-import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { hasCompleteOrchestrationSelection } from "../shared/thread-runtime-config";
+import {
+  AgentCompositionResourcesSection,
+  type PendingMainAgentConfigCreateSeed,
+} from "./AgentCompositionResourcesSection";
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
+import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
+import {
+  createCommitModelPricingExtra,
+  mapCommitModelOptions,
+  toCandidateModelSelection,
+  toModelCascadeSelection,
+} from "./model-cascade-options";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import {
   applyProviderPreset,
@@ -54,27 +66,11 @@ import {
   findMatchingProviderPreset,
   formatProviderPresetSelectLabel,
 } from "./provider-presets";
-import { SubagentSettingsSection } from "./SubagentSettingsSection";
-import {
-  AgentCompositionResourcesSection,
-  type PendingMainAgentConfigCreateSeed,
-} from "./AgentCompositionResourcesSection";
-import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
-import {
-  createCommitModelPricingExtra,
-  mapCommitModelOptions,
-  toCandidateModelSelection,
-  toModelCascadeSelection,
-} from "./model-cascade-options";
-import { ModelCascadeSelect } from "./ModelCascadeSelect";
-import { ComposerFieldSelect } from "./ComposerFieldSelect";
 import { SettingsSyncControl } from "./SettingsSyncControl";
+import { SubagentSettingsSection } from "./SubagentSettingsSection";
+import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
-export type ModelsSettingsTab =
-  | "subagents"
-  | "providers"
-  | "proxyBridge"
-  | "compositionParts";
+export type ModelsSettingsTab = "subagents" | "providers" | "proxyBridge" | "compositionParts";
 
 type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
 
@@ -105,9 +101,7 @@ interface ModelsSettingsPanelProps {
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
   /** Ask App to open orchestration settings and create a main agent config. */
-  onRequestCreateMainAgentConfig?:
-    | ((seed: PendingMainAgentConfigCreateSeed) => void)
-    | undefined;
+  onRequestCreateMainAgentConfig?: ((seed: PendingMainAgentConfigCreateSeed) => void) | undefined;
   /** When set (orchestration panel), open create dialog with this model preselected. */
   pendingCreateMainConfig?: PendingMainAgentConfigCreateSeed | undefined;
   onPendingCreateMainConfigConsumed?: (() => void) | undefined;
@@ -204,15 +198,14 @@ export function ModelsSettingsPanel({
         onSync={onSyncDomain}
       />
     ) : null;
-  const [defaultOrchestrationDraft, setDefaultOrchestrationDraft] =
-    useState<OrchestrationSelection>(
-      () =>
-        defaultOrchestrationSelection ?? {
-          mainAgentConfigId: "",
-          mainPrompt: { mode: "builtin" },
-          subagents: { mode: "none" },
-        },
-    );
+  const [defaultOrchestrationDraft, setDefaultOrchestrationDraft] = useState<OrchestrationSelection>(
+    () =>
+      defaultOrchestrationSelection ?? {
+        mainAgentConfigId: "",
+        mainPrompt: { mode: "builtin" },
+        subagents: { mode: "none" },
+      },
+  );
   const [auxiliaryModelOptions, setAuxiliaryModelOptions] = useState<CommitModelOptionView[]>([]);
   const [auxiliaryModelsLoading, setAuxiliaryModelsLoading] = useState(false);
   const [auxiliaryModelsError, setAuxiliaryModelsError] = useState<string>();
@@ -234,8 +227,7 @@ export function ModelsSettingsPanel({
   const updateDefaultOrchestrationDraft = useCallback(
     (patch: Partial<OrchestrationSelection>) => {
       const next: OrchestrationSelection = {
-        mainAgentConfigId:
-          patch.mainAgentConfigId ?? defaultOrchestrationDraft.mainAgentConfigId,
+        mainAgentConfigId: patch.mainAgentConfigId ?? defaultOrchestrationDraft.mainAgentConfigId,
         mainPrompt: patch.mainPrompt ?? defaultOrchestrationDraft.mainPrompt,
         subagents: patch.subagents ?? defaultOrchestrationDraft.subagents,
       };
@@ -249,12 +241,11 @@ export function ModelsSettingsPanel({
     [defaultOrchestrationDraft, onDefaultOrchestrationSelectionChange],
   );
 
-  const auxiliaryModelLookupId =
-    settings.mainAgentConfigs.some(
-      (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
-    )
-      ? defaultOrchestrationDraft.mainAgentConfigId
-      : (settings.mainAgentConfigs[0]?.id ?? "");
+  const auxiliaryModelLookupId = settings.mainAgentConfigs.some(
+    (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
+  )
+    ? defaultOrchestrationDraft.mainAgentConfigId
+    : (settings.mainAgentConfigs[0]?.id ?? "");
 
   useEffect(() => {
     if (!window.eco?.listGitCommitModelOptions) {
@@ -267,9 +258,7 @@ export function ModelsSettingsPanel({
     setAuxiliaryModelsLoading(true);
     setAuxiliaryModelsError(undefined);
     void window.eco
-      .listGitCommitModelOptions(
-        auxiliaryModelLookupId ? { mainAgentConfigId: auxiliaryModelLookupId } : {},
-      )
+      .listGitCommitModelOptions(auxiliaryModelLookupId ? { mainAgentConfigId: auxiliaryModelLookupId } : {})
       .then((result) => {
         if (!cancelled) {
           setAuxiliaryModelOptions(result.options);
@@ -362,9 +351,7 @@ export function ModelsSettingsPanel({
         ...(target.requestPath !== undefined && target.requestPath !== ""
           ? { requestPath: target.requestPath }
           : {}),
-        ...(target.version !== undefined && target.version !== ""
-          ? { version: target.version }
-          : {}),
+        ...(target.version !== undefined && target.version !== "" ? { version: target.version } : {}),
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
         ...(target.id && { providerId: target.id }),
         ...(target.apiKey && { apiKey: target.apiKey }),
@@ -453,9 +440,7 @@ export function ModelsSettingsPanel({
     if (!onRequestCreateMainAgentConfig || candidates.length === 0) {
       return;
     }
-    const hasMainConfig = settings.mainAgentConfigs.some(
-      (config) => config.source !== "built_in",
-    );
+    const hasMainConfig = settings.mainAgentConfigs.some((config) => config.source !== "built_in");
     if (hasMainConfig) {
       return;
     }
@@ -645,7 +630,7 @@ export function ModelsSettingsPanel({
         <div
           className="models-settings-tabs"
           role="tablist"
-            aria-label={t("settings.models.providerCategories")}
+          aria-label={t("settings.models.providerCategories")}
         >
           {providerSettingsTabItems.map((tab) => (
             <button
@@ -742,9 +727,7 @@ export function ModelsSettingsPanel({
                 type="button"
                 role="tab"
                 aria-selected={runtimeConfigTab === tab.id}
-                className={
-                  runtimeConfigTab === tab.id ? "models-settings-tab active" : "models-settings-tab"
-                }
+                className={runtimeConfigTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
                 onClick={() => setRuntimeConfigTab(tab.id)}
               >
                 {tab.label}
@@ -753,191 +736,189 @@ export function ModelsSettingsPanel({
           </div>
 
           {runtimeConfigTab === "defaults" ? (
-          <section className="settings-global-orchestration">
-            <div className="settings-global-orchestration-header">
-              <div className="settings-global-orchestration-heading">
-                <span className="settings-global-orchestration-icon" aria-hidden>
-                  <Globe2 size={18} strokeWidth={1.8} />
-                </span>
-                <div>
-                  <h3>{t("settings.models.resources.globalOrchestration")}</h3>
-                  <p>{t("settings.models.resources.globalOrchestrationHint")}</p>
+            <section className="settings-global-orchestration">
+              <div className="settings-global-orchestration-header">
+                <div className="settings-global-orchestration-heading">
+                  <span className="settings-global-orchestration-icon" aria-hidden>
+                    <Globe2 size={18} strokeWidth={1.8} />
+                  </span>
+                  <div>
+                    <h3>{t("settings.models.resources.globalOrchestration")}</h3>
+                    <p>{t("settings.models.resources.globalOrchestrationHint")}</p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="settings-global-orchestration-reset"
+                  title={t("settings.models.resources.clearGlobalOrchestration")}
+                  aria-label={t("settings.models.resources.clearGlobalOrchestration")}
+                  disabled={busy || !defaultOrchestrationSelection}
+                  onClick={() => {
+                    setDefaultOrchestrationDraft({
+                      mainAgentConfigId: "",
+                      mainPrompt: { mode: "builtin" },
+                      subagents: { mode: "none" },
+                    });
+                    void Promise.resolve(onDefaultOrchestrationSelectionChange?.(undefined)).catch(
+                      (error) => {
+                        setPanelError(error instanceof Error ? error.message : String(error));
+                      },
+                    );
+                  }}
+                >
+                  <Eraser size={17} aria-hidden />
+                </button>
               </div>
-              <button
-                type="button"
-                className="settings-global-orchestration-reset"
-                title={t("settings.models.resources.clearGlobalOrchestration")}
-                aria-label={t("settings.models.resources.clearGlobalOrchestration")}
-                disabled={busy || !defaultOrchestrationSelection}
-                onClick={() => {
-                  setDefaultOrchestrationDraft({
-                    mainAgentConfigId: "",
-                    mainPrompt: { mode: "builtin" },
-                    subagents: { mode: "none" },
-                  });
-                  void Promise.resolve(onDefaultOrchestrationSelectionChange?.(undefined)).catch(
-                    (error) => {
-                      setPanelError(error instanceof Error ? error.message : String(error));
-                    },
-                  );
-                }}
-              >
-                <Eraser size={17} aria-hidden />
-              </button>
-            </div>
-            <div className="settings-global-orchestration-list">
-              <label className="settings-global-orchestration-row">
-                <span className="settings-global-orchestration-label">
-                  {t("composer.route.mainAgent")}
-                </span>
-                <ComposerFieldSelect
-                  value={defaultOrchestrationDraft.mainAgentConfigId.trim()}
-                  disabled={busy || settings.mainAgentConfigs.length === 0}
-                  showPlaceholder
-                  placeholder={t("composer.route.notConfigured")}
-                  invalid={
-                    Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
+              <div className="settings-global-orchestration-list">
+                <label className="settings-global-orchestration-row">
+                  <span className="settings-global-orchestration-label">{t("composer.route.mainAgent")}</span>
+                  <ComposerFieldSelect
+                    value={defaultOrchestrationDraft.mainAgentConfigId.trim()}
+                    disabled={busy || settings.mainAgentConfigs.length === 0}
+                    showPlaceholder
+                    placeholder={t("composer.route.notConfigured")}
+                    invalid={
+                      Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
+                      !settings.mainAgentConfigs.some(
+                        (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
+                      )
+                    }
+                    invalidLabel={t("settings.models.resources.missingMainAgentHint")}
+                    onChange={(value) => updateDefaultOrchestrationDraft({ mainAgentConfigId: value })}
+                  >
+                    {defaultOrchestrationDraft.mainAgentConfigId.trim() &&
                     !settings.mainAgentConfigs.some(
                       (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
-                    )
-                  }
-                  invalidLabel={t("settings.models.resources.missingMainAgentHint")}
-                  onChange={(value) =>
-                    updateDefaultOrchestrationDraft({ mainAgentConfigId: value })
-                  }
-                >
-                  {Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
-                  !settings.mainAgentConfigs.some(
-                    (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
-                  ) ? (
-                    <option value={defaultOrchestrationDraft.mainAgentConfigId}>
-                      {t("settings.models.resources.missingMainAgentOption", {
-                        id: defaultOrchestrationDraft.mainAgentConfigId,
-                      })}
-                    </option>
-                  ) : null}
-                  {settings.mainAgentConfigs.map((config) => (
-                    <option key={config.id} value={config.id}>
-                      {config.name} ({config.modelRef.modelId})
-                    </option>
-                  ))}
-                </ComposerFieldSelect>
-              </label>
-              <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
-                <span className="settings-global-orchestration-label">
-                  {t("composer.route.auxiliaryModel")}
-                  <span className="settings-global-orchestration-hint">
-                    {t("composer.route.auxiliaryModelHint")}
-                  </span>
-                </span>
-                <ModelCascadeSelect
-                  value={toModelCascadeSelection(defaultAuxiliaryModel)}
-                  options={mapCommitModelOptions(auxiliaryModelOptions)}
-                  loading={auxiliaryModelsLoading}
-                  error={auxiliaryModelsError}
-                  disabled={busy}
-                  clearable
-                  hint={t("composer.route.auxiliaryModelHint")}
-                  placeholder={t("composer.route.auxiliaryModel")}
-                  renderExtra={commitModelPricingExtra}
-                  onChange={(selection) => selectDefaultAuxiliaryModel(selection ? toCandidateModelSelection(selection) : undefined)}
-                />
-              </label>
-              <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
-                <span className="settings-global-orchestration-label">
-                  {t("composer.route.visionModel")}
-                  <span className="settings-global-orchestration-hint">
-                    {t("composer.route.visionModelHint")}
-                  </span>
-                </span>
-                <ModelCascadeSelect
-                  value={toModelCascadeSelection(defaultVisionModel)}
-                  options={mapCommitModelOptions(auxiliaryModelOptions)}
-                  loading={auxiliaryModelsLoading}
-                  error={auxiliaryModelsError}
-                  disabled={busy}
-                  clearable
-                  hint={t("composer.route.visionModelHint")}
-                  placeholder={t("composer.route.visionModel")}
-                  renderExtra={commitModelPricingExtra}
-                  onChange={(selection) => selectDefaultVisionModel(selection ? toCandidateModelSelection(selection) : undefined)}
-                />
-              </label>
-              <label className="settings-global-orchestration-row">
-                <span className="settings-global-orchestration-label">
-                  {t("composer.route.prompt")}
-                </span>
-                <ComposerFieldSelect
-                  value={
-                    defaultOrchestrationDraft.mainPrompt.mode === "builtin"
-                      ? "__builtin__"
-                      : defaultOrchestrationDraft.mainPrompt.promptId
-                  }
-                  disabled={busy}
-                  onChange={(value) =>
-                    updateDefaultOrchestrationDraft({
-                      mainPrompt:
-                        value === "__builtin__"
-                          ? { mode: "builtin" }
-                          : { mode: "custom_append", promptId: value },
-                    })
-                  }
-                >
-                  <option value="__builtin__">{t("composer.route.defaultBuiltinPrompt")}</option>
-                  {settings.mainAgentPrompts
-                    .filter((prompt) => prompt.mode === "custom_append")
-                    .map((prompt) => (
-                      <option key={prompt.id} value={prompt.id}>
-                        {prompt.name}
+                    ) ? (
+                      <option value={defaultOrchestrationDraft.mainAgentConfigId}>
+                        {t("settings.models.resources.missingMainAgentOption", {
+                          id: defaultOrchestrationDraft.mainAgentConfigId,
+                        })}
+                      </option>
+                    ) : null}
+                    {settings.mainAgentConfigs.map((config) => (
+                      <option key={config.id} value={config.id}>
+                        {config.name} ({config.modelRef.modelId})
                       </option>
                     ))}
-                </ComposerFieldSelect>
-              </label>
-              <label className="settings-global-orchestration-row">
-                <span className="settings-global-orchestration-label">
-                  {t("composer.route.subagentOrchestration")}
-                </span>
-                <ComposerFieldSelect
-                  value={
-                    defaultOrchestrationDraft.subagents.mode === "none"
-                      ? "__none__"
-                      : defaultOrchestrationDraft.subagents.orchestrationId
-                  }
-                  disabled={busy}
-                  onChange={(value) =>
-                    updateDefaultOrchestrationDraft({
-                      subagents:
-                        value === "__none__"
-                          ? { mode: "none" }
-                          : { mode: "orchestration", orchestrationId: value },
-                    })
-                  }
-                >
-                  <option value="__none__">{t("composer.route.noSubagents")}</option>
-                  {settings.subagentOrchestrations.map((orchestration) => (
-                    <option key={orchestration.id} value={orchestration.id}>
-                      {orchestration.name} ({orchestration.agents.length})
-                    </option>
-                  ))}
-                </ComposerFieldSelect>
-              </label>
-            </div>
-          </section>
+                  </ComposerFieldSelect>
+                </label>
+                <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
+                  <span className="settings-global-orchestration-label">
+                    {t("composer.route.auxiliaryModel")}
+                    <span className="settings-global-orchestration-hint">
+                      {t("composer.route.auxiliaryModelHint")}
+                    </span>
+                  </span>
+                  <ModelCascadeSelect
+                    value={toModelCascadeSelection(defaultAuxiliaryModel)}
+                    options={mapCommitModelOptions(auxiliaryModelOptions)}
+                    loading={auxiliaryModelsLoading}
+                    error={auxiliaryModelsError}
+                    disabled={busy}
+                    clearable
+                    hint={t("composer.route.auxiliaryModelHint")}
+                    placeholder={t("composer.route.auxiliaryModel")}
+                    renderExtra={commitModelPricingExtra}
+                    onChange={(selection) =>
+                      selectDefaultAuxiliaryModel(
+                        selection ? toCandidateModelSelection(selection) : undefined,
+                      )
+                    }
+                  />
+                </label>
+                <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
+                  <span className="settings-global-orchestration-label">
+                    {t("composer.route.visionModel")}
+                    <span className="settings-global-orchestration-hint">
+                      {t("composer.route.visionModelHint")}
+                    </span>
+                  </span>
+                  <ModelCascadeSelect
+                    value={toModelCascadeSelection(defaultVisionModel)}
+                    options={mapCommitModelOptions(auxiliaryModelOptions)}
+                    loading={auxiliaryModelsLoading}
+                    error={auxiliaryModelsError}
+                    disabled={busy}
+                    clearable
+                    hint={t("composer.route.visionModelHint")}
+                    placeholder={t("composer.route.visionModel")}
+                    renderExtra={commitModelPricingExtra}
+                    onChange={(selection) =>
+                      selectDefaultVisionModel(selection ? toCandidateModelSelection(selection) : undefined)
+                    }
+                  />
+                </label>
+                <label className="settings-global-orchestration-row">
+                  <span className="settings-global-orchestration-label">{t("composer.route.prompt")}</span>
+                  <ComposerFieldSelect
+                    value={
+                      defaultOrchestrationDraft.mainPrompt.mode === "builtin"
+                        ? "__builtin__"
+                        : defaultOrchestrationDraft.mainPrompt.promptId
+                    }
+                    disabled={busy}
+                    onChange={(value) =>
+                      updateDefaultOrchestrationDraft({
+                        mainPrompt:
+                          value === "__builtin__"
+                            ? { mode: "builtin" }
+                            : { mode: "custom_append", promptId: value },
+                      })
+                    }
+                  >
+                    <option value="__builtin__">{t("composer.route.defaultBuiltinPrompt")}</option>
+                    {settings.mainAgentPrompts
+                      .filter((prompt) => prompt.mode === "custom_append")
+                      .map((prompt) => (
+                        <option key={prompt.id} value={prompt.id}>
+                          {prompt.name}
+                        </option>
+                      ))}
+                  </ComposerFieldSelect>
+                </label>
+                <label className="settings-global-orchestration-row">
+                  <span className="settings-global-orchestration-label">
+                    {t("composer.route.subagentOrchestration")}
+                  </span>
+                  <ComposerFieldSelect
+                    value={
+                      defaultOrchestrationDraft.subagents.mode === "none"
+                        ? "__none__"
+                        : defaultOrchestrationDraft.subagents.orchestrationId
+                    }
+                    disabled={busy}
+                    onChange={(value) =>
+                      updateDefaultOrchestrationDraft({
+                        subagents:
+                          value === "__none__"
+                            ? { mode: "none" }
+                            : { mode: "orchestration", orchestrationId: value },
+                      })
+                    }
+                  >
+                    <option value="__none__">{t("composer.route.noSubagents")}</option>
+                    {settings.subagentOrchestrations.map((orchestration) => (
+                      <option key={orchestration.id} value={orchestration.id}>
+                        {orchestration.name} ({orchestration.agents.length})
+                      </option>
+                    ))}
+                  </ComposerFieldSelect>
+                </label>
+              </div>
+            </section>
           ) : (
-          <AgentCompositionResourcesSection
-            settings={settings}
-            mcpServers={mcpServers}
-            busy={busy}
-            activeScope={runtimeConfigTab}
-            onRegistryChange={refreshSettings}
-            onSavingChange={onSavingChange}
-            onErrorMessage={(message: string) => showProviderTestMessage("error", message)}
-            {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
-            {...(onPendingCreateMainConfigConsumed
-              ? { onPendingCreateMainConfigConsumed }
-              : {})}
-          />
+            <AgentCompositionResourcesSection
+              settings={settings}
+              mcpServers={mcpServers}
+              busy={busy}
+              activeScope={runtimeConfigTab}
+              onRegistryChange={refreshSettings}
+              onSavingChange={onSavingChange}
+              onErrorMessage={(message: string) => showProviderTestMessage("error", message)}
+              {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
+              {...(onPendingCreateMainConfigConsumed ? { onPendingCreateMainConfigConsumed } : {})}
+            />
           )}
         </>
       )}
@@ -1099,9 +1080,7 @@ function ProviderEditorModal({
         <div className="provider-modal-layout">
           <div className="provider-modal-form-main settings-modal-body mcp-editor-form models-editor-form">
             <section className="provider-form-section">
-              <h3 className="provider-form-section-title">
-                {t("settings.models.provider.basicInfo")}
-              </h3>
+              <h3 className="provider-form-section-title">{t("settings.models.provider.basicInfo")}</h3>
               <div className="provider-form-grid">
                 <div className="mcp-field models-provider-preset-field">
                   <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
@@ -1138,9 +1117,7 @@ function ProviderEditorModal({
                   <input
                     className="mcp-field-input"
                     value={form.name}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, name: event.target.value }))
-                    }
+                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                   />
                 </label>
               </div>
@@ -1165,18 +1142,14 @@ function ProviderEditorModal({
             </section>
 
             <section className="provider-form-section">
-              <h3 className="provider-form-section-title">
-                {t("settings.models.provider.connection")}
-              </h3>
+              <h3 className="provider-form-section-title">{t("settings.models.provider.connection")}</h3>
               <label className="mcp-field">
                 <span className="mcp-field-label">baseURL</span>
                 <input
                   className="mcp-field-input"
                   value={form.baseUrl}
                   placeholder="https://api.deepseek.com"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, baseUrl: event.target.value }))
-                  }
+                  onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
                 />
                 <span className="mcp-field-hint">{t("settings.models.provider.rootHint")}</span>
               </label>
@@ -1216,9 +1189,7 @@ function ProviderEditorModal({
                   value={form.version ?? "v1"}
                   placeholder="v1"
                   disabled={busy}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, version: event.target.value }))
-                  }
+                  onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
                 />
                 <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
               </label>
@@ -1247,9 +1218,7 @@ function ProviderEditorModal({
                       ? t("settings.models.provider.keepKey")
                       : t("settings.models.provider.optionalKey")
                   }
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, apiKey: event.target.value }))
-                  }
+                  onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
                 />
               </label>
             </section>
@@ -1275,15 +1244,11 @@ function ProviderEditorModal({
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={
-                      prefersReducedMotion
-                        ? { duration: 0 }
-                        : { type: "spring", bounce: 0, duration: 0.34 }
+                      prefersReducedMotion ? { duration: 0 } : { type: "spring", bounce: 0, duration: 0.34 }
                     }
                   >
                     <label className="mcp-field">
-                      <span className="mcp-field-label">
-                        {t("settings.models.provider.tokenCountMode")}
-                      </span>
+                      <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
                       <select
                         className="mcp-field-input"
                         value={form.tokenCountMode ?? "local_heuristic"}
@@ -1291,8 +1256,9 @@ function ProviderEditorModal({
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
-                            tokenCountMode: event.target
-                              .value as NonNullable<ProviderConfigInput["tokenCountMode"]>,
+                            tokenCountMode: event.target.value as NonNullable<
+                              ProviderConfigInput["tokenCountMode"]
+                            >,
                           }))
                         }
                       >
@@ -1305,9 +1271,7 @@ function ProviderEditorModal({
                         <option value="openai_responses">OpenAI /v1/responses/input_tokens</option>
                         <option value="llama_tokenize">llama.cpp /apply-template + /tokenize</option>
                       </select>
-                      <span className="mcp-field-hint">
-                        {t("settings.models.provider.tokenCountHint")}
-                      </span>
+                      <span className="mcp-field-hint">{t("settings.models.provider.tokenCountHint")}</span>
                     </label>
                   </motion.div>
                 ) : null}
@@ -1342,12 +1306,7 @@ function ProviderEditorModal({
 
         <footer className="settings-modal-footer settings-modal-footer-split">
           {isEditing ? (
-            <button
-              type="button"
-              className="mcp-uninstall-button"
-              onClick={onDelete}
-              disabled={busy}
-            >
+            <button type="button" className="mcp-uninstall-button" onClick={onDelete} disabled={busy}>
               <Trash2 size={16} />
               {t("common.delete")}
             </button>
@@ -1355,12 +1314,7 @@ function ProviderEditorModal({
             <span />
           )}
           <div className="settings-modal-footer-actions">
-            <button
-              type="button"
-              className="settings-modal-cancel"
-              onClick={onClose}
-              disabled={busy}
-            >
+            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
               {t("common.cancel")}
             </button>
             <button

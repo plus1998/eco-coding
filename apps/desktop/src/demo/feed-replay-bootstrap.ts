@@ -1,9 +1,9 @@
+import { replayGatewayClientRoundFeedSelector } from "../feed-replay/gateway-client-round-feed-replay";
+import { GATEWAY_PROFILE_DISPLAY_NAMES } from "../feed-replay/gateway-client-round-fixture";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
 import { DEMO_WORKSPACE_PATH } from "./constants";
 import { demoLog } from "./demo-log";
-import { GATEWAY_PROFILE_DISPLAY_NAMES } from "../feed-replay/gateway-client-round-fixture";
-import { replayGatewayClientRoundFeedSelector } from "../feed-replay/gateway-client-round-feed-replay";
 import { hydrateDemoFeedReplayTurnDetails } from "./feed-replay-turn-hydrate";
 
 export interface DemoFeedReplayState {
@@ -74,7 +74,9 @@ export async function initDemoFeedReplayState(): Promise<DemoFeedReplayState> {
         prompt: result.cell.prompt.split("\n")[0] ?? title,
         workspacePath: DEMO_WORKSPACE_PATH,
         status: "idle",
-        message: result.scenarioChecklistOk ? "replay ok" : `replay checklist: ${result.scenarioFailed.join(", ")}`,
+        message: result.scenarioChecklistOk
+          ? "replay ok"
+          : `replay checklist: ${result.scenarioFailed.join(", ")}`,
         createdAt: now,
         updatedAt: now,
       });
@@ -118,6 +120,8 @@ export function resolveDemoFeedReplayProjection(threadId: string): ThreadRunProj
   return getDemoFeedReplayState().projections.get(threadId);
 }
 
-export function resolveDemoFeedReplayFullProjection(threadId: string): ThreadRunProjectionSnapshot | undefined {
+export function resolveDemoFeedReplayFullProjection(
+  threadId: string,
+): ThreadRunProjectionSnapshot | undefined {
   return getDemoFeedReplayState().fullProjections.get(threadId);
 }

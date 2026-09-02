@@ -202,10 +202,12 @@ export function ClarificationPanel({
       if (inCustomField) {
         // Custom free-form: Enter submits (or advances) when ready; Shift+Enter keeps newline.
         if (event.key === "Enter" && !event.shiftKey) {
-          if (!isClarificationQuestionReady(
-            selectionsRef.current[questionIndex] ?? [],
-            customTextsRef.current[questionIndex] ?? "",
-          )) {
+          if (
+            !isClarificationQuestionReady(
+              selectionsRef.current[questionIndex] ?? [],
+              customTextsRef.current[questionIndex] ?? "",
+            )
+          ) {
             return;
           }
           event.preventDefault();
@@ -249,16 +251,7 @@ export function ClarificationPanel({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    busy,
-    question,
-    highlightIndex,
-    optionCount,
-    questionIndex,
-    total,
-    onDismiss,
-    displayOptions,
-  ]);
+  }, [busy, question, highlightIndex, optionCount, questionIndex, total, onDismiss, displayOptions]);
 
   if (!question) {
     return null;
@@ -368,9 +361,7 @@ export function ClarificationPanel({
           <label className="clarification-custom-label" htmlFor={`clarification-custom-${request.toolUseId}`}>
             {t("approval.clarification.customLabel")}
             {!currentCustomText.trim() ? (
-              <span className="clarification-custom-required">
-                {t("approval.clarification.required")}
-              </span>
+              <span className="clarification-custom-required">{t("approval.clarification.required")}</span>
             ) : null}
           </label>
           <textarea
@@ -399,9 +390,7 @@ export function ClarificationPanel({
               }
             }}
           />
-          <p className="clarification-custom-hint">
-            {t("approval.clarification.customHint")}
-          </p>
+          <p className="clarification-custom-hint">{t("approval.clarification.customHint")}</p>
         </div>
       ) : null}
 
@@ -478,7 +467,10 @@ export function ClarificationPanel({
   if (docked) {
     return (
       <div className="codex-composer is-compact clarification-dock-shell">
-        <section className="composer-primary clarification-dock-inner" aria-label={t("approval.clarification.label")}>
+        <section
+          className="composer-primary clarification-dock-inner"
+          aria-label={t("approval.clarification.label")}
+        >
           {panelBody}
         </section>
       </div>

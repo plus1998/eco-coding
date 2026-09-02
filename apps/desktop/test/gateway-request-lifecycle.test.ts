@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
-  globalClaudeBridgeBindingRegistry,
   type ClaudeBridgeBindingRoute,
+  globalClaudeBridgeBindingRegistry,
 } from "../src/main/claude-bridge-binding";
-import type { ProviderConfigSecret } from "../src/main/provider-store";
 import {
   clearGatewayRequestLifecycleStateForTests,
   handleGatewayRequestLifecycleEvent,
   resolveBindingRoleForRoutes,
 } from "../src/main/gateway-request-lifecycle";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { RuntimeAgentRole } from "../src/shared/ipc";
 
 const registry = globalClaudeBridgeBindingRegistry;
@@ -302,7 +302,8 @@ describe("gateway-request-lifecycle desktop bridge", () => {
         apiCompat: "anthropic",
       },
     ]);
-    const completed: Array<{ role: RuntimeAgentRole; logicalRequestId: string; providerRequestId?: string }> = [];
+    const completed: Array<{ role: RuntimeAgentRole; logicalRequestId: string; providerRequestId?: string }> =
+      [];
     handleGatewayRequestLifecycleEvent(
       {
         type: "logical.completed",
@@ -320,10 +321,17 @@ describe("gateway-request-lifecycle desktop bridge", () => {
       {
         onUpstreamRequestId: () => {},
         onUpstreamConnectionError: () => {},
-        onLogicalCompleted: (input) => completed.push({ role: input.role, logicalRequestId: input.logicalRequestId, providerRequestId: input.providerRequestId }),
+        onLogicalCompleted: (input) =>
+          completed.push({
+            role: input.role,
+            logicalRequestId: input.logicalRequestId,
+            providerRequestId: input.providerRequestId,
+          }),
       },
     );
-    expect(completed).toEqual([{ role: "coder", logicalRequestId: "lr_complete_1", providerRequestId: "req_logical_done" }]);
+    expect(completed).toEqual([
+      { role: "coder", logicalRequestId: "lr_complete_1", providerRequestId: "req_logical_done" },
+    ]);
   });
 
   test("concurrent logical requests same binding same role close independently by logicalRequestId", () => {
@@ -356,7 +364,8 @@ describe("gateway-request-lifecycle desktop bridge", () => {
       {
         onUpstreamRequestId: () => {},
         onUpstreamConnectionError: () => {},
-        onLogicalCompleted: (input) => completed.push({ role: input.role, logicalRequestId: input.logicalRequestId }),
+        onLogicalCompleted: (input) =>
+          completed.push({ role: input.role, logicalRequestId: input.logicalRequestId }),
       },
     );
 
@@ -377,11 +386,14 @@ describe("gateway-request-lifecycle desktop bridge", () => {
       {
         onUpstreamRequestId: () => {},
         onUpstreamConnectionError: () => {},
-        onLogicalFailed: (input) => failed.push({ role: input.role, logicalRequestId: input.logicalRequestId, error: input.error }),
+        onLogicalFailed: (input) =>
+          failed.push({ role: input.role, logicalRequestId: input.logicalRequestId, error: input.error }),
       },
     );
 
     expect(completed).toEqual([{ role: "coder", logicalRequestId: "lr_concurrent_1" }]);
-    expect(failed).toEqual([{ role: "coder", logicalRequestId: "lr_concurrent_2", error: "transport failure" }]);
+    expect(failed).toEqual([
+      { role: "coder", logicalRequestId: "lr_concurrent_2", error: "transport failure" },
+    ]);
   });
 });

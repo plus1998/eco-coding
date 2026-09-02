@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import { generateVaultKey } from "@eco/shared";
 import {
-  buildVaultClaimInsertRow,
-  VAULT_CLAIM_TTL_MS,
-  VAULT_NO_SYNCED_PEER_CODE,
-} from "../src/main/supabase-vault-claim";
-import {
   emptyEcoSyncedSettingsPayload,
   encryptDecryptSecretRoundtrip,
   ensureLocalVaultKey,
   isEcoSyncedSettingsPayload,
 } from "../src/main/supabase-settings-sync";
+import {
+  buildVaultClaimInsertRow,
+  VAULT_CLAIM_TTL_MS,
+  VAULT_NO_SYNCED_PEER_CODE,
+} from "../src/main/supabase-vault-claim";
 
 test("settings sync encrypt/decrypt roundtrip preserves API key plaintext", async () => {
   const vaultKey = await generateVaultKey();
@@ -67,9 +67,7 @@ test("buildVaultClaimInsertRow shapes pending claim insert", () => {
 });
 
 test("createVaultClaim allows offline peers when another device has vault_synced", async () => {
-  const { createVaultClaim, VAULT_NO_SYNCED_DEVICE_CODE } = await import(
-    "../src/main/supabase-vault-claim"
-  );
+  const { createVaultClaim, VAULT_NO_SYNCED_DEVICE_CODE } = await import("../src/main/supabase-vault-claim");
   let inserted = false;
   const client = {
     from(table: string) {
@@ -83,9 +81,7 @@ test("createVaultClaim allows offline peers when another device has vault_synced
           },
           is() {
             return Promise.resolve({
-              data: [
-                { id: "peer-device", vault_synced_at: "2026-01-01T00:00:00.000Z", disabled_at: null },
-              ],
+              data: [{ id: "peer-device", vault_synced_at: "2026-01-01T00:00:00.000Z", disabled_at: null }],
               error: null,
             });
           },

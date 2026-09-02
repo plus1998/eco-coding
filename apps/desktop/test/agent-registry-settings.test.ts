@@ -85,9 +85,7 @@ test("registry settings merge keeps built-in templates and user orchestration re
   ]);
   expect(merged.mainAgentConfigs.map((config) => config.id)).toEqual(["user.main.config"]);
   expect(merged.mainAgentPrompts.map((prompt) => prompt.id)).toEqual(["user.main.prompt"]);
-  expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual([
-    "user.subagents",
-  ]);
+  expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual(["user.subagents"]);
 });
 
 test("registry settings merge replaces three resource tables from store", () => {
@@ -110,7 +108,5 @@ test("registry settings merge replaces three resource tables from store", () => 
 
   expect(merged.mainAgentConfigs.map((config) => config.id)).toEqual(["user.main.config"]);
   expect(merged.mainAgentPrompts.map((prompt) => prompt.id)).toEqual(["user.main.prompt"]);
-  expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual([
-    "user.subagents",
-  ]);
+  expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual(["user.subagents"]);
 });

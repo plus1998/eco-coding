@@ -2,10 +2,7 @@ import { expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  InMemorySessionStore,
-  runSessionStoreConformance,
-} from "../src/session-store";
+import { InMemorySessionStore, runSessionStoreConformance } from "../src/session-store";
 
 const sqliteAvailable = await (async () => {
   try {

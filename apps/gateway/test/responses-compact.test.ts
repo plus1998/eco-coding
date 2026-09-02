@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import type {
   GatewayConfig,
   GatewayProvider,
   GatewayUsageEvent,
   GatewayUsageObserver,
 } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 async function postCompact(
   provider: GatewayProvider,
@@ -49,12 +49,7 @@ async function postResponses(
   },
 ): Promise<Response> {
   const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
-  const handler = createTestGatewayFetchHandler(
-    config,
-    fetchImpl,
-    () => undefined,
-    options?.onUsage,
-  );
+  const handler = createTestGatewayFetchHandler(config, fetchImpl, () => undefined, options?.onUsage);
   const headers = new Headers({ "content-type": "application/json" });
   if (options?.codexTurnMetadataHeader !== undefined) {
     headers.set("x-codex-turn-metadata", options.codexTurnMetadataHeader);
@@ -120,9 +115,7 @@ describe("POST /v1/responses/compact (gateway protocol)", () => {
     const json = (await response.json()) as {
       output: Array<{ type: string; encrypted_content?: string }>;
     };
-    expect(json.output).toEqual([
-      { type: "compaction", encrypted_content: "opaque-compact-payload" },
-    ]);
+    expect(json.output).toEqual([{ type: "compaction", encrypted_content: "opaque-compact-payload" }]);
   });
 
   test("gateway-delegated also forwards compact", async () => {

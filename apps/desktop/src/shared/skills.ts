@@ -124,9 +124,7 @@ export function dedupeSkillsByName(skills: readonly SkillInfo[]): SkillInfo[] {
 }
 
 export function listSdkReadyProjectSkills(skills: readonly SkillInfo[]): SkillInfo[] {
-  return dedupeSkillsByName(
-    skills.filter((skill) => skill.source === "project" && skill.sdkReady),
-  );
+  return dedupeSkillsByName(skills.filter((skill) => skill.source === "project" && skill.sdkReady));
 }
 
 export function isSkillAvailableForCore(
@@ -196,9 +194,7 @@ export function filterExplicitUserSkillNames(
   prompt: string | undefined,
   userSkills: readonly Pick<SkillInfo, "name" | "sdkReady">[],
 ): string[] {
-  const allowed = new Set(
-    userSkills.filter((skill) => skill.sdkReady).map((skill) => skill.name),
-  );
+  const allowed = new Set(userSkills.filter((skill) => skill.sdkReady).map((skill) => skill.name));
   return parseExplicitSkillNames(prompt).filter((name) => allowed.has(name));
 }
 
@@ -247,14 +243,7 @@ export function mergeSkillNames(...lists: readonly (readonly string[])[]): strin
   return merged.sort((a, b) => a.localeCompare(b));
 }
 
-const LEGACY_AGENT_SKILL_ROLES = [
-  "planner",
-  "explore",
-  "architect",
-  "coder",
-  "reviewer",
-  "tester",
-] as const;
+const LEGACY_AGENT_SKILL_ROLES = ["planner", "explore", "architect", "coder", "reviewer", "tester"] as const;
 
 export function buildRuntimeAgentSkillAssignments(
   skills: readonly string[],
@@ -304,10 +293,7 @@ function readYamlScalar(block: string, key: string): string {
     return "";
   }
   let value = match[1].trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
     value = value.slice(1, -1);
   }
   return value;

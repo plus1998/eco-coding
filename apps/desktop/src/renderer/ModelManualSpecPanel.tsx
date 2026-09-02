@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelsDevMapping, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
+import { multiplyUnitRate } from "../shared/manual-spec-pricing";
 import {
   catalogCapabilityHint,
   catalogPricingHint,
@@ -8,15 +9,14 @@ import {
   formatCatalogMappingLabel,
   formatTokenCountHint,
   listManualOverrideFields,
+  type ManualSpecFormFields,
+  type ManualTriState,
   mergeEffectiveCapabilityHint,
   mergeEffectivePricingHint,
   parsePriceMultiplierFormValue,
   tryFormToManualSpec,
-  type ManualSpecFormFields,
-  type ManualTriState,
 } from "./agent-resource-manual-spec-form";
 import { ModelsDevCatalogReferencePanel } from "./ModelSpecSummary";
-import { multiplyUnitRate } from "../shared/manual-spec-pricing";
 
 interface ModelManualSpecPanelProps {
   value: ManualSpecFormFields;
@@ -173,9 +173,7 @@ export function ModelManualSpecPanel({
             label={t("modelSpec.contextLimit")}
             value={value.contextTokens}
             placeholder={autoContextHint ?? "tokens"}
-            {...(autoContextHint
-              ? { caption: t("modelSpec.catalogHint", { hint: autoContextHint }) }
-              : {})}
+            {...(autoContextHint ? { caption: t("modelSpec.catalogHint", { hint: autoContextHint }) } : {})}
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(contextTokens) => onChange({ contextTokens })}
           />
@@ -183,9 +181,7 @@ export function ModelManualSpecPanel({
             label={t("modelSpec.maxOutput")}
             value={value.maxOutputTokens}
             placeholder={autoOutputHint ?? "tokens"}
-            {...(autoOutputHint
-              ? { caption: t("modelSpec.catalogHint", { hint: autoOutputHint }) }
-              : {})}
+            {...(autoOutputHint ? { caption: t("modelSpec.catalogHint", { hint: autoOutputHint }) } : {})}
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(maxOutputTokens) => onChange({ maxOutputTokens })}
           />
@@ -218,7 +214,11 @@ export function ModelManualSpecPanel({
           <NumericField
             label={t("modelSpec.input")}
             value={value.inputPerM}
-            placeholder={formatRatePlaceholder(catalogRates?.inputPerM, effectiveInputPerM, t("modelSpec.input"))}
+            placeholder={formatRatePlaceholder(
+              catalogRates?.inputPerM,
+              effectiveInputPerM,
+              t("modelSpec.input"),
+            )}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(inputPerM) => onChange({ inputPerM })}
@@ -226,7 +226,11 @@ export function ModelManualSpecPanel({
           <NumericField
             label={t("modelSpec.output")}
             value={value.outputPerM}
-            placeholder={formatRatePlaceholder(catalogRates?.outputPerM, effectiveOutputPerM, t("modelSpec.output"))}
+            placeholder={formatRatePlaceholder(
+              catalogRates?.outputPerM,
+              effectiveOutputPerM,
+              t("modelSpec.output"),
+            )}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(outputPerM) => onChange({ outputPerM })}
@@ -234,7 +238,11 @@ export function ModelManualSpecPanel({
           <NumericField
             label={t("modelSpec.cacheRead")}
             value={value.cacheReadPerM}
-            placeholder={formatRatePlaceholder(catalogRates?.cacheReadPerM, effectiveCacheReadPerM, t("modelSpec.cacheRead"))}
+            placeholder={formatRatePlaceholder(
+              catalogRates?.cacheReadPerM,
+              effectiveCacheReadPerM,
+              t("modelSpec.cacheRead"),
+            )}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(cacheReadPerM) => onChange({ cacheReadPerM })}
@@ -242,7 +250,11 @@ export function ModelManualSpecPanel({
           <NumericField
             label={t("modelSpec.cacheWrite")}
             value={value.cacheWritePerM}
-            placeholder={formatRatePlaceholder(catalogRates?.cacheWritePerM, effectiveCacheWritePerM, t("modelSpec.cacheWrite"))}
+            placeholder={formatRatePlaceholder(
+              catalogRates?.cacheWritePerM,
+              effectiveCacheWritePerM,
+              t("modelSpec.cacheWrite"),
+            )}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(cacheWritePerM) => onChange({ cacheWritePerM })}
@@ -297,11 +309,7 @@ export function ModelManualSpecPanel({
   );
 }
 
-function formatRatePlaceholder(
-  catalog?: number,
-  effective?: number,
-  label?: string,
-): string {
+function formatRatePlaceholder(catalog?: number, effective?: number, label?: string): string {
   if (effective !== undefined) {
     return `$${formatRateHint(effective)}`;
   }

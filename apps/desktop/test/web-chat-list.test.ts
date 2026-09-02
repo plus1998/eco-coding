@@ -84,11 +84,7 @@ test("mergeWebChatList appends customs after builtins", () => {
 
 test("createCustomWebChatItem and removeCustomWebChatItem", () => {
   const empty = defaultWebChatListSnapshot();
-  const created = createCustomWebChatItem(
-    { title: " Grok ", url: "grok.x.ai" },
-    empty,
-    () => "fixed-id",
-  );
+  const created = createCustomWebChatItem({ title: " Grok ", url: "grok.x.ai" }, empty, () => "fixed-id");
   expect(created.ok).toBe(true);
   if (!created.ok) {
     return;
@@ -122,9 +118,7 @@ test("webChatHostname strips www", () => {
 });
 
 test("webChatListPopoverBoxForRect places panel below and right-aligned", async () => {
-  const { webChatListPopoverBoxForRect } = await import(
-    "../src/renderer/web-chat-list-popover-layout"
-  );
+  const { webChatListPopoverBoxForRect } = await import("../src/renderer/web-chat-list-popover-layout");
   const style = webChatListPopoverBoxForRect(
     { top: 12, bottom: 40, left: 900, right: 928, width: 28, height: 28 },
     { width: 1200, height: 800 },

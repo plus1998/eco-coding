@@ -7,8 +7,8 @@ import type {
   IntegrationId,
   IntegrationsEnabledSettings,
 } from "../shared/integrations";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { COMPOSER_TOOLBAR_ICON_PX } from "./composer-icon-metrics";
 
 interface Props {
@@ -20,13 +20,7 @@ interface Props {
   onToggle: (id: IntegrationId, enabled: boolean) => void;
 }
 
-function IntegrationRows({
-  availability,
-  enabledSettings,
-  canEdit,
-  saving,
-  onToggle,
-}: Props) {
+function IntegrationRows({ availability, enabledSettings, canEdit, saving, onToggle }: Props) {
   const { t } = useTranslation();
 
   return (
@@ -105,7 +99,9 @@ export function ComposerIntegrations({
 
   const position = useCallback(() => {
     if (triggerRef.current) {
-      setStyle(composerFloatingStyleForAnchor(triggerRef.current, { width: 300, minHeight: 120, prefer: "above" }));
+      setStyle(
+        composerFloatingStyleForAnchor(triggerRef.current, { width: 300, minHeight: 120, prefer: "above" }),
+      );
     }
   }, []);
 
@@ -139,7 +135,12 @@ export function ComposerIntegrations({
 
   const popover = open
     ? createPortal(
-        <div ref={panelRef} className="composer-codex-popover composer-agents-popover" role="dialog" style={style}>
+        <div
+          ref={panelRef}
+          className="composer-codex-popover composer-agents-popover"
+          role="dialog"
+          style={style}
+        >
           <div className="composer-agents-popover-header">
             <span>{t("settings.integrations")}</span>
             <span>

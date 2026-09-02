@@ -1,12 +1,12 @@
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import { buildApprovalReviewSystemPrompt } from "./approval-policy";
+import { postAuxiliaryBridgeRequest, resolveRouteApiCompat } from "./bridge-auxiliary-request";
 import {
-  buildApprovalEnvelope,
   type ApprovalActivityLine,
   type BuildApprovalEnvelopeResult,
+  buildApprovalEnvelope,
   type EcoApprovalEnvelopeV2,
 } from "./eco-approval-evidence";
-import { postAuxiliaryBridgeRequest, resolveRouteApiCompat } from "./bridge-auxiliary-request";
 
 const REVIEW_TIMEOUT_MS = 30_000;
 
@@ -44,8 +44,10 @@ const REVIEW_SCHEMA = {
 } as const;
 
 function isV2Envelope(envelope: EcoApprovalEnvelope): envelope is EcoApprovalEnvelopeV2 {
-  return Array.isArray((envelope as EcoApprovalEnvelopeV2).transcript)
-    && Boolean((envelope as EcoApprovalEnvelopeV2).plannedAction);
+  return (
+    Array.isArray((envelope as EcoApprovalEnvelopeV2).transcript) &&
+    Boolean((envelope as EcoApprovalEnvelopeV2).plannedAction)
+  );
 }
 
 function normalizeEnvelope(envelope: EcoApprovalEnvelope): BuildApprovalEnvelopeResult {
@@ -232,17 +234,10 @@ function parseReviewObject(raw: string): ParsedReviewResponse | undefined {
   if (!(["unknown", "low", "medium", "high"] as unknown[]).includes(value.user_authorization)) {
     return undefined;
   }
-  if (
-    value.decision !== "allow" &&
-    value.decision !== "human_required" &&
-    value.decision !== "deny"
-  ) {
+  if (value.decision !== "allow" && value.decision !== "human_required" && value.decision !== "deny") {
     return undefined;
   }
-  if (
-    !Array.isArray(value.policy_matches) ||
-    value.policy_matches.some((item) => typeof item !== "string")
-  ) {
+  if (!Array.isArray(value.policy_matches) || value.policy_matches.some((item) => typeof item !== "string")) {
     return undefined;
   }
   if (typeof value.rationale !== "string" || !value.rationale.trim()) {

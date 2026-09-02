@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import { activityHeaderProjectInfoPopoverBoxForRect } from "../src/renderer/activity-header-project-info-layout";
 import {
   ActivityHeaderProjectInfo,
   ActivityHeaderProjectInfoPanel,
 } from "../src/renderer/ActivityHeaderProjectInfo";
+import { activityHeaderProjectInfoPopoverBoxForRect } from "../src/renderer/activity-header-project-info-layout";
 import { renderLocalized } from "./i18n-test";
 
 test("project info popover aligns below the folder icon and stays in the viewport", () => {

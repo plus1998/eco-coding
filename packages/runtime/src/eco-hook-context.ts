@@ -1,9 +1,9 @@
 import type { RuntimeAgentRole } from "../../shared/src";
 import type { EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
-import type { ExecutionConfirmationMode } from "./tool-confirmation.js";
 import type { SubagentAvailability } from "./subagent-availability.js";
 import type { SubagentLaunchRegistry } from "./subagent-launch-registry.js";
 import type { SubagentResumeResolveInput } from "./subagent-resume.js";
+import type { ExecutionConfirmationMode } from "./tool-confirmation.js";
 
 export type PlanApprovalDecision = "approved" | "denied";
 
@@ -61,9 +61,7 @@ export interface EcoSubagentSessionHooks {
   onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
 }
 
-export type EcoSubagentLaunchGateDecision =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type EcoSubagentLaunchGateDecision = { ok: true } | { ok: false; reason: string };
 
 export interface EcoSubagentLaunchGate {
   tryReserveLaunch(input: {
@@ -71,11 +69,7 @@ export interface EcoSubagentLaunchGate {
     role?: RuntimeAgentRole;
     prompt?: string;
   }): EcoSubagentLaunchGateDecision;
-  releaseLaunch?(input: {
-    toolUseId?: string;
-    agentId?: string;
-    role?: RuntimeAgentRole;
-  }): void;
+  releaseLaunch?(input: { toolUseId?: string; agentId?: string; role?: RuntimeAgentRole }): void;
 }
 
 export interface EcoSubagentRuntimeLimitHooks {
@@ -91,11 +85,7 @@ export interface EcoSubagentAttributionHooks {
   }): string | undefined;
   onTaskToolUse?(toolUseId: string, input?: { role?: RuntimeAgentRole }): void;
   /** Seed runtime stream context when a subagent instance is known (SubagentStart / delegation link). */
-  onSubagentRegistered?(input: {
-    role: RuntimeAgentRole;
-    agentId?: string;
-    parentToolUseId?: string;
-  }): void;
+  onSubagentRegistered?(input: { role: RuntimeAgentRole; agentId?: string; parentToolUseId?: string }): void;
 }
 
 export interface EcoHookContext {

@@ -88,9 +88,9 @@ test("preferences panel puts language under the general section", () => {
   expect(markup).toContain(">折叠<");
   expect(markup).toContain(">展开<");
 
-  const generalIdx = markup.indexOf("settings-section-label\">常规<");
-  const notificationsIdx = markup.indexOf("settings-section-label\">通知<");
-  const displayIdx = markup.indexOf("settings-section-label\">显示<");
+  const generalIdx = markup.indexOf('settings-section-label">常规<');
+  const notificationsIdx = markup.indexOf('settings-section-label">通知<');
+  const displayIdx = markup.indexOf('settings-section-label">显示<');
   const billingIdx = markup.indexOf("显示计费");
   const thinkingLabelIdx = markup.indexOf("<strong>思考内容</strong>");
   const cacheIdx = markup.indexOf("Cache break 提示");

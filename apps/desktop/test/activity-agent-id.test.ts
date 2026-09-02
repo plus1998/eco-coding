@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { inferActivityRole } from "@eco/runtime/sdk";
-import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
-import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { activityStreamKey, resolveActivityAgentId } from "../src/main/activity-agent-id";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 
 test("resolveActivityAgentId prefers distinct subagent session id", () => {
   const agentId = resolveActivityAgentId(
@@ -49,15 +49,17 @@ test("resolveActivityAgentId falls back to parent tool use mapping", () => {
   );
 
   expect(agentId).toBe("agent_coder_a");
-  expect(inferActivityRole({
-    type: "message.delta",
-    role: "planner",
-    payload: {
-      type: "eco_stream",
-      blockKind: "text",
-      subagent_type: "coder",
-    },
-  })).toBe("coder");
+  expect(
+    inferActivityRole({
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        subagent_type: "coder",
+      },
+    }),
+  ).toBe("coder");
 });
 
 test("activityStreamKey isolates parallel subagent streams", () => {

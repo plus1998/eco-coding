@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  ImageGenerationError,
   type GeneratedImageFile,
+  ImageGenerationError,
   type ImageGenerationToolInput,
 } from "../shared/image-generation";
 import type { ImageGenerationClientConfig } from "./image-generation-store";
@@ -202,10 +202,15 @@ async function generateGemini(
   const images: ImagePayload[] = [];
   const candidates = Array.isArray(json.candidates) ? json.candidates : [];
   for (const candidate of candidates) {
-    if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) continue;
+    if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts))
+      continue;
     for (const part of candidate.content.parts) {
       if (!isRecord(part)) continue;
-      const inline = isRecord(part.inlineData) ? part.inlineData : isRecord(part.inline_data) ? part.inline_data : undefined;
+      const inline = isRecord(part.inlineData)
+        ? part.inlineData
+        : isRecord(part.inline_data)
+          ? part.inline_data
+          : undefined;
       if (!inline || typeof inline.data !== "string") continue;
       images.push(
         validateImagePayload(
@@ -220,7 +225,10 @@ async function generateGemini(
     }
   }
   if (images.length !== 1) {
-    throw new ImageGenerationError("invalid_response", `Gemini 返回了 ${images.length} 张图片，预期为 1 张。`);
+    throw new ImageGenerationError(
+      "invalid_response",
+      `Gemini 返回了 ${images.length} 张图片，预期为 1 张。`,
+    );
   }
   return images;
 }
@@ -266,11 +274,12 @@ function providerHttpError(response: Response, json: Record<string, unknown>): I
     (typeof error?.message === "string" && error.message.trim()) ||
     (typeof json.message === "string" && json.message.trim()) ||
     `HTTP ${response.status}`;
-  const code = response.status === 401 || response.status === 403
-    ? "auth_failed"
-    : response.status === 429
-      ? "rate_limited"
-      : "provider_error";
+  const code =
+    response.status === 401 || response.status === 403
+      ? "auth_failed"
+      : response.status === 429
+        ? "rate_limited"
+        : "provider_error";
   const requestId = response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? undefined;
   return new ImageGenerationError(code, message.slice(0, 2_000), response.status, requestId);
 }
@@ -299,10 +308,16 @@ async function fetchProviderImage(url: string, signal?: AbortSignal): Promise<Im
 
 function validateImagePayload(bytes: Buffer, declaredMime?: string): ImagePayload {
   if (bytes.length === 0) throw new ImageGenerationError("invalid_response", "供应商返回了空图片。");
-  if (bytes.length > MAX_IMAGE_BYTES) throw new ImageGenerationError("image_too_large", "供应商图片超过 64 MB 限制。");
+  if (bytes.length > MAX_IMAGE_BYTES)
+    throw new ImageGenerationError("image_too_large", "供应商图片超过 64 MB 限制。");
   const detected = detectImageMime(bytes);
-  if (!detected) throw new ImageGenerationError("invalid_image", "供应商返回的数据不是受支持的 PNG、JPEG 或 WebP 图片。");
-  if (declaredMime && declaredMime.split(";")[0]?.trim() && !declaredMime.toLowerCase().includes(detected.split("/")[1]!)) {
+  if (!detected)
+    throw new ImageGenerationError("invalid_image", "供应商返回的数据不是受支持的 PNG、JPEG 或 WebP 图片。");
+  if (
+    declaredMime &&
+    declaredMime.split(";")[0]?.trim() &&
+    !declaredMime.toLowerCase().includes(detected.split("/")[1]!)
+  ) {
     throw new ImageGenerationError("invalid_image", "供应商图片 MIME 与文件内容不一致。");
   }
   return { bytes, mimeType: detected };
@@ -321,7 +336,8 @@ async function writeImages(
   const written: GeneratedImageFile[] = [];
   try {
     for (const [index, payload] of payloads.entries()) {
-      const ext = payload.mimeType === "image/png" ? "png" : payload.mimeType === "image/jpeg" ? "jpg" : "webp";
+      const ext =
+        payload.mimeType === "image/png" ? "png" : payload.mimeType === "image/jpeg" ? "jpg" : "webp";
       const prefix = input.outputName ?? `image-${Date.now()}`;
       const name = `${prefix}-${index + 1}-${randomUUID().slice(0, 8)}.${ext}`;
       const absolutePath = path.join(outputDir, name);
@@ -348,15 +364,30 @@ async function writeImages(
 }
 
 function detectImageMime(bytes: Buffer): string | undefined {
-  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+    return "image/png";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (
+    bytes.length >= 12 &&
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WEBP"
+  )
+    return "image/webp";
   return undefined;
 }
 
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return host === "localhost" || host === "::1" || host.endsWith(".local") || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  return (
+    host === "localhost" ||
+    host === "::1" ||
+    host.endsWith(".local") ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

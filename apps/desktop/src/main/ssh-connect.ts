@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
-import type { InteractiveTerminalManager } from "./interactive-terminal-manager";
-import { resolveCommandExecutable } from "./resolve-command-executable";
 import type { SshBookmarkPublic } from "../shared/ssh-bookmarks";
 import { SSH_DEFAULT_PORT } from "../shared/ssh-bookmarks";
+import type { InteractiveTerminalManager } from "./interactive-terminal-manager";
+import { resolveCommandExecutable } from "./resolve-command-executable";
 
 export interface SshConnectSecrets {
   password?: string;
@@ -31,12 +31,15 @@ function splitExtraArgs(extraArgs: string | undefined): string[] {
   return extraArgs.trim().split(/\s+/).filter(Boolean);
 }
 
-export function buildSshArgv(
-  bookmark: SshBookmarkPublic,
-  identityFilePath?: string,
-): string[] {
+export function buildSshArgv(bookmark: SshBookmarkPublic, identityFilePath?: string): string[] {
   const ssh = resolveCommandExecutable(process.platform === "win32" ? "ssh.exe" : "ssh");
-  const args = [ssh, "-p", String(bookmark.port || SSH_DEFAULT_PORT), "-o", "StrictHostKeyChecking=accept-new"];
+  const args = [
+    ssh,
+    "-p",
+    String(bookmark.port || SSH_DEFAULT_PORT),
+    "-o",
+    "StrictHostKeyChecking=accept-new",
+  ];
   if (identityFilePath) {
     args.push("-i", identityFilePath);
   }
@@ -45,7 +48,11 @@ export function buildSshArgv(
   return args;
 }
 
-async function ensureStoredKeyFile(userDataDir: string, bookmarkId: string, keyContent: string): Promise<string> {
+async function ensureStoredKeyFile(
+  userDataDir: string,
+  bookmarkId: string,
+  keyContent: string,
+): Promise<string> {
   const keyDir = path.join(userDataDir, "ssh-keys");
   await fsPromises.mkdir(keyDir, { recursive: true });
   const keyPath = path.join(keyDir, bookmarkId);

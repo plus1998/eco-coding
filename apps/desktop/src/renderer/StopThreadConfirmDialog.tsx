@@ -58,21 +58,11 @@ export function StopThreadConfirmDialog({
           </ul>
         </div>
         <footer className="settings-modal-footer stop-thread-confirm-footer">
-          <button
-            type="button"
-            className="settings-modal-cancel"
-            onClick={onDismiss}
-            disabled={busy}
-          >
+          <button type="button" className="settings-modal-cancel" onClick={onDismiss} disabled={busy}>
             {t("dialog.stop.continue")}
           </button>
           <div className="settings-modal-footer-actions stop-thread-confirm-actions">
-            <button
-              type="button"
-              className="plan-button primary"
-              onClick={onConfirm}
-              disabled={busy}
-            >
+            <button type="button" className="plan-button primary" onClick={onConfirm} disabled={busy}>
               {busy ? t("dialog.stop.stopping") : t("dialog.stop.confirm")}
             </button>
           </div>

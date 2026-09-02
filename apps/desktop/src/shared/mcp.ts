@@ -102,7 +102,9 @@ export function buildCodexMcpServersForConfigSync(
     const key = sanitizeMcpServerName(server.name);
     if (!server.enabled || !server.name.trim() || !assigned.has(key)) continue;
     if (server.transport === "sse") {
-      throw new Error(`MCP server "${server.name}" uses SSE, which Codex does not support. Use HTTP or stdio.`);
+      throw new Error(
+        `MCP server "${server.name}" uses SSE, which Codex does not support. Use HTTP or stdio.`,
+      );
     }
     const entry = buildMcpServerEntry(server);
     if (!entry) throw new Error(`MCP server "${server.name}" is incomplete.`);
@@ -116,15 +118,23 @@ export function buildCodexMcpServersForConfigSync(
         transport: "stdio",
         command: typeof entry.command === "string" ? entry.command : "",
         args: Array.isArray(entry.args) ? entry.args.filter((v): v is string => typeof v === "string") : [],
-        env: entry.env && typeof entry.env === "object" && !Array.isArray(entry.env)
-          ? Object.fromEntries(Object.entries(entry.env).filter(([, v]) => typeof v === "string") as Array<[string, string]>)
-          : {},
+        env:
+          entry.env && typeof entry.env === "object" && !Array.isArray(entry.env)
+            ? Object.fromEntries(
+                Object.entries(entry.env).filter(([, v]) => typeof v === "string") as Array<[string, string]>,
+              )
+            : {},
         ...(enabledTools ? { enabledTools } : {}),
       });
     } else {
-      const headers = entry.headers && typeof entry.headers === "object" && !Array.isArray(entry.headers)
-        ? Object.fromEntries(Object.entries(entry.headers).filter(([, v]) => typeof v === "string") as Array<[string, string]>)
-        : {};
+      const headers =
+        entry.headers && typeof entry.headers === "object" && !Array.isArray(entry.headers)
+          ? Object.fromEntries(
+              Object.entries(entry.headers).filter(([, v]) => typeof v === "string") as Array<
+                [string, string]
+              >,
+            )
+          : {};
       result.push({
         name: key,
         transport: "http",
@@ -353,4 +363,5 @@ export function validateMcpServerInput(input: McpServerConfigInput): void {
     throw new Error(`${input.transport} transport requires a URL.`);
   }
 }
+
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";

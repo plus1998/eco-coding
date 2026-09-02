@@ -1,12 +1,6 @@
-import { ChevronDown, X } from "lucide-react";
-import {
-  type Dispatch,
-  type SetStateAction,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
 import type { TFunction } from "i18next";
+import { ChevronDown, X } from "lucide-react";
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type {
@@ -26,15 +20,12 @@ import {
 } from "./agent-resource-form";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
-import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { CandidateModelSpecPanel } from "./ModelSpecSummary";
+import { SubagentOrchestrationRosterEditor } from "./SubagentOrchestrationRosterEditor";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
-import { SubagentOrchestrationRosterEditor } from "./SubagentOrchestrationRosterEditor";
-import {
-  matchesToolCapabilityPreset,
-  TOOL_CAPABILITY_PRESETS,
-} from "./tool-capability-groups";
+import { matchesToolCapabilityPreset, TOOL_CAPABILITY_PRESETS } from "./tool-capability-groups";
 
 export type AgentCompositionEditorScope = "mainConfig" | "prompt" | "orchestration";
 export type AgentCompositionEditorMode = "create" | "edit" | "copy";
@@ -255,8 +246,7 @@ export function AgentResourceEditorModal({
     }
   }
 
-  const agentSideOpen =
-    scope === "orchestration" && Boolean(selectedAgent) && selectedAgentIndex >= 0;
+  const agentSideOpen = scope === "orchestration" && Boolean(selectedAgent) && selectedAgentIndex >= 0;
 
   const metaSection = (
     <section className="models-agent-resource-form-section">
@@ -321,9 +311,7 @@ export function AgentResourceEditorModal({
 
         <div className="settings-modal-body mcp-editor-form models-agent-resource-form">
           {scope === "orchestration" ? (
-            <div
-              className={`models-agent-resource-editor-layout${agentSideOpen ? " is-side-open" : ""}`}
-            >
+            <div className={`models-agent-resource-editor-layout${agentSideOpen ? " is-side-open" : ""}`}>
               <div className="models-agent-resource-editor-main">
                 {metaSection}
                 <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--guidance">
@@ -440,7 +428,10 @@ export function AgentResourceEditorModal({
                       <ChevronDown size={15} className="provider-advanced-toggle-icon" aria-hidden />
                     </button>
                     {mainAdvancedOpen ? (
-                      <div id="main-agent-advanced-body" className="provider-advanced-body composition-main-advanced-body">
+                      <div
+                        id="main-agent-advanced-body"
+                        className="provider-advanced-body composition-main-advanced-body"
+                      >
                         <V4aTeachingCheckboxField
                           checked={form.mainV4aTeachingEnabled}
                           {...(busy !== undefined ? { disabled: busy } : {})}
@@ -563,7 +554,11 @@ function ThinkingEffortSelect({
   return (
     <label className="mcp-field">
       <span className="mcp-field-label">{t("settings.models.thinkingEffort")}</span>
-      <ComposerFieldSelect value={value} {...(disabled !== undefined ? { disabled } : {})} onChange={onChange}>
+      <ComposerFieldSelect
+        value={value}
+        {...(disabled !== undefined ? { disabled } : {})}
+        onChange={onChange}
+      >
         <option value="">{t("common.default")}</option>
         <option value="off">{t("settings.models.effort.off")}</option>
         <option value="low">{t("settings.models.effort.low")}</option>
@@ -589,7 +584,11 @@ function ApiCompatSelect({
   return (
     <label className="mcp-field">
       <span className="mcp-field-label">{t("settings.models.apiCompat")}</span>
-      <ComposerFieldSelect value={value} {...(disabled !== undefined ? { disabled } : {})} onChange={onChange}>
+      <ComposerFieldSelect
+        value={value}
+        {...(disabled !== undefined ? { disabled } : {})}
+        onChange={onChange}
+      >
         <option value="">{t("common.default")}</option>
         {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>

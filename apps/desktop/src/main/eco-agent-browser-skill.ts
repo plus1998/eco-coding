@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
-import { CLAUDE_SKILLS_REL, type SkillInfo } from "../shared/skills";
 import { ECO_AGENT_BROWSER_SKILL_NAME } from "../shared/browser";
+import { CLAUDE_SKILLS_REL, type SkillInfo } from "../shared/skills";
 
 const MANAGED_MARKER = ".eco-managed";
 
@@ -24,8 +24,7 @@ export function resolveBundledEcoAgentBrowserSkillDir(
 ): string | undefined {
   const candidates: string[] = [];
   const resourcesPath =
-    options.resourcesPath ??
-    (typeof process.resourcesPath === "string" ? process.resourcesPath : undefined);
+    options.resourcesPath ?? (typeof process.resourcesPath === "string" ? process.resourcesPath : undefined);
   if (resourcesPath) {
     candidates.push(path.join(resourcesPath, "skills", ECO_AGENT_BROWSER_SKILL_NAME));
   }

@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
+  defaultImageGenerationEndpoint,
+  defaultImageGenerationModel,
   type GeneratedImageFile,
   type ImageGenerationArtifact,
   type ImageGenerationArtifactStatus,
@@ -11,8 +13,6 @@ import {
   type ImageGenerationProvider,
   type ImageGenerationSettingsSnapshot,
   type ImageGenerationToolInput,
-  defaultImageGenerationEndpoint,
-  defaultImageGenerationModel,
   isImageGenerationProvider,
 } from "../shared/image-generation";
 

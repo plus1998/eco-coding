@@ -47,10 +47,9 @@ test("local_heuristic reports heuristic precision without network access", async
 });
 
 test("anthropic_messages counts via Eco Bridge → Gateway → provider", async () => {
-  const {
-    configureEcoGatewayLifecycle,
-    stopGlobalEcoGateway,
-  } = await import("../src/main/eco-gateway-lifecycle");
+  const { configureEcoGatewayLifecycle, stopGlobalEcoGateway } = await import(
+    "../src/main/eco-gateway-lifecycle"
+  );
   const upstreamRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const upstream = Bun.serve({
     port: 0,
@@ -234,10 +233,9 @@ test("provider token counter rejects an invalid runtime mode instead of treating
 
 test("Anthropic proxy uses the provider's explicit token count adapter", async () => {
   const { startAnthropicModelProxy } = await import("../src/main/anthropic-proxy");
-  const {
-    configureEcoGatewayLifecycle,
-    stopGlobalEcoGateway,
-  } = await import("../src/main/eco-gateway-lifecycle");
+  const { configureEcoGatewayLifecycle, stopGlobalEcoGateway } = await import(
+    "../src/main/eco-gateway-lifecycle"
+  );
   const upstreamRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const upstream = Bun.serve({
     port: 0,

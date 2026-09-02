@@ -11,9 +11,7 @@ import {
   resolveProviderRoute,
   UnsupportedUpstreamKindError,
 } from "../provider-router.js";
-import {
-  buildRequestLifecycleContext,
-} from "../request-lifecycle.js";
+import { buildRequestLifecycleContext } from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
 import type {
   GatewayConfig,
@@ -64,12 +62,7 @@ export async function handlePostChatCompletions(
     throw error;
   }
 
-  const lifecycle = buildRequestLifecycleContext(
-    route,
-    "chat_completions",
-    onLog,
-    onRequestLifecycle,
-  );
+  const lifecycle = buildRequestLifecycleContext(route, "chat_completions", onLog, onRequestLifecycle);
 
   onLog(
     `POST /v1/chat/completions provider=${route.provider.id} kind=${route.upstreamKind} model=${route.upstreamModelId} stream=${body.stream === true}`,

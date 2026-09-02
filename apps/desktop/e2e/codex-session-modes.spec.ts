@@ -17,7 +17,10 @@ test("Codex ask and plan session modes behave correctly", async ({ ecoPage: page
     );
   });
 
-  expect(template?.runtimeConfig, "No idle Codex thread with a persisted runtime config is available.").toBeTruthy();
+  expect(
+    template?.runtimeConfig,
+    "No idle Codex thread with a persisted runtime config is available.",
+  ).toBeTruthy();
 
   const ask = await page.evaluate(
     async (request) => window.eco.startThread({ ...request, coreKind: "codex" }),

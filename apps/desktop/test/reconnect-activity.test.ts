@@ -20,7 +20,5 @@ test("parseReconnectActivityMessage maps proxy connection failure summary", () =
 });
 
 test("shouldClearReconnectActivity keeps reconnect during Requesting model", () => {
-  expect(
-    shouldClearReconnectActivity({ role: "explore", message: "Requesting model…" }),
-  ).toBe(false);
+  expect(shouldClearReconnectActivity({ role: "explore", message: "Requesting model…" })).toBe(false);
 });

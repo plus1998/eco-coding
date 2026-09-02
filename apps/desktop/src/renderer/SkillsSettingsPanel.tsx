@@ -61,9 +61,7 @@ export function SkillsSettingsPanel({
   for (const skill of snapshot?.userSkills ?? []) {
     skillsByLayout[skill.layout].push(skill);
   }
-  const visibleSkills = skillsByLayout[activeLayout].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  const visibleSkills = skillsByLayout[activeLayout].sort((a, b) => a.name.localeCompare(b.name));
   const searchEntryIds = new Set(catalogResult?.entries.map((entry) => entry.id) ?? []);
   const leaderboardEntries = (leaderboardResult?.entries ?? [])
     .map((entry, index) => ({ entry, rank: index + 1 }))
@@ -76,9 +74,7 @@ export function SkillsSettingsPanel({
     setLeaderboardError(undefined);
     void onLoadCatalogLeaderboard()
       .then(setLeaderboardResult)
-      .catch((error: unknown) =>
-        setLeaderboardError(error instanceof Error ? error.message : String(error)),
-      )
+      .catch((error: unknown) => setLeaderboardError(error instanceof Error ? error.message : String(error)))
       .finally(() => setLeaderboardLoading(false));
   };
   const renderCatalogEntry = (entry: SkillCatalogEntry, rank?: number) => {
@@ -196,7 +192,10 @@ export function SkillsSettingsPanel({
       </header>
 
       {catalogOpen ? (
-        <div className="settings-modal-backdrop" onClick={() => !installingCatalogId && setCatalogOpen(false)}>
+        <div
+          className="settings-modal-backdrop"
+          onClick={() => !installingCatalogId && setCatalogOpen(false)}
+        >
           <section
             className="settings-modal skills-catalog-modal"
             role="dialog"

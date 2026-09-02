@@ -1,14 +1,14 @@
 import { Check, ChevronRight, KeyRound, Mic, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AsrApiMode, AsrProfileSaveInput, AsrProfileSnapshot, AsrProfilesSnapshot } from "../shared/ipc";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
-import { SettingsSyncControl } from "./SettingsSyncControl";
+import type { AsrApiMode, AsrProfileSaveInput, AsrProfileSnapshot, AsrProfilesSnapshot } from "../shared/ipc";
 import {
   isAsrInputDeviceAvailable,
   SYSTEM_DEFAULT_ASR_INPUT_DEVICE_ID,
   useAsrInputDevices,
 } from "./asr-input-devices";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface AsrSettingsPanelProps {
   snapshot: AsrProfilesSnapshot;
@@ -68,9 +68,7 @@ export function resolveAsrProfileEditorSelection(input: {
   selectedProfileId: string | undefined;
   profiles: readonly AsrProfileSnapshot[];
   activeProfileId: string;
-}):
-  | { action: "keep" }
-  | { action: "reselect"; profileId: string | undefined; draft: ProfileDraft } {
+}): { action: "keep" } | { action: "reselect"; profileId: string | undefined; draft: ProfileDraft } {
   if (input.selectedProfileId === undefined) {
     return { action: "keep" };
   }
@@ -159,7 +157,9 @@ export function AsrSettingsPanel({
     const deviceId = snapshot.inputDeviceId ?? SYSTEM_DEFAULT_ASR_INPUT_DEVICE_ID;
     if (!deviceId) return t("asr.systemDefault");
     if (!selectedDeviceAvailable) return t("asr.inputDeviceUnavailable");
-    return inputDevices.devices.find((device) => device.deviceId === deviceId)?.label ?? t("asr.systemDefault");
+    return (
+      inputDevices.devices.find((device) => device.deviceId === deviceId)?.label ?? t("asr.systemDefault")
+    );
   })();
 
   useEffect(() => {
@@ -466,7 +466,11 @@ export function AsrSettingsPanel({
 
               <div className="asr-field">
                 <span>{t("asr.apiMode")}</span>
-                <div className="settings-segmented-control asr-segmented" role="group" aria-label={t("asr.apiMode")}>
+                <div
+                  className="settings-segmented-control asr-segmented"
+                  role="group"
+                  aria-label={t("asr.apiMode")}
+                >
                   <button
                     type="button"
                     aria-pressed={draft.apiMode === "chat_completions"}
@@ -495,7 +499,9 @@ export function AsrSettingsPanel({
                   </button>
                 </div>
                 <small>
-                  {draft.apiMode === "audio_transcriptions" ? t("asr.subtitleTranscriptions") : t("asr.subtitleChat")}
+                  {draft.apiMode === "audio_transcriptions"
+                    ? t("asr.subtitleTranscriptions")
+                    : t("asr.subtitleChat")}
                 </small>
               </div>
 
@@ -602,8 +608,9 @@ export function AsrSettingsPanel({
                 {t("asr.save")}
               </button>
 
-              {!creating && draft.id && (
-                confirmingDelete ? (
+              {!creating &&
+                draft.id &&
+                (confirmingDelete ? (
                   <div className="asr-delete-confirm" role="group" aria-label={t("asr.deleteConfirm")}>
                     <span>{t("asr.deleteConfirm")}</span>
                     <button
@@ -633,8 +640,7 @@ export function AsrSettingsPanel({
                     <Trash2 size={14} aria-hidden />
                     {t("asr.deleteProfile")}
                   </button>
-                )
-              )}
+                ))}
             </div>
           </div>
         </div>

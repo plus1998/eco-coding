@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import {
-  isCatalogSkillInstalled,
-  SkillsSettingsPanel,
-} from "../src/renderer/SkillsSettingsPanel";
+import { isCatalogSkillInstalled, SkillsSettingsPanel } from "../src/renderer/SkillsSettingsPanel";
 import type { SkillCatalogEntry, SkillInfo } from "../src/shared/skills";
 import { renderLocalized } from "./i18n-test";
 
@@ -80,7 +77,5 @@ test("catalog installed state requires the complete source and Skill id", () => 
   };
 
   expect(isCatalogSkillInstalled([skill], entry)).toBe(false);
-  expect(
-    isCatalogSkillInstalled([{ ...skill, catalogSource: "anthropics/skills" }], entry),
-  ).toBe(true);
+  expect(isCatalogSkillInstalled([{ ...skill, catalogSource: "anthropics/skills" }], entry)).toBe(true);
 });

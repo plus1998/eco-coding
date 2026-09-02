@@ -1,10 +1,5 @@
-import {
-  approveBashIfPresent,
-  clickSend,
-  fillComposer,
-  readFeedLoadingState,
-} from "./helpers/eco-page";
 import { expect, test } from "./fixtures/electron-app";
+import { approveBashIfPresent, clickSend, fillComposer, readFeedLoadingState } from "./helpers/eco-page";
 
 test("feed loading indicator appears and clears during bash run", async ({ ecoPage: page }) => {
   const marker = process.env.ECO_SMOKE_MARKER ?? `ECO_FEED_LOADING_${Date.now()}`;
@@ -19,9 +14,7 @@ test("feed loading indicator appears and clears during bash run", async ({ ecoPa
     ].join(" ");
 
   if (process.env.ECO_SMOKE_CONNECT_ONLY === "1") {
-    console.log(
-      `[feed-loading] connected title=${JSON.stringify(await page.title())} url=${page.url()}`,
-    );
+    console.log(`[feed-loading] connected title=${JSON.stringify(await page.title())} url=${page.url()}`);
     return;
   }
 
@@ -44,9 +37,10 @@ test("feed loading indicator appears and clears during bash run", async ({ ecoPa
     await page.waitForTimeout(500);
   }
 
-  expect(sawInlineLoading, formatFailure("Timed out waiting for .run-log-inline-loading to appear.", samples, marker)).toBe(
-    true,
-  );
+  expect(
+    sawInlineLoading,
+    formatFailure("Timed out waiting for .run-log-inline-loading to appear.", samples, marker),
+  ).toBe(true);
 
   while (Date.now() - startedAt < timeoutMs) {
     approvals += await approveBashIfPresent(page);
@@ -73,7 +67,9 @@ test("feed loading indicator appears and clears during bash run", async ({ ecoPa
     await page.waitForTimeout(500);
   }
 
-  throw new Error(formatFailure("Timed out waiting for .run-log-inline-loading to disappear.", samples, marker));
+  throw new Error(
+    formatFailure("Timed out waiting for .run-log-inline-loading to disappear.", samples, marker),
+  );
 });
 
 function formatFailure(

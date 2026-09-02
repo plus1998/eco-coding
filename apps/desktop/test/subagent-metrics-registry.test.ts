@@ -3,11 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { emptyCostBreakdown } from "@eco/runtime";
+import type { ConversationStore } from "../src/main/conversation-store";
 import { createConversationStore } from "../src/main/conversation-store";
 import type { SubagentMetricsDiagnosticsPort } from "../src/main/subagent-metrics-diagnostics";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
-import type { ConversationStore } from "../src/main/conversation-store";
 
 function seedThread(store: ConversationStore, threadId: string): void {
   const now = new Date().toISOString();
@@ -168,8 +168,12 @@ test("resolveAgentId does not consume queued parent tool_use ids without explici
   registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
   registry.onSubagentStart(threadId, { agentId: "agent_coder_b", role: "coder" });
 
-  expect(registry.resolveAgentId(threadId, { role: "coder", parentToolUseId: "toolu_task_a" })).toBeUndefined();
-  expect(registry.resolveAgentId(threadId, { role: "coder", parentToolUseId: "toolu_task_b" })).toBeUndefined();
+  expect(
+    registry.resolveAgentId(threadId, { role: "coder", parentToolUseId: "toolu_task_a" }),
+  ).toBeUndefined();
+  expect(
+    registry.resolveAgentId(threadId, { role: "coder", parentToolUseId: "toolu_task_b" }),
+  ).toBeUndefined();
 });
 
 test("resolveAgentId does not match queued parent tool_use ids by role", () => {
@@ -181,8 +185,12 @@ test("resolveAgentId does not match queued parent tool_use ids by role", () => {
   registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
   registry.onSubagentStart(threadId, { agentId: "agent_explore_a", role: "explore" });
 
-  expect(registry.resolveAgentId(threadId, { role: "planner", parentToolUseId: "toolu_task_coder" })).toBeUndefined();
-  expect(registry.resolveAgentId(threadId, { role: "planner", parentToolUseId: "toolu_task_explore" })).toBeUndefined();
+  expect(
+    registry.resolveAgentId(threadId, { role: "planner", parentToolUseId: "toolu_task_coder" }),
+  ).toBeUndefined();
+  expect(
+    registry.resolveAgentId(threadId, { role: "planner", parentToolUseId: "toolu_task_explore" }),
+  ).toBeUndefined();
 });
 
 test("resolveAgentId links explicit parentToolUseId even when subagent starts out of order", () => {

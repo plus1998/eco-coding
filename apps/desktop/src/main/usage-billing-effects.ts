@@ -43,7 +43,8 @@ export interface UsageBillingEffectsServices {
   usageLedger: Pick<
     UsageLedgerCoordinator,
     "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow" | "registerProxyPendingAttribution"
-  > & Partial<Pick<UsageLedgerCoordinator, "persistSubagentBillingEntries">>;
+  > &
+    Partial<Pick<UsageLedgerCoordinator, "persistSubagentBillingEntries">>;
   accumulator: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordContextObservation" | "recordSdkUsage">;
   billingSnapshotSelection?: BillingSnapshotSelectionPolicy;
@@ -112,8 +113,7 @@ export async function applySingleUsageBillingEffects(
     });
   }
 
-  const pendingExactAttribution =
-    artifacts.ledgerEvent.attribution.status === "pending" && !input.agentId;
+  const pendingExactAttribution = artifacts.ledgerEvent.attribution.status === "pending" && !input.agentId;
   await services.context.applyUpdate({
     threadId: input.threadId,
     usage: artifacts.delta,

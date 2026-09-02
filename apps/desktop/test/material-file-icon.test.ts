@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { resolveMaterialIconName, getMaterialIconUrl } from "../src/renderer/material-file-icon";
+import { getMaterialIconUrl, resolveMaterialIconName } from "../src/renderer/material-file-icon";
 
 test("resolves common code file icons from Material Icon Theme", () => {
   expect(resolveMaterialIconName("src/App.tsx")).toBe("react_ts");

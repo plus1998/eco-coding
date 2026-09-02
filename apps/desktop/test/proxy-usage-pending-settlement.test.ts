@@ -1,23 +1,23 @@
 import { expect, test } from "bun:test";
 import { computeRequestBilling, type ParsedUsage } from "@eco/runtime";
-import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
-import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
 import { resolveProxyUsageBilling } from "../src/main/proxy-usage-billing";
+import {
+  PROXY_PENDING_PARENT_UNMAPPED_REASON,
+  ProxyUsagePendingRegistry,
+} from "../src/main/proxy-usage-pending-settlement";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import { resolveSingleUsageBillingArtifacts } from "../src/main/usage-billing-artifacts";
 import {
-  ProxyUsagePendingRegistry,
-  PROXY_PENDING_PARENT_UNMAPPED_REASON,
-} from "../src/main/proxy-usage-pending-settlement";
+  type AgentInstanceRecord,
+  InMemoryUsageLedger,
+  type UsageLedgerEvent,
+} from "../src/main/usage-ledger";
 import {
   UsageLedgerCoordinator,
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
-import {
-  InMemoryUsageLedger,
-  type AgentInstanceRecord,
-  type UsageLedgerEvent,
-} from "../src/main/usage-ledger";
-import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };

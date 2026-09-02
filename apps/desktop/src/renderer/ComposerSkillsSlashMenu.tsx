@@ -1,9 +1,17 @@
-import { type CSSProperties, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { SkillInfo } from "../shared/skills";
 import { formatSkillDisplayName } from "./composer-skills";
-import { highlightQueryInLabel, type SkillFuzzyMatch } from "./skill-fuzzy";
 import { layoutSlashMenu, SkillMenuRow } from "./composer-skills-ui";
+import { highlightQueryInLabel, type SkillFuzzyMatch } from "./skill-fuzzy";
 
 interface ComposerSkillsSlashMenuProps {
   open: boolean;
@@ -90,11 +98,7 @@ export function ComposerSkillsSlashMenu({
   }
 
   const emptyMessage =
-    skills.length === 0
-      ? "没有可用的 Skill"
-      : query.trim()
-        ? "没有匹配的 Skill"
-        : "输入 Skill 名称筛选";
+    skills.length === 0 ? "没有可用的 Skill" : query.trim() ? "没有匹配的 Skill" : "输入 Skill 名称筛选";
 
   return createPortal(
     <div

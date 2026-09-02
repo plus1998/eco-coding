@@ -3,15 +3,9 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  buildCodexGatewayModelAlias,
-  type CodexGatewayApiCompat,
-} from "../../shared/src";
+import { buildCodexGatewayModelAlias, type CodexGatewayApiCompat } from "../../shared/src";
 import { resolveCodexHomeDir } from "./codex-config-sync.js";
-import {
-  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
-  resolveEffectiveContextLimit,
-} from "./models-dev-limits.js";
+import { DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT, resolveEffectiveContextLimit } from "./models-dev-limits.js";
 
 export const ECO_MODEL_CATALOG_FILE_NAME = "eco-model-catalog.json";
 
@@ -221,8 +215,7 @@ export async function loadBundledCodexModelCatalog(
   } = {},
 ): Promise<CodexBundledModelEntry[]> {
   const run = options.runCodex ?? runCodexDebugModelsBundled;
-  const dumpHomeDir =
-    options.dumpHomeDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-bundled-")));
+  const dumpHomeDir = options.dumpHomeDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-bundled-")));
   const ownsDumpHome = options.dumpHomeDir === undefined;
   try {
     const raw = await run(codexExecutable, dumpHomeDir);
@@ -265,8 +258,7 @@ export function selectFreeformApplyPatchTemplate(
     .filter((entry) => entry.apply_patch_tool_type === "freeform")
     .sort((left, right) => {
       const leftPriority = typeof left.priority === "number" ? left.priority : Number.MAX_SAFE_INTEGER;
-      const rightPriority =
-        typeof right.priority === "number" ? right.priority : Number.MAX_SAFE_INTEGER;
+      const rightPriority = typeof right.priority === "number" ? right.priority : Number.MAX_SAFE_INTEGER;
       if (leftPriority !== rightPriority) {
         return leftPriority - rightPriority;
       }
@@ -339,11 +331,7 @@ export function buildEcoCodexModelCatalogDocument(
       continue;
     }
     seenAliases.add(alias);
-    const { template, known } = selectNativeTemplateForModel(
-      nativeModels,
-      route.modelId,
-      freeformTemplate,
-    );
+    const { template, known } = selectNativeTemplateForModel(nativeModels, route.modelId, freeformTemplate);
     models.push(
       applyGlobalCatalogContextWindowLimit(
         buildAliasCatalogEntry(alias, route, template, known),
@@ -409,8 +397,7 @@ export function buildAliasCatalogEntry(
   const entry = cloneCatalogEntry(template);
   entry.slug = aliasSlug;
   entry.display_name =
-    route.displayName?.trim() ||
-    `${route.providerId} / ${route.modelId} (${route.apiCompat})`;
+    route.displayName?.trim() || `${route.providerId} / ${route.modelId} (${route.apiCompat})`;
   entry.description =
     typeof entry.description === "string" && entry.description.trim()
       ? entry.description
@@ -526,11 +513,7 @@ export async function syncEcoCodexModelCatalog(
     ...(input.runCodex ? { runCodex: input.runCodex } : {}),
   });
   const routes = mergeCodexGatewayCatalogRoutes(input.routes);
-  const document = buildEcoCodexModelCatalogDocument(
-    nativeModels,
-    routes,
-    input.globalContextWindowLimit,
-  );
+  const document = buildEcoCodexModelCatalogDocument(nativeModels, routes, input.globalContextWindowLimit);
   const catalogPath = resolveEcoModelCatalogPath(input.ecoDataDir);
   const written = await writeEcoCodexModelCatalog(catalogPath, document);
   const aliasSlugs = document.models
@@ -571,9 +554,7 @@ export async function runCodexDebugModelsBundled(
     });
     child.on("error", (error) => {
       reject(
-        new Error(
-          `Failed to spawn Codex for bundled model catalog (${codexExecutable}): ${error.message}`,
-        ),
+        new Error(`Failed to spawn Codex for bundled model catalog (${codexExecutable}): ${error.message}`),
       );
     });
     child.on("close", (code, signal) => {

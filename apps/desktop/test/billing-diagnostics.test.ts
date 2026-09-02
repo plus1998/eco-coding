@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { buildBillingDiagnostics, withBillingDiagnostics } from "../src/main/billing-diagnostics";
-import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 import type { BillingProjectionReconciliationResult } from "../src/main/billing-projector-reconciliation";
+import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 
 function billing(input: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnapshot {
   return {

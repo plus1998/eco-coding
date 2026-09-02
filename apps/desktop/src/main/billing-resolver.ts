@@ -1,30 +1,32 @@
 import {
   buildModelPricingSummary,
   formatModelPricingLabel,
-  unresolvedModelCapabilities,
   type ModelCostRates,
   type ModelPricingLookup,
+  unresolvedModelCapabilities,
 } from "@eco/runtime";
-import {
-  applyPriceMultiplierToCostRates,
-  resolvePriceMultiplier,
-} from "../shared/manual-spec-pricing";
-import { createModelAlias, resolveProxyRoute, stripExtendedContextModelSuffix, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
-import type { ProviderConfigSecret } from "./provider-store";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
-import {
-  type ModelSettingsSnapshot,
-  type ModelsDevMapping,
-  type RuntimeRoleRouteConfig,
-  type RuntimeAgentRole,
-  type UpstreamApiCompat,
-  type RouteCapabilityHint,
-  type RouteManualSpec,
-  type RoutePricingHint,
-  type CommitModelPricingHint,
-  type ThinkingEffort,
+import type {
+  CommitModelPricingHint,
+  ModelSettingsSnapshot,
+  ModelsDevMapping,
+  RouteCapabilityHint,
+  RouteManualSpec,
+  RoutePricingHint,
+  RuntimeAgentRole,
+  RuntimeRoleRouteConfig,
+  ThinkingEffort,
+  UpstreamApiCompat,
 } from "../shared/ipc";
+import { applyPriceMultiplierToCostRates, resolvePriceMultiplier } from "../shared/manual-spec-pricing";
+import {
+  type AnthropicProxyResolvedRoute,
+  createModelAlias,
+  resolveProxyRoute,
+  stripExtendedContextModelSuffix,
+} from "./anthropic-proxy";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import type { ProviderConfigSecret } from "./provider-store";
 
 export interface RuntimeRoute {
   role: RuntimeAgentRole;
@@ -341,8 +343,7 @@ function resolveEffectiveLimits(
   const manualMaxOutput = manualMaxOutputTokens(manualSpec);
   const contextTokens = manualContext ?? limitsLookup?.limits.contextTokens;
   const maxOutputTokens = manualMaxOutput ?? limitsLookup?.limits.maxOutputTokens;
-  const contextLimitResolved =
-    manualContext !== undefined || Boolean(limitsLookup);
+  const contextLimitResolved = manualContext !== undefined || Boolean(limitsLookup);
   return {
     ...(contextTokens !== undefined && { contextTokens }),
     ...(maxOutputTokens !== undefined && { maxOutputTokens }),
@@ -350,10 +351,7 @@ function resolveEffectiveLimits(
   };
 }
 
-function resolveEffectivePricingSummary(
-  lookup: ModelPricingLookup | null,
-  manualSpec?: RouteManualSpec,
-) {
+function resolveEffectivePricingSummary(lookup: ModelPricingLookup | null, manualSpec?: RouteManualSpec) {
   const catalogSummary = lookup ? buildModelPricingSummary(lookup) : null;
   const rates = resolveRatesForRoute(lookup, manualSpec);
   if (!rates) {
@@ -459,7 +457,9 @@ export async function lookupRoutePricingHints(
           inputPerM: catalogSummary.inputPerM,
           outputPerM: catalogSummary.outputPerM,
           ...(catalogSummary.cacheReadPerM !== undefined && { cacheReadPerM: catalogSummary.cacheReadPerM }),
-          ...(catalogSummary.cacheWritePerM !== undefined && { cacheWritePerM: catalogSummary.cacheWritePerM }),
+          ...(catalogSummary.cacheWritePerM !== undefined && {
+            cacheWritePerM: catalogSummary.cacheWritePerM,
+          }),
         },
       }),
       pricingResolved: effectivePricing?.pricingResolved ?? false,
@@ -523,7 +523,9 @@ export async function lookupCommitModelPricingHints(
           inputPerM: catalogSummary.inputPerM,
           outputPerM: catalogSummary.outputPerM,
           ...(catalogSummary.cacheReadPerM !== undefined && { cacheReadPerM: catalogSummary.cacheReadPerM }),
-          ...(catalogSummary.cacheWritePerM !== undefined && { cacheWritePerM: catalogSummary.cacheWritePerM }),
+          ...(catalogSummary.cacheWritePerM !== undefined && {
+            cacheWritePerM: catalogSummary.cacheWritePerM,
+          }),
         },
       }),
       pricingResolved: effectivePricing?.pricingResolved ?? false,

@@ -334,67 +334,65 @@ export function ProjectSidebarTree({
               )}
               <span>{project.name}</span>
             </button>
-              <span
-                className={
-                  openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
-                }
-              >
-                {!project.isHome ? (
-                  <span className="project-menu-wrap sidebar-menu-wrap">
-                    <button
-                      type="button"
-                      className="project-menu-trigger"
-                      title={t("projectTree.actions", { name: project.name })}
-                      aria-label={t("projectTree.actions", { name: project.name })}
-                      aria-haspopup="menu"
-                      aria-expanded={openMenuPath === project.path}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
-                      }}
-                    >
-                      <MoreHorizontal size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
-                    </button>
-                    {openMenuPath === project.path ? (
-                      <div className="project-menu" role="menu">
-                        <button
-                          type="button"
-                          className="project-menu-item"
-                          role="menuitem"
-                          onClick={() => {
-                            if (project.pinned) {
-                              onUnpinProject(project.path);
-                            } else {
-                              onPinProject(project.path);
-                            }
-                            setOpenMenuPath(undefined);
-                          }}
-                        >
-                          {project.pinned ? (
-                            <PinOff size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
-                          ) : (
-                            <Pin size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
-                          )}
-                          <span>
-                            {project.pinned ? t("projectTree.unpin") : t("projectTree.pin")}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="project-menu-item danger"
-                          role="menuitem"
-                          onClick={() => {
-                            onRemoveProject(project.path);
-                            setOpenMenuPath(undefined);
-                          }}
-                        >
-                          <Trash2 size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
-                          <span>{t("projectTree.remove")}</span>
-                        </button>
-                      </div>
-                    ) : null}
-                  </span>
-                ) : null}
+            <span
+              className={
+                openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
+              }
+            >
+              {!project.isHome ? (
+                <span className="project-menu-wrap sidebar-menu-wrap">
+                  <button
+                    type="button"
+                    className="project-menu-trigger"
+                    title={t("projectTree.actions", { name: project.name })}
+                    aria-label={t("projectTree.actions", { name: project.name })}
+                    aria-haspopup="menu"
+                    aria-expanded={openMenuPath === project.path}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
+                    }}
+                  >
+                    <MoreHorizontal size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+                  </button>
+                  {openMenuPath === project.path ? (
+                    <div className="project-menu" role="menu">
+                      <button
+                        type="button"
+                        className="project-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          if (project.pinned) {
+                            onUnpinProject(project.path);
+                          } else {
+                            onPinProject(project.path);
+                          }
+                          setOpenMenuPath(undefined);
+                        }}
+                      >
+                        {project.pinned ? (
+                          <PinOff size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+                        ) : (
+                          <Pin size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+                        )}
+                        <span>{project.pinned ? t("projectTree.unpin") : t("projectTree.pin")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="project-menu-item danger"
+                        role="menuitem"
+                        onClick={() => {
+                          onRemoveProject(project.path);
+                          setOpenMenuPath(undefined);
+                        }}
+                      >
+                        <Trash2 size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+                        <span>{t("projectTree.remove")}</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </span>
+              ) : null}
               <button
                 type="button"
                 className="project-new-chat"
@@ -437,11 +435,7 @@ export function ProjectSidebarTree({
 
                 return (
                   <div key={thread.id} className={rowClassName} data-thread-id={thread.id}>
-                    <button
-                      type="button"
-                      className="chat-item nested"
-                      onClick={() => onSelectThread(thread)}
-                    >
+                    <button type="button" className="chat-item nested" onClick={() => onSelectThread(thread)}>
                       <span className="chat-item-title-row">
                         <span className="chat-item-title">{thread.title}</span>
                       </span>
@@ -461,7 +455,12 @@ export function ProjectSidebarTree({
                               role="img"
                               aria-label={thread.cancelling ? t("activity.stopping") : thread.status}
                             >
-                              <LoaderCircle size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
+                              <LoaderCircle
+                                size={ICON_SIZE.sm}
+                                strokeWidth={ICON_STROKE}
+                                className="spinning"
+                                aria-hidden
+                              />
                             </span>
                           ) : isThreadUnread ? (
                             <span
@@ -536,7 +535,12 @@ export function ProjectSidebarTree({
                             }}
                           >
                             {deletingThreadId === thread.id ? (
-                              <LoaderCircle size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
+                              <LoaderCircle
+                                size={ICON_SIZE.sm}
+                                strokeWidth={ICON_STROKE}
+                                className="spinning"
+                                aria-hidden
+                              />
                             ) : (
                               <Trash2 size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
                             )}

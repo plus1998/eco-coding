@@ -1,3 +1,4 @@
+import { expect, test } from "./fixtures/electron-app";
 import { clickSend, fillComposer } from "./helpers/eco-page";
 import {
   expectMainFeedLayoutRestored,
@@ -7,7 +8,6 @@ import {
   expectWorkspaceToolbarRightReserve,
   waitForTaskPanelWidth,
 } from "./helpers/subagent-drawer";
-import { expect, test } from "./fixtures/electron-app";
 
 test("subagent drawer, task panel, and workspace layout", async ({ ecoPage: page }) => {
   const marker = process.env.ECO_SMOKE_MARKER ?? `ECO_SUBAGENT_DRAWER_${Date.now()}`;
@@ -22,9 +22,7 @@ test("subagent drawer, task panel, and workspace layout", async ({ ecoPage: page
     ].join(" ");
 
   if (process.env.ECO_SMOKE_CONNECT_ONLY === "1") {
-    console.log(
-      `[subagent-drawer] connected title=${JSON.stringify(await page.title())} url=${page.url()}`,
-    );
+    console.log(`[subagent-drawer] connected title=${JSON.stringify(await page.title())} url=${page.url()}`);
     return;
   }
 

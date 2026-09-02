@@ -44,12 +44,11 @@ test("WebChatListStore merges builtins and persists custom bookmarks", async (t)
   assert.equal(again.items.find((item) => item.id === "c1")?.url, "https://my-bot.example");
 
   const cleared = reopened.save({ customs: [] });
+  assert.equal(cleared.items.length, builtinWebChatItems().length, "clearing customs leaves builtins");
   assert.equal(
-    cleared.items.length,
-    builtinWebChatItems().length,
-    "clearing customs leaves builtins",
+    cleared.items.some((item) => item.id === "c1"),
+    false,
   );
-  assert.equal(cleared.items.some((item) => item.id === "c1"), false);
 });
 
 test("WebChatListStore rejects builtin id collisions when saving customs", async (t) => {

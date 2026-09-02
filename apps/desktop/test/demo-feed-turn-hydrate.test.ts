@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import {
-  loadGatewayClientRoundCell,
-  discoverGatewayClientRoundCells,
-} from "../src/feed-replay/gateway-client-round-fixture";
-import { replayGatewayClientRoundCellFeed } from "../src/feed-replay/gateway-client-round-feed-replay";
 import { hydrateDemoFeedReplayTurnDetails } from "../src/demo/feed-replay-turn-hydrate";
+import { replayGatewayClientRoundCellFeed } from "../src/feed-replay/gateway-client-round-feed-replay";
+import {
+  discoverGatewayClientRoundCells,
+  loadGatewayClientRoundCell,
+} from "../src/feed-replay/gateway-client-round-fixture";
 import { buildThreadRunProjectionViewModel } from "../src/renderer/thread-run-projection-view";
 import { buildThreadRunTurnFeedSections } from "../src/renderer/thread-run-turn-feed";
 

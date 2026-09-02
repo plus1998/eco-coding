@@ -33,6 +33,13 @@ import {
   resolveProviderRoute,
   UnsupportedUpstreamKindError,
 } from "../provider-router.js";
+import {
+  buildRequestLifecycleContext,
+  type RequestLifecycleContext,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCancelled,
+  tryEmitLogicalCompleted,
+} from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
 import {
   appendStreamUtf8Chunk,
@@ -49,15 +56,8 @@ import type {
   GatewayUsageObserver,
   ResolvedProviderRoute,
 } from "../types.js";
-import { forwardOpenAIChat } from "../upstream/openai-chat.js";
-import {
-  buildRequestLifecycleContext,
-  reportLogicalUpstreamFailure,
-  tryEmitLogicalCompleted,
-  tryEmitLogicalCancelled,
-  type RequestLifecycleContext,
-} from "../request-lifecycle.js";
 import { fetchUpstreamWithRetry } from "../upstream/fetch-with-retry.js";
+import { forwardOpenAIChat } from "../upstream/openai-chat.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "../upstream/request-id-headers.js";
 import {
   isDeepSeekResponsesUpstreamModel,
@@ -658,9 +658,7 @@ function passThroughAnthropicSseWithUsage(
     settleMessagesStreamUsage(tracker, route, onUsage, onLog, undefined);
   };
 
-  const closeDownstreamAndCancelUpstream = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-  ) => {
+  const closeDownstreamAndCancelUpstream = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (terminalSettled) {
       return;
     }
@@ -673,10 +671,7 @@ function passThroughAnthropicSseWithUsage(
     void reader.cancel().catch(() => undefined);
   };
 
-  const enqueueSseBlock = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-    block: string,
-  ) => {
+  const enqueueSseBlock = (controller: ReadableStreamDefaultController<Uint8Array>, block: string) => {
     const framed = block.endsWith("\n\n") ? block : `${block}\n\n`;
     controller.enqueue(encoder.encode(framed));
   };
@@ -806,15 +801,10 @@ function passThroughAnthropicSseWithUsage(
     },
   });
 
-  const headers = headersWithLogicalRequestIdentity(
-    upstreamResponse.headers,
-    route.logicalRequestId,
-    {
-      "content-type":
-        upstreamResponse.headers.get("content-type") ?? "text/event-stream; charset=utf-8",
-      "cache-control": upstreamResponse.headers.get("cache-control") ?? "no-cache",
-    },
-  );
+  const headers = headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
+    "content-type": upstreamResponse.headers.get("content-type") ?? "text/event-stream; charset=utf-8",
+    "cache-control": upstreamResponse.headers.get("cache-control") ?? "no-cache",
+  });
 
   return new Response(stream, {
     status: upstreamResponse.status,
@@ -885,9 +875,7 @@ function mapResponsesSseBodyToAnthropic(input: {
     }
   };
 
-  const closeDownstreamAndCancelUpstream = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-  ) => {
+  const closeDownstreamAndCancelUpstream = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (terminalSettled) {
       return;
     }
@@ -902,9 +890,7 @@ function mapResponsesSseBodyToAnthropic(input: {
     void reader.cancel().catch(() => undefined);
   };
 
-  const completeFromResponses = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-  ) => {
+  const completeFromResponses = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (terminalSettled || cancelled || streamFailed) {
       return;
     }
@@ -1064,11 +1050,7 @@ function mapResponsesSseBodyToAnthropic(input: {
                 return;
               }
               if (!streamFailed && !sawResponseCompleted) {
-                failFromResponses(
-                  controller,
-                  `${face} stream ended before response.completed.`,
-                  false,
-                );
+                failFromResponses(controller, `${face} stream ended before response.completed.`, false);
               }
               return;
             }

@@ -49,7 +49,9 @@ function resolveFixtureDir(arg) {
       return dir;
     }
   }
-  throw new Error("No Codex fixture found. Run: LONGCAT_API_KEY=... bun scripts/conversation-round/record.mjs");
+  throw new Error(
+    "No Codex fixture found. Run: LONGCAT_API_KEY=... bun scripts/conversation-round/record.mjs",
+  );
 }
 
 function resolveSdkFixtureDir(core, arg) {
@@ -179,8 +181,7 @@ function replaySdk(core, fixtureArgValue) {
   };
 }
 
-const cores =
-  coreArg === "all" ? ["codex", "pi", "claude"] : [coreArg];
+const cores = coreArg === "all" ? ["codex", "pi", "claude"] : [coreArg];
 
 const results = [];
 for (const core of cores) {
@@ -200,10 +201,10 @@ for (const core of cores) {
 const payload =
   results.length === 1
     ? results[0]
-  : {
-      ok: results.every((result) => result.ok),
-      results,
-    };
+    : {
+        ok: results.every((result) => result.ok),
+        results,
+      };
 
 console.log(JSON.stringify(payload, null, 2));
 

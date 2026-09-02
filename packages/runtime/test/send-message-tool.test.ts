@@ -41,8 +41,7 @@ test("parseSendMessageToolResult reads JSON output and plain text fallback", () 
     ),
   ).toEqual({
     success: true,
-    resultMessage:
-      'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background.',
+    resultMessage: 'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background.',
     resumedAgentId: "a897f866adcc1af29",
   });
 
@@ -55,10 +54,9 @@ test("formatSendMessageToolResultSummary prefers result message", () => {
   expect(
     formatSendMessageToolResultSummary({
       success: true,
-      resultMessage: 'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background.',
+      resultMessage:
+        'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background.',
       resumedAgentId: "a897f866adcc1af29",
     }),
-  ).toBe(
-    'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background.',
-  );
+  ).toBe('Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background.');
 });

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { NotificationSettingsStore } from "../src/main/notification-settings-store";
+import { IPC_CHANNELS, isKnownIpcChannel } from "../src/shared/ipc";
 import {
   defaultNotificationSettings,
   type NotificationSettingsSnapshot,
 } from "../src/shared/notification-settings";
-import { IPC_CHANNELS, isKnownIpcChannel } from "../src/shared/ipc";
 
 class MemoryNotificationDatabase {
   private readonly rows = new Map<string, string>();
@@ -51,9 +51,11 @@ test("notification settings store recovers from corrupt json", () => {
   const db = new MemoryNotificationDatabase();
   const store = new NotificationSettingsStore(db as never);
   store.initialize();
-  db.prepare(
-    `INSERT INTO notification_settings (key, value_json, updated_at) VALUES (?, ?, ?)`,
-  ).run("snapshot", "{not-json", "2020-01-01T00:00:00.000Z");
+  db.prepare(`INSERT INTO notification_settings (key, value_json, updated_at) VALUES (?, ?, ?)`).run(
+    "snapshot",
+    "{not-json",
+    "2020-01-01T00:00:00.000Z",
+  );
   expect(store.get()).toEqual(defaultNotificationSettings());
 });
 

@@ -1,3 +1,15 @@
+import {
+  computeRequestBilling,
+  computeThreadBillingTotals,
+  emptyCostBreakdown,
+  type ModelCostRates,
+  mergeCostBreakdowns,
+  mergeUsageTotals,
+  type ParsedUsage,
+  type RequestBillingDelta,
+  type TokenCostBreakdown,
+  tokenTotalsFromUsage,
+} from "@eco/runtime";
 import type {
   BillingUsageSource,
   RuntimeAgentRole,
@@ -6,18 +18,6 @@ import type {
   ThreadBillingSourceSnapshot,
   ThreadSubagentBillingSnapshot,
 } from "../shared/ipc";
-import {
-  computeRequestBilling,
-  computeThreadBillingTotals,
-  emptyCostBreakdown,
-  mergeCostBreakdowns,
-  mergeUsageTotals,
-  tokenTotalsFromUsage,
-  type ModelCostRates,
-  type ParsedUsage,
-  type RequestBillingDelta,
-  type TokenCostBreakdown,
-} from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { resolveLedgerSourcePriority } from "./billing-source-priority";
 import { readRouteRole } from "./proxy-usage-pending-settlement";
@@ -28,9 +28,7 @@ import type {
   UsageLedgerEvent,
   UsageLedgerSource,
 } from "./usage-ledger";
-import {
-  readUsageLedgerComputedBilling,
-} from "./usage-ledger-cost-metadata";
+import { readUsageLedgerComputedBilling } from "./usage-ledger-cost-metadata";
 import { createEmptyUsage } from "./usage-request-types";
 
 export interface BillingProjectorRateResolution {
@@ -195,7 +193,10 @@ export function projectBillingFromUsageLedger(
   const priority = input.primarySourcePriority ?? resolveLedgerSourcePriority(sourceBreakdown);
   const nonVisionSources = new Set(
     input.events
-      .filter((event) => event.role !== "vision" && event.usageKind !== "request_partial" && event.usageKind !== "context")
+      .filter(
+        (event) =>
+          event.role !== "vision" && event.usageKind !== "request_partial" && event.usageKind !== "context",
+      )
       .map((event) => event.source),
   );
   const primarySource =
@@ -205,16 +206,13 @@ export function projectBillingFromUsageLedger(
   const agentSnapshots = finalizeAgents(byAgent, agentRecords);
   const runAttemptSnapshots = finalizeRunAttempts(byRunAttempt);
   const snapshot = primarySource
-      ? buildThreadBillingSnapshot({
-          primarySource,
-          sourceBreakdown,
-          sources,
-          subagents: buildThreadSubagentSnapshots(
-            agentSnapshots,
-            input.existingSubagentContextByAgentId,
-          ),
-          ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
-        })
+    ? buildThreadBillingSnapshot({
+        primarySource,
+        sourceBreakdown,
+        sources,
+        subagents: buildThreadSubagentSnapshots(agentSnapshots, input.existingSubagentContextByAgentId),
+        ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
+      })
     : undefined;
 
   return {
@@ -265,20 +263,17 @@ function buildThreadBillingSnapshot(input: {
       pricingResolved: false,
     };
   }
-  const sdkReported =
-    input.sourceBreakdown.sdk?.reportedCostUsd ?? 0;
+  const sdkReported = input.sourceBreakdown.sdk?.reportedCostUsd ?? 0;
   return {
     totalTokens: primary.totalTokens,
-    ...computeThreadBillingTotals(
-      sdkReported,
-      primary.plannerTokenCostUsd,
-      primary.ecoCostUsd,
-    ),
+    ...computeThreadBillingTotals(sdkReported, primary.plannerTokenCostUsd, primary.ecoCostUsd),
     ecoCostBreakdown: primaryState.ecoCostBreakdown,
     plannerCostBreakdown: primaryState.plannerCostBreakdown,
     pricingResolved: primary.pricingResolved,
     primarySource: input.primarySource as BillingUsageSource,
-    sourceBreakdown: input.sourceBreakdown as Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>,
+    sourceBreakdown: input.sourceBreakdown as Partial<
+      Record<BillingUsageSource, ThreadBillingSourceSnapshot>
+    >,
     ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
     ...(primary.byModel && { byModel: primary.byModel }),
     ...(primary.byRole && { byRole: primary.byRole }),
@@ -304,10 +299,7 @@ function addEventToSource(
     state.ecoCostBreakdown = mergeCostBreakdowns(state.ecoCostBreakdown, billing.ecoBreakdown);
   }
   if (billing.plannerBreakdown) {
-    state.plannerCostBreakdown = mergeCostBreakdowns(
-      state.plannerCostBreakdown,
-      billing.plannerBreakdown,
-    );
+    state.plannerCostBreakdown = mergeCostBreakdowns(state.plannerCostBreakdown, billing.plannerBreakdown);
   }
   const model = getOrCreateModel(state, event.modelId?.trim() || event.role);
   addRole(model.roles, readRouteRole(event));
@@ -494,8 +486,7 @@ function buildThreadSubagentSnapshots(
         cacheCreationTokens: agent.cacheCreationTokens,
         // Do not hardcode 0: that was persisted and later hydrate mistook billing totals
         // for window fill. Prefer metrics registry when present.
-        contextOccupied:
-          existingOccupied !== undefined && existingOccupied > 0 ? existingOccupied : 0,
+        contextOccupied: existingOccupied !== undefined && existingOccupied > 0 ? existingOccupied : 0,
         ecoCostUsd: agent.ecoCostUsd,
         ...(agent.ecoCostBreakdown && { ecoCostBreakdown: agent.ecoCostBreakdown }),
         ...(agent.modelIds[0] && { modelId: agent.modelIds[0] }),
@@ -578,12 +569,9 @@ function collectReportedRequestCosts(
     if (scope !== "source" && !scopedId) {
       continue;
     }
-    const key = [
-      scope,
-      scopedId ?? event.source,
-      event.source,
-      event.requestKey ?? event.sourceEventId,
-    ].join("\u001f");
+    const key = [scope, scopedId ?? event.source, event.source, event.requestKey ?? event.sourceEventId].join(
+      "\u001f",
+    );
     const cost = costs.get(key) ?? {
       source: event.source,
       explicitSum: 0,
@@ -750,10 +738,7 @@ function subagentSnapshotTotal(entry: ThreadSubagentBillingSnapshot): number {
   return entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens;
 }
 
-function readNumberMetadata(
-  metadata: Record<string, unknown> | undefined,
-  key: string,
-): number | undefined {
+function readNumberMetadata(metadata: Record<string, unknown> | undefined, key: string): number | undefined {
   const value = metadata?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -786,10 +771,7 @@ function indexProxyBillableEvents(events: readonly UsageLedgerEvent[]): ProxyBil
   return { requestKeys, providerRequestIds, usageFingerprints };
 }
 
-function shouldSkipDuplicateBillableEvent(
-  event: UsageLedgerEvent,
-  proxyIndex: ProxyBillableIndex,
-): boolean {
+function shouldSkipDuplicateBillableEvent(event: UsageLedgerEvent, proxyIndex: ProxyBillableIndex): boolean {
   if (event.source !== "sdk") {
     return false;
   }

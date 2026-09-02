@@ -168,7 +168,9 @@ export function SubagentSettingsSection({
                     <div className="models-agent-template-meta">
                       <span>{formatModelBinding(template)}</span>
                       <span>{formatTools(template)}</span>
-                      {template.mcpServers.length > 0 ? <span>{template.mcpServers.length} 个连接器</span> : null}
+                      {template.mcpServers.length > 0 ? (
+                        <span>{template.mcpServers.length} 个连接器</span>
+                      ) : null}
                     </div>
                     <div className="models-agent-template-permissions">
                       {permissionChips.map((chip) => (

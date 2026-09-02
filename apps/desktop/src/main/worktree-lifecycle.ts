@@ -71,8 +71,14 @@ export function parseApprovedPlanDocument(text: string): ApprovedPlanSnapshot | 
     return undefined;
   }
 
-  const userPrompt = lines.slice(userRequestIndex + 1, analysisIndex).join("\n").trim();
-  const analysis = lines.slice(analysisIndex + 1, approvedPlanIndex).join("\n").trim();
+  const userPrompt = lines
+    .slice(userRequestIndex + 1, analysisIndex)
+    .join("\n")
+    .trim();
+  const analysis = lines
+    .slice(analysisIndex + 1, approvedPlanIndex)
+    .join("\n")
+    .trim();
   const planLines = lines.slice(approvedPlanIndex + 1);
   const editMarker = "_User edited this plan in Eco before approval._";
   const planUserEdited = planLines.at(-1)?.trim().toLowerCase() === editMarker.toLowerCase();
@@ -142,10 +148,7 @@ export async function readClaudePlanFile(
 }
 
 /** @deprecated Legacy `.eco/approved-plans/` snapshots; new threads use Claude `.claude/plans/`. */
-export async function approvedPlanSnapshotExists(
-  workspacePath: string,
-  threadId: string,
-): Promise<boolean> {
+export async function approvedPlanSnapshotExists(workspacePath: string, threadId: string): Promise<boolean> {
   try {
     await fs.access(approvedPlanFilePath(workspacePath, threadId));
     return true;

@@ -6,10 +6,7 @@ import {
   resetBrowserWebviewLayoutForTests,
   resolveBrowserWebviewHostSlot,
 } from "../src/renderer/browser-webview-layout";
-import {
-  BrowserWebviewPool,
-  browserWebviewPool,
-} from "../src/renderer/browser-webview-pool";
+import { BrowserWebviewPool, browserWebviewPool } from "../src/renderer/browser-webview-pool";
 import { createMockHostSlot, withBrowserWebviewTestDom } from "./browser-webview-test-dom";
 
 const browserHostSource = readFileSync(
@@ -40,18 +37,12 @@ const browserStateStoreSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/browser-state-store.ts", import.meta.url)),
   "utf8",
 );
-const appSource = readFileSync(
-  fileURLToPath(new URL("../src/renderer/App.tsx", import.meta.url)),
-  "utf8",
-);
+const appSource = readFileSync(fileURLToPath(new URL("../src/renderer/App.tsx", import.meta.url)), "utf8");
 const stylesSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/styles.css", import.meta.url)),
   "utf8",
 );
-const mainSource = readFileSync(
-  fileURLToPath(new URL("../src/main/index.ts", import.meta.url)),
-  "utf8",
-);
+const mainSource = readFileSync(fileURLToPath(new URL("../src/main/index.ts", import.meta.url)), "utf8");
 
 test("browser host uses renderer webview guests instead of WebContentsView", () => {
   expect(browserHostSource).not.toContain("WebContentsView");
@@ -128,9 +119,7 @@ test("task panel resize blocks browser webview pointer capture", () => {
   expect(browserWebviewLayoutSource).toContain("BROWSER_WEBVIEW_RESIZE_SHIELD_Z_INDEX");
   expect(stylesSource).toContain("body.is-resizing-task-panel::before");
   expect(stylesSource).toContain("body.is-resizing-task-panel .browser-panel-webview");
-  expect(stylesSource).toMatch(
-    /body\.is-resizing-task-panel::before[\s\S]*?z-index:\s*92/,
-  );
+  expect(stylesSource).toMatch(/body\.is-resizing-task-panel::before[\s\S]*?z-index:\s*92/);
   expect(appSource).toContain("handleTaskPanelResizePointerDown");
   expect(appSource).toContain("setPointerCapture");
 });

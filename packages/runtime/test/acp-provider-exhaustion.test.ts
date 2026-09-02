@@ -6,9 +6,7 @@ import {
 } from "../src/acp-provider-exhaustion.js";
 
 test("detects Cursor RetriableError / resource_exhausted envelopes", () => {
-  expect(isAcpProviderExhaustionMessage("Error: RetriableError: [resource_exhausted] Error")).toBe(
-    true,
-  );
+  expect(isAcpProviderExhaustionMessage("Error: RetriableError: [resource_exhausted] Error")).toBe(true);
   expect(isAcpProviderExhaustionMessage("ConnectError: [resource_exhausted] Error")).toBe(true);
   expect(isAcpProviderExhaustionMessage("Error: T: [resource_exhausted] Error")).toBe(true);
   expect(isAcpProviderExhaustionMessage("Working on your request.")).toBe(false);
@@ -20,9 +18,7 @@ test("splits trailing exhaustion from a real assistant body", () => {
     envelope: "Error: RetriableError: [resource_exhausted] Error",
   });
   expect(
-    splitAcpProviderExhaustion(
-      "I'll inspect the login page.\n\nError: T: [resource_exhausted] Error",
-    ),
+    splitAcpProviderExhaustion("I'll inspect the login page.\n\nError: T: [resource_exhausted] Error"),
   ).toEqual({
     body: "I'll inspect the login page.",
     envelope: "Error: T: [resource_exhausted] Error",

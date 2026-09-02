@@ -15,32 +15,38 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  createAgentSession,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
   SettingsManager,
-  createAgentSession,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentEvent } from "../../packages/shared/src";
-import { createAgentEvent } from "../../packages/shared/src";
 import type { EcoAgentRuntimeConfig } from "../../packages/runtime/src/agent-orchestration";
 import { PiCodingAgentDriver, PiSessionRegistry } from "../../packages/runtime/src/pi-coding-agent-driver";
-import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../../packages/runtime/src/pi-event-adapter";
-import { collectPiSubagentFinalText } from "../../packages/runtime/src/pi-subagent";
+import {
+  createPiEventAdapterState,
+  mapPiSessionEventToAgentEvents,
+} from "../../packages/runtime/src/pi-event-adapter";
 import { createPiMcpExtensionFactory, piMcpToolAllowlist } from "../../packages/runtime/src/pi-mcp";
 import { resolvePiSessionSkillPaths } from "../../packages/runtime/src/pi-skills";
-import { buildScenarioPrompt } from "./lib/scenario-prompt.mjs";
+import { collectPiSubagentFinalText } from "../../packages/runtime/src/pi-subagent";
+import type { AgentEvent } from "../../packages/shared/src";
+import { createAgentEvent } from "../../packages/shared/src";
 import { appendJsonl, ensureDir, redactSecrets, snapshotWorkspace, writeJson } from "./lib/fixture-io.mjs";
-import { evaluateSdkScenarioChecklist } from "./lib/sdk-checklist.mjs";
 import { resolveMcpEchoServerPath, resolveNodeExecutable } from "./lib/resolve-executables.mjs";
+import { buildScenarioPrompt } from "./lib/scenario-prompt.mjs";
 import { setupScenarioWorkspace } from "./lib/scenario-workspace.mjs";
+import { evaluateSdkScenarioChecklist } from "./lib/sdk-checklist.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(__dirname, "fixtures");
 
 const LONGCAT_API_KEY =
   process.env.LONGCAT_API_KEY?.trim() || process.env.ECO_CODEX_SMOKE_API_KEY?.trim() || "";
-const LONGCAT_BASE = (process.env.ECO_PI_SMOKE_BASE_URL ?? "https://api.longcat.chat/openai").replace(/\/$/, "");
+const LONGCAT_BASE = (process.env.ECO_PI_SMOKE_BASE_URL ?? "https://api.longcat.chat/openai").replace(
+  /\/$/,
+  "",
+);
 const LONGCAT_MODEL = process.env.ECO_PI_SMOKE_MODEL?.trim() || "LongCat-2.0";
 const LONGCAT_PROVIDER = "longcat";
 const TIMEOUT_MS = Number.parseInt(process.env.ECO_PI_SMOKE_TIMEOUT_MS ?? "600000", 10);
@@ -52,8 +58,7 @@ if (!LONGCAT_API_KEY) {
 
 const marker = process.env.ECO_SMOKE_MARKER?.trim() || `LC${Date.now().toString(36).toUpperCase()}`;
 const runId =
-  process.env.ECO_PI_SMOKE_RUN_ID?.trim() ||
-  `${new Date().toISOString().replace(/[:.]/g, "-")}-${marker}-pi`;
+  process.env.ECO_PI_SMOKE_RUN_ID?.trim() || `${new Date().toISOString().replace(/[:.]/g, "-")}-${marker}-pi`;
 const outDir = process.env.ECO_PI_SMOKE_FIXTURE_DIR?.trim()
   ? path.resolve(process.env.ECO_PI_SMOKE_FIXTURE_DIR)
   : path.join(fixturesRoot, runId);
@@ -105,7 +110,8 @@ const agentRegistry: EcoAgentRuntimeConfig = {
       id: "smoke.worker",
       name: "Smoke Worker",
       description: "Short-lived worker for Eco scenario smoke.",
-      prompt: "You are smoke_worker. Reply with exactly the marker string the parent asked for. Do not call tools unless required.",
+      prompt:
+        "You are smoke_worker. Reply with exactly the marker string the parent asked for. Do not call tools unless required.",
       whenToUse: "When the parent delegates a smoke task.",
       defaultTools: {
         allowed: [],
@@ -411,7 +417,9 @@ try {
         const childDriver = new PiCodingAgentDriver(
           {
             createSession: async (childInput) => {
-              const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), `pi-round-child-${childInput.threadId}-`));
+              const agentDir = fs.mkdtempSync(
+                path.join(os.tmpdir(), `pi-round-child-${childInput.threadId}-`),
+              );
               const { session, sessionId } = await makeLongcatSession({
                 cwd: childInput.cwd,
                 agentDir,

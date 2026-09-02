@@ -214,15 +214,9 @@ test("shouldEmitUpstreamConnectionErrorActivity fail closed for unknown or silen
     emitTimelineActivity: true,
   });
 
-  expect(
-    shouldEmitUpstreamConnectionErrorActivity(registry, threadId, silent.logicalRequestId),
-  ).toBe(false);
-  expect(
-    shouldEmitUpstreamConnectionErrorActivity(registry, threadId, visible.logicalRequestId),
-  ).toBe(true);
-  expect(
-    shouldEmitUpstreamConnectionErrorActivity(registry, threadId, "req_unknown_stale"),
-  ).toBe(false);
+  expect(shouldEmitUpstreamConnectionErrorActivity(registry, threadId, silent.logicalRequestId)).toBe(false);
+  expect(shouldEmitUpstreamConnectionErrorActivity(registry, threadId, visible.logicalRequestId)).toBe(true);
+  expect(shouldEmitUpstreamConnectionErrorActivity(registry, threadId, "req_unknown_stale")).toBe(false);
 });
 
 test("lifecycle connection error uses logicalRequestId not statusCode", () => {

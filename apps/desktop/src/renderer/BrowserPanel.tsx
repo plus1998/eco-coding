@@ -1,22 +1,7 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Globe,
-  LoaderCircle,
-  RefreshCw,
-} from "lucide-react";
-import {
-  useEffect,
-  useId,
-  useState,
-  type FormEvent,
-} from "react";
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, LoaderCircle, RefreshCw } from "lucide-react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  normalizeBrowserNavigateUrl,
-  type BrowserViewState,
-} from "../shared/browser";
+import { type BrowserViewState, normalizeBrowserNavigateUrl } from "../shared/browser";
 import { BrowserWebviewViewportMarker } from "./BrowserWebviewViewportMarker";
 
 const ICON_SIZE = 15;

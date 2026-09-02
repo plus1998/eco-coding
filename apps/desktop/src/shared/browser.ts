@@ -29,8 +29,7 @@ export function browserAgentSessionKey(threadId: string): string {
     h2 ^= c;
     h2 = Math.imul(h2, 0x01000193);
   }
-  const hex =
-    (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
+  const hex = (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
   return `e${hex.slice(0, 10)}`;
 }
 
@@ -67,7 +66,10 @@ export function ecoAgentBrowserAllowedToolPatternForThread(_threadId?: string): 
 
 /** True for the logical eco browser MCP server name. */
 export function isEcoAgentBrowserRuntimeServerName(name: string): boolean {
-  const n = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  const n = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-");
   return n === ECO_AGENT_BROWSER_MCP_SERVER || /^eco_ab_e[a-f0-9]{10}$/.test(n);
 }
 
@@ -77,10 +79,7 @@ export type BrowserOpenApprovalMode = "always_allow" | "always_ask";
 export const BROWSER_OPEN_APPROVAL_MODES = ["always_allow", "always_ask"] as const;
 
 export function isBrowserOpenApprovalMode(value: unknown): value is BrowserOpenApprovalMode {
-  return (
-    typeof value === "string" &&
-    (BROWSER_OPEN_APPROVAL_MODES as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (BROWSER_OPEN_APPROVAL_MODES as readonly string[]).includes(value);
 }
 
 export interface BrowserSettingsSnapshot {
@@ -203,11 +202,7 @@ export function pickBrowserFaviconUrl(favicons: readonly string[] | undefined): 
     if (!url) {
       continue;
     }
-    if (
-      url.startsWith("data:image/") ||
-      url.startsWith("https://") ||
-      url.startsWith("http://")
-    ) {
+    if (url.startsWith("data:image/") || url.startsWith("https://") || url.startsWith("http://")) {
       return url;
     }
   }
@@ -325,8 +320,7 @@ export function partitionForBrowserWorkspace(workspaceKey: string): string {
     h2 ^= c;
     h2 = Math.imul(h2, 0x01000193);
   }
-  const hex =
-    (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
+  const hex = (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
   return `persist:eco-browser-w-${hex.slice(0, 16)}`;
 }
 
@@ -347,9 +341,7 @@ export function resolveBrowserScopePartition(
     return partitionForBrowserWorkspace(ECO_BROWSER_PERSONAL_SCOPE_ID);
   }
   if (!workspacePath) {
-    throw new Error(
-      `无法解析会话 workspacePath（scope=${scopeId}），无法使用 workspace 级浏览器存储分区。`,
-    );
+    throw new Error(`无法解析会话 workspacePath（scope=${scopeId}），无法使用 workspace 级浏览器存储分区。`);
   }
   return partitionForBrowserWorkspace(workspacePath);
 }
@@ -460,10 +452,7 @@ export function isBrowserPlaceholderUrl(url: string | undefined | null): boolean
  * Handshake / CDP warmup blanks stay hidden until they navigate somewhere real,
  * unless the creator asked to surface the empty shell (human panel, tab_new).
  */
-export function shouldSurfaceBrowserInstance(input: {
-  url: string;
-  surfacePlaceholder?: boolean;
-}): boolean {
+export function shouldSurfaceBrowserInstance(input: { url: string; surfacePlaceholder?: boolean }): boolean {
   if (!isBrowserPlaceholderUrl(input.url)) {
     return true;
   }
@@ -513,9 +502,7 @@ export function appendBrowserPrompt(
   base: string | undefined,
   browserAppend: string | undefined,
 ): string | undefined {
-  const parts = [base?.trim(), browserAppend?.trim()].filter(
-    (part): part is string => Boolean(part),
-  );
+  const parts = [base?.trim(), browserAppend?.trim()].filter((part): part is string => Boolean(part));
   if (parts.length === 0) {
     return undefined;
   }

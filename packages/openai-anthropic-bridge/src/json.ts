@@ -1,10 +1,4 @@
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export function jsonMarshal(value: unknown): string {
   return JSON.stringify(value);
@@ -22,7 +16,7 @@ export function canonicalizeJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(canonicalizeJsonValue);
   }
-  if (value !== null && typeof value === 'object') {
+  if (value !== null && typeof value === "object") {
     const source = value as Record<string, unknown>;
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(source).sort()) {
@@ -38,7 +32,7 @@ export function canonicalJsonString(value: unknown): string {
 }
 
 export function bytesTrimSpace(bytes: Uint8Array | string): string {
-  if (typeof bytes === 'string') {
+  if (typeof bytes === "string") {
     return bytes.trim();
   }
   return new TextDecoder().decode(bytes).trim();

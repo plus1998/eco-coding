@@ -12,9 +12,9 @@ import type {
   ThreadRunProjectionTimelineItem,
   ThreadRunProjectionUsage,
   ThreadStatus,
+  ThreadSubagentSessionTiming,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
-import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
@@ -49,9 +49,7 @@ interface MutableRequestSpan {
   sawStreamStart: boolean;
 }
 
-export function buildThreadRunProjection(
-  input: BuildThreadRunProjectionInput,
-): ThreadRunProjectionSnapshot {
+export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): ThreadRunProjectionSnapshot {
   const nowMs = input.nowMs ?? Date.now();
   const sortedEvents = [...input.events].sort((left, right) => {
     const sequenceDiff = left.sequence - right.sequence;
@@ -60,7 +58,9 @@ export function buildThreadRunProjection(
   const events = dedupeFinalizedSdkMessageBlocks(sortedEvents);
   const attempts = input.attempts
     .map(mapAttempt)
-    .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.retryIndex - right.retryIndex);
+    .sort(
+      (left, right) => left.startedAt.localeCompare(right.startedAt) || left.retryIndex - right.retryIndex,
+    );
   const currentAttemptId =
     attempts.find((attempt) => attempt.status === "running")?.attemptId ??
     attempts[attempts.length - 1]?.attemptId;
@@ -200,8 +200,7 @@ export function buildThreadRunProjection(
     const delegation = resolveAgentDelegationFromEvents(events, agent.agentId);
     const identity = resolveAgentCardIdentityFromEvents(events, agent.agentId);
     const durationMs =
-      timing?.durationMs ??
-      computeDurationMs(startedAt, endedAt, nowMs, diagnostics, agent.agentId);
+      timing?.durationMs ?? computeDurationMs(startedAt, endedAt, nowMs, diagnostics, agent.agentId);
     agentsById.set(agent.agentId, {
       agentId: agent.agentId,
       role: agent.role,
@@ -251,9 +250,7 @@ export function buildThreadRunProjection(
       {
         ...item,
         scope: "main" as const,
-        ...(item.role === "general" || item.role === "subagent"
-          ? { role: "assistant" as const }
-          : {}),
+        ...(item.role === "general" || item.role === "subagent" ? { role: "assistant" as const } : {}),
       },
     ];
   });
@@ -785,10 +782,8 @@ function resolveAgentDelegationFromEvents(
       continue;
     }
     const metadata = event.metadata;
-    const summary =
-      typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
-    const prompt =
-      typeof metadata?.delegationPrompt === "string" ? metadata.delegationPrompt.trim() : "";
+    const summary = typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
+    const prompt = typeof metadata?.delegationPrompt === "string" ? metadata.delegationPrompt.trim() : "";
     if (summary) {
       delegationSummary = summary;
     }
@@ -822,8 +817,7 @@ function resolveAgentCardIdentityFromEvents(
     if (nick) {
       nickname = nick;
     }
-    let nextTaskName =
-      typeof metadata?.taskName === "string" ? metadata.taskName.trim() : "";
+    let nextTaskName = typeof metadata?.taskName === "string" ? metadata.taskName.trim() : "";
     if (!nextTaskName && typeof metadata?.agentPath === "string") {
       nextTaskName = taskNameFromAgentPathMetadata(metadata.agentPath) ?? "";
     }

@@ -25,12 +25,7 @@ export function MarkdownContent({ text, className }: MarkdownContentProps) {
 
   // SSR / renderToStaticMarkup (tests): emit HTML from the same PM document model.
   if (!canUseProseMirrorHost()) {
-    return (
-      <div
-        className={rootClass}
-        dangerouslySetInnerHTML={{ __html: renderFeedMarkdownHtml(text) }}
-      />
-    );
+    return <div className={rootClass} dangerouslySetInnerHTML={{ __html: renderFeedMarkdownHtml(text) }} />;
   }
 
   return <MarkdownContentProseMirror text={text} className={rootClass} />;

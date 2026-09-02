@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { getRuntimePlatformLabel } from "../src/renderer/runtime-platform";
 import { i18n } from "../src/renderer/i18n";
+import { getRuntimePlatformLabel } from "../src/renderer/runtime-platform";
 
 describe("runtime-platform", () => {
   test("getRuntimePlatformLabel detects platform from navigator", () => {

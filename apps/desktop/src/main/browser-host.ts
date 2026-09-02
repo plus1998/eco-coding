@@ -1,33 +1,38 @@
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import type { CodexMcpServerForConfigSync } from "@eco/runtime";
+import type { WebContents } from "electron";
+import { session, shell, webContents } from "electron";
 import {
-  ECO_AGENT_BROWSER_ALLOWED_TOOL,
-  ECO_AGENT_BROWSER_MCP_SERVER,
-  ECO_AGENT_BROWSER_PROMPT_APPEND,
-  ECO_BROWSER_PERSONAL_SCOPE_ID,
   appendBrowserPrompt,
   type BrowserInstanceSource,
   type BrowserInstanceView,
   type BrowserViewState,
-  isBrowserHttpUrl,
-  normalizeBrowserNavigateUrl,
-  resolveBrowserNavigateTarget,
-  planAdoptPersonalBrowsersToThread,
-  resolveBrowserScopePartition,
-  pickBrowserFaviconUrl,
-  shouldAutoApproveEcoAgentBrowserTools,
   browserAgentSessionKey,
   buildEcoAgentBrowserPromptAppend,
+  ECO_AGENT_BROWSER_ALLOWED_TOOL,
+  ECO_AGENT_BROWSER_MCP_SERVER,
+  ECO_AGENT_BROWSER_PROMPT_APPEND,
+  ECO_BROWSER_PERSONAL_SCOPE_ID,
+  isBrowserHttpUrl,
   isBrowserPlaceholderUrl,
+  normalizeBrowserNavigateUrl,
+  pickBrowserFaviconUrl,
+  planAdoptPersonalBrowsersToThread,
+  resolveBrowserNavigateTarget,
+  resolveBrowserScopePartition,
+  shouldAutoApproveEcoAgentBrowserTools,
   shouldSurfaceBrowserInstance,
 } from "../shared/browser";
 import type { McpSdkConfig } from "../shared/mcp";
-import {
-  resolveAgentBrowserBinary,
-} from "./agent-browser-resolve";
-import {
-  BrowserMcpGateway,
-  mergeEcoBrowserSdkConfig,
-} from "./browser-mcp-gateway";
+import type { AgentBrowserMcpToolResult } from "./agent-browser-cli-bridge";
+import { resolveAgentBrowserTabIndex } from "./agent-browser-cli-bridge";
+import { resolveAgentBrowserBinary } from "./agent-browser-resolve";
+import { type BrowserCdpProxy, type BrowserCdpTarget, startMultiBrowserCdpProxy } from "./browser-cdp-proxy";
 import { writeBrowserHtmlPreviewTempFile } from "./browser-html-preview";
+import { BrowserMcpGateway, mergeEcoBrowserSdkConfig } from "./browser-mcp-gateway";
 import {
   agentBrowserTextResult,
   captureGuestScreenshot,
@@ -35,21 +40,7 @@ import {
   isFullPageScreenshot,
   resolveAgentBrowserScreenshotPath,
 } from "./browser-native-agent-tools";
-import type { AgentBrowserMcpToolResult } from "./agent-browser-cli-bridge";
-import { resolveAgentBrowserTabIndex } from "./agent-browser-cli-bridge";
-import {
-  type BrowserCdpProxy,
-  type BrowserCdpTarget,
-  startMultiBrowserCdpProxy,
-} from "./browser-cdp-proxy";
 import type { BrowserSettingsStore } from "./browser-settings-store";
-import type { CodexMcpServerForConfigSync } from "@eco/runtime";
-import type { WebContents } from "electron";
-import { session, shell, webContents } from "electron";
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { createRequire } from "node:module";
 
 export { appendBrowserPrompt };
 
@@ -71,10 +62,7 @@ function resolveAgentBrowserSocketDir(): string {
   return path.join(process.cwd(), ".eco-ab");
 }
 
-function ensureAgentBrowserRuntimeEnv(
-  cdpPort: number,
-  threadId: string,
-): Record<string, string> {
+function ensureAgentBrowserRuntimeEnv(cdpPort: number, threadId: string): Record<string, string> {
   const sessionKey = browserAgentSessionKey(threadId);
   const socketDir = path.join(resolveAgentBrowserSocketDir(), sessionKey);
   try {
@@ -249,11 +237,7 @@ export class BrowserHost {
     if (!toLoad) {
       const current = guest.isDestroyed() ? "" : guest.getURL();
       const restore = browser.detachedUrl?.trim() || browser.lastLoadedUrl?.trim();
-      if (
-        isBrowserPlaceholderUrl(current) &&
-        restore &&
-        !isBrowserPlaceholderUrl(restore)
-      ) {
+      if (isBrowserPlaceholderUrl(current) && restore && !isBrowserPlaceholderUrl(restore)) {
         toLoad = restore;
       }
     }
@@ -284,11 +268,7 @@ export class BrowserHost {
   }
 
   /** Coalesce loadURL while Electron churns guest webContents ids (destroy/recreate storm). */
-  private scheduleGuestNavigation(
-    scope: ThreadBrowserScope,
-    browser: SessionBrowser,
-    target: string,
-  ): void {
+  private scheduleGuestNavigation(scope: ThreadBrowserScope, browser: SessionBrowser, target: string): void {
     const url = target.trim();
     if (!url) {
       return;
@@ -392,10 +372,9 @@ export class BrowserHost {
     return [...scope.browsers.values()].flatMap((browser) => {
       const wc = browser.webContents;
       const alive = wc && !wc.isDestroyed();
-      let url =
-        alive
-          ? wc.getURL() || HOME_URL
-          : browser.detachedUrl?.trim() || browser.pendingUrl?.trim() || HOME_URL;
+      let url = alive
+        ? wc.getURL() || HOME_URL
+        : browser.detachedUrl?.trim() || browser.pendingUrl?.trim() || HOME_URL;
       if (
         alive &&
         isBrowserPlaceholderUrl(url) &&
@@ -467,8 +446,7 @@ export class BrowserHost {
         ...(workspaceHint !== undefined ? { workspacePath: workspaceHint } : {}),
       });
     }
-    const workspacePath =
-      workspaceHint?.trim() || this.deps.resolveWorkspacePath(scopeId)?.trim();
+    const workspacePath = workspaceHint?.trim() || this.deps.resolveWorkspacePath(scopeId)?.trim();
     return resolveBrowserScopePartition(scopeId, {
       ...(workspacePath !== undefined ? { workspacePath } : {}),
     });
@@ -614,12 +592,7 @@ export class BrowserHost {
     });
 
     const onNav = (_event: unknown, url?: string) => {
-      const target =
-        typeof url === "string" && url.trim()
-          ? url
-          : !wc.isDestroyed()
-            ? wc.getURL()
-            : "";
+      const target = typeof url === "string" && url.trim() ? url : !wc.isDestroyed() ? wc.getURL() : "";
       if (!isBrowserPlaceholderUrl(target)) {
         browser.detachedUrl = target;
         browser.lastLoadedUrl = target;
@@ -695,9 +668,7 @@ export class BrowserHost {
     this.revealBrowserId = browserId;
   }
 
-  private findBrowser(
-    browserId: string,
-  ): { scope: ThreadBrowserScope; browser: SessionBrowser } | undefined {
+  private findBrowser(browserId: string): { scope: ThreadBrowserScope; browser: SessionBrowser } | undefined {
     for (const scope of this.scopes.values()) {
       const browser = scope.browsers.get(browserId);
       if (browser) {
@@ -964,7 +935,7 @@ export class BrowserHost {
   async openExternalCurrent(browserId?: string): Promise<void> {
     const browser = this.requireFocusedOrId(browserId);
     const wc = browser.webContents;
-    const url = wc && !wc.isDestroyed() ? wc.getURL() : browser.pendingUrl ?? "";
+    const url = wc && !wc.isDestroyed() ? wc.getURL() : (browser.pendingUrl ?? "");
     if (isBrowserHttpUrl(url)) {
       await shell.openExternal(url);
     }
@@ -1073,9 +1044,7 @@ export class BrowserHost {
   }
 
   private orderedBrowsersInScope(scope: ThreadBrowserScope): SessionBrowser[] {
-    return [...scope.browsers.values()].sort(
-      (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-    );
+    return [...scope.browsers.values()].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
   private cdpTargetsForScope(scope: ThreadBrowserScope): BrowserCdpTarget[] {
@@ -1095,8 +1064,7 @@ export class BrowserHost {
     if (!scope || scope.browsers.size === 0) {
       return;
     }
-    const browserId =
-      scope.focusedBrowserId ?? scope.browsers.keys().next().value ?? undefined;
+    const browserId = scope.focusedBrowserId ?? scope.browsers.keys().next().value ?? undefined;
     if (!browserId) {
       return;
     }
@@ -1135,10 +1103,9 @@ export class BrowserHost {
   private resolveBrowserTabUrl(browser: SessionBrowser): string {
     const wc = browser.webContents;
     const alive = wc && !wc.isDestroyed();
-    let url =
-      alive
-        ? wc.getURL() || HOME_URL
-        : browser.detachedUrl?.trim() || browser.pendingUrl?.trim() || HOME_URL;
+    let url = alive
+      ? wc.getURL() || HOME_URL
+      : browser.detachedUrl?.trim() || browser.pendingUrl?.trim() || HOME_URL;
     if (
       alive &&
       isBrowserPlaceholderUrl(url) &&
@@ -1174,7 +1141,9 @@ export class BrowserHost {
     const scopeId = threadId.trim();
     const scope = this.scopes.get(scopeId);
     if (!scope || scope.browsers.size === 0) {
-      throw new Error("No browser tabs in this session. Use agent_browser_open or agent_browser_tab_new first.");
+      throw new Error(
+        "No browser tabs in this session. Use agent_browser_open or agent_browser_tab_new first.",
+      );
     }
     const ordered = this.orderedBrowsersInScope(scope);
     const index = resolveAgentBrowserTabIndex(args, ordered.length);
@@ -1195,8 +1164,7 @@ export class BrowserHost {
     if (!scope || scope.browsers.size === 0) {
       throw new Error("No tabs to close");
     }
-    const browserId =
-      scope.focusedBrowserId ?? this.orderedBrowsersInScope(scope)[0]?.id ?? undefined;
+    const browserId = scope.focusedBrowserId ?? this.orderedBrowsersInScope(scope)[0]?.id ?? undefined;
     if (!browserId) {
       throw new Error("No tabs to close");
     }
@@ -1235,8 +1203,7 @@ export class BrowserHost {
     const full = isFullPageScreenshot(args);
     await this.ensureScopeGuestsReady(threadId);
     const scope = this.ensureScope(threadId.trim());
-    const browserId =
-      scope.focusedBrowserId ?? scope.browsers.keys().next().value ?? undefined;
+    const browserId = scope.focusedBrowserId ?? scope.browsers.keys().next().value ?? undefined;
     if (!browserId) {
       throw new Error("No browser target available in this session");
     }
@@ -1376,9 +1343,7 @@ export class BrowserHost {
     return mergeEcoBrowserSdkConfig(base, {
       enabled: injection.enabled,
       ...(injection.sdkEntry ? { sdkEntry: injection.sdkEntry } : {}),
-      ...(injection.autoApproveTools !== undefined
-        ? { autoApproveTools: injection.autoApproveTools }
-        : {}),
+      ...(injection.autoApproveTools !== undefined ? { autoApproveTools: injection.autoApproveTools } : {}),
     });
   }
 
@@ -1487,8 +1452,6 @@ export function isWebContentsAlive(wc: WebContents | undefined): wc is WebConten
   return Boolean(wc && !wc.isDestroyed());
 }
 
-export function isSessionEcoBrowserEnabled(
-  mcpServersEnabled: Record<string, boolean> | undefined,
-): boolean {
+export function isSessionEcoBrowserEnabled(mcpServersEnabled: Record<string, boolean> | undefined): boolean {
   return mcpServersEnabled?.[ECO_AGENT_BROWSER_MCP_SERVER] === true;
 }

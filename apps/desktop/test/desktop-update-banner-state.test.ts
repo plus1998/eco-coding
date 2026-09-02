@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import type { DesktopUpdateState } from "../src/shared/desktop-update";
 import {
   resolveSidebarUpdateAction,
   shouldShowSidebarUpdateDownload,
   sidebarSettingsVersionLabel,
 } from "../src/renderer/desktop-update-banner-state";
+import type { DesktopUpdateState } from "../src/shared/desktop-update";
 
 const baseState = {
   capability: "auto",

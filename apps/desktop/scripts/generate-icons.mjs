@@ -11,8 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { decodePngToRgba, encodeRgbaToPng } from "./png-rgba.mjs";
 import { encodeIcoFromRgba } from "./encode-ico.mjs";
+import { decodePngToRgba, encodeRgbaToPng } from "./png-rgba.mjs";
 import {
   applyTransparentRoundedProductIcon,
   bakeTransparentRoundedPng,
@@ -72,7 +72,9 @@ async function buildIco(inputPath, outputPath) {
 
 async function buildIcns(inputPng, outputPath) {
   if (process.platform !== "darwin") {
-    console.warn("Skipping icon.icns (iconutil is macOS-only). Pack macOS builds on darwin or commit icon.icns.");
+    console.warn(
+      "Skipping icon.icns (iconutil is macOS-only). Pack macOS builds on darwin or commit icon.icns.",
+    );
     return;
   }
 

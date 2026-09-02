@@ -31,8 +31,7 @@ export function listExpiredAutoCloseTabIds(
 ): string[] {
   return Object.entries(autoCloseByTabId)
     .filter(
-      ([tabId, countdown]) =>
-        countdown.deadline <= now && sessionsByTabId[tabId] === countdown.sessionId,
+      ([tabId, countdown]) => countdown.deadline <= now && sessionsByTabId[tabId] === countdown.sessionId,
     )
     .map(([tabId]) => tabId);
 }

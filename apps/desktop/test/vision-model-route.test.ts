@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import {
-  normalizeVisionModelSelection,
-  isVisionModelSelection,
-} from "../src/shared/vision-model";
-import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "../src/main/vision-model-route";
 import type { ProviderStore } from "../src/main/provider-store";
+import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "../src/main/vision-model-route";
+import { isVisionModelSelection, normalizeVisionModelSelection } from "../src/shared/vision-model";
 
 describe("vision model selection", () => {
   test("normalizes a complete selection", () => {

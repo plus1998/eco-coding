@@ -1,14 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-  handleBridgeMessagesRequest,
-  resolveExplicitBridgeRequestAgentId,
-  resolveFrozenLiveRequestAttribution,
-} from "../src/main/thread-live-request-coordinator";
-import {
   CLAUDE_CODE_ATTRIBUTION_HEADERS,
   ECO_PROXY_BILLING_HEADERS,
   ProxyBillingStampRegistry,
 } from "../src/main/proxy-billing-stamp";
+import {
+  handleBridgeMessagesRequest,
+  resolveExplicitBridgeRequestAgentId,
+  resolveFrozenLiveRequestAttribution,
+} from "../src/main/thread-live-request-coordinator";
 import { ThreadLiveRequestRegistry } from "../src/main/thread-live-request-registry";
 import { BUILTIN_VISION_AGENT_ROLE } from "../src/shared/prompt-image-vision";
 
@@ -21,9 +21,7 @@ test("resolveExplicitBridgeRequestAgentId accepts matching request-scoped billin
     [ECO_PROXY_BILLING_HEADERS.agentId]: "vision:thr:abc",
     [ECO_PROXY_BILLING_HEADERS.billingRole]: BUILTIN_VISION_AGENT_ROLE,
   });
-  expect(resolveExplicitBridgeRequestAgentId(BUILTIN_VISION_AGENT_ROLE, headers)).toBe(
-    "vision:thr:abc",
-  );
+  expect(resolveExplicitBridgeRequestAgentId(BUILTIN_VISION_AGENT_ROLE, headers)).toBe("vision:thr:abc");
   expect(resolveExplicitBridgeRequestAgentId("coder", headers)).toBeUndefined();
 });
 
@@ -41,9 +39,7 @@ test("Eco Vision headers take priority over Claude agent-id header", () => {
     [ECO_PROXY_BILLING_HEADERS.billingRole]: BUILTIN_VISION_AGENT_ROLE,
     [CLAUDE_CODE_ATTRIBUTION_HEADERS.agentId]: "agent_should_not_win",
   });
-  expect(resolveExplicitBridgeRequestAgentId(BUILTIN_VISION_AGENT_ROLE, headers)).toBe(
-    "vision:thr:abc",
-  );
+  expect(resolveExplicitBridgeRequestAgentId(BUILTIN_VISION_AGENT_ROLE, headers)).toBe("vision:thr:abc");
   // Mismatched Eco role rejects Eco stamp; Claude header still applies.
   expect(resolveExplicitBridgeRequestAgentId("coder", headers)).toBe("agent_should_not_win");
 });

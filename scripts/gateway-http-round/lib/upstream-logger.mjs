@@ -25,8 +25,7 @@ export function createUpstreamLoggingFetch(options) {
     const url = String(input);
     const method = init?.method ?? "GET";
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
-    const body =
-      typeof init?.body === "string" ? init.body : init?.body ? String(init.body) : undefined;
+    const body = typeof init?.body === "string" ? init.body : init?.body ? String(init.body) : undefined;
 
     const result = await captureHttpExchange({
       fetchImpl: fetch,

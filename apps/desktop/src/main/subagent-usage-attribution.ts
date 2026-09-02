@@ -60,9 +60,7 @@ export function resolveSubagentUsageAttribution(
   }
 
   const shouldResolve =
-    isSubagentBillingRole(input.role) ||
-    Boolean(input.explicitSubagentId) ||
-    Boolean(input.parentToolUseId);
+    isSubagentBillingRole(input.role) || Boolean(input.explicitSubagentId) || Boolean(input.parentToolUseId);
 
   if (!shouldResolve) {
     return { billingRole, attempted: false };

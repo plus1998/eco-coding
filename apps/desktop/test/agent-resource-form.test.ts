@@ -13,7 +13,11 @@ import {
   mainAgentPromptToForm,
   subagentOrchestrationToForm,
 } from "../src/renderer/agent-resource-form";
-import { CODING_AGENT_TEMPLATE_IDS, createBuiltInAgentTemplates, resolveOrchestrationSnapshot } from "../src/shared/agent-orchestration";
+import {
+  CODING_AGENT_TEMPLATE_IDS,
+  createBuiltInAgentTemplates,
+  resolveOrchestrationSnapshot,
+} from "../src/shared/agent-orchestration";
 import type { AgentTemplate, ProviderConfigView } from "../src/shared/ipc";
 import { runtimeRoleRoutesFromOrchestrationSnapshot } from "../src/shared/thread-runtime-config";
 
@@ -204,11 +208,7 @@ test("buildSubagentOrchestrationFromForm binds models and preserves guidance", (
     source: "project",
     updatedAt: "2026-06-08T00:00:00.000Z",
   });
-  expect(built.agents.map((agent) => agent.agentKey)).toEqual([
-    "researcher",
-    "explore",
-    "source_verifier",
-  ]);
+  expect(built.agents.map((agent) => agent.agentKey)).toEqual(["researcher", "explore", "source_verifier"]);
   expect(built.agents[2]?.tools.disallowed).toContain("Bash");
   expect(built.strategy).toEqual({
     kind: "autonomous",
@@ -268,12 +268,8 @@ test("V4A teaching form defaults false and round-trips when enabled", () => {
   const orchBuilt = buildSubagentOrchestrationFromForm(orchForm, {
     templates: [researcherTemplate, exploreTemplate],
   });
-  expect(orchBuilt.agents.find((agent) => agent.agentKey === "researcher")?.v4aTeachingEnabled).toBe(
-    true,
-  );
-  expect(
-    orchBuilt.agents.find((agent) => agent.agentKey === "explore")?.v4aTeachingEnabled,
-  ).toBeUndefined();
+  expect(orchBuilt.agents.find((agent) => agent.agentKey === "researcher")?.v4aTeachingEnabled).toBe(true);
+  expect(orchBuilt.agents.find((agent) => agent.agentKey === "explore")?.v4aTeachingEnabled).toBeUndefined();
   expect(
     subagentOrchestrationToForm(orchBuilt).agents.find((agent) => agent.agentKey === "researcher")
       ?.v4aTeachingEnabled,
@@ -286,15 +282,15 @@ test("buildSubagentOrchestrationFromForm rejects reserved and duplicate agent ke
   const firstAgent = form.agents[0]!;
   firstAgent.agentKey = "system";
 
-  expect(() =>
-    buildSubagentOrchestrationFromForm(form, { templates: [researcherTemplate] }),
-  ).toThrow(/系统保留名称|reserved/i);
+  expect(() => buildSubagentOrchestrationFromForm(form, { templates: [researcherTemplate] })).toThrow(
+    /系统保留名称|reserved/i,
+  );
 
   firstAgent.agentKey = "researcher";
   form.agents.push({ ...firstAgent });
-  expect(() =>
-    buildSubagentOrchestrationFromForm(form, { templates: [researcherTemplate] }),
-  ).toThrow(/Agent key 重复|Duplicate agent key/i);
+  expect(() => buildSubagentOrchestrationFromForm(form, { templates: [researcherTemplate] })).toThrow(
+    /Agent key 重复|Duplicate agent key/i,
+  );
 });
 
 test("buildMainAgentConfigFromForm requires candidate model selection", () => {

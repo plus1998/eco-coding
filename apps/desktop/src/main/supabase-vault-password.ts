@@ -1,14 +1,15 @@
 /**
  * Password-wrapped vault_key stored in `user_vault_wraps` (account unlock path).
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+
 import {
+  ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
   isPasswordWrappedVaultKey,
   type PasswordWrappedVaultKey,
   unwrapVaultKeyWithPassword,
   wrapVaultKeyWithPassword,
-  ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
 } from "@eco/shared";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const VAULT_PASSWORD_WRAP_REQUIRED_CODE = "vault_password_wrap_required";
 export const VAULT_PASSWORD_UNLOCK_FAILED_CODE = "vault_password_unlock_failed";
@@ -121,7 +122,10 @@ export async function wrapAndUploadVaultKeyWithPassword(input: {
   password: string;
 }): Promise<UserVaultWrapRow> {
   if (!input.password.trim()) {
-    throw new VaultPasswordError("Password is required to wrap the vault key.", VAULT_PASSWORD_WRAP_REQUIRED_CODE);
+    throw new VaultPasswordError(
+      "Password is required to wrap the vault key.",
+      VAULT_PASSWORD_WRAP_REQUIRED_CODE,
+    );
   }
   const wrapped = await wrapVaultKeyWithPassword(input.vaultKey, input.password);
   return upsertUserVaultWrap(input.client, input.userId, wrapped);

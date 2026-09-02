@@ -15,10 +15,7 @@ export const ECO_REALTIME_TOPIC_PREFIX = {
 
 export type EcoRealtimeTopicKind = keyof typeof ECO_REALTIME_TOPIC_PREFIX;
 
-export type EcoRealtimeTopic =
-  | `eco:user:${string}`
-  | `eco:bind:${string}`
-  | `eco:vault:${string}`;
+export type EcoRealtimeTopic = `eco:user:${string}` | `eco:bind:${string}` | `eco:vault:${string}`;
 
 /** Lowercase UUID as used by Postgres realtime topic helpers (`[0-9a-f-]{36}`). */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

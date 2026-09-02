@@ -118,7 +118,9 @@ export function listCommitMessageCandidateRoutes(
   routes: readonly RuntimeRoleRouteConfig[],
   enabledRoles: ReadonlySet<SubagentRole>,
 ): RuntimeRoleRouteConfig[] {
-  return routes.filter((route) => route.role !== "planner" && isSubagentRole(route.role) && enabledRoles.has(route.role));
+  return routes.filter(
+    (route) => route.role !== "planner" && isSubagentRole(route.role) && enabledRoles.has(route.role),
+  );
 }
 
 export function resolveDefaultCommitMessageRole(
@@ -132,7 +134,8 @@ export function resolveDefaultCommitMessageRole(
   }
   const hintByRole = new Map(hints.map((hint) => [hint.role, hint]));
   const sorted = [...candidates].sort((left, right) => {
-    const scoreDelta = commitModelPriceScore(hintByRole.get(left.role)) - commitModelPriceScore(hintByRole.get(right.role));
+    const scoreDelta =
+      commitModelPriceScore(hintByRole.get(left.role)) - commitModelPriceScore(hintByRole.get(right.role));
     if (scoreDelta !== 0) {
       return scoreDelta;
     }

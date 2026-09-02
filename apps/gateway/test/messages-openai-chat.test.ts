@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import {
-  GATEWAY_PROVIDER_ID_HEADER,
-  GATEWAY_REQUESTED_MODEL_HEADER,
-} from "../src/provider-router.js";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
+import { GATEWAY_PROVIDER_ID_HEADER, GATEWAY_REQUESTED_MODEL_HEADER } from "../src/provider-router.js";
 import type { GatewayConfig, GatewayProvider } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 describe("POST /v1/messages openai-chat face", () => {
   test("non-stream Anthropic Messages body converts via chat completions", async () => {
@@ -24,27 +21,24 @@ describe("POST /v1/messages openai-chat face", () => {
     };
     let upstreamUrl = "";
     let upstreamBody: Record<string, unknown> | undefined;
-    const handler = createTestGatewayFetchHandler(
-      config,
-      async (input, init) => {
-        upstreamUrl = String(input);
-        upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return Response.json({
-          id: "chatcmpl-msg",
-          object: "chat.completion",
-          created: 1,
-          model: "chat-model",
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: "hi from chat" },
-              finish_reason: "stop",
-            },
-          ],
-          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
-        });
-      },
-    );
+    const handler = createTestGatewayFetchHandler(config, async (input, init) => {
+      upstreamUrl = String(input);
+      upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        id: "chatcmpl-msg",
+        object: "chat.completion",
+        created: 1,
+        model: "chat-model",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "hi from chat" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+      });
+    });
 
     const response = await handler(
       new Request("http://127.0.0.1/v1/messages", {

@@ -4,8 +4,8 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import type { SkillInfo } from "../shared/skills";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 interface ComposerSkillsControlProps {
@@ -41,9 +41,7 @@ function ComposerSkillsRows({
         return (
           <section key={source} className="composer-skills-scope">
             <h3>
-              {source === "project"
-                ? t("settings.models.editor.project")
-                : t("settings.models.editor.user")}
+              {source === "project" ? t("settings.models.editor.project") : t("settings.models.editor.user")}
             </h3>
             <div className="composer-agents-list">
               {scoped.map((skill) => {

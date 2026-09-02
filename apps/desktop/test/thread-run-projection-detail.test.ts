@@ -23,9 +23,7 @@ function item(
 }
 
 function projection(): ThreadRunProjectionSnapshot {
-  const agentTimeline = Array.from({ length: 5 }, (_, index) =>
-    item(`agent_evt_${index + 1}`, index + 1),
-  );
+  const agentTimeline = Array.from({ length: 5 }, (_, index) => item(`agent_evt_${index + 1}`, index + 1));
   const toolItem = item("tool_1", 10, {
     eventType: "tool.completed",
     scope: "main",
@@ -191,9 +189,7 @@ test("buildThreadRunProjectionDetail pages a complete turn across main and agent
           startedAt: "2026-01-01T00:00:00.000Z",
         },
       ],
-      timeline: [
-        { ...projection().timeline[0]!, runAttemptId: "attempt_1" },
-      ],
+      timeline: [{ ...projection().timeline[0]!, runAttemptId: "attempt_1" }],
       agents: [
         {
           ...projection().agents[0]!,

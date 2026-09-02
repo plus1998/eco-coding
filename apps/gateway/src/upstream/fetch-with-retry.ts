@@ -1,13 +1,6 @@
-import {
-  GATEWAY_UPSTREAM_RETRY,
-  runWithUpstreamResponseRetry,
-} from "@eco/openai-anthropic-bridge";
-
+import { GATEWAY_UPSTREAM_RETRY, runWithUpstreamResponseRetry } from "@eco/openai-anthropic-bridge";
+import { fetchWithRequestLifecycle, type RequestLifecycleContext } from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
-import {
-  fetchWithRequestLifecycle,
-  type RequestLifecycleContext,
-} from "../request-lifecycle.js";
 
 export interface FetchUpstreamWithRetryOptions {
   fetchImpl: typeof fetch;
@@ -26,9 +19,7 @@ export interface FetchUpstreamWithRetryOptions {
  * Same-route upstream fetch with transient HTTP / network retries before any
  * client body is written. Uses lifecycle attemptIndex when provided.
  */
-export async function fetchUpstreamWithRetry(
-  options: FetchUpstreamWithRetryOptions,
-): Promise<Response> {
+export async function fetchUpstreamWithRetry(options: FetchUpstreamWithRetryOptions): Promise<Response> {
   const {
     fetchImpl,
     url,
@@ -59,15 +50,11 @@ export async function fetchUpstreamWithRetry(
       signal,
       onRetry: ({ attempt, status, error, delayMs }) => {
         if (status !== undefined) {
-          onLog(
-            `upstream retry attempt=${attempt} status=${status} delayMs=${delayMs} url=${url}`,
-          );
+          onLog(`upstream retry attempt=${attempt} status=${status} delayMs=${delayMs} url=${url}`);
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        onLog(
-          `upstream retry attempt=${attempt} transport=${message} delayMs=${delayMs} url=${url}`,
-        );
+        onLog(`upstream retry attempt=${attempt} transport=${message} delayMs=${delayMs} url=${url}`);
       },
     },
   );

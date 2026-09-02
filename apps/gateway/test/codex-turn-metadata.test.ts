@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  CODEX_TURN_METADATA_HEADER,
-  parseCodexTurnMetadataHeader,
-} from "../src/codex-turn-metadata.js";
+import { CODEX_TURN_METADATA_HEADER, parseCodexTurnMetadataHeader } from "../src/codex-turn-metadata.js";
 
 function headersWithMetadata(metadata: unknown): Headers {
   return new Headers({
@@ -50,14 +47,10 @@ describe("Codex turn metadata", () => {
 
   test("rejects malformed JSON and missing turn identity", () => {
     expect(
-      parseCodexTurnMetadataHeader(
-        new Headers({ [CODEX_TURN_METADATA_HEADER]: "{not-json" }),
-      ),
+      parseCodexTurnMetadataHeader(new Headers({ [CODEX_TURN_METADATA_HEADER]: "{not-json" })),
     ).toBeUndefined();
     expect(
-      parseCodexTurnMetadataHeader(
-        headersWithMetadata({ thread_id: "codex_root", request_kind: "turn" }),
-      ),
+      parseCodexTurnMetadataHeader(headersWithMetadata({ thread_id: "codex_root", request_kind: "turn" })),
     ).toBeUndefined();
     expect(
       parseCodexTurnMetadataHeader(
@@ -65,9 +58,7 @@ describe("Codex turn metadata", () => {
       ),
     ).toBeUndefined();
     expect(
-      parseCodexTurnMetadataHeader(
-        headersWithMetadata({ thread_id: "codex_root", turn_id: "turn_1" }),
-      ),
+      parseCodexTurnMetadataHeader(headersWithMetadata({ thread_id: "codex_root", turn_id: "turn_1" })),
     ).toBeUndefined();
   });
 

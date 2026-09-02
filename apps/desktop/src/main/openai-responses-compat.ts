@@ -24,12 +24,8 @@ const DROPPABLE_RESPONSES_PARAMETERS = new Set([
 
 const learnedUnsupportedParametersByEndpoint = new Map<string, Set<string>>();
 
-function compatibilityCacheKey(input: {
-  url: string;
-  logContext?: Record<string, unknown>;
-}): string {
-  const providerId =
-    typeof input.logContext?.providerId === "string" ? input.logContext.providerId : "";
+function compatibilityCacheKey(input: { url: string; logContext?: Record<string, unknown> }): string {
+  const providerId = typeof input.logContext?.providerId === "string" ? input.logContext.providerId : "";
   try {
     const url = new URL(input.url);
     return [providerId, url.origin, url.pathname].filter(Boolean).join("|");
@@ -51,17 +47,14 @@ function learnUnsupportedParameter(cacheKey: string, param: string): void {
   learnedUnsupportedParametersByEndpoint.set(cacheKey, new Set([key]));
 }
 
-function dropLearnedUnsupportedParameters(
-  body: Record<string, unknown>,
-  cacheKey: string,
-): string[] {
+function dropLearnedUnsupportedParameters(body: Record<string, unknown>, cacheKey: string): string[] {
   const known = learnedUnsupportedParametersByEndpoint.get(cacheKey);
   if (!known || known.size === 0) {
     return [];
   }
   const dropped: string[] = [];
   for (const key of [...known].sort()) {
-    if (!Object.prototype.hasOwnProperty.call(body, key)) {
+    if (!Object.hasOwn(body, key)) {
       continue;
     }
     delete body[key];
@@ -127,7 +120,7 @@ export function dropUnsupportedOpenAIResponsesParameter(
   if (!DROPPABLE_RESPONSES_PARAMETERS.has(key)) {
     return { dropped: false, key, reason: "not_droppable" };
   }
-  if (!Object.prototype.hasOwnProperty.call(body, key)) {
+  if (!Object.hasOwn(body, key)) {
     return { dropped: false, key, reason: "missing" };
   }
   delete body[key];
@@ -149,10 +142,7 @@ export async function postJsonWithOpenAIResponsesUnsupportedParameterRetry(input
   droppedParams: string[];
 }> {
   const requestBody = { ...input.body };
-  const droppedParams = dropLearnedUnsupportedParameters(
-    requestBody,
-    compatibilityCacheKey(input),
-  );
+  const droppedParams = dropLearnedUnsupportedParameters(requestBody, compatibilityCacheKey(input));
   if (droppedParams.length > 0) {
     logUpstream("openai-responses-drop-learned-unsupported-params", {
       ...input.logContext,

@@ -4,8 +4,8 @@ import {
   createDefaultToolCapabilityFields,
   isGroupedCapabilityToolName,
   stripGroupedToolsFromDisallowed,
-  toolPolicyToCapabilityFields,
   TOOL_CAPABILITY_PRESETS,
+  toolPolicyToCapabilityFields,
 } from "../src/renderer/tool-capability-groups";
 
 test("toolPolicyToCapabilityFields and capabilityFieldsToToolPolicy round-trip", () => {
@@ -24,14 +24,7 @@ test("toolPolicyToCapabilityFields and capabilityFieldsToToolPolicy round-trip",
   const roundTrip = capabilityFieldsToToolPolicy(capability);
 
   expect(roundTrip.disallowed).toEqual(
-    expect.arrayContaining([
-      "Write",
-      "Bash",
-      "WebSearch",
-      "WebFetch",
-      "TaskCreate",
-      "Agent",
-    ]),
+    expect.arrayContaining(["Write", "Bash", "WebSearch", "WebFetch", "TaskCreate", "Agent"]),
   );
   expect(roundTrip.coreOverrides?.claude?.disallowedTools).toContain("CustomTool");
   expect(roundTrip.filesystem).toEqual({ read: "workspace", write: "none" });
@@ -86,9 +79,7 @@ test("grouped tool filter helpers", () => {
 
 test("rejects write access without shell because Codex cannot express it", () => {
   expect(() =>
-    capabilityFieldsToToolPolicy(
-      createDefaultToolCapabilityFields({ writeCodebase: true, bash: false }),
-    ),
+    capabilityFieldsToToolPolicy(createDefaultToolCapabilityFields({ writeCodebase: true, bash: false })),
   ).toThrow("Codex 无法表达");
 });
 

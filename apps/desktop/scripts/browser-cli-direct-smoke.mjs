@@ -23,12 +23,7 @@ import { runAgentBrowser } from "./agent-browser-cli.mjs";
 
 const cdpPort = Number.parseInt(process.env.AGENT_BROWSER_CDP ?? "", 10);
 const marker = process.env.ECO_SMOKE_MARKER ?? `CLI_SMOKE_${Date.now()}`;
-const outDir = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  ".smoke-artifacts",
-  marker,
-);
+const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".smoke-artifacts", marker);
 const results = [];
 
 function pass(name, detail = "") {

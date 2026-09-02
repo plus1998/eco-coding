@@ -1,27 +1,27 @@
 import { expect, test } from "bun:test";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
+import type { AgentEvent } from "../../shared/src";
+import type { SdkToolPermissionHandler } from "../src/ask-user-question";
+import {
+  decidePiPromptRunTerminal,
+  ECO_PI_SESSION_RETRY,
+  PiCodingAgentDriver,
+  type PiSessionHandle,
+  PiSessionRegistry,
+} from "../src/pi-coding-agent-driver";
 import {
   applyPiAssistantErrorTracker,
   createPiEventAdapterState,
   mapPiSessionEventToAgentEvents,
-  readPiAssistantErrorMessage,
   type PiEventAdapterContext,
+  readPiAssistantErrorMessage,
 } from "../src/pi-event-adapter";
-import { parsePiUsage } from "../src/pi-usage";
 import {
   buildEcoPiModel,
   computePiRouteFingerprint,
   mapEcoThinkingEffortToPiThinkingLevel,
 } from "../src/pi-model-bridge";
-import {
-  ECO_PI_SESSION_RETRY,
-  PiCodingAgentDriver,
-  PiSessionRegistry,
-  type PiSessionHandle,
-  decidePiPromptRunTerminal,
-} from "../src/pi-coding-agent-driver";
-import type { SdkToolPermissionHandler } from "../src/ask-user-question";
-import { type AgentEvent } from "../../shared/src";
+import { parsePiUsage } from "../src/pi-usage";
 
 function makeCtx(): PiEventAdapterContext {
   let seq = 0;
@@ -46,7 +46,10 @@ function streamKey(event: AgentEvent | undefined): string | undefined {
 function isFinalize(event: AgentEvent | undefined): boolean {
   const payload = event?.payload;
   return Boolean(
-    payload && typeof payload === "object" && !Array.isArray(payload) && (payload as { streamFinalize?: unknown }).streamFinalize === true,
+    payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      (payload as { streamFinalize?: unknown }).streamFinalize === true,
   );
 }
 
@@ -102,9 +105,7 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
   expect((thinking[0]?.payload as { blockKind?: string; reasoningDisplay?: string }).blockKind).toBe(
     "thinking",
   );
-  expect(
-    (thinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
-  ).toBeUndefined();
+  expect((thinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay).toBeUndefined();
 
   const openaiThinking = mapPiSessionEventToAgentEvents(
     {
@@ -113,9 +114,7 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
     },
     { ...makeCtx(), apiCompat: "openai_responses" },
   );
-  expect(
-    (openaiThinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
-  ).toBe("summary");
+  expect((openaiThinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay).toBe("summary");
 
   const anthropicThinking = mapPiSessionEventToAgentEvents(
     {
@@ -124,9 +123,7 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
     },
     { ...makeCtx(), apiCompat: "anthropic" },
   );
-  expect(
-    (anthropicThinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
-  ).toBe("raw");
+  expect((anthropicThinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay).toBe("raw");
 
   const start = mapPiSessionEventToAgentEvents(
     {
@@ -383,10 +380,7 @@ test("message_end after streamed text does not re-emit full body", () => {
 
 test("PI planner agentId is session id; non-assistant message_start does not burn generation", () => {
   const ctx = makeCtx();
-  mapPiSessionEventToAgentEvents(
-    { type: "message_start", message: { role: "assistant", content: [] } },
-    ctx,
-  );
+  mapPiSessionEventToAgentEvents({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
   const events = mapPiSessionEventToAgentEvents(
     {
       type: "message_update",
@@ -751,9 +745,7 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
         createCount += 1;
         createInputs.push({
           ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-          ...(input.replacePersistedSessions
-            ? { replacePersistedSessions: true }
-            : {}),
+          ...(input.replacePersistedSessions ? { replacePersistedSessions: true } : {}),
         });
         const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
         return makeHandle(
@@ -977,9 +969,7 @@ test("token-only MCP env change reuses registry session", async () => {
         createCount += 1;
         createInputs.push({
           ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-          ...(input.replacePersistedSessions
-            ? { replacePersistedSessions: true }
-            : {}),
+          ...(input.replacePersistedSessions ? { replacePersistedSessions: true } : {}),
         });
         const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
         return makeHandle(
@@ -1105,9 +1095,7 @@ test("inherited spawn env in live MCP config does not recreate or clear JSONL", 
         createCount += 1;
         createInputs.push({
           ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-          ...(input.replacePersistedSessions
-            ? { replacePersistedSessions: true }
-            : {}),
+          ...(input.replacePersistedSessions ? { replacePersistedSessions: true } : {}),
         });
         const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
         return makeHandle(
@@ -1242,9 +1230,7 @@ test("legacy resumeMcpFingerprint with embedded token still disk-resumes", async
         createCount += 1;
         createInputs.push({
           ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-          ...(input.replacePersistedSessions
-            ? { replacePersistedSessions: true }
-            : {}),
+          ...(input.replacePersistedSessions ? { replacePersistedSessions: true } : {}),
         });
         const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
         return makeHandle(

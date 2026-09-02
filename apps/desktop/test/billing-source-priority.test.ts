@@ -6,12 +6,7 @@ import {
 } from "../src/main/billing-source-priority";
 
 test("resolveBillingSourcePriority prefers proxy when proxy breakdown exists", () => {
-  expect(resolveBillingSourcePriority({ sdk: {}, proxy: {} })).toEqual([
-    "proxy",
-    "sdk",
-    "codex",
-    "pi",
-  ]);
+  expect(resolveBillingSourcePriority({ sdk: {}, proxy: {} })).toEqual(["proxy", "sdk", "codex", "pi"]);
   expect(resolveBillingSourcePriority({ sdk: {} })).toEqual(["sdk", "proxy", "codex", "pi"]);
 });
 
@@ -26,12 +21,7 @@ test("resolveBillingSourcePriority selects Codex as the authoritative source", (
 });
 
 test("resolveBillingSourcePriority selects PI first when pi breakdown exists", () => {
-  expect(resolveBillingSourcePriority({ pi: {}, proxy: {} })).toEqual([
-    "pi",
-    "proxy",
-    "sdk",
-    "codex",
-  ]);
+  expect(resolveBillingSourcePriority({ pi: {}, proxy: {} })).toEqual(["pi", "proxy", "sdk", "codex"]);
 });
 
 test("resolveLedgerSourcePriority includes Codex and PI", () => {

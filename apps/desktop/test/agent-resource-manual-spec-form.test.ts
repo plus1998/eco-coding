@@ -77,11 +77,7 @@ test("countManualOverrides and listManualOverrideFields", () => {
   form.supportsImageInput = "yes";
   form.outputPerM = "15";
   expect(countManualOverrides(form)).toBe(3);
-  expect([...listManualOverrideFields(form)]).toEqual([
-    "contextTokens",
-    "supportsImageInput",
-    "outputPerM",
-  ]);
+  expect([...listManualOverrideFields(form)]).toEqual(["contextTokens", "supportsImageInput", "outputPerM"]);
 });
 
 test("mergeEffectiveCapabilityHint prefers manual values", () => {

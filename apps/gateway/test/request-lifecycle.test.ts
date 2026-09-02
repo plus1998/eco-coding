@@ -1,20 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
 import { GATEWAY_PROVIDER_ID_HEADER, GATEWAY_REQUESTED_MODEL_HEADER } from "../src/provider-router.js";
-import type {
-  GatewayProvider,
-  GatewayRequestLifecycleEvent,
-  GatewayRequestLifecycleObserver,
-  ResolvedProviderRoute,
-} from "../src/types.js";
 import {
   buildRequestLifecycleContext,
   fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
   tryEmitLogicalCompleted,
 } from "../src/request-lifecycle.js";
-import { forwardAnthropicMessagesBody } from "../src/upstream/anthropic-messages.js";
-import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
 import { createGatewayFetchHandler } from "../src/server.js";
+import type {
+  GatewayProvider,
+  GatewayRequestLifecycleEvent,
+  GatewayRequestLifecycleObserver,
+  ResolvedProviderRoute,
+} from "../src/types.js";
+import { forwardAnthropicMessagesBody } from "../src/upstream/anthropic-messages.js";
 import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 function collectLifecycle(observer: GatewayRequestLifecycleObserver) {
@@ -221,7 +221,12 @@ describe("gateway request lifecycle", () => {
         headers: { "request-id": "req_http_fail" },
       });
 
-    await fetchWithRequestLifecycle(fetchImpl, "https://mock.test/v1/messages", { method: "POST" }, lifecycle!);
+    await fetchWithRequestLifecycle(
+      fetchImpl,
+      "https://mock.test/v1/messages",
+      { method: "POST" },
+      lifecycle!,
+    );
     reportLogicalUpstreamFailure(lifecycle, {
       stage: "http",
       error: "Upstream returned HTTP 503",
@@ -426,7 +431,9 @@ describe("gateway request lifecycle", () => {
         pullCount++;
         if (pullCount === 1) {
           controller.enqueue(
-            new TextEncoder().encode('data: {"type":"response.created","response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-test","output":[]}}\n\n'),
+            new TextEncoder().encode(
+              'data: {"type":"response.created","response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-test","output":[]}}\n\n',
+            ),
           );
           return;
         }
@@ -486,7 +493,9 @@ describe("gateway request lifecycle", () => {
     const neverEnd = new ReadableStream<Uint8Array>({
       pull(controller) {
         controller.enqueue(
-          new TextEncoder().encode('data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}\n\n'),
+          new TextEncoder().encode(
+            'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}\n\n',
+          ),
         );
         return new Promise<void>((resolve) => {
           cancelUpstream = resolve;
@@ -593,7 +602,8 @@ describe("gateway request lifecycle", () => {
     };
     const config = { host: "127.0.0.1", port: 0, providers: [provider] };
     const { events, observer } = collectLifecycle(() => undefined);
-    const sse = 'data: {"type":"response.incomplete","response":{"id":"resp_1","object":"response","status":"incomplete","model":"gpt-test","output":[],"usage":{"input_tokens":1,"output_tokens":0,"total_tokens":1}}}\n\n';
+    const sse =
+      'data: {"type":"response.incomplete","response":{"id":"resp_1","object":"response","status":"incomplete","model":"gpt-test","output":[],"usage":{"input_tokens":1,"output_tokens":0,"total_tokens":1}}}\n\n';
     const handler = createTestGatewayFetchHandler(
       config,
       async () =>

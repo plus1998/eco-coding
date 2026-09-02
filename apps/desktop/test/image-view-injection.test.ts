@@ -3,10 +3,7 @@ import fs from "node:fs";
 import { INTEGRATION_IDS } from "../src/shared/integrations";
 
 const indexSource = fs.readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
-const piSessionSource = fs.readFileSync(
-  new URL("../src/main/pi-mcp-session.ts", import.meta.url),
-  "utf8",
-);
+const piSessionSource = fs.readFileSync(new URL("../src/main/pi-mcp-session.ts", import.meta.url), "utf8");
 
 test("INTEGRATION_IDS stays browser and imageGeneration only", () => {
   expect(INTEGRATION_IDS).toEqual(["browser", "imageGeneration"]);

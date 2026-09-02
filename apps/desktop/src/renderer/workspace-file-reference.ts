@@ -46,7 +46,7 @@ export function isWorkspacePathContained(workspacePath: string, targetPath: stri
 export const WORKSPACE_FILE_REFERENCE_EVENT = "eco:workspace-file-reference";
 
 const PATH_PATTERN =
-  /(?<![\p{L}\p{N}_])(?<!https:)(?<!http:)(?<!file:)(?<!https:\/)(?<!http:\/)(?<!file:\/)(?<!https:\/\/)(?<!http:\/\/)(?<!file:\/\/)(?:\/[^\s"'`()\[\]<>:]+(?:[^\s"'`()\[\]<>:]*)?|[A-Za-z]:[\\/][^\s"'`()\[\]<>:]+(?:[^\s"'`()\[\]<>:]*)?)(?::([1-9]\d*)(?::([1-9]\d*))?)?/gu;
+  /(?<![\p{L}\p{N}_])(?<!https:)(?<!http:)(?<!file:)(?<!https:\/)(?<!http:\/)(?<!file:\/)(?<!https:\/\/)(?<!http:\/\/)(?<!file:\/\/)(?:\/[^\s"'`()[\]<>:]+(?:[^\s"'`()[\]<>:]*)?|[A-Za-z]:[\\/][^\s"'`()[\]<>:]+(?:[^\s"'`()[\]<>:]*)?)(?::([1-9]\d*)(?::([1-9]\d*))?)?/gu;
 
 function trimTrailingPunctuation(value: string): string {
   return value.replace(/[.,;!?)}\]]+$/, "");
@@ -142,7 +142,9 @@ export function parseWorkspaceFileReferenceHref(
   }
 }
 
-export function linkifyWorkspaceFileReferences(text: string): Array<
+export function linkifyWorkspaceFileReferences(
+  text: string,
+): Array<
   { type: "text"; value: string } | { type: "link"; value: string; reference: WorkspaceFileReference }
 > {
   const result: Array<
@@ -172,9 +174,7 @@ export function linkifyWorkspaceFileReferences(text: string): Array<
   return result;
 }
 
-export function workspaceFileReferenceRemarkPlugin(): (
-  tree: WorkspaceFileReferenceAstNode,
-) => void {
+export function workspaceFileReferenceRemarkPlugin(): (tree: WorkspaceFileReferenceAstNode) => void {
   return (tree) => {
     const visit = (node: WorkspaceFileReferenceAstNode, parent?: WorkspaceFileReferenceAstNode) => {
       if (node.type === "text" && typeof node.value === "string" && parent?.type !== "link") {
@@ -187,7 +187,11 @@ export function workspaceFileReferenceRemarkPlugin(): (
               1,
               ...parts.map((part) =>
                 part.type === "link"
-                  ? { type: "link", url: `eco-file:${encodeWorkspaceFileReference(part.reference)}`, children: [{ type: "text", value: part.value }] }
+                  ? {
+                      type: "link",
+                      url: `eco-file:${encodeWorkspaceFileReference(part.reference)}`,
+                      children: [{ type: "text", value: part.value }],
+                    }
                   : { type: "text", value: part.value },
               ),
             );

@@ -103,9 +103,8 @@ export class BackgroundTerminalTaskRegistry {
   }
 
   countRunning(): number {
-    return [...this.tasks.values()].filter(
-      (task) => task.status === "starting" || task.status === "running",
-    ).length;
+    return [...this.tasks.values()].filter((task) => task.status === "starting" || task.status === "running")
+      .length;
   }
 
   stopAllRunning(): void {

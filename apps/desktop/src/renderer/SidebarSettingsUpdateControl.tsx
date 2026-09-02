@@ -70,7 +70,11 @@ export function SidebarSettingsUpdateControl({
   if (action.kind === "checking" || action.kind === "installing") {
     return (
       <ComposerHoverTooltip content={tooltip}>
-        <span className="sidebar-settings-meta sidebar-settings-meta--busy" aria-label={ariaLabel} role="status">
+        <span
+          className="sidebar-settings-meta sidebar-settings-meta--busy"
+          aria-label={ariaLabel}
+          role="status"
+        >
           <LoaderCircle size={16} className="sidebar-settings-update-spin" aria-hidden />
         </span>
       </ComposerHoverTooltip>

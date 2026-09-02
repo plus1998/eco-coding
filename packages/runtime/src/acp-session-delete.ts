@@ -23,10 +23,14 @@ export function agentSupportsSessionDelete(initializeResult: {
   return isRecord(caps) && isRecord(caps.delete);
 }
 
-export function acpSessionIdToDelete(session: {
-  coreKind?: string;
-  externalSessionId?: string;
-} | undefined): string | undefined {
+export function acpSessionIdToDelete(
+  session:
+    | {
+        coreKind?: string;
+        externalSessionId?: string;
+      }
+    | undefined,
+): string | undefined {
   if (session?.coreKind !== "acp") return undefined;
   const id = session.externalSessionId?.trim();
   return id ? id : undefined;
@@ -40,10 +44,7 @@ export function resolveCursorAcpSessionsDir(env: NodeJS.ProcessEnv = process.env
   return path.join(home, ".cursor", "acp-sessions");
 }
 
-export function resolveCursorAcpSessionDir(
-  sessionId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function resolveCursorAcpSessionDir(sessionId: string, env: NodeJS.ProcessEnv = process.env): string {
   const id = sessionId.trim();
   if (!SESSION_ID_RE.test(id) || id === "." || id === "..") {
     throw new Error(ACP_SESSION_ID_INVALID);
@@ -80,8 +81,7 @@ export async function removeCursorAcpSessionDir(
 }
 
 export const ACP_SESSION_DELETE_FAILED_PREFIX = "ACP session/delete 失败：";
-export const ACP_SESSION_DELETE_FALLBACK_LOG =
-  "Cursor ACP 未声明 session/delete，改删本地会话目录。";
+export const ACP_SESSION_DELETE_FALLBACK_LOG = "Cursor ACP 未声明 session/delete，改删本地会话目录。";
 
 export function isAcpSessionDeleteMethodNotFound(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -174,10 +174,8 @@ export async function deleteCursorAcpSession(input: {
 }): Promise<void> {
   const env = input.env;
   resolveCursorAcpSessionDir(input.sessionId, env);
-  const tryProtocol =
-    input.tryProtocolDelete ?? ((id) => defaultTryProtocolDelete(id, env));
-  const removeDir =
-    input.removeLocalSessionDir ?? ((id) => removeCursorAcpSessionDir(id, env));
+  const tryProtocol = input.tryProtocolDelete ?? ((id) => defaultTryProtocolDelete(id, env));
+  const removeDir = input.removeLocalSessionDir ?? ((id) => removeCursorAcpSessionDir(id, env));
   const log = input.log ?? ((line) => process.stderr.write(`[eco] ${line}\n`));
 
   let outcome: "deleted" | "unsupported";

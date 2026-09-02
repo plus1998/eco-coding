@@ -17,12 +17,11 @@ test("mapAgentBrowserToolToCliArgs covers core browser tools", () => {
     "open",
     "https://example.com",
   ]);
-  expect(
-    mapAgentBrowserToolToCliArgs("agent_browser_click", { ref: "@e2" }),
-  ).toEqual(["click", "@e2"]);
-  expect(
-    mapAgentBrowserToolToCliArgs("agent_browser_snapshot", { interactive: true }),
-  ).toEqual(["snapshot", "--interactive"]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_click", { ref: "@e2" })).toEqual(["click", "@e2"]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_snapshot", { interactive: true })).toEqual([
+    "snapshot",
+    "--interactive",
+  ]);
   expect(mapAgentBrowserToolToCliArgs("agent_browser_scroll", { direction: "down", amount: 400 })).toEqual([
     "scroll",
     "down",
@@ -37,14 +36,8 @@ test("resolveAgentBrowserTabSwitchArg maps to agent-browser tab syntax", () => {
   expect(resolveAgentBrowserTabSwitchArg({ label: "Example Domain" })).toBe("Example Domain");
   expect(resolveAgentBrowserTabSwitchArg({ index: 0 })).toBe("t1");
   expect(resolveAgentBrowserTabSwitchArg({ index: 1 })).toBe("t2");
-  expect(mapAgentBrowserToolToCliArgs("agent_browser_tab_switch", { tabId: "t2" })).toEqual([
-    "tab",
-    "t2",
-  ]);
-  expect(mapAgentBrowserToolToCliArgs("agent_browser_tab_switch", { index: 0 })).toEqual([
-    "tab",
-    "t1",
-  ]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_tab_switch", { tabId: "t2" })).toEqual(["tab", "t2"]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_tab_switch", { index: 0 })).toEqual(["tab", "t1"]);
 });
 
 test("resolveAgentBrowserTabIndex maps tN to zero-based index", () => {

@@ -35,9 +35,10 @@ test("normalize missing object is all show", () => {
 });
 
 test("normalize dirty column falls back to show and keeps a valid hide", () => {
-  expect(
-    normalizeAcpHostUiFeatures({ contextUsage: "hide", billing: "nope" }),
-  ).toEqual({ contextUsage: "hide", billing: "show" });
+  expect(normalizeAcpHostUiFeatures({ contextUsage: "hide", billing: "nope" })).toEqual({
+    contextUsage: "hide",
+    billing: "show",
+  });
   expect(normalizeAcpHostUiFeatures({ contextUsage: "hide" })).toEqual({
     contextUsage: "hide",
     billing: "show",
@@ -46,7 +47,5 @@ test("normalize dirty column falls back to show and keeps a valid hide", () => {
 
 test("isAcpHostUiFeatureVisible treats missing features as show", () => {
   expect(isAcpHostUiFeatureVisible(undefined, "billing")).toBe(true);
-  expect(
-    isAcpHostUiFeatureVisible({ contextUsage: "hide", billing: "hide" }, "billing"),
-  ).toBe(false);
+  expect(isAcpHostUiFeatureVisible({ contextUsage: "hide", billing: "hide" }, "billing")).toBe(false);
 });

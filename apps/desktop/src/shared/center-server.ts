@@ -120,7 +120,6 @@ export function buildEcoAuthEmailConfirmRedirect(supabaseUrl: string): string {
   return `${base}/functions/v1/auth-email-confirmed`;
 }
 
-
 export interface CenterServerSignInRequest {
   supabaseUrl: string;
   /** Optional when anon key was already saved for this project URL. */
@@ -146,7 +145,6 @@ export interface CenterServerAccountAuthResult {
   device?: CenterServerDeviceView;
   user?: CenterServerAccountView;
 }
-
 
 export interface CenterServerCreatePairingResult {
   pairingId: string;
@@ -319,12 +317,7 @@ export type CenterServerSyncDomain =
   | "packageScriptArgs"
   | "sshBookmarks";
 
-export type CenterServerDomainSyncState =
-  | "synced"
-  | "dirty"
-  | "never_synced"
-  | "cloud_empty"
-  | "needs_vault";
+export type CenterServerDomainSyncState = "synced" | "dirty" | "never_synced" | "cloud_empty" | "needs_vault";
 
 export interface CenterServerDomainSyncStatusEntry {
   domain: CenterServerSyncDomain;
@@ -349,10 +342,7 @@ export interface CenterServerSyncDomainResult {
   cloudEmpty?: boolean;
 }
 
-export function resolveSupabaseProjectUrl(input: {
-  supabaseUrl?: string;
-  serverUrl?: string;
-}): string {
+export function resolveSupabaseProjectUrl(input: { supabaseUrl?: string; serverUrl?: string }): string {
   const raw = (input.supabaseUrl ?? input.serverUrl ?? "").trim();
   return raw ? normalizeSupabaseProjectUrl(raw) : "";
 }
@@ -397,10 +387,7 @@ export function buildCenterServerWebSocketUrl(serverUrl: string, accessToken: st
  * Scheme: `eco://center?supabase=...&anon=...`
  * Password login is still required on the phone; QR does not grant control.
  */
-export function buildCenterQrPayload(input: {
-  supabaseUrl: string;
-  anonKey: string;
-}): string {
+export function buildCenterQrPayload(input: { supabaseUrl: string; anonKey: string }): string {
   const supabaseUrl = input.supabaseUrl.trim();
   const anonKey = input.anonKey.trim();
   if (!supabaseUrl || !anonKey) {
@@ -496,10 +483,7 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
   if (looksLikeTransientNetworkFailure(lower)) {
     return "network";
   }
-  if (
-    lower.includes("token user is not active") ||
-    lower.includes("refresh token subject is not active")
-  ) {
+  if (lower.includes("token user is not active") || lower.includes("refresh token subject is not active")) {
     return "account_unusable";
   }
   if (
@@ -532,9 +516,7 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
  * Access JWTs are short-lived; refresh tokens are long-lived. Transient refresh
  * failures must keep the stored refresh token so the client can retry.
  */
-export function recoveryForSessionRefreshFailure(
-  message: string | undefined,
-): CenterServerAuthRecovery {
+export function recoveryForSessionRefreshFailure(message: string | undefined): CenterServerAuthRecovery {
   if (isCenterServerAuthCredentialError(message)) {
     return classifyCenterServerAuthError(message);
   }

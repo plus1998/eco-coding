@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { classifyGatewayUsageEvent } from "../src/main/gateway-usage-dispatch";
-import { resolveClaudeSessionUsageRoute } from "../src/main/anthropic-proxy";
 import type { AnthropicProxyResolvedRoute } from "../src/main/anthropic-proxy";
+import { resolveClaudeSessionUsageRoute } from "../src/main/anthropic-proxy";
+import { classifyGatewayUsageEvent } from "../src/main/gateway-usage-dispatch";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 
 describe("classifyGatewayUsageEvent", () => {

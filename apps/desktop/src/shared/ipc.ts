@@ -1,6 +1,3 @@
-import type { McpSettingsSnapshot } from "./mcp";
-import type { ThreadRunToolMetadata } from "./thread-run-events";
-import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 import type {
   ImageGenerationArtifact,
   ImageGenerationArtifactListRequest,
@@ -16,6 +13,9 @@ import type {
   IntegrationsEnabledSettings,
   ProjectIntegrationsSettingsSnapshot,
 } from "./integrations";
+import type { McpSettingsSnapshot } from "./mcp";
+import type { ThreadRunToolMetadata } from "./thread-run-events";
+import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 
 export const IPC_CHANNELS = {
   appMenuCommand: "app:menu-command",
@@ -322,6 +322,17 @@ export interface CursorModelOption {
   default: boolean;
 }
 export type {
+  CursorAgentInfo,
+  CursorAgentLayout,
+  CursorAgentSource,
+  CursorAgentsListResult,
+  CursorBuiltinSubagentType,
+} from "./cursor-agents";
+export {
+  CURSOR_AGENTS_REL,
+  CURSOR_BUILTIN_SUBAGENT_TYPES,
+} from "./cursor-agents";
+export type {
   EventCenterEnvelope,
   EventCenterEventKind,
   EventCenterInvokeParams,
@@ -371,27 +382,16 @@ export type {
 export type {
   LinkAgentsSkillsRequest,
   LinkAgentsSkillsResult,
-  SkillInfo,
-  SkillSource,
   SkillCatalogInstallRequest,
   SkillCatalogInstallResult,
   SkillCatalogSearchRequest,
   SkillCatalogSearchResult,
+  SkillInfo,
+  SkillSource,
+  SkillsListResult,
   SkillUninstallRequest,
   SkillUninstallResult,
-  SkillsListResult,
 } from "./skills";
-export type {
-  CursorAgentInfo,
-  CursorAgentLayout,
-  CursorAgentsListResult,
-  CursorAgentSource,
-  CursorBuiltinSubagentType,
-} from "./cursor-agents";
-export {
-  CURSOR_BUILTIN_SUBAGENT_TYPES,
-  CURSOR_AGENTS_REL,
-} from "./cursor-agents";
 export type {
   ThreadRunBashApprovalMetadata,
   ThreadRunBashApprovalPhase,
@@ -1068,9 +1068,9 @@ export type {
   BrowserNavigateRequest,
   BrowserOpenRequest,
   BrowserRegisterGuestRequest,
+  BrowserSettingsSnapshot,
   BrowserSetUiScopeRequest,
   BrowserSetVisibleRequest,
-  BrowserSettingsSnapshot,
   BrowserViewState,
 } from "./browser";
 
@@ -1105,11 +1105,11 @@ export type {
   SubagentSelection,
   ToolPolicy,
 } from "./agent-orchestration";
-export type { ProviderTokenCountMode, UpstreamApiCompat };
 export type { ProjectMcpSettingsSnapshot } from "./composer-mcp";
-export type { ProjectIntegrationsSettingsSnapshot } from "./integrations";
 export type { ProjectSkillsSettingsSnapshot } from "./composer-skills-settings";
+export type { ProjectIntegrationsSettingsSnapshot } from "./integrations";
 export type { ProjectOrchestrationSettingsSnapshot } from "./project-orchestration-settings";
+export type { ProviderTokenCountMode, UpstreamApiCompat };
 
 export interface ProviderConfigInput {
   id?: string;
@@ -1276,25 +1276,25 @@ export {
   buildThreadRuntimeConfigFromDefaults,
   deriveSubagentEnabledFromSnapshot,
   hasCompleteOrchestrationSelection,
-  lockThreadRuntimeConfigSnapshotOnContinue,
-  materializeThreadOrchestrationSnapshot,
-  serializeThreadRuntimeConfigForCompare,
-  shouldRematerializeThreadRuntimeConfigOnContinue,
-  threadRuntimeConfigsEquivalent,
   isAskSessionMode,
   isBashReviewModeOnlyRuntimeConfigUpdate,
-  resolveBusyThreadRuntimeConfigUpdate,
   isThreadRuntimeConfig,
+  lockThreadRuntimeConfigSnapshotOnContinue,
+  materializeThreadOrchestrationSnapshot,
   normalizeThreadRuntimeConfig,
   orchestrationResourceLookupFromSettings,
+  resolveAcpCursorModelIdForSend,
+  resolveBusyThreadRuntimeConfigUpdate,
   resolveMainAgentModelOverrideForProvider,
   resolveMainAgentSystemPromptPreset,
-  resolveAcpCursorModelIdForSend,
   resolveSessionMode,
   resolveThreadOrchestrationConfig,
   resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromOrchestrationSnapshot,
+  serializeThreadRuntimeConfigForCompare,
+  shouldRematerializeThreadRuntimeConfigOnContinue,
+  threadRuntimeConfigsEquivalent,
   withAgentSessionMode,
 } from "./thread-runtime-config";
 
@@ -2295,8 +2295,7 @@ export function parseGitSaveCommitModelPreferenceRequest(
     throw new Error("Invalid git save commit model preference request.");
   }
   const record = value as Record<string, unknown>;
-  const candidateModelId =
-    typeof record.candidateModelId === "string" ? record.candidateModelId.trim() : "";
+  const candidateModelId = typeof record.candidateModelId === "string" ? record.candidateModelId.trim() : "";
   if (!candidateModelId || candidateModelId === "auto") {
     throw new Error("Invalid git save commit model preference request.");
   }
@@ -2465,7 +2464,9 @@ export function isTerminalSpawnRequest(value: unknown): value is TerminalSpawnRe
   );
 }
 
-export function isSshBookmarkSaveInput(value: unknown): value is import("./ssh-bookmarks").SshBookmarkSaveInput {
+export function isSshBookmarkSaveInput(
+  value: unknown,
+): value is import("./ssh-bookmarks").SshBookmarkSaveInput {
   if (!value || typeof value !== "object") {
     return false;
   }

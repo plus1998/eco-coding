@@ -1,6 +1,13 @@
 import type { CoreKind } from "@eco/runtime";
 
-export interface ThreadRuntimeAdapter<TStart, TContinue, TCancel, TStartResult, TContinueResult, TCancelResult> {
+export interface ThreadRuntimeAdapter<
+  TStart,
+  TContinue,
+  TCancel,
+  TStartResult,
+  TContinueResult,
+  TCancelResult,
+> {
   readonly kind: CoreKind;
   start(input: TStart): Promise<TStartResult> | TStartResult;
   continue(input: TContinue): Promise<TContinueResult> | TContinueResult;

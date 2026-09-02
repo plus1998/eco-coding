@@ -17,9 +17,9 @@ import {
   type CodexContextSnapshotResolution,
   CodexEventAdapter,
   type CodexExecutionConfirmationMode,
+  CodexForkNotAvailable,
   type CodexGatewayCatalogRoute,
   type CodexMcpServerForConfigSync,
-  CodexForkNotAvailable,
   CodexResumeNotAvailable,
   type CodexSessionMode,
   type CodexThreadAttribution,
@@ -37,8 +37,8 @@ import {
   ensureCodexSkillsExtraRoots,
   forkCodexThread,
   isCodexThreadConfigApplied,
-  mergeMainAgentAppendParts,
   listCodexSkills,
+  mergeMainAgentAppendParts,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
   readCodexThreadStatus,
@@ -62,11 +62,6 @@ import {
   createCodexApprovalBridge,
 } from "./codex-approval-bridge";
 import { waitForCodexConfigReload } from "./codex-config-reload-wait";
-import {
-  CODEX_SKILLS_CONFIG_RELOAD_BLOCKED_MESSAGE,
-  shouldBlockCodexSkillsConfigReload,
-  skillsEnabledSettingsChanged,
-} from "./codex-skills-config-reload";
 import { CodexModelCatalogService } from "./codex-model-catalog";
 import {
   CodexRuntimeLifecycle,
@@ -74,6 +69,11 @@ import {
   getGlobalCodexRuntimeLifecycle,
   stopGlobalCodexRuntimeLifecycle,
 } from "./codex-runtime-lifecycle";
+import {
+  CODEX_SKILLS_CONFIG_RELOAD_BLOCKED_MESSAGE,
+  shouldBlockCodexSkillsConfigReload,
+  skillsEnabledSettingsChanged,
+} from "./codex-skills-config-reload";
 import type { CodexThreadMap } from "./codex-thread-map";
 import { resolveCodexThreadAttribution } from "./codex-thread-map";
 import { normalizeCodexThreadRunEventForProjection } from "./codex-thread-run-event-normalizer";
@@ -116,9 +116,7 @@ export interface RunThreadRequestWithRuntimeProxyInput {
     | readonly CodexMcpServerForConfigSync[]
     | Promise<readonly CodexMcpServerForConfigSync[]>;
   /** Composer-selected MCP names, intersected with each actor's orchestration assignment. */
-  resolveEnabledMcpServerKeys?: () =>
-    | readonly string[]
-    | Promise<readonly string[]>;
+  resolveEnabledMcpServerKeys?: () => readonly string[] | Promise<readonly string[]>;
   /** Exact per-thread Skill path visibility. */
   resolveSkillConfig?: () => readonly { path: string; enabled: boolean }[];
   /** CWD used to discover and explicitly disable Codex's built-in imagegen Skill. */
@@ -158,9 +156,7 @@ export interface CodexRuntimeRunDeps {
    * Enrich catalog routes with resolved context windows (models.dev / manual) so
    * Codex aliases do not fall back to the unknown-model 128k default.
    */
-  enrichCatalogRoutes?: (
-    routes: readonly CodexGatewayCatalogRoute[],
-  ) => Promise<CodexGatewayCatalogRoute[]>;
+  enrichCatalogRoutes?: (routes: readonly CodexGatewayCatalogRoute[]) => Promise<CodexGatewayCatalogRoute[]>;
   /** Secret-free settings-level catalog expansion sources beyond provider defaults. */
   listCatalogRouteConfigs?: () => readonly CodexGatewayCatalogRoute[];
   listCatalogOrchestrationAgents?: () => readonly CodexGatewayCatalogRoute[];
@@ -614,12 +610,9 @@ export async function forkCodexThreadForEcoThread(input: {
   const ecoThreadId = input.ecoThreadId.trim();
   const targetItemId = input.targetItemId.trim();
   if (!ecoThreadId) {
-    throw new CodexForkNotAvailable(
-      "Codex fork is not available because the Eco thread id is missing.",
-      {
-        nextAction: "Retry rewind from a Codex-backed thread that has a persisted Eco thread id.",
-      },
-    );
+    throw new CodexForkNotAvailable("Codex fork is not available because the Eco thread id is missing.", {
+      nextAction: "Retry rewind from a Codex-backed thread that has a persisted Eco thread id.",
+    });
   }
   if (!targetItemId) {
     throw new CodexForkNotAvailable(
@@ -658,12 +651,9 @@ export async function forkCodexThreadForEcoThread(input: {
     appliedByThread.set(codexThreadId, prepared.threadConfig);
     controlPlaneAppliedConfigByClient.set(client, appliedByThread);
   } else if (status !== "idle") {
-    throw new CodexForkNotAvailable(
-      `Codex fork requires an idle thread; current status is ${status}.`,
-      {
-        nextAction: "Wait for the active turn to finish, then retry rewind.",
-      },
-    );
+    throw new CodexForkNotAvailable(`Codex fork requires an idle thread; current status is ${status}.`, {
+      nextAction: "Wait for the active turn to finish, then retry rewind.",
+    });
   }
 
   const targetTurnIndex =
@@ -685,7 +675,9 @@ export async function forkCodexThreadForEcoThread(input: {
   } catch (error) {
     if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
       await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
-        runtimeDeps.onStderr?.(`Codex recovery cleanup failed after fork request error: ${String(cleanupError)}`);
+        runtimeDeps.onStderr?.(
+          `Codex recovery cleanup failed after fork request error: ${String(cleanupError)}`,
+        );
       });
     }
     throw error;
@@ -707,8 +699,7 @@ export async function forkCodexThreadForEcoThread(input: {
         throw new CodexForkNotAvailable(
           "Codex fork returned no new thread id and did not request mapping clear.",
           {
-            nextAction:
-              "Retry rewind after confirming app-server thread/fork returns thread.id.",
+            nextAction: "Retry rewind after confirming app-server thread/fork returns thread.id.",
           },
         );
       }
@@ -725,8 +716,7 @@ export async function forkCodexThreadForEcoThread(input: {
       }
       const preparedMatchesNew =
         Boolean(preparedConfig) && isCodexThreadConfigApplied(client, newCodexThreadId, preparedConfig!);
-      const configToMark =
-        previousAppliedConfig ?? (preparedMatchesNew ? preparedConfig : undefined);
+      const configToMark = previousAppliedConfig ?? (preparedMatchesNew ? preparedConfig : undefined);
       if (configToMark) {
         const nextApplied = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
         nextApplied.set(newCodexThreadId, configToMark);
@@ -735,8 +725,7 @@ export async function forkCodexThreadForEcoThread(input: {
       runtimeDeps.onCodexThreadMapped?.(newCodexThreadId);
     }
 
-    const restoreFiles =
-      runtimeDeps.restoreFilesAfterCodexFork ?? runtimeDeps.restoreFilesAfterCodexRollback;
+    const restoreFiles = runtimeDeps.restoreFilesAfterCodexFork ?? runtimeDeps.restoreFilesAfterCodexRollback;
     if (!restoreFiles) {
       throw new CodexForkNotAvailable(
         "Codex fork succeeded but local file checkpoint restore is not configured.",
@@ -746,8 +735,7 @@ export async function forkCodexThreadForEcoThread(input: {
     await restoreFiles(ecoThreadId, targetItemId);
 
     // Remote fork succeeded — keep local run-event / activity / projection consistent.
-    const pruneThread =
-      runtimeDeps.pruneThreadAfterCodexFork ?? runtimeDeps.pruneThreadAfterCodexRollback;
+    const pruneThread = runtimeDeps.pruneThreadAfterCodexFork ?? runtimeDeps.pruneThreadAfterCodexRollback;
     if (!pruneThread) {
       throw new CodexForkNotAvailable(
         "Codex fork succeeded on app-server but local prune is not configured.",
@@ -991,9 +979,10 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   const codexHomeDir = resolveCodexHomeDir(runtimeDeps.ecoDataDir);
   const providers = [...runtimeDeps.listProviders()];
   const mcpServers = input.mcpServers ?? (await runtimeDeps.listGlobalMcpServers?.()) ?? [];
-  const globalUserRules = [runtimeDeps.getGlobalUserRules?.()?.trim(), input.systemPromptAppend?.trim()]
-    .filter((value): value is string => Boolean(value))
-    .join("\n\n") || undefined;
+  const globalUserRules =
+    [runtimeDeps.getGlobalUserRules?.()?.trim(), input.systemPromptAppend?.trim()]
+      .filter((value): value is string => Boolean(value))
+      .join("\n\n") || undefined;
   const registryAppend = input.agentRegistry
     ? buildCodexMainAgentOrchestrationAppend(
         input.agentRegistry.orchestration,
@@ -1370,11 +1359,7 @@ function assertThreadMcpServersAvailable(
   }
   const available = new Set(availableServerNames.map((name) => name.trim()).filter(Boolean));
   const missing = [
-    ...new Set(
-      enabledServerNames
-        .map((name) => name.trim())
-        .filter((name) => name && !available.has(name)),
-    ),
+    ...new Set(enabledServerNames.map((name) => name.trim()).filter((name) => name && !available.has(name))),
   ];
   throw new Error(
     `Selected MCP servers are not registered in the loaded global Codex runtime: ${missing.join(", ")}. Save the related MCP or integration settings, then wait for the global runtime refresh to finish.`,

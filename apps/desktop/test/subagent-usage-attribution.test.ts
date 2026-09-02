@@ -1,15 +1,17 @@
 import { expect, test } from "bun:test";
-import type { AgentRole } from "../src/shared/ipc";
 import {
   resolveSubagentUsageAttribution,
   type SubagentUsageAttributionResolver,
 } from "../src/main/subagent-usage-attribution";
+import type { AgentRole } from "../src/shared/ipc";
 
-function resolver(input: {
-  resolve?: (role: AgentRole, subagentAgentId?: string, parentToolUseId?: string) => string | undefined;
-  roleFor?: (agentId: string) => AgentRole | undefined;
-  calls?: Array<{ role: AgentRole; subagentAgentId?: string; parentToolUseId?: string }>;
-} = {}): SubagentUsageAttributionResolver {
+function resolver(
+  input: {
+    resolve?: (role: AgentRole, subagentAgentId?: string, parentToolUseId?: string) => string | undefined;
+    roleFor?: (agentId: string) => AgentRole | undefined;
+    calls?: Array<{ role: AgentRole; subagentAgentId?: string; parentToolUseId?: string }>;
+  } = {},
+): SubagentUsageAttributionResolver {
   return {
     resolveAgentId: (_threadId, request) => {
       input.calls?.push(request);

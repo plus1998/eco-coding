@@ -18,9 +18,7 @@ export interface ComposerImageAttachment {
   previewUrl: string;
 }
 
-export function isAllowedImageMediaType(
-  mediaType: string,
-): mediaType is PromptImageAttachment["mediaType"] {
+export function isAllowedImageMediaType(mediaType: string): mediaType is PromptImageAttachment["mediaType"] {
   return ALLOWED_MEDIA_TYPES.has(mediaType as PromptImageAttachment["mediaType"]);
 }
 

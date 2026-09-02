@@ -1,12 +1,9 @@
 import { RotateCcw, Search } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDiffFileStatus, WorkspaceDiffResult } from "../shared/ipc";
 import { MaterialFileIcon } from "./MaterialFileIcon";
-import {
-  WorkspaceExplorerTree,
-  type ExplorerTreeItem,
-} from "./WorkspaceExplorerTree";
+import { type ExplorerTreeItem, WorkspaceExplorerTree } from "./WorkspaceExplorerTree";
 
 const ROOT_ID = "__workspace-diff-root__";
 
@@ -58,7 +55,10 @@ function compactSingleChildDirectories(
   }
 }
 
-export function buildDiffTree(files: DiffFile[], rootLabel = "Changes"): {
+export function buildDiffTree(
+  files: DiffFile[],
+  rootLabel = "Changes",
+): {
   items: Record<string, DiffTreeItem>;
   expandedItems: string[];
   fileItemIds: Record<string, string>;

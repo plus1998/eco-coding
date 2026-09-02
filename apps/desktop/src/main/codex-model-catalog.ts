@@ -1,4 +1,4 @@
-import { listCodexModelCatalog, type CodexModelCatalogEntry } from "@eco/runtime";
+import { type CodexModelCatalogEntry, listCodexModelCatalog } from "@eco/runtime";
 import type { CodexModelCatalogEntryView } from "../shared/models";
 
 export const DEFAULT_CODEX_MODEL_CATALOG_CACHE_TTL_MS = 5 * 60_000;

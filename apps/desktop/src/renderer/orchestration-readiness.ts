@@ -72,8 +72,10 @@ export function diagnoseOrchestrationSnapshotReadiness(
 ): OrchestrationFieldIssue[] {
   const issues: OrchestrationFieldIssue[] = [];
   const effectiveMainModel =
-    resolveMainAgentModelOverrideForProvider(snapshot.mainAgent.modelRef.providerId, mainAgentModelOverride) ??
-    snapshot.mainAgent.modelRef;
+    resolveMainAgentModelOverrideForProvider(
+      snapshot.mainAgent.modelRef.providerId,
+      mainAgentModelOverride,
+    ) ?? snapshot.mainAgent.modelRef;
   const mainIssue = diagnoseModelRef(effectiveMainModel, providersById);
   if (mainIssue) {
     issues.push({

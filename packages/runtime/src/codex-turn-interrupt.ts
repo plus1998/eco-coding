@@ -12,9 +12,7 @@ export interface CodexTurnInterruptParams {
   turnId: string;
 }
 
-export interface CodexTurnInterruptResult {
-  // app-server returns an empty object on success
-}
+export type CodexTurnInterruptResult = {};
 
 export class CodexTurnInterruptFailed extends Error {
   readonly code = "CodexTurnInterruptFailed";

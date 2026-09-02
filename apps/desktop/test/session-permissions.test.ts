@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  isAllowedSessionPermission,
-  isLocalRendererUrl,
-} from "../src/main/session-permissions";
+import { isAllowedSessionPermission, isLocalRendererUrl } from "../src/main/session-permissions";
 
 test("isLocalRendererUrl accepts file and localhost", () => {
   expect(isLocalRendererUrl("file:///Users/x/app/index.html")).toBe(true);

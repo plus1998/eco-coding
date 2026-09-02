@@ -10,9 +10,7 @@ test("skillsEnabledSettingsChanged detects path toggles and ignores empty maps",
   expect(skillsEnabledSettingsChanged({}, { "/a": true })).toBe(true);
   expect(skillsEnabledSettingsChanged({ "/a": true }, { "/a": true })).toBe(false);
   expect(skillsEnabledSettingsChanged({ "/a": true }, { "/a": false })).toBe(true);
-  expect(skillsEnabledSettingsChanged({ "/b": true, "/a": false }, { "/a": false, "/b": true })).toBe(
-    false,
-  );
+  expect(skillsEnabledSettingsChanged({ "/b": true, "/a": false }, { "/a": false, "/b": true })).toBe(false);
 });
 
 test("shouldBlockCodexSkillsConfigReload allows notLoaded, no mapping, and no client", () => {

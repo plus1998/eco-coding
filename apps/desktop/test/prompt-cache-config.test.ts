@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   buildResourcesFromRouteProfile,
-  resolveOrchestrationSnapshot,
   type OrchestrationResourceBundle,
+  resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
 import type { McpServerConfigView, ModelSettingsSnapshot } from "../src/shared/ipc";
 import {
@@ -16,24 +16,27 @@ import {
 import type { ThreadRuntimeConfig } from "../src/shared/thread-runtime-config";
 
 function bundle(id: string): OrchestrationResourceBundle {
-  return buildResourcesFromRouteProfile({
-    id: "coding-default",
-    name: "Default coding",
-    routes: [
-      { role: "planner", providerId: "p1", modelId: "m1" },
-      { role: "explore", providerId: "p1", modelId: "m1" },
-      { role: "architect", providerId: "p1", modelId: "m1" },
-      { role: "coder", providerId: "p1", modelId: "m1" },
-      { role: "reviewer", providerId: "p1", modelId: "m1" },
-      { role: "tester", providerId: "p1", modelId: "m1" },
-    ],
-    createdAt: "2026-07-27T00:00:00.000Z",
-    updatedAt: "2026-07-27T00:00:00.000Z",
-  }, {
-    mainAgentConfigId: `${id}.main`,
-    subagentOrchestrationId: `${id}.subagents`,
-    updatedAt: "2026-07-27T00:00:00.000Z",
-  });
+  return buildResourcesFromRouteProfile(
+    {
+      id: "coding-default",
+      name: "Default coding",
+      routes: [
+        { role: "planner", providerId: "p1", modelId: "m1" },
+        { role: "explore", providerId: "p1", modelId: "m1" },
+        { role: "architect", providerId: "p1", modelId: "m1" },
+        { role: "coder", providerId: "p1", modelId: "m1" },
+        { role: "reviewer", providerId: "p1", modelId: "m1" },
+        { role: "tester", providerId: "p1", modelId: "m1" },
+      ],
+      createdAt: "2026-07-27T00:00:00.000Z",
+      updatedAt: "2026-07-27T00:00:00.000Z",
+    },
+    {
+      mainAgentConfigId: `${id}.main`,
+      subagentOrchestrationId: `${id}.subagents`,
+      updatedAt: "2026-07-27T00:00:00.000Z",
+    },
+  );
 }
 
 const bundleA = bundle("a");
@@ -183,12 +186,12 @@ test("orchestration label and model stack use snapshot display names", () => {
 
 test("prompt cache drift messages describe orchestration changes", () => {
   const orchestrationLabel = { modelStack: "GPT+DeepSeek", orchestrationName: "Composer" };
-  expect(
-    formatPromptCacheConfigDriftHint(["orchestration", "mcp"], { orchestrationLabel }),
-  ).toContain("已经变更为 GPT+DeepSeek（Composer）");
-  expect(
-    formatPromptCacheConfigDriftMessage(["orchestration"], { orchestrationLabel }),
-  ).toBe("已经变更为 GPT+DeepSeek（Composer）");
+  expect(formatPromptCacheConfigDriftHint(["orchestration", "mcp"], { orchestrationLabel })).toContain(
+    "已经变更为 GPT+DeepSeek（Composer）",
+  );
+  expect(formatPromptCacheConfigDriftMessage(["orchestration"], { orchestrationLabel })).toBe(
+    "已经变更为 GPT+DeepSeek（Composer）",
+  );
 });
 
 test("resolvePromptCacheConfigDrift returns empty when signatures match", () => {

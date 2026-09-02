@@ -1,17 +1,14 @@
+import type { FitAddon, Ghostty, Terminal as GhosttyTerminalType, ITheme } from "ghostty-web";
 import { useEffect, useRef, useState } from "react";
-import type { FitAddon, Ghostty, ITheme, Terminal as GhosttyTerminalType } from "ghostty-web";
 import type { TerminalStreamEvent } from "../shared/ipc";
 import { i18n } from "./i18n";
+import { installTerminalLinkHandling } from "./terminal-links";
+import { handleTerminalSelectionShortcut, installTerminalSelectionEnhancements } from "./terminal-selection";
 import {
   DEFAULT_TYPOGRAPHY_PREFERENCES,
   TYPOGRAPHY_CHANGE_EVENT,
   type TypographyPreferences,
 } from "./typography-preferences";
-import {
-  handleTerminalSelectionShortcut,
-  installTerminalSelectionEnhancements,
-} from "./terminal-selection";
-import { installTerminalLinkHandling } from "./terminal-links";
 
 interface GhosttyRuntime {
   mod: typeof import("ghostty-web");
@@ -282,7 +279,6 @@ export function GhosttyTerminal({
       terminal.open(mount);
       cleanups.push(installTerminalSelectionEnhancements(terminal));
       cleanups.push(installTerminalLinkHandling(terminal));
-
 
       const themeObserver = new MutationObserver(() => {
         if (!disposed && termRef.current) {

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
+import type { AcpPermissionRequest } from "@eco/runtime";
 import {
   createAcpPermissionHandler,
   mapAcpPermissionToBashApprovalRequest,
   mapBashResolutionToAcpPermission,
 } from "../src/main/acp-permission-bridge";
-import type { AcpPermissionRequest } from "@eco/runtime";
 import type { BashApprovalRequest } from "../src/shared/ipc";
 
 const EXECUTE_REQUEST: AcpPermissionRequest = {
@@ -36,9 +36,9 @@ test("maps execute toolCall command into Eco bash approval request", () => {
 });
 
 test("approved_remember_prefix selects allow_always when Cursor offers it", () => {
-  expect(
-    mapBashResolutionToAcpPermission(EXECUTE_REQUEST, { decision: "approved_remember_prefix" }),
-  ).toEqual({ outcome: { outcome: "selected", optionId: "allow-always" } });
+  expect(mapBashResolutionToAcpPermission(EXECUTE_REQUEST, { decision: "approved_remember_prefix" })).toEqual(
+    { outcome: { outcome: "selected", optionId: "allow-always" } },
+  );
   expect(mapBashResolutionToAcpPermission(EXECUTE_REQUEST, { decision: "approved" })).toEqual({
     outcome: { outcome: "selected", optionId: "allow-once" },
   });

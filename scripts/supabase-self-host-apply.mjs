@@ -11,7 +11,16 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -81,13 +90,29 @@ function composeFileArgs(abs) {
 function applyViaDockerCompose(sql) {
   if (!composeDir) fail("--compose-dir required for docker apply");
   const abs = path.resolve(composeDir);
-  if (!existsSync(path.join(abs, "docker-compose.yml")) && !existsSync(path.join(abs, "docker-compose.yaml"))) {
+  if (
+    !existsSync(path.join(abs, "docker-compose.yml")) &&
+    !existsSync(path.join(abs, "docker-compose.yaml"))
+  ) {
     fail(`No docker-compose.yml in ${abs}`);
   }
   // Prefer service name "db" (official self-host stack).
   return run(
     "docker",
-    ["compose", ...composeFileArgs(abs), "exec", "-T", "db", "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"],
+    [
+      "compose",
+      ...composeFileArgs(abs),
+      "exec",
+      "-T",
+      "db",
+      "psql",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-v",
+      "ON_ERROR_STOP=1",
+    ],
     { cwd: abs, input: sql },
   );
 }

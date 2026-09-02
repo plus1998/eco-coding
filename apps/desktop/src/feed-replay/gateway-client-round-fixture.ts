@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@eco/shared";
@@ -100,9 +100,7 @@ export function resolveClientRoundFixtureRoot(configured?: string): string {
     }
   }
 
-  throw new Error(
-    "No gateway client-round fixture found. Run: bun run gateway-http-round:record:all",
-  );
+  throw new Error("No gateway client-round fixture found. Run: bun run gateway-http-round:record:all");
 }
 
 function loadCellFromDir(
@@ -294,7 +292,8 @@ export function parseFeedReplaySelector(raw: string | undefined): FeedReplaySele
     return { mode: "matrix" };
   }
 
-  const fixtureRoot = process.env.ECO_DEMO_FEED_REPLAY_FIXTURE?.trim() || process.env.ECO_GATEWAY_CLIENT_ROUND_FIXTURE?.trim();
+  const fixtureRoot =
+    process.env.ECO_DEMO_FEED_REPLAY_FIXTURE?.trim() || process.env.ECO_GATEWAY_CLIENT_ROUND_FIXTURE?.trim();
   const fixtureRootOpt = fixtureRoot ? { fixtureRoot } : {};
 
   const clientRowMatch = value.match(/^(codex|claude|pi)[:/](.+)$/i);

@@ -44,8 +44,7 @@ export function WorkspaceGitCommitGraph({
         setCommits((current) => (replace ? result.commits : [...current, ...result.commits]));
         setHasMore(result.hasMore);
       } catch (loadError) {
-        const message =
-          loadError instanceof Error ? loadError.message : t("workspaceGit.historyLoadFailed");
+        const message = loadError instanceof Error ? loadError.message : t("workspaceGit.historyLoadFailed");
         setError(message);
         if (replace) {
           setCommits([]);
@@ -146,15 +145,13 @@ export function WorkspaceGitCommitGraph({
   );
 
   if (embedded) {
-    return (
-      <div className="thread-info-workspace-git-graph is-expanded is-embedded">
-        {graphBody}
-      </div>
-    );
+    return <div className="thread-info-workspace-git-graph is-expanded is-embedded">{graphBody}</div>;
   }
 
   return (
-    <div className={expanded ? "thread-info-workspace-git-graph is-expanded" : "thread-info-workspace-git-graph"}>
+    <div
+      className={expanded ? "thread-info-workspace-git-graph is-expanded" : "thread-info-workspace-git-graph"}
+    >
       <button
         type="button"
         className="thread-info-workspace-git-graph-trigger"
@@ -164,7 +161,9 @@ export function WorkspaceGitCommitGraph({
         <span className="thread-info-workspace-git-graph-title">{t("workspaceGit.graph")}</span>
         <ChevronDown
           size={13}
-          className={expanded ? "thread-info-workspace-git-chevron open" : "thread-info-workspace-git-chevron"}
+          className={
+            expanded ? "thread-info-workspace-git-chevron open" : "thread-info-workspace-git-chevron"
+          }
           aria-hidden
         />
       </button>

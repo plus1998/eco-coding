@@ -26,9 +26,7 @@ afterEach(async () => {
 test("resolvePiAgentDir nests under ecoDataDir/pi-agent/<threadId>", () => {
   const agentDir = resolvePiAgentDir(tempDir, "thr_abc");
   expect(agentDir).toBe(path.join(tempDir, "pi-agent", "thr_abc"));
-  expect(resolvePiSessionsDir(agentDir)).toBe(
-    path.join(tempDir, "pi-agent", "thr_abc", "sessions"),
-  );
+  expect(resolvePiSessionsDir(agentDir)).toBe(path.join(tempDir, "pi-agent", "thr_abc", "sessions"));
   expect(resolvePiAgentRoot(tempDir)).toBe(path.join(tempDir, "pi-agent"));
 });
 
@@ -48,9 +46,7 @@ test("ensurePiSessionsDir + clearPiSessionFiles + findPiSessionFile", async () =
 
   expect(await findPiSessionFile(sessionsDir, "sess_new")).toBe(newer);
   expect(await isUsablePiSessionFile(newer, sessionsDir)).toBe(true);
-  expect(await isUsablePiSessionFile(path.join(tempDir, "outside.jsonl"), sessionsDir)).toBe(
-    false,
-  );
+  expect(await isUsablePiSessionFile(path.join(tempDir, "outside.jsonl"), sessionsDir)).toBe(false);
 
   expect(await clearPiSessionFiles(agentDir)).toBe(2);
   expect(await fs.readdir(sessionsDir)).toEqual(["notes.txt"]);

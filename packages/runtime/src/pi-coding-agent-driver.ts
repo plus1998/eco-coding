@@ -1,19 +1,20 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
+import type { SdkToolPermissionHandler } from "./ask-user-question.js";
+import { createPlanReadyEvent } from "./claude-agent-sdk.js";
+import type { CoreSessionMode } from "./core-runtime.js";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index.js";
 import { createEcoPiAgentExtensionFactory } from "./pi-eco-extensions.js";
-import { mapPiSessionEventToAgentEvents, type PiSessionEventLike, createPiEventAdapterState, applyPiAssistantErrorTracker } from "./pi-event-adapter.js";
 import {
-  type BuildEcoPiModelInput,
-  type EcoApiCompat,
-  type EcoPiModelSpec,
-  type PiThinkingLevel,
-  buildEcoPiModel,
-  computePiRouteFingerprint,
-  mapApiCompatToPiAuthProvider,
-  mapEcoThinkingEffortToPiThinkingLevel,
-  resolvePiPlannerRoute,
-} from "./pi-model-bridge.js";
+  applyPiAssistantErrorTracker,
+  createPiEventAdapterState,
+  mapPiSessionEventToAgentEvents,
+  type PiSessionEventLike,
+} from "./pi-event-adapter.js";
+import {
+  createEcoPiFinalizePlanExtensionFactory,
+  PI_FINALIZE_PLAN_EXTENSION_NAME,
+} from "./pi-finalize-plan.js";
 import {
   canonicalizePiMcpFingerprint,
   createPiMcpExtensionFactory,
@@ -22,34 +23,33 @@ import {
   toPiMcpAdapterConfig,
 } from "./pi-mcp.js";
 import {
-  clearPiSessionFiles,
-  ensurePiSessionsDir,
-  isUsablePiSessionFile,
-} from "./pi-session-paths.js";
-import {
-  ensurePiPrivateSkillsDir,
-  fingerprintPiSkillPaths,
-  resolvePiSessionSkillPaths,
-} from "./pi-skills.js";
-import {
-  listEnabledPiSubagents,
-  PI_AGENT_TOOL_NAME,
-  piParentSessionKey,
-} from "./pi-subagent.js";
-import type { SdkToolPermissionHandler } from "./ask-user-question.js";
-import {
-  createEcoPiToolApprovalExtensionFactory,
-  PI_TOOL_APPROVAL_EXTENSION_NAME,
-  PI_TOOL_APPROVAL_HANDLER_MISSING,
-} from "./pi-tool-approval.js";
-import { createEcoPiFinalizePlanExtensionFactory, PI_FINALIZE_PLAN_EXTENSION_NAME } from "./pi-finalize-plan.js";
+  type BuildEcoPiModelInput,
+  buildEcoPiModel,
+  computePiRouteFingerprint,
+  type EcoApiCompat,
+  type EcoPiModelSpec,
+  mapApiCompatToPiAuthProvider,
+  mapEcoThinkingEffortToPiThinkingLevel,
+  type PiThinkingLevel,
+  resolvePiPlannerRoute,
+} from "./pi-model-bridge.js";
 import {
   createPiModeAwareToolPermissionHandler,
   piSystemPromptForSessionMode,
   piToolsForSessionMode,
 } from "./pi-session-mode.js";
-import type { CoreSessionMode } from "./core-runtime.js";
-import { createPlanReadyEvent } from "./claude-agent-sdk.js";
+import { clearPiSessionFiles, ensurePiSessionsDir, isUsablePiSessionFile } from "./pi-session-paths.js";
+import {
+  ensurePiPrivateSkillsDir,
+  fingerprintPiSkillPaths,
+  resolvePiSessionSkillPaths,
+} from "./pi-skills.js";
+import { listEnabledPiSubagents, PI_AGENT_TOOL_NAME, piParentSessionKey } from "./pi-subagent.js";
+import {
+  createEcoPiToolApprovalExtensionFactory,
+  PI_TOOL_APPROVAL_EXTENSION_NAME,
+  PI_TOOL_APPROVAL_HANDLER_MISSING,
+} from "./pi-tool-approval.js";
 
 export interface PiSideEventBus {
   push(event: AgentEvent): void;
@@ -104,9 +104,7 @@ export interface PiSessionHandle {
    * Parent-only: re-arm plan.ready emitter for this run (session reuse).
    * finalize_plan closes over a stable bridge object; each run must refresh emit.
    */
-  armPlanReady?: (
-    emit: ((plan: string, toolCallId: string) => void) | undefined,
-  ) => void;
+  armPlanReady?: (emit: ((plan: string, toolCallId: string) => void) | undefined) => void;
   /** Whether this session was created with the eco-pi-approval extension. */
   toolApprovalEnabled?: boolean;
   /** Session mode used when this AgentSession was created (Ask/Plan force tool drift). */
@@ -258,9 +256,7 @@ export class PiSessionRegistry {
 
   private keysForThread(threadId: string): string[] {
     const parent = piParentSessionKey(threadId);
-    return [...this.sessions.keys()].filter(
-      (key) => key === parent || key.startsWith(`${parent}::sub::`),
-    );
+    return [...this.sessions.keys()].filter((key) => key === parent || key.startsWith(`${parent}::sub::`));
   }
 }
 
@@ -271,10 +267,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
   private readonly resolveBridgeModel: PiCodingAgentDriverOptions["resolveBridgeModel"];
   private readonly registry: PiSessionRegistry;
 
-  constructor(
-    options: PiCodingAgentDriverOptions,
-    registry: PiSessionRegistry = globalPiSessionRegistry,
-  ) {
+  constructor(options: PiCodingAgentDriverOptions, registry: PiSessionRegistry = globalPiSessionRegistry) {
     this.createSession = options.createSession ?? createDefaultPiSession;
     this.resolveBridgeModel = options.resolveBridgeModel;
     this.registry = registry;
@@ -359,10 +352,8 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     const mcpFingerprint = fingerprintPiMcpServers(mcpServers);
     const mcpDrift =
       Boolean(session) &&
-      canonicalizePiMcpFingerprint(session!.mcpFingerprint) !==
-        canonicalizePiMcpFingerprint(mcpFingerprint);
-    const wantsAgentTool =
-      sessionMode === "agent" && listEnabledPiSubagents(input.agentRegistry).length > 0;
+      canonicalizePiMcpFingerprint(session!.mcpFingerprint) !== canonicalizePiMcpFingerprint(mcpFingerprint);
+    const wantsAgentTool = sessionMode === "agent" && listEnabledPiSubagents(input.agentRegistry).length > 0;
     const agentToolDrift = Boolean(session) && wantsAgentTool !== Boolean(session!.armSubagentSpawn);
     const modeDrift = Boolean(session) && (session!.sessionMode ?? "agent") !== sessionMode;
 
@@ -378,10 +369,8 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       handler: modeAwareHandler,
     };
     const wantsToolApproval = Boolean(permissionBridge.handler);
-    const approvalDrift =
-      Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
-    const forceFresh =
-      identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift;
+    const approvalDrift = Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
+    const forceFresh = identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift;
     const appendSystemPrompt = [
       piSystemPromptForSessionMode(sessionMode),
       ...(input.piSession?.appendSystemPrompt ?? []),
@@ -395,8 +384,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     // Fingerprints decide whether to rebuild the in-process AgentSession.
     // Conversation JSONL is always resumed when a session file is available —
     // identity/MCP/mode drift must never wipe parent transcript.
-    const resumeFile =
-      input.piSession?.sessionFile?.trim() || session?.sessionFile?.trim() || "";
+    const resumeFile = input.piSession?.sessionFile?.trim() || session?.sessionFile?.trim() || "";
     const openExistingJsonl = Boolean(resumeFile);
 
     const spawnBridge: {
@@ -461,9 +449,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
               return handler(request);
             },
             cwd,
-            ...(input.piSession?.toolApprovalAgentId
-              ? { agentId: input.piSession.toolApprovalAgentId }
-              : {}),
+            ...(input.piSession?.toolApprovalAgentId ? { agentId: input.piSession.toolApprovalAgentId } : {}),
             ...(input.piSession?.toolApprovalAgentType
               ? { agentType: input.piSession.toolApprovalAgentType }
               : {}),
@@ -482,12 +468,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
         skillPaths: selectedSkillPaths,
-        toolsAllowlist: [
-          ...new Set([
-            ...toolsAllowlist,
-            ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : []),
-          ]),
-        ],
+        toolsAllowlist: [...new Set([...toolsAllowlist, ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : [])])],
         ...(mcpServers && Object.keys(mcpServers).length > 0 && sessionMode === "agent"
           ? { mcpServers }
           : {}),
@@ -647,10 +628,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   const mcpFingerprint = fingerprintPiMcpServers(input.mcpServers);
   const mappedMcp = toPiMcpAdapterConfig(input.mcpServers);
   const hasMcpServers = Object.keys(mappedMcp.mcpServers).length > 0;
-  const mcpFactory = await createPiMcpExtensionFactory(
-    hasMcpServers ? input.mcpServers : undefined,
-    { agentDir: input.agentDir },
-  );
+  const mcpFactory = await createPiMcpExtensionFactory(hasMcpServers ? input.mcpServers : undefined, {
+    agentDir: input.agentDir,
+  });
 
   const appendSystemPrompt = [...(input.appendSystemPrompt ?? [])]
     .map((entry) => entry.trim())
@@ -666,8 +646,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
 
   const systemPromptText = input.systemPromptOverride?.trim();
 
-  const extensionFactories: Array<{ name: string; factory: (pi: unknown) => void | Promise<void> }> =
-    [];
+  const extensionFactories: Array<{ name: string; factory: (pi: unknown) => void | Promise<void> }> = [];
   if (mcpFactory) {
     extensionFactories.push({
       name: "eco-pi-mcp",
@@ -739,9 +718,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   // PI's `tools` option is an allowlist: extension tools not listed here are dropped
   // from the registry (see AgentSession._refreshToolRegistry). Agent must be included
   // whenever eco-pi-agent is loaded, or the model only sees mcp/browser and never Agent.
-  const hasAgentExtension = (input.extensionFactories ?? []).some(
-    (entry) => entry.name === "eco-pi-agent",
-  );
+  const hasAgentExtension = (input.extensionFactories ?? []).some((entry) => entry.name === "eco-pi-agent");
   const toolsAllowlist =
     hasAgentExtension && !toolsAllowlistBase.includes(PI_AGENT_TOOL_NAME)
       ? [...toolsAllowlistBase, PI_AGENT_TOOL_NAME]
@@ -765,9 +742,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     await session.bindExtensions({
       mode: "rpc",
       onError: (err: { extensionPath?: string; error?: string }) => {
-        console.error(
-          `PI extension error (${err.extensionPath ?? "?"}): ${err.error ?? "unknown"}`,
-        );
+        console.error(`PI extension error (${err.extensionPath ?? "?"}): ${err.error ?? "unknown"}`);
       },
     });
   }
@@ -829,9 +804,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
         includeDefaults: false,
       });
       // AgentSession.reload re-reads ResourceLoader and rebuilds the system prompt.
-      await (
-        session as { reload: (options?: Record<string, never>) => Promise<void> }
-      ).reload();
+      await (session as { reload: (options?: Record<string, never>) => Promise<void> }).reload();
     },
     async *prompt(text: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
       const queue: AgentEvent[] = [];
@@ -923,8 +896,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
           aborted: Boolean(signal?.aborted),
           ...(runError
             ? {
-                errorMessage:
-                  runError instanceof Error ? runError.message : String(runError),
+                errorMessage: runError instanceof Error ? runError.message : String(runError),
               }
             : assistantError
               ? { errorMessage: assistantError }

@@ -1,8 +1,6 @@
-import type {
-  AgentTemplate,
-  ToolPolicy,
-} from "../shared/ipc";
+import type { AgentTemplate, ToolPolicy } from "../shared/ipc";
 import { formatList, parseList, uniqueValues } from "./agent-template-form-utils";
+import { i18n } from "./i18n";
 import {
   buildCapabilityPermissionChips,
   capabilityFieldsToToolPolicy,
@@ -10,18 +8,17 @@ import {
   isDelegationToolName,
   isGroupedCapabilityToolName,
   stripGroupedToolsFromDisallowed,
-  toolPolicyToCapabilityFields,
   type ToolCapabilityFieldValues,
+  toolPolicyToCapabilityFields,
 } from "./tool-capability-groups";
-import { i18n } from "./i18n";
 
-export type { ToolCapabilityFieldValues };
+export { formatList, parseList } from "./agent-template-form-utils";
 export {
   DELEGATION_TOOL_NAMES,
   isDelegationToolName,
   TOOL_CAPABILITY_PRESETS,
 } from "./tool-capability-groups";
-export { parseList, formatList } from "./agent-template-form-utils";
+export type { ToolCapabilityFieldValues };
 
 export interface AgentTemplateFormState extends ToolCapabilityFieldValues {
   id: string;

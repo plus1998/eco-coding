@@ -70,10 +70,7 @@ async function readBranchFromHead(gitRoot: string): Promise<string | undefined> 
   }
 }
 
-async function runGit(
-  cwd: string,
-  args: string[],
-): Promise<{ ok: true; stdout: string } | { ok: false }> {
+async function runGit(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false }> {
   try {
     const { stdout } = await execFileAsync(resolveGitExecutable(), args, { cwd });
     return { ok: true, stdout: stdout.trim() };

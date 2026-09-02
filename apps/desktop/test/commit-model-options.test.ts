@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
   buildCommitModelOptions,
   commitModelDedupeKey,
-  formatCommitModelDisplayName,
   findCommitModelOptionForCandidateId,
+  formatCommitModelDisplayName,
   resolveInitialCommitModelOption,
 } from "../src/shared/commit-model-options";
 import type { CommitModelPricingHint } from "../src/shared/ipc";
@@ -51,13 +51,15 @@ describe("commit-model-options", () => {
 
   it("formats long model ids for display", () => {
     expect(formatCommitModelDisplayName("vendor/very-long-model-name-for-testing-only")).toMatch(/…/);
-    expect(commitModelDedupeKey("Anthropic", "sonnet", {
-      candidateModelId: "cand-1",
-      modelId: "sonnet",
-      providerName: "Anthropic",
-      pricingResolved: true,
-      rates: { inputPerM: 1, outputPerM: 2 },
-    })).toContain("anthropic::sonnet::");
+    expect(
+      commitModelDedupeKey("Anthropic", "sonnet", {
+        candidateModelId: "cand-1",
+        modelId: "sonnet",
+        providerName: "Anthropic",
+        pricingResolved: true,
+        rates: { inputPerM: 1, outputPerM: 2 },
+      }),
+    ).toContain("anthropic::sonnet::");
   });
 
   it("prefers the saved Git commit model and only uses the auxiliary model as the initial default", () => {
@@ -80,11 +82,10 @@ describe("commit-model-options", () => {
     );
 
     expect(
-      resolveInitialCommitModelOption(options, "saved-git-model", "auxiliary-model")
-        ?.candidateModelId,
+      resolveInitialCommitModelOption(options, "saved-git-model", "auxiliary-model")?.candidateModelId,
     ).toBe("saved-git-model");
-    expect(
-      resolveInitialCommitModelOption(options, "auto", "auxiliary-model")?.candidateModelId,
-    ).toBe("auxiliary-model");
+    expect(resolveInitialCommitModelOption(options, "auto", "auxiliary-model")?.candidateModelId).toBe(
+      "auxiliary-model",
+    );
   });
 });

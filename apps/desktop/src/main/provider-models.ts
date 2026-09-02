@@ -1,16 +1,3 @@
-import type {
-  ListUpstreamModelsRequest,
-  ListUpstreamModelsResult,
-  RoleRouteTestResult,
-  TestProviderConnectionRequest,
-  TestProviderConnectionResult,
-  TestRoleRouteItem,
-  TestRoleRoutesRequest,
-  TestRoleRoutesResult,
-  UpstreamModelOption,
-  ProviderRequestError,
-} from "../shared/models";
-import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
   assertApiCompatCompatibleWithProviderPath,
   IncompatibleApiCompatError,
@@ -19,13 +6,26 @@ import {
   resolveUpstreamApiCompat,
   type UpstreamApiCompat,
 } from "../shared/api-compat";
+import type { ThinkingEffort } from "../shared/ipc";
+import type {
+  ListUpstreamModelsRequest,
+  ListUpstreamModelsResult,
+  ProviderRequestError,
+  RoleRouteTestResult,
+  TestProviderConnectionRequest,
+  TestProviderConnectionResult,
+  TestRoleRouteItem,
+  TestRoleRoutesRequest,
+  TestRoleRoutesResult,
+  UpstreamModelOption,
+} from "../shared/models";
+import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
   buildBridgeProviderTestAnthropicRequest,
   buildBridgeProviderTestUpstreamBody,
   parseBridgeProviderTestReply,
 } from "./bridge-provider-test";
 import { postJsonWithOpenAIResponsesUnsupportedParameterRetry } from "./openai-responses-compat";
-import type { ThinkingEffort } from "../shared/ipc";
 import type { ProviderStore } from "./provider-store";
 import {
   headersToLoggable,
@@ -309,12 +309,7 @@ async function postUpstreamCompatTest(
     }
     throw error;
   }
-  const routing = describeProviderCompatRouting(
-    input.baseUrl,
-    effectivePath,
-    input.apiCompat,
-    input.version,
-  );
+  const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat, input.version);
   const anthropicRequest = buildBridgeProviderTestAnthropicRequest(input.modelId, thinkingEffort);
   let { body: requestBody, preferStream } = buildBridgeProviderTestUpstreamBody(
     input.apiCompat,
@@ -530,20 +525,12 @@ export function buildProviderRequestBaseUrl(baseUrl: string, requestPath?: strin
 }
 
 /** Anthropic Messages API: POST `{requestBase}/{version}/messages`. */
-export function buildMessagesUrl(
-  baseUrl: string,
-  requestPath?: string,
-  version?: string,
-): string {
+export function buildMessagesUrl(baseUrl: string, requestPath?: string, version?: string): string {
   return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/${normalizeApiVersion(version)}/messages`;
 }
 
 /** OpenAI Responses API: POST `{requestBase}/{version}/responses`. */
-export function buildResponsesUrl(
-  baseUrl: string,
-  requestPath?: string,
-  version?: string,
-): string {
+export function buildResponsesUrl(baseUrl: string, requestPath?: string, version?: string): string {
   return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/${normalizeApiVersion(version)}/responses`;
 }
 
@@ -565,19 +552,11 @@ export function buildOpenAICompatUpstreamUrl(
   requestPath?: string,
   version?: string,
 ): string {
-  return buildResponsesUrl(
-    baseUrl,
-    resolveRequestPathForApiCompat(requestPath, "openai_responses"),
-    version,
-  );
+  return buildResponsesUrl(baseUrl, resolveRequestPathForApiCompat(requestPath, "openai_responses"), version);
 }
 
 /** OpenAI Chat Completions runtime/test URL. */
-export function buildChatCompletionsUrl(
-  baseUrl: string,
-  requestPath?: string,
-  version?: string,
-): string {
+export function buildChatCompletionsUrl(baseUrl: string, requestPath?: string, version?: string): string {
   return `${buildProviderRequestBaseUrl(
     baseUrl,
     resolveRequestPathForApiCompat(requestPath, "openai_chat_completions"),
@@ -616,8 +595,7 @@ export function splitBaseUrlAndRequestPath(fullUrl: string): { baseUrl: string; 
 }
 
 /** Trailing path segments that are API endpoints, not service roots (OpenAI-compat gateways). */
-const API_ENDPOINT_PATH_SUFFIX_RE =
-  /\/v[\w.-]+\/(?:chat\/completions|responses|messages)$/i;
+const API_ENDPOINT_PATH_SUFFIX_RE = /\/v[\w.-]+\/(?:chat\/completions|responses|messages)$/i;
 
 /** Strip mistaken endpoint suffixes so models discovery hits `{origin}/{version}/models`, not `.../chat/completions/{version}/models`. */
 export function stripApiEndpointPathSuffix(pathname: string): string {
@@ -672,9 +650,7 @@ export function resolveModelsListUrl(
   baseUrl: string,
   requestPath?: string,
   version?: string,
-):
-  | { ok: true; url: string; serviceRoot: string }
-  | { ok: false; error: string } {
+): { ok: true; url: string; serviceRoot: string } | { ok: false; error: string } {
   const trimmedBase = baseUrl.trim();
   if (!trimmedBase) {
     return {
@@ -934,7 +910,11 @@ export function parseUpstreamModelsPayload(payload: unknown): UpstreamModelOptio
     return [];
   }
 
-  const list = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
+  const list = Array.isArray(payload.data)
+    ? payload.data
+    : Array.isArray(payload.models)
+      ? payload.models
+      : [];
   const models: UpstreamModelOption[] = [];
 
   for (const item of list) {
@@ -942,11 +922,7 @@ export function parseUpstreamModelsPayload(payload: unknown): UpstreamModelOptio
       continue;
     }
     const id =
-      typeof item.id === "string"
-        ? item.id
-        : typeof item.model === "string"
-          ? item.model
-          : undefined;
+      typeof item.id === "string" ? item.id : typeof item.model === "string" ? item.model : undefined;
     if (!id?.trim()) {
       continue;
     }
@@ -975,10 +951,10 @@ export function buildMessagesTestRequestBody(
   modelId: string,
   thinkingEffort?: ThinkingEffort,
 ): Record<string, unknown> {
-  return buildBridgeProviderTestAnthropicRequest(
-    modelId,
-    thinkingEffort ?? "off",
-  ) as unknown as Record<string, unknown>;
+  return buildBridgeProviderTestAnthropicRequest(modelId, thinkingEffort ?? "off") as unknown as Record<
+    string,
+    unknown
+  >;
 }
 
 export function buildResponsesTestRequestBody(modelId: string): Record<string, unknown> {
@@ -1036,12 +1012,9 @@ function resolveProviderCredentials(
   | ProviderRequestError {
   const baseUrl = request.baseUrl?.trim();
   const inlineApiKey = request.apiKey?.trim();
-  const inlineRequestPath =
-    "requestPath" in request ? normalizeRequestPath(request.requestPath) : "";
+  const inlineRequestPath = "requestPath" in request ? normalizeRequestPath(request.requestPath) : "";
   const inlineVersion =
-    "version" in request && request.version !== undefined
-      ? normalizeApiVersion(request.version)
-      : undefined;
+    "version" in request && request.version !== undefined ? normalizeApiVersion(request.version) : undefined;
 
   if (request.providerId) {
     const provider = store.getProviderWithSecret(request.providerId);
@@ -1067,8 +1040,7 @@ function resolveProviderCredentials(
       "requestPath" in request && request.requestPath !== undefined
         ? inlineRequestPath
         : normalizeRequestPath(provider.requestPath);
-    const resolvedVersion =
-      inlineVersion ?? normalizeApiVersion(provider.version);
+    const resolvedVersion = inlineVersion ?? normalizeApiVersion(provider.version);
     const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
     const resolvedApiCompat = resolveUpstreamApiCompat(
       "apiCompat" in request && request.apiCompat !== undefined

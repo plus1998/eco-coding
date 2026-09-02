@@ -95,9 +95,7 @@ interface ProviderGroup {
   options: ModelCascadeOption[];
 }
 
-export function groupModelCascadeOptions(
-  options: readonly ModelCascadeOption[],
-): ProviderGroup[] {
+export function groupModelCascadeOptions(options: readonly ModelCascadeOption[]): ProviderGroup[] {
   const groups = new Map<string, ProviderGroup>();
   for (const option of options) {
     let group = groups.get(option.providerId);
@@ -122,10 +120,7 @@ export function groupModelCascadeOptions(
  * matching models are listed. Groups without any match are hidden — the
  * catalogue is never rendered flat across providers.
  */
-export function filterModelCascadeGroups(
-  groups: readonly ProviderGroup[],
-  query: string,
-): ProviderGroup[] {
+export function filterModelCascadeGroups(groups: readonly ProviderGroup[], query: string): ProviderGroup[] {
   const needle = query.trim().toLowerCase();
   if (!needle) {
     return groups.map((group) => ({ ...group, options: [...group.options] }));
@@ -133,8 +128,7 @@ export function filterModelCascadeGroups(
   return groups
     .map((group) => {
       const providerMatches =
-        group.providerName.toLowerCase().includes(needle) ||
-        group.providerId.toLowerCase().includes(needle);
+        group.providerName.toLowerCase().includes(needle) || group.providerId.toLowerCase().includes(needle);
       const matchedOptions = group.options.filter(
         (option) =>
           providerMatches ||
@@ -149,23 +143,13 @@ export function filterModelCascadeGroups(
     .filter((group) => group.options.length > 0);
 }
 
-function renderProviderBadge(group: Pick<ProviderGroup, "providerId" | "providerName" | "providerColor" | "providerIcon">) {
+function renderProviderBadge(
+  group: Pick<ProviderGroup, "providerId" | "providerName" | "providerColor" | "providerIcon">,
+) {
   if (group.providerIcon) {
-    return (
-      <img
-        className="model-cascade-provider-icon"
-        src={group.providerIcon}
-        alt=""
-        aria-hidden="true"
-      />
-    );
+    return <img className="model-cascade-provider-icon" src={group.providerIcon} alt="" aria-hidden="true" />;
   }
-  return (
-    <CommitModelProviderDot
-      color={group.providerColor ?? "transparent"}
-      label={group.providerName}
-    />
-  );
+  return <CommitModelProviderDot color={group.providerColor ?? "transparent"} label={group.providerName} />;
 }
 
 function optionMatchesSelection(
@@ -388,7 +372,13 @@ export function ModelCascadeSelect({
     if (focusedModelIndex >= activeProviderOptions.length) {
       setFocusedModelIndex(Math.max(0, activeProviderOptions.length - 1));
     }
-  }, [activeProviderOptions.length, focusedModelIndex, focusedProviderIndex, panelOpen, visibleGroups.length]);
+  }, [
+    activeProviderOptions.length,
+    focusedModelIndex,
+    focusedProviderIndex,
+    panelOpen,
+    visibleGroups.length,
+  ]);
 
   // Focus the search box when the panel opens.
   useEffect(() => {
@@ -405,10 +395,7 @@ export function ModelCascadeSelect({
     }
     function handlePointerDown(event: MouseEvent) {
       const target = event.target as Node;
-      if (
-        panelRef.current?.contains(target) ||
-        triggerRef.current?.contains(target)
-      ) {
+      if (panelRef.current?.contains(target) || triggerRef.current?.contains(target)) {
         return;
       }
       closePanel(false);
@@ -465,9 +452,7 @@ export function ModelCascadeSelect({
       ? group.options.findIndex((option) => optionMatchesSelection(option, value))
       : -1;
     setFocusedModelIndex(selectedIndex >= 0 ? selectedIndex : 0);
-    requestAnimationFrame(() =>
-      modelButtonRefs.current[selectedIndex >= 0 ? selectedIndex : 0]?.focus(),
-    );
+    requestAnimationFrame(() => modelButtonRefs.current[selectedIndex >= 0 ? selectedIndex : 0]?.focus());
   }
 
   function focusActiveProvider() {
@@ -573,11 +558,7 @@ export function ModelCascadeSelect({
     <div
       id={panelId}
       ref={panelRef}
-      className={
-        inline
-          ? "model-cascade-panel is-inline"
-          : "composer-codex-popover model-cascade-panel"
-      }
+      className={inline ? "model-cascade-panel is-inline" : "composer-codex-popover model-cascade-panel"}
       style={inline ? undefined : panelStyle}
       role="dialog"
       aria-modal={inline ? "true" : undefined}
@@ -637,9 +618,7 @@ export function ModelCascadeSelect({
                       }}
                       type="button"
                       className={
-                        active
-                          ? "model-cascade-provider-item is-active"
-                          : "model-cascade-provider-item"
+                        active ? "model-cascade-provider-item is-active" : "model-cascade-provider-item"
                       }
                       tabIndex={focusedProviderIndex === index ? 0 : -1}
                       aria-expanded={active}
@@ -687,9 +666,7 @@ export function ModelCascadeSelect({
                       }}
                       type="button"
                       className={
-                        selected
-                          ? "model-cascade-model-item is-selected"
-                          : "model-cascade-model-item"
+                        selected ? "model-cascade-model-item is-selected" : "model-cascade-model-item"
                       }
                       tabIndex={focusedModelIndex === index ? 0 : -1}
                       title={`${option.providerName} · ${option.modelId}`}
@@ -768,9 +745,7 @@ export function ModelCascadeSelect({
         {selectedOption ? renderProviderBadge(selectedOption) : null}
         <span
           className={
-            hasSelection
-              ? "model-cascade-trigger-label"
-              : "model-cascade-trigger-label is-placeholder"
+            hasSelection ? "model-cascade-trigger-label" : "model-cascade-trigger-label is-placeholder"
           }
         >
           {loading && !hasSelection ? t("composer.model.loading") : triggerLabel}

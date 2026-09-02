@@ -2,25 +2,16 @@
  * Test helper: product-layer Bridge rewrite before pure gateway handler.
  * Mirrors Desktop eco-sdk-bridge product resolution (not gateway itself).
  */
+
+import { InvalidCodexGatewayModelAliasError, parseCodexGatewayModelAlias } from "@eco/shared";
 import {
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
   mapApiCompatToUpstreamKind,
 } from "../src/provider-router.js";
-import {
-  createGatewayFetchHandler,
-  type GatewayLogFn,
-} from "../src/server.js";
-import type {
-  GatewayConfig,
-  GatewayProvider,
-  GatewayUsageObserver,
-} from "../src/types.js";
-import {
-  InvalidCodexGatewayModelAliasError,
-  parseCodexGatewayModelAlias,
-} from "@eco/shared";
+import { createGatewayFetchHandler, type GatewayLogFn } from "../src/server.js";
+import type { GatewayConfig, GatewayProvider, GatewayUsageObserver } from "../src/types.js";
 
 export interface ProductRoute {
   providerId: string;
@@ -53,9 +44,7 @@ export function resolveProductRoute(
         providerId: match.id,
         upstreamModelId: scoped.upstreamModelId,
         clientModel: requested,
-        ...(scoped.apiCompat
-          ? { upstreamKind: mapApiCompatToUpstreamKind(scoped.apiCompat) }
-          : {}),
+        ...(scoped.apiCompat ? { upstreamKind: mapApiCompatToUpstreamKind(scoped.apiCompat) } : {}),
       };
     }
   } catch (error) {

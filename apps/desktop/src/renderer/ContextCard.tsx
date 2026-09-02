@@ -4,17 +4,14 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot, ThreadStatus } from "../shared/ipc";
-import {
-  type RuntimeAgentDisplayNames,
-  formatRuntimeRoleModelLabel,
-  resolveRuntimeAgentName,
-} from "./runtime-agent-display";
-import {
-  type RuntimeAgentThemes,
-  resolveRuntimeAgentThemeColor,
-} from "./runtime-agent-theme";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { i18n } from "./i18n";
+import {
+  formatRuntimeRoleModelLabel,
+  type RuntimeAgentDisplayNames,
+  resolveRuntimeAgentName,
+} from "./runtime-agent-display";
+import { type RuntimeAgentThemes, resolveRuntimeAgentThemeColor } from "./runtime-agent-theme";
 
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
@@ -375,9 +372,7 @@ export function ContextCard({
               className="context-card-collapse"
               onClick={() => setPlannerDetailsOpen((open) => !open)}
               aria-expanded={plannerDetailsOpen}
-              aria-label={
-                plannerDetailsOpen ? t("context.collapseBreakdown") : t("context.expandBreakdown")
-              }
+              aria-label={plannerDetailsOpen ? t("context.collapseBreakdown") : t("context.expandBreakdown")}
             >
               <span className="context-card-collapse-label">{plannerDetailsOpen ? "−" : "+"}</span>
             </button>

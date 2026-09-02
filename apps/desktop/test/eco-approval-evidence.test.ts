@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 import {
-  MAX_ENVELOPE_CHARS,
   buildApprovalEnvelope,
+  MAX_ENVELOPE_CHARS,
   shouldIncludeActivityLine,
   truncateText,
 } from "../src/main/eco-approval-evidence";
 import { reviewEcoApproval } from "../src/main/eco-approval-reviewer";
-import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 const route: AnthropicProxyRoute = {
   role: "auxiliary",

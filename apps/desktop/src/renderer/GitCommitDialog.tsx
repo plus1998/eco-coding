@@ -1,26 +1,23 @@
-import { Check, ChevronDown, GitBranch, GitCommitHorizontal, GitMerge, Loader2, Plus, Sparkles } from "lucide-react";
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  Check,
+  ChevronDown,
+  GitBranch,
+  GitCommitHorizontal,
+  GitMerge,
+  Loader2,
+  Plus,
+  Sparkles,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   findCommitModelOptionForCandidateId,
   resolveInitialCommitModelOption,
 } from "../shared/commit-model-options";
-import type {
-  CommitModelOptionView,
-  GitWorkingTreeStatus,
-} from "../shared/ipc";
-import {
-  createCommitModelPricingExtra,
-  mapCommitModelOptions,
-} from "./model-cascade-options";
+import type { CommitModelOptionView, GitWorkingTreeStatus } from "../shared/ipc";
 import { ModelCascadeSelect } from "./ModelCascadeSelect";
+import { createCommitModelPricingExtra, mapCommitModelOptions } from "./model-cascade-options";
 import {
   beginWorkspaceGitAction,
   clearWorkspaceGitAction,
@@ -92,14 +89,8 @@ export function GitCommitDialog({
     selectedOption?.modelLabel ??
     (modelOptionsLoading ? t("git.commit.loadingModels") : t("git.commit.noModel"));
 
-  const commitModelCascadeOptions = useMemo(
-    () => mapCommitModelOptions(modelOptions),
-    [modelOptions],
-  );
-  const commitModelPricingExtra = useMemo(
-    () => createCommitModelPricingExtra(modelOptions),
-    [modelOptions],
-  );
+  const commitModelCascadeOptions = useMemo(() => mapCommitModelOptions(modelOptions), [modelOptions]);
+  const commitModelPricingExtra = useMemo(() => createCommitModelPricingExtra(modelOptions), [modelOptions]);
 
   useEffect(() => {
     if (!open || !window.eco) {
@@ -261,8 +252,7 @@ export function GitCommitDialog({
       let operationId: number | null = null;
       let committedSuccessfully = false;
       const trimmed = message.trim();
-      const initialPhase =
-        action === "push" ? "pushing" : trimmed ? "committing" : "generating";
+      const initialPhase = action === "push" ? "pushing" : trimmed ? "committing" : "generating";
       operationId = beginWorkspaceGitAction(operationWorkspacePath, initialPhase);
       if (operationId === null) {
         return;
@@ -435,8 +425,9 @@ export function GitCommitDialog({
   const canPushOnly = canPush && (gitStatus?.aheadCount ?? 0) > 0;
   const branchLabel = gitStatus?.branch ?? "detached";
   const branchPickerDisabled = submitting || busy || branchBusy || generatingMessage;
-  const showBranchPicker =
-    Boolean(gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch);
+  const showBranchPicker = Boolean(
+    gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch,
+  );
   const modelPickerDisabled =
     submitting || busy || disabled || generatingMessage || modelOptionsLoading || modelOptions.length === 0;
   const messageFieldDisabled = submitting || busy || disabled || generatingMessage;
@@ -484,12 +475,18 @@ export function GitCommitDialog({
                     <ChevronDown
                       size={13}
                       strokeWidth={2}
-                      className={branchMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
+                      className={
+                        branchMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"
+                      }
                       aria-hidden
                     />
                   </button>
                   {branchMenuOpen ? (
-                    <div className="git-commit-branch-menu" role="listbox" aria-label={t("git.commit.commitTo")}>
+                    <div
+                      className="git-commit-branch-menu"
+                      role="listbox"
+                      aria-label={t("git.commit.commitTo")}
+                    >
                       {branchCreateMode ? (
                         <div className="git-commit-branch-create">
                           <div className="git-commit-branch-menu-header">{t("git.commit.newBranch")}</div>
@@ -517,7 +514,9 @@ export function GitCommitDialog({
                               }
                             }}
                           />
-                          {branchError ? <p className="git-commit-branch-create-error">{branchError}</p> : null}
+                          {branchError ? (
+                            <p className="git-commit-branch-create-error">{branchError}</p>
+                          ) : null}
                         </div>
                       ) : (
                         <>
@@ -555,7 +554,9 @@ export function GitCommitDialog({
                                   }}
                                 >
                                   <Plus size={14} strokeWidth={2} aria-hidden />
-                                  <span className="git-commit-branch-menu-label">{t("git.commit.newBranch")}</span>
+                                  <span className="git-commit-branch-menu-label">
+                                    {t("git.commit.newBranch")}
+                                  </span>
                                 </button>
                               </li>
                             ) : null}

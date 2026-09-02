@@ -20,12 +20,7 @@ test("normalizeStoredPriceMultiplier omits default multiplier", () => {
 });
 
 test("applyPriceMultiplierToPerMRates multiplies all present rates", () => {
-  expect(
-    applyPriceMultiplierToPerMRates(
-      { inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3 },
-      2,
-    ),
-  ).toEqual({
+  expect(applyPriceMultiplierToPerMRates({ inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3 }, 2)).toEqual({
     inputPerM: 6,
     outputPerM: 30,
     cacheReadPerM: 0.6,
@@ -33,10 +28,7 @@ test("applyPriceMultiplierToPerMRates multiplies all present rates", () => {
 });
 
 test("applyPriceMultiplierToCostRates multiplies catalog rates", () => {
-  const result = applyPriceMultiplierToCostRates(
-    { input: 3, output: 15, cacheRead: 0.3 },
-    1.5,
-  );
+  const result = applyPriceMultiplierToCostRates({ input: 3, output: 15, cacheRead: 0.3 }, 1.5);
   expect(result?.input).toBeCloseTo(4.5);
   expect(result?.output).toBeCloseTo(22.5);
   expect(result?.cacheRead).toBeCloseTo(0.45);

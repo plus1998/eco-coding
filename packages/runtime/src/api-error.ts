@@ -19,10 +19,8 @@ function readErrorFromJson(value: unknown): { message?: string; code?: string } 
 
   const directMessage =
     typeof value.message === "string" && value.message.trim() ? value.message.trim() : undefined;
-  const directCode =
-    typeof value.code === "string" && value.code.trim() ? value.code.trim() : undefined;
-  const directType =
-    typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
+  const directCode = typeof value.code === "string" && value.code.trim() ? value.code.trim() : undefined;
+  const directType = typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
 
   if (isRecord(value.error)) {
     const nestedMessage =
@@ -63,10 +61,10 @@ function readErrorFromJson(value: unknown): { message?: string; code?: string } 
   });
 }
 
-function compactErrorFields(input: {
-  message?: string | undefined;
-  code?: string | undefined;
-}): { message?: string; code?: string } {
+function compactErrorFields(input: { message?: string | undefined; code?: string | undefined }): {
+  message?: string;
+  code?: string;
+} {
   const result: { message?: string; code?: string } = {};
   if (input.message) {
     result.message = input.message;
@@ -149,10 +147,7 @@ function extractJsonPayload(text: string): { jsonText?: string; remainder: strin
 }
 
 /** Parse SDK structured `error` attribute from stream/tool payloads. */
-export function parseSdkApiErrorAttribute(
-  raw: string,
-  model?: string,
-): ThreadApiErrorInfo | null {
+export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadApiErrorInfo | null {
   const trimmed = raw.trim();
   if (!trimmed) {
     return null;
@@ -255,12 +250,7 @@ export function formatApiErrorActivitySummary(info: ThreadApiErrorInfo): string 
 }
 
 export function apiErrorDedupeKey(info: ThreadApiErrorInfo): string {
-  return [
-    info.model ?? "",
-    info.statusCode ?? "",
-    info.code ?? "",
-    info.message,
-  ].join("|");
+  return [info.model ?? "", info.statusCode ?? "", info.code ?? "", info.message].join("|");
 }
 
 /** Best-effort parse for legacy persisted lines that only stored raw SDK error text. */

@@ -2,10 +2,10 @@ import type { File } from "gitdiff-parser";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  fileToDisplayHunks,
-  flattenDisplayLines,
   type DiffDisplayHunk,
   type DiffDisplayLine,
+  fileToDisplayHunks,
+  flattenDisplayLines,
 } from "./diff-display-lines";
 import { highlightDiffDisplayLines, resolveShikiLanguage } from "./diff-shiki-highlight";
 import { MaterialFileIcon } from "./MaterialFileIcon";
@@ -114,9 +114,7 @@ const DiffLinesView = memo(function DiffLinesView({
                     dangerouslySetInnerHTML={{ __html: html }}
                   />
                 ) : (
-                  <span className="pm-diff-line-text">
-                    {line.text.length > 0 ? line.text : "\u00a0"}
-                  </span>
+                  <span className="pm-diff-line-text">{line.text.length > 0 ? line.text : "\u00a0"}</span>
                 )}
               </div>
             );
@@ -127,13 +125,7 @@ const DiffLinesView = memo(function DiffLinesView({
   );
 });
 
-export function GitDiffViewer({
-  patch,
-  selectedPath,
-  emptyLabel,
-  additions,
-  deletions,
-}: GitDiffViewerProps) {
+export function GitDiffViewer({ patch, selectedPath, emptyLabel, additions, deletions }: GitDiffViewerProps) {
   const { t } = useTranslation();
   const files = useMemo(() => {
     const trimmed = patch.trim();
@@ -155,11 +147,7 @@ export function GitDiffViewer({
   }, [files, selectedPath]);
 
   if (!patch.trim()) {
-    return (
-      <p className="workspace-diff-empty">
-        {emptyLabel ?? t("workspace.diff.noChanges")}
-      </p>
-    );
+    return <p className="workspace-diff-empty">{emptyLabel ?? t("workspace.diff.noChanges")}</p>;
   }
 
   if (visibleFiles.length === 0) {

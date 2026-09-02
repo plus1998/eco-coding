@@ -25,12 +25,8 @@ function makeStatus(overrides: Partial<GitWorkingTreeStatus> = {}): GitWorkingTr
 
 test("workspaceGitStatusFingerprint changes only when summary stats change", () => {
   const first = workspaceGitStatusFingerprint(gitStatusToSummary(makeStatus()));
-  const same = workspaceGitStatusFingerprint(
-    gitStatusToSummary(makeStatus({ branch: "feature" })),
-  );
-  const changed = workspaceGitStatusFingerprint(
-    gitStatusToSummary(makeStatus({ dirtyFileCount: 3 })),
-  );
+  const same = workspaceGitStatusFingerprint(gitStatusToSummary(makeStatus({ branch: "feature" })));
+  const changed = workspaceGitStatusFingerprint(gitStatusToSummary(makeStatus({ dirtyFileCount: 3 })));
 
   expect(same).toBe(first);
   expect(changed).not.toBe(first);

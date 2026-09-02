@@ -13,9 +13,7 @@ import { computeRouteFingerprint } from "../shared/route-fingerprint";
  * Eco compact is NOT a resume decision: continuation orchestration builds the handoff
  * prompt and starts a new session without calling resume.
  */
-export type ClaudeResumeDecision =
-  | { kind: "resume"; sessionId: string }
-  | { kind: "reject"; reason: string };
+export type ClaudeResumeDecision = { kind: "resume"; sessionId: string } | { kind: "reject"; reason: string };
 
 export interface ClaudeResumeRouteSnapshot {
   fingerprint: string;

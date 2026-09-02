@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { AgentTemplate, ProviderConfigView, ThinkingEffort } from "../shared/ipc";
 import { defaultThemeColorForAgentKey } from "../shared/subagent-theme";
 import type { AgentResourceAgentFormState } from "./agent-resource-form";
-import { formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
 
 interface SubagentOrchestrationRosterEditorProps {
   agents: AgentResourceAgentFormState[];
@@ -33,10 +33,7 @@ export function SubagentOrchestrationRosterEditor({
   const { t } = useTranslation();
   const [pendingTemplateId, setPendingTemplateId] = useState("");
 
-  const rosterTemplateIds = useMemo(
-    () => new Set(agents.map((agent) => agent.templateId)),
-    [agents],
-  );
+  const rosterTemplateIds = useMemo(() => new Set(agents.map((agent) => agent.templateId)), [agents]);
 
   const addableTemplates = useMemo(
     () => templates.filter((template) => !rosterTemplateIds.has(template.id)),
@@ -56,11 +53,12 @@ export function SubagentOrchestrationRosterEditor({
       <header className="orchestration-roster-header">
         <div className="orchestration-roster-header-copy">
           <h3 className="orchestration-roster-title">{t("settings.models.editor.rosterLabel")}</h3>
-          <p className="orchestration-roster-subtitle">
-            {t("settings.models.editor.rosterSubtitle")}
-          </p>
+          <p className="orchestration-roster-subtitle">{t("settings.models.editor.rosterSubtitle")}</p>
         </div>
-        <span className="orchestration-roster-count" aria-label={t("settings.models.editor.rosterCountAria", { count: agents.length })}>
+        <span
+          className="orchestration-roster-count"
+          aria-label={t("settings.models.editor.rosterCountAria", { count: agents.length })}
+        >
           {agents.length}
         </span>
       </header>
@@ -104,9 +102,7 @@ export function SubagentOrchestrationRosterEditor({
             <Users size={22} strokeWidth={1.75} />
           </span>
           <p className="orchestration-roster-empty-title">{t("settings.models.editor.rosterEmptyTitle")}</p>
-          <p className="orchestration-roster-empty-copy">
-            {t("settings.models.editor.rosterEmptyCopy")}
-          </p>
+          <p className="orchestration-roster-empty-copy">{t("settings.models.editor.rosterEmptyCopy")}</p>
         </div>
       ) : (
         <ul className="orchestration-roster-group">
@@ -147,7 +143,9 @@ export function SubagentOrchestrationRosterEditor({
                     <span className="orchestration-roster-row-top">
                       <span className="orchestration-roster-row-name">{displayName}</span>
                       <span className="orchestration-roster-status">
-                        {agent.enabled ? t("settings.models.editor.rosterEnabled") : t("settings.models.editor.rosterDisabled")}
+                        {agent.enabled
+                          ? t("settings.models.editor.rosterEnabled")
+                          : t("settings.models.editor.rosterDisabled")}
                       </span>
                     </span>
                     <span className="orchestration-roster-row-meta">{modelMetaLabel}</span>
@@ -160,7 +158,11 @@ export function SubagentOrchestrationRosterEditor({
                 <div className="orchestration-roster-row-controls">
                   <label
                     className="mcp-toggle mcp-toggle-sm orchestration-roster-toggle"
-                    title={agent.enabled ? t("settings.models.editor.rosterToggleEnabled") : t("settings.models.editor.rosterToggleDisabled")}
+                    title={
+                      agent.enabled
+                        ? t("settings.models.editor.rosterToggleEnabled")
+                        : t("settings.models.editor.rosterToggleDisabled")
+                    }
                     onClick={(event) => event.stopPropagation()}
                   >
                     <input
@@ -192,5 +194,12 @@ export function SubagentOrchestrationRosterEditor({
 }
 
 function isThinkingEffort(value: string): value is ThinkingEffort {
-  return value === "off" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max";
+  return (
+    value === "off" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh" ||
+    value === "max"
+  );
 }

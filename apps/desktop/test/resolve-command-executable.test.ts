@@ -16,9 +16,7 @@ test("shellQuoteArg quotes unsafe characters", () => {
 
 test("buildShellCommandLine joins quoted argv", () => {
   expect(buildShellCommandLine(["bun", "run", "dev"])).toBe("bun run dev");
-  expect(buildShellCommandLine(["npm", "run", "test", "--", "--watch"])).toBe(
-    "npm run test -- --watch",
-  );
+  expect(buildShellCommandLine(["npm", "run", "test", "--", "--watch"])).toBe("npm run test -- --watch");
 });
 
 test("pathDirectories prepends common bin directories", () => {

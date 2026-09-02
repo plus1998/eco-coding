@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import type { ThreadRunProjectionSnapshot } from "../src/shared/thread-run-projection";
 import {
   hydrateThreadFeedSkeletonSnapshot,
   isThreadFeedSkeletonFresh,
 } from "../src/main/thread-feed-skeleton-store";
+import type { ThreadRunProjectionSnapshot } from "../src/shared/thread-run-projection";
 
 const baseSnapshot = (): ThreadRunProjectionSnapshot => ({
   thread: {

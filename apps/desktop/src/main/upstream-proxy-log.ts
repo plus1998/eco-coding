@@ -130,14 +130,9 @@ export function buildProxyCallDebug(input: {
     input.clientRequestRaw !== undefined ? parseJsonForLog(input.clientRequestRaw) : undefined;
   const upstreamRequest =
     input.upstreamRequestRaw !== undefined ? parseJsonForLog(input.upstreamRequestRaw) : undefined;
-  const responseBody =
-    input.responseRaw !== undefined ? debugBodyFromRaw(input.responseRaw) : undefined;
+  const responseBody = input.responseRaw !== undefined ? debugBodyFromRaw(input.responseRaw) : undefined;
 
-  if (
-    clientRequest === undefined &&
-    upstreamRequest === undefined &&
-    responseBody === undefined
-  ) {
+  if (clientRequest === undefined && upstreamRequest === undefined && responseBody === undefined) {
     return undefined;
   }
 
@@ -378,10 +373,7 @@ function formatElapsed(elapsedMs: number): string {
 }
 
 function formatProxyCallTokens(tokens: UpstreamProxyCallTokens): string {
-  const parts = [
-    `输入 ${formatTokenCount(tokens.input)}`,
-    `输出 ${formatTokenCount(tokens.output)}`,
-  ];
+  const parts = [`输入 ${formatTokenCount(tokens.input)}`, `输出 ${formatTokenCount(tokens.output)}`];
   if (tokens.cacheRead > 0) {
     parts.push(`缓存读 ${formatTokenCount(tokens.cacheRead)}`);
   }
@@ -392,10 +384,7 @@ function formatProxyCallTokens(tokens: UpstreamProxyCallTokens): string {
 }
 
 function formatDebugSection(label: string, body: unknown): string[] {
-  const text =
-    typeof body === "string"
-      ? body
-      : JSON.stringify(body, null, 2);
+  const text = typeof body === "string" ? body : JSON.stringify(body, null, 2);
   const indented = text.split("\n").map((line) => `    ${line}`);
   return [`  ${label}:`, ...indented];
 }

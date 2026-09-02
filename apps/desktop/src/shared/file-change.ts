@@ -114,15 +114,13 @@ export function enrichFileChangeFromToolOutput(
   const additions =
     typeof gitDiff?.additions === "number"
       ? gitDiff.additions
-      : fromPatch?.additions ?? existing?.additions ?? 0;
+      : (fromPatch?.additions ?? existing?.additions ?? 0);
   const deletions =
     typeof gitDiff?.deletions === "number"
       ? gitDiff.deletions
-      : fromPatch?.deletions ?? existing?.deletions ?? 0;
+      : (fromPatch?.deletions ?? existing?.deletions ?? 0);
   const previewLines =
-    fromPatch && fromPatch.previewLines.length > 0
-      ? fromPatch.previewLines
-      : existing?.previewLines ?? [];
+    fromPatch && fromPatch.previewLines.length > 0 ? fromPatch.previewLines : (existing?.previewLines ?? []);
 
   if (previewLines.length === 0 && additions === 0 && deletions === 0) {
     return existing;
@@ -204,8 +202,7 @@ function readAcpDiffBlock(value: unknown): AcpDiffBlock | undefined {
 }
 
 function normalizeAcpDiffBlock(value: Record<string, unknown>): AcpDiffBlock | undefined {
-  const path =
-    readString(value.path) ?? readString(value.file_path) ?? readString(value.filePath);
+  const path = readString(value.path) ?? readString(value.file_path) ?? readString(value.filePath);
   const hasOld = "oldText" in value || "old_text" in value || "old_string" in value;
   const hasNew = "newText" in value || "new_text" in value || "new_string" in value;
   if (!path && !hasOld && !hasNew) {
@@ -250,8 +247,10 @@ export function parseThreadRunFileChangeMetadata(value: unknown): ThreadRunFileC
   if (!path) {
     return undefined;
   }
-  const additions = typeof value.additions === "number" && Number.isFinite(value.additions) ? value.additions : 0;
-  const deletions = typeof value.deletions === "number" && Number.isFinite(value.deletions) ? value.deletions : 0;
+  const additions =
+    typeof value.additions === "number" && Number.isFinite(value.additions) ? value.additions : 0;
+  const deletions =
+    typeof value.deletions === "number" && Number.isFinite(value.deletions) ? value.deletions : 0;
   const previewLines = parsePreviewLines(value.previewLines);
   return { path, additions, deletions, previewLines };
 }
@@ -287,10 +286,8 @@ function buildEditFileChangeFromPiEdits(
     if (!isRecord(edit)) {
       continue;
     }
-    const oldText =
-      readString(edit.oldText) ?? readString(edit.old_string) ?? readString(edit.old_text);
-    const newText =
-      readString(edit.newText) ?? readString(edit.new_string) ?? readString(edit.new_text);
+    const oldText = readString(edit.oldText) ?? readString(edit.old_string) ?? readString(edit.old_text);
+    const newText = readString(edit.newText) ?? readString(edit.new_string) ?? readString(edit.new_text);
     if (oldText !== undefined) {
       oldParts.push(oldText);
     }

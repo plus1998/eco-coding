@@ -2,8 +2,7 @@
 // separator: namespace "collaboration" + "spawn_agent" => "collaborationspawn_agent".
 // V1 / plain spawn maps to HookToolName::spawn_agent() => "spawn_agent".
 // `collaboration__spawn_agent` is the code-mode / UI label, not the hook matcher name.
-export const SPAWN_AGENT_HOOK_MATCHER =
-  "spawn_agent|collaborationspawn_agent|collaboration__spawn_agent";
+export const SPAWN_AGENT_HOOK_MATCHER = "spawn_agent|collaborationspawn_agent|collaboration__spawn_agent";
 export const SPAWN_AGENT_HOOK_STATUS = "Eco: apply orchestration role model";
 
 /**

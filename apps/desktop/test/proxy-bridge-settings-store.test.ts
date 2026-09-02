@@ -30,9 +30,7 @@ test("normalizeProxyBridgeSettingsSnapshot trims and drops empty", () => {
 });
 
 test("normalizeProxyBridgeSettingsSnapshot rejects newlines", () => {
-  expect(() => normalizeProxyBridgeSettingsSnapshot({ upstreamUserAgent: "a\nb" })).toThrow(
-    /换行/,
-  );
+  expect(() => normalizeProxyBridgeSettingsSnapshot({ upstreamUserAgent: "a\nb" })).toThrow(/换行/);
 });
 
 test("resolveUpstreamUserAgentOverride returns undefined when unset", () => {

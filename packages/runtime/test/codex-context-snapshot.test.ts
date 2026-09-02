@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "../src/codex-config-sync.js";
-import { DEFAULT_CONTEXT_LIMIT } from "../src/models-dev-limits.js";
 import {
   buildCodexThreadUsageSummary,
   CODEX_CONTEXT_ESTIMATE_LABEL,
@@ -8,6 +7,7 @@ import {
   resolveCodexContextFromNotification,
   resolveCodexContextSnapshot,
 } from "../src/codex-context-snapshot.js";
+import { DEFAULT_CONTEXT_LIMIT } from "../src/models-dev-limits.js";
 
 const MAIN_ATTRIBUTION = {
   ecoThreadId: "thr_eco_main",
@@ -85,11 +85,7 @@ test("resolveCodexContextSnapshot unwraps V1 route aliases", () => {
   const resolved = resolveCodexContextSnapshot({
     params: tokenUsagePayload(),
     attribution: MAIN_ATTRIBUTION,
-    modelId: buildCodexGatewayModelAlias(
-      "custom.__provider",
-      "vendor/model.__v1",
-      "anthropic",
-    ),
+    modelId: buildCodexGatewayModelAlias("custom.__provider", "vendor/model.__v1", "anthropic"),
   });
 
   expect(resolved?.context.modelId).toBe("vendor/model.__v1");

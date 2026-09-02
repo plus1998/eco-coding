@@ -6,8 +6,8 @@ import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type { McpServerConfigView } from "../shared/ipc";
 import { sanitizeMcpServerName } from "../shared/mcp";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 interface ComposerMcpServersProps {

@@ -1,9 +1,9 @@
-import { isReadToolName } from "@eco/runtime/tool-target";
 import {
   isSubagentMissionEnvelope,
   parseSubagentMissionMessage,
   resolveMissionDisplayText,
 } from "@eco/runtime/agent-mission";
+import { isReadToolName } from "@eco/runtime/tool-target";
 import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import {
   bashApprovalPhaseToLifecycle,
@@ -19,6 +19,7 @@ import {
   type ToolActionLifecycle,
   toolStatusToLifecycle,
 } from "../shared/activity-display";
+import type { ActionKindTranslate } from "../shared/feed-action-kind";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change";
 import type {
   ThreadRunProjectionAgent,
@@ -31,10 +32,7 @@ import {
   isPromptCacheTimelineEventType,
   readPromptCacheTimelineMetadata,
 } from "../shared/prompt-cache-timeline";
-import {
-  type PromptImagePreview,
-  readPromptImagePreviews,
-} from "../shared/prompt-image-metadata";
+import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isReconnectActivityOrigin,
@@ -45,8 +43,6 @@ import {
   resolveReconnectPhaseDisplay,
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
-import { i18n } from "./i18n";
-import type { ActionKindTranslate } from "../shared/feed-action-kind";
 import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
@@ -65,10 +61,10 @@ import {
   reasoningSummaryLabel,
   resolveSubagentRunDisplayTitle,
 } from "./activity-log";
+import { i18n } from "./i18n";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 
-const translateActionKind: ActionKindTranslate = (key, vars) =>
-  vars ? i18n.t(key, vars) : i18n.t(key);
+const translateActionKind: ActionKindTranslate = (key, vars) => (vars ? i18n.t(key, vars) : i18n.t(key));
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
@@ -1039,16 +1035,18 @@ export function collapseEphemeralReasoningSummaryTimeline(
     }
   }
 
-  return timeline.map((item, index) => {
-    if (!isReasoningSummaryItem(item)) {
-      return item;
-    }
-    if (index <= lastSupersedingIndex || index !== tipSummaryIndex) {
-      return undefined;
-    }
-    const slotKey = slotKeyBySummaryIndex.get(index);
-    return slotKey ? withReasoningSummarySlotKey(item, slotKey) : item;
-  }).filter((item): item is ThreadRunProjectionTimelineItem => Boolean(item));
+  return timeline
+    .map((item, index) => {
+      if (!isReasoningSummaryItem(item)) {
+        return item;
+      }
+      if (index <= lastSupersedingIndex || index !== tipSummaryIndex) {
+        return undefined;
+      }
+      const slotKey = slotKeyBySummaryIndex.get(index);
+      return slotKey ? withReasoningSummarySlotKey(item, slotKey) : item;
+    })
+    .filter((item): item is ThreadRunProjectionTimelineItem => Boolean(item));
 }
 
 function resolveReasoningSummarySlotKey(
@@ -1596,9 +1594,7 @@ function isDuplicateTaskNotificationSummaryEcho(
   });
 }
 
-function readProjectionTaskNotificationToolUseId(
-  item: ThreadRunProjectionTimelineItem,
-): string | undefined {
+function readProjectionTaskNotificationToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
   const metadata = item.metadata;
   if (!metadata) {
     return undefined;
@@ -2757,7 +2753,8 @@ function buildProjectionToolActionBlock(
   );
   const imagePath = metadataTool?.imageView?.path.trim();
   const imageView = imagePath ? { path: imagePath, eventId: item.id } : undefined;
-  const mcpDiscovery = metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
+  const mcpDiscovery =
+    metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const toolOutput = metadataTool?.outputPreview?.trim();
@@ -2808,9 +2805,7 @@ export function projectionItemToDetailBlock(
       return {
         kind: "action",
         icon: "images",
-        label: i18n.t(
-          lifecycle === "running" ? "activity.imageView.viewing" : "activity.imageView.viewed",
-        ),
+        label: i18n.t(lifecycle === "running" ? "activity.imageView.viewing" : "activity.imageView.viewed"),
         toolName: "ViewImage",
         lifecycle,
         imageView: { path: imagePath, eventId: item.id },
@@ -2877,11 +2872,7 @@ export function projectionItemToDetailBlock(
     // User role / message.user on the main timeline is handled by UserPromptBlock;
     // never surface as agent narrative (mid-turn Codex historically hit this path).
     const liveType = projectionLiveType(item);
-    if (
-      item.role === "user" ||
-      liveType === "message.user" ||
-      item.metadata?.itemType === "userMessage"
-    ) {
+    if (item.role === "user" || liveType === "message.user" || item.metadata?.itemType === "userMessage") {
       if (item.scope === "agent") {
         // Subagent user prompts still go through projection detail blocks.
       } else {
@@ -2910,8 +2901,7 @@ export function projectionItemToDetailBlock(
       return undefined;
     }
     const streaming = item.eventType === "thinking.delta";
-    const asSummary =
-      readReasoningDisplay(item.metadata) === "summary" || isReasoningSummaryItem(item);
+    const asSummary = readReasoningDisplay(item.metadata) === "summary" || isReasoningSummaryItem(item);
     if (asSummary) {
       // Tip status (ephemeral): shimmer while this row is on the Feed tip.
       // Visibility of finals is decided by collapseEphemeralReasoningSummaryTimeline.
@@ -3048,9 +3038,7 @@ function isProjectionThreadFailure(item: ThreadRunProjectionTimelineItem): boole
   }
   const liveType = projectionLiveType(item);
   return (
-    liveType === "thread.blocked" ||
-    liveType === "thread.execution_failed" ||
-    liveType === "thread.failed"
+    liveType === "thread.blocked" || liveType === "thread.execution_failed" || liveType === "thread.failed"
   );
 }
 
@@ -3230,11 +3218,13 @@ function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | und
   return typeof liveType === "string" ? liveType : undefined;
 }
 
-function readUnprojectedCodexItem(item: ThreadRunProjectionTimelineItem): {
-  itemType: string;
-  phase?: "started" | "completed";
-  payload?: string;
-} | undefined {
+function readUnprojectedCodexItem(item: ThreadRunProjectionTimelineItem):
+  | {
+      itemType: string;
+      phase?: "started" | "completed";
+      payload?: string;
+    }
+  | undefined {
   if (projectionLiveType(item) !== "codex.item.unprojected") {
     return undefined;
   }
@@ -3325,9 +3315,7 @@ function readProjectionToolMetadata(
       ? (rawImageView as Record<string, unknown>).path
       : undefined;
   const imageView =
-    typeof imageViewPath === "string" && imageViewPath.trim()
-      ? { path: imageViewPath.trim() }
-      : undefined;
+    typeof imageViewPath === "string" && imageViewPath.trim() ? { path: imageViewPath.trim() } : undefined;
   const rawMcpDiscovery = record.mcpDiscovery;
   const mcpDiscovery =
     rawMcpDiscovery &&

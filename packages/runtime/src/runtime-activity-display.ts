@@ -1,21 +1,21 @@
 import type { AgentEvent, AgentEventType, AgentRole, RuntimeAgentRole } from "../../shared/src";
 import { formatSubagentMissionMessage } from "./agent-mission.js";
 import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
-import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import { resolveSkillDisplayName } from "./skill-display.js";
-import {
-  formatGrepTargetLabel,
-  formatReadTargetLabel,
-  resolveGrepTargetFromToolInput,
-  resolveReadTargetFromToolInput,
-} from "./tool-target.js";
-import { createToolOutputPreview } from "./tool-output-preview.js";
 import {
   isSubagentRole,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
   type SubagentRole,
 } from "./subagent-availability.js";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
+import { createToolOutputPreview } from "./tool-output-preview.js";
+import {
+  formatGrepTargetLabel,
+  formatReadTargetLabel,
+  resolveGrepTargetFromToolInput,
+  resolveReadTargetFromToolInput,
+} from "./tool-target.js";
 
 export function extractSdkRunFailure(payload: unknown): string | null {
   if (!isRecord(payload)) {
@@ -53,7 +53,6 @@ function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
   );
 }
 
-
 export function extractCompactPostTokens(payload: unknown): number | undefined {
   if (!isRecord(payload)) {
     return undefined;
@@ -74,7 +73,6 @@ export function extractCompactPostTokens(payload: unknown): number | undefined {
         : undefined;
   return post !== undefined && Number.isFinite(post) ? post : undefined;
 }
-
 
 export type SdkTodoUpdatedKind = "task_started" | "task_updated" | "task_progress";
 
@@ -482,11 +480,7 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
-    const detail = formatToolResultDisplayDetail(
-      payload.tool_name,
-      payload.input,
-      payload.content,
-    );
+    const detail = formatToolResultDisplayDetail(payload.tool_name, payload.input, payload.content);
     return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }
 
@@ -678,11 +672,7 @@ function resolveAgentToolTaskPrompt(input: Record<string, unknown>): string {
   );
 }
 
-function formatToolResultDisplayDetail(
-  toolName: string,
-  input: unknown,
-  content: unknown,
-): string | null {
+function formatToolResultDisplayDetail(toolName: string, input: unknown, content: unknown): string | null {
   const inputDetail = formatToolInputSummary(toolName, input);
   const contentDetail = formatToolResultContentSummary(content);
   if (inputDetail && contentDetail) {

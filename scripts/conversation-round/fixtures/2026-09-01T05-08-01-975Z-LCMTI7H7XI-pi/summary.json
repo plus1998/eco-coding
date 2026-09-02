@@ -8,9 +8,7 @@
   "ok": false,
   "checklist": {
     "ok": false,
-    "failed": [
-      "subagent_turn_events"
-    ],
+    "failed": ["subagent_turn_events"],
     "checklist": {
       "skills_listed": {
         "ok": true,

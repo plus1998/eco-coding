@@ -390,9 +390,7 @@ export async function prepareGatewayBindingForwardRequest(input: {
   if (!binding) {
     return {
       kind: "response",
-      response: unauthorizedClaudeBridgeResponse(
-        "Unknown or revoked Gateway bridge credential.",
-      ),
+      response: unauthorizedClaudeBridgeResponse("Unknown or revoked Gateway bridge credential."),
     };
   }
   if (!globalClaudeBridgeBindingRegistry.acquire(binding)) {
@@ -432,10 +430,7 @@ export async function prepareGatewayBindingForwardRequest(input: {
     // Responses is the conversion hub: the gateway can convert Responses IR to
     // openai_responses, openai_chat_completions, or anthropic upstream wire formats.
     // Chat Completions is passthrough-only and must match openai_chat_completions.
-    if (
-      input.face === "chat_completions" &&
-      route.apiCompat !== "openai_chat_completions"
-    ) {
+    if (input.face === "chat_completions" && route.apiCompat !== "openai_chat_completions") {
       releaseLease();
       return {
         kind: "response",
@@ -453,8 +448,7 @@ export async function prepareGatewayBindingForwardRequest(input: {
     }
 
     const clientModel =
-      (typeof input.requestedModel === "string" && input.requestedModel.trim()) ||
-      route.aliasModelId;
+      (typeof input.requestedModel === "string" && input.requestedModel.trim()) || route.aliasModelId;
     const onMessagesRequest = binding.callbacks.onMessagesRequest;
     let logicalRequestId: string | undefined;
     if (onMessagesRequest) {

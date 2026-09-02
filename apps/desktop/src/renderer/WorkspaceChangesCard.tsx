@@ -57,11 +57,7 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
           </div>
           {threadId ? (
             <div className="workspace-changes-actions">
-              <button
-                type="button"
-                className="workspace-changes-review"
-                onClick={() => void openReview()}
-              >
+              <button type="button" className="workspace-changes-review" onClick={() => void openReview()}>
                 {t("workspace.diff.reviewAction")}
               </button>
             </div>
@@ -90,11 +86,7 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
         ) : null}
       </div>
       {reviewOpen ? (
-        <DiffReviewModal
-          diff={reviewDiff}
-          fileCount={fileCount}
-          onClose={() => setReviewOpen(false)}
-        />
+        <DiffReviewModal diff={reviewDiff} fileCount={fileCount} onClose={() => setReviewOpen(false)} />
       ) : null}
     </>
   );

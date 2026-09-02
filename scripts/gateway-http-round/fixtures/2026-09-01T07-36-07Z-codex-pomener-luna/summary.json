@@ -3,12 +3,8 @@
   "layer": "client-round",
   "marker": "LCMTICSEDF",
   "recordedAt": "2026-09-01T07:36:09.419Z",
-  "clients": [
-    "codex"
-  ],
-  "profileIds": [
-    "packy_responses"
-  ],
+  "clients": ["codex"],
+  "profileIds": ["packy_responses"],
   "skippedCells": [
     {
       "client": "codex",

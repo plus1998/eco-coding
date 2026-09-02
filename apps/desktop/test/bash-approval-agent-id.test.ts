@@ -13,9 +13,7 @@ function deps(input: {
   return {
     plannerAgentId: input.plannerAgentId,
     roleForAgentId: (_threadId: string, agentId: string) => input.roles?.[agentId],
-    resolveSubagentId:
-      input.resolveSubagentId ??
-      ((_threadId, _input) => undefined),
+    resolveSubagentId: input.resolveSubagentId ?? ((_threadId, _input) => undefined),
   };
 }
 

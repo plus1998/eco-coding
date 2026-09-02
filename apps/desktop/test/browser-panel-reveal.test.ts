@@ -20,11 +20,9 @@ test("agent_browser_open vs tab_new semantics are split in BrowserHost", () => {
     "utf8",
   );
   const indexSource = fs.readFileSync(path.join(import.meta.dir, "../src/main/index.ts"), "utf8");
-  const openFn = browserHostSource.match(
-    /private async invokeNativeAgentBrowserOpen[\s\S]*?^  \}/m,
-  )?.[0];
+  const openFn = browserHostSource.match(/private async invokeNativeAgentBrowserOpen[\s\S]*?^ {2}\}/m)?.[0];
   const tabNewFn = browserHostSource.match(
-    /private async invokeNativeAgentBrowserTabNew[\s\S]*?^  \}/m,
+    /private async invokeNativeAgentBrowserTabNew[\s\S]*?^ {2}\}/m,
   )?.[0];
   expect(openFn).toBeDefined();
   expect(tabNewFn).toBeDefined();
@@ -48,15 +46,9 @@ test("browser MCP logical name stays fixed (no eco_ab multi-name)", () => {
 
 test("MCP/CDP handshake and non-open tools do not reveal browser panel", () => {
   expect(shouldRevealBrowserForCdpActivity({ kind: "ws-connect" })).toBe(false);
-  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.enable" })).toBe(
-    false,
-  );
-  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Runtime.evaluate" })).toBe(
-    false,
-  );
-  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.getTargets" })).toBe(
-    false,
-  );
+  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.enable" })).toBe(false);
+  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Runtime.evaluate" })).toBe(false);
+  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.getTargets" })).toBe(false);
   expect(
     shouldRevealBrowserForCdpActivity({
       kind: "cdp-method",
@@ -71,12 +63,12 @@ test("MCP/CDP handshake and non-open tools do not reveal browser panel", () => {
     }),
   ).toBe(false);
   // snapshot / click / screenshot are not agent_browser_open
-  expect(
-    shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.captureScreenshot" }),
-  ).toBe(false);
-  expect(
-    shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Input.dispatchMouseEvent" }),
-  ).toBe(false);
+  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.captureScreenshot" })).toBe(
+    false,
+  );
+  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Input.dispatchMouseEvent" })).toBe(
+    false,
+  );
 });
 
 test("agent CDP navigate/activate no longer drives UI focus (legacy classifier unchanged)", () => {
@@ -87,9 +79,7 @@ test("agent CDP navigate/activate no longer drives UI focus (legacy classifier u
   );
   expect(browserHostSource).toContain("onActivateTarget: (_targetId) => {");
   expect(browserHostSource).toContain("CDP navigate/activate must not move UI focus");
-  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.navigate" })).toBe(
-    true,
-  );
+  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.navigate" })).toBe(true);
 });
 
 test("placeholder about:blank is not a user-facing browser tab", () => {
@@ -114,14 +104,12 @@ test("detects any eco agent browser tool name", () => {
 test("detects eco agent browser open tool names and urls", () => {
   expect(isEcoAgentBrowserOpenToolName("mcp__eco_agent_browser__agent_browser_open")).toBe(true);
   expect(isEcoAgentBrowserOpenToolName("agent_browser_open")).toBe(true);
-  expect(isEcoAgentBrowserOpenToolName("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(
-    false,
-  );
+  expect(isEcoAgentBrowserOpenToolName("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(false);
   expect(isEcoAgentBrowserOpenToolName("mcp__eco_agent_browser__agent_browser_click")).toBe(false);
   expect(isEcoAgentBrowserOpenToolName("Bash")).toBe(false);
-  expect(
-    extractUrlFromBrowserOpenToolPayload({ input: { url: "https://google.com" } }),
-  ).toBe("https://google.com");
+  expect(extractUrlFromBrowserOpenToolPayload({ input: { url: "https://google.com" } })).toBe(
+    "https://google.com",
+  );
 });
 
 test("does not treat tool.started / tool.completed event labels as browser URLs", () => {

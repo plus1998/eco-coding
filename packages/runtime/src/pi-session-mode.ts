@@ -14,15 +14,9 @@ export const PI_READ_ONLY_BUILTIN_TOOLS = ["read", "bash"] as const;
 export const PI_WRITE_BUILTIN_TOOLS = ["edit", "write"] as const;
 
 const PI_ASK_PLAN_DENY_TOOLS = new Set(
-  [
-    ...PI_WRITE_BUILTIN_TOOLS,
-    "Edit",
-    "Write",
-    "MultiEdit",
-    "NotebookEdit",
-    PI_AGENT_TOOL_NAME,
-    "Agent",
-  ].map((name) => name.toLowerCase()),
+  [...PI_WRITE_BUILTIN_TOOLS, "Edit", "Write", "MultiEdit", "NotebookEdit", PI_AGENT_TOOL_NAME, "Agent"].map(
+    (name) => name.toLowerCase(),
+  ),
 );
 
 /** Destructive / mutating patterns — fail closed if matched. */
@@ -136,8 +130,7 @@ export function isPiReadOnlyBashCommand(command: string): boolean {
   }
 
   const isSafeSegment = (segment: string): boolean =>
-    CD_COMMAND_PATTERN.test(segment) ||
-    SAFE_BASH_PATTERNS.some((pattern) => pattern.test(segment));
+    CD_COMMAND_PATTERN.test(segment) || SAFE_BASH_PATTERNS.some((pattern) => pattern.test(segment));
 
   // Allow read-only chains: each && / ; link, and each | stage within it,
   // must be cd or an allowlisted read-only command.
@@ -148,9 +141,7 @@ export function isPiReadOnlyBashCommand(command: string): boolean {
       if (!chain) {
         return false;
       }
-      const stages = chain.includes("|")
-        ? chain.split("|").map((stage) => stage.trim())
-        : [chain];
+      const stages = chain.includes("|") ? chain.split("|").map((stage) => stage.trim()) : [chain];
       if (!stages.every(isSafeSegment)) {
         return false;
       }
@@ -167,9 +158,7 @@ export function isPiReadOnlyBashCommand(command: string): boolean {
   }
 
   // At least one real read-only command is required (cd-only does nothing).
-  return allStages.some(
-    (stage) => !CD_COMMAND_PATTERN.test(stage) && isSafeSegment(stage),
-  );
+  return allStages.some((stage) => !CD_COMMAND_PATTERN.test(stage) && isSafeSegment(stage));
 }
 
 export function piToolsForSessionMode(
@@ -205,10 +194,7 @@ export function piSystemPromptForSessionMode(mode: CoreSessionMode): string {
   return "";
 }
 
-export type PiPlanSubmittedHandler = (input: {
-  plan: string;
-  toolCallId: string;
-}) => void;
+export type PiPlanSubmittedHandler = (input: { plan: string; toolCallId: string }) => void;
 
 export interface CreatePiModeAwareToolPermissionHandlerInput {
   mode: CoreSessionMode;

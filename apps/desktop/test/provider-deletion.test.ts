@@ -83,9 +83,7 @@ test("partitions cascading configs from blocking active threads", () => {
     { kind: "route_profile", id: "legacy", name: "Legacy" },
   ]);
 
-  expect(partitioned.blocking).toEqual([
-    { kind: "active_thread", id: "thread-a", name: "Thread A" },
-  ]);
+  expect(partitioned.blocking).toEqual([{ kind: "active_thread", id: "thread-a", name: "Thread A" }]);
   expect(partitioned.cascadeMainAgentConfigs).toEqual([
     { kind: "main_agent_config", id: "main-a", name: "Main A" },
   ]);
@@ -121,11 +119,7 @@ function threadWithProvider(status: ThreadSummary["status"], id: string): Thread
   } as unknown as ThreadSummary;
 }
 
-function threadWithOverride(
-  status: ThreadSummary["status"],
-  id: string,
-  providerId: string,
-): ThreadSummary {
+function threadWithOverride(status: ThreadSummary["status"], id: string, providerId: string): ThreadSummary {
   return {
     id,
     title: id,

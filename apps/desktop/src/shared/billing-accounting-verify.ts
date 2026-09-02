@@ -1,4 +1,4 @@
-import { buildBillingTokenBreakdown, type BillingTokenBreakdown } from "./billing-token-breakdown";
+import { type BillingTokenBreakdown, buildBillingTokenBreakdown } from "./billing-token-breakdown";
 import type { BillingUsageSource, ThreadBillingSnapshot, ThreadUsageLedgerEventView } from "./ipc";
 
 export interface BillingAccountingIssue {
@@ -56,7 +56,14 @@ function sumEventTokens(events: readonly ThreadUsageLedgerEventView[]): number {
   return events.reduce((sum, event) => sum + tokenSum(event), 0);
 }
 
-function sumBreakdownTokens(rows: readonly { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }[]): number {
+function sumBreakdownTokens(
+  rows: readonly {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  }[],
+): number {
   return rows.reduce((sum, row) => sum + tokenSum(row), 0);
 }
 

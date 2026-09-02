@@ -3,18 +3,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  approvedPlanSnapshotExists,
+  deleteApprovedPlanSnapshotIfNewerThan,
+  parseApprovedPlanDocument,
+  writeApprovedPlanSnapshot,
+} from "../src/main/worktree-lifecycle";
+import {
   continueStatusMessage,
   resolveContinuePhase,
   resolveThreadContinueAction,
   threadEnteredExecutionPhase,
   userRequestsPlanRevision,
 } from "../src/shared/thread-continuation";
-import {
-  approvedPlanSnapshotExists,
-  deleteApprovedPlanSnapshotIfNewerThan,
-  parseApprovedPlanDocument,
-  writeApprovedPlanSnapshot,
-} from "../src/main/worktree-lifecycle";
 
 test("userRequestsPlanRevision detects replan intent", () => {
   expect(userRequestsPlanRevision("继续")).toBe(false);
@@ -209,12 +209,12 @@ test("deleteApprovedPlanSnapshotIfNewerThan removes only future snapshots", asyn
     plan: "plan",
   });
 
-  expect(await deleteApprovedPlanSnapshotIfNewerThan(dir, "thr_plan", new Date(Date.now() + 60_000).toISOString())).toBe(
-    false,
-  );
+  expect(
+    await deleteApprovedPlanSnapshotIfNewerThan(dir, "thr_plan", new Date(Date.now() + 60_000).toISOString()),
+  ).toBe(false);
   expect(await approvedPlanSnapshotExists(dir, "thr_plan")).toBe(true);
-  expect(await deleteApprovedPlanSnapshotIfNewerThan(dir, "thr_plan", new Date(Date.now() - 60_000).toISOString())).toBe(
-    true,
-  );
+  expect(
+    await deleteApprovedPlanSnapshotIfNewerThan(dir, "thr_plan", new Date(Date.now() - 60_000).toISOString()),
+  ).toBe(true);
   expect(await approvedPlanSnapshotExists(dir, "thr_plan")).toBe(false);
 });

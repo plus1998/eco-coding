@@ -75,11 +75,7 @@ export function resolveCodexRewindTargetTurnIndex(
   let targetTurnIndex = turns.findIndex((turn) =>
     turn.items?.some((item) => isCodexUserMessageItem(item) && codexItemIds(item).includes(targetItemId)),
   );
-  if (
-    targetTurnIndex < 0 &&
-    Number.isInteger(input.targetTurnIndex) &&
-    input.targetTurnIndex! >= 0
-  ) {
+  if (targetTurnIndex < 0 && Number.isInteger(input.targetTurnIndex) && input.targetTurnIndex! >= 0) {
     const userTurnIndexes = turns.flatMap((turn, index) =>
       turn.items?.some((item) => isCodexUserMessageItem(item)) ? [index] : [],
     );
@@ -92,9 +88,7 @@ export function resolveCodexRewindTargetTurnIndex(
   }
   if (targetTurnIndex < 0) {
     const availableUserItems = turns.flatMap((turn) =>
-      (turn.items ?? [])
-        .filter((item) => isCodexUserMessageItem(item))
-        .flatMap((item) => codexItemIds(item)),
+      (turn.items ?? []).filter((item) => isCodexUserMessageItem(item)).flatMap((item) => codexItemIds(item)),
     );
     throw new CodexForkNotAvailable(
       `Codex user item '${targetItemId}' was not found among ${availableUserItems.length} persisted user items.`,
@@ -124,19 +118,13 @@ function codexItemIds(item: { id?: unknown; clientId?: unknown }): string[] {
   return ids;
 }
 
-export function buildCodexThreadForkParams(
-  threadId: string,
-  lastTurnId: string,
-): CodexThreadForkParams {
+export function buildCodexThreadForkParams(threadId: string, lastTurnId: string): CodexThreadForkParams {
   const trimmedThreadId = threadId.trim();
   const trimmedLastTurnId = lastTurnId.trim();
   if (!trimmedThreadId || !trimmedLastTurnId) {
-    throw new CodexForkNotAvailable(
-      "Codex fork requires a thread id and lastTurnId (last kept turn).",
-      {
-        nextAction: "Retry from a Codex-backed user message after reloading turn history with turn ids.",
-      },
-    );
+    throw new CodexForkNotAvailable("Codex fork requires a thread id and lastTurnId (last kept turn).", {
+      nextAction: "Retry from a Codex-backed user message after reloading turn history with turn ids.",
+    });
   }
   return { threadId: trimmedThreadId, lastTurnId: trimmedLastTurnId };
 }
@@ -147,8 +135,7 @@ function readTurnId(turn: CodexTurnReadShape, index: number): string {
     throw new CodexForkNotAvailable(
       `Codex turn at index ${index} has no stable id; cannot thread/fork with lastTurnId.`,
       {
-        nextAction:
-          "Upgrade Codex app-server so thread/read turns include id, then retry rewind.",
+        nextAction: "Upgrade Codex app-server so thread/read turns include id, then retry rewind.",
       },
     );
   }
@@ -169,12 +156,9 @@ export async function forkCodexThread(
   const threadId = input.threadId.trim();
   const targetItemId = input.itemId.trim();
   if (!threadId || !targetItemId) {
-    throw new CodexForkNotAvailable(
-      "Codex fork requires a thread id and target item id.",
-      {
-        nextAction: "Retry from a Codex-backed user message that has a persisted item id.",
-      },
-    );
+    throw new CodexForkNotAvailable("Codex fork requires a thread id and target item id.", {
+      nextAction: "Retry from a Codex-backed user message that has a persisted item id.",
+    });
   }
 
   const read = await client.request<{
@@ -215,12 +199,9 @@ export async function forkCodexThread(
 
   const newThreadId = typeof forked.thread?.id === "string" ? forked.thread.id.trim() : "";
   if (!newThreadId) {
-    throw new CodexForkNotAvailable(
-      "Codex thread/fork returned without a new thread id.",
-      {
-        nextAction: "Retry rewind after confirming app-server supports thread/fork with lastTurnId.",
-      },
-    );
+    throw new CodexForkNotAvailable("Codex thread/fork returned without a new thread id.", {
+      nextAction: "Retry rewind after confirming app-server supports thread/fork with lastTurnId.",
+    });
   }
   const forkedFromId =
     typeof forked.thread?.forkedFromId === "string" ? forked.thread.forkedFromId.trim() : undefined;

@@ -52,8 +52,7 @@ export function readPiAssistantErrorMessage(event: PiSessionEventLike): string |
     if (message.stopReason !== "error") {
       continue;
     }
-    const errorMessage =
-      typeof message.errorMessage === "string" ? message.errorMessage.trim() : "";
+    const errorMessage = typeof message.errorMessage === "string" ? message.errorMessage.trim() : "";
     if (errorMessage) {
       return errorMessage;
     }
@@ -475,8 +474,7 @@ export function mapPiSessionEventToAgentEvents(
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `tool_${seq}`;
       const pending = ctx.state.pendingToolUses.get(toolCallId);
       ctx.state.pendingToolUses.delete(toolCallId);
-      const toolName =
-        typeof event.toolName === "string" ? event.toolName : pending?.toolName ?? "tool";
+      const toolName = typeof event.toolName === "string" ? event.toolName : (pending?.toolName ?? "tool");
       const input = pending?.input ?? {};
       const isError = event.isError === true;
       const resultText = formatToolResult(event.result);
@@ -582,11 +580,7 @@ function stampOpenThinkingDisplay(
   return reasoningDisplay;
 }
 
-function closeOpenStreams(
-  ctx: PiEventAdapterContext,
-  seq: number,
-  reason: string,
-): AgentEvent[] {
+function closeOpenStreams(ctx: PiEventAdapterContext, seq: number, reason: string): AgentEvent[] {
   const state = ctx.state;
   const events: AgentEvent[] = [];
   const base = {
@@ -595,7 +589,8 @@ function closeOpenStreams(
     role: "planner" as const,
   };
   if (state.openThinking) {
-    const reasoningDisplay = state.openThinkingDisplay ?? resolvePiThinkingReasoningDisplay(undefined, ctx, state);
+    const reasoningDisplay =
+      state.openThinkingDisplay ?? resolvePiThinkingReasoningDisplay(undefined, ctx, state);
     events.push(
       createAgentEvent({
         id: `${ctx.threadId}:pi:${seq}:think_close:${reason}`,
@@ -740,10 +735,7 @@ function formatToolResult(result: unknown): string {
   }
 }
 
-function normalizePiToolUseInput(
-  toolName: string,
-  input: Record<string, unknown>,
-): Record<string, unknown> {
+function normalizePiToolUseInput(toolName: string, input: Record<string, unknown>): Record<string, unknown> {
   if (toolName !== "Agent") {
     return input;
   }

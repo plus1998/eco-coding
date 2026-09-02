@@ -2,7 +2,11 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "../src/main/workspace-file-browser";
+import {
+  listWorkspaceEntries,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+} from "../src/main/workspace-file-browser";
 
 let workspacePath = "";
 let outsidePath = "";
@@ -120,21 +124,19 @@ test("rejects oversized media with an understandable reason", async () => {
 });
 
 test("rejects directories, workspace escapes, and symlink escapes", async () => {
-  await expect(
-    readWorkspaceFile({ workspacePath, filePath: workspacePath }),
-  ).rejects.toThrow("regular file");
+  await expect(readWorkspaceFile({ workspacePath, filePath: workspacePath })).rejects.toThrow("regular file");
 
   const outsideFile = path.join(outsidePath, "secret.txt");
   await fs.writeFile(outsideFile, "secret");
-  await expect(
-    readWorkspaceFile({ workspacePath, filePath: outsideFile }),
-  ).rejects.toThrow("inside the workspace");
+  await expect(readWorkspaceFile({ workspacePath, filePath: outsideFile })).rejects.toThrow(
+    "inside the workspace",
+  );
 
   const symlinkPath = path.join(workspacePath, "secret.txt");
   await fs.symlink(outsideFile, symlinkPath);
-  await expect(
-    readWorkspaceFile({ workspacePath, filePath: symlinkPath }),
-  ).rejects.toThrow("inside the workspace");
+  await expect(readWorkspaceFile({ workspacePath, filePath: symlinkPath })).rejects.toThrow(
+    "inside the workspace",
+  );
 });
 
 test("does not expose symlink entries", async () => {
@@ -171,15 +173,15 @@ test("rejects writing directories, workspace escapes, and symlinks", async () =>
 
   const outsideFile = path.join(outsidePath, "secret.txt");
   await fs.writeFile(outsideFile, "secret");
-  await expect(
-    writeWorkspaceFile({ workspacePath, filePath: outsideFile, content: "nope" }),
-  ).rejects.toThrow("inside the workspace");
+  await expect(writeWorkspaceFile({ workspacePath, filePath: outsideFile, content: "nope" })).rejects.toThrow(
+    "inside the workspace",
+  );
 
   const symlinkPath = path.join(workspacePath, "linked.txt");
   await fs.symlink(outsideFile, symlinkPath);
-  await expect(
-    writeWorkspaceFile({ workspacePath, filePath: symlinkPath, content: "nope" }),
-  ).rejects.toThrow(/symbolic link|inside the workspace/);
+  await expect(writeWorkspaceFile({ workspacePath, filePath: symlinkPath, content: "nope" })).rejects.toThrow(
+    /symbolic link|inside the workspace/,
+  );
   expect(await fs.readFile(outsideFile, "utf8")).toBe("secret");
 });
 

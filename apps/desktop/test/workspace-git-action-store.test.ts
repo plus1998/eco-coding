@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
+import { i18n } from "../src/renderer/i18n";
 import {
   beginWorkspaceGitAction,
   clearWorkspaceGitAction,
@@ -9,7 +10,6 @@ import {
   setWorkspaceGitActionPhase,
   subscribeWorkspaceGitAction,
 } from "../src/renderer/workspace-git-action-store";
-import { i18n } from "../src/renderer/i18n";
 
 function requireOperationId(operationId: number | null): number {
   if (operationId === null) {

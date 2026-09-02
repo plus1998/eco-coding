@@ -1,4 +1,4 @@
-import { jsonMarshal, jsonParse, type JsonValue } from './json.js';
+import { type JsonValue, jsonMarshal, jsonParse } from "./json.js";
 import type {
   AnthropicContentBlock,
   AnthropicImageSource,
@@ -11,7 +11,7 @@ import type {
   ResponsesRequest,
   ResponsesTextFormat,
   ResponsesTool,
-} from './types.js';
+} from "./types.js";
 
 /** Floor for max_output_tokens in Responses requests (matches Go minMaxOutputTokens). */
 export const minMaxOutputTokens = 128;
@@ -21,9 +21,9 @@ export function toResponsesCallID(id: string): string {
 }
 
 export function fromResponsesCallID(id: string): string {
-  if (id.startsWith('fc_')) {
+  if (id.startsWith("fc_")) {
     const after = id.slice(3);
-    if (after.startsWith('toolu_') || after.startsWith('call_')) {
+    if (after.startsWith("toolu_") || after.startsWith("call_")) {
       return after;
     }
   }
@@ -31,78 +31,77 @@ export function fromResponsesCallID(id: string): string {
 }
 
 export function isWebSearchToolName(name: string | undefined): boolean {
-  return (name ?? '').trim() === 'web_search';
+  return (name ?? "").trim() === "web_search";
 }
 
 export function normalizeWebSearchDomain(domain: string): string {
-  return domain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  return domain
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
 }
 
 export function mapAnthropicEffortToResponses(effort: string): string {
-  if (effort === 'max') {
-    return 'xhigh';
+  if (effort === "max") {
+    return "xhigh";
   }
   return effort;
 }
 
 export function reasoningEffortFromThinkingBudget(budgetTokens: number): string {
   if (budgetTokens >= 4096) {
-    return 'high';
+    return "high";
   }
   if (budgetTokens >= 2048) {
-    return 'medium';
+    return "medium";
   }
   if (budgetTokens >= 1024) {
-    return 'low';
+    return "low";
   }
-  return 'minimal';
+  return "minimal";
 }
 
-export function defaultReasoningSummaryMode(): 'auto' | 'detailed' {
+export function defaultReasoningSummaryMode(): "auto" | "detailed" {
   const detailed =
-    (process.env.LITELLM_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true' ||
-    (process.env.ECO_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true';
-  return detailed ? 'detailed' : 'auto';
+    (process.env.LITELLM_REASONING_AUTO_SUMMARY ?? "").toLowerCase() === "true" ||
+    (process.env.ECO_REASONING_AUTO_SUMMARY ?? "").toLowerCase() === "true";
+  return detailed ? "detailed" : "auto";
 }
 
 export function isAnthropicBillingHeaderText(text: string): boolean {
-  return text.startsWith('x-anthropic-billing-header: ');
+  return text.startsWith("x-anthropic-billing-header: ");
 }
 
 export function anthropicImageToDataURI(src: AnthropicImageSource | undefined): string {
   if (src === undefined) {
-    return '';
+    return "";
   }
-  if (src.type === 'url') {
-    return src.url?.trim() ?? '';
+  if (src.type === "url") {
+    return src.url?.trim() ?? "";
   }
-  if (src.data === undefined || src.data === '') {
-    return '';
+  if (src.data === undefined || src.data === "") {
+    return "";
   }
-  let mediaType = src.media_type ?? '';
-  if (mediaType === '') {
-    mediaType = 'image/png';
+  let mediaType = src.media_type ?? "";
+  if (mediaType === "") {
+    mediaType = "image/png";
   }
   return `data:${mediaType};base64,${src.data}`;
 }
 
 export function isReasoningModel(model: string): boolean {
-  return model.startsWith('gpt-5');
+  return model.startsWith("gpt-5");
 }
 
 export function normalizeToolParameters(schema: unknown): unknown {
-  if (
-    schema === undefined ||
-    schema === null ||
-    jsonMarshal(schema) === 'null'
-  ) {
-    return { type: 'object', properties: {} };
+  if (schema === undefined || schema === null || jsonMarshal(schema) === "null") {
+    return { type: "object", properties: {} };
   }
 
   let m: Record<string, JsonValue>;
   try {
-    const parsed = typeof schema === 'string' ? jsonParse(schema) : schema;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    const parsed = typeof schema === "string" ? jsonParse(schema) : schema;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return schema;
     }
     m = parsed as Record<string, JsonValue>;
@@ -110,11 +109,11 @@ export function normalizeToolParameters(schema: unknown): unknown {
     return schema;
   }
 
-  if (m.type !== 'object') {
+  if (m.type !== "object") {
     return schema;
   }
 
-  if ('properties' in m) {
+  if ("properties" in m) {
     return schema;
   }
 
@@ -122,11 +121,11 @@ export function normalizeToolParameters(schema: unknown): unknown {
 }
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function translateAnthropicContextManagementToResponses(raw: unknown): unknown | undefined {
@@ -142,14 +141,14 @@ export function translateAnthropicContextManagementToResponses(raw: unknown): un
     if (!isUnknownRecord(edit)) {
       continue;
     }
-    if (edit.type !== 'compact_20260112') {
+    if (edit.type !== "compact_20260112") {
       continue;
     }
-    const converted: Record<string, unknown> = { type: 'compaction' };
+    const converted: Record<string, unknown> = { type: "compaction" };
     const trigger = edit.trigger;
     if (isUnknownRecord(trigger)) {
       const value = trigger.value;
-      if (typeof value === 'number' && Number.isFinite(value)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
         converted.compact_threshold = Math.trunc(value);
       }
     }
@@ -163,8 +162,8 @@ export function normalizeExitPlanModeToolParameters(schema: unknown): unknown {
   const normalized = normalizeToolParameters(schema);
   let m: Record<string, JsonValue>;
   try {
-    const parsed = typeof normalized === 'string' ? jsonParse(normalized) : normalized;
-    if (!isJsonRecord(parsed) || parsed.type !== 'object') {
+    const parsed = typeof normalized === "string" ? jsonParse(normalized) : normalized;
+    if (!isJsonRecord(parsed) || parsed.type !== "object") {
       return normalized;
     }
     m = parsed;
@@ -177,67 +176,65 @@ export function normalizeExitPlanModeToolParameters(schema: unknown): unknown {
     ? {
         ...properties.plan,
         description:
-          typeof properties.plan.description === 'string'
+          typeof properties.plan.description === "string"
             ? properties.plan.description
-            : 'Complete Markdown plan to submit for Eco approval.',
+            : "Complete Markdown plan to submit for Eco approval.",
       }
     : {
-        type: 'string',
-        description: 'Complete Markdown plan to submit for Eco approval.',
+        type: "string",
+        description: "Complete Markdown plan to submit for Eco approval.",
       };
   properties.planContent = isJsonRecord(properties.planContent)
     ? {
         ...properties.planContent,
         description:
-          typeof properties.planContent.description === 'string'
+          typeof properties.planContent.description === "string"
             ? properties.planContent.description
-            : 'Alias for the complete Markdown plan. Prefer plan when possible.',
+            : "Alias for the complete Markdown plan. Prefer plan when possible.",
       }
     : {
-        type: 'string',
-        description: 'Alias for the complete Markdown plan. Prefer plan when possible.',
+        type: "string",
+        description: "Alias for the complete Markdown plan. Prefer plan when possible.",
       };
 
   const required = Array.isArray(m.required)
-    ? m.required.filter((item): item is string => typeof item === 'string')
+    ? m.required.filter((item): item is string => typeof item === "string")
     : [];
-  if (!required.includes('plan')) {
-    required.push('plan');
+  if (!required.includes("plan")) {
+    required.push("plan");
   }
 
   return { ...m, properties, required };
 }
 
 function normalizeToolParametersForTool(name: string, schema: unknown): unknown {
-  return name === 'ExitPlanMode'
+  return name === "ExitPlanMode"
     ? normalizeExitPlanModeToolParameters(schema)
     : normalizeToolParameters(schema);
 }
 
 function augmentToolDescription(name: string, description: string | undefined): string | undefined {
-  if (name !== 'ExitPlanMode') {
+  if (name !== "ExitPlanMode") {
     return description;
   }
-  const requirement = 'Eco requirement: include the complete Markdown plan in the `plan` tool input field.';
+  const requirement = "Eco requirement: include the complete Markdown plan in the `plan` tool input field.";
   return description?.trim() ? `${description.trim()}\n\n${requirement}` : requirement;
 }
 
 /** Map Anthropic thinking/effort fields to OpenAI Responses reasoning, when enabled. */
-export function resolveAnthropicReasoningForResponses(
-  req: AnthropicRequest,
-): ResponsesReasoning | undefined {
-  if (req.thinking?.type === 'disabled') {
+export function resolveAnthropicReasoningForResponses(req: AnthropicRequest): ResponsesReasoning | undefined {
+  if (req.thinking?.type === "disabled") {
     return undefined;
   }
 
   let effort: string | undefined;
-  if (req.output_config?.effort !== undefined && req.output_config.effort !== '') {
+  if (req.output_config?.effort !== undefined && req.output_config.effort !== "") {
     effort = req.output_config.effort;
-  } else if (req.effort !== undefined && req.effort !== '') {
+  } else if (req.effort !== undefined && req.effort !== "") {
     effort = req.effort;
-  } else if (req.thinking?.type === 'adaptive') {
-    effort = 'medium';
-  } else if (req.thinking?.type === 'enabled') {
+  } else if (req.thinking?.type === "adaptive") {
+    effort = "medium";
+  } else if (req.thinking?.type === "enabled") {
     effort = reasoningEffortFromThinkingBudget(req.thinking.budget_tokens ?? 0);
   }
 
@@ -249,7 +246,7 @@ export function resolveAnthropicReasoningForResponses(
     effort: mapAnthropicEffortToResponses(effort),
   };
 
-  if (req.thinking?.summary !== undefined && req.thinking.summary !== '') {
+  if (req.thinking?.summary !== undefined && req.thinking.summary !== "") {
     reasoning.summary = req.thinking.summary;
   } else {
     // Anthropic thinking clients expect a textual thinking block. Without a
@@ -264,12 +261,12 @@ export function resolveAnthropicReasoningForResponses(
 export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
   let input = convertAnthropicToResponsesInput(undefined, req.messages);
   const instructions = anthropicSystemToResponsesInstructions(req.system);
-  if (input.length === 0 && instructions !== '') {
+  if (input.length === 0 && instructions !== "") {
     input = [
       {
-        type: 'message',
-        role: 'system',
-        content: [{ type: 'input_text', text: instructions }],
+        type: "message",
+        role: "system",
+        content: [{ type: "input_text", text: instructions }],
       },
     ];
   }
@@ -278,7 +275,7 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
     model: req.model,
     input,
     stream: req.stream ?? false,
-    include: ['reasoning.encrypted_content'],
+    include: ["reasoning.encrypted_content"],
   };
 
   if (!isReasoningModel(req.model)) {
@@ -289,11 +286,10 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
   out.store = false;
   out.parallel_tool_calls = true;
   const outputFormat = anthropicOutputFormatToResponses(req.output_format);
-  out.text = outputFormat === undefined
-    ? { verbosity: 'medium' }
-    : { verbosity: 'medium', format: outputFormat };
+  out.text =
+    outputFormat === undefined ? { verbosity: "medium" } : { verbosity: "medium", format: outputFormat };
 
-  if (instructions !== '' && input.length > 0 && input[0]?.role !== 'system') {
+  if (instructions !== "" && input.length > 0 && input[0]?.role !== "system") {
     out.instructions = instructions;
   }
 
@@ -330,17 +326,14 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
 }
 
 export function anthropicOutputFormatToResponses(raw: unknown): ResponsesTextFormat | undefined {
-  if (!isUnknownRecord(raw) || raw.type !== 'json_schema' || raw.schema === undefined) {
+  if (!isUnknownRecord(raw) || raw.type !== "json_schema" || raw.schema === undefined) {
     return undefined;
   }
 
   return {
-    type: 'json_schema',
-    name:
-      typeof raw.name === 'string' && raw.name.trim() !== ''
-        ? raw.name.trim()
-        : 'eco_structured_output',
-    ...(typeof raw.description === 'string' && raw.description.trim() !== ''
+    type: "json_schema",
+    name: typeof raw.name === "string" && raw.name.trim() !== "" ? raw.name.trim() : "eco_structured_output",
+    ...(typeof raw.description === "string" && raw.description.trim() !== ""
       ? { description: raw.description.trim() }
       : {}),
     schema: raw.schema,
@@ -352,22 +345,20 @@ export function convertAnthropicToolChoiceToResponses(raw: unknown): unknown {
   // OpenAI Responses / DeepSeek Responses expect string tool_choice for
   // auto|none|required; object form is only for function|web_search|custom.
   // Returning { type: "auto" } causes: unknown variant `auto`, expected function|…
-  if (typeof raw === 'string') {
-    if (raw === 'any') return 'required';
+  if (typeof raw === "string") {
+    if (raw === "any") return "required";
     return raw;
   }
   const tc = raw as { type?: string; name?: string };
   switch (tc.type) {
-    case 'auto':
-      return 'auto';
-    case 'any':
-      return 'required';
-    case 'none':
-      return 'none';
-    case 'tool':
-      return isWebSearchToolName(tc.name)
-        ? { type: 'web_search' }
-        : { type: 'function', name: tc.name };
+    case "auto":
+      return "auto";
+    case "any":
+      return "required";
+    case "none":
+      return "none";
+    case "tool":
+      return isWebSearchToolName(tc.name) ? { type: "web_search" } : { type: "function", name: tc.name };
     default:
       return raw;
   }
@@ -383,8 +374,8 @@ export function convertAnthropicToResponsesInput(
     const sysParts = parseAnthropicSystemContentParts(system);
     if (sysParts.length > 0) {
       out.push({
-        type: 'message',
-        role: 'developer',
+        type: "message",
+        role: "developer",
         content: sysParts,
       });
     }
@@ -399,20 +390,20 @@ export function convertAnthropicToResponsesInput(
 export function anthropicSystemToResponsesInstructions(raw: unknown): string {
   const parts = parseAnthropicSystemContentParts(raw);
   return parts
-    .map((part) => part.text ?? '')
-    .filter((text) => text !== '')
-    .join('\n');
+    .map((part) => part.text ?? "")
+    .filter((text) => text !== "")
+    .join("\n");
 }
 
 export function parseAnthropicSystemContentParts(raw: unknown): ResponsesContentPart[] {
   if (raw === undefined || raw === null) {
     return [];
   }
-  if (typeof raw === 'string') {
-    if (isAnthropicBillingHeaderText(raw) || raw === '') {
+  if (typeof raw === "string") {
+    if (isAnthropicBillingHeaderText(raw) || raw === "") {
       return [];
     }
-    return [{ type: 'input_text', text: raw }];
+    return [{ type: "input_text", text: raw }];
   }
   if (!Array.isArray(raw)) {
     return [];
@@ -420,8 +411,8 @@ export function parseAnthropicSystemContentParts(raw: unknown): ResponsesContent
   const blocks = raw as AnthropicContentBlock[];
   const parts: ResponsesContentPart[] = [];
   for (const b of blocks) {
-    if (b.type === 'text' && b.text !== undefined && b.text !== '' && !isAnthropicBillingHeaderText(b.text)) {
-      parts.push({ type: 'input_text', text: b.text });
+    if (b.type === "text" && b.text !== undefined && b.text !== "" && !isAnthropicBillingHeaderText(b.text)) {
+      parts.push({ type: "input_text", text: b.text });
     }
   }
   return parts;
@@ -429,9 +420,9 @@ export function parseAnthropicSystemContentParts(raw: unknown): ResponsesContent
 
 export function anthropicMsgToResponsesItems(m: AnthropicMessage): ResponsesInputItem[] {
   switch (m.role) {
-    case 'user':
+    case "user":
       return anthropicUserToResponses(m.content);
-    case 'assistant':
+    case "assistant":
       return anthropicAssistantToResponses(m.content);
     default:
       return anthropicUserToResponses(m.content);
@@ -439,9 +430,9 @@ export function anthropicMsgToResponsesItems(m: AnthropicMessage): ResponsesInpu
 }
 
 export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
-  if (typeof raw === 'string') {
-    const parts: ResponsesContentPart[] = [{ type: 'input_text', text: raw }];
-    return [{ type: 'message', role: 'user', content: parts }];
+  if (typeof raw === "string") {
+    const parts: ResponsesContentPart[] = [{ type: "input_text", text: raw }];
+    return [{ type: "message", role: "user", content: parts }];
   }
 
   const blocks = raw as AnthropicContentBlock[];
@@ -449,13 +440,13 @@ export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
   let toolResultImageParts: ResponsesContentPart[] = [];
 
   for (const b of blocks) {
-    if (b.type !== 'tool_result') {
+    if (b.type !== "tool_result") {
       continue;
     }
     const { outputText, imageParts } = convertToolResultOutput(b);
     out.push({
-      type: 'function_call_output',
-      call_id: toResponsesCallID(b.tool_use_id ?? ''),
+      type: "function_call_output",
+      call_id: toResponsesCallID(b.tool_use_id ?? ""),
       output: outputText,
     });
     toolResultImageParts = toolResultImageParts.concat(imageParts);
@@ -464,15 +455,15 @@ export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
   const parts: ResponsesContentPart[] = [];
   for (const b of blocks) {
     switch (b.type) {
-      case 'text':
-        if (b.text !== undefined && b.text !== '') {
-          parts.push({ type: 'input_text', text: b.text });
+      case "text":
+        if (b.text !== undefined && b.text !== "") {
+          parts.push({ type: "input_text", text: b.text });
         }
         break;
-      case 'image': {
+      case "image": {
         const uri = anthropicImageToDataURI(b.source);
-        if (uri !== '') {
-          parts.push({ type: 'input_image', image_url: uri });
+        if (uri !== "") {
+          parts.push({ type: "input_image", image_url: uri });
         }
         break;
       }
@@ -481,16 +472,16 @@ export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
   parts.push(...toolResultImageParts);
 
   if (parts.length > 0) {
-    out.push({ type: 'message', role: 'user', content: parts });
+    out.push({ type: "message", role: "user", content: parts });
   }
 
   return out;
 }
 
 export function anthropicAssistantToResponses(raw: unknown): ResponsesInputItem[] {
-  if (typeof raw === 'string') {
-    const parts: ResponsesContentPart[] = [{ type: 'output_text', text: raw }];
-    return [{ type: 'message', role: 'assistant', content: parts }];
+  if (typeof raw === "string") {
+    const parts: ResponsesContentPart[] = [{ type: "output_text", text: raw }];
+    return [{ type: "message", role: "assistant", content: parts }];
   }
 
   const blocks = raw as AnthropicContentBlock[];
@@ -504,22 +495,22 @@ export function anthropicAssistantToResponses(raw: unknown): ResponsesInputItem[
   }
 
   const text = extractAnthropicTextFromBlocks(blocks);
-  if (text !== '') {
-    const parts: ResponsesContentPart[] = [{ type: 'output_text', text }];
-    items.push({ type: 'message', role: 'assistant', content: parts });
+  if (text !== "") {
+    const parts: ResponsesContentPart[] = [{ type: "output_text", text }];
+    items.push({ type: "message", role: "assistant", content: parts });
   }
 
   for (const b of blocks) {
-    if (b.type !== 'tool_use') {
+    if (b.type !== "tool_use") {
       continue;
     }
-    let args = '{}';
+    let args = "{}";
     if (b.input !== undefined) {
-      args = typeof b.input === 'string' ? b.input : jsonMarshal(b.input);
+      args = typeof b.input === "string" ? b.input : jsonMarshal(b.input);
     }
     items.push({
-      type: 'function_call',
-      call_id: toResponsesCallID(b.id ?? ''),
+      type: "function_call",
+      call_id: toResponsesCallID(b.id ?? ""),
       name: b.name,
       arguments: args,
     });
@@ -532,19 +523,19 @@ function anthropicThinkingBlockToResponsesItem(
   block: AnthropicContentBlock,
   index: number,
 ): ResponsesInputItem | undefined {
-  if (block.type !== 'thinking' && block.type !== 'redacted_thinking') {
+  if (block.type !== "thinking" && block.type !== "redacted_thinking") {
     return undefined;
   }
 
   const item: ResponsesInputItem = {
-    type: 'reasoning',
+    type: "reasoning",
     id: block.id ?? `rs_${index}`,
     summary: [],
   };
-  if (block.type === 'thinking' && block.thinking !== undefined && block.thinking !== '') {
-    item.summary = [{ type: 'summary_text', text: block.thinking }];
+  if (block.type === "thinking" && block.thinking !== undefined && block.thinking !== "") {
+    item.summary = [{ type: "summary_text", text: block.thinking }];
   }
-  if (block.type === 'redacted_thinking' && block.data !== undefined && block.data !== '') {
+  if (block.type === "redacted_thinking" && block.data !== undefined && block.data !== "") {
     item.encrypted_content = block.data;
   }
   if ((item.summary?.length ?? 0) === 0 && item.encrypted_content === undefined) {
@@ -558,10 +549,10 @@ export function convertToolResultOutput(b: AnthropicContentBlock): {
   imageParts: ResponsesContentPart[];
 } {
   if (b.content === undefined || b.content === null) {
-    return { outputText: '', imageParts: [] };
+    return { outputText: "", imageParts: [] };
   }
 
-  if (typeof b.content === 'string') {
+  if (typeof b.content === "string") {
     return { outputText: b.content, imageParts: [] };
   }
 
@@ -570,45 +561,42 @@ export function convertToolResultOutput(b: AnthropicContentBlock): {
   const imageParts: ResponsesContentPart[] = [];
   for (const ib of inner) {
     switch (ib.type) {
-      case 'text':
-        if (ib.text !== undefined && ib.text !== '') {
+      case "text":
+        if (ib.text !== undefined && ib.text !== "") {
           textParts.push(ib.text);
         }
         break;
-      case 'image': {
+      case "image": {
         const uri = anthropicImageToDataURI(ib.source);
-        if (uri !== '') {
-          imageParts.push({ type: 'input_image', image_url: uri });
+        if (uri !== "") {
+          imageParts.push({ type: "input_image", image_url: uri });
         }
         break;
       }
     }
   }
 
-  return { outputText: textParts.join('\n'), imageParts };
+  return { outputText: textParts.join("\n"), imageParts };
 }
 
 export function extractAnthropicTextFromBlocks(blocks: AnthropicContentBlock[]): string {
   const parts: string[] = [];
   for (const b of blocks) {
-    if (b.type === 'text' && b.text !== undefined && b.text !== '') {
+    if (b.type === "text" && b.text !== undefined && b.text !== "") {
       parts.push(b.text);
     }
   }
-  return parts.join('\n\n');
+  return parts.join("\n\n");
 }
 
 export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): ResponsesTool[] {
   const out: ResponsesTool[] = [];
   for (const t of tools) {
-    if (
-      (t.type !== undefined && t.type.startsWith('web_search')) ||
-      isWebSearchToolName(t.name)
-    ) {
-      const converted: ResponsesTool = { type: 'web_search' };
+    if ((t.type !== undefined && t.type.startsWith("web_search")) || isWebSearchToolName(t.name)) {
+      const converted: ResponsesTool = { type: "web_search" };
       const allowedDomains = (t.allowed_domains ?? [])
         .map(normalizeWebSearchDomain)
-        .filter((domain) => domain !== '');
+        .filter((domain) => domain !== "");
       if (allowedDomains.length > 0) {
         converted.filters = { allowed_domains: allowedDomains };
       }
@@ -616,7 +604,7 @@ export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): Respon
       continue;
     }
     out.push({
-      type: 'function',
+      type: "function",
       name: t.name,
       description: augmentToolDescription(t.name, t.description),
       parameters: normalizeToolParametersForTool(t.name, t.input_schema),
@@ -629,7 +617,7 @@ export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): Respon
 export function extractAnthropicRequestToolNames(req: AnthropicRequest): string[] {
   const names: string[] = [];
   for (const tool of req.tools ?? []) {
-    if (typeof tool.name === 'string' && tool.name.trim() !== '') {
+    if (typeof tool.name === "string" && tool.name.trim() !== "") {
       names.push(tool.name.trim());
     }
   }
@@ -642,7 +630,7 @@ export function normalizeFunctionCallNameForRequest(
   requestToolNames: readonly string[],
 ): string {
   const trimmed = name.trim();
-  if (trimmed === '' || requestToolNames.length === 0) {
+  if (trimmed === "" || requestToolNames.length === 0) {
     return trimmed;
   }
   if (requestToolNames.includes(trimmed)) {
@@ -654,7 +642,7 @@ export function normalizeFunctionCallNameForRequest(
     return bySuffix;
   }
   const doubleUnderscore = requestToolNames.find(
-    (tool) => tool.replace(/^mcp__/, '').replace(/__/g, '_') === trimmed.replace(/_/g, '_'),
+    (tool) => tool.replace(/^mcp__/, "").replace(/__/g, "_") === trimmed.replace(/_/g, "_"),
   );
   if (doubleUnderscore) {
     return doubleUnderscore;

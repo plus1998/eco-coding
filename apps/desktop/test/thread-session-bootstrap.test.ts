@@ -35,7 +35,7 @@ test("buildThreadSessionBootstrap assembles session metadata", () => {
     usageSnapshotServices: {
       getLegacyBilling: () => undefined,
       resolveBillingSnapshot: () => ({ snapshot: { ecoCostUsd: 0 } as never }),
-      enrichBillingSnapshot: () => ({ ecoCostUsd: 0 } as never),
+      enrichBillingSnapshot: () => ({ ecoCostUsd: 0 }) as never,
       projectBillingSnapshot: () => undefined,
       getThreadStatus: () => "idle",
       getDisplayContextSnapshot: () => undefined,
@@ -49,22 +49,24 @@ test("buildThreadSessionBootstrap assembles session metadata", () => {
 });
 
 test("buildThreadSessionBootstrap returns empty payload for blank thread id", () => {
-  expect(buildThreadSessionBootstrap("  ", {
-    getThread: () => thread,
-    listFollowUps: () => [],
-    getPendingPlan: () => undefined,
-    getPendingBashApproval: () => undefined,
-    getPendingClarification: () => undefined,
-    listSubagentSessionTimings: () => [],
-    usageSnapshotServices: {
-      getLegacyBilling: () => undefined,
-      resolveBillingSnapshot: () => ({ snapshot: { ecoCostUsd: 0 } as never }),
-      enrichBillingSnapshot: () => ({ ecoCostUsd: 0 } as never),
-      projectBillingSnapshot: () => undefined,
-      getThreadStatus: () => undefined,
-      getDisplayContextSnapshot: () => undefined,
-    },
-  })).toEqual({
+  expect(
+    buildThreadSessionBootstrap("  ", {
+      getThread: () => thread,
+      listFollowUps: () => [],
+      getPendingPlan: () => undefined,
+      getPendingBashApproval: () => undefined,
+      getPendingClarification: () => undefined,
+      listSubagentSessionTimings: () => [],
+      usageSnapshotServices: {
+        getLegacyBilling: () => undefined,
+        resolveBillingSnapshot: () => ({ snapshot: { ecoCostUsd: 0 } as never }),
+        enrichBillingSnapshot: () => ({ ecoCostUsd: 0 }) as never,
+        projectBillingSnapshot: () => undefined,
+        getThreadStatus: () => undefined,
+        getDisplayContextSnapshot: () => undefined,
+      },
+    }),
+  ).toEqual({
     followUps: [],
     subagentSessions: [],
     usage: {},

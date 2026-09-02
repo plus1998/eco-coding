@@ -213,7 +213,10 @@ export async function expectWorkspacePanelOpen(page: Page, expectedOpen: boolean
   );
 }
 
-export async function expectWorkspaceToolbarRightReserve(page: Page, expectedReserved: boolean): Promise<void> {
+export async function expectWorkspaceToolbarRightReserve(
+  page: Page,
+  expectedReserved: boolean,
+): Promise<void> {
   await page.waitForFunction(
     (reserved) => {
       const toolbar = document.querySelector(".codex-main-toolbar--workspace");

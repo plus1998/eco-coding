@@ -1,21 +1,21 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { RunAttemptPhase, RunAttemptStatus } from "../main/usage-ledger";
 import type { ThreadRunEvent } from "../shared/ipc";
 import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
-import type { RunAttemptPhase, RunAttemptStatus } from "../main/usage-ledger";
-import { replayConversationRound } from "./conversation-round-replay";
 import type { ConversationRoundFixture } from "./conversation-round-fixture";
+import { replayConversationRound } from "./conversation-round-replay";
 import {
+  cellKey,
+  discoverGatewayClientRoundCells,
   type GatewayClientId,
   type GatewayClientRoundCell,
   type GatewayProfileId,
-  RECORDING_CELL_SPECS,
-  cellKey,
-  discoverGatewayClientRoundCells,
   hasRpcLog,
   loadAgentEventsFromCell,
   loadGatewayClientRoundCell,
   parseFeedReplaySelector,
+  RECORDING_CELL_SPECS,
 } from "./gateway-client-round-fixture";
 import { evaluateReplayScenarioChecklist } from "./replay-scenario-checklist";
 import { replaySdkAgentEventsToFeed } from "./sdk-feed-replay";
@@ -100,7 +100,9 @@ export async function replayGatewayClientRoundCellFeed(
         ? codexResult.feedTimelineIds
         : feedProjection.timeline.map((item) => item.id),
       scenarioChecklistOk: cell.checklistOk && replayScenario.ok,
-      scenarioFailed: cell.checklistOk ? replayScenario.failed : ["recorded_checklist_failed", ...replayScenario.failed],
+      scenarioFailed: cell.checklistOk
+        ? replayScenario.failed
+        : ["recorded_checklist_failed", ...replayScenario.failed],
     };
   }
 
@@ -125,7 +127,9 @@ export async function replayGatewayClientRoundCellFeed(
     persistedEvents: sdkResult.persistedEvents,
     feedTimelineIds: sdkResult.projection.timeline.map((item) => item.id),
     scenarioChecklistOk: cell.checklistOk && replayScenario.ok,
-    scenarioFailed: cell.checklistOk ? replayScenario.failed : ["recorded_checklist_failed", ...replayScenario.failed],
+    scenarioFailed: cell.checklistOk
+      ? replayScenario.failed
+      : ["recorded_checklist_failed", ...replayScenario.failed],
   };
 }
 

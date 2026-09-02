@@ -11,18 +11,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { togglePlusMenuSessionMode, type SessionMode } from "../shared/session-mode";
+import { type SessionMode, togglePlusMenuSessionMode } from "../shared/session-mode";
 import { sessionModeUi } from "../shared/session-mode-ui";
-import { SessionModeIcon } from "./ComposerPlanModeToggle";
 import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
-import {
-  COMPOSER_TOOLBAR_ICON_PX,
-  COMPOSER_TOOLBAR_ICON_STROKE,
-} from "./composer-icon-metrics";
-import {
-  clampComposerFloatingLeft,
-  composerFloatingAvailableWidth,
-} from "./composer-floating";
+import { SessionModeIcon } from "./ComposerPlanModeToggle";
+import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
+import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 const MENU_WIDTH = 220;
 const VIEWPORT_MARGIN = 8;
@@ -314,8 +308,7 @@ export function ComposerSessionModeTag({ mode, onClose }: ComposerSessionModeTag
   }
 
   const label = sessionModeUi(mode).title;
-  const tooltipLabel =
-    mode === "plan" ? t("composer.plus.planMode") : t("composer.plus.askMode");
+  const tooltipLabel = mode === "plan" ? t("composer.plus.planMode") : t("composer.plus.askMode");
   const canClose = Boolean(onClose);
   const exitLabel = t("composer.plus.exitMode", { mode: label });
 

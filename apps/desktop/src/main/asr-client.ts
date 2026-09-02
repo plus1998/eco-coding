@@ -1,10 +1,10 @@
+import { ASR_WAV_DATA_URL_PREFIX, asrDataUrlByteLength, MAX_ASR_DATA_URL_BYTES } from "../shared/asr-limits";
 import {
-  normalizeAsrApiMode,
-  normalizeAsrEndpoint,
   type AsrApiMode,
   type AsrClientConfig,
+  normalizeAsrApiMode,
+  normalizeAsrEndpoint,
 } from "./asr-settings-store";
-import { asrDataUrlByteLength, ASR_WAV_DATA_URL_PREFIX, MAX_ASR_DATA_URL_BYTES } from "../shared/asr-limits";
 
 export interface AsrTranscribeRequest {
   audioWavBase64: string;
@@ -20,14 +20,15 @@ export function asrRequestPath(apiMode: AsrApiMode): string {
   return apiMode === "audio_transcriptions" ? "/audio/transcriptions" : "/chat/completions";
 }
 
-export function buildAsrRequestBody(config: AsrClientConfig, audioWavBase64: string): Record<string, unknown> {
+export function buildAsrRequestBody(
+  config: AsrClientConfig,
+  audioWavBase64: string,
+): Record<string, unknown> {
   return {
     model: config.model,
     messages: [
       // Qwen ASR OpenAI-compatible API requires system content as [{ text }], not a plain string.
-      ...(config.systemPrompt
-        ? [{ role: "system", content: [{ text: config.systemPrompt }] }]
-        : []),
+      ...(config.systemPrompt ? [{ role: "system", content: [{ text: config.systemPrompt }] }] : []),
       {
         role: "user",
         content: [
@@ -61,7 +62,9 @@ function parseAsrApiError(payload: Record<string, unknown> | undefined, status: 
     payload && typeof payload.error === "object" && payload.error
       ? (payload.error as Record<string, unknown>).message
       : undefined;
-  return new Error(typeof apiMessage === "string" ? `ASR API 错误：${apiMessage}` : `ASR 请求失败（HTTP ${status}）。`);
+  return new Error(
+    typeof apiMessage === "string" ? `ASR API 错误：${apiMessage}` : `ASR 请求失败（HTTP ${status}）。`,
+  );
 }
 
 function parseChatCompletionsText(payload: Record<string, unknown> | undefined): string {
@@ -132,7 +135,9 @@ export async function transcribeAsr(
       throw parseAsrApiError(payload, response.status);
     }
     const normalizedContent =
-      apiMode === "audio_transcriptions" ? parseTranscriptionsText(payload) : parseChatCompletionsText(payload);
+      apiMode === "audio_transcriptions"
+        ? parseTranscriptionsText(payload)
+        : parseChatCompletionsText(payload);
     if (!normalizedContent.trim()) {
       throw new Error("ASR 返回为空或格式无效。");
     }

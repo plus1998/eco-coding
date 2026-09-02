@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { createModelAlias } from "../src/main/anthropic-proxy";
 import {
   ClaudeBridgeBindingRegistry,
   globalClaudeBridgeBindingRegistry,
 } from "../src/main/claude-bridge-binding";
-import { createModelAlias } from "../src/main/anthropic-proxy";
-import type { ProviderConfigSecret } from "../src/main/provider-store";
 import { decideClaudeResume, snapshotClaudeResumeRoutes } from "../src/main/claude-resume-decision";
-import { computeRouteFingerprint } from "../src/shared/route-fingerprint";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { RuntimeRoleRouteConfig } from "../src/shared/ipc";
+import { computeRouteFingerprint } from "../src/shared/route-fingerprint";
 
 function provider(id: string): ProviderConfigSecret {
   return {
@@ -130,9 +130,7 @@ describe("resume fingerprint / apiCompat normalization", () => {
   });
 
   test("raw vs resolved apiCompat fingerprint mismatch does not block resume", () => {
-    const rawThreadRoutes: RuntimeRoleRouteConfig[] = [
-      { role: "planner", providerId: "p1", modelId: "m1" },
-    ];
+    const rawThreadRoutes: RuntimeRoleRouteConfig[] = [{ role: "planner", providerId: "p1", modelId: "m1" }];
     const resolvedRoutes: RuntimeRoleRouteConfig[] = [
       { role: "planner", providerId: "p1", modelId: "m1", apiCompat: "anthropic" },
     ];

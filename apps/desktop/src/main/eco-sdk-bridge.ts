@@ -9,10 +9,10 @@ import {
   CODEX_TURN_METADATA_HEADER,
   dispatchNodeRequest,
   type EcoGatewayServer,
+  GATEWAY_LOGICAL_REQUEST_ID_HEADER,
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
   GATEWAY_THREAD_ID_HEADER,
-  GATEWAY_LOGICAL_REQUEST_ID_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
   mapApiCompatToUpstreamKind,
   parseCodexTurnMetadataHeader,
@@ -303,10 +303,7 @@ async function forwardWithResolvedRoute(
     }
   }
 
-  if (
-    (face === "responses" || face === "chat_completions") &&
-    options.prepareGatewayBindingForward
-  ) {
+  if ((face === "responses" || face === "chat_completions") && options.prepareGatewayBindingForward) {
     // Always try binding prep first — even when PI pre-sets GATEWAY_PROVIDER_ID_HEADER.
     // Skipping would treat body.model (alias) as upstreamModelId.
     const prepared = await options.prepareGatewayBindingForward({

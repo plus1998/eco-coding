@@ -5,8 +5,8 @@ import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
-  resolvePlanSessionRunOutcome,
   resolvePlanningRunOutcome,
+  resolvePlanSessionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "../src/main/thread-run-outcome";
 
@@ -60,16 +60,10 @@ test("resolvePlanningRunOutcome returns awaiting plan or idle on success", () =>
 
 test("resolvePlanningRunOutcome keeps awaiting_plan when upstream fails after plan capture", () => {
   expect(
-    resolvePlanningRunOutcome(
-      { ok: false, reason: "ACP process exited" },
-      { hasPendingPlan: true },
-    ),
+    resolvePlanningRunOutcome({ ok: false, reason: "ACP process exited" }, { hasPendingPlan: true }),
   ).toEqual({ kind: "awaiting_plan", message: "" });
   expect(
-    resolvePlanningRunOutcome(
-      { ok: false, reason: "stop", aborted: true },
-      { hasPendingPlan: true },
-    ),
+    resolvePlanningRunOutcome({ ok: false, reason: "stop", aborted: true }, { hasPendingPlan: true }),
   ).toEqual({ kind: "cancelled", reason: "cancelled by user" });
 });
 
@@ -97,9 +91,7 @@ test("resolveExecutionRunOutcome returns completed on success", () => {
     kind: "failed",
     reason: "blocked",
   });
-  expect(
-    resolveExecutionRunOutcome({ ok: false, reason: "tasks remain", incomplete: true }),
-  ).toEqual({
+  expect(resolveExecutionRunOutcome({ ok: false, reason: "tasks remain", incomplete: true })).toEqual({
     kind: "incomplete",
     reason: "tasks remain",
   });
@@ -109,9 +101,7 @@ test("resolveContinuationRunOutcome keeps mode-specific success decisions", () =
   expect(
     resolveContinuationRunOutcome({ ok: true }, { mode: "execution", planningPlanCaptured: false }),
   ).toEqual({ kind: "completed" });
-  expect(
-    resolveContinuationRunOutcome({ ok: true }, { mode: "ask", planningPlanCaptured: false }),
-  ).toEqual({
+  expect(resolveContinuationRunOutcome({ ok: true }, { mode: "ask", planningPlanCaptured: false })).toEqual({
     kind: "completed",
   });
   expect(

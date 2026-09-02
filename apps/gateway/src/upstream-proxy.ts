@@ -3,12 +3,7 @@
  * Host injects this fetch; does not use process-global dispatcher.
  */
 
-export const GATEWAY_SUPPORTED_PROXY_PROTOCOLS = [
-  "http:",
-  "https:",
-  "socks5:",
-  "socks:",
-] as const;
+export const GATEWAY_SUPPORTED_PROXY_PROTOCOLS = ["http:", "https:", "socks5:", "socks:"] as const;
 
 export function parseUpstreamProxyUrl(raw: string | undefined): string | undefined {
   const trimmed = raw?.trim();
@@ -55,15 +50,11 @@ type ProxiedFetchFn = (
  * Mutable outbound fetch that optionally routes through undici ProxyAgent.
  * Lazy-loads undici so pure unit tests without undici still import the module.
  */
-export function createUpstreamFetchController(
-  initialProxyUrl?: string,
-): UpstreamFetchController {
+export function createUpstreamFetchController(initialProxyUrl?: string): UpstreamFetchController {
   let proxyUrl = parseUpstreamProxyUrl(initialProxyUrl);
   let dispatcher: { close?: () => void } | undefined;
   let undiciFetch: ProxiedFetchFn | undefined;
-  let ProxyAgentCtor:
-    | (new (url: string) => { close?: () => void })
-    | undefined;
+  let ProxyAgentCtor: (new (url: string) => { close?: () => void }) | undefined;
 
   async function ensureUndici(): Promise<void> {
     if (undiciFetch && ProxyAgentCtor) {
@@ -71,9 +62,7 @@ export function createUpstreamFetchController(
     }
     const undici = await import("undici");
     undiciFetch = undici.fetch as unknown as ProxiedFetchFn;
-    ProxyAgentCtor = undici.ProxyAgent as unknown as new (
-      url: string,
-    ) => { close?: () => void };
+    ProxyAgentCtor = undici.ProxyAgent as unknown as new (url: string) => { close?: () => void };
   }
 
   function rebuildDispatcher(next: string | undefined): void {

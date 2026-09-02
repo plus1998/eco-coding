@@ -76,7 +76,11 @@ export class AcpFsHandler {
     const lines = text.split("\n");
     const start = Math.max(0, request.line - 1);
     const end = request.limit === undefined ? lines.length : start + request.limit;
-    return { content: lines.slice(start, end).join("\n"), start_line: request.line, end_line: start + (end - start) };
+    return {
+      content: lines.slice(start, end).join("\n"),
+      start_line: request.line,
+      end_line: start + (end - start),
+    };
   }
 
   async write(request: AcpFsWriteRequest): Promise<Record<string, unknown>> {

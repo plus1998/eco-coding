@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  InMemoryCodexThreadMap,
-  resolveCodexThreadAttribution,
-} from "../src/main/codex-thread-map";
+import { InMemoryCodexThreadMap, resolveCodexThreadAttribution } from "../src/main/codex-thread-map";
 
 const ECO = "thr_eco_main";
 const MAIN = "019fef91-eeca-76b2-a55e-688fffb375fe";

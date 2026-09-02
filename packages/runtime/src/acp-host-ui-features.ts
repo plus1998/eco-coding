@@ -29,7 +29,8 @@ export function resolveAcpHostUiFeatures(input: {
 }
 
 export function normalizeAcpHostUiFeatures(raw: unknown): AcpHostUiFeatures {
-  const record = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   return {
     contextUsage: record.contextUsage === "hide" ? "hide" : "show",
     billing: record.billing === "hide" ? "hide" : "show",

@@ -19,7 +19,10 @@ export function parseShellCommand(command: string): ShellAst {
 }
 
 function parseCompoundSegment(raw: string): CompoundSegment {
-  const stageRaws = raw.split(PIPELINE_SPLIT).map((segment) => segment.trim()).filter(Boolean);
+  const stageRaws = raw
+    .split(PIPELINE_SPLIT)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
   const stages = stageRaws.map((stageRaw) => tokenizeShellSegment(stageRaw));
   return {
     raw,

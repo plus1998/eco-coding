@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  decideClaudeResume,
-  snapshotClaudeResumeRoutes,
-} from "../src/main/claude-resume-decision";
+import { decideClaudeResume, snapshotClaudeResumeRoutes } from "../src/main/claude-resume-decision";
 import type { RuntimeRoleRouteConfig } from "../src/shared/ipc";
 
 function route(

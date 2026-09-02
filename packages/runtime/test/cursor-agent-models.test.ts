@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   buildCursorAgentCliEnv,
   listCursorAgentModels,
@@ -54,9 +54,7 @@ describe("listCursorAgentModels", () => {
       spawnFn,
     });
 
-    expect(models).toEqual([
-      { id: "auto", displayName: "Auto", current: true, default: true },
-    ]);
+    expect(models).toEqual([{ id: "auto", displayName: "Auto", current: true, default: true }]);
     expect(calls).toHaveLength(1);
     // The spawned env must be process.env merged with the partial override —
     // a bare { CURSOR_API_KEY } env broke executable discovery on Windows.

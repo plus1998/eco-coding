@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import {
-  resolveDefaultCodexThreadAttribution,
-  type CodexThreadAttribution,
-} from "@eco/runtime";
+import { type CodexThreadAttribution, resolveDefaultCodexThreadAttribution } from "@eco/runtime";
 
 /**
  * Multi-agent spawn policy (§6.4.1): only the **main** Eco thread may invoke
@@ -122,9 +119,10 @@ class SqliteCodexThreadMap implements CodexThreadMap {
   }
 
   private ensureNullableAgentRole(): void {
-    const columns = this.db
-      .prepare(`PRAGMA table_info(codex_thread_attribution)`)
-      .all() as Array<{ name: string; notnull: number }>;
+    const columns = this.db.prepare(`PRAGMA table_info(codex_thread_attribution)`).all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
     const agentRole = columns.find((column) => column.name === "agent_role");
     if (!agentRole || Number(agentRole.notnull) === 0) {
       return;
@@ -312,11 +310,7 @@ export class InMemoryCodexThreadMap implements CodexThreadMap {
     const spawnCallId = record.spawnCallId?.trim() || previous?.spawnCallId;
     this.attributionByCodexThreadId.set(codex, {
       parentThreadId: parent,
-      ...(role
-        ? { agentRole: role }
-        : previous?.agentRole
-          ? { agentRole: previous.agentRole }
-          : {}),
+      ...(role ? { agentRole: role } : previous?.agentRole ? { agentRole: previous.agentRole } : {}),
       ...(agentNickname && { agentNickname }),
       ...(spawnCallId && { spawnCallId }),
     });

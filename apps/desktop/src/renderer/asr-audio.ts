@@ -1,7 +1,7 @@
-import { asrDataUrlByteLength, ASR_WAV_DATA_URL_PREFIX, MAX_ASR_DATA_URL_BYTES } from "../shared/asr-limits";
+import { ASR_WAV_DATA_URL_PREFIX, asrDataUrlByteLength, MAX_ASR_DATA_URL_BYTES } from "../shared/asr-limits";
 
 const MAX_ASR_SECONDS = 180;
-const MAX_ASR_RAW_BYTES = Math.floor((MAX_ASR_DATA_URL_BYTES - ASR_WAV_DATA_URL_PREFIX.length) * 3 / 4);
+const MAX_ASR_RAW_BYTES = Math.floor(((MAX_ASR_DATA_URL_BYTES - ASR_WAV_DATA_URL_PREFIX.length) * 3) / 4);
 
 export function downsampleToMono16k(audio: AudioBuffer): Float32Array {
   const ratio = audio.sampleRate / 16_000;
@@ -21,7 +21,8 @@ export function downsampleToMono16k(audio: AudioBuffer): Float32Array {
 export function encodePcm16Wav(samples: Float32Array, sampleRate = 16_000): ArrayBuffer {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
-  const write = (offset: number, value: string) => [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
+  const write = (offset: number, value: string) =>
+    [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
   write(0, "RIFF");
   view.setUint32(4, 36 + samples.length * 2, true);
   write(8, "WAVE");

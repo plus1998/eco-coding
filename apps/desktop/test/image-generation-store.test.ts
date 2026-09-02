@@ -1,20 +1,15 @@
+import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Database } from "bun:sqlite";
-import {
-  ImageGenerationStore,
-  type ImageGenerationSecretCodec,
-} from "../src/main/image-generation-store";
+import { type ImageGenerationSecretCodec, ImageGenerationStore } from "../src/main/image-generation-store";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      fs.rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -59,7 +54,9 @@ test("the built-in legacy OpenAI profile is migrated without changing custom pro
 
   store.initialize();
 
-  expect(store.getSettings().profiles.find((profile) => profile.id === builtIn.id)?.model).toBe("gpt-image-2");
+  expect(store.getSettings().profiles.find((profile) => profile.id === builtIn.id)?.model).toBe(
+    "gpt-image-2",
+  );
   expect(store.getSettings().profiles.find((profile) => profile.id === custom.id)?.model).toBe("gpt-image-1");
 });
 

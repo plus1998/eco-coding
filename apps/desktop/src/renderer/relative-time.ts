@@ -1,11 +1,7 @@
 import { translateCatalog } from "../shared/i18n-catalogs";
 import type { AppLocale } from "../shared/locale";
 
-export function formatRelativeTime(
-  iso: string,
-  now = Date.now(),
-  locale: AppLocale = "zh-CN",
-): string {
+export function formatRelativeTime(iso: string, now = Date.now(), locale: AppLocale = "zh-CN"): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) {
     return "";

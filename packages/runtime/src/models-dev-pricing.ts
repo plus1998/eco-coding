@@ -134,10 +134,7 @@ export function extractRatesFromModelEntry(entry: ModelsDevModelEntry): ModelCos
 /**
  * Alternate model ids to try against models.dev (gateway naming differs from Anthropic API).
  */
-export function expandModelLookupCandidates(
-  modelId: string,
-  providerHint: string | null,
-): string[] {
+export function expandModelLookupCandidates(modelId: string, providerHint: string | null): string[] {
   const trimmed = modelId.trim();
   if (!trimmed) {
     return [];
@@ -397,11 +394,7 @@ export function formatRatePerMillion(usd: number): string {
     return "$?";
   }
   const text =
-    usd >= 10
-      ? usd.toFixed(0)
-      : Number.isInteger(usd)
-        ? String(usd)
-        : usd.toFixed(2).replace(/\.?0+$/, "");
+    usd >= 10 ? usd.toFixed(0) : Number.isInteger(usd) ? String(usd) : usd.toFixed(2).replace(/\.?0+$/, "");
   return `$${text}`;
 }
 

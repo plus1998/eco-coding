@@ -4,12 +4,12 @@ import {
   isRetryableRequestFailureItem,
   readUserPromptRetryIdentity,
 } from "../src/renderer/request-failure-retry";
+import type { ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 import {
   supportsHistoryRewrite,
   supportsOneClickRequestRetry,
   usesRewindOnRequestRetry,
 } from "../src/shared/thread-request-retry";
-import type { ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function item(
   input: Partial<ThreadRunProjectionTimelineItem> & { id: string },

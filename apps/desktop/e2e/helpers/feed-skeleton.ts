@@ -7,9 +7,7 @@ import { resolveDevUserDataSuffix } from "../../src/main/desktop-dev-user-data-s
 const UNPACKAGED_USER_DATA_BASENAME = "@eco/desktop";
 
 export function resolveUnpackagedUserDataDir(configuredSuffix?: string): string {
-  const suffix = resolveDevUserDataSuffix(
-    configuredSuffix ?? process.env.ECO_DEV_USER_DATA_SUFFIX ?? "E2E",
-  );
+  const suffix = resolveDevUserDataSuffix(configuredSuffix ?? process.env.ECO_DEV_USER_DATA_SUFFIX ?? "E2E");
   const base =
     process.platform === "darwin"
       ? join(homedir(), "Library", "Application Support", UNPACKAGED_USER_DATA_BASENAME)

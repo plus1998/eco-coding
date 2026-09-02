@@ -90,10 +90,7 @@ export async function forkClaudeSessionAt(input: {
   dir: string;
   upToMessageId: string;
   loadSdk?: () => Promise<{
-    forkSession?: (
-      sessionId: string,
-      options?: { dir?: string; upToMessageId?: string },
-    ) => Promise<unknown>;
+    forkSession?: (sessionId: string, options?: { dir?: string; upToMessageId?: string }) => Promise<unknown>;
   }>;
 }): Promise<string> {
   const sessionId = input.sessionId.trim();
@@ -117,9 +114,7 @@ export async function forkClaudeSessionAt(input: {
 
   const result = await sdk.forkSession(sessionId, { dir, upToMessageId });
   const forkedSessionId =
-    result &&
-    typeof result === "object" &&
-    typeof (result as { sessionId?: unknown }).sessionId === "string"
+    result && typeof result === "object" && typeof (result as { sessionId?: unknown }).sessionId === "string"
       ? (result as { sessionId: string }).sessionId.trim()
       : "";
   if (!forkedSessionId) {

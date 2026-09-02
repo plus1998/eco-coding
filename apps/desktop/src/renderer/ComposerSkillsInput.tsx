@@ -1,7 +1,7 @@
 import {
   type ClipboardEvent,
-  type KeyboardEvent,
   forwardRef,
+  type KeyboardEvent,
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
@@ -89,8 +89,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       () => ({
         focus: () => editorRef.current?.focus(),
         scrollIntoView: (options) => editorRef.current?.scrollIntoView(options),
-        getSelectionStart: () =>
-          editorRef.current ? getSelectionOffsets(editorRef.current).start : 0,
+        getSelectionStart: () => (editorRef.current ? getSelectionOffsets(editorRef.current).start : 0),
         getSelectionEnd: () => (editorRef.current ? getCursorOffset(editorRef.current) : 0),
         setCursor: (offset) => {
           if (editorRef.current) {

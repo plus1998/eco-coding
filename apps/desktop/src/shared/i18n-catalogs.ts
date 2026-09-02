@@ -2257,8 +2257,7 @@ export const i18nCatalogs = {
       "settings.followUpDelivery.queue": "Queue",
       "settings.followUpDelivery.steer": "Steer",
       "settings.defaultBashReviewMode": "Default approval mode",
-      "settings.defaultBashReviewModeHint":
-        "Execution approval mode used by Composer for new sessions.",
+      "settings.defaultBashReviewModeHint": "Execution approval mode used by Composer for new sessions.",
       "settings.defaultBashReviewMode.allowAllConfirm":
         "Full access lets new sessions auto-allow internet and local-file actions without asking you each time. Continue?",
       "settings.tokenSpeed": "Token speed stats",
@@ -2675,8 +2674,7 @@ export const i18nCatalogs = {
       "settings.center.confirmRemove":
         "Delete the “{{name}}” connection?\nThis disconnects the remote service and unbinds paired phones. It must be configured again to use it.",
       "settings.center.title": "Connection",
-      "settings.center.description":
-        "Connect to Supabase and control Eco Coding remotely from your phone.",
+      "settings.center.description": "Connect to Supabase and control Eco Coding remotely from your phone.",
       "settings.center.empty": "No Supabase project configured",
       "settings.center.add": "Add connection",
       "settings.center.relogin": "Sign in again",
@@ -2686,7 +2684,8 @@ export const i18nCatalogs = {
       "settings.center.tab.devices": "Devices",
       "settings.center.tabs.label": "Center settings sections",
       "settings.center.boundPhones": "Bound phones",
-      "settings.center.noPhones": "No phones connected yet. After they sign in with the same account, they can select this PC.",
+      "settings.center.noPhones":
+        "No phones connected yet. After they sign in with the same account, they can select this PC.",
       "settings.center.online": "Online",
       "settings.center.offline": "Offline",
       "settings.center.boundAt": "{{status}} · Bound {{time}}",
@@ -2740,7 +2739,8 @@ export const i18nCatalogs = {
       "settings.center.vault.title": "Config sync",
       "settings.center.vault.unlockTitle": "Sync key",
       "settings.center.syncStatus.title": "Sync status",
-      "settings.center.syncStatus.hint": "Use the cloud icon on each settings page to pull or push individually.",
+      "settings.center.syncStatus.hint":
+        "Use the cloud icon on each settings page to pull or push individually.",
       "settings.center.syncStatus.action": "Sync with cloud",
       "settings.center.syncStatus.lastSynced": "Last synced {{time}}",
       "settings.center.syncStatus.summary.configured": "Configured",
@@ -2749,8 +2749,7 @@ export const i18nCatalogs = {
       "settings.center.syncStatus.summary.agentCount": "{{count}} agents",
       "settings.center.syncStatus.summary.gitInstructions": "Commit instructions",
       "settings.center.syncStatus.summary.gitRoutes": "{{count}} route preferences",
-      "settings.center.syncStatus.summary.scriptArgs":
-        "{{workspaces}} workspaces · {{scripts}} extra args",
+      "settings.center.syncStatus.summary.scriptArgs": "{{workspaces}} workspaces · {{scripts}} extra args",
       "settings.center.syncStatus.domain.providers": "Providers",
       "settings.center.syncStatus.domain.proxyBridge": "Proxy bridge",
       "settings.center.syncStatus.domain.asr": "ASR",
@@ -3482,7 +3481,8 @@ export const i18nCatalogs = {
       "app.sshBookmarks.empty": "No SSH bookmarks yet",
       "app.sshBookmarks.connecting": "Connecting…",
       "app.sshBookmarks.connectFailed": "SSH connection failed",
-      "app.sshBookmarks.passwordManualHint": "Automatic password entry is unavailable here; type the password in the terminal.",
+      "app.sshBookmarks.passwordManualHint":
+        "Automatic password entry is unavailable here; type the password in the terminal.",
       "app.sshBookmarks.noWorkspace": "Open a project before connecting via SSH.",
       "app.sshBookmarks.nameLabel": "Name",
       "app.sshBookmarks.namePlaceholder": "e.g. Production",

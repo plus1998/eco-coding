@@ -1,13 +1,5 @@
 import { Diff, X } from "lucide-react";
-import {
-  Component,
-  lazy,
-  type ReactNode,
-  Suspense,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { Component, lazy, type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDiffResult, WorkspaceFileDiffResult } from "../shared/ipc";
@@ -22,10 +14,7 @@ const GitDiffViewer = lazy(() =>
   }),
 );
 
-class DiffViewerErrorBoundary extends Component<
-  { children: ReactNode },
-  { failed: boolean }
-> {
+class DiffViewerErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError(): { failed: boolean } {
@@ -69,10 +58,7 @@ function formatDiffStat(value: number): string {
   return value > 0 ? String(value) : "0";
 }
 
-type LoadWorkspaceFileDiff = (
-  workspacePath: string,
-  path: string,
-) => Promise<WorkspaceFileDiffResult>;
+type LoadWorkspaceFileDiff = (workspacePath: string, path: string) => Promise<WorkspaceFileDiffResult>;
 
 interface WorkspaceDiffDrawerProps {
   open: boolean;
@@ -307,18 +293,9 @@ export function WorkspaceDiffPanel({
           <div className="workspace-diff-drawer-preview">
             {files.length === 0 ? (
               <div className="workspace-diff-empty-state" role="status">
-                <Diff
-                  className="workspace-diff-empty-state__icon"
-                  size={48}
-                  strokeWidth={1.25}
-                  aria-hidden
-                />
-                <p className="workspace-diff-empty-state__title">
-                  {t("workspace.diff.emptyTitle")}
-                </p>
-                <p className="workspace-diff-empty-state__hint">
-                  {t("workspace.diff.emptyHint")}
-                </p>
+                <Diff className="workspace-diff-empty-state__icon" size={48} strokeWidth={1.25} aria-hidden />
+                <p className="workspace-diff-empty-state__title">{t("workspace.diff.emptyTitle")}</p>
+                <p className="workspace-diff-empty-state__hint">{t("workspace.diff.emptyHint")}</p>
               </div>
             ) : activePath ? (
               <WorkspaceDiffFilePreview

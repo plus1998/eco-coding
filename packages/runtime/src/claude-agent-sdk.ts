@@ -9,11 +9,9 @@ import {
   type RuntimeAgentRole,
 } from "../../shared/src";
 import { formatSubagentMissionMessage } from "./agent-mission";
-import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
-import { formatApiErrorUserMessage } from "./api-error.js";
 import {
-  buildMainAgentSystemPrompt,
   buildClaudeCodeSystemPrompt,
+  buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromOrchestration,
   createAgentDefinitionsFromOrchestration,
   resolveMainAgentAllowedTools,
@@ -24,6 +22,7 @@ import {
   SDK_TASK_PROGRESS_TOOL_NAMES,
 } from "./agent-orchestration.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
+import { formatApiErrorUserMessage } from "./api-error.js";
 import {
   awaitExitPlanModeUserDecision,
   buildEcoSdkHooks,
@@ -41,7 +40,13 @@ import type {
   EcoSdkSessionOptions,
 } from "./index";
 import { forkClaudeSessionAt } from "./runtime-session-compat.js";
-export { forkClaudeSessionAt, resolveClaudeResumeSessionAtBeforeUserMessage } from "./runtime-session-compat.js";
+import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
+
+export {
+  forkClaudeSessionAt,
+  resolveClaudeResumeSessionAtBeforeUserMessage,
+} from "./runtime-session-compat.js";
+
 import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { createSdkModelResolver, resolveMainSdkModelId } from "./sdk-model-alias";
 import {
@@ -176,10 +181,7 @@ export function isClaudeStreamInputDeliveryUnknown(error: unknown): boolean {
 export interface ClaudeQueryLifecycleHooks {
   onOpen?: (handle: ClaudeQueryHandle) => void | Promise<void>;
   onClosing?: (handle: ClaudeQueryHandle) => void | Promise<void>;
-  onClosed?: (
-    handle: ClaudeQueryHandle,
-    detail: { stillQueued: string[] },
-  ) => void | Promise<void>;
+  onClosed?: (handle: ClaudeQueryHandle, detail: { stillQueued: string[] }) => void | Promise<void>;
 }
 
 export interface ClaudeQueryTeardownResult {
@@ -257,10 +259,7 @@ export type HeldPromptStream = StreamingUserPrompt & {
   close(): void;
 };
 
-export function createHeldPromptStream(
-  text: string,
-  options?: { uuid?: string },
-): HeldPromptStream {
+export function createHeldPromptStream(text: string, options?: { uuid?: string }): HeldPromptStream {
   type Queued = {
     message: SdkUserMessage;
     resolve: () => void;
@@ -379,8 +378,7 @@ export function createClaudeQueryHandle(
         );
       }
       if (raced.kind === "rejected") {
-        const message =
-          raced.error instanceof Error ? raced.error.message : String(raced.error);
+        const message = raced.error instanceof Error ? raced.error.message : String(raced.error);
         options.onProbe?.("stream_input_error", {
           error: message,
           uuid: pushOptions?.uuid?.trim() || null,
@@ -397,10 +395,7 @@ export function createClaudeQueryHandle(
 }
 
 /** Prefer worktree root when present (aligned with rewind / resume cwd). */
-export function resolveClaudeSessionCwd(input: {
-  workspacePath: string;
-  worktreePath: string;
-}): string {
+export function resolveClaudeSessionCwd(input: { workspacePath: string; worktreePath: string }): string {
   const worktree = input.worktreePath.trim();
   if (worktree) {
     return worktree;
@@ -427,9 +422,7 @@ export function resolveSdkPromptCaptureText(prompt: string | AsyncIterable<SdkUs
 /**
  * Extract the user text from a string or streaming prompt (async; reads full iterable).
  */
-export async function extractSdkPromptText(
-  prompt: string | AsyncIterable<SdkUserMessage>,
-): Promise<string> {
+export async function extractSdkPromptText(prompt: string | AsyncIterable<SdkUserMessage>): Promise<string> {
   const marked = resolveSdkPromptCaptureText(prompt);
   if (typeof prompt === "string" || marked) {
     return typeof prompt === "string" ? prompt : marked;
@@ -814,9 +807,7 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
   const previous = messages[targetIndex - 1];
   const previousUuid = typeof previous?.uuid === "string" ? previous.uuid.trim() : "";
   if (!previousUuid) {
-    throw new Error(
-      "目标消息之前缺少可 fork 的 chain entry UUID，无法安全截断 resume。",
-    );
+    throw new Error("目标消息之前缺少可 fork 的 chain entry UUID，无法安全截断 resume。");
   }
   return previousUuid;
 }
@@ -1026,10 +1017,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // proxy can attribute usage to the right agent role instead of guessing by shared model.
     const resolveSdkModel = createSdkModelResolver(input.routes);
     const dynamicAgents = input.agentRegistry
-      ? createAgentDefinitionsFromOrchestration(input.agentRegistry.orchestration, input.agentRegistry.templates, {
-          ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
-          resolveModelId: resolveSdkModel,
-        })
+      ? createAgentDefinitionsFromOrchestration(
+          input.agentRegistry.orchestration,
+          input.agentRegistry.templates,
+          {
+            ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
+            resolveModelId: resolveSdkModel,
+          },
+        )
       : undefined;
     const availableDynamicDefinitions =
       dynamicAgents && phase.availability
@@ -1050,13 +1045,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? capAgentDefinitionsForReadOnlyPhase(dynamicDefinitions, phase.allowedTools)
         : dynamicDefinitions;
     const toolPermissions = input.agentRegistry
-      ? buildToolPermissionPolicyFromOrchestration(input.agentRegistry.orchestration, input.agentRegistry.templates, {
-          ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
-          ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
-          ...(input.sdkSession?.runtimeMcpServers?.length
-            ? { runtimeMcpServers: input.sdkSession.runtimeMcpServers }
-            : {}),
-        })
+      ? buildToolPermissionPolicyFromOrchestration(
+          input.agentRegistry.orchestration,
+          input.agentRegistry.templates,
+          {
+            ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
+            ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
+            ...(input.sdkSession?.runtimeMcpServers?.length
+              ? { runtimeMcpServers: input.sdkSession.runtimeMcpServers }
+              : {}),
+          },
+        )
       : undefined;
     const pendingToolPermissionDecisions: EcoToolPermissionDecisionAudit[] = [];
     const onToolPermissionDecision = (decision: EcoToolPermissionDecisionAudit) => {
@@ -1097,7 +1096,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }),
       stopTask: async (agentId) => {
         if (typeof queryForSubagentControl?.stopTask !== "function") {
-          throw new Error(`Claude Agent SDK cannot stop timed-out subagent ${agentId}: stopTask is unavailable.`);
+          throw new Error(
+            `Claude Agent SDK cannot stop timed-out subagent ${agentId}: stopTask is unavailable.`,
+          );
         }
         await queryForSubagentControl.stopTask(agentId);
       },
@@ -1147,14 +1148,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const orchestrationMainModelId = input.agentRegistry?.orchestration.mainAgent.modelRef.modelId;
     const mainModel = resolveMainSdkModelId(input.routes, orchestrationMainModelId);
     const systemPrompt = input.agentRegistry
-      ? buildMainAgentSystemPrompt(
-          input.agentRegistry.orchestration,
-          input.agentRegistry.templates,
-          {
-            ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
-            ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
-          },
-        )
+      ? buildMainAgentSystemPrompt(input.agentRegistry.orchestration, input.agentRegistry.templates, {
+          ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
+          ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
+        })
       : buildClaudeCodeSystemPrompt({
           ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
           ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
@@ -1172,9 +1169,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
-      ...(phase.permissionMode === "bypassPermissions"
-        ? { allowDangerouslySkipPermissions: true }
-        : {}),
+      ...(phase.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       allowedTools,
       ...(sdkDisallowedTools.length > 0 ? { disallowedTools: sdkDisallowedTools } : {}),
       ...(this.options.toolPermissionHandler
@@ -1393,7 +1388,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           break;
         }
         const message = next.value;
-        for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
+        for (const event of drainToolPermissionDecisionEvents(
+          input.threadId,
+          pendingToolPermissionDecisions,
+        )) {
           yield event;
         }
         if (!sessionCaptured && isSdkInitMessage(message)) {
@@ -2333,9 +2331,7 @@ function drainToolPermissionDecisionEvents(
   return events;
 }
 
-export {
-  buildAutonomousPlanContinuationPrompt,
-} from "./prompts/autonomous.js";
+export { buildAutonomousPlanContinuationPrompt } from "./prompts/autonomous.js";
 
 export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {
   return createAgentEvent({
@@ -2971,7 +2967,9 @@ function mapUserToolResultEvents(
       ? message.toolUseResult
       : undefined;
   const hasCompletedAgentOutput =
-    agentOutput?.status === "completed" && typeof agentOutput.agentId === "string" && agentOutput.agentId.trim();
+    agentOutput?.status === "completed" &&
+    typeof agentOutput.agentId === "string" &&
+    agentOutput.agentId.trim();
   const events: AgentEvent[] = [];
   for (const [index, block] of message.message.content.entries()) {
     if (!isRecord(block) || block.type !== "tool_result") {
@@ -3030,13 +3028,16 @@ export function readSdkToolNonExecutionKind(
   message: Record<string, unknown>,
   block?: Record<string, unknown>,
 ): SdkToolNonExecutionKind | undefined {
-  const fromMeta = readNonExecutionKindFromMeta(message.tool_result_meta)
-    ?? (block ? readNonExecutionKindFromMeta(block.tool_result_meta) : undefined);
+  const fromMeta =
+    readNonExecutionKindFromMeta(message.tool_result_meta) ??
+    (block ? readNonExecutionKindFromMeta(block.tool_result_meta) : undefined);
   if (fromMeta) {
     return fromMeta;
   }
-  return normalizeSdkToolNonExecutionKind(message.toolDenialKind)
-    ?? (block ? normalizeSdkToolNonExecutionKind(block.toolDenialKind) : undefined);
+  return (
+    normalizeSdkToolNonExecutionKind(message.toolDenialKind) ??
+    (block ? normalizeSdkToolNonExecutionKind(block.toolDenialKind) : undefined)
+  );
 }
 
 function readNonExecutionKindFromMeta(value: unknown): SdkToolNonExecutionKind | undefined {
@@ -3631,10 +3632,7 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
   }
 
   if (isRecord(event.payload)) {
-    if (
-      event.payload.type === "tool_permission_denied" ||
-      event.payload.type === "tool_result_error"
-    ) {
+    if (event.payload.type === "tool_permission_denied" || event.payload.type === "tool_result_error") {
       return "tool";
     }
     if (

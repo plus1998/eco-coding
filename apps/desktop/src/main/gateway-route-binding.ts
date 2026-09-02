@@ -5,24 +5,20 @@
 import { mapApiCompatToUpstreamKind } from "@eco/gateway";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import {
+  type AnthropicProxyResolvedRoute,
   type AnthropicProxyRoute,
   type AnthropicProxyStartOptions,
-  type AnthropicProxyResolvedRoute,
   type StartedAnthropicProxy,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
 import {
   ECO_BRIDGE_BINDING_ID_HEADER,
   ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
-  LOCAL_PROXY_API_KEY,
   globalClaudeBridgeBindingRegistry,
+  LOCAL_PROXY_API_KEY,
 } from "./claude-bridge-binding";
 
-export {
-  ECO_BRIDGE_BINDING_ID_HEADER,
-  ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
-  LOCAL_PROXY_API_KEY,
-};
+export { ECO_BRIDGE_BINDING_ID_HEADER, ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER, LOCAL_PROXY_API_KEY };
 
 /** Claude-compatible shape; preferred name for PI / multi-face Gateway binding. */
 export type StartedGatewayRouteBinding = StartedAnthropicProxy;

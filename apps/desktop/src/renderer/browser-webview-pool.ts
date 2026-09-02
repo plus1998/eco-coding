@@ -1,9 +1,6 @@
 import { BROWSER_WEBVIEW_TAB_ID_ATTR } from "../shared/browser";
 import type { EcoBrowserWebviewElement } from "./browser-webview";
-import {
-  resolveBrowserWebviewHostSlot,
-  subscribeBrowserWebviewHostSlot,
-} from "./browser-webview-layout";
+import { resolveBrowserWebviewHostSlot, subscribeBrowserWebviewHostSlot } from "./browser-webview-layout";
 
 export type BrowserWebviewPoolDesiredInstance = {
   id: string;
@@ -26,9 +23,7 @@ function removeStrayWebviews(browserId: string, keep?: EcoBrowserWebviewElement)
   if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") {
     return;
   }
-  for (const node of document.querySelectorAll(
-    `webview[${BROWSER_WEBVIEW_TAB_ID_ATTR}="${browserId}"]`,
-  )) {
+  for (const node of document.querySelectorAll(`webview[${BROWSER_WEBVIEW_TAB_ID_ATTR}="${browserId}"]`)) {
     if (keep && (node as unknown as EcoBrowserWebviewElement) === keep) {
       continue;
     }

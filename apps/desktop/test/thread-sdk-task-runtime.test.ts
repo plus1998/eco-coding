@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import type { CoderTodoItem } from "../src/shared/ipc";
 import {
   createThreadSdkTaskRuntime,
   isSdkTodoProgressPayload,
   type ThreadSdkTaskRuntimeStore,
 } from "../src/main/thread-sdk-task-runtime";
+import type { CoderTodoItem } from "../src/shared/ipc";
 
 function todo(input: Partial<CoderTodoItem> = {}): CoderTodoItem {
   return {

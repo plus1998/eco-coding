@@ -3,7 +3,12 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
-import type { SshAuthType, SshBookmarkSaveInput, SshBookmarkView, SshKeySource } from "../shared/ssh-bookmarks";
+import type {
+  SshAuthType,
+  SshBookmarkSaveInput,
+  SshBookmarkView,
+  SshKeySource,
+} from "../shared/ssh-bookmarks";
 import { SSH_DEFAULT_PORT, sshBookmarkEndpointLabel } from "../shared/ssh-bookmarks";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
@@ -160,7 +165,9 @@ function SshBookmarkEditorDialog({
               <input
                 type="text"
                 value={draft.username}
-                onChange={(event) => onDraftChange((current) => ({ ...current, username: event.target.value }))}
+                onChange={(event) =>
+                  onDraftChange((current) => ({ ...current, username: event.target.value }))
+                }
                 placeholder={t("app.sshBookmarks.usernamePlaceholder")}
                 maxLength={64}
               />
@@ -173,7 +180,9 @@ function SshBookmarkEditorDialog({
                   type="radio"
                   name="ssh-auth-type"
                   checked={draft.authType === "password"}
-                  onChange={() => onDraftChange((current) => ({ ...current, authType: "password" as SshAuthType }))}
+                  onChange={() =>
+                    onDraftChange((current) => ({ ...current, authType: "password" as SshAuthType }))
+                  }
                 />
                 <span>{t("app.sshBookmarks.authPassword")}</span>
               </label>
@@ -200,7 +209,9 @@ function SshBookmarkEditorDialog({
                 <input
                   type="password"
                   value={draft.password ?? ""}
-                  onChange={(event) => onDraftChange((current) => ({ ...current, password: event.target.value }))}
+                  onChange={(event) =>
+                    onDraftChange((current) => ({ ...current, password: event.target.value }))
+                  }
                   placeholder={
                     mode === "edit" && editingBookmark?.hasPassword
                       ? t("app.sshBookmarks.passwordKeepPlaceholder")
@@ -218,7 +229,9 @@ function SshBookmarkEditorDialog({
                       type="radio"
                       name="ssh-key-source"
                       checked={draft.keySource === "path"}
-                      onChange={() => onDraftChange((current) => ({ ...current, keySource: "path" as SshKeySource }))}
+                      onChange={() =>
+                        onDraftChange((current) => ({ ...current, keySource: "path" as SshKeySource }))
+                      }
                     />
                     <span>{t("app.sshBookmarks.keyPathOption")}</span>
                   </label>
@@ -240,7 +253,9 @@ function SshBookmarkEditorDialog({
                     <input
                       type="text"
                       value={draft.keyPath ?? ""}
-                      onChange={(event) => onDraftChange((current) => ({ ...current, keyPath: event.target.value }))}
+                      onChange={(event) =>
+                        onDraftChange((current) => ({ ...current, keyPath: event.target.value }))
+                      }
                       placeholder={t("app.sshBookmarks.keyPathPlaceholder")}
                       maxLength={1024}
                     />
@@ -250,7 +265,9 @@ function SshBookmarkEditorDialog({
                     <span>{t("app.sshBookmarks.storedKeyLabel")}</span>
                     <textarea
                       value={draft.storedKey ?? ""}
-                      onChange={(event) => onDraftChange((current) => ({ ...current, storedKey: event.target.value }))}
+                      onChange={(event) =>
+                        onDraftChange((current) => ({ ...current, storedKey: event.target.value }))
+                      }
                       placeholder={
                         mode === "edit" && editingBookmark?.hasStoredKey
                           ? t("app.sshBookmarks.storedKeyKeepPlaceholder")
@@ -269,7 +286,9 @@ function SshBookmarkEditorDialog({
               <input
                 type="text"
                 value={draft.extraArgs ?? ""}
-                onChange={(event) => onDraftChange((current) => ({ ...current, extraArgs: event.target.value }))}
+                onChange={(event) =>
+                  onDraftChange((current) => ({ ...current, extraArgs: event.target.value }))
+                }
                 placeholder={t("app.sshBookmarks.extraArgsPlaceholder")}
                 maxLength={500}
               />

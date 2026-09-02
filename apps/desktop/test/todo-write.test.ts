@@ -49,9 +49,7 @@ test("coderTodosFromTodoWrite maps statuses like Codex update_plan", () => {
 });
 
 test("TodoWrite replaces list order and length", () => {
-  const initial = mergeCoderTodoItems("thr_1", [
-    { title: "Old task", detail: "Old task" },
-  ]);
+  const initial = mergeCoderTodoItems("thr_1", [{ title: "Old task", detail: "Old task" }]);
   const replaced = coderTodosFromTodoWrite(
     "thr_1",
     [

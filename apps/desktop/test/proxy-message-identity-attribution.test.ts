@@ -8,18 +8,18 @@ import {
   USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY,
   USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
 } from "../src/main/proxy-usage-pending-settlement";
-import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import { createUsageContextService } from "../src/main/usage-context-effects";
 import {
-  InMemoryUsageLedger,
-  buildUsageLedgerEventKey,
   type AgentInstanceRecord,
+  buildUsageLedgerEventKey,
+  InMemoryUsageLedger,
   type UsageLedgerEvent,
 } from "../src/main/usage-ledger";
 import {
-  UsageLedgerCoordinator,
   type ProxyAttributionSettlement,
+  UsageLedgerCoordinator,
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
 
@@ -40,14 +40,16 @@ function mockPricingCache(): ModelsDevPricingCache {
   } as ModelsDevPricingCache;
 }
 
-function createCoordinator(input: {
-  metrics?: SubagentMetricsRegistry;
-  onSettled?: (
-    threadId: string,
-    settlements: readonly ProxyAttributionSettlement[],
-  ) => void | Promise<void>;
-  diagnostics?: Array<{ topic: string; fields: Record<string, unknown> }>;
-} = {}) {
+function createCoordinator(
+  input: {
+    metrics?: SubagentMetricsRegistry;
+    onSettled?: (
+      threadId: string,
+      settlements: readonly ProxyAttributionSettlement[],
+    ) => void | Promise<void>;
+    diagnostics?: Array<{ topic: string; fields: Record<string, unknown> }>;
+  } = {},
+) {
   const ledger = new InMemoryUsageLedger();
   const metrics = input.metrics ?? new SubagentMetricsRegistry(metricsStoreStub);
   const store: UsageLedgerCoordinatorStore = {
@@ -124,10 +126,7 @@ function pendingProxyEvent(input: {
   };
 }
 
-function appendPending(
-  coordinator: UsageLedgerCoordinator,
-  event: UsageLedgerEvent,
-): number {
+function appendPending(coordinator: UsageLedgerCoordinator, event: UsageLedgerEvent): number {
   coordinator.appendEvents([event]);
   return coordinator.registerProxyPendingAttribution(threadId, {
     eventId: event.id,
@@ -191,10 +190,7 @@ test("planner-route pending usage is rebound to the exact general-purpose role a
 
 test("proxy usage first settles when the SDK assistant message identity arrives", () => {
   const { ledger, coordinator } = createCoordinator();
-  appendPending(
-    coordinator,
-    pendingProxyEvent({ eventId: "evt_1", messageId: "msg_proxy_first" }),
-  );
+  appendPending(coordinator, pendingProxyEvent({ eventId: "evt_1", messageId: "msg_proxy_first" }));
 
   expect(
     coordinator.bindProxyMessageIdentity(threadId, {
@@ -221,10 +217,7 @@ test("SDK assistant identity first settles a later proxy usage registration", ()
   ).toBe(0);
 
   expect(
-    appendPending(
-      coordinator,
-      pendingProxyEvent({ eventId: "evt_2", messageId: "msg_identity_first" }),
-    ),
+    appendPending(coordinator, pendingProxyEvent({ eventId: "evt_2", messageId: "msg_identity_first" })),
   ).toBe(1);
   expect(ledger.listUsageEvents(threadId)[0]?.agentId).toBe("agent_beta");
 });
@@ -232,10 +225,7 @@ test("SDK assistant identity first settles a later proxy usage registration", ()
 test("three concurrent general-purpose agents settle only by their message ids", () => {
   const { ledger, coordinator } = createCoordinator();
   for (const [index, messageId] of ["msg_a", "msg_b", "msg_c"].entries()) {
-    appendPending(
-      coordinator,
-      pendingProxyEvent({ eventId: `evt_${index + 3}`, messageId }),
-    );
+    appendPending(coordinator, pendingProxyEvent({ eventId: `evt_${index + 3}`, messageId }));
   }
 
   coordinator.bindProxyMessageIdentity(threadId, {
@@ -255,21 +245,14 @@ test("three concurrent general-purpose agents settle only by their message ids",
   });
 
   expect(
-    Object.fromEntries(
-      ledger
-        .listUsageEvents(threadId)
-        .map((event) => [event.sdkMessageId, event.agentId]),
-    ),
+    Object.fromEntries(ledger.listUsageEvents(threadId).map((event) => [event.sdkMessageId, event.agentId])),
   ).toEqual({ msg_a: "agent_a", msg_b: "agent_b", msg_c: "agent_c" });
 });
 
 test("message identity is idempotent and conflicting identities are logged without overwrite", () => {
   const diagnostics: Array<{ topic: string; fields: Record<string, unknown> }> = [];
   const { ledger, coordinator } = createCoordinator({ diagnostics });
-  appendPending(
-    coordinator,
-    pendingProxyEvent({ eventId: "evt_6", messageId: "msg_conflict" }),
-  );
+  appendPending(coordinator, pendingProxyEvent({ eventId: "evt_6", messageId: "msg_conflict" }));
   expect(
     coordinator.bindProxyMessageIdentity(threadId, {
       messageId: "msg_conflict",
@@ -334,8 +317,7 @@ test("settlement reconciles the exact agent instance context and metrics", async
         {
           context,
           subagentMetrics: metrics,
-          schedulePersistThreadMetrics: (persistedThreadId) =>
-            persisted.push(persistedThreadId),
+          schedulePersistThreadMetrics: (persistedThreadId) => persisted.push(persistedThreadId),
         },
         targetThreadId,
         settlements,

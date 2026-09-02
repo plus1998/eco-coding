@@ -1,10 +1,7 @@
 import { AppWindow, ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  BrowserOpenApprovalMode,
-  BrowserSettingsSnapshot,
-} from "../shared/browser";
+import type { BrowserOpenApprovalMode, BrowserSettingsSnapshot } from "../shared/browser";
 import { useBrowserIntegrationStatus } from "./browser-state-store";
 
 interface BrowserSettingsPanelProps {
@@ -14,20 +11,15 @@ interface BrowserSettingsPanelProps {
 
 const OPEN_APPROVAL_OPTIONS: BrowserOpenApprovalMode[] = ["always_allow", "always_ask"];
 
-export function BrowserSettingsPanel({
-  settings,
-  onSave,
-}: BrowserSettingsPanelProps) {
+export function BrowserSettingsPanel({ settings, onSave }: BrowserSettingsPanelProps) {
   const { t } = useTranslation();
   const browserIntegration = useBrowserIntegrationStatus();
   const switchId = useId();
   const approvalId = useId();
   const [busy, setBusy] = useState(false);
 
-  const unavailable =
-    settings.agentIntegrationEnabled && browserIntegration.available === false;
-  const unavailableReason =
-    browserIntegration.unavailableReason ?? t("settings.browser.agentUnknownReason");
+  const unavailable = settings.agentIntegrationEnabled && browserIntegration.available === false;
+  const unavailableReason = browserIntegration.unavailableReason ?? t("settings.browser.agentUnknownReason");
 
   async function save(next: BrowserSettingsSnapshot) {
     if (busy) {
@@ -58,12 +50,9 @@ export function BrowserSettingsPanel({
         </div>
         <label
           className="composer-switch browser-settings-switch"
-          title={t(
-            settings.agentIntegrationEnabled
-              ? "composer.enabledNamed"
-              : "composer.disabledNamed",
-            { name: t("settings.browser.masterTitle") },
-          )}
+          title={t(settings.agentIntegrationEnabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+            name: t("settings.browser.masterTitle"),
+          })}
         >
           <input
             type="checkbox"
@@ -117,7 +106,12 @@ export function BrowserSettingsPanel({
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={14} strokeWidth={2} aria-hidden className="browser-settings-select-chevron" />
+                <ChevronDown
+                  size={14}
+                  strokeWidth={2}
+                  aria-hidden
+                  className="browser-settings-select-chevron"
+                />
               </label>
             </li>
           </ul>

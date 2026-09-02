@@ -33,10 +33,8 @@ export interface CreateEcoPiToolApprovalInput {
 }
 
 export const PI_TOOL_APPROVAL_EXTENSION_NAME = "eco-pi-approval" as const;
-export const PI_TOOL_APPROVAL_HANDLER_MISSING =
-  "Tool permission handler is not armed for this session.";
-export const PI_TOOL_APPROVAL_HANDLER_FAILED =
-  "Tool permission check failed; tool call blocked.";
+export const PI_TOOL_APPROVAL_HANDLER_MISSING = "Tool permission handler is not armed for this session.";
+export const PI_TOOL_APPROVAL_HANDLER_FAILED = "Tool permission check failed; tool call blocked.";
 
 /** Map PI builtin lowercase names to Claude SDK PascalCase for the Eco handler only. */
 const PI_BUILTIN_TOOL_NAME_TO_SDK: Readonly<Record<string, string>> = {
@@ -50,10 +48,7 @@ export function mapPiToolNameToSdkToolName(toolName: string): string {
   return PI_BUILTIN_TOOL_NAME_TO_SDK[toolName] ?? toolName;
 }
 
-function isAbortRejection(
-  error: unknown,
-  signals: { ctx?: AbortSignal; request: AbortSignal },
-): boolean {
+function isAbortRejection(error: unknown, signals: { ctx?: AbortSignal; request: AbortSignal }): boolean {
   if (signals.ctx?.aborted || signals.request.aborted) {
     return true;
   }

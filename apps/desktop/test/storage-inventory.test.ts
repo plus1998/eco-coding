@@ -2,14 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  buildStorageUsageSnapshot,
-  measurePathBytes,
-} from "../src/main/storage-inventory";
-import {
-  encodeClaudeProjectDirName,
-  isEcoClaudeProjectDirName,
-} from "../src/main/claude-session-paths";
+import { encodeClaudeProjectDirName, isEcoClaudeProjectDirName } from "../src/main/claude-session-paths";
+import { buildStorageUsageSnapshot, measurePathBytes } from "../src/main/storage-inventory";
 
 let tempDir = "";
 
@@ -63,10 +57,7 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
   await fs.writeFile(path.join(checkpointsDir, "thr_1", "items", "x.bin"), "D".repeat(40));
   await fs.writeFile(path.join(codexHomeDir, "config.toml"), "E".repeat(15));
   await fs.writeFile(path.join(userDataDir, "models-dev-pricing.json"), "F".repeat(25));
-  await fs.writeFile(
-    path.join(claudeProjectsDir, "proj-a", "session-1.jsonl"),
-    "J".repeat(50),
-  );
+  await fs.writeFile(path.join(claudeProjectsDir, "proj-a", "session-1.jsonl"), "J".repeat(50));
   await fs.writeFile(path.join(claudeFileHistoryDir, "snap1"), "H".repeat(12));
 
   const piAgentDir = path.join(userDataDir, "pi-agent");

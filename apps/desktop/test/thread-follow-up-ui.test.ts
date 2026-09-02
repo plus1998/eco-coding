@@ -1,21 +1,18 @@
 import { expect, test } from "bun:test";
-import type { ThreadPendingFollowUp } from "../src/shared/ipc";
+import { i18n } from "../src/renderer/i18n";
 import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
   queuedThreadFollowUps,
 } from "../src/renderer/thread-follow-up-ui";
+import type { ThreadPendingFollowUp } from "../src/shared/ipc";
 import {
   coreSupportsFollowUpEscalate,
   resolveFollowUpDeliveryModeForCore,
 } from "../src/shared/thread-follow-up-core";
-import { i18n } from "../src/renderer/i18n";
 
-function followUp(
-  id: string,
-  patch: Partial<ThreadPendingFollowUp> = {},
-): ThreadPendingFollowUp {
+function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): ThreadPendingFollowUp {
   return {
     id,
     threadId: "thr_1",
@@ -69,13 +66,15 @@ test("formatThreadFollowUpPreview localizes image and empty defaults", async () 
 
   expect(preview).toEndWith("... (1 image(s))");
   expect(preview.length).toBeLessThan(140);
-  expect(formatThreadFollowUpPreview(followUp("images", {
-    prompt: "",
-    attachments: [{ mediaType: "image/png", data: "abc" }],
-  }))).toBe("1 image(s)");
-  expect(formatThreadFollowUpPreview(followUp("empty", { prompt: "" }))).toBe(
-    "Empty follow-up message",
-  );
+  expect(
+    formatThreadFollowUpPreview(
+      followUp("images", {
+        prompt: "",
+        attachments: [{ mediaType: "image/png", data: "abc" }],
+      }),
+    ),
+  ).toBe("1 image(s)");
+  expect(formatThreadFollowUpPreview(followUp("empty", { prompt: "" }))).toBe("Empty follow-up message");
 });
 
 test("ACP follow-up UI stays queue-only: no escalate, no steer shortcut", () => {

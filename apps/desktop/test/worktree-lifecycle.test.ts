@@ -18,9 +18,7 @@ describe("isWorktreeGitCwdError", () => {
   });
 
   test("ignores unrelated git errors", () => {
-    expect(isWorktreeGitCwdError(new Error("Failed to list changed files: merge conflict"))).toBe(
-      false,
-    );
+    expect(isWorktreeGitCwdError(new Error("Failed to list changed files: merge conflict"))).toBe(false);
   });
 });
 

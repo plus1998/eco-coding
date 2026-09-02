@@ -1,10 +1,6 @@
 import type { PackageManagerKind } from "./ipc";
 
-export function buildRunCommand(
-  packageManager: PackageManagerKind,
-  script: string,
-  args?: string,
-): string[] {
+export function buildRunCommand(packageManager: PackageManagerKind, script: string, args?: string): string[] {
   const trimmedArgs = args?.trim();
   const tokens = trimmedArgs ? splitShellArgs(trimmedArgs) : [];
   switch (packageManager) {
@@ -31,11 +27,7 @@ export function buildRunCommand(
   }
 }
 
-export function formatRunCommand(
-  packageManager: PackageManagerKind,
-  script: string,
-  args?: string,
-): string {
+export function formatRunCommand(packageManager: PackageManagerKind, script: string, args?: string): string {
   return buildRunCommand(packageManager, script, args).join(" ");
 }
 

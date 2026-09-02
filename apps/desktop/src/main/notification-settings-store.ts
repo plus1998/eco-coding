@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
-  type NotificationSettingsSnapshot,
   defaultNotificationSettings,
+  type NotificationSettingsSnapshot,
   normalizeNotificationSettingsSnapshot,
 } from "../shared/notification-settings";
 
@@ -14,9 +14,7 @@ export {
   normalizeNotificationSettingsSnapshot,
 } from "../shared/notification-settings";
 
-export async function createNotificationSettingsStore(
-  dbPath: string,
-): Promise<NotificationSettingsStore> {
+export async function createNotificationSettingsStore(dbPath: string): Promise<NotificationSettingsStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
   const store = new NotificationSettingsStore(new sqlite.DatabaseSync(dbPath));

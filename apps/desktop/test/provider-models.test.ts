@@ -31,28 +31,29 @@ function expectAnthropicNativeUpstreamBody(body: unknown, modelId: string): void
   expect(body).not.toHaveProperty("store");
   expect(body).not.toHaveProperty("parallel_tool_calls");
 }
-import { normalizeUpstreamApiCompat } from "../src/shared/api-compat";
+
 import {
+  buildChatCompletionsTestRequestBody,
   buildChatCompletionsUrl,
   buildMessagesUrl,
-  buildOpenAICompatUpstreamUrl,
-  buildResponsesInputTokensUrl,
   buildModelsListUrl,
+  buildOpenAICompatUpstreamUrl,
   buildProviderRequestBaseUrl,
   buildProviderTestRequestBody,
-  buildChatCompletionsTestRequestBody,
+  buildResponsesInputTokensUrl,
   buildResponsesTestRequestBody,
+  buildRouteTestDedupeKey,
   describeProviderCompatRouting,
+  listProviderUpstreamModels,
   normalizeRequestPath,
   parseUpstreamModelsPayload,
   resolveModelsListUrl,
   splitBaseUrlAndRequestPath,
-  buildRouteTestDedupeKey,
-  listProviderUpstreamModels,
   testProviderConnection,
   testRoleRoutes,
 } from "../src/main/provider-models";
 import type { ProviderStore } from "../src/main/provider-store";
+import { normalizeUpstreamApiCompat } from "../src/shared/api-compat";
 
 describe("listProviderUpstreamModels", () => {
   test("returns localizable details when a saved provider has no baseURL", async () => {
@@ -121,7 +122,9 @@ describe("buildModelsListUrl", () => {
     expect(buildModelsListUrl("https://api.deepseek.com", "/anthropic")).toBe(
       "https://api.deepseek.com/v1/models",
     );
-    expect(buildModelsListUrl("https://api.deepseek.com/anthropic")).toBe("https://api.deepseek.com/v1/models");
+    expect(buildModelsListUrl("https://api.deepseek.com/anthropic")).toBe(
+      "https://api.deepseek.com/v1/models",
+    );
   });
 
   test("includes service path prefix (OpenCode Zen)", () => {
@@ -168,11 +171,7 @@ describe("describeProviderCompatRouting", () => {
   });
 
   test("documents OpenAI Chat Completions path", () => {
-    const routing = describeProviderCompatRouting(
-      "https://api.deepseek.com",
-      "",
-      "openai_chat_completions",
-    );
+    const routing = describeProviderCompatRouting("https://api.deepseek.com", "", "openai_chat_completions");
     expect(routing.chatApi).toBe("openai-v1-chat-completions");
     expect(routing.chatUrl).toBe("https://api.deepseek.com/v1/chat/completions");
   });
@@ -234,9 +233,7 @@ describe("buildMessagesUrl", () => {
   });
 
   test("buildMessagesUrl uses custom version segment", () => {
-    expect(buildMessagesUrl("https://api.example.com", "", "v2")).toBe(
-      "https://api.example.com/v2/messages",
-    );
+    expect(buildMessagesUrl("https://api.example.com", "", "v2")).toBe("https://api.example.com/v2/messages");
   });
 });
 
@@ -773,7 +770,10 @@ describe("testRoleRoutes", () => {
     let callCount = 0;
     const fetcher = async (_url: string, init?: RequestInit) => {
       callCount += 1;
-      expectAnthropicNativeUpstreamBody(JSON.parse(String(init?.body)), callCount === 1 ? "model-a" : "model-b");
+      expectAnthropicNativeUpstreamBody(
+        JSON.parse(String(init?.body)),
+        callCount === 1 ? "model-a" : "model-b",
+      );
       return mockAnthropicUpstreamMessage("ok");
     };
 

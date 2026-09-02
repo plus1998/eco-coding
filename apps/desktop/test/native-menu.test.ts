@@ -3,10 +3,7 @@ import type { MenuItemConstructorOptions } from "electron";
 import { buildApplicationMenuTemplate } from "../src/main/native-menu";
 import type { AppMenuCommand } from "../src/shared/ipc";
 
-function submenuFor(
-  template: MenuItemConstructorOptions[],
-  label: string,
-): MenuItemConstructorOptions[] {
+function submenuFor(template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] {
   const submenu = template.find((item) => item.label === label)?.submenu;
   if (!Array.isArray(submenu)) {
     throw new Error(`Missing ${label} submenu`);

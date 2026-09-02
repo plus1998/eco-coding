@@ -93,9 +93,7 @@ test("isMermaidLang matches mermaid fence params", () => {
 });
 
 test("renderFeedMarkdownHtml marks mermaid fences without rendering SVG", () => {
-  const html = renderFeedMarkdownHtml(
-    ["```mermaid", "graph TD", "  A-->B", "```"].join("\n"),
-  );
+  const html = renderFeedMarkdownHtml(["```mermaid", "graph TD", "  A-->B", "```"].join("\n"));
   expect(html).toContain("markdown-code-block--mermaid");
   expect(html).toContain("language-mermaid");
   expect(html).toContain("A--&gt;B");

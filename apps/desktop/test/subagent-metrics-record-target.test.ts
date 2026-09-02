@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import type { RuntimeAgentRole } from "../src/shared/ipc";
 import {
   resolveSubagentMetricsRecordTarget,
   type SubagentMetricsRecordTargetResolver,
 } from "../src/main/subagent-metrics-record-target";
+import type { RuntimeAgentRole } from "../src/shared/ipc";
 
 function resolver(
   input: {

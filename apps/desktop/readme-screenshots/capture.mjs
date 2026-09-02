@@ -24,7 +24,16 @@ mkdirSync(previewDir, { recursive: true });
 
 const vite = spawn(
   "bun",
-  ["x", "vite", "--config", "readme-screenshots/vite.config.ts", "--host", "127.0.0.1", "--port", String(port)],
+  [
+    "x",
+    "vite",
+    "--config",
+    "readme-screenshots/vite.config.ts",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    String(port),
+  ],
   {
     cwd: desktopRoot,
     stdio: ["ignore", "pipe", "pipe"],
@@ -69,12 +78,7 @@ try {
 }
 
 async function launchBrowser() {
-  const attempts = [
-    { channel: "chrome" },
-    { channel: "msedge" },
-    { channel: "chromium" },
-    {},
-  ];
+  const attempts = [{ channel: "chrome" }, { channel: "msedge" }, { channel: "chromium" }, {}];
   let lastError;
   for (const options of attempts) {
     try {

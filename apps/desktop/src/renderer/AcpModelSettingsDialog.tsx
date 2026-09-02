@@ -1,12 +1,8 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { AcpModelOption } from "../shared/acp-model-vendor";
-import {
-  createAcpCurrentExtra,
-  mapAcpModelOptions,
-  resolveAcpVendorNames,
-} from "./model-cascade-options";
 import { ModelCascadeSelect } from "./ModelCascadeSelect";
+import { createAcpCurrentExtra, mapAcpModelOptions, resolveAcpVendorNames } from "./model-cascade-options";
 
 interface AcpModelSettingsDialogProps {
   models: readonly AcpModelOption[];

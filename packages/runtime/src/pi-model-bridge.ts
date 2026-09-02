@@ -27,9 +27,7 @@ export const ECO_PI_EXTENDED_THINKING_LEVEL_MAP = {
 } as const satisfies EcoPiThinkingLevelMap;
 
 /** Eco thinkingEffort → PI thinkingLevel. Unknown / unset fail closed to off. */
-export function mapEcoThinkingEffortToPiThinkingLevel(
-  effort: string | undefined,
-): PiThinkingLevel {
+export function mapEcoThinkingEffortToPiThinkingLevel(effort: string | undefined): PiThinkingLevel {
   if (!effort || !isThinkingEffort(effort) || effort === "off") {
     return "off";
   }
@@ -147,9 +145,7 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(input.route?.thinkingEffort);
 
   const declaredContextWindow =
-    input.contextWindow ??
-    input.route?.primary.contextWindow ??
-    DEFAULT_CONTEXT_LIMIT;
+    input.contextWindow ?? input.route?.primary.contextWindow ?? DEFAULT_CONTEXT_LIMIT;
   const contextWindow = resolveEffectiveContextLimit(
     declaredContextWindow,
     input.globalContextWindowLimit ?? DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
@@ -181,9 +177,7 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   };
 }
 
-export function resolvePiPlannerRoute(
-  routes: readonly ResolvedModelRoute[],
-): ResolvedModelRoute | undefined {
+export function resolvePiPlannerRoute(routes: readonly ResolvedModelRoute[]): ResolvedModelRoute | undefined {
   return (
     routes.find((route) => route.role === "planner") ??
     routes.find((route) => route.role === "main") ??

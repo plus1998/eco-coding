@@ -37,9 +37,7 @@ export interface ProxyUsagePendingSettlementUpdate {
 }
 
 export interface ProxyMessageIdentityDiagnostic {
-  reason:
-    | "message_identity_conflict"
-    | "pending_parent_tool_use_conflict";
+  reason: "message_identity_conflict" | "pending_parent_tool_use_conflict";
   messageId: string;
   eventId?: string;
   existingAgentId?: string;
@@ -58,15 +56,9 @@ export interface ProxyUsagePendingMutationResult {
 
 export class ProxyUsagePendingRegistry {
   private readonly byThread = new Map<string, ProxyUsagePendingEntry[]>();
-  private readonly messageBindingsByThread = new Map<
-    string,
-    Map<string, ProxyMessageIdentityBinding>
-  >();
+  private readonly messageBindingsByThread = new Map<string, Map<string, ProxyMessageIdentityBinding>>();
 
-  register(
-    threadId: string,
-    entry: ProxyUsagePendingEntry,
-  ): ProxyUsagePendingMutationResult {
+  register(threadId: string, entry: ProxyUsagePendingEntry): ProxyUsagePendingMutationResult {
     const normalized = normalizePendingEntry(entry);
     const binding = normalized.messageId
       ? this.messageBindingsByThread.get(threadId)?.get(normalized.messageId)
@@ -77,17 +69,12 @@ export class ProxyUsagePendingRegistry {
 
     const queue = this.byThread.get(threadId) ?? [];
     queue.push(normalized);
-    queue.sort((left, right) =>
-      left.observedAt.localeCompare(right.observedAt),
-    );
+    queue.sort((left, right) => left.observedAt.localeCompare(right.observedAt));
     this.byThread.set(threadId, queue);
     return { updates: [], diagnostics: [] };
   }
 
-  bindMessageIdentity(
-    threadId: string,
-    input: ProxyMessageIdentityBinding,
-  ): ProxyUsagePendingMutationResult {
+  bindMessageIdentity(threadId: string, input: ProxyMessageIdentityBinding): ProxyUsagePendingMutationResult {
     const binding = normalizeMessageBinding(input);
     if (!binding) {
       return { updates: [], diagnostics: [] };
@@ -181,9 +168,7 @@ export class ProxyUsagePendingRegistry {
     return queue;
   }
 
-  rebuildFromEvents(
-    events: readonly UsageLedgerEvent[],
-  ): ProxyUsagePendingMutationResult {
+  rebuildFromEvents(events: readonly UsageLedgerEvent[]): ProxyUsagePendingMutationResult {
     const threadIds = new Set(events.map((event) => event.threadId));
     for (const threadId of threadIds) {
       this.byThread.delete(threadId);
@@ -228,9 +213,7 @@ export class ProxyUsagePendingRegistry {
       return { updates: [], diagnostics: [] };
     }
 
-    const consumed = queue.filter(
-      (entry) => entry.messageId === binding.messageId,
-    );
+    const consumed = queue.filter((entry) => entry.messageId === binding.messageId);
     if (consumed.length === 0) {
       return { updates: [], diagnostics: [] };
     }
@@ -262,32 +245,20 @@ export class ProxyUsagePendingRegistry {
 
 export function readRouteRole(event: UsageLedgerEvent): RuntimeAgentRole {
   const metadataRole = event.metadata?.[USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY];
-  return typeof metadataRole === "string"
-    ? (metadataRole as RuntimeAgentRole)
-    : event.role;
+  return typeof metadataRole === "string" ? (metadataRole as RuntimeAgentRole) : event.role;
 }
 
 export function readBillingRole(event: UsageLedgerEvent): RuntimeAgentRole {
   const metadataRole = event.metadata?.[USAGE_LEDGER_BILLING_ROLE_METADATA_KEY];
-  return typeof metadataRole === "string"
-    ? (metadataRole as RuntimeAgentRole)
-    : event.role;
+  return typeof metadataRole === "string" ? (metadataRole as RuntimeAgentRole) : event.role;
 }
 
-export function isProxyPendingAttributionEvent(
-  event: UsageLedgerEvent,
-): boolean {
+export function isProxyPendingAttributionEvent(event: UsageLedgerEvent): boolean {
   return event.source === "proxy" && event.attribution.status === "pending";
 }
 
-function normalizePendingEntry(
-  entry: ProxyUsagePendingEntry,
-): ProxyUsagePendingEntry {
-  const {
-    parentToolUseId: rawParentToolUseId,
-    messageId: rawMessageId,
-    ...rest
-  } = entry;
+function normalizePendingEntry(entry: ProxyUsagePendingEntry): ProxyUsagePendingEntry {
+  const { parentToolUseId: rawParentToolUseId, messageId: rawMessageId, ...rest } = entry;
   const parentToolUseId = normalizeOptionalString(rawParentToolUseId);
   const messageId = normalizeOptionalString(rawMessageId);
   return {
@@ -302,8 +273,7 @@ function normalizeMessageBinding(
 ): ProxyMessageIdentityBinding | undefined {
   const messageId = normalizeOptionalString(input.messageId);
   const agentId = normalizeOptionalString(input.agentId);
-  const role = normalizeOptionalString(input.role) as
-    RuntimeAgentRole | undefined;
+  const role = normalizeOptionalString(input.role) as RuntimeAgentRole | undefined;
   const parentToolUseId = normalizeOptionalString(input.parentToolUseId);
   if (!messageId || !agentId || !role) {
     return undefined;
@@ -320,10 +290,7 @@ function mergeCompatibleBinding(
   existing: ProxyMessageIdentityBinding,
   incoming: ProxyMessageIdentityBinding,
 ): ProxyMessageIdentityBinding | undefined {
-  if (
-    existing.agentId !== incoming.agentId ||
-    existing.role !== incoming.role
-  ) {
+  if (existing.agentId !== incoming.agentId || existing.role !== incoming.role) {
     return undefined;
   }
   if (
@@ -348,11 +315,7 @@ function buildMutationForBoundEntry(
   binding: ProxyMessageIdentityBinding,
 ): ProxyUsagePendingMutationResult {
   const diagnostics: ProxyMessageIdentityDiagnostic[] = [];
-  if (
-    entry.parentToolUseId &&
-    binding.parentToolUseId &&
-    entry.parentToolUseId !== binding.parentToolUseId
-  ) {
+  if (entry.parentToolUseId && binding.parentToolUseId && entry.parentToolUseId !== binding.parentToolUseId) {
     diagnostics.push({
       reason: "pending_parent_tool_use_conflict",
       messageId: binding.messageId,
@@ -381,9 +344,7 @@ function buildMutationForBoundEntry(
   };
 }
 
-function normalizeOptionalString(
-  value: string | undefined,
-): string | undefined {
+function normalizeOptionalString(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized || undefined;
 }

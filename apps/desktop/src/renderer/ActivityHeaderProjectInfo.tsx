@@ -4,8 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
-  activityHeaderProjectInfoPopoverBoxForRect,
   type ActivityHeaderProjectInfoPopoverBox,
+  activityHeaderProjectInfoPopoverBoxForRect,
 } from "./activity-header-project-info-layout";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 
@@ -173,12 +173,7 @@ export function ActivityHeaderProjectInfo({
       <button
         ref={buttonRef}
         type="button"
-        className={[
-          "activity-header-project-info-trigger",
-          open ? "is-open" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className={["activity-header-project-info-trigger", open ? "is-open" : ""].filter(Boolean).join(" ")}
         title={t("thread.projectInfo")}
         aria-label={t("thread.projectInfo")}
         aria-haspopup="dialog"

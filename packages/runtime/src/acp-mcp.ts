@@ -29,9 +29,7 @@ export type AcpMcpHttpServer = {
 
 export type AcpMcpServer = AcpMcpStdioServer | AcpMcpHttpServer;
 
-export function toAcpMcpServers(
-  mcpServers: Record<string, unknown> | undefined,
-): AcpMcpServer[] {
+export function toAcpMcpServers(mcpServers: Record<string, unknown> | undefined): AcpMcpServer[] {
   if (!mcpServers) {
     return [];
   }

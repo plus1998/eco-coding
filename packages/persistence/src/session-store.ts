@@ -241,14 +241,15 @@ export class SqliteSessionStore implements SessionStore {
 
 export type SessionStoreFactory = () => SessionStore | Promise<SessionStore>;
 
-export async function runSessionStoreConformance(
-  createStore: SessionStoreFactory,
-): Promise<void> {
+export async function runSessionStoreConformance(createStore: SessionStoreFactory): Promise<void> {
   const store = await createStore();
   const projectKey = "-Users-test-proj";
   const sessionId = "session-1";
   const key: SessionKey = { projectKey, sessionId };
-  const entries = [{ type: "user", message: "hello" }, { type: "assistant", message: "hi" }];
+  const entries = [
+    { type: "user", message: "hello" },
+    { type: "assistant", message: "hi" },
+  ];
 
   expectNull(await store.load(key));
   await store.append(key, entries);

@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  buildSidebarSearchResults,
-  type SidebarSearchProject,
-} from "../src/renderer/SidebarSearchDialog";
+import { buildSidebarSearchResults, type SidebarSearchProject } from "../src/renderer/SidebarSearchDialog";
 import type { ThreadSummary } from "../src/shared/ipc";
 
 const projects: SidebarSearchProject[] = [

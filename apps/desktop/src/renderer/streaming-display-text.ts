@@ -3,10 +3,7 @@ export interface StreamingDisplaySnapshot {
   pendingBlock: boolean;
 }
 
-export function resolveStreamingDisplaySnapshot(
-  text: string,
-  streaming: boolean,
-): StreamingDisplaySnapshot {
+export function resolveStreamingDisplaySnapshot(text: string, streaming: boolean): StreamingDisplaySnapshot {
   if (!streaming || !text) {
     return { displayText: text, pendingBlock: false };
   }

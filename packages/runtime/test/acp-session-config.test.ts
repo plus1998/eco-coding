@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  parseAcpAvailableModels,
-  resolveAcpWireModelId,
-} from "../src/acp-session-config.js";
+import { parseAcpAvailableModels, resolveAcpWireModelId } from "../src/acp-session-config.js";
 
 test("resolveAcpWireModelId prefers exact ACP modelId", () => {
   expect(
@@ -26,9 +23,9 @@ test("resolveAcpWireModelId throws when availableModels is missing", () => {
 });
 
 test("resolveAcpWireModelId throws when id cannot be mapped", () => {
-  expect(() =>
-    resolveAcpWireModelId("nope", [{ modelId: "default[]", name: "Auto" }]),
-  ).toThrow(/not in availableModels/);
+  expect(() => resolveAcpWireModelId("nope", [{ modelId: "default[]", name: "Auto" }])).toThrow(
+    /not in availableModels/,
+  );
 });
 
 test("parseAcpAvailableModels reads session/new or session/load models", () => {

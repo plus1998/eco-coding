@@ -108,7 +108,9 @@ export class CodexFileCheckpointStore {
 
   async restore(threadId: string, itemId: string, worktreePath: string): Promise<void> {
     const directory = this.itemDirectory(threadId, itemId);
-    const manifest = JSON.parse(await fs.readFile(path.join(directory, "manifest.json"), "utf8")) as CheckpointManifest;
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(directory, "manifest.json"), "utf8"),
+    ) as CheckpointManifest;
     const currentFiles = (await listCheckpointFiles(worktreePath, manifest.mode)).files;
     for (const relativePath of currentFiles) {
       await fs.rm(path.join(worktreePath, relativePath), { recursive: true, force: true });
@@ -151,7 +153,9 @@ export class CodexFileCheckpointStore {
 
   async restoreRecovery(threadId: string, worktreePath: string, recoveryId: string): Promise<void> {
     const directory = path.join(this.rootDir, safeSegment(threadId), "recovery", safeSegment(recoveryId));
-    const manifest = JSON.parse(await fs.readFile(path.join(directory, "manifest.json"), "utf8")) as CheckpointManifest;
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(directory, "manifest.json"), "utf8"),
+    ) as CheckpointManifest;
     const currentFiles = (await listCheckpointFiles(worktreePath, manifest.mode)).files;
     for (const relativePath of currentFiles) {
       await fs.rm(path.join(worktreePath, relativePath), { recursive: true, force: true });
@@ -170,10 +174,10 @@ export class CodexFileCheckpointStore {
   }
 
   async deleteRecovery(threadId: string, recoveryId: string): Promise<void> {
-    await fs.rm(
-      path.join(this.rootDir, safeSegment(threadId), "recovery", safeSegment(recoveryId)),
-      { recursive: true, force: true },
-    );
+    await fs.rm(path.join(this.rootDir, safeSegment(threadId), "recovery", safeSegment(recoveryId)), {
+      recursive: true,
+      force: true,
+    });
   }
 
   private pendingDirectory(threadId: string): string {
@@ -186,11 +190,15 @@ export class CodexFileCheckpointStore {
 }
 
 async function listGitFiles(worktreePath: string): Promise<string[]> {
-  const { stdout } = await execFileAsync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
-    cwd: worktreePath,
-    encoding: "buffer",
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const { stdout } = await execFileAsync(
+    "git",
+    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+    {
+      cwd: worktreePath,
+      encoding: "buffer",
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
   return stdout
     .toString("utf8")
     .split("\0")

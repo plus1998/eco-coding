@@ -5,7 +5,7 @@ import type {
   WebSearchCardDisplay,
 } from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
-import { resolveActionKind, type ActivityActionIcon } from "../shared/feed-action-kind";
+import { type ActivityActionIcon, resolveActionKind } from "../shared/feed-action-kind";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import {
   normalizeSubagentDisplayRole,

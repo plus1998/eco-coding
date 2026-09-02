@@ -44,10 +44,7 @@ export function readStoredLocalePreference(storage?: LocaleStorage): AppLocalePr
   }
 }
 
-export function persistLocalePreference(
-  preference: AppLocalePreference,
-  storage?: LocaleStorage,
-): void {
+export function persistLocalePreference(preference: AppLocalePreference, storage?: LocaleStorage): void {
   if (!storage) {
     return;
   }

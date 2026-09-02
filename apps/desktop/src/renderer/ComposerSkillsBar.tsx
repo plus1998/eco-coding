@@ -1,5 +1,5 @@
-import type { LinkAgentsSkillsResult, SkillInfo } from "../shared/skills";
 import { useTranslation } from "react-i18next";
+import type { LinkAgentsSkillsResult, SkillInfo } from "../shared/skills";
 import { SkillPillWithCard } from "./composer-skills-ui";
 
 interface ComposerSkillsBarProps {

@@ -1,5 +1,5 @@
-import { useBrowserWebviewInstances } from "./browser-state-store";
 import { BrowserWebviewPersistentHost } from "./BrowserWebviewPersistentHost";
+import { useBrowserWebviewInstances } from "./browser-state-store";
 import { browserWebviewPool } from "./browser-webview-pool";
 
 /**

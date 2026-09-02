@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ThreadRuntimeCoordinator, type ThreadRuntimeAdapter } from "../src/main/thread-runtime-coordinator";
+import { type ThreadRuntimeAdapter, ThreadRuntimeCoordinator } from "../src/main/thread-runtime-coordinator";
 
 describe("ThreadRuntimeCoordinator", () => {
   test("routes concurrent thread operations to their owning Core", async () => {
@@ -21,12 +21,7 @@ describe("ThreadRuntimeCoordinator", () => {
       coordinator.cancel("claude", "a"),
     ]);
 
-    expect(calls).toEqual([
-      "claude:start:a",
-      "codex:start:b",
-      "codex:continue:b",
-      "claude:cancel:a",
-    ]);
+    expect(calls).toEqual(["claude:start:a", "codex:start:b", "codex:continue:b", "claude:cancel:a"]);
   });
 
   test("fails explicitly when a Core is not registered", () => {

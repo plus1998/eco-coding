@@ -13,47 +13,40 @@ import {
   X,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import {
-  type Dispatch,
-  type SetStateAction,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { i18n } from "./i18n";
 import type {
   CenterServerAccountAuthResult,
+  CenterServerApproveVaultClaimResult,
   CenterServerConnectionStatus,
+  CenterServerConnectQrResult,
   CenterServerCreatePairingResult,
   CenterServerDeviceBindingView,
   CenterServerDevicePresenceView,
+  CenterServerDomainSyncState,
+  CenterServerRequestVaultClaimResult,
   CenterServerSettingsInput,
   CenterServerSettingsSnapshot,
   CenterServerSettingsView,
   CenterServerSignInRequest,
   CenterServerSignUpRequest,
-  CenterServerApproveVaultClaimResult,
-  CenterServerConnectQrResult,
-  CenterServerRequestVaultClaimResult,
   CenterServerSubmitVaultClaimCodeResult,
-  CenterServerSyncStatusSnapshot,
   CenterServerSyncDomain,
-  CenterServerDomainSyncState,
+  CenterServerSyncStatusSnapshot,
   CenterServerUnlockVaultResult,
   CenterServerVaultClaimView,
   CenterServerVaultStatus,
   CenterServerWrapVaultResult,
 } from "../shared/center-server";
 import {
-  CenterServerRemoveConnectionError,
   CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
+  CenterServerRemoveConnectionError,
   classifyCenterServerAuthError,
   isCenterServerReloginError,
   isLocalhostCenterServerUrl,
 } from "../shared/center-server";
+import { i18n } from "./i18n";
 
 interface CenterServerSettingsPanelProps {
   snapshot: CenterServerSettingsSnapshot;
@@ -489,7 +482,6 @@ export function CenterServerSettingsPanel({
     }
   }
 
-
   async function handleRequestVaultClaim() {
     setError(undefined);
     setVaultBusy(true);
@@ -515,7 +507,9 @@ export function CenterServerSettingsPanel({
     try {
       const result = await onApproveVaultClaim(claim.id);
       setApprovalCode(result.code);
-      setApprovalTarget(t("settings.center.vault.pendingClaim", { id: shortenDeviceId(claim.requesterDeviceId) }));
+      setApprovalTarget(
+        t("settings.center.vault.pendingClaim", { id: shortenDeviceId(claim.requesterDeviceId) }),
+      );
       setApprovalSheetOpen(true);
       await refreshVault();
     } catch (caught) {
@@ -789,86 +783,86 @@ export function CenterServerSettingsPanel({
           <section className="cs-block cs-block--tab-first">
             <h2 className="cs-block-label">{t("settings.center.vault.unlockTitle")}</h2>
             <div className="cs-card cs-vault-card">
-            <div className="cs-vault-status-row">
-              <div className="cs-vault-status-copy">
-                <span className="cs-vault-status-title">
-                  <span
-                    className={`cs-vault-status-dot cs-vault-status-dot--${
-                      hasVaultKey
-                        ? "ready"
-                        : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
-                          ? "need-auth"
-                          : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
-                            ? "pending"
-                            : "need-auth"
-                    }`}
-                    aria-hidden
-                  />
-                  {hasVaultKey
-                    ? t("settings.center.vault.statusReady")
-                    : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
-                      ? t("settings.center.vault.statusNeedPassword")
-                      : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
-                        ? t("settings.center.vault.statusWaiting")
-                        : t("settings.center.vault.statusNeedPassword")}
-                </span>
-                {vaultStatus?.needsPasswordWrap ? (
-                  <span className="cs-vault-status-meta">{t("settings.center.vault.needsWrapHint")}</span>
+              <div className="cs-vault-status-row">
+                <div className="cs-vault-status-copy">
+                  <span className="cs-vault-status-title">
+                    <span
+                      className={`cs-vault-status-dot cs-vault-status-dot--${
+                        hasVaultKey
+                          ? "ready"
+                          : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
+                            ? "need-auth"
+                            : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                              ? "pending"
+                              : "need-auth"
+                      }`}
+                      aria-hidden
+                    />
+                    {hasVaultKey
+                      ? t("settings.center.vault.statusReady")
+                      : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
+                        ? t("settings.center.vault.statusNeedPassword")
+                        : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                          ? t("settings.center.vault.statusWaiting")
+                          : t("settings.center.vault.statusNeedPassword")}
+                  </span>
+                  {vaultStatus?.needsPasswordWrap ? (
+                    <span className="cs-vault-status-meta">{t("settings.center.vault.needsWrapHint")}</span>
+                  ) : null}
+                </div>
+                {!hasVaultKey || vaultStatus?.needsPasswordWrap ? (
+                  <div className="cs-vault-password-row">
+                    <input
+                      type="password"
+                      className="cs-input"
+                      autoComplete="current-password"
+                      placeholder={t("settings.center.vault.passwordPlaceholder")}
+                      value={vaultPassword}
+                      disabled={actionBusy || vaultBusy}
+                      onChange={(event) => setVaultPassword(event.target.value)}
+                    />
+                    {!hasVaultKey ? (
+                      <button
+                        type="button"
+                        className="cs-btn cs-btn--accent"
+                        disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
+                        onClick={() => void handleUnlockVaultWithPassword()}
+                      >
+                        {t("settings.center.vault.unlockWithPassword")}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="cs-btn cs-btn--accent"
+                        disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
+                        onClick={() => void handleWrapVaultWithPassword()}
+                      >
+                        {t("settings.center.vault.wrapWithPassword")}
+                      </button>
+                    )}
+                  </div>
                 ) : null}
               </div>
-              {!hasVaultKey || vaultStatus?.needsPasswordWrap ? (
-                <div className="cs-vault-password-row">
-                  <input
-                    type="password"
-                    className="cs-input"
-                    autoComplete="current-password"
-                    placeholder={t("settings.center.vault.passwordPlaceholder")}
-                    value={vaultPassword}
-                    disabled={actionBusy || vaultBusy}
-                    onChange={(event) => setVaultPassword(event.target.value)}
-                  />
-                  {!hasVaultKey ? (
-                    <button
-                      type="button"
-                      className="cs-btn cs-btn--accent"
-                      disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
-                      onClick={() => void handleUnlockVaultWithPassword()}
-                    >
-                      {t("settings.center.vault.unlockWithPassword")}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="cs-btn cs-btn--accent"
-                      disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
-                      onClick={() => void handleWrapVaultWithPassword()}
-                    >
-                      {t("settings.center.vault.wrapWithPassword")}
-                    </button>
-                  )}
-                </div>
+
+              {vaultStatus?.error ? (
+                <p className="cs-error cs-vault-inline-error">
+                  {vaultStatus.error === "vault_no_synced_device" ||
+                  /vault_no_synced_device/i.test(vaultStatus.error)
+                    ? t("settings.center.vault.noSyncedDevice")
+                    : vaultStatus.error === "settings_sync_vault_required" ||
+                        /settings_sync_vault_required/i.test(vaultStatus.error)
+                      ? t("settings.center.vault.vaultRequired")
+                      : vaultStatus.error === "settings_sync_vault_decrypt" ||
+                          /settings_sync_vault_decrypt/i.test(vaultStatus.error)
+                        ? t("settings.center.vault.vaultDecryptFailed")
+                        : vaultStatus.error === "vault_password_wrap_missing" ||
+                            /vault_password_wrap_missing/i.test(vaultStatus.error)
+                          ? t("settings.center.vault.wrapMissing")
+                          : vaultStatus.error}
+                </p>
               ) : null}
             </div>
-
-            {vaultStatus?.error ? (
-              <p className="cs-error cs-vault-inline-error">
-                {vaultStatus.error === "vault_no_synced_device" ||
-                /vault_no_synced_device/i.test(vaultStatus.error)
-                  ? t("settings.center.vault.noSyncedDevice")
-                  : vaultStatus.error === "settings_sync_vault_required" ||
-                      /settings_sync_vault_required/i.test(vaultStatus.error)
-                    ? t("settings.center.vault.vaultRequired")
-                    : vaultStatus.error === "settings_sync_vault_decrypt" ||
-                        /settings_sync_vault_decrypt/i.test(vaultStatus.error)
-                      ? t("settings.center.vault.vaultDecryptFailed")
-                      : vaultStatus.error === "vault_password_wrap_missing" ||
-                          /vault_password_wrap_missing/i.test(vaultStatus.error)
-                        ? t("settings.center.vault.wrapMissing")
-                        : vaultStatus.error}
-              </p>
-            ) : null}
-          </div>
-        </section>
+          </section>
 
           <section className="cs-block">
             <div className="cs-block-head">
@@ -879,7 +873,11 @@ export function CenterServerSettingsPanel({
                 disabled={actionBusy || syncStatusLoading}
                 onClick={() => void refreshSyncStatus()}
               >
-                <RefreshCw size={14} strokeWidth={1.75} className={syncStatusLoading ? "cs-spin" : undefined} />
+                <RefreshCw
+                  size={14}
+                  strokeWidth={1.75}
+                  className={syncStatusLoading ? "cs-spin" : undefined}
+                />
                 {t("common.refresh")}
               </button>
             </div>
@@ -932,7 +930,11 @@ export function CenterServerSettingsPanel({
                   disabled={actionBusy || bindingsLoading}
                   onClick={() => void refreshBindings()}
                 >
-                  <RefreshCw size={14} strokeWidth={1.75} className={bindingsLoading ? "cs-spin" : undefined} />
+                  <RefreshCw
+                    size={14}
+                    strokeWidth={1.75}
+                    className={bindingsLoading ? "cs-spin" : undefined}
+                  />
                   {t("common.refresh")}
                 </button>
                 <button
@@ -1033,7 +1035,9 @@ export function CenterServerSettingsPanel({
                     </div>
                   ) : connectQr || pairing ? (
                     <div className="cs-pairing cs-pairing--sheet">
-                      {isLocalhostCenterServerUrl(snapshot.settings.supabaseUrl || snapshot.settings.serverUrl) ? (
+                      {isLocalhostCenterServerUrl(
+                        snapshot.settings.supabaseUrl || snapshot.settings.serverUrl,
+                      ) ? (
                         <p className="cs-pairing-note">{t("settings.center.localhostWarning")}</p>
                       ) : null}
                       <div className="cs-pairing-qr">
@@ -1192,7 +1196,6 @@ export function CenterServerSettingsPanel({
             document.body,
           )
         : null}
-
     </div>
   );
 }
@@ -1524,7 +1527,11 @@ function OtpCodeInput({
             index === activeIndex ? " is-active" : ""
           }`;
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed 6-cell passcode grid, cells are positional
-          return <span key={index} className={cellClass}>{digit}</span>;
+          return (
+            <span key={index} className={cellClass}>
+              {digit}
+            </span>
+          );
         })}
       </div>
     </div>
@@ -1640,9 +1647,7 @@ function formatDomainSyncSummary(domain: CenterServerSyncDomain, summary: string
     }
     const routeSegment = segments.find((part) => part !== "instructions" && /^\d+$/.test(part));
     if (routeSegment) {
-      labels.push(
-        i18n.t("settings.center.syncStatus.summary.gitRoutes", { count: Number(routeSegment) }),
-      );
+      labels.push(i18n.t("settings.center.syncStatus.summary.gitRoutes", { count: Number(routeSegment) }));
     }
     if (labels.length > 0) {
       return labels.join(" · ");

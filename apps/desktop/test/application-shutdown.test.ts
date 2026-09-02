@@ -1,15 +1,13 @@
 import { expect, test } from "bun:test";
 import {
+  type ApplicationShutdownDeps,
   buildQuitConfirmationDialogOptions,
   collectRunningWorkSummary,
   hasRunningWork,
   isThreadActivelyRunning,
-  type ApplicationShutdownDeps,
 } from "../src/main/application-shutdown-work";
 
-function createDeps(
-  overrides: Partial<ApplicationShutdownDeps> = {},
-): ApplicationShutdownDeps {
+function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): ApplicationShutdownDeps {
   return {
     locale: () => "zh-CN",
     listThreads: () => [],

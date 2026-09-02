@@ -98,9 +98,7 @@ export class SubagentLaunchRegistry {
   /**
    * Pair a structured SDK stream parent_tool_use_id with a pending launch and agent id.
    */
-  resolveFromStreamParentToolUseId(
-    parentToolUseId: string,
-  ): SubagentStreamDelegationLink | undefined {
+  resolveFromStreamParentToolUseId(parentToolUseId: string): SubagentStreamDelegationLink | undefined {
     const parentKey = parentToolUseId.trim();
     if (!parentKey) {
       return undefined;
@@ -173,9 +171,7 @@ export class SubagentLaunchRegistry {
     return matches;
   }
 
-  private tryPairStreamParentToolUseId(
-    parentToolUseId: string,
-  ): SubagentStreamDelegationLink | undefined {
+  private tryPairStreamParentToolUseId(parentToolUseId: string): SubagentStreamDelegationLink | undefined {
     const parentKey = parentToolUseId.trim();
     if (!parentKey || this.linkedStreamParentToolUseIds.has(parentKey)) {
       return undefined;
@@ -207,10 +203,7 @@ export class SubagentLaunchRegistry {
     return link;
   }
 
-  private findPendingLaunchesByPrompt(
-    role: RuntimeAgentRole,
-    prompt: string,
-  ): SubagentLaunchRecord[] {
+  private findPendingLaunchesByPrompt(role: RuntimeAgentRole, prompt: string): SubagentLaunchRecord[] {
     const matches: SubagentLaunchRecord[] = [];
     for (const record of this.launches.values()) {
       if (record.role === role && record.prompt.trim() === prompt) {

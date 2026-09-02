@@ -22,7 +22,9 @@
   min-height: 42px;
   padding: 9px 12px;
   text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .task-panel-home-actions button:hover {

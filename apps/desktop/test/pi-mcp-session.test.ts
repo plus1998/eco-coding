@@ -1,11 +1,8 @@
 import { expect, test } from "bun:test";
-import {
-  buildPiMcpSessionConfig,
-  mergePiAppendSystemPrompt,
-} from "../src/main/pi-mcp-session";
+import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
+import { buildPiMcpSessionConfig, mergePiAppendSystemPrompt } from "../src/main/pi-mcp-session";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../src/shared/browser";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../src/shared/image-generation";
-import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 
 test("buildPiMcpSessionConfig only includes Composer-selected servers", () => {
   const result = buildPiMcpSessionConfig({
@@ -94,9 +91,9 @@ test("buildPiMcpSessionConfig always merges imageViewInject even when Composer i
     type: "stdio",
     args: ["image-view.mjs"],
   });
-  expect(
-    (result.mcpServers[ECO_IMAGE_VIEW_MCP_SERVER] as { command?: string }).command,
-  ).not.toBe("user-override");
+  expect((result.mcpServers[ECO_IMAGE_VIEW_MCP_SERVER] as { command?: string }).command).not.toBe(
+    "user-override",
+  );
   expect(result.appendSystemPrompt).toEqual(["Use eco_image_view with an absolute path."]);
 });
 
@@ -128,10 +125,8 @@ test("buildPiMcpSessionConfig isolates different browser tokens per call", () =>
       },
     },
   });
-  const envA = (a.mcpServers[ECO_AGENT_BROWSER_MCP_SERVER] as { env?: Record<string, string> })
-    .env;
-  const envB = (b.mcpServers[ECO_AGENT_BROWSER_MCP_SERVER] as { env?: Record<string, string> })
-    .env;
+  const envA = (a.mcpServers[ECO_AGENT_BROWSER_MCP_SERVER] as { env?: Record<string, string> }).env;
+  const envB = (b.mcpServers[ECO_AGENT_BROWSER_MCP_SERVER] as { env?: Record<string, string> }).env;
   expect(envA?.ECO_BROWSER_AUTH_TOKEN).toBe("token-a");
   expect(envB?.ECO_BROWSER_AUTH_TOKEN).toBe("token-b");
 });

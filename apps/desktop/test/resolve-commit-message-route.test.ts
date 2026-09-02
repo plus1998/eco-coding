@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
+import type { RoutePricingHint, RuntimeRoleRouteConfig } from "../src/shared/ipc";
 import {
   commitRoutePriceScore,
   resolveCommitMessageRoute,
   resolveDefaultCommitMessageRole,
 } from "../src/shared/resolve-commit-message-route";
-import type { RoutePricingHint, RuntimeRoleRouteConfig } from "../src/shared/ipc";
 
 const routes: RuntimeRoleRouteConfig[] = [
   { role: "explore", providerId: "p1", modelId: "haiku" },

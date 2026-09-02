@@ -1,9 +1,6 @@
 import { emptyCostBreakdown, type ParsedUsage } from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
-import type {
-  BillingProjectorAgentSnapshot,
-  UsageLedgerBillingProjection,
-} from "./billing-projector";
+import type { BillingProjectorAgentSnapshot, UsageLedgerBillingProjection } from "./billing-projector";
 import type { SubagentMetricsEntry, SubagentMetricsStatus } from "./subagent-metrics-registry";
 
 export function projectSubagentMetricsEntriesFromBillingProjection(input: {

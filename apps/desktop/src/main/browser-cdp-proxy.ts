@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import http from "node:http";
-import type { AddressInfo } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Socket } from "node:net";
+import http from "node:http";
+import type { AddressInfo, Socket } from "node:net";
 import type { WebContents } from "electron";
 import { FORBIDDEN_CDP_PORT } from "../shared/dev-cdp";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
 export { FORBIDDEN_CDP_PORT };
 
 export interface BrowserCdpProxy {
@@ -65,10 +65,7 @@ function ensureDebuggerAttached(wc: WebContents): DebuggerLike {
   return dbg;
 }
 
-function readFrames(
-  buffer: Buffer,
-  onFrame: (payload: Buffer, opcode: number) => void,
-): Buffer {
+function readFrames(buffer: Buffer, onFrame: (payload: Buffer, opcode: number) => void): Buffer {
   let offset = 0;
   while (buffer.length - offset >= 2) {
     const b0 = buffer[offset]!;
@@ -373,8 +370,7 @@ export async function startBrowserCdpProxy(
 ): Promise<BrowserCdpProxy> {
   const id = "eco-guest";
   return startMultiBrowserCdpProxy({
-    getTargets: () =>
-      webContents && !webContents.isDestroyed() ? [{ id, webContents }] : [],
+    getTargets: () => (webContents && !webContents.isDestroyed() ? [{ id, webContents }] : []),
     ...(options.onClientActivity ? { onClientActivity: options.onClientActivity } : {}),
   });
 }
@@ -568,7 +564,9 @@ function handleUpgrade(
     socket.destroy();
     return;
   }
-  const accept = createHash("sha1").update(key + WS_GUID).digest("base64");
+  const accept = createHash("sha1")
+    .update(key + WS_GUID)
+    .digest("base64");
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
       "Upgrade: websocket\r\n" +
@@ -654,9 +652,7 @@ async function handleClientMessage(
   const method = message.method;
   const params = message.params ?? {};
   const clientSessionId =
-    typeof message.sessionId === "string" && message.sessionId.trim()
-      ? message.sessionId
-      : undefined;
+    typeof message.sessionId === "string" && message.sessionId.trim() ? message.sessionId : undefined;
 
   try {
     const shim = await tryHandleTargetDomain(

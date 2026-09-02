@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  createEmptySubagentMetricsEntry,
-  SubagentMetricsState,
-} from "../src/main/subagent-metrics-state";
+import { createEmptySubagentMetricsEntry, SubagentMetricsState } from "../src/main/subagent-metrics-state";
 
 test("SubagentMetricsState tracks active role indexes through start and stop", () => {
   const state = new SubagentMetricsState();

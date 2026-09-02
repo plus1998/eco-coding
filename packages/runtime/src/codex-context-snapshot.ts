@@ -10,12 +10,12 @@
 
 import type { RuntimeAgentRole } from "../../shared/src";
 import { parseCodexGatewayModelAlias } from "./codex-config-sync.js";
-import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "./models-dev-limits.js";
 import {
   type CodexThreadAttribution,
   resolveDefaultCodexThreadAttribution,
 } from "./codex-thread-attribution.js";
 import type { ContextBreakdownSegment } from "./context-breakdown.js";
+import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "./models-dev-limits.js";
 
 /** Raw `thread/tokenUsage/updated` notification params from Codex app-server. */
 export interface CodexTokenUsageUpdatedParams {
@@ -304,14 +304,9 @@ function readString(record: Record<string, unknown>, key: string): string | unde
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function readNonNegativeSafeInteger(
-  record: Record<string, unknown>,
-  key: string,
-): number | undefined {
+function readNonNegativeSafeInteger(record: Record<string, unknown>, key: string): number | undefined {
   const value = record[key];
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -13,10 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  clampComposerFloatingLeft,
-  composerFloatingAvailableWidth,
-} from "./composer-floating";
+import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
 
 interface ComposerFieldSelectProps {
   value: string;
@@ -331,12 +328,7 @@ export function ComposerFieldSelect({
           {triggerLabel}
         </span>
         {invalid ? (
-          <CircleAlert
-            size={14}
-            strokeWidth={2}
-            aria-hidden
-            className="composer-field-select-invalid-icon"
-          />
+          <CircleAlert size={14} strokeWidth={2} aria-hidden className="composer-field-select-invalid-icon" />
         ) : null}
         <ChevronDown
           size={14}

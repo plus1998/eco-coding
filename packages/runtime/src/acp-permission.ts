@@ -24,8 +24,7 @@ export function parseAcpPermissionRequest(params: unknown): AcpPermissionRequest
   if (!isRecord(params) || !isRecord(params.toolCall)) {
     return undefined;
   }
-  const toolCallId =
-    typeof params.toolCall.toolCallId === "string" ? params.toolCall.toolCallId.trim() : "";
+  const toolCallId = typeof params.toolCall.toolCallId === "string" ? params.toolCall.toolCallId.trim() : "";
   if (!toolCallId) {
     return undefined;
   }

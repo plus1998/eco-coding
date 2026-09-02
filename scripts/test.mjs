@@ -153,7 +153,10 @@ function resolveCommand({ options, passthrough }) {
   if (options.size > 0) {
     throwUsageError(`未知参数：${[...options].map((option) => `--${option}`).join(" ")}`);
   }
-  return { kind: "commands", commands: [["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough]] };
+  return {
+    kind: "commands",
+    commands: [["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough]],
+  };
 }
 
 async function run(command) {

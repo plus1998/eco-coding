@@ -5,9 +5,7 @@ export const ACP_FOLLOW_UP_ESCALATE_UNSUPPORTED =
 
 export type AcpFollowUpEnqueuePlan = { kind: "default" } | { kind: "force_queue" };
 
-export function coreSupportsMidTurnFollowUp(
-  coreKind: string | undefined,
-): coreKind is "claude" | "codex" {
+export function coreSupportsMidTurnFollowUp(coreKind: string | undefined): coreKind is "claude" | "codex" {
   return coreKind === "claude" || coreKind === "codex";
 }
 

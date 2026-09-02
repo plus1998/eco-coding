@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import {
+  CLAUDE_CODE_ATTRIBUTION_HEADERS,
+  ECO_PROXY_BILLING_HEADERS,
   ProxyBillingStampRegistry,
   readClaudeCodeAgentIdFromRequestHeaders,
   readProxyBillingStampFromHeaders,
-  CLAUDE_CODE_ATTRIBUTION_HEADERS,
-  ECO_PROXY_BILLING_HEADERS,
 } from "../src/main/proxy-billing-stamp";
 import { resolveProxyUsageBilling } from "../src/main/proxy-usage-billing";
-import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import {
   finalizeLiveRequest,
   handleBridgeMessagesRequest,
@@ -151,9 +151,9 @@ test("logicalRequestId frozen stamp attributes concurrent same-role usage withou
   expect(resolvedB.attributionPending).toBe(false);
 
   finalizeLiveRequest(live, threadId, a.logicalRequestId);
-  expect(
-    resolveFrozenLiveRequestAttribution(live, threadId, a.logicalRequestId)?.agentId,
-  ).toBe("agent_coder_a");
+  expect(resolveFrozenLiveRequestAttribution(live, threadId, a.logicalRequestId)?.agentId).toBe(
+    "agent_coder_a",
+  );
 });
 
 test("same-role concurrent without stamp stays attributionPending", () => {

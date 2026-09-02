@@ -25,7 +25,7 @@ test("ACP composer trigger uses the model trigger, not the orchestration empty s
   expect(markup).not.toContain("is-empty");
 });
 
-test("ACP composer trigger shows Cursor current when no model is selected", () => {
+test("ACP composer trigger shows default label when no model is selected", () => {
   const markup = renderLocalized(
     createElement(ComposerAcpModelTrigger, {
       models,
@@ -34,5 +34,5 @@ test("ACP composer trigger shows Cursor current when no model is selected", () =
     "zh-CN",
   );
 
-  expect(markup).toContain("GPT-5.3 Codex");
+  expect(markup).toContain("跟随当前默认模型");
 });

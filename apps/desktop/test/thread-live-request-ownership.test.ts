@@ -100,12 +100,8 @@ test("Bridge started then provider rekey then delayed SDK request.started keeps 
   expect(markBridgeRequestStartedPersisted(threadId, logicalRequestId)).toBe(true);
 
   recordProviderRequestIdForLogical(registry, threadId, logicalRequestId, "provider_req_1");
-  expect(registry.findEntryByLogicalId(threadId, logicalRequestId)?.providerRequestId).toBe(
-    "provider_req_1",
-  );
-  expect(registry.findEntryByLogicalId(threadId, logicalRequestId)?.logicalRequestId).toBe(
-    logicalRequestId,
-  );
+  expect(registry.findEntryByLogicalId(threadId, logicalRequestId)?.providerRequestId).toBe("provider_req_1");
+  expect(registry.findEntryByLogicalId(threadId, logicalRequestId)?.logicalRequestId).toBe(logicalRequestId);
 
   const sdkResolved = resolveLiveRequestIdForEvent(registry, threadId, {
     type: "request.started",
@@ -187,15 +183,11 @@ test("shouldEmitRetryScheduledCancellation allows explicit active request id onl
   const first = registry.beginRequest(threadId, { role: "coder" });
   registry.beginRequest(threadId, { role: "coder" });
 
-  expect(
-    shouldEmitRetryScheduledCancellation(registry, threadId, first.logicalRequestId),
-  ).toBe(true);
+  expect(shouldEmitRetryScheduledCancellation(registry, threadId, first.logicalRequestId)).toBe(true);
   expect(shouldEmitRetryScheduledCancellation(registry, threadId, "unknown")).toBe(false);
 
   registry.endRequest(threadId, first.logicalRequestId);
-  expect(
-    shouldEmitRetryScheduledCancellation(registry, threadId, first.logicalRequestId),
-  ).toBe(false);
+  expect(shouldEmitRetryScheduledCancellation(registry, threadId, first.logicalRequestId)).toBe(false);
 });
 
 test("markRequestStartedPersisted dedupes Bridge request.started by logical id", () => {

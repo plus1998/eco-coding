@@ -63,17 +63,11 @@ export function CoderTodoPanel({ todos, embedded, compact = false }: CoderTodoPa
         const statusLabel = t(statusKey[todo.status]);
         return (
           <li key={todo.id} className={`coder-todo-item ${todo.status}`}>
-            <TodoStatusIndex
-              position={todo.position}
-              status={todo.status}
-              statusLabel={statusLabel}
-            />
+            <TodoStatusIndex position={todo.position} status={todo.status} statusLabel={statusLabel} />
             <div className="coder-todo-body">
               <div className="coder-todo-title-row">
                 <strong title={label}>{label}</strong>
-                {!compact ? (
-                  <span className={`coder-todo-status ${todo.status}`}>{statusLabel}</span>
-                ) : null}
+                {!compact ? <span className={`coder-todo-status ${todo.status}`}>{statusLabel}</span> : null}
               </div>
               {!compact && todo.detail && todo.detail !== todo.title ? (
                 <details className="coder-todo-detail">

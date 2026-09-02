@@ -59,13 +59,14 @@ function normalizeTab(value: unknown): TerminalTabRecord | undefined {
     return undefined;
   }
   const label =
-    typeof record.label === "string" && record.label.trim()
-      ? record.label.trim()
-      : i18n.t("terminal.title");
+    typeof record.label === "string" && record.label.trim() ? record.label.trim() : i18n.t("terminal.title");
   return { id: record.id.trim(), label };
 }
 
-function normalizeProjectTerminalState(value: unknown, fallbackLabel: string): ProjectTerminalState | undefined {
+function normalizeProjectTerminalState(
+  value: unknown,
+  fallbackLabel: string,
+): ProjectTerminalState | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -161,9 +162,7 @@ export function resolveTerminalTabForInjectedSession(options: {
   sessionId: string;
   sessionByTabId: Readonly<Record<string, string | undefined>>;
 }): { state: ProjectTerminalState; tabId: string } {
-  const existingTab = options.state.tabs.find(
-    (tab) => options.sessionByTabId[tab.id] === options.sessionId,
-  );
+  const existingTab = options.state.tabs.find((tab) => options.sessionByTabId[tab.id] === options.sessionId);
   if (existingTab) {
     return {
       state: { ...options.state, open: true, activeTabId: existingTab.id },

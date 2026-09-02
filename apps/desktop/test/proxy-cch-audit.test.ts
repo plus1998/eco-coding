@@ -94,7 +94,9 @@ test("normalizeAnthropicMessagesBodyForCache strips system billing header and st
   expect(normalized.messages).toEqual([
     {
       role: "user",
-      content: [{ type: "tool_result", tool_use_id: "toolu_1", content: `log ${STABLE_CCH_PLACEHOLDER} done` }],
+      content: [
+        { type: "tool_result", tool_use_id: "toolu_1", content: `log ${STABLE_CCH_PLACEHOLDER} done` },
+      ],
     },
   ]);
 });

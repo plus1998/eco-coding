@@ -20,10 +20,7 @@ function resolveMaterialIconDiskPath(iconFile: string): string | undefined {
     return direct;
   }
   if (iconFile.endsWith(".svg") && !iconFile.endsWith(".clone.svg")) {
-    const clonePath = path.join(
-      materialIconsSrc,
-      `${iconFile.slice(0, -".svg".length)}.clone.svg`,
-    );
+    const clonePath = path.join(materialIconsSrc, `${iconFile.slice(0, -".svg".length)}.clone.svg`);
     if (existsSync(clonePath)) {
       return clonePath;
     }
@@ -87,7 +84,13 @@ export default defineConfig({
   // 导致 CodeMirror 语言包 load 后 token 不上色（社区高频问题）。
   // 强制去重，确保运行时只有单一实例。
   resolve: {
-    dedupe: ["@lezer/highlight", "@lezer/common", "@codemirror/state", "@codemirror/view", "@codemirror/language"],
+    dedupe: [
+      "@lezer/highlight",
+      "@lezer/common",
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+    ],
   },
   build: {
     outDir: "dist/renderer",

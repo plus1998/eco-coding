@@ -60,7 +60,9 @@ export function ProxyBridgeSettingsSection({ settings, disabled, onSave }: Proxy
             }
           }}
         />
-        <span className="mcp-field-hint">失焦后自动保存。作用于 Codex / Claude 经 Bridge → Gateway 的上游请求。</span>
+        <span className="mcp-field-hint">
+          失焦后自动保存。作用于 Codex / Claude 经 Bridge → Gateway 的上游请求。
+        </span>
       </label>
       <label className="mcp-field">
         <span className="mcp-field-label">上游出站代理</span>

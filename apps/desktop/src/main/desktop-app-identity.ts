@@ -1,9 +1,6 @@
-import { app } from "electron";
 import path from "node:path";
-import {
-  DEFAULT_DEV_USER_DATA_SUFFIX,
-  resolveDevUserDataSuffix,
-} from "./desktop-dev-user-data-suffix";
+import { app } from "electron";
+import { DEFAULT_DEV_USER_DATA_SUFFIX, resolveDevUserDataSuffix } from "./desktop-dev-user-data-suffix";
 
 /** Packaged desktop identity ({@link electron-builder.yml}). */
 export const DESKTOP_PACKAGED_APP_ID = "com.eco.coding";

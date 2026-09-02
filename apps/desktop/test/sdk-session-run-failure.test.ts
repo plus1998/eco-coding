@@ -46,10 +46,10 @@ describe("shouldClearSdkSessionOnRunFailure", () => {
     expect(source).toContain("hadResume: Boolean(resumeOptsForContinuation)");
 
     const planningFailed = source.match(
-      /onFailed: \(reason\) => \{\n          taskRunHooks\.stopIfUnhandled\("blocked"\);\n          cancelClarificationsForThread\(thread\.id, reason\);\n          assertSdkSessionRetainedOnRunFailure\(\{[\s\S]*?hadResume: Boolean\(resumeOptsForRun\),[\s\S]*?markThreadInterrupted\(thread\.id, reason\);\n        \}/,
+      /onFailed: \(reason\) => \{\n {10}taskRunHooks\.stopIfUnhandled\("blocked"\);\n {10}cancelClarificationsForThread\(thread\.id, reason\);\n {10}assertSdkSessionRetainedOnRunFailure\(\{[\s\S]*?hadResume: Boolean\(resumeOptsForRun\),[\s\S]*?markThreadInterrupted\(thread\.id, reason\);\n {8}\}/,
     );
     const continuationFailed = source.match(
-      /onFailed: \(reason\) => \{\n          taskRunHooks\?\.stopIfUnhandled\("blocked"\);\n          assertSdkSessionRetainedOnRunFailure\(\{[\s\S]*?hadResume: Boolean\(resumeOptsForContinuation\),[\s\S]*?markThreadInterrupted\(thread\.id, reason\);\n        \}/,
+      /onFailed: \(reason\) => \{\n {10}taskRunHooks\?\.stopIfUnhandled\("blocked"\);\n {10}assertSdkSessionRetainedOnRunFailure\(\{[\s\S]*?hadResume: Boolean\(resumeOptsForContinuation\),[\s\S]*?markThreadInterrupted\(thread\.id, reason\);\n {8}\}/,
     );
     expect(planningFailed).not.toBeNull();
     expect(continuationFailed).not.toBeNull();

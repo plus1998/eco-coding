@@ -63,22 +63,25 @@ test("normalizeStoredMainAgentConfig requires name and agentKey", () => {
   ).toThrow(/主 Agent 配置名称不能为空|main agent config name is required/i);
 });
 
-test.skipIf(!sqliteAvailable)("deleteMainAgentConfig removes the config without reference checks", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-orchestration-store-delete-"));
-  const store = await createAgentOrchestrationStore(path.join(dir, "orchestration.db"));
-  store.saveMainAgentConfig({
-    id: "user.main",
-    name: "Main",
-    agentKey: "main",
-    modelRef: { providerId: "p1", modelId: "m1" },
-    tools: { allowed: [], disallowed: [] },
-    skills: [],
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    source: "user",
-  });
-  expect(() => store.deleteMainAgentConfig("user.main")).not.toThrow();
-  expect(store.getMainAgentConfig("user.main")).toBeUndefined();
-});
+test.skipIf(!sqliteAvailable)(
+  "deleteMainAgentConfig removes the config without reference checks",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-orchestration-store-delete-"));
+    const store = await createAgentOrchestrationStore(path.join(dir, "orchestration.db"));
+    store.saveMainAgentConfig({
+      id: "user.main",
+      name: "Main",
+      agentKey: "main",
+      modelRef: { providerId: "p1", modelId: "m1" },
+      tools: { allowed: [], disallowed: [] },
+      skills: [],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      source: "user",
+    });
+    expect(() => store.deleteMainAgentConfig("user.main")).not.toThrow();
+    expect(store.getMainAgentConfig("user.main")).toBeUndefined();
+  },
+);
 
 test.skipIf(!sqliteAvailable)("agent template CRUD remains available", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-orchestration-store-template-"));

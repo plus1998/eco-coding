@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ParsedUsage } from "@eco/runtime";
+import type { UsageBillingContextUpdate } from "../src/main/usage-billing-artifacts";
 import {
   applyUsageContextUpdate,
   buildUsageContextUpdateOptions,
@@ -7,7 +8,6 @@ import {
   type UsageContextMonitor,
   type UsageContextUpdateMonitor,
 } from "../src/main/usage-context-effects";
-import type { UsageBillingContextUpdate } from "../src/main/usage-billing-artifacts";
 
 function usage(inputTokens = 1_000): ParsedUsage {
   return { inputTokens, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0 };

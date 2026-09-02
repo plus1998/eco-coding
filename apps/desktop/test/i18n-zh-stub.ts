@@ -1,9 +1,7 @@
 import type { ActionKindTranslate } from "../src/shared/feed-action-kind";
 import { i18nCatalogs } from "../src/shared/i18n-catalogs";
 
-function catalogTranslate(
-  locale: "zh-CN" | "en-US",
-): ActionKindTranslate {
+function catalogTranslate(locale: "zh-CN" | "en-US"): ActionKindTranslate {
   return (key, vars) => {
     const catalog = i18nCatalogs[locale].translation as Record<string, string>;
     let template = catalog[key];

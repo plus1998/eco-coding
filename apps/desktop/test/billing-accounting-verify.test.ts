@@ -1,20 +1,20 @@
 import { expect, test } from "bun:test";
-import { type ParsedUsage } from "@eco/runtime";
+import type { ParsedUsage } from "@eco/runtime";
 import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
 import { resolveProxyUsageBilling } from "../src/main/proxy-usage-billing";
-import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import { resolveSingleUsageBillingArtifacts } from "../src/main/usage-billing-artifacts";
+import {
+  type AgentInstanceRecord,
+  InMemoryUsageLedger,
+  type UsageLedgerEvent,
+} from "../src/main/usage-ledger";
 import {
   UsageLedgerCoordinator,
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
 import { buildThreadUsageLedgerEventView } from "../src/main/usage-ledger-view";
-import {
-  InMemoryUsageLedger,
-  type AgentInstanceRecord,
-  type UsageLedgerEvent,
-} from "../src/main/usage-ledger";
 import { verifyBillingAccounting } from "../src/shared/billing-accounting-verify";
 
 const metricsStoreStub: SubagentMetricsPersistenceStore = {

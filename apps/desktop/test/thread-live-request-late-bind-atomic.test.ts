@@ -101,9 +101,7 @@ test("applyExactLogicalRequestLateBind: terminal-before-bind patches via finaliz
     source: "finalized",
     agentId: "agent_a",
   });
-  expect(registry.findFinalizedByLogicalId(threadId, snapshot.logicalRequestId)?.agentId).toBe(
-    "agent_a",
-  );
+  expect(registry.findFinalizedByLogicalId(threadId, snapshot.logicalRequestId)?.agentId).toBe("agent_a");
 });
 
 test("applyExactLogicalRequestLateBind: silent path binds registry without DB", () => {
@@ -130,7 +128,5 @@ test("applyExactLogicalRequestLateBind: silent path binds registry without DB", 
   });
   expect(result).toMatchObject({ ok: true, bound: true, updated: 0, emitTimelineActivity: false });
   expect(dbCalls).toBe(0);
-  expect(registry.findEntryByLogicalId(threadId, snapshot.logicalRequestId)?.agentId).toBe(
-    "agent_silent",
-  );
+  expect(registry.findEntryByLogicalId(threadId, snapshot.logicalRequestId)?.agentId).toBe("agent_silent");
 });

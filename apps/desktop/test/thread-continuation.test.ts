@@ -65,10 +65,10 @@ test("rewind continuation prompt uses trimmed history instead of future activity
 
 test("rewind history refuses to continue when the target boundary is missing", () => {
   expect(() =>
-    activityLinesBeforeRewindTarget(
-      [{ id: "before", role: "user", message: "之前" }],
-      { activityLineId: "missing", userMessageId: "user-missing" },
-    ),
+    activityLinesBeforeRewindTarget([{ id: "before", role: "user", message: "之前" }], {
+      activityLineId: "missing",
+      userMessageId: "user-missing",
+    }),
   ).toThrow("无法定位历史边界");
 });
 
@@ -215,8 +215,6 @@ test("resolveCodexContinueStrategy rejects rewind without binding", () => {
 test("threadHasPriorAgentOutput ignores noise and user-only history", () => {
   expect(threadHasPriorAgentOutput([])).toBe(false);
   expect(threadHasPriorAgentOutput([{ role: "user", message: "hi" }])).toBe(false);
-  expect(
-    threadHasPriorAgentOutput([{ role: "planner", message: "Requesting model…" }]),
-  ).toBe(false);
+  expect(threadHasPriorAgentOutput([{ role: "planner", message: "Requesting model…" }])).toBe(false);
   expect(threadHasPriorAgentOutput([{ role: "planner", message: "我来帮你改这个按钮。" }])).toBe(true);
 });

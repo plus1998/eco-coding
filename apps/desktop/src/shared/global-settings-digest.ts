@@ -14,9 +14,7 @@ export interface GlobalSettingsDigestResult {
  * Content digest for Mobile (and other thin clients) to decide whether a full
  * model/workflow settings pull is needed. Secrets are reduced to presence bits.
  */
-export function computeGlobalSettingsDigest(
-  input: GlobalSettingsDigestInput,
-): GlobalSettingsDigestResult {
+export function computeGlobalSettingsDigest(input: GlobalSettingsDigestInput): GlobalSettingsDigestResult {
   const payload = {
     modelSettings: input.modelSettings,
     workflowSettings: redactWorkflowSettingsForDigest(input.workflowSettings),
@@ -25,9 +23,7 @@ export function computeGlobalSettingsDigest(
   return { digest };
 }
 
-export function redactWorkflowSettingsForDigest(
-  workflow: WorkflowSettingsSnapshot,
-): Record<string, unknown> {
+export function redactWorkflowSettingsForDigest(workflow: WorkflowSettingsSnapshot): Record<string, unknown> {
   const { acpCursorApiKey, ...rest } = workflow;
   return {
     ...rest,

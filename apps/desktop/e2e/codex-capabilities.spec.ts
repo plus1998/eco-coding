@@ -22,7 +22,9 @@ test("Codex composer exposes MCP, subagent, and skills UI", async ({ ecoPage: pa
   expect(mcpLabel?.includes("MCP")).toBe(true);
   await mcpTrigger.click();
 
-  const mcpSwitches = page.locator('.composer-agents-popover[aria-label="MCP 服务器"] input[type="checkbox"]');
+  const mcpSwitches = page.locator(
+    '.composer-agents-popover[aria-label="MCP 服务器"] input[type="checkbox"]',
+  );
   const mcpSwitchCount = await mcpSwitches.count();
   for (let index = 0; index < mcpSwitchCount; index += 1) {
     const state = await mcpSwitches.nth(index).evaluate((input) => ({

@@ -92,15 +92,9 @@ test("contextCardPlaceholder differs for awaiting_plan vs idle", () => {
 
 test("shouldShowContextUsagePanel and billing panel honor hostUiFeatures", () => {
   expect(shouldShowContextUsagePanel("running")).toBe(true);
-  expect(
-    shouldShowContextUsagePanel("running", { contextUsage: "hide", billing: "show" }),
-  ).toBe(false);
-  expect(
-    shouldShowBillingUsagePanel("running", { contextUsage: "show", billing: "hide" }),
-  ).toBe(false);
-  expect(
-    shouldShowBillingUsagePanel("running", { contextUsage: "hide", billing: "hide" }),
-  ).toBe(false);
+  expect(shouldShowContextUsagePanel("running", { contextUsage: "hide", billing: "show" })).toBe(false);
+  expect(shouldShowBillingUsagePanel("running", { contextUsage: "show", billing: "hide" })).toBe(false);
+  expect(shouldShowBillingUsagePanel("running", { contextUsage: "hide", billing: "hide" })).toBe(false);
 });
 
 test("buildThreadUsageSummary omits hidden context and billing instead of fabricating them", () => {

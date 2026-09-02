@@ -1,10 +1,4 @@
-import {
-  appendJsonl,
-  bodyKind,
-  redactSecrets,
-  snapshotHeaders,
-  writeBodyArtifact,
-} from "./fixture-io.mjs";
+import { appendJsonl, bodyKind, redactSecrets, snapshotHeaders, writeBodyArtifact } from "./fixture-io.mjs";
 
 export async function captureHttpExchange(input) {
   const started = Date.now();

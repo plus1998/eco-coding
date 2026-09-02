@@ -302,6 +302,20 @@ export type {
   RuntimeAgentRole,
   SessionCapturedPayload,
 } from "../../shared/src";
+export * from "./acp-agent-driver.js";
+export * from "./acp-client.js";
+export * from "./acp-cursor-agent.js";
+export * from "./acp-cursor-extensions.js";
+export * from "./acp-event-map.js";
+export * from "./acp-host-ui-features.js";
+export * from "./acp-jsonrpc.js";
+export * from "./acp-mcp.js";
+export * from "./acp-permission.js";
+export * from "./acp-prompt.js";
+export * from "./acp-provider-exhaustion.js";
+export * from "./acp-session-config.js";
+export * from "./acp-session-delete.js";
+export * from "./acp-types.js";
 export {
   formatSubagentMissionMessage,
   isGenericMissionSummary,
@@ -324,87 +338,6 @@ export {
   type ThreadApiErrorInfo,
 } from "./api-error";
 export * from "./ask-user-question";
-export * from "./core-runtime";
-export * from "./pi-availability.js";
-export * from "./pi-coding-agent-driver.js";
-export * from "./pi-eco-extensions.js";
-export * from "./pi-tool-approval.js";
-export * from "./pi-event-adapter.js";
-export * from "./pi-mcp.js";
-export * from "./pi-model-bridge.js";
-export * from "./pi-session-paths.js";
-export * from "./pi-finalize-plan.js";
-export * from "./pi-session-mode.js";
-export * from "./pi-skills.js";
-export * from "./pi-subagent.js";
-export * from "./pi-usage.js";
-export * from "./acp-cursor-agent.js";
-export * from "./acp-agent-driver.js";
-export * from "./acp-mcp.js";
-export * from "./acp-jsonrpc.js";
-export * from "./acp-types.js";
-export * from "./acp-cursor-extensions.js";
-export * from "./acp-client.js";
-export * from "./acp-event-map.js";
-export * from "./acp-provider-exhaustion.js";
-export * from "./acp-host-ui-features.js";
-export * from "./acp-prompt.js";
-export * from "./acp-session-delete.js";
-export * from "./acp-session-config.js";
-export * from "./acp-permission.js";
-export * from "./codex-app-server-client.js";
-export * from "./codex-app-server-driver.js";
-export * from "./codex-config-sync.js";
-export * from "./codex-context-snapshot.js";
-export * from "./codex-event-adapter.js";
-export * from "./codex-external-agent-config.js";
-export * from "./codex-model-list.js";
-export * from "./codex-model-catalog-sync.js";
-export * from "./codex-plan-handoff.js";
-export * from "./codex-prompt-materializer.js";
-export * from "./codex-role-sync.js";
-export * from "./codex-fork.js";
-// codex-rollback re-exports fork for legacy import paths; don't `export *` it from the package root.
-export * from "./codex-skills-extra-roots.js";
-export * from "./codex-skills-list.js";
-export {
-  ECO_SPAWN_AGENT_PRETOOL_SCRIPT,
-  SPAWN_AGENT_HOOK_MATCHER,
-  SPAWN_AGENT_HOOK_STATUS,
-  computeCodexCommandHookHash as computeCodexSpawnAgentHookHash,
-  syncCodexSpawnAgentHook,
-} from "./codex-spawn-agent-hook.js";
-export * from "./codex-hooks-sync.js";
-export * from "./v4a-teaching.js";
-export * from "./v4a-teaching-flags.js";
-export * from "./codex-spawn-role-queue.js";
-export * from "./codex-thread-attribution.js";
-export * from "./codex-thread-resume.js";
-export {
-  CODEX_APPROVAL_POLICIES,
-  CODEX_SANDBOX_MODES,
-  CODEX_WEB_SEARCH_MODES,
-  DEFAULT_CODEX_TOOL_POLICY,
-  applyCodexExecutionConfirmation,
-  cloneEcoToolPolicy as cloneCodexToolPolicy,
-  ecoSandboxModeToTurnPolicy,
-  ecoToolPolicyToRoleTomlFields,
-  isCodexApprovalPolicy,
-  isCodexSandboxMode,
-  isCodexWebSearchMode,
-  normalizeEcoToolPolicy as normalizeCodexToolPolicy,
-  resolveEffectiveTurnSandbox,
-  resolveMainAgentHandsOnFromCodexPolicy,
-  toCodexAppServerSandboxPolicyWire,
-  type CodexApprovalPolicy,
-  type CodexExecutionConfirmationMode,
-  type CodexSandboxMode,
-  type CodexWebSearchMode,
-  type EcoToolPolicy as CodexToolPolicy,
-} from "./codex-tool-policy.js";
-export * from "./codex-turn-interrupt.js";
-export * from "./codex-turn-steer.js";
-export * from "./codex-turn-route-registry.js";
 export {
   computeRequestBilling,
   computeSavings,
@@ -426,6 +359,58 @@ export type {
   SdkToolPermissionDecision,
   SdkToolPermissionRequest,
 } from "./claude-agent-sdk";
+export * from "./codex-app-server-client.js";
+export * from "./codex-app-server-driver.js";
+export * from "./codex-config-sync.js";
+export * from "./codex-context-snapshot.js";
+export * from "./codex-event-adapter.js";
+export * from "./codex-external-agent-config.js";
+export * from "./codex-fork.js";
+export * from "./codex-hooks-sync.js";
+export * from "./codex-model-catalog-sync.js";
+export * from "./codex-model-list.js";
+export * from "./codex-output-truncation.js";
+export * from "./codex-plan-handoff.js";
+export * from "./codex-prompt-materializer.js";
+export * from "./codex-role-sync.js";
+// codex-rollback re-exports fork for legacy import paths; don't `export *` it from the package root.
+export * from "./codex-skills-extra-roots.js";
+export * from "./codex-skills-list.js";
+export {
+  computeCodexCommandHookHash as computeCodexSpawnAgentHookHash,
+  ECO_SPAWN_AGENT_PRETOOL_SCRIPT,
+  SPAWN_AGENT_HOOK_MATCHER,
+  SPAWN_AGENT_HOOK_STATUS,
+  syncCodexSpawnAgentHook,
+} from "./codex-spawn-agent-hook.js";
+export * from "./codex-spawn-role-queue.js";
+export * from "./codex-thread-attribution.js";
+export * from "./codex-thread-resume.js";
+export {
+  applyCodexExecutionConfirmation,
+  CODEX_APPROVAL_POLICIES,
+  CODEX_SANDBOX_MODES,
+  CODEX_WEB_SEARCH_MODES,
+  type CodexApprovalPolicy,
+  type CodexExecutionConfirmationMode,
+  type CodexSandboxMode,
+  type CodexWebSearchMode,
+  cloneEcoToolPolicy as cloneCodexToolPolicy,
+  DEFAULT_CODEX_TOOL_POLICY,
+  type EcoToolPolicy as CodexToolPolicy,
+  ecoSandboxModeToTurnPolicy,
+  ecoToolPolicyToRoleTomlFields,
+  isCodexApprovalPolicy,
+  isCodexSandboxMode,
+  isCodexWebSearchMode,
+  normalizeEcoToolPolicy as normalizeCodexToolPolicy,
+  resolveEffectiveTurnSandbox,
+  resolveMainAgentHandsOnFromCodexPolicy,
+  toCodexAppServerSandboxPolicyWire,
+} from "./codex-tool-policy.js";
+export * from "./codex-turn-interrupt.js";
+export * from "./codex-turn-route-registry.js";
+export * from "./codex-turn-steer.js";
 export {
   alignBreakdownSegmentsToOccupied,
   CONTEXT_SEGMENT_COLORS,
@@ -441,8 +426,15 @@ export {
   parseSdkGetContextUsageBreakdown,
   type SdkContextUsageBreakdown,
 } from "./context-breakdown";
-export * from "./eco-sdk-hooks";
+export * from "./core-runtime";
+export {
+  type CursorAgentModelListOptions,
+  type CursorAgentModelOption,
+  listCursorAgentModels,
+  parseCursorAgentModelsOutput,
+} from "./cursor-agent-models";
 export * from "./eco-image-view-tool.js";
+export * from "./eco-sdk-hooks";
 export * from "./filesystem-scope-policy.js";
 export {
   extractCapabilitiesFromModelEntry,
@@ -509,7 +501,21 @@ export {
   findPlanSectionStart,
   stripPlanningTranscriptNoise,
 } from "./phase-deliverable";
+export * from "./pi-availability.js";
+export * from "./pi-coding-agent-driver.js";
+export * from "./pi-eco-extensions.js";
+export * from "./pi-event-adapter.js";
+export * from "./pi-finalize-plan.js";
+export * from "./pi-mcp.js";
+export * from "./pi-model-bridge.js";
+export * from "./pi-session-mode.js";
+export * from "./pi-session-paths.js";
+export * from "./pi-skills.js";
+export * from "./pi-subagent.js";
+export * from "./pi-tool-approval.js";
+export * from "./pi-usage.js";
 export * from "./reviewer-scope";
+export * from "./send-message-tool.js";
 export {
   formatSkillActivityLabel,
   isSkillActivityLabel,
@@ -543,10 +549,8 @@ export {
   type ThinkingQueryPatch,
 } from "./thinking-options";
 export * from "./tool-confirmation.js";
-export * from "./codex-output-truncation.js";
 export * from "./tool-output-preview.js";
 export * from "./tool-permission-policy.js";
-export * from "./send-message-tool.js";
 export {
   accumulateThreadCost,
   estimateContextTokens,
@@ -567,9 +571,5 @@ export {
   type SdkModelUsageBilling,
   shortenModelId,
 } from "./usage";
-export {
-  listCursorAgentModels,
-  parseCursorAgentModelsOutput,
-  type CursorAgentModelListOptions,
-  type CursorAgentModelOption,
-} from "./cursor-agent-models";
+export * from "./v4a-teaching.js";
+export * from "./v4a-teaching-flags.js";

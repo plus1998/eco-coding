@@ -1,7 +1,9 @@
 export type MermaidAppTheme = "light" | "dark";
 
 export function isMermaidLang(params: unknown): boolean {
-  const raw = String(params ?? "").trim().toLowerCase();
+  const raw = String(params ?? "")
+    .trim()
+    .toLowerCase();
   if (!raw) return false;
   const first = raw.split(/\s+/)[0] ?? "";
   return first === "mermaid";
@@ -21,8 +23,7 @@ let mermaidPromise: Promise<MermaidApi> | null = null;
 let initializedTheme: MermaidAppTheme | null = null;
 let renderSeq = 0;
 
-const ECO_FONT =
-  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", sans-serif';
+const ECO_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", sans-serif';
 
 const ECO_THEME_CSS = `
   .node rect, .node polygon, .node circle, .node ellipse, .actor, .labelBox, .face {
@@ -145,7 +146,10 @@ export function buildEcoMermaidThemeVariables(theme: MermaidAppTheme) {
     noteBkgColor: fallback.note,
     noteTextColor: text,
     noteBorderColor: border,
-    activationBkgColor: cssVar("--accent-soft", theme === "dark" ? "rgba(59,130,246,0.18)" : "rgba(0,122,255,0.12)"),
+    activationBkgColor: cssVar(
+      "--accent-soft",
+      theme === "dark" ? "rgba(59,130,246,0.18)" : "rgba(0,122,255,0.12)",
+    ),
     activationBorderColor: primary,
     sequenceNumberColor: heading,
     sectionBkgColor: elevated,
@@ -157,7 +161,10 @@ export function buildEcoMermaidThemeVariables(theme: MermaidAppTheme) {
     taskTextDarkColor: text,
     taskTextLightColor: heading,
     taskTextOutsideColor: text,
-    activeTaskBkgColor: cssVar("--accent-soft", theme === "dark" ? "rgba(59,130,246,0.2)" : "rgba(0,122,255,0.14)"),
+    activeTaskBkgColor: cssVar(
+      "--accent-soft",
+      theme === "dark" ? "rgba(59,130,246,0.2)" : "rgba(0,122,255,0.14)",
+    ),
     activeTaskBorderColor: primary,
     gridColor: border,
     doneTaskBkgColor: theme === "dark" ? "rgba(134,239,172,0.16)" : "rgba(36,138,61,0.12)",

@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { AcpClient } from "../src/acp-client";
-import {
-  AcpJsonRpcPeer,
-  encodeJsonRpcLine,
-} from "../src/acp-jsonrpc";
+import { AcpJsonRpcPeer, encodeJsonRpcLine } from "../src/acp-jsonrpc";
 import { ACP_IDLE_TIMEOUT_MS } from "../src/acp-types";
 
 /** Measured against local `agent acp` (2026.08.11-e8db854). */
@@ -253,9 +250,9 @@ test("loadSession throws ACP_LOAD_SESSION_UNSUPPORTED when capability false", as
   await pending;
   client.confInitialized();
 
-  await expect(
-    client.loadSession({ sessionId: "x", cwd: "/tmp" }),
-  ).rejects.toThrow(/ACP_LOAD_SESSION_UNSUPPORTED/);
+  await expect(client.loadSession({ sessionId: "x", cwd: "/tmp" })).rejects.toThrow(
+    /ACP_LOAD_SESSION_UNSUPPORTED/,
+  );
   peer.dispose();
 });
 
@@ -371,7 +368,9 @@ test("session/request_permission auto-selects allow_once so the prompt turn is n
 test("session/request_permission parks on Eco handler instead of auto-allow", async () => {
   const io = createMockIo();
   const peer = new AcpJsonRpcPeer(io);
-  let resolvePermission: ((value: { outcome: { outcome: "selected"; optionId: string } }) => void) | undefined;
+  let resolvePermission:
+    | ((value: { outcome: { outcome: "selected"; optionId: string } }) => void)
+    | undefined;
   const client = new AcpClient({
     peer,
     clientInfo: { name: "eco-test", version: "0.0.0" },
@@ -454,9 +453,7 @@ test("onSessionUpdate subscribes to session/update notifications", () => {
       params: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk" } },
     }),
   );
-  expect(seen).toEqual([
-    { sessionId: "s", update: { sessionUpdate: "agent_message_chunk" } },
-  ]);
+  expect(seen).toEqual([{ sessionId: "s", update: { sessionUpdate: "agent_message_chunk" } }]);
 
   unsubscribe();
   io.emit(
@@ -567,10 +564,10 @@ test("cursor/create_plan without handler is rejected explicitly", async () => {
   peer.dispose();
 });
 
-import { AcpFsHandler } from "../src/acp-fs";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { AcpFsHandler } from "../src/acp-fs";
 
 function createClientWithFs(io = createMockIo(), fsHandler?: AcpFsHandler) {
   const peer = new AcpJsonRpcPeer(io);

@@ -1,6 +1,7 @@
 import { Check, Image, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import {
   defaultImageGenerationEndpoint,
   defaultImageGenerationModel,
@@ -9,7 +10,6 @@ import {
   type ImageGenerationProvider,
   type ImageGenerationSettingsSnapshot,
 } from "../shared/image-generation";
-import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface Props {
@@ -143,7 +143,9 @@ export function ImageGenerationSettingsPanel({
             >
               <span>
                 <strong>{profile.name}</strong>
-                <small>{profile.provider} · {profile.model}</small>
+                <small>
+                  {profile.provider} · {profile.model}
+                </small>
               </span>
               {settings.activeProfileId === profile.id ? <Check size={14} aria-hidden /> : null}
             </button>

@@ -238,9 +238,7 @@ export class ThreadLiveRequestRegistry {
     if (!trimmed) {
       return false;
     }
-    return (this.activeByThread.get(threadId) ?? []).some(
-      (entry) => entry.logicalRequestId === trimmed,
-    );
+    return (this.activeByThread.get(threadId) ?? []).some((entry) => entry.logicalRequestId === trimmed);
   }
 
   endRequest(threadId: string, logicalRequestId: string): void {

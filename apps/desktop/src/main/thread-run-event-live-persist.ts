@@ -5,10 +5,9 @@ import type {
   ThreadRunToolMetadata,
 } from "../shared/ipc";
 import { activityStreamKey } from "./activity-agent-id";
-import type { ConversationStore } from "./conversation-store";
 import type { AgentLifecycleService } from "./agent-lifecycle-service";
+import type { ConversationStore } from "./conversation-store";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import type { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
 import {
   markBridgeRequestStartedPersisted,
   resolveLiveRequestIdForEvent,
@@ -16,8 +15,11 @@ import {
   shouldEmitSdkShadowRequestTerminal,
   shouldPersistRequestStartedShadowEvent,
 } from "./thread-live-request-coordinator";
-import { buildThreadRunEventFromLiveEvent } from "./thread-run-event-normalizer";
-import { isMetricsOnlyThreadLiveEvent } from "./thread-run-event-normalizer";
+import type { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
+import {
+  buildThreadRunEventFromLiveEvent,
+  isMetricsOnlyThreadLiveEvent,
+} from "./thread-run-event-normalizer";
 
 export interface ThreadRunEventLivePersistExtras {
   agentId?: string;
@@ -101,7 +103,9 @@ export function createThreadRunEventLivePersister(deps: ThreadRunEventLivePersis
       return;
     }
 
-    const eventId = createEventId({ ...(input.persistedActivityLine && { persistedActivityLine: input.persistedActivityLine }) });
+    const eventId = createEventId({
+      ...(input.persistedActivityLine && { persistedActivityLine: input.persistedActivityLine }),
+    });
     const runAttemptId = deps.resolveCurrentRunAttemptId(input.threadId);
     const bashApproval =
       input.extras?.bashApproval && deps.buildBashApprovalMetadata

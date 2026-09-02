@@ -13,10 +13,7 @@ test("parses AskUserQuestion input", () => {
       {
         question: "Which API?",
         header: "Scope",
-        options: [
-          { label: "REST", description: "Use REST", recommended: true },
-          { label: "GraphQL" },
-        ],
+        options: [{ label: "REST", description: "Use REST", recommended: true }, { label: "GraphQL" }],
       },
     ],
   });

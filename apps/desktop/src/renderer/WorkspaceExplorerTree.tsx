@@ -1,13 +1,13 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
   useMemo,
   useRef,
-  type CSSProperties,
-  type KeyboardEvent,
-  type ReactNode,
 } from "react";
 import "./workspace-explorer-tree.css";
 
@@ -115,42 +115,56 @@ export function WorkspaceExplorerTree({
     () => collectVisibleNodes(items, rootItem, expanded, hideRoot),
     [expanded, hideRoot, items, rootItem],
   );
-  const activeIndex = focusedItem && items[focusedItem]
-    ? focusedItem
-    : selectedItems.find((index) => items[index]) ?? nodes[0]?.index;
+  const activeIndex =
+    focusedItem && items[focusedItem]
+      ? focusedItem
+      : (selectedItems.find((index) => items[index]) ?? nodes[0]?.index);
 
   useEffect(() => {
     if (!activeIndex || !listRef.current) return;
-    const escaped = typeof CSS !== "undefined" && "escape" in CSS
-      ? CSS.escape(activeIndex)
-      : activeIndex.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const escaped =
+      typeof CSS !== "undefined" && "escape" in CSS
+        ? CSS.escape(activeIndex)
+        : activeIndex.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     const row = listRef.current.querySelector<HTMLElement>(`[data-tree-index="${escaped}"]`);
     row?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  const toggleFolder = useCallback((index: string) => {
-    if (expanded.has(index)) onCollapseItem(index);
-    else onExpandItem(index);
-  }, [expanded, onCollapseItem, onExpandItem]);
+  const toggleFolder = useCallback(
+    (index: string) => {
+      if (expanded.has(index)) onCollapseItem(index);
+      else onExpandItem(index);
+    },
+    [expanded, onCollapseItem, onExpandItem],
+  );
 
-  const activateItem = useCallback((index: string) => {
-    const item = items[index];
-    if (!item) return;
-    onFocusItem?.(index);
-    onSelectItem(index);
-    // Clicking a folder row selects it and expands if collapsed; collapse only via chevron.
-    if (item.isFolder && !expanded.has(index)) onExpandItem(index);
-  }, [expanded, items, onExpandItem, onFocusItem, onSelectItem]);
+  const activateItem = useCallback(
+    (index: string) => {
+      const item = items[index];
+      if (!item) return;
+      onFocusItem?.(index);
+      onSelectItem(index);
+      // Clicking a folder row selects it and expands if collapsed; collapse only via chevron.
+      if (item.isFolder && !expanded.has(index)) onExpandItem(index);
+    },
+    [expanded, items, onExpandItem, onFocusItem, onSelectItem],
+  );
 
-  const moveFocus = useCallback((direction: 1 | -1) => {
-    if (nodes.length === 0) return;
-    const current = activeIndex ? nodes.findIndex((node) => node.index === activeIndex) : -1;
-    const nextIndex = current < 0
-      ? (direction === 1 ? 0 : nodes.length - 1)
-      : Math.min(Math.max(current + direction, 0), nodes.length - 1);
-    const next = nodes[nextIndex];
-    if (next) onFocusItem?.(next.index);
-  }, [activeIndex, nodes, onFocusItem]);
+  const moveFocus = useCallback(
+    (direction: 1 | -1) => {
+      if (nodes.length === 0) return;
+      const current = activeIndex ? nodes.findIndex((node) => node.index === activeIndex) : -1;
+      const nextIndex =
+        current < 0
+          ? direction === 1
+            ? 0
+            : nodes.length - 1
+          : Math.min(Math.max(current + direction, 0), nodes.length - 1);
+      const next = nodes[nextIndex];
+      if (next) onFocusItem?.(next.index);
+    },
+    [activeIndex, nodes, onFocusItem],
+  );
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const item = activeIndex ? items[activeIndex] : undefined;
@@ -210,7 +224,9 @@ export function WorkspaceExplorerTree({
               isSelected && "is-selected",
               isFocused && "is-focused",
               item.isFolder && "is-folder",
-            ].filter(Boolean).join(" ")}
+            ]
+              .filter(Boolean)
+              .join(" ")}
             style={{ "--tree-depth": node.depth } as CSSProperties}
             role="treeitem"
             aria-selected={isSelected}
@@ -221,7 +237,11 @@ export function WorkspaceExplorerTree({
             onClick={() => activateItem(node.index)}
             onFocus={() => onFocusItem?.(node.index)}
           >
-            <span className="workspace-explorer-tree__indent" style={{ width: node.depth * 16 }} aria-hidden />
+            <span
+              className="workspace-explorer-tree__indent"
+              style={{ width: node.depth * 16 }}
+              aria-hidden
+            />
             {item.isFolder ? (
               <button
                 type="button"
@@ -234,9 +254,11 @@ export function WorkspaceExplorerTree({
                   toggleFolder(node.index);
                 }}
               >
-                {isExpanded
-                  ? <ChevronDown size={14} strokeWidth={2} />
-                  : <ChevronRight size={14} strokeWidth={2} />}
+                {isExpanded ? (
+                  <ChevronDown size={14} strokeWidth={2} />
+                ) : (
+                  <ChevronRight size={14} strokeWidth={2} />
+                )}
               </button>
             ) : (
               <span className="workspace-explorer-tree__leading">
@@ -259,9 +281,7 @@ export function WorkspaceExplorerTree({
               )}
             </span>
             {renderTrailing ? (
-              <span className="workspace-explorer-tree__trailing">
-                {renderTrailing(item)}
-              </span>
+              <span className="workspace-explorer-tree__trailing">{renderTrailing(item)}</span>
             ) : null}
           </div>
         );

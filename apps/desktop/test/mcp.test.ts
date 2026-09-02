@@ -61,7 +61,9 @@ test("builds http MCP config with explicit tool patterns", () => {
 });
 
 test("validates MCP server input", () => {
-  expect(() => validateMcpServerInput({ name: "", transport: "stdio", enabled: true, command: "npx" })).toThrow();
+  expect(() =>
+    validateMcpServerInput({ name: "", transport: "stdio", enabled: true, command: "npx" }),
+  ).toThrow();
   expect(() =>
     validateMcpServerInput({ name: "bad name", transport: "stdio", enabled: true, command: "npx" }),
   ).toThrow();

@@ -25,18 +25,18 @@ import {
   createPlanModeBoundaryPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
+  createStopHook,
   createSubagentLaunchGatePreToolHook,
   createSubagentLaunchPreToolHook,
   createSubagentStartHook,
   createSubagentStopHook,
-  createToolOutputTruncationPostToolHook,
   createSubagentToolAttributionPreToolHook,
-  createTaskCreatedHook,
   createTaskCompletedHook,
+  createTaskCreatedHook,
   createTaskToolPreToolHook,
+  createToolOutputTruncationPostToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
-  createStopHook,
   parseDeferredExitPlanModeResult,
   parseExitPlanModeInput,
   parseExitPlanModeOutput,
@@ -1229,9 +1229,7 @@ test("createToolPermissionPreToolHook reports policy denials without delegation 
   expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
     'Tool "Edit" is disallowed for main.',
   );
-  expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toBe(
-    'Tool "Edit" is disallowed for main.',
-  );
+  expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toBe('Tool "Edit" is disallowed for main.');
 
   const mainBash = await hook!(
     {
@@ -1248,9 +1246,7 @@ test("createToolPermissionPreToolHook reports policy denials without delegation 
   expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
     'Tool "Bash" is disallowed for main.',
   );
-  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toBe(
-    'Tool "Bash" is disallowed for main.',
-  );
+  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toBe('Tool "Bash" is disallowed for main.');
 
   const subagentEdit = await hook!(
     {

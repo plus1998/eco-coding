@@ -22,22 +22,27 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
+const defaultWorkflowSettingsExpectation = {
+  sessionMode: "agent",
+  defaultCoreKind: "claude",
+  showBilling: true,
+  contextWindowLimitTokens: 262_144,
+  maxOutputLimitTokens: 32_768,
+  followUpDeliveryMode: "steer",
+  defaultBashReviewMode: "always",
+} as const;
+
 test("session mode defaults to agent", () => {
-  expect(defaultWorkflowSettings()).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
-  });
+  expect(defaultWorkflowSettings()).toEqual(defaultWorkflowSettingsExpectation);
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
 });
 
 test("workflow settings show billing defaults on and accepts opt-out", () => {
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" }).showBilling).toBe(true);
-  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", showBilling: false }).showBilling).toBe(false);
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", showBilling: false }).showBilling).toBe(
+    false,
+  );
   expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", showBilling: false })).toBe(true);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", showBilling: "false" })).toBe(false);
 });
@@ -106,43 +111,17 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
 
 test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "plan" })).toEqual({
+    ...defaultWorkflowSettingsExpectation,
     sessionMode: "plan",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
   });
-  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
-  });
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual(defaultWorkflowSettingsExpectation);
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
+    ...defaultWorkflowSettingsExpectation,
     sessionMode: "ask",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
   });
-  expect(normalizeWorkflowSettingsSnapshot({})).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
-  });
+  expect(normalizeWorkflowSettingsSnapshot({})).toEqual(defaultWorkflowSettingsExpectation);
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", followUpDeliveryMode: "queue" })).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
+    ...defaultWorkflowSettingsExpectation,
     followUpDeliveryMode: "queue",
   });
 });
@@ -165,12 +144,7 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
       mcpServersEnabled: { mongo: true, browser: false },
     }),
   ).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
+    ...defaultWorkflowSettingsExpectation,
     mcpServersEnabled: { mongo: true, browser: false },
   });
 });
@@ -187,33 +161,19 @@ test("normalizeWorkflowSettingsSnapshot preserves default orchestration selectio
       defaultOrchestrationSelection: selection,
     }),
   ).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
+    ...defaultWorkflowSettingsExpectation,
     defaultOrchestrationSelection: selection,
   });
 });
 
 test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "codex" })).toEqual({
-    sessionMode: "agent",
+    ...defaultWorkflowSettingsExpectation,
     defaultCoreKind: "codex",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
   });
-  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual({
-    sessionMode: "agent",
-    defaultCoreKind: "claude",
-    showBilling: true,
-    contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_768,
-    followUpDeliveryMode: "steer",
-  });
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual(
+    defaultWorkflowSettingsExpectation,
+  );
 });
 
 test("normalizeWorkflowSettingsSnapshot preserves supported context and max output limits", () => {
@@ -265,6 +225,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     contextWindowLimitTokens: 524_288,
     maxOutputLimitTokens: 65_536,
     followUpDeliveryMode: "steer",
+    defaultBashReviewMode: "always",
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },

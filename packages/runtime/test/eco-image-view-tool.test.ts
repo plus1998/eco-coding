@@ -82,7 +82,5 @@ test("resolvePiMcpProxyDiscoveryCall labels PI mcp search/action probes", () => 
       args: { path: "/tmp/shot.png" },
     }),
   ).toBe(undefined);
-  expect(resolvePiMcpProxyDiscoveryCall("mcp__eco_image_view__view_image", { search: "x" })).toBe(
-    undefined,
-  );
+  expect(resolvePiMcpProxyDiscoveryCall("mcp__eco_image_view__view_image", { search: "x" })).toBe(undefined);
 });

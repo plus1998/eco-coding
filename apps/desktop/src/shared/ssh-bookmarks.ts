@@ -157,7 +157,10 @@ function normalizeExtraArgs(value: unknown): string | undefined {
   return extraArgs;
 }
 
-export function normalizeSshBookmarkPublic(value: unknown, fallbackOrder: number): SshBookmarkPublic | undefined {
+export function normalizeSshBookmarkPublic(
+  value: unknown,
+  fallbackOrder: number,
+): SshBookmarkPublic | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -260,7 +263,9 @@ export function isSshBookmarkListSnapshot(value: unknown): value is SshBookmarkL
   return true;
 }
 
-export function sshBookmarkEndpointLabel(bookmark: Pick<SshBookmarkPublic, "username" | "host" | "port">): string {
+export function sshBookmarkEndpointLabel(
+  bookmark: Pick<SshBookmarkPublic, "username" | "host" | "port">,
+): string {
   const portSuffix = bookmark.port === SSH_DEFAULT_PORT ? "" : `:${bookmark.port}`;
   return `${bookmark.username}@${bookmark.host}${portSuffix}`;
 }

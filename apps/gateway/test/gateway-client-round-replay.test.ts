@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
+import { listDiscoveredMatrixCells } from "../../desktop/src/feed-replay/gateway-client-round-feed-replay";
 import {
-  RECORDING_CELL_SPECS,
   cellKey,
   discoverGatewayClientRoundCells,
+  RECORDING_CELL_SPECS,
 } from "../../desktop/src/feed-replay/gateway-client-round-fixture";
-import { listDiscoveredMatrixCells } from "../../desktop/src/feed-replay/gateway-client-round-feed-replay";
 
 interface UpstreamExchange {
   profileId: string;
@@ -37,7 +37,9 @@ describe.skipIf(!hasClientRoundCells())("gateway client-round fixture replay", (
   test("matrix coverage report", () => {
     const cells = listDiscoveredMatrixCells();
     const discovered = new Set(cells.map((cell) => cellKey(cell.client, cell.profileId)));
-    const missing = RECORDING_CELL_SPECS.filter((spec) => !discovered.has(cellKey(spec.client, spec.profileId)));
+    const missing = RECORDING_CELL_SPECS.filter(
+      (spec) => !discovered.has(cellKey(spec.client, spec.profileId)),
+    );
     console.log(`recorded ${cells.length}/${RECORDING_CELL_SPECS.length} cells`);
     if (missing.length > 0) {
       console.log(`missing: ${missing.map((spec) => cellKey(spec.client, spec.profileId)).join(", ")}`);
@@ -48,7 +50,9 @@ describe.skipIf(!hasClientRoundCells())("gateway client-round fixture replay", (
   test("each discovered cell has checklist + upstream artifacts", () => {
     for (const cell of listDiscoveredMatrixCells()) {
       const runDir = path.dirname(path.dirname(cell.dir));
-      const exchanges = loadUpstreamExchanges(cell.dir, runDir).filter((row) => row.profileId === cell.profileId);
+      const exchanges = loadUpstreamExchanges(cell.dir, runDir).filter(
+        (row) => row.profileId === cell.profileId,
+      );
       expect(exchanges.length, `${cell.client}/${cell.profileId} exchanges`).toBeGreaterThan(0);
       expect(cell.checklistOk, `${cell.client}/${cell.profileId} checklist`).toBe(true);
 

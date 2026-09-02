@@ -1,11 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { ThreadRunEvent } from "../src/shared/ipc";
-import type {
-  ThreadRunProjectionAttempt,
-  ThreadRunProjectionTimelineItem,
-} from "../src/shared/thread-run-projection";
-import { buildThreadRunProjection } from "../src/main/thread-run-projection";
-import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
+import type { FeedSkeletonPatchContext } from "../src/main/thread-feed-skeleton-patch";
 import {
   createFeedSkeletonPatchState,
   createThreadFeedSkeletonRecord,
@@ -13,19 +7,21 @@ import {
   patchThreadFeedSkeletonFromEvent,
   shouldTrackEventForFeedSkeletonPatch,
 } from "../src/main/thread-feed-skeleton-patch";
-import { eventToTimelineItem } from "../src/main/thread-run-projection";
-import {
-  selectSkeletonTimelineItems,
-} from "../src/shared/thread-run-projection-skeleton";
-import type { FeedSkeletonPatchContext } from "../src/main/thread-feed-skeleton-patch";
+import { buildThreadRunProjection, eventToTimelineItem } from "../src/main/thread-run-projection";
+import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
 import type { RunAttemptRecord } from "../src/main/usage-ledger";
+import type { ThreadRunEvent } from "../src/shared/ipc";
+import type {
+  ThreadRunProjectionAttempt,
+  ThreadRunProjectionTimelineItem,
+} from "../src/shared/thread-run-projection";
+import { selectSkeletonTimelineItems } from "../src/shared/thread-run-projection-skeleton";
 
 const THREAD_ID = "thr_patch";
 const STARTED_AT = "2026-01-01T00:00:00.000Z";
 
 function runEvent(
-  overrides: Partial<ThreadRunEvent> &
-    Pick<ThreadRunEvent, "id" | "sequence" | "eventType" | "message">,
+  overrides: Partial<ThreadRunEvent> & Pick<ThreadRunEvent, "id" | "sequence" | "eventType" | "message">,
 ): ThreadRunEvent {
   return {
     threadId: THREAD_ID,
@@ -308,8 +304,11 @@ describe("thread feed skeleton patch", () => {
     });
     record.patchState = createFeedSkeletonPatchState(record.snapshot);
     for (const event of events) {
-      record =
-        patchThreadFeedSkeletonFromEvent(record, event, patchContext(mapAttempts(attempts), event.sequence))!;
+      record = patchThreadFeedSkeletonFromEvent(
+        record,
+        event,
+        patchContext(mapAttempts(attempts), event.sequence),
+      )!;
     }
     expect(feedSkeletonTimelineIds(record.snapshot)).toEqual(["user_1", "final_1"]);
     expect(record.maxEventSequence).toBe(4);
@@ -458,8 +457,11 @@ describe("thread feed skeleton patch", () => {
     });
     record.patchState = createFeedSkeletonPatchState(record.snapshot);
     for (const event of events) {
-      record =
-        patchThreadFeedSkeletonFromEvent(record, event, patchContext(mapAttempts(attempts), event.sequence))!;
+      record = patchThreadFeedSkeletonFromEvent(
+        record,
+        event,
+        patchContext(mapAttempts(attempts), event.sequence),
+      )!;
     }
     const delta = record.snapshot.timeline.find((item) => item.id === "delta_1");
     expect(delta?.text).toBe("正在写代码");

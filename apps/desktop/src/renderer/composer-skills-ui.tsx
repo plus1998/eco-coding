@@ -10,11 +10,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { SkillInfo, SkillSource } from "../shared/skills";
+import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
 import { formatSkillDisplayName } from "./composer-skills";
-import {
-  clampComposerFloatingLeft,
-  composerFloatingAvailableWidth,
-} from "./composer-floating";
 import { i18n } from "./i18n";
 
 const PANEL_GAP = 8;
@@ -23,8 +20,7 @@ const VIEWPORT_MARGIN = 8;
 const SKILL_MENU_ROW_HEIGHT = 54;
 const SKILL_MENU_VISIBLE_ROWS = 5;
 const SKILL_MENU_PADDING = 12;
-const SKILL_MENU_PREFERRED_MAX_HEIGHT =
-  SKILL_MENU_VISIBLE_ROWS * SKILL_MENU_ROW_HEIGHT + SKILL_MENU_PADDING;
+const SKILL_MENU_PREFERRED_MAX_HEIGHT = SKILL_MENU_VISIBLE_ROWS * SKILL_MENU_ROW_HEIGHT + SKILL_MENU_PADDING;
 
 export function skillScopeLabel(source: SkillSource): string {
   return i18n.t(source === "project" ? "composer.skills.scope.project" : "composer.skills.scope.personal");
@@ -120,9 +116,7 @@ export function SkillFloatingCard({
 }) {
   const localPanelRef = useRef<HTMLDivElement>(null);
   const resolvedPanelRef = panelRef ?? localPanelRef;
-  const [layout, setLayout] = useState<{ style: CSSProperties; placement: "above" | "below" } | null>(
-    null,
-  );
+  const [layout, setLayout] = useState<{ style: CSSProperties; placement: "above" | "below" } | null>(null);
 
   useLayoutEffect(() => {
     if (!open || !anchorRef.current) {

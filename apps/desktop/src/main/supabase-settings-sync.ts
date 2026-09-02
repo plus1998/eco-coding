@@ -4,8 +4,9 @@
  * - `user_settings.payload`: non-secret provider / ASR / image / workflow / orchestration JSON
  * - `user_secrets`: AES-GCM ciphertext of API keys under local vault_key
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { decryptSecretWithVaultKey, encryptSecretWithVaultKey, generateVaultKey } from "@eco/shared";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AgentTemplate,
   MainAgentConfigResource,
@@ -332,9 +333,7 @@ export function normalizeEcoSyncedSettingsPayload(
     routeProfiles: payload.routeProfiles ?? [],
     proxyBridge: payload.proxyBridge ?? {},
     ...(payload.git !== undefined ? { git: payload.git } : {}),
-    ...(payload.packageScriptArgs !== undefined
-      ? { packageScriptArgs: payload.packageScriptArgs }
-      : {}),
+    ...(payload.packageScriptArgs !== undefined ? { packageScriptArgs: payload.packageScriptArgs } : {}),
     sshBookmarks: payload.sshBookmarks ?? [],
   };
 }
@@ -933,9 +932,7 @@ export function canonicalizeDomainPayloadSlice(domain: EcoSettingsSyncDomain, sl
     }
     case "proxyBridge": {
       const record = slice as Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent">;
-      return record.upstreamUserAgent?.trim()
-        ? { upstreamUserAgent: record.upstreamUserAgent.trim() }
-        : {};
+      return record.upstreamUserAgent?.trim() ? { upstreamUserAgent: record.upstreamUserAgent.trim() } : {};
     }
     case "asr": {
       const record = slice as EcoSyncedSettingsPayload["asr"];
@@ -1026,7 +1023,7 @@ function isDomainSliceEmpty(domain: EcoSettingsSyncDomain, slice: unknown): bool
       );
     }
     case "proxyBridge":
-      return !Boolean((slice as { upstreamUserAgent?: string }).upstreamUserAgent?.trim());
+      return !(slice as { upstreamUserAgent?: string }).upstreamUserAgent?.trim();
     case "asr":
       return ((slice as EcoSyncedSettingsPayload["asr"]).profiles?.length ?? 0) === 0;
     case "imageGeneration":
@@ -1146,7 +1143,10 @@ export function buildDomainSyncSummary(
       if (workspaceCount === 0) {
         return "";
       }
-      const scriptCount = Object.values(store).reduce((total, scripts) => total + Object.keys(scripts).length, 0);
+      const scriptCount = Object.values(store).reduce(
+        (total, scripts) => total + Object.keys(scripts).length,
+        0,
+      );
       return `${workspaceCount} · ${scriptCount}`;
     }
     case "sshBookmarks": {
@@ -1247,7 +1247,10 @@ export async function syncAccountConfigDomain(input: {
       let mergedSecrets = filterSecretsForDomain(localSecrets, input.domain);
       if (remotePayload) {
         const secretRows = await pullUserSecrets(input.client, input.userId);
-        const plain = secretRows.length > 0 ? await decryptUserSecrets(vaultKey, secretRows) : { secrets: [], skipped: 0 };
+        const plain =
+          secretRows.length > 0
+            ? await decryptUserSecrets(vaultKey, secretRows)
+            : { secrets: [], skipped: 0 };
         mergedSecrets = mergeDomainSecrets(plain.secrets, localSecrets, input.domain);
       }
       encryptedSecrets = await encryptSecretSnapshot(vaultKey, mergedSecrets);
@@ -1262,7 +1265,10 @@ export async function syncAccountConfigDomain(input: {
     settingsPushed = !isSecretsOnlySyncDomain(input.domain);
   }
 
-  if (vaultKey && (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)) {
+  if (
+    vaultKey &&
+    (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)
+  ) {
     await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
   }
 
@@ -1313,8 +1319,7 @@ export function computeDomainSyncStatuses(input: {
 
     const payloadMatch = domainPayloadEqual(input.localPayload, input.remotePayload, domain);
     const secretsMatch =
-      !domainHasSecrets ||
-      domainSecretsEqual(input.localSecrets, input.remoteSecrets, domain);
+      !domainHasSecrets || domainSecretsEqual(input.localSecrets, input.remoteSecrets, domain);
     const cloudEmpty = isDomainEmptyInCloud(input.remotePayload, domain);
     const localEmpty = isDomainEmptyInLocal(input.localPayload, domain);
 

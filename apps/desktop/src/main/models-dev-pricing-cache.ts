@@ -12,12 +12,12 @@ import {
   lookupModelCostByKey,
   lookupModelCostInCatalog,
   lookupModelLimitsInCatalog,
-  resolveProviderKeyFromBaseUrl,
   type ModelCapabilitiesLookup,
   type ModelLimitsLookup,
   type ModelPricingLookup,
   type ModelsDevCatalog,
   type ModelsDevCatalogModelOption,
+  resolveProviderKeyFromBaseUrl,
 } from "@eco/runtime";
 import type { ModelsDevMapping } from "../shared/ipc";
 
@@ -247,10 +247,6 @@ export class ModelsDevPricingCache {
 
   private async writeDiskCache(catalog: ModelsDevCatalog): Promise<void> {
     await fs.mkdir(path.dirname(this.options.cachePath), { recursive: true });
-    await fs.writeFile(
-      this.options.cachePath,
-      JSON.stringify({ fetchedAt: Date.now(), catalog }),
-      "utf8",
-    );
+    await fs.writeFile(this.options.cachePath, JSON.stringify({ fetchedAt: Date.now(), catalog }), "utf8");
   }
 }

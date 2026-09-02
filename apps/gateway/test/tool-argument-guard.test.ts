@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import {
   CodexToolArgumentFailureCircuitBreaker,
   codexToolArgumentFailureCircuitBreaker,
   normalizeResponsesToolArgumentResponse,
 } from "../src/tool-argument-guard.js";
 import type { GatewayProvider } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 const provider: GatewayProvider = {
   id: "responses",

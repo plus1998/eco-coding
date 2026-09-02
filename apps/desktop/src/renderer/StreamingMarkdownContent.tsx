@@ -2,10 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
-import {
-  isStructuralStreamingTail,
-  partitionStreamingMarkdown,
-} from "./streaming-markdown-partition";
+import { isStructuralStreamingTail, partitionStreamingMarkdown } from "./streaming-markdown-partition";
 import { usePacedStreamText } from "./use-paced-stream-text";
 
 interface StreamingMarkdownContentProps {
@@ -86,9 +83,7 @@ export function StreamingMarkdownContent({
           {showStable ? (
             <MarkdownContent text={stable} className="markdown-content--streaming-stable" />
           ) : null}
-          {showTail ? (
-            <div className="markdown-content markdown-content--streaming-plain">{tail}</div>
-          ) : null}
+          {showTail ? <div className="markdown-content markdown-content--streaming-plain">{tail}</div> : null}
         </div>
       </div>
     );

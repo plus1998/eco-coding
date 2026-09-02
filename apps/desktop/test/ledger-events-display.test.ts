@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
+import type { ThreadUsageLedgerEventView } from "../src/shared/ipc";
 import {
   partitionLedgerEventsForDisplay,
   resolveLedgerEventBillingRole,
   sumLedgerEventTokens,
 } from "../src/shared/ledger-events-display";
-import type { ThreadUsageLedgerEventView } from "../src/shared/ipc";
 
 function makeEvent(
   overrides: Partial<ThreadUsageLedgerEventView> & Pick<ThreadUsageLedgerEventView, "id" | "source">,

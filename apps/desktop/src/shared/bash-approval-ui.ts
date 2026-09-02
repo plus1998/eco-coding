@@ -1,8 +1,4 @@
-export type BashApprovalChoice =
-  | "approve"
-  | "approve_remember_prefix"
-  | "deny"
-  | "deny_custom";
+export type BashApprovalChoice = "approve" | "approve_remember_prefix" | "deny" | "deny_custom";
 
 /**
  * @deprecated Prefer i18n key `approval.bash.otherPlaceholder` in UI.
@@ -34,10 +30,7 @@ export function formatBashApprovalRememberPrefix(command: string, maxLength = 48
 }
 
 /** Join a localized remember-prefix intro with a truncated command preview. */
-export function buildBashApprovalRememberPrefixLabel(
-  command: string,
-  rememberPrefixIntro: string,
-): string {
+export function buildBashApprovalRememberPrefixLabel(command: string, rememberPrefixIntro: string): string {
   return `${rememberPrefixIntro}${formatBashApprovalRememberPrefix(command)}`;
 }
 
@@ -54,10 +47,7 @@ export function commandMatchesRememberedBashPrefix(command: string, prefix: stri
   return trimmedCommand === trimmedPrefix || trimmedCommand.startsWith(trimmedPrefix);
 }
 
-export function commandMatchesAnyRememberedBashPrefix(
-  command: string,
-  prefixes: readonly string[],
-): boolean {
+export function commandMatchesAnyRememberedBashPrefix(command: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => commandMatchesRememberedBashPrefix(command, prefix));
 }
 

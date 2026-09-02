@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
-  GATEWAY_PROVIDER_ID_HEADER,
-  GATEWAY_THREAD_ID_HEADER,
   applyGatewayResponsesPromptCacheHints,
   buildGatewayPromptCacheKey,
+  GATEWAY_PROVIDER_ID_HEADER,
+  GATEWAY_THREAD_ID_HEADER,
 } from "../src/provider-router.js";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import type { GatewayConfig, GatewayProvider } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 describe("messages→responses prompt cache key", () => {
   test("buildGatewayPromptCacheKey sanitizes thread id", () => {
@@ -44,18 +44,15 @@ describe("messages→responses prompt cache key", () => {
       "",
     ].join("\n");
 
-    const handler = createTestGatewayFetchHandler(
-      config,
-      async (_input, init) => {
-        if (typeof init?.body === "string") {
-          capturedBody = JSON.parse(init.body) as Record<string, unknown>;
-        }
-        return new Response(responsesStream, {
-          status: 200,
-          headers: { "content-type": "text/event-stream" },
-        });
-      },
-    );
+    const handler = createTestGatewayFetchHandler(config, async (_input, init) => {
+      if (typeof init?.body === "string") {
+        capturedBody = JSON.parse(init.body) as Record<string, unknown>;
+      }
+      return new Response(responsesStream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
 
     const response = await handler(
       new Request("http://127.0.0.1/v1/messages", {

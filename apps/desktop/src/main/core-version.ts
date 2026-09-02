@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveCursorAgentExecutable } from "@eco/runtime";
 import { resolveCodexExecutable } from "./codex-runtime-run";
 import { readCliVersionOutput } from "./packaged-runtime-executables";
-import { resolveCursorAgentExecutable } from "@eco/runtime";
+
 const requireFromHere = createRequire(import.meta.url);
 
 function readPackageJsonVersion(pkgPath: string, expectedName?: string): string | undefined {

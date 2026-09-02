@@ -1,1 +1,7 @@
-{"error":{"type":"packy_bad_response_status_code","message":"上游服务暂时不可用（Upstream service is temporarily unavailable） [edge-blocked by Cloudflare, ray a342b1a4cd5d9935-PDX] (request id: 01M1DZ8GGFJDQ28ESWM1P5XBQ9)"},"type":"packy_error"}
+{
+  "error": {
+    "type": "packy_bad_response_status_code",
+    "message": "上游服务暂时不可用（Upstream service is temporarily unavailable） [edge-blocked by Cloudflare, ray a342b1a4cd5d9935-PDX] (request id: 01M1DZ8GGFJDQ28ESWM1P5XBQ9)"
+  },
+  "type": "packy_error"
+}

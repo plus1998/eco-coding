@@ -1,8 +1,5 @@
 import type { CommitModelPricingHint } from "./ipc";
-import {
-  commitModelPriceScore,
-  type CommitMessageCandidateModel,
-} from "./resolve-commit-message-route";
+import { type CommitMessageCandidateModel, commitModelPriceScore } from "./resolve-commit-message-route";
 
 export interface CommitModelOption {
   id: string;
@@ -35,12 +32,7 @@ function pricingSignature(rates?: CommitModelPricingHint["rates"]): string {
   if (!rates) {
     return "unresolved";
   }
-  return [
-    rates.inputPerM,
-    rates.outputPerM,
-    rates.cacheReadPerM ?? "",
-    rates.cacheWritePerM ?? "",
-  ].join(":");
+  return [rates.inputPerM, rates.outputPerM, rates.cacheReadPerM ?? "", rates.cacheWritePerM ?? ""].join(":");
 }
 
 export function commitModelDedupeKey(
@@ -103,9 +95,7 @@ export function buildCommitModelOptions(
     };
   });
 
-  return options.sort(
-    (left, right) => commitModelPriceScore(left.hint) - commitModelPriceScore(right.hint),
-  );
+  return options.sort((left, right) => commitModelPriceScore(left.hint) - commitModelPriceScore(right.hint));
 }
 
 export function findCommitModelOptionForCandidateId(

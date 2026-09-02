@@ -25,10 +25,7 @@ const TABLE_SEP = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
  * Partition markdown source into completed blocks vs a mutable tail.
  * When not streaming, the whole source is stable.
  */
-export function partitionStreamingMarkdown(
-  text: string,
-  streaming: boolean,
-): StreamingMarkdownPartition {
+export function partitionStreamingMarkdown(text: string, streaming: boolean): StreamingMarkdownPartition {
   if (!text) {
     return { stable: "", tail: "" };
   }

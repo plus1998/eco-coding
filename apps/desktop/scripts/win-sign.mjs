@@ -15,7 +15,9 @@ export default async function winSign(configuration) {
   const keyContainer = process.env.ECO_WIN_CERT_KEY?.trim();
   const csp = process.env.ECO_WIN_CERT_CSP?.trim();
   if (!certPath || !keyContainer || !csp) {
-    throw new Error("WIN_SIGN is set but ECO_WIN_CERT_PATH, ECO_WIN_CERT_KEY, or ECO_WIN_CERT_CSP is missing.");
+    throw new Error(
+      "WIN_SIGN is set but ECO_WIN_CERT_PATH, ECO_WIN_CERT_KEY, or ECO_WIN_CERT_CSP is missing.",
+    );
   }
 
   const timestampUrl = process.env.WIN_SIGN_TIMESTAMP_URL?.trim() || "http://timestamp.digicert.com";

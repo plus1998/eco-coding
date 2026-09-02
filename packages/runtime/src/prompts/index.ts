@@ -1,6 +1,4 @@
-export {
-  buildAutonomousPlanContinuationPrompt,
-} from "./autonomous.js";
+export { buildAutonomousPlanContinuationPrompt } from "./autonomous.js";
 export { executeCoreGoalAppend } from "./eco-common.js";
 export {
   executionArchitectDescription,

@@ -8,8 +8,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createGatewayFetchHandler } from "../../apps/gateway/src/server.ts";
-import type { GatewayProvider } from "../../apps/gateway/src/types.ts";
 import {
   GATEWAY_BRIDGE_BINDING_ID_HEADER,
   GATEWAY_PROVIDER_ID_HEADER,
@@ -17,6 +15,8 @@ import {
   GATEWAY_RUN_ATTEMPT_ID_HEADER,
   GATEWAY_THREAD_ID_HEADER,
 } from "../../apps/gateway/src/provider-router.ts";
+import { createGatewayFetchHandler } from "../../apps/gateway/src/server.ts";
+import type { GatewayProvider } from "../../apps/gateway/src/types.ts";
 import { ensureDir, writeJson } from "./lib/fixture-io.mjs";
 import { captureHttpExchange, logExchange } from "./lib/http-capture.mjs";
 import { listProfileIds, resolveProfile } from "./lib/profiles.mjs";
@@ -134,9 +134,7 @@ for (const profileId of listProfileIds(profileArg)) {
   report.profiles[profileId] = profileReport;
 }
 
-report.ok = Object.values(report.profiles).every((p) =>
-  Object.values(p.scenarios).every((s) => s.ok),
-);
+report.ok = Object.values(report.profiles).every((p) => Object.values(p.scenarios).every((s) => s.ok));
 
 writeJson(path.join(outDir, "summary.json"), report);
 writeJson(path.join(outDir, "meta.json"), {

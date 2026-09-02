@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import type { GitWorkingTreeStatus } from "../src/shared/ipc";
 import {
   cacheWorkspaceGitStatus,
   readFreshWorkspaceGitStatus,
   shouldRefreshWorkspaceGitStatus,
   WORKSPACE_GIT_STATUS_CACHE_TTL_MS,
 } from "../src/renderer/workspace-git-status-cache";
+import type { GitWorkingTreeStatus } from "../src/shared/ipc";
 
 function status(workspacePath: string, insertions: number): GitWorkingTreeStatus {
   return {

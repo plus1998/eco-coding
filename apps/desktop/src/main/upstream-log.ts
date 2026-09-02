@@ -6,10 +6,7 @@ const UPSTREAM_LOG_PREFIX = "[eco-upstream]";
 const MAX_LOG_BODY_CHARS = 12_000;
 
 export function getUpstreamLogBaseDir(): string {
-  return (
-    process.env.ECO_UPSTREAM_LOG_DIR?.trim() ||
-    path.join(os.homedir(), ".eco-coding", "logs")
-  );
+  return process.env.ECO_UPSTREAM_LOG_DIR?.trim() || path.join(os.homedir(), ".eco-coding", "logs");
 }
 
 export function formatUpstreamLogDateKey(date = new Date()): string {
@@ -44,15 +41,9 @@ export function announceUpstreamLogDestination(extra?: Record<string, unknown>):
   });
 }
 
-type LoggableHeadersInput =
-  | Headers
-  | Record<string, string | string[] | undefined>;
+type LoggableHeadersInput = Headers | Record<string, string | string[] | undefined>;
 
-function appendLoggableHeader(
-  result: Record<string, string>,
-  key: string,
-  value: string,
-): void {
+function appendLoggableHeader(result: Record<string, string>, key: string, value: string): void {
   const lower = key.toLowerCase();
   if (lower === "x-api-key" || lower === "authorization") {
     result[key] = redactSecret(value);

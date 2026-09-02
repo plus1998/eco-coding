@@ -2,9 +2,7 @@ import { computeWindowOccupancy, type ParsedUsage } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { AnthropicProxyUsageInfo } from "./anthropic-proxy";
-import {
-  type UsageBillingObservation,
-} from "./billing-orchestration";
+import type { UsageBillingObservation } from "./billing-orchestration";
 import {
   resolveSubagentUsageAttribution,
   type SubagentUsageAttributionResolver,
@@ -63,9 +61,7 @@ export interface ProxyUsageBillingResolution {
   attributionPending: boolean;
 }
 
-export function resolveProxyUsageBilling(
-  input: ResolveProxyUsageBillingInput,
-): ProxyUsageBillingResolution {
+export function resolveProxyUsageBilling(input: ResolveProxyUsageBillingInput): ProxyUsageBillingResolution {
   const { info } = input;
   const nextRequestSeq = (input.currentRequestSeq ?? 0) + 1;
   const requestKey = buildProxyUsageRequestKey(info, nextRequestSeq);
@@ -84,8 +80,7 @@ export function resolveProxyUsageBilling(
   // role is not authoritative. Keep it pending until the SDK or sidechain transcript
   // binds that exact message id to an agent instance.
   const attributionPending =
-    !subagentAgentId &&
-    (attributionAttempted || Boolean(info.downstreamMessageId?.trim()));
+    !subagentAgentId && (attributionAttempted || Boolean(info.downstreamMessageId?.trim()));
   const usage: ParsedUsage = {
     inputTokens: info.usage.inputTokens,
     outputTokens: info.usage.outputTokens,
@@ -139,10 +134,7 @@ export function resolveProxyUsageBilling(
   };
 }
 
-export function buildProxyUsageRequestKey(
-  info: AnthropicProxyUsageInfo,
-  requestSeq: number,
-): string {
+export function buildProxyUsageRequestKey(info: AnthropicProxyUsageInfo, requestSeq: number): string {
   return [
     "proxy",
     info.role,

@@ -1,4 +1,4 @@
-import { Schema, type Node as PMNode } from "prosemirror-model";
+import { type Node as PMNode, Schema } from "prosemirror-model";
 
 export type DiffLineKind = "context" | "insert" | "delete";
 
@@ -43,16 +43,8 @@ export const diffViewerSchema = new Schema({
           [
             "span",
             { class: "pm-diff-line-nos", "aria-hidden": "true" },
-            [
-              "span",
-              { class: "pm-diff-line-no pm-diff-line-no--old" },
-              oldNo == null ? "" : String(oldNo),
-            ],
-            [
-              "span",
-              { class: "pm-diff-line-no pm-diff-line-no--new" },
-              newNo == null ? "" : String(newNo),
-            ],
+            ["span", { class: "pm-diff-line-no pm-diff-line-no--old" }, oldNo == null ? "" : String(oldNo)],
+            ["span", { class: "pm-diff-line-no pm-diff-line-no--new" }, newNo == null ? "" : String(newNo)],
           ],
           ["span", { class: "pm-diff-line-text" }, text.length > 0 ? text : "\u00a0"],
         ];

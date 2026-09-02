@@ -2,7 +2,7 @@
  * Eco PI extension: finalize_plan tool for Plan mode handoff (Codex-style async approval).
  * Submits the plan, ends the turn; Eco persists pending plan and waits for user approval.
  */
-import { Type, type Static, type TSchema } from "typebox";
+import { type Static, type TSchema, Type } from "typebox";
 import { PI_FINALIZE_PLAN_TOOL_NAME } from "./pi-session-mode.js";
 
 export interface EcoPiFinalizePlanExtensionApi {
@@ -18,7 +18,9 @@ export interface EcoPiFinalizePlanExtensionApi {
       toolCallId: string,
       params: Record<string, unknown>,
       signal: AbortSignal | undefined,
-      onUpdate: ((partial: { content: Array<{ type: "text"; text: string }>; details: unknown }) => void) | undefined,
+      onUpdate:
+        | ((partial: { content: Array<{ type: "text"; text: string }>; details: unknown }) => void)
+        | undefined,
       ctx: { cwd: string },
     ) => Promise<{ content: Array<{ type: "text"; text: string }>; details: unknown }>;
   }): void;

@@ -78,9 +78,12 @@ try {
   });
   await page.waitForTimeout(300);
 
-  const threadRow = page.locator(".sidebar-thread, button, [role='button']").filter({
-    hasText: "Supabase Center 配对 UI",
-  }).first();
+  const threadRow = page
+    .locator(".sidebar-thread, button, [role='button']")
+    .filter({
+      hasText: "Supabase Center 配对 UI",
+    })
+    .first();
   await threadRow.waitFor({ timeout: 20_000 });
   await threadRow.click({ force: true });
   await page.waitForSelector("text=三个子代理已完成", { timeout: 20_000 });
@@ -93,7 +96,10 @@ try {
   const settings = page.locator(".settings-page");
   await settings.waitFor({ state: "visible", timeout: 10_000 });
 
-  const subagentTab = settings.locator("button").filter({ hasText: /^子代理$/ }).first();
+  const subagentTab = settings
+    .locator("button")
+    .filter({ hasText: /^子代理$/ })
+    .first();
   if ((await subagentTab.count()) > 0) {
     await subagentTab.click({ force: true });
     await page.waitForTimeout(500);
@@ -110,19 +116,29 @@ try {
 
   await page.keyboard.press("Escape").catch(() => undefined);
   await page.waitForTimeout(200);
-  const backBtn = settings.locator("button").filter({ hasText: /^返回$/ }).first();
+  const backBtn = settings
+    .locator("button")
+    .filter({ hasText: /^返回$/ })
+    .first();
   if ((await backBtn.count()) > 0) {
     await backBtn.click({ force: true });
   } else {
     await page.keyboard.press("Escape").catch(() => undefined);
   }
   await page.waitForTimeout(400);
-  await page.locator(".settings-page").waitFor({ state: "hidden", timeout: 8_000 }).catch(async () => {
-    await page.keyboard.press("Escape").catch(() => undefined);
-    await page.waitForTimeout(300);
-  });
+  await page
+    .locator(".settings-page")
+    .waitFor({ state: "hidden", timeout: 8_000 })
+    .catch(async () => {
+      await page.keyboard.press("Escape").catch(() => undefined);
+      await page.waitForTimeout(300);
+    });
 
-  await page.locator("text=Supabase Center 配对 UI").first().click({ force: true }).catch(() => undefined);
+  await page
+    .locator("text=Supabase Center 配对 UI")
+    .first()
+    .click({ force: true })
+    .catch(() => undefined);
   await page.waitForTimeout(500);
   const costTarget = page.locator('button[aria-label*="计费"], button[aria-label*="$0.48"]').first();
   await costTarget.waitFor({ timeout: 10_000 });
@@ -180,7 +196,10 @@ async function openSettingsSection(page, label) {
   if ((await settingsBtn.count()) > 0) {
     await settingsBtn.click();
   } else {
-    await page.getByRole("button", { name: /设置|Settings|模型|Models/ }).first().click();
+    await page
+      .getByRole("button", { name: /设置|Settings|模型|Models/ })
+      .first()
+      .click();
   }
   await page.waitForSelector(".settings-page, [aria-label='设置'], [aria-label='Settings']", {
     timeout: 15_000,

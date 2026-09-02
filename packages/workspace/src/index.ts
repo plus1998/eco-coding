@@ -132,7 +132,7 @@ export class GitWorktreeService {
     const result = await this.runner.run(["git", "rev-parse", "--verify", "HEAD"], workspacePath);
     if (result.exitCode !== 0) {
       throw new Error(
-        "Git 仓库还没有任何提交。请先至少创建一次提交（例如 git add . && git commit -m \"initial commit\"），再开始编码线程。",
+        'Git 仓库还没有任何提交。请先至少创建一次提交（例如 git add . && git commit -m "initial commit"），再开始编码线程。',
       );
     }
   }
@@ -328,10 +328,7 @@ export class GitWorktreeService {
    * Unlike `git apply`, this succeeds when the workspace has drifted (e.g. agent edits
    * leaked to the main checkout during multi-pass review, a known Claude Code worktree issue).
    */
-  private async materializeWorktreeFiles(
-    plan: WorktreePlan,
-    changedFiles: readonly string[],
-  ): Promise<void> {
+  private async materializeWorktreeFiles(plan: WorktreePlan, changedFiles: readonly string[]): Promise<void> {
     for (const relPath of changedFiles) {
       const normalized = relPath.replace(/\\/g, "/");
       if (!normalized || normalized.includes("..")) {

@@ -1,15 +1,11 @@
-import { crc32 } from "node:zlib";
-import { inflateSync, deflateSync } from "node:zlib";
+import { crc32, deflateSync, inflateSync } from "node:zlib";
 
 const PNG_SIGNATURE = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function readUint32BE(bytes, offset) {
   return (
-    (bytes[offset] << 24) |
-    (bytes[offset + 1] << 16) |
-    (bytes[offset + 2] << 8) |
-    bytes[offset + 3]
-  ) >>> 0;
+    ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0
+  );
 }
 
 function writeUint32BE(bytes, offset, value) {
@@ -85,7 +81,12 @@ export function decodePngToRgba(input) {
 
   for (let offset = 8; offset + 8 <= bytes.length; ) {
     const length = readUint32BE(bytes, offset);
-    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    const type = String.fromCharCode(
+      bytes[offset + 4],
+      bytes[offset + 5],
+      bytes[offset + 6],
+      bytes[offset + 7],
+    );
     const dataStart = offset + 8;
     const dataEnd = dataStart + length;
     const chunkData = bytes.subarray(dataStart, dataEnd);

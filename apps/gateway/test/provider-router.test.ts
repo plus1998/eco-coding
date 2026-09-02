@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { defaultProviders } from "../src/provider-config.js";
 import {
+  buildUpstreamCompactUrl,
+  buildUpstreamUrl,
   GATEWAY_PROVIDER_ID_HEADER,
   MissingProviderIdError,
   ProviderNotFoundError,
-  buildUpstreamCompactUrl,
-  buildUpstreamUrl,
   resolveProviderRoute,
 } from "../src/provider-router.js";
 
@@ -13,9 +13,7 @@ describe("resolveProviderRoute", () => {
   const providers = defaultProviders();
 
   test("requires provider id header-equivalent option", () => {
-    expect(() => resolveProviderRoute("claude-sonnet-4-20250514", providers)).toThrow(
-      MissingProviderIdError,
-    );
+    expect(() => resolveProviderRoute("claude-sonnet-4-20250514", providers)).toThrow(MissingProviderIdError);
   });
 
   test("matches provider id + concrete model", () => {
@@ -96,9 +94,9 @@ describe("resolveProviderRoute", () => {
     const malformed = "eco_route_v1.bad";
     const provider = providers[0]!;
     // Without matching provider id, fails closed.
-    expect(() =>
-      resolveProviderRoute(malformed, [provider], { providerId: "nope" }),
-    ).toThrow(ProviderNotFoundError);
+    expect(() => resolveProviderRoute(malformed, [provider], { providerId: "nope" })).toThrow(
+      ProviderNotFoundError,
+    );
     // With provider id, concrete model id is forwarded as-is (product layer mistake survives as wire value).
     const route = resolveProviderRoute(malformed, [provider], {
       providerId: provider.id,
@@ -107,9 +105,9 @@ describe("resolveProviderRoute", () => {
   });
 
   test("throws for unknown provider", () => {
-    expect(() =>
-      resolveProviderRoute("unknown-model", providers, { providerId: "missing" }),
-    ).toThrow(ProviderNotFoundError);
+    expect(() => resolveProviderRoute("unknown-model", providers, { providerId: "missing" })).toThrow(
+      ProviderNotFoundError,
+    );
   });
 
   test("provider id header constant is stable", () => {
@@ -120,16 +118,12 @@ describe("resolveProviderRoute", () => {
 describe("buildUpstreamUrl", () => {
   test("anthropic messages url", () => {
     const provider = defaultProviders()[0]!;
-    expect(buildUpstreamUrl(provider, "anthropic-messages")).toBe(
-      "https://api.anthropic.com/v1/messages",
-    );
+    expect(buildUpstreamUrl(provider, "anthropic-messages")).toBe("https://api.anthropic.com/v1/messages");
   });
 
   test("compact url remains constructible for tools that need it", () => {
     const provider = defaultProviders()[1]!;
-    expect(buildUpstreamCompactUrl(provider)).toBe(
-      "https://api.openai.com/v1/responses/compact",
-    );
+    expect(buildUpstreamCompactUrl(provider)).toBe("https://api.openai.com/v1/responses/compact");
   });
 
   test("uses provider version segment when set", () => {
@@ -137,9 +131,7 @@ describe("buildUpstreamUrl", () => {
       ...defaultProviders()[0]!,
       version: "v2",
     };
-    expect(buildUpstreamUrl(provider, "anthropic-messages")).toBe(
-      "https://api.anthropic.com/v2/messages",
-    );
+    expect(buildUpstreamUrl(provider, "anthropic-messages")).toBe("https://api.anthropic.com/v2/messages");
   });
 
   test("empty version defaults to v1", () => {
@@ -147,8 +139,6 @@ describe("buildUpstreamUrl", () => {
       ...defaultProviders()[0]!,
       version: "  ",
     };
-    expect(buildUpstreamUrl(provider, "anthropic-messages")).toBe(
-      "https://api.anthropic.com/v1/messages",
-    );
+    expect(buildUpstreamUrl(provider, "anthropic-messages")).toBe("https://api.anthropic.com/v1/messages");
   });
 });

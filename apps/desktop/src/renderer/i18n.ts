@@ -38,10 +38,7 @@ void i18n.use(initReactI18next).init({
 });
 
 export async function applyLocalePreference(preference: AppLocalePreference): Promise<AppLocale> {
-  persistLocalePreference(
-    preference,
-    typeof window === "undefined" ? undefined : window.localStorage,
-  );
+  persistLocalePreference(preference, typeof window === "undefined" ? undefined : window.localStorage);
   const locale = getResolvedRendererLocale(preference);
   await i18n.changeLanguage(locale);
   if (typeof document !== "undefined") {

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import type { AgentRole } from "../src/shared/ipc";
 import type { StartedAnthropicProxy } from "../src/main/anthropic-proxy";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
-import { runThreadRequestWithRuntimeProxy } from "../src/main/thread-runtime-proxy-attempt";
 import type { RunAttemptContext } from "../src/main/thread-run-attempt";
+import { runThreadRequestWithRuntimeProxy } from "../src/main/thread-runtime-proxy-attempt";
+import type { AgentRole } from "../src/shared/ipc";
 
 function attemptContext(threadId: string): RunAttemptContext {
   return { threadId, runAttemptId: "attempt_test", phase: "execution" };

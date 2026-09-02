@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
-import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
+import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 const UPSTREAM_CHAT_SSE = [
   'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"llama","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}',
@@ -104,9 +104,7 @@ describe("openai-chat upstream", () => {
 
     expect(body).toContain('"type":"response.failed"');
     expect(body).toContain("ended before the [DONE] terminator");
-    expect(logs).toContainEqual(
-      expect.stringContaining("finish_reason=stop done=false"),
-    );
+    expect(logs).toContainEqual(expect.stringContaining("finish_reason=stop done=false"));
   });
 
   test("fails a [DONE] stream when finish_reason is missing", async () => {
@@ -188,11 +186,7 @@ describe("openai-chat upstream", () => {
       upstreamModelId: "responses-default",
       models: ["responses-default"],
     };
-    const alias = buildCodexGatewayModelAlias(
-      provider.id,
-      "chat/model.__v1",
-      "openai_chat_completions",
-    );
+    const alias = buildCodexGatewayModelAlias(provider.id, "chat/model.__v1", "openai_chat_completions");
     const usageEvents: GatewayUsageEvent[] = [];
     const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
@@ -406,11 +400,7 @@ describe("openai-chat upstream", () => {
       upstreamModelId: "deepseek-v4",
       models: ["deepseek-v4"],
     };
-    const alias = buildCodexGatewayModelAlias(
-      provider.id,
-      "deepseek-v4",
-      "openai_chat_completions",
-    );
+    const alias = buildCodexGatewayModelAlias(provider.id, "deepseek-v4", "openai_chat_completions");
     const patch = "*** Begin Patch\n*** Add File: a.txt\n+hi\n*** End Patch";
     let upstreamBody: {
       tools?: { type?: string; function?: { name?: string; parameters?: unknown } }[];

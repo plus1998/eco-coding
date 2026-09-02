@@ -15,7 +15,5 @@ export function renderLocalized(element: ReactElement, locale: AppLocale): strin
     initImmediate: false,
     interpolation: { escapeValue: false },
   });
-  return renderToStaticMarkup(
-    createElement(I18nextProvider, { i18n: instance }, element),
-  );
+  return renderToStaticMarkup(createElement(I18nextProvider, { i18n: instance }, element));
 }

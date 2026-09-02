@@ -146,10 +146,7 @@ test("createSubagentSessionHooks records dynamic Eco agent sessions", () => {
 });
 
 test.skipIf(!sqliteAvailable)("conversation store persists and resolves reviewer resume", async () => {
-  const dbPath = path.join(
-    await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-")),
-    "test.sqlite",
-  );
+  const dbPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-")), "test.sqlite");
   const store = await createConversationStore(dbPath);
   store.saveThread({
     id: "thr_sub",
@@ -184,10 +181,7 @@ test.skipIf(!sqliteAvailable)("conversation store persists and resolves reviewer
 });
 
 test.skipIf(!sqliteAvailable)("persists subagent session timing on stop and resume", async () => {
-  const dbPath = path.join(
-    await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-timing-")),
-    "test.sqlite",
-  );
+  const dbPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-timing-")), "test.sqlite");
   const store = await createConversationStore(dbPath);
   store.saveThread({
     id: "thr_timing",

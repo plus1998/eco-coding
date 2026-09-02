@@ -1,10 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentEvent } from "../../../../packages/shared/src";
 import { mapSdkMessageToEvents } from "../../../../packages/runtime/src/claude-agent-sdk";
-import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../../../../packages/runtime/src/pi-event-adapter";
+import {
+  createPiEventAdapterState,
+  mapPiSessionEventToAgentEvents,
+} from "../../../../packages/runtime/src/pi-event-adapter";
 import { createSdkStreamContext } from "../../../../packages/runtime/src/sdk-stream-events";
+import type { AgentEvent } from "../../../../packages/shared/src";
 import { evaluateSdkScenarioChecklist } from "../../../../scripts/conversation-round/lib/sdk-checklist.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -87,7 +90,10 @@ export function resolveSdkRoundFixtureDir(core: SdkRoundCore, configured?: strin
   );
 }
 
-export function loadSdkRoundFixture(core: SdkRoundCore, fixtureDir = resolveSdkRoundFixtureDir(core)): SdkRoundFixture {
+export function loadSdkRoundFixture(
+  core: SdkRoundCore,
+  fixtureDir = resolveSdkRoundFixtureDir(core),
+): SdkRoundFixture {
   const agentEventsPath = path.join(fixtureDir, "agent-events.jsonl");
   if (!existsSync(agentEventsPath)) {
     throw new Error(`Missing agent-events.jsonl in ${fixtureDir}`);
@@ -95,7 +101,9 @@ export function loadSdkRoundFixture(core: SdkRoundCore, fixtureDir = resolveSdkR
 
   const agentEvents = readJsonl<AgentEvent>(agentEventsPath, "event");
   const rawPath =
-    core === "pi" ? path.join(fixtureDir, "pi-sdk-events.jsonl") : path.join(fixtureDir, "sdk-messages.jsonl");
+    core === "pi"
+      ? path.join(fixtureDir, "pi-sdk-events.jsonl")
+      : path.join(fixtureDir, "sdk-messages.jsonl");
   const rawField = core === "pi" ? "event" : "message";
   const rawRows = readJsonl<unknown>(rawPath, rawField as "event");
 
@@ -106,7 +114,10 @@ export function loadSdkRoundFixture(core: SdkRoundCore, fixtureDir = resolveSdkR
     ? (JSON.parse(readFileSync(path.join(fixtureDir, "meta.json"), "utf8")) as Record<string, unknown>)
     : {};
   const workspaceFiles = existsSync(path.join(fixtureDir, "workspace-files.json"))
-    ? (JSON.parse(readFileSync(path.join(fixtureDir, "workspace-files.json"), "utf8")) as Record<string, string>)
+    ? (JSON.parse(readFileSync(path.join(fixtureDir, "workspace-files.json"), "utf8")) as Record<
+        string,
+        string
+      >)
     : {};
   const prompt = existsSync(path.join(fixtureDir, "prompt.txt"))
     ? readFileSync(path.join(fixtureDir, "prompt.txt"), "utf8")
@@ -153,10 +164,7 @@ export function replayPiSdkEvents(input: {
   return events;
 }
 
-export function replayClaudeSdkMessages(input: {
-  messages: unknown[];
-  threadId?: string;
-}): AgentEvent[] {
+export function replayClaudeSdkMessages(input: { messages: unknown[]; threadId?: string }): AgentEvent[] {
   const threadId = input.threadId ?? "thr_claude_replay";
   const streamCtx = createSdkStreamContext();
   const events: AgentEvent[] = [];

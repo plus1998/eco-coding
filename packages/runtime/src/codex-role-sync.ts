@@ -14,11 +14,7 @@ import {
   type CodexMcpServerForConfigSync,
   type EcoProviderForCodexConfig,
 } from "./codex-config-sync.js";
-import type {
-  CodexExecutionConfirmationMode,
-  CodexSandboxMode,
-  EcoToolPolicy,
-} from "./codex-tool-policy.js";
+import type { CodexExecutionConfirmationMode, CodexSandboxMode, EcoToolPolicy } from "./codex-tool-policy.js";
 import {
   applyCodexExecutionConfirmation,
   cloneEcoToolPolicy,
@@ -596,14 +592,20 @@ export function buildCodexRoleToml(input: {
       `network_access = ${permission.sandbox_workspace_write.network_access ? "true" : "false"}`,
     );
   }
-  const serverByName = new Map((input.mcpServers ?? []).map((server) => [sanitizeMcpServerName(server.name), server]));
-  for (const [serverName, visibility] of Object.entries(input.mcpVisibility ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
+  const serverByName = new Map(
+    (input.mcpServers ?? []).map((server) => [sanitizeMcpServerName(server.name), server]),
+  );
+  for (const [serverName, visibility] of Object.entries(input.mcpVisibility ?? {}).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
     const server = serverByName.get(serverName);
     if (!server) throw new Error(`Missing MCP definition for Codex role server '${serverName}'.`);
     const serverLines = buildCodexMcpServerTomlLines({
       ...server,
       ...(visibility.enabled_tools !== undefined ? { enabledTools: visibility.enabled_tools } : {}),
-    }).map((line) => line === "enabled = true" ? `enabled = ${visibility.enabled ? "true" : "false"}` : line);
+    }).map((line) =>
+      line === "enabled = true" ? `enabled = ${visibility.enabled ? "true" : "false"}` : line,
+    );
     lines.push("", ...serverLines);
   }
   if (input.toolPolicy.allowSpawn === false) {
@@ -728,15 +730,11 @@ function resolveCodexRoleApiCompat(
     case "openai_chat_completions":
       return normalized;
     default:
-      throw new Error(
-        `Codex role '${agentKey}' has unsupported modelRef.apiCompat '${normalized}'.`,
-      );
+      throw new Error(`Codex role '${agentKey}' has unsupported modelRef.apiCompat '${normalized}'.`);
   }
 }
 
-function withCodexReasoningEffort(
-  effort: string | undefined,
-): { reasoningEffort?: string } {
+function withCodexReasoningEffort(effort: string | undefined): { reasoningEffort?: string } {
   const reasoningEffort = mapEcoThinkingEffortToCodexReasoningEffort(effort);
   return reasoningEffort ? { reasoningEffort } : {};
 }
@@ -792,7 +790,8 @@ function hasConfiguredToolPolicy(policy: unknown): boolean {
     return false;
   }
   const record = policy as Record<string, unknown>;
-  const mcp = record.mcp && typeof record.mcp === "object" ? (record.mcp as Record<string, unknown>) : undefined;
+  const mcp =
+    record.mcp && typeof record.mcp === "object" ? (record.mcp as Record<string, unknown>) : undefined;
   return (
     Boolean(record.sandboxMode) ||
     Boolean(record.approvalPolicy) ||

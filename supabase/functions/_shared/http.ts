@@ -43,10 +43,7 @@ export async function readJsonObject(req: Request): Promise<Record<string, unkno
   return body as Record<string, unknown>;
 }
 
-export function requireString(
-  body: Record<string, unknown>,
-  key: string,
-): string {
+export function requireString(body: Record<string, unknown>, key: string): string {
   const value = body[key];
   if (typeof value !== "string" || !value.trim()) {
     throw new HttpError(400, `${key} is required.`, "invalid_request");

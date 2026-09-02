@@ -136,7 +136,10 @@ async function waitForCompleteResult(
   );
 }
 
-async function readResult(page: import("@playwright/test").Page, threadId: string): Promise<MultiAgentResult> {
+async function readResult(
+  page: import("@playwright/test").Page,
+  threadId: string,
+): Promise<MultiAgentResult> {
   return page.evaluate(async (id) => {
     const [thread, projection, sessions, metrics, usage, ledger] = await Promise.all([
       window.eco.getThread(id),
@@ -191,14 +194,24 @@ function assertCompleteResult(result: MultiAgentResult, threadId: string, marker
     const expectedMarker = `MULTI_${role.toUpperCase()}_${markerValue}`;
     const eventTypes = agent?.timeline?.map((event) => event.eventType) ?? [];
     const finalTexts =
-      agent?.timeline?.filter((event) => event.eventType === "message.final").map((event) => event.text) ?? [];
+      agent?.timeline?.filter((event) => event.eventType === "message.final").map((event) => event.text) ??
+      [];
     expect(agent?.status, `${role}: agent did not stop successfully.`).toBe("stopped");
-    expect(eventTypes.includes("agent.started") && eventTypes.includes("agent.stopped"), `${role}: lifecycle events are incomplete.`).toBe(true);
+    expect(
+      eventTypes.includes("agent.started") && eventTypes.includes("agent.stopped"),
+      `${role}: lifecycle events are incomplete.`,
+    ).toBe(true);
     expect(finalTexts.includes(expectedMarker), `${role}: missing marker ${expectedMarker}.`).toBe(true);
     expect(session?.status, `${role}: stopped session is missing.`).toBe("stopped");
-    expect(metric && (metric.contextOccupied ?? 0) > 0 && (metric.ecoCostUsd ?? 0) > 0, `${role}: non-zero metrics are missing.`).toBe(true);
+    expect(
+      metric && (metric.contextOccupied ?? 0) > 0 && (metric.ecoCostUsd ?? 0) > 0,
+      `${role}: non-zero metrics are missing.`,
+    ).toBe(true);
     expect(context && (context.occupied ?? 0) > 0, `${role}: context instance is missing.`).toBe(true);
-    expect(ledger.some((event) => event.attributionStatus === "attributed"), `${role}: attributed ledger event is missing.`).toBe(true);
+    expect(
+      ledger.some((event) => event.attributionStatus === "attributed"),
+      `${role}: attributed ledger event is missing.`,
+    ).toBe(true);
     return {
       role,
       agentId: agent!.agentId!,
@@ -256,7 +269,12 @@ function assertSqlitePersistence(
         ),
       ).toBe(true);
     }
-    return { databasePath: dbPath, agents: agents.length, sessions: sessions.length, metrics: metrics.length };
+    return {
+      databasePath: dbPath,
+      agents: agents.length,
+      sessions: sessions.length,
+      metrics: metrics.length,
+    };
   } finally {
     db.close();
   }

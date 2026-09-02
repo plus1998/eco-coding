@@ -158,10 +158,10 @@ test("reviewer fails closed to human approval on invalid model output", async ()
     envelope: envelope("git status"),
     fetcher: async () => {
       calls += 1;
-      return new Response(
-        JSON.stringify({ type: "message", content: [{ type: "text", text: "allow" }] }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ type: "message", content: [{ type: "text", text: "allow" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     },
   });
   expect(calls).toBe(2);

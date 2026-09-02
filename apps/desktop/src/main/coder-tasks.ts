@@ -5,8 +5,7 @@ export interface CoderTaskDraft {
   detail: string;
 }
 
-const CODER_TASKS_HEADING =
-  /^#{1,6}\s*(?:Coder\s*Tasks|CoderTasks|编码任务|Coder任务)\s*(.*)$/i;
+const CODER_TASKS_HEADING = /^#{1,6}\s*(?:Coder\s*Tasks|CoderTasks|编码任务|Coder任务)\s*(.*)$/i;
 
 export function extractCoderTasksFromText(text: string): CoderTaskDraft[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -29,11 +28,9 @@ export function extractCoderTasksFromText(text: string): CoderTaskDraft[] {
     sectionLines.push(line);
   }
 
-  const numberedTasks = splitTaskItems(sectionLines, /^\s*\d+[\.)]\s+(.+?)\s*$/);
+  const numberedTasks = splitTaskItems(sectionLines, /^\s*\d+[.)]\s+(.+?)\s*$/);
   const rawTasks =
-    numberedTasks.length > 0
-      ? numberedTasks
-      : splitTaskItems(sectionLines, /^\s*[-*]\s+(.+?)\s*$/);
+    numberedTasks.length > 0 ? numberedTasks : splitTaskItems(sectionLines, /^\s*[-*]\s+(.+?)\s*$/);
 
   return rawTasks
     .map((item) => {
@@ -92,12 +89,13 @@ export function completeRunningCoderTodos(
   status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">,
   now = new Date().toISOString(),
 ): CoderTodoItem[] {
-  return todos.map((todo) =>
-    todo.status === "running" ? { ...todo, status, updatedAt: now } : todo,
-  );
+  return todos.map((todo) => (todo.status === "running" ? { ...todo, status, updatedAt: now } : todo));
 }
 
-export function findCoderTodoForPrompt(todos: CoderTodoItem[], prompt: string | undefined): CoderTodoItem | undefined {
+export function findCoderTodoForPrompt(
+  todos: CoderTodoItem[],
+  prompt: string | undefined,
+): CoderTodoItem | undefined {
   const normalizedPrompt = normalizeTaskTitle(prompt ?? "");
   if (normalizedPrompt) {
     const byTitle = todos.find((todo) => normalizedPrompt.includes(normalizeTaskTitle(todo.title)));
@@ -109,9 +107,7 @@ export function findCoderTodoForPrompt(todos: CoderTodoItem[], prompt: string | 
 }
 
 export function todoListSignature(todos: CoderTodoItem[]): string {
-  return todos
-    .map((todo) => `${todo.position}:${todo.title}:${todo.detail}:${todo.status}`)
-    .join("\n---\n");
+  return todos.map((todo) => `${todo.position}:${todo.title}:${todo.detail}:${todo.status}`).join("\n---\n");
 }
 
 function splitTaskItems(

@@ -217,18 +217,14 @@ test("image generation MCP approval accepts only a one-time approval", async () 
         feedback.push(text);
       },
     };
-    const result = await handleCodexServerRequest(
-      deps,
-      CODEX_MCP_SERVER_ELICITATION_REQUEST,
-      {
-        threadId: "codex-thread-image",
-        turnId: "turn-image",
-        serverName: "eco_image_generation",
-        mode: "form",
-        message: 'Allow the MCP server to run tool "create_image"',
-        requestedSchema: {},
-      },
-    );
+    const result = await handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+      threadId: "codex-thread-image",
+      turnId: "turn-image",
+      serverName: "eco_image_generation",
+      mode: "form",
+      message: 'Allow the MCP server to run tool "create_image"',
+      requestedSchema: {},
+    });
     expect(events[0]?.bashApproval).toMatchObject({
       kind: "image_generation",
       cwd: "/workspace/worktree",

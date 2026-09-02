@@ -50,11 +50,7 @@ export function sumLedgerEventTokens(events: readonly ThreadUsageLedgerEventView
   }
   return {
     ...totals,
-    total:
-      totals.inputTokens +
-      totals.outputTokens +
-      totals.cacheReadTokens +
-      totals.cacheCreationTokens,
+    total: totals.inputTokens + totals.outputTokens + totals.cacheReadTokens + totals.cacheCreationTokens,
   };
 }
 

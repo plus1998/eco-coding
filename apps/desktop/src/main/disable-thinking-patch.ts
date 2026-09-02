@@ -1,5 +1,5 @@
-import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
+import type { UpstreamApiCompat } from "../shared/api-compat";
 
 export function buildDisableThinkingChatPatch(
   apiCompat: UpstreamApiCompat,

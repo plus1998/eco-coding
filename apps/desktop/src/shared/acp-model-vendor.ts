@@ -7,13 +7,7 @@ export interface AcpModelOption {
   default?: boolean;
 }
 
-export const ACP_MODEL_VENDORS: readonly AcpModelVendor[] = [
-  "anthropic",
-  "gpt",
-  "grok",
-  "google",
-  "other",
-];
+export const ACP_MODEL_VENDORS: readonly AcpModelVendor[] = ["anthropic", "gpt", "grok", "google", "other"];
 
 export const ACP_MODEL_VENDOR_ICONS: Record<AcpModelVendor, string> = {
   anthropic: "./agent-icons/claude-code.ico",

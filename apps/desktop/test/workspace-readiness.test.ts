@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { workspaceSupportsWorktree } from "../src/shared/workspace-readiness";
 import type { WorkspaceInfo } from "../src/shared/ipc";
+import { workspaceSupportsWorktree } from "../src/shared/workspace-readiness";
 
 function workspace(overrides: Partial<WorkspaceInfo> = {}): WorkspaceInfo {
   return {
@@ -18,14 +18,10 @@ describe("workspaceSupportsWorktree", () => {
   });
 
   it("returns false when git repo has no commits", () => {
-    expect(
-      workspaceSupportsWorktree(workspace({ isGitRepository: true, hasGitCommits: false })),
-    ).toBe(false);
+    expect(workspaceSupportsWorktree(workspace({ isGitRepository: true, hasGitCommits: false }))).toBe(false);
   });
 
   it("returns true when git repo has commits", () => {
-    expect(
-      workspaceSupportsWorktree(workspace({ isGitRepository: true, hasGitCommits: true })),
-    ).toBe(true);
+    expect(workspaceSupportsWorktree(workspace({ isGitRepository: true, hasGitCommits: true }))).toBe(true);
   });
 });

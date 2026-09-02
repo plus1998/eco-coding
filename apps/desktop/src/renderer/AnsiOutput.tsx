@@ -18,18 +18,9 @@ export const AnsiOutput = forwardRef<HTMLPreElement, AnsiOutputProps>(function A
     return ansiToHtml(text);
   }, [placeholder, text]);
 
-  return (
-    <pre
-      ref={ref}
-      className={className}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
+  return <pre ref={ref} className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

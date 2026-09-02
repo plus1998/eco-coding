@@ -149,9 +149,7 @@ try {
       report.ok = true;
       report.handshakeEvidence = "mcp-server.log saw initialize + serverInfo response";
     } else if (logText.includes("START") && !logText.includes("method=initialize")) {
-      report.errors.push(
-        "MCP process started but never received initialize (Codex stdin not delivered?)",
-      );
+      report.errors.push("MCP process started but never received initialize (Codex stdin not delivered?)");
     }
   }
 

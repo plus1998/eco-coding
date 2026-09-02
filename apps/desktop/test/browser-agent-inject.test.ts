@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  ECO_AGENT_BROWSER_ALLOWED_TOOL,
-  ECO_AGENT_BROWSER_MCP_SERVER,
-} from "../src/shared/browser";
+import { ECO_AGENT_BROWSER_ALLOWED_TOOL, ECO_AGENT_BROWSER_MCP_SERVER } from "../src/shared/browser";
 import type { McpSdkConfig } from "../src/shared/mcp";
 
 // Unit-test pure merge logic without Electron native browser views.

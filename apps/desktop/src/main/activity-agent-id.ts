@@ -1,8 +1,8 @@
 import {
+  type AgentEvent,
   normalizeSdkSubagentType,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
-  type AgentEvent,
 } from "@eco/runtime";
 import { inferActivityRole } from "@eco/runtime/sdk";
 import type { RuntimeAgentRole } from "../shared/ipc";
@@ -49,11 +49,7 @@ function readDistinctSubagentSessionId(
   plannerSessionId: string | undefined,
 ): string | undefined {
   const explicitAgentId = agentId?.trim();
-  if (
-    !explicitAgentId ||
-    explicitAgentId === "unknown-session" ||
-    explicitAgentId === plannerSessionId
-  ) {
+  if (!explicitAgentId || explicitAgentId === "unknown-session" || explicitAgentId === plannerSessionId) {
     return undefined;
   }
   return explicitAgentId;
@@ -70,10 +66,7 @@ export function resolveActivityAgentId(
 ): string | undefined {
   const displayRole = inferActivityRole(event);
   const billingRole = readBillingRole(displayRole);
-  const distinctExplicit = readDistinctSubagentSessionId(
-    event.agentId,
-    options.plannerSessionId?.trim(),
-  );
+  const distinctExplicit = readDistinctSubagentSessionId(event.agentId, options.plannerSessionId?.trim());
   const parentToolUseId = readParentToolUseId(event.payload);
 
   if (parentToolUseId && options.metricsRegistry) {

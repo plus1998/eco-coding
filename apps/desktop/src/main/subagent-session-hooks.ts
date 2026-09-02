@@ -1,9 +1,9 @@
 import type { EcoSubagentAttributionHooks, EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
 import { summarizeAgentObjective } from "@eco/runtime";
-import { resolveSubagentSessionRole } from "../shared/subagent-roles.js";
 import type { RuntimeAgentRole } from "../shared/ipc";
-import type { ConversationStore } from "./conversation-store.js";
+import { resolveSubagentSessionRole } from "../shared/subagent-roles.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
+import type { ConversationStore } from "./conversation-store.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import {

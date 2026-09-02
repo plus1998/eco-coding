@@ -1,371 +1,371 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 import {
   newResponsesEventToAnthropicState,
   responsesAnthropicEventToSse,
   responsesEventToAnthropicEvents,
   validateAnthropicStreamEvents,
-} from '../src/index.js';
-import type { ResponsesStreamEvent } from '../src/types.js';
+} from "../src/index.js";
+import type { ResponsesStreamEvent } from "../src/types.js";
 
 /** Ported from sub2api anthropic_responses_test.go (streaming unit tests) */
-describe('responses → anthropic stream events (sub2api parity)', () => {
-  test('text delta emits content_block_start with empty text field', () => {
+describe("responses → anthropic stream events (sub2api parity)", () => {
+  test("text delta emits content_block_start with empty text field", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", model: "m", status: "in_progress", output: [] },
       }),
-      ...push({ type: 'response.output_text.delta', output_index: 0, delta: 'Hello' }),
-      ...push({ type: 'response.output_text.done', output_index: 0 }),
+      ...push({ type: "response.output_text.delta", output_index: 0, delta: "Hello" }),
+      ...push({ type: "response.output_text.done", output_index: 0 }),
       ...push({
-        type: 'response.completed',
-        response: { id: 'r1', model: 'm', status: 'completed', output: [] },
+        type: "response.completed",
+        response: { id: "r1", model: "m", status: "completed", output: [] },
       }),
     ];
-    const start = events.find((e) => e.type === 'content_block_start');
-    expect(start?.content_block?.type).toBe('text');
-    expect(start?.content_block?.text).toBe('');
+    const start = events.find((e) => e.type === "content_block_start");
+    expect(start?.content_block?.type).toBe("text");
+    expect(start?.content_block?.text).toBe("");
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('thinking block start includes empty thinking on wire', () => {
+  test("thinking block start includes empty thinking on wire", () => {
     const state = newResponsesEventToAnthropicState();
     const events = responsesEventToAnthropicEvents(
       {
-        type: 'response.output_item.added',
+        type: "response.output_item.added",
         output_index: 0,
-        item: { type: 'reasoning', id: 'ri_1' },
+        item: { type: "reasoning", id: "ri_1" },
       },
       state,
     );
-    expect(events[0]?.type).toBe('content_block_start');
+    expect(events[0]?.type).toBe("content_block_start");
     const sse = responsesAnthropicEventToSse(events[0]!);
     expect(sse).toContain('"thinking":""');
     expect(sse).toContain('"type":"thinking"');
   });
 
-  test('full text stream sequence: start → delta → stop → message_stop', () => {
+  test("full text stream sequence: start → delta → stop → message_stop", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
 
     let all = push({
-      type: 'response.created',
-      response: { id: 'r1', model: 'm', status: 'in_progress', output: [] },
+      type: "response.created",
+      response: { id: "r1", model: "m", status: "in_progress", output: [] },
     });
-    all = [...all, ...push({ type: 'response.output_text.delta', output_index: 0, delta: 'Hello' })];
-    all = [...all, ...push({ type: 'response.output_text.delta', output_index: 0, delta: ' world' })];
-    all = [...all, ...push({ type: 'response.output_text.done', output_index: 0 })];
+    all = [...all, ...push({ type: "response.output_text.delta", output_index: 0, delta: "Hello" })];
+    all = [...all, ...push({ type: "response.output_text.delta", output_index: 0, delta: " world" })];
+    all = [...all, ...push({ type: "response.output_text.done", output_index: 0 })];
     all = [
       ...all,
       ...push({
-        type: 'response.completed',
+        type: "response.completed",
         response: {
-          id: 'r1',
-          model: 'm',
-          status: 'completed',
+          id: "r1",
+          model: "m",
+          status: "completed",
           output: [],
           usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
         },
       }),
     ];
 
-    expect(all.filter((e) => e.type === 'content_block_start').length).toBe(1);
-    expect(all.filter((e) => e.type === 'content_block_delta').length).toBe(2);
-    expect(all.filter((e) => e.type === 'content_block_stop').length).toBe(1);
-    expect(all.some((e) => e.type === 'message_stop')).toBe(true);
+    expect(all.filter((e) => e.type === "content_block_start").length).toBe(1);
+    expect(all.filter((e) => e.type === "content_block_delta").length).toBe(2);
+    expect(all.filter((e) => e.type === "content_block_stop").length).toBe(1);
+    expect(all.some((e) => e.type === "message_stop")).toBe(true);
     expect(validateAnthropicStreamEvents(all)).toEqual([]);
   });
 
-  test('tool_use block uses input {} on start', () => {
+  test("tool_use block uses input {} on start", () => {
     const state = newResponsesEventToAnthropicState();
     const events = responsesEventToAnthropicEvents(
       {
-        type: 'response.output_item.added',
+        type: "response.output_item.added",
         output_index: 0,
         item: {
-          type: 'function_call',
-          id: 'item_1',
-          call_id: 'call_abc',
-          name: 'Read',
+          type: "function_call",
+          id: "item_1",
+          call_id: "call_abc",
+          name: "Read",
         },
       },
       state,
     );
-    const start = events.find((e) => e.type === 'content_block_start');
-    expect(start?.content_block?.type).toBe('tool_use');
+    const start = events.find((e) => e.type === "content_block_start");
+    expect(start?.content_block?.type).toBe("tool_use");
     expect(start?.content_block?.input).toEqual({});
     const sse = responsesAnthropicEventToSse(start!);
     expect(sse).toContain('"input":{}');
   });
 
-  test('output_text.done with full text emits missing text delta', () => {
+  test("output_text.done with full text emits missing text delta", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", object: "response", model: "m", status: "in_progress", output: [] },
       }),
-      ...push({ type: 'response.output_text.done', output_index: 0, text: 'Hello from done' }),
+      ...push({ type: "response.output_text.done", output_index: 0, text: "Hello from done" }),
       ...push({
-        type: 'response.completed',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+        type: "response.completed",
+        response: { id: "r1", object: "response", model: "m", status: "completed", output: [] },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_start')).toMatchObject([
-      { index: 0, content_block: { type: 'text', text: '' } },
+    expect(events.filter((e) => e.type === "content_block_start")).toMatchObject([
+      { index: 0, content_block: { type: "text", text: "" } },
     ]);
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'text_delta', text: 'Hello from done' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "text_delta", text: "Hello from done" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('message output_item.done with content emits missing text delta', () => {
+  test("message output_item.done with content emits missing text delta", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", object: "response", model: "m", status: "in_progress", output: [] },
       }),
       ...push({
-        type: 'response.output_item.done',
+        type: "response.output_item.done",
         output_index: 0,
         item: {
-          type: 'message',
-          id: 'msg_1',
-          role: 'assistant',
-          content: [{ type: 'output_text', text: 'Hello from item' }],
+          type: "message",
+          id: "msg_1",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Hello from item" }],
         },
       }),
       ...push({
-        type: 'response.completed',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+        type: "response.completed",
+        response: { id: "r1", object: "response", model: "m", status: "completed", output: [] },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'text_delta', text: 'Hello from item' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "text_delta", text: "Hello from item" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('reasoning delta without output_item.added opens thinking block', () => {
+  test("reasoning delta without output_item.added opens thinking block", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", object: "response", model: "m", status: "in_progress", output: [] },
       }),
       ...push({
-        type: 'response.reasoning_summary_text.delta',
+        type: "response.reasoning_summary_text.delta",
         output_index: 0,
-        delta: 'thinking',
+        delta: "thinking",
       }),
-      ...push({ type: 'response.reasoning_summary_text.done', output_index: 0 }),
+      ...push({ type: "response.reasoning_summary_text.done", output_index: 0 }),
       ...push({
-        type: 'response.completed',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+        type: "response.completed",
+        response: { id: "r1", object: "response", model: "m", status: "completed", output: [] },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_start')).toMatchObject([
-      { index: 0, content_block: { type: 'thinking', thinking: '' } },
+    expect(events.filter((e) => e.type === "content_block_start")).toMatchObject([
+      { index: 0, content_block: { type: "thinking", thinking: "" } },
     ]);
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'thinking' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "thinking" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('reasoning_text delta is translated to an Anthropic thinking delta', () => {
+  test("reasoning_text delta is translated to an Anthropic thinking delta", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", object: "response", model: "m", status: "in_progress", output: [] },
       }),
       ...push({
-        type: 'response.reasoning_text.delta',
+        type: "response.reasoning_text.delta",
         output_index: 0,
         content_index: 0,
-        delta: 'raw reasoning',
+        delta: "raw reasoning",
       }),
       ...push({
-        type: 'response.reasoning_text.done',
+        type: "response.reasoning_text.done",
         output_index: 0,
         content_index: 0,
-        text: 'raw reasoning',
+        text: "raw reasoning",
       }),
       ...push({
-        type: 'response.completed',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+        type: "response.completed",
+        response: { id: "r1", object: "response", model: "m", status: "completed", output: [] },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'raw reasoning' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "raw reasoning" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('removes HTML comment artifacts split across reasoning summary deltas', () => {
+  test("removes HTML comment artifacts split across reasoning summary deltas", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.reasoning_summary_text.delta',
+        type: "response.reasoning_summary_text.delta",
         output_index: 0,
-        delta: '**Determining unique truth**\n\n<!',
+        delta: "**Determining unique truth**\n\n<!",
       }),
       ...push({
-        type: 'response.reasoning_summary_text.delta',
+        type: "response.reasoning_summary_text.delta",
         output_index: 0,
-        delta: '-- -->',
+        delta: "-- -->",
       }),
       ...push({
-        type: 'response.reasoning_summary_text.done',
+        type: "response.reasoning_summary_text.done",
         output_index: 0,
-        text: '**Determining unique truth**\n\n<!-- -->',
+        text: "**Determining unique truth**\n\n<!-- -->",
       }),
     ];
 
     const thinking = events
-      .filter((event) => event.type === 'content_block_delta')
-      .map((event) => event.delta?.thinking ?? '')
-      .join('');
-    expect(thinking).toBe('**Determining unique truth**\n\n');
-    expect(thinking).not.toContain('<!--');
-    expect(thinking).not.toContain('-->');
+      .filter((event) => event.type === "content_block_delta")
+      .map((event) => event.delta?.thinking ?? "")
+      .join("");
+    expect(thinking).toBe("**Determining unique truth**\n\n");
+    expect(thinking).not.toContain("<!--");
+    expect(thinking).not.toContain("-->");
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('removes complete HTML comments but preserves surrounding reasoning text', () => {
+  test("removes complete HTML comments but preserves surrounding reasoning text", () => {
     const state = newResponsesEventToAnthropicState();
     const events = responsesEventToAnthropicEvents(
       {
-        type: 'response.reasoning_text.delta',
+        type: "response.reasoning_text.delta",
         output_index: 0,
-        delta: 'before<!-- internal-only -->after',
+        delta: "before<!-- internal-only -->after",
       },
       state,
     );
 
-    expect(events.filter((event) => event.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'beforeafter' } },
+    expect(events.filter((event) => event.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "beforeafter" } },
     ]);
   });
 
-  test('does not duplicate reasoning when a gateway emits both content and summary deltas', () => {
+  test("does not duplicate reasoning when a gateway emits both content and summary deltas", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
-      ...push({ type: 'response.reasoning_text.delta', output_index: 0, delta: 'raw reasoning' }),
-      ...push({ type: 'response.reasoning_summary_text.delta', output_index: 0, delta: 'summary' }),
-      ...push({ type: 'response.reasoning_text.done', output_index: 0, text: 'raw reasoning' }),
+      ...push({ type: "response.reasoning_text.delta", output_index: 0, delta: "raw reasoning" }),
+      ...push({ type: "response.reasoning_summary_text.delta", output_index: 0, delta: "summary" }),
+      ...push({ type: "response.reasoning_text.done", output_index: 0, text: "raw reasoning" }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'raw reasoning' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "raw reasoning" } },
     ]);
-    expect(events.filter((e) => e.type === 'content_block_delta')).toHaveLength(1);
+    expect(events.filter((e) => e.type === "content_block_delta")).toHaveLength(1);
   });
 
-  test('reasoning output_item.done with summary emits missing thinking delta', () => {
+  test("reasoning output_item.done with summary emits missing thinking delta", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", object: "response", model: "m", status: "in_progress", output: [] },
       }),
       ...push({
-        type: 'response.output_item.done',
+        type: "response.output_item.done",
         output_index: 0,
         item: {
-          type: 'reasoning',
-          id: 'rs_1',
-          summary: [{ type: 'summary_text', text: 'reasoning from item' }],
+          type: "reasoning",
+          id: "rs_1",
+          summary: [{ type: "summary_text", text: "reasoning from item" }],
         },
       }),
       ...push({
-        type: 'response.completed',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+        type: "response.completed",
+        response: { id: "r1", object: "response", model: "m", status: "completed", output: [] },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'reasoning from item' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "reasoning from item" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('reasoning output_item.done with reasoning_text content emits missing thinking delta', () => {
+  test("reasoning output_item.done with reasoning_text content emits missing thinking delta", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.output_item.done',
+        type: "response.output_item.done",
         output_index: 0,
         item: {
-          type: 'reasoning',
-          id: 'rs_1',
-          content: [{ type: 'reasoning_text', text: 'reasoning from content' }],
+          type: "reasoning",
+          id: "rs_1",
+          content: [{ type: "reasoning_text", text: "reasoning from content" }],
         },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'reasoning from content' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "reasoning from content" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
-  test('completed response output backfills missing reasoning and text', () => {
+  test("completed response output backfills missing reasoning and text", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
     const events = [
       ...push({
-        type: 'response.created',
-        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+        type: "response.created",
+        response: { id: "r1", object: "response", model: "m", status: "in_progress", output: [] },
       }),
       ...push({
-        type: 'response.completed',
+        type: "response.completed",
         response: {
-          id: 'r1',
-          object: 'response',
-          model: 'm',
-          status: 'completed',
+          id: "r1",
+          object: "response",
+          model: "m",
+          status: "completed",
           output: [
             {
-              type: 'reasoning',
-              id: 'rs_1',
-              summary: [{ type: 'summary_text', text: 'final reasoning' }],
+              type: "reasoning",
+              id: "rs_1",
+              summary: [{ type: "summary_text", text: "final reasoning" }],
             },
             {
-              type: 'message',
-              id: 'msg_1',
-              role: 'assistant',
-              content: [{ type: 'output_text', text: 'final answer' }],
+              type: "message",
+              id: "msg_1",
+              role: "assistant",
+              content: [{ type: "output_text", text: "final answer" }],
             },
           ],
         },
       }),
     ];
 
-    expect(events.filter((e) => e.type === 'content_block_start')).toMatchObject([
-      { index: 0, content_block: { type: 'thinking', thinking: '' } },
-      { index: 1, content_block: { type: 'text', text: '' } },
+    expect(events.filter((e) => e.type === "content_block_start")).toMatchObject([
+      { index: 0, content_block: { type: "thinking", thinking: "" } },
+      { index: 1, content_block: { type: "text", text: "" } },
     ]);
-    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
-      { index: 0, delta: { type: 'thinking_delta', thinking: 'final reasoning' } },
-      { index: 1, delta: { type: 'text_delta', text: 'final answer' } },
+    expect(events.filter((e) => e.type === "content_block_delta")).toMatchObject([
+      { index: 0, delta: { type: "thinking_delta", thinking: "final reasoning" } },
+      { index: 1, delta: { type: "text_delta", text: "final answer" } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });

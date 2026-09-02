@@ -1,5 +1,8 @@
 import type { ThreadRunEventInput } from "../shared/ipc";
-import type { PromptCacheConfigDriftKind, PromptCacheOrchestrationLabel } from "../shared/prompt-cache-config";
+import type {
+  PromptCacheConfigDriftKind,
+  PromptCacheOrchestrationLabel,
+} from "../shared/prompt-cache-config";
 import { formatPromptCacheConfigDriftMessage } from "../shared/prompt-cache-config";
 import { PROMPT_CACHE_EPISODE_METADATA_KEY } from "../shared/prompt-cache-timeline";
 import type { PromptCacheBreakReason } from "./prompt-cache-fingerprint";

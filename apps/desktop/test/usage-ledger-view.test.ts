@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { PROXY_PENDING_ATTRIBUTION_REASON } from "../src/main/proxy-usage-pending-settlement";
 import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 import { buildThreadUsageLedgerEventView } from "../src/main/usage-ledger-view";
-import { PROXY_PENDING_ATTRIBUTION_REASON } from "../src/main/proxy-usage-pending-settlement";
 
 test("buildThreadUsageLedgerEventView exposes routeRole billingRole and attribution", () => {
   const event = buildSingleUsageLedgerEvent({

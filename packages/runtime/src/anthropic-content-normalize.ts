@@ -13,9 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Gateway occasionally returns one text block whose body is a JSON-serialized content array. */
-export function tryParseSerializedAnthropicContentBlocks(
-  text: string,
-): Record<string, unknown>[] | null {
+export function tryParseSerializedAnthropicContentBlocks(text: string): Record<string, unknown>[] | null {
   const trimmed = text.trim();
   if (!trimmed.startsWith("[")) {
     return null;
@@ -29,10 +27,7 @@ export function tryParseSerializedAnthropicContentBlocks(
       return null;
     }
     if (
-      !parsed.some(
-        (block) =>
-          block.type === "text" || block.type === "tool_use" || block.type === "thinking",
-      )
+      !parsed.some((block) => block.type === "text" || block.type === "tool_use" || block.type === "thinking")
     ) {
       return null;
     }

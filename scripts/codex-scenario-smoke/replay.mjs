@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHECKLIST_KEYS, evaluateScenarioChecklist, diffAgainstBaseline } from "./assert.mjs";
+import { CHECKLIST_KEYS, diffAgainstBaseline, evaluateScenarioChecklist } from "./assert.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(__dirname, "fixtures");
@@ -38,9 +38,7 @@ const rpcLog = fs
 const skillsListResult = fs.existsSync(skillsPath)
   ? JSON.parse(fs.readFileSync(skillsPath, "utf8"))
   : undefined;
-const workspaceFiles = fs.existsSync(workspacePath)
-  ? JSON.parse(fs.readFileSync(workspacePath, "utf8"))
-  : {};
+const workspaceFiles = fs.existsSync(workspacePath) ? JSON.parse(fs.readFileSync(workspacePath, "utf8")) : {};
 const recordedSummary = fs.existsSync(summaryPath)
   ? JSON.parse(fs.readFileSync(summaryPath, "utf8"))
   : undefined;
@@ -71,8 +69,7 @@ const structural = {
   entryCount: rpcLog.length,
 };
 
-const structuralOk =
-  structural.hasTurnCompleted && structural.entryCount > 0 && structural.hasTurnStart;
+const structuralOk = structural.hasTurnCompleted && structural.entryCount > 0 && structural.hasTurnStart;
 
 const result = {
   ok: evaluation.ok && structuralOk && (!requireAll || drift.ok),

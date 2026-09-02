@@ -8,9 +8,7 @@ export interface ThreadIdleDuration {
   minutes: number;
 }
 
-export function resolveLatestThreadActivityAt(
-  timeline: readonly { at: string }[],
-): string | undefined {
+export function resolveLatestThreadActivityAt(timeline: readonly { at: string }[]): string | undefined {
   let latestAt: string | undefined;
   let latestMs = Number.NEGATIVE_INFINITY;
 

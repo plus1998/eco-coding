@@ -3,9 +3,9 @@ import path from "node:path";
 import {
   buildCodexGatewayModelAlias as buildSharedCodexGatewayModelAlias,
   CODEX_GATEWAY_MODEL_ALIAS_SEPARATOR,
-  parseCodexGatewayModelAlias as parseSharedCodexGatewayModelAlias,
   type CodexGatewayApiCompat,
   type ParsedCodexGatewayModelAlias,
+  parseCodexGatewayModelAlias as parseSharedCodexGatewayModelAlias,
 } from "../../shared/src";
 
 export const DEFAULT_ECO_GATEWAY_PORT = 18_765;
@@ -157,9 +157,7 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
   const modelCatalogJsonPath = input.modelCatalogJsonPath?.trim();
   if (modelCatalogJsonPath) {
     if (!path.isAbsolute(modelCatalogJsonPath)) {
-      throw new Error(
-        `modelCatalogJsonPath must be an absolute path, received: ${modelCatalogJsonPath}`,
-      );
+      throw new Error(`modelCatalogJsonPath must be an absolute path, received: ${modelCatalogJsonPath}`);
     }
     // Formal Eco catalog with freeform apply_patch aliases for eco_route_v1… models.
     lines.push(`model_catalog_json = ${tomlString(modelCatalogJsonPath)}`, "");
@@ -172,16 +170,11 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
   // Features are global to the app-server process. Always pin fail-closed defaults:
   // Codex 0.146 enables remote_plugin/plugins by default (marketplace outbounds).
   // Role definitions stay thread-scoped via thread/start.config & thread/resume.config.
-  lines.push(
-    "[features]",
-    "remote_plugin = false",
-    "plugins = false",
-  );
+  lines.push("[features]", "remote_plugin = false", "plugins = false");
   if (enableMultiAgent) {
     lines.push("multi_agent = true", "hooks = true", "", "[agents]", "max_threads = 16", "max_depth = 1");
   }
   lines.push("");
-
 
   const streamIdleTimeoutMs = resolveCodexStreamIdleTimeoutMs();
   for (const provider of enabledProviders) {
@@ -234,8 +227,7 @@ export async function syncCodexConfigFromEcoProviders(
 
   // Multi-agent: PreToolUse spawn_agent fork_turns=none.
   // Dynamic import keeps node:crypto out of the renderer bundle.
-  const enableMultiAgent =
-    input.enableMultiAgent === true || (input.agentRoles ?? []).length > 0;
+  const enableMultiAgent = input.enableMultiAgent === true || (input.agentRoles ?? []).length > 0;
   if (enableMultiAgent) {
     const { syncEcoCodexHooks } = await import("./codex-hooks-sync.js");
     const hooks = await syncEcoCodexHooks({

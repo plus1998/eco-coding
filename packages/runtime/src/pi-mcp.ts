@@ -30,9 +30,7 @@ export type PiMcpAdapterConfig = {
 };
 
 /** Claude/Eco SDK entry → pi-mcp-adapter ServerEntry. Returns undefined when incomplete/unsupported. */
-export function toPiMcpServerEntry(
-  entry: unknown,
-): PiMcpAdapterServerEntry | undefined {
+export function toPiMcpServerEntry(entry: unknown): PiMcpAdapterServerEntry | undefined {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
     return undefined;
   }
@@ -55,8 +53,7 @@ export function toPiMcpServerEntry(
 
   if (typeof record.url === "string" && record.url.trim()) {
     const headers = stringRecord(record.headers);
-    const transportType =
-      record.type === "sse" || record.httpTransport === "sse" ? "sse" : "http";
+    const transportType = record.type === "sse" || record.httpTransport === "sse" ? "sse" : "http";
     return {
       url: record.url.trim(),
       ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
@@ -70,9 +67,7 @@ export function toPiMcpServerEntry(
 }
 
 /** Convert Eco session mcpServers map into an isolated pi-mcp-adapter config snapshot. */
-export function toPiMcpAdapterConfig(
-  mcpServers: Record<string, unknown> | undefined,
-): PiMcpAdapterConfig {
+export function toPiMcpAdapterConfig(mcpServers: Record<string, unknown> | undefined): PiMcpAdapterConfig {
   const next: Record<string, PiMcpAdapterServerEntry> = {};
   if (!mcpServers) {
     return { mcpServers: next };
@@ -99,9 +94,7 @@ function identityPiMcpServerEntry(entry: PiMcpAdapterServerEntry): PiMcpAdapterS
 }
 
 /** Stable fingerprint for which MCP servers are loaded (order-independent; env ignored). */
-export function fingerprintPiMcpServers(
-  mcpServers: Record<string, unknown> | undefined,
-): string {
+export function fingerprintPiMcpServers(mcpServers: Record<string, unknown> | undefined): string {
   const config = toPiMcpAdapterConfig(mcpServers);
   const keys = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b));
   if (keys.length === 0) {

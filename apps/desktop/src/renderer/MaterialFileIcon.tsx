@@ -1,5 +1,5 @@
-import { useSyncExternalStore, type CSSProperties } from "react";
-import { resolveMaterialIconName, getMaterialIconUrl } from "./material-file-icon";
+import { type CSSProperties, useSyncExternalStore } from "react";
+import { getMaterialIconUrl, resolveMaterialIconName } from "./material-file-icon";
 
 function subscribeTheme(onStoreChange: () => void): () => void {
   const root = document.documentElement;

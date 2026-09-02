@@ -6,8 +6,8 @@ import {
   generateImagesToWorkspace,
   normalizeImageGenerationToolInput,
 } from "../src/main/image-generation-client";
-import { ImageGenerationError } from "../src/shared/image-generation";
 import type { ImageGenerationClientConfig } from "../src/main/image-generation-store";
+import { ImageGenerationError } from "../src/shared/image-generation";
 
 const originalFetch = globalThis.fetch;
 const temporaryDirectories: string[] = [];
@@ -16,9 +16,7 @@ const pngBase64 = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]).toS
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      fs.rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })),
   );
 });
 

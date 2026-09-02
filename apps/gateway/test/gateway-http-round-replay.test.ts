@@ -36,7 +36,10 @@ describe.skipIf(!hasGatewayFixture())("gateway HTTP round replay", () => {
         return;
       }
       const upstreamFixtureDir = resolveGatewayHttpRoundFixtureDir("gateway", fixture.runId);
-      const upstreamLog = fs.readFileSync(path.join(upstreamFixtureDir, "upstream-via-gateway.jsonl"), "utf8");
+      const upstreamLog = fs.readFileSync(
+        path.join(upstreamFixtureDir, "upstream-via-gateway.jsonl"),
+        "utf8",
+      );
       const upstreamExchanges = upstreamLog
         .split(/\r?\n/)
         .filter(Boolean)

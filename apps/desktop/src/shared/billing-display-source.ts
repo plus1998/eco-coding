@@ -72,11 +72,7 @@ function applyBillingDisplaySourceRow(
     ...billingBase,
     displaySource,
     totalTokens: sourceRow.totalTokens,
-    ...computeThreadBillingTotals(
-      sourceReportedCostUsd,
-      sourceRow.plannerTokenCostUsd,
-      sourceRow.ecoCostUsd,
-    ),
+    ...computeThreadBillingTotals(sourceReportedCostUsd, sourceRow.plannerTokenCostUsd, sourceRow.ecoCostUsd),
     pricingResolved: billing.pricingResolved && sourceRow.pricingResolved,
     ...(sourceRow.byRole && { byRole: sourceRow.byRole }),
     ...(sourceRow.byModel && { byModel: sourceRow.byModel }),

@@ -39,7 +39,10 @@ export function formatDesktopUpdateError(error: unknown): string {
   ) {
     return "CHANNEL_FILE_NOT_FOUND";
   }
-  if (/ERR_UPDATER_LATEST_VERSION_NOT_FOUND/i.test(message) || /Unable to find latest version on GitHub/i.test(message)) {
+  if (
+    /ERR_UPDATER_LATEST_VERSION_NOT_FOUND/i.test(message) ||
+    /Unable to find latest version on GitHub/i.test(message)
+  ) {
     return "LATEST_VERSION_NOT_FOUND";
   }
   if (/ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED|net::ERR_/i.test(message)) {

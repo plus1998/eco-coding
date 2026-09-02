@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { emptyCostBreakdown } from "@eco/runtime";
 import {
   buildSubagentUsageContributionKey,
+  type SubagentMetricsPersistenceRecord,
   subagentMetricsEntryFromPersistenceRecord,
   subagentMetricsEntryToPersistenceInput,
-  type SubagentMetricsPersistenceRecord,
 } from "../src/main/subagent-metrics-persistence";
 
 const record: SubagentMetricsPersistenceRecord = {

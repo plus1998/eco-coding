@@ -58,8 +58,7 @@ test("formattedTruncateText adds Warning header when truncated", () => {
 });
 
 test("formattedTruncateText reports multi-line count", () => {
-  const content =
-    "this is an example of a long output that should be truncated\nalso some other line";
+  const content = "this is an example of a long output that should be truncated\nalso some other line";
   const out = formattedTruncateText(content, { mode: "bytes", limit: 30 });
   expect(out).toContain("Total output lines: 2");
   expect(out).toContain("chars truncated");

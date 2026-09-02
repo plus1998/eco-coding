@@ -1,7 +1,4 @@
-import {
-  TASK_PANEL_HOME_TAB_ID,
-  type TaskPanelActiveTab,
-} from "./SubagentTaskDrawer";
+import { TASK_PANEL_HOME_TAB_ID, type TaskPanelActiveTab } from "./SubagentTaskDrawer";
 import type { WorkspaceFileReference } from "./workspace-file-reference";
 
 export type TaskPanelSessionFileTarget = WorkspaceFileReference & {
@@ -41,9 +38,7 @@ export function captureTaskPanelSessionUiState(
 ): TaskPanelSessionUiState {
   const openTabIds = dedupeTabIds(input.openTabIds);
   const activeTab =
-    typeof input.activeTab === "string" && input.activeTab.trim()
-      ? input.activeTab
-      : TASK_PANEL_HOME_TAB_ID;
+    typeof input.activeTab === "string" && input.activeTab.trim() ? input.activeTab : TASK_PANEL_HOME_TAB_ID;
   const fileTarget = normalizeFileTarget(input.fileTarget);
   const selectedSubagentAgentId =
     typeof input.selectedSubagentAgentId === "string" && input.selectedSubagentAgentId.trim()
@@ -81,9 +76,10 @@ export function normalizeTaskPanelSessionUiState(value: unknown): TaskPanelSessi
 
   return {
     open,
-    activeTab: openTabIds.includes(activeTab) || activeTab === TASK_PANEL_HOME_TAB_ID
-      ? activeTab
-      : openTabIds.at(-1) ?? TASK_PANEL_HOME_TAB_ID,
+    activeTab:
+      openTabIds.includes(activeTab) || activeTab === TASK_PANEL_HOME_TAB_ID
+        ? activeTab
+        : (openTabIds.at(-1) ?? TASK_PANEL_HOME_TAB_ID),
     openTabIds,
     fullscreen: open && record.fullscreen === true,
     ...(selectedSubagentAgentId ? { selectedSubagentAgentId } : {}),

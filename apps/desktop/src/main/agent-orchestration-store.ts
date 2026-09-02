@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import {
-  type AgentTemplate,
-  type MainAgentConfigResource,
-  type MainAgentPromptResource,
-  type SubagentOrchestrationResource,
+import type {
+  AgentTemplate,
+  MainAgentConfigResource,
+  MainAgentPromptResource,
+  SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
 
 interface StoredConfigRow {
@@ -150,15 +150,13 @@ export class AgentOrchestrationStore {
   }
 
   private getResourceRow(table: string, id: string): StoredConfigRow | undefined {
-    return this.db
-      .prepare(`SELECT id, value_json FROM ${table} WHERE id = ?`)
-      .get(id.trim()) as unknown as StoredConfigRow | undefined;
+    return this.db.prepare(`SELECT id, value_json FROM ${table} WHERE id = ?`).get(id.trim()) as unknown as
+      | StoredConfigRow
+      | undefined;
   }
 
   private upsertRow(table: string, id: string, value: unknown, updatedAt: string): void {
-    this.db
-      .prepare(UPSERT_SQL.replace("__TABLE__", table))
-      .run(id, JSON.stringify(value), updatedAt);
+    this.db.prepare(UPSERT_SQL.replace("__TABLE__", table)).run(id, JSON.stringify(value), updatedAt);
   }
 }
 

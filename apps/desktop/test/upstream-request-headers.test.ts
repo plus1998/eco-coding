@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
-  DEFAULT_UPSTREAM_USER_AGENT,
   buildProviderDirectUpstreamHeaders,
   buildProxyUpstreamHeaders,
+  DEFAULT_UPSTREAM_USER_AGENT,
 } from "../src/main/upstream-request-headers";
 
 test("buildProxyUpstreamHeaders passthrough SDK user-agent on anthropic path", () => {

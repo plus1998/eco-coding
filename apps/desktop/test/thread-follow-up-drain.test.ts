@@ -8,10 +8,7 @@ import {
   shouldDrainThreadFollowUps,
 } from "../src/shared/thread-follow-up-drain";
 
-function followUp(
-  id: string,
-  patch: Partial<ThreadPendingFollowUp> = {},
-): ThreadPendingFollowUp {
+function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): ThreadPendingFollowUp {
   return {
     id,
     threadId: "thr_1",
@@ -124,9 +121,7 @@ test("buildThreadFollowUpDrainPrompt sends only the first delivered follow-up", 
 
 test("buildThreadFollowUpDrainPrompt ignores queued records until claimed", () => {
   expect(
-    buildThreadFollowUpDrainPrompt([
-      followUp("queued", { status: "queued", deliveryMode: "queued" }),
-    ]),
+    buildThreadFollowUpDrainPrompt([followUp("queued", { status: "queued", deliveryMode: "queued" })]),
   ).toBe("");
 });
 

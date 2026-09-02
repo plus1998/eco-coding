@@ -6,7 +6,8 @@ import {
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function timelineItem(
-  overrides: Partial<ThreadRunProjectionTimelineItem> & Pick<ThreadRunProjectionTimelineItem, "id" | "sequence" | "text">,
+  overrides: Partial<ThreadRunProjectionTimelineItem> &
+    Pick<ThreadRunProjectionTimelineItem, "id" | "sequence" | "text">,
 ): ThreadRunProjectionTimelineItem {
   return {
     eventType: "thread.status",

@@ -5,8 +5,8 @@ import type {
   EcoAgentTemplateConfig,
   EcoToolPolicy,
 } from "./agent-orchestration.js";
-import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 import { PI_MCP_PROXY_TOOL_NAMES } from "./pi-mcp.js";
+import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 
 export const PI_AGENT_TOOL_NAME = "Agent" as const;
 
@@ -43,13 +43,9 @@ export interface PiSubagentSpawnResult {
   truncated: boolean;
 }
 
-export type PiSubagentSpawnHandler = (
-  input: PiSubagentSpawnInput,
-) => Promise<PiSubagentSpawnResult>;
+export type PiSubagentSpawnHandler = (input: PiSubagentSpawnInput) => Promise<PiSubagentSpawnResult>;
 
-export function listEnabledPiSubagents(
-  registry: EcoAgentRuntimeConfig | undefined,
-): PiEnabledSubagent[] {
+export function listEnabledPiSubagents(registry: EcoAgentRuntimeConfig | undefined): PiEnabledSubagent[] {
   if (!registry) {
     return [];
   }
@@ -79,9 +75,7 @@ export function listEnabledPiSubagents(
           : template.defaultTools,
       ),
       mcpServers: [
-        ...new Set(
-          [...template.mcpServers, ...agent.mcpServers].map((name) => name.trim()).filter(Boolean),
-        ),
+        ...new Set([...template.mcpServers, ...agent.mcpServers].map((name) => name.trim()).filter(Boolean)),
       ],
       skills: [...new Set([...template.skills, ...agent.skills].map((s) => s.trim()).filter(Boolean))],
       template,
@@ -108,10 +102,7 @@ export function buildPiSubagentDescription(
  * Map Eco tool policy → PI built-in allowlist.
  * Never includes Agent (no nested delegation).
  */
-export function resolvePiSubagentToolAllowlist(
-  policy: EcoToolPolicy,
-  hasMcpServers: boolean,
-): string[] {
+export function resolvePiSubagentToolAllowlist(policy: EcoToolPolicy, hasMcpServers: boolean): string[] {
   const materialized = materializeEcoToolPolicy(policy);
   const disallowed = new Set(
     materialized.disallowed.map((entry) => entry.trim().toLowerCase()).filter(Boolean),

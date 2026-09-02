@@ -1,7 +1,7 @@
 import { Loader2, Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { ThreadPendingPlan } from "../shared/ipc";
 import { useTranslation } from "react-i18next";
+import type { ThreadPendingPlan } from "../shared/ipc";
 import { MAIN_SHELL_MEDIA_QUERIES } from "./activity-workspace-layout";
 import { MarkdownContent } from "./MarkdownContent";
 

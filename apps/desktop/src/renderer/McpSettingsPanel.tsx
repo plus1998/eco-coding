@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import {
   ChevronLeft,
   CircleAlert,
@@ -10,7 +11,12 @@ import {
 } from "lucide-react";
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
+import type {
+  McpServerCheckResult,
+  McpServerConfigInput,
+  McpServerConfigView,
+  McpTransport,
+} from "../shared/ipc";
 import {
   mcpServerToInput,
   parseMcpArgsList,
@@ -18,12 +24,6 @@ import {
   serializeMcpArgsList,
   serializeMcpEnvEntries,
 } from "../shared/mcp";
-import type {
-  McpServerCheckResult,
-  McpServerConfigInput,
-  McpServerConfigView,
-  McpTransport,
-} from "../shared/ipc";
 
 interface McpSettingsPanelProps {
   servers: McpServerConfigView[];
@@ -318,14 +318,8 @@ function McpServerEditor({
       </header>
 
       <div className="mcp-editor-title-block">
-        <h1>
-          {isEditing
-            ? t("settings.mcp.updateTitle", { name: titleName })
-            : t("settings.mcp.addTitle")}
-        </h1>
-        {isEditing && (
-          <p className="mcp-editor-hint">{t("settings.mcp.switchHint")}</p>
-        )}
+        <h1>{isEditing ? t("settings.mcp.updateTitle", { name: titleName }) : t("settings.mcp.addTitle")}</h1>
+        {isEditing && <p className="mcp-editor-hint">{t("settings.mcp.switchHint")}</p>}
       </div>
 
       <div className="mcp-editor-form">
@@ -477,9 +471,7 @@ function McpServerEditor({
               <textarea
                 className="mcp-field-input mcp-field-textarea"
                 value={form.headersJson ?? "{}"}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, headersJson: event.target.value }))
-                }
+                onChange={(event) => setForm((current) => ({ ...current, headersJson: event.target.value }))}
                 rows={4}
               />
             </label>
@@ -493,9 +485,7 @@ function McpServerEditor({
             <input
               className="mcp-field-input"
               value={form.allowedTools ?? ""}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, allowedTools: event.target.value }))
-              }
+              onChange={(event) => setForm((current) => ({ ...current, allowedTools: event.target.value }))}
               placeholder="mcp__github__*"
             />
           </label>

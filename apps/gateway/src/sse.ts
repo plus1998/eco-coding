@@ -1,5 +1,9 @@
 import { StringDecoder } from "node:string_decoder";
-import type { AnthropicStreamEvent, ChatCompletionsChunk, ResponsesStreamEvent } from "@eco/openai-anthropic-bridge";
+import type {
+  AnthropicStreamEvent,
+  ChatCompletionsChunk,
+  ResponsesStreamEvent,
+} from "@eco/openai-anthropic-bridge";
 
 export function splitSseBlocks(buffer: string): { blocks: string[]; remainder: string } {
   const parts = buffer.split(/\r?\n\r?\n/);
@@ -11,11 +15,7 @@ export function createStreamUtf8Decoder(): StringDecoder {
   return new StringDecoder("utf8");
 }
 
-export function appendStreamUtf8Chunk(
-  decoder: StringDecoder,
-  buffer: string,
-  chunk: Uint8Array,
-): string {
+export function appendStreamUtf8Chunk(decoder: StringDecoder, buffer: string, chunk: Uint8Array): string {
   return buffer + decoder.write(Buffer.from(chunk));
 }
 

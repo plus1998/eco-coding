@@ -127,8 +127,18 @@ test("skips items without a resolvable title", () => {
 test("sorts by kind priority then updatedAt descending", () => {
   const items = buildSidebarAttentionItems({
     threads: [
-      thread({ id: "p-old", title: "旧计划", status: "awaiting_plan", updatedAt: "2026-01-01T00:00:00.000Z" }),
-      thread({ id: "p-new", title: "新计划", status: "awaiting_plan", updatedAt: "2026-01-03T00:00:00.000Z" }),
+      thread({
+        id: "p-old",
+        title: "旧计划",
+        status: "awaiting_plan",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      thread({
+        id: "p-new",
+        title: "新计划",
+        status: "awaiting_plan",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      }),
       thread({ id: "b-1", title: "命令", status: "running", updatedAt: "2026-01-04T00:00:00.000Z" }),
       thread({ id: "c-1", title: "完成", status: "completed", updatedAt: "2026-01-05T00:00:00.000Z" }),
     ],

@@ -1,14 +1,14 @@
+import { formatCostUsd, formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime/usage";
 import { ChevronDown, CircleHelp } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import {
-  formatCostUsd,
-  formatRoleModelLabel,
-  formatUsageBadge,
-  shortenModelId,
-} from "@eco/runtime/usage";
 import { buildAgentViewRows, buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
+import type {
+  ThreadBillingSnapshot,
+  ThreadSubagentBillingSnapshot,
+  ThreadUsageLedgerEventView,
+} from "../shared/ipc";
 import {
   ledgerEventRouteRoleDiffers,
   partitionLedgerEventsForDisplay,
@@ -18,22 +18,14 @@ import {
   sortLedgerEventsNewestFirst,
   sumLedgerEventTokens,
 } from "../shared/ledger-events-display";
-import type {
-  ThreadBillingSnapshot,
-  ThreadSubagentBillingSnapshot,
-  ThreadUsageLedgerEventView,
-} from "../shared/ipc";
+import { resolveSubagentRunDisplayTitle } from "./activity-log";
+import { composerFloatingViewport, observeComposerFloatingViewport } from "./composer-floating";
+import { i18n } from "./i18n";
 import {
-  type RuntimeAgentDisplayNames,
   formatRuntimeRoleModelLabel,
+  type RuntimeAgentDisplayNames,
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
-import { resolveSubagentRunDisplayTitle } from "./activity-log";
-import {
-  composerFloatingViewport,
-  observeComposerFloatingViewport,
-} from "./composer-floating";
-import { i18n } from "./i18n";
 
 type BreakdownView = "agent" | "model" | "events";
 
@@ -58,9 +50,7 @@ function formatLedgerEventAgentLabel(event: ThreadUsageLedgerEventView): string 
   return agentId.slice(-8);
 }
 
-function attributionStatusLabel(
-  status: ThreadUsageLedgerEventView["attributionStatus"],
-): string {
+function attributionStatusLabel(status: ThreadUsageLedgerEventView["attributionStatus"]): string {
   if (status === "pending") {
     return i18n.t("usage.pending");
   }
@@ -92,9 +82,7 @@ export function formatLedgerEventProviderModel(
   if (!resolvedModelId) {
     return undefined;
   }
-  const inferredProvider = !providerId && modelId?.includes("/")
-    ? modelId.split("/")[0]?.trim()
-    : undefined;
+  const inferredProvider = !providerId && modelId?.includes("/") ? modelId.split("/")[0]?.trim() : undefined;
   const rawProviderLabel = providerId || inferredProvider;
   const providerPrefix = rawProviderLabel ? `${rawProviderLabel}/` : undefined;
   const providerModelId =
@@ -102,9 +90,7 @@ export function formatLedgerEventProviderModel(
       ? modelId.slice(providerPrefix.length)
       : resolvedModelId;
   const providerLabel =
-    rawProviderLabel && !/^codex-[a-z0-9]+$/i.test(rawProviderLabel)
-      ? rawProviderLabel
-      : undefined;
+    rawProviderLabel && !/^codex-[a-z0-9]+$/i.test(rawProviderLabel) ? rawProviderLabel : undefined;
   return {
     ...(providerLabel && { providerLabel }),
     modelLabel: shortenModelId(providerModelId),
@@ -116,16 +102,13 @@ export function BillingCostCell({
   ecoCostUsd,
   reportedCostUsd,
   className = "usage-breakdown-cost",
-	}: {
-	  ecoCostUsd: number;
-	  reportedCostUsd?: number | undefined;
-	  className?: string;
-	}) {
+}: {
+  ecoCostUsd: number;
+  reportedCostUsd?: number | undefined;
+  className?: string;
+}) {
   return (
-    <span
-      className={className}
-      title={reportedCostUsd !== undefined ? i18n.t("usage.costTitle") : undefined}
-    >
+    <span className={className} title={reportedCostUsd !== undefined ? i18n.t("usage.costTitle") : undefined}>
       {formatCostUsd(ecoCostUsd)}
       {reportedCostUsd !== undefined && reportedCostUsd > 0 ? (
         <span className="usage-breakdown-cost-reported"> / {formatCostUsd(reportedCostUsd)}</span>
@@ -279,12 +262,14 @@ function BreakdownRows({
               key={`${row.role}:${row.kind}`}
               title={title}
               titleTooltip={
-                row.modelId
-                  ? formatRuntimeRoleModelLabel(row.role, row.modelId, agentDisplayNames)
-                  : title
+                row.modelId ? formatRuntimeRoleModelLabel(row.role, row.modelId, agentDisplayNames) : title
               }
               {...(row.modelId && { meta: shortenModelId(row.modelId) })}
-              {...(status && row.kind !== "primary" ? { status, statusKind: row.kind } : status ? { status } : {})}
+              {...(status && row.kind !== "primary"
+                ? { status, statusKind: row.kind }
+                : status
+                  ? { status }
+                  : {})}
               tokenBadge={row.tokenBadge}
               ecoCostUsd={row.ecoCostUsd}
             />
@@ -349,13 +334,10 @@ function LedgerEventRow({
   const roleLabel =
     resolveRuntimeAgentName(billingRole, agentDisplayNames) ?? formatRoleModelLabel(billingRole);
   const routeRoleLabel =
-    resolveRuntimeAgentName(event.routeRole, agentDisplayNames) ??
-    formatRoleModelLabel(event.routeRole);
+    resolveRuntimeAgentName(event.routeRole, agentDisplayNames) ?? formatRoleModelLabel(event.routeRole);
   const providerModel = formatLedgerEventProviderModel(event);
   const formattedAgentLabel = formatLedgerEventAgentLabel(event);
-  const agentLabel = formattedAgentLabel
-    ? `agent ${formattedAgentLabel}`
-    : i18n.t("usage.noAgent");
+  const agentLabel = formattedAgentLabel ? `agent ${formattedAgentLabel}` : i18n.t("usage.noAgent");
   const tokenBadge = formatUsageBadge({
     inputTokens: event.inputTokens,
     outputTokens: event.outputTokens,
@@ -363,20 +345,15 @@ function LedgerEventRow({
     cacheCreationTokens: event.cacheCreationTokens,
   });
   const observedTime = formatLedgerEventTime(event.observedAt);
-  const computedCostAvailable =
-    event.ecoCostUsd !== undefined && event.pricingResolved !== false;
+  const computedCostAvailable = event.ecoCostUsd !== undefined && event.pricingResolved !== false;
   const primaryCostUsd = computedCostAvailable ? event.ecoCostUsd : event.reportedCostUsd;
   const reportedCostUsd =
-    computedCostAvailable && event.reportedCostUsd !== undefined
-      ? event.reportedCostUsd
-      : undefined;
+    computedCostAvailable && event.reportedCostUsd !== undefined ? event.reportedCostUsd : undefined;
   const detailParts = [
     roleLabel,
     providerModel?.title,
     agentLabel,
-    ledgerEventRouteRoleDiffers(event)
-      ? i18n.t("usage.route", { role: routeRoleLabel })
-      : undefined,
+    ledgerEventRouteRoleDiffers(event) ? i18n.t("usage.route", { role: routeRoleLabel }) : undefined,
     attributionLabel || undefined,
     event.attributionReason,
     showSource ? event.source : undefined,
@@ -412,16 +389,12 @@ function LedgerEventRow({
           </span>
           <span className="usage-breakdown-event-meta">
             {providerModel?.providerLabel ? (
-              <span className="usage-breakdown-event-provider">
-                {providerModel.providerLabel}
-              </span>
+              <span className="usage-breakdown-event-provider">{providerModel.providerLabel}</span>
             ) : null}
             <span className="usage-breakdown-event-role">{roleLabel}</span>
             <span
               className={
-                formattedAgentLabel
-                  ? "usage-breakdown-event-agent"
-                  : "usage-breakdown-event-no-agent"
+                formattedAgentLabel ? "usage-breakdown-event-agent" : "usage-breakdown-event-no-agent"
               }
             >
               {agentLabel}
@@ -467,11 +440,7 @@ function LedgerEventRow({
         </span>
       </span>
       {observedTime ? (
-        <time
-          className="usage-breakdown-event-time"
-          dateTime={event.observedAt}
-          title={event.observedAt}
-        >
+        <time className="usage-breakdown-event-time" dateTime={event.observedAt} title={event.observedAt}>
           {observedTime}
         </time>
       ) : null}
@@ -493,7 +462,9 @@ function LedgerEventList({
   scrollable?: boolean;
 }) {
   const list = (
-    <ul className={`usage-breakdown-list usage-breakdown-events${compact ? " usage-breakdown-list-compact" : ""}`}>
+    <ul
+      className={`usage-breakdown-list usage-breakdown-events${compact ? " usage-breakdown-list-compact" : ""}`}
+    >
       {events.map((event) => (
         <LedgerEventRow
           key={event.id}
@@ -533,13 +504,8 @@ export function resolveEventsSummaryPopoverPosition(
 ): EventsSummaryPopoverPosition {
   const margin = EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN;
   const rightBound =
-    viewportWidth !== undefined
-      ? viewportWidth - margin
-      : composerFloatingViewport(margin).right;
-  const width = Math.min(
-    EVENTS_SUMMARY_POPOVER_MAX_WIDTH,
-    Math.max(160, rightBound - margin),
-  );
+    viewportWidth !== undefined ? viewportWidth - margin : composerFloatingViewport(margin).right;
+  const width = Math.min(EVENTS_SUMMARY_POPOVER_MAX_WIDTH, Math.max(160, rightBound - margin));
   const left = Math.max(margin, Math.min(anchor.right - width, rightBound - width));
 
   return {
@@ -645,9 +611,7 @@ function LedgerEventRows({
           summary={i18n.t("usage.shadowSummary", { count: sortedShadow.length })}
           className="usage-breakdown-shadow-events"
         >
-          <p className="usage-breakdown-events-hint">
-            {i18n.t("usage.shadowHint")}
-          </p>
+          <p className="usage-breakdown-events-hint">{i18n.t("usage.shadowHint")}</p>
           <LedgerEventList
             events={sortedShadow}
             compact={compact}
@@ -703,10 +667,7 @@ function EventsSummaryInfo({ summary }: { summary: LedgerEventSummary }) {
   const popover = visible
     ? createPortal(
         <span
-          className={[
-            "usage-breakdown-events-summary-popover",
-            summary.tokensMatch ? "" : "is-warning",
-          ]
+          className={["usage-breakdown-events-summary-popover", summary.tokensMatch ? "" : "is-warning"]
             .filter(Boolean)
             .join(" ")}
           role="tooltip"
@@ -788,10 +749,7 @@ function ViewToggle({
       </button>
       {showEvents ? (
         <span
-          className={[
-            "usage-breakdown-events-tab-shell",
-            view === "events" ? "is-active" : "",
-          ]
+          className={["usage-breakdown-events-tab-shell", view === "events" ? "is-active" : ""]
             .filter(Boolean)
             .join(" ")}
         >
@@ -908,11 +866,7 @@ export function UsageBreakdownPanel({
   const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
   return (
-    <ExpandableBillingSection
-      title={i18n.t("usage.details")}
-      summary={summary}
-      defaultExpanded
-    >
+    <ExpandableBillingSection title={i18n.t("usage.details")} summary={summary} defaultExpanded>
       <ViewToggle
         view={view}
         onChange={setView}

@@ -1,5 +1,11 @@
 import type { ResponsesRequest, ResponsesUsage } from "@eco/openai-anthropic-bridge";
 import { buildUpstreamUrl } from "../provider-router.js";
+import {
+  type RequestLifecycleContext,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCancelled,
+  tryEmitLogicalCompleted,
+} from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
 import { parseResponsesStreamEventBlock, splitSseBlocks } from "../sse.js";
 import type {
@@ -13,15 +19,13 @@ import {
   normalizeResponsesUsage,
   type ParsedUsage,
 } from "../usage-normalize.js";
-import {
-  reportLogicalUpstreamFailure,
-  tryEmitLogicalCancelled,
-  tryEmitLogicalCompleted,
-  type RequestLifecycleContext,
-} from "../request-lifecycle.js";
 import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
-import { responsesCompletedSse, responsesFailedSse, isResponsesToolOutputItem } from "./responses-stream-errors.js";
+import {
+  isResponsesToolOutputItem,
+  responsesCompletedSse,
+  responsesFailedSse,
+} from "./responses-stream-errors.js";
 import { upstreamErrorResponse } from "./upstream-error.js";
 import { applyUpstreamUserAgent } from "./user-agent.js";
 
@@ -136,14 +140,9 @@ export async function forwardResponsesPassthrough(
   lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
   const deepSeekSanitized = sanitizeDeepSeekResponsesCustomTools(responsesBody, route.upstreamModelId);
-  const softFail = sanitizeThirdPartyResponsesSoftFailFields(
-    deepSeekSanitized,
-    route.provider.baseUrl,
-  );
+  const softFail = sanitizeThirdPartyResponsesSoftFailFields(deepSeekSanitized, route.provider.baseUrl);
   if (softFail.dropped.length > 0) {
-    onLog(
-      `responses soft-fail sanitize provider=${route.provider.id} dropped=${softFail.dropped.join(",")}`,
-    );
+    onLog(`responses soft-fail sanitize provider=${route.provider.id} dropped=${softFail.dropped.join(",")}`);
   }
   const upstreamBody: ResponsesRequest = {
     ...softFail.body,
@@ -402,10 +401,7 @@ function observeResponsesSseBody(input: {
       return;
     }
     stallTimer = setTimeout(() => {
-      synthesizeCompletedAndClose(
-        controller,
-        "post-tool stall on incomplete SSE remainder",
-      );
+      synthesizeCompletedAndClose(controller, "post-tool stall on incomplete SSE remainder");
     }, POST_TOOL_STALL_MS);
   };
 
@@ -495,10 +491,7 @@ function observeResponsesSseBody(input: {
     return false;
   };
 
-  const enqueueSseBlock = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-    block: string,
-  ) => {
+  const enqueueSseBlock = (controller: ReadableStreamDefaultController<Uint8Array>, block: string) => {
     const framed = block.endsWith("\n\n") ? block : `${block}\n\n`;
     controller.enqueue(encoder.encode(framed));
   };

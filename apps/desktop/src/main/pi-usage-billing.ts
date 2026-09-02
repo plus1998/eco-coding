@@ -1,13 +1,8 @@
-import {
-  parsePiUsage,
-  type ParsedUsage,
-  computeWindowOccupancy,
-} from "@eco/runtime";
+import { computeWindowOccupancy, type ParsedUsage, parsePiUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { RuntimeRoute } from "./billing-resolver";
-import type { SingleUsageBillingArtifacts } from "./usage-billing-artifacts";
+import type { SingleUsageBillingArtifacts, UsageBillingPricingLookup } from "./usage-billing-artifacts";
 import { resolveSingleUsageBillingArtifacts } from "./usage-billing-artifacts";
-import type { UsageBillingPricingLookup } from "./usage-billing-artifacts";
 
 export interface ResolvePiUsageBillingInput {
   threadId: string;
@@ -20,7 +15,12 @@ export interface ResolvePiUsageBillingInput {
 }
 
 export type PiUsageBillingResult =
-  | { status: "resolved"; usage: ParsedUsage; contextOccupied: number; artifacts: SingleUsageBillingArtifacts }
+  | {
+      status: "resolved";
+      usage: ParsedUsage;
+      contextOccupied: number;
+      artifacts: SingleUsageBillingArtifacts;
+    }
   | { status: "rejected"; reason: "not_pi_usage" | "empty_usage" | "unresolved_artifacts" };
 
 /**
@@ -43,11 +43,7 @@ export async function resolvePiUsageBilling(
       ? {
           input: readToken(input.payload.usage, ["input", "input_tokens", "inputTokens"]),
           output: readToken(input.payload.usage, ["output", "output_tokens", "outputTokens"]),
-          cacheRead: readToken(input.payload.usage, [
-            "cacheRead",
-            "cache_read",
-            "cache_read_input_tokens",
-          ]),
+          cacheRead: readToken(input.payload.usage, ["cacheRead", "cache_read", "cache_read_input_tokens"]),
           cacheWrite: readToken(input.payload.usage, [
             "cacheWrite",
             "cache_write",

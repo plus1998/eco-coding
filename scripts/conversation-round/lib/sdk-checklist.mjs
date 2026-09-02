@@ -46,7 +46,11 @@ export function evaluateSdkScenarioChecklist(input) {
         turnCompleted = true;
       } else if (event.type === "agent.settled") {
         turnCompleted = true;
-        if (typeof event.agentId === "string" && agentStartedIds.size > 1 && !agentStartedIds.has(event.agentId)) {
+        if (
+          typeof event.agentId === "string" &&
+          agentStartedIds.size > 1 &&
+          !agentStartedIds.has(event.agentId)
+        ) {
           childLifecycle = true;
         }
       }
@@ -93,9 +97,7 @@ export function evaluateSdkScenarioChecklist(input) {
         fileReadSeen = true;
       }
       const content =
-        typeof payload === "object" && payload && "content" in payload
-          ? String(payload.content)
-          : "";
+        typeof payload === "object" && payload && "content" in payload ? String(payload.content) : "";
       if (/SMOKE_FILE|smoke-note/i.test(content)) {
         fileReadSeen = true;
       }
@@ -116,8 +118,7 @@ export function evaluateSdkScenarioChecklist(input) {
     joinedText.includes(marker) ||
     Object.values(workspaceFiles).some((v) => v.includes(marker));
 
-  const skillMentioned =
-    /SMOKE_SKILL_OK|smoke-skill|SKILL-GREETING/i.test(joinedText) || skillsListed;
+  const skillMentioned = /SMOKE_SKILL_OK|smoke-skill|SKILL-GREETING/i.test(joinedText) || skillsListed;
 
   const checklist = {
     skills_listed: {

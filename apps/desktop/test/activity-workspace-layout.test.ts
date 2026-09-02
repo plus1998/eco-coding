@@ -4,15 +4,14 @@ import {
   activityUserMessageNavContentHeightPx,
   activityUserMessageNavListMaxHeightPx,
   activityUserMessageNavShellMaxHeightPx,
-  MAIN_SHELL_BREAKPOINTS,
-  MAIN_SHELL_MEDIA_QUERIES,
-  TASK_PANEL_GEOMETRY,
   clampTaskPanelWidth,
   computeActivityUserMessageNavDensity,
   feedColumnLeftGutterPx,
+  MAIN_SHELL_BREAKPOINTS,
+  MAIN_SHELL_MEDIA_QUERIES,
+  PANEL_CHROME_GEOMETRY,
   panelChromeButtonsWidthPx,
   panelChromeCssVariables,
-  PANEL_CHROME_GEOMETRY,
   resolveActivityWorkspaceLayoutMode,
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
@@ -21,6 +20,7 @@ import {
   shouldShowPanelChromeGroupB,
   shouldShowTaskFullscreenChrome,
   shouldShowWorkspaceActionGroupA,
+  TASK_PANEL_GEOMETRY,
   taskPanelGeometryCssVariables,
   taskPanelMaxWidthForPane,
   workspacePanelLayoutForMode,
@@ -98,42 +98,32 @@ test("message navigation compresses rail density before enabling scroll", () => 
 });
 
 test("A/B chrome groups never appear on settings; B only with workspace", () => {
-  expect(
-    shouldShowPanelChromeGroupB({ settingsOpen: true, showWorkspacePanel: true }),
-  ).toBe(false);
-  expect(
-    shouldShowWorkspaceActionGroupA({ settingsOpen: true, showWorkspacePanel: true }),
-  ).toBe(false);
-  expect(
-    shouldShowPanelChromeGroupB({ settingsOpen: false, showWorkspacePanel: true }),
-  ).toBe(true);
-  expect(
-    shouldShowPanelChromeGroupB({ settingsOpen: false, showWorkspacePanel: false }),
-  ).toBe(false);
+  expect(shouldShowPanelChromeGroupB({ settingsOpen: true, showWorkspacePanel: true })).toBe(false);
+  expect(shouldShowWorkspaceActionGroupA({ settingsOpen: true, showWorkspacePanel: true })).toBe(false);
+  expect(shouldShowPanelChromeGroupB({ settingsOpen: false, showWorkspacePanel: true })).toBe(true);
+  expect(shouldShowPanelChromeGroupB({ settingsOpen: false, showWorkspacePanel: false })).toBe(false);
 });
 
 test("main shell media queries match the token table", () => {
   expect(MAIN_SHELL_MEDIA_QUERIES.sidebarOverlay).toBe(
     `(max-width: ${MAIN_SHELL_BREAKPOINTS.sidebarOverlay}px)`,
   );
-  expect(MAIN_SHELL_MEDIA_QUERIES.taskOverlay).toBe(
-    `(max-width: ${MAIN_SHELL_BREAKPOINTS.taskOverlay}px)`,
-  );
+  expect(MAIN_SHELL_MEDIA_QUERIES.taskOverlay).toBe(`(max-width: ${MAIN_SHELL_BREAKPOINTS.taskOverlay}px)`);
 });
 
 test("task panel layout phase derives open/closing/fullscreen cleanly", () => {
-  expect(
-    resolveTaskPanelLayoutPhase({ layoutPresent: false, exiting: false, fullscreen: false }),
-  ).toBe("closed");
-  expect(
-    resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: true, fullscreen: true }),
-  ).toBe("closing");
-  expect(
-    resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: false, fullscreen: true }),
-  ).toBe("fullscreen");
-  expect(
-    resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: false, fullscreen: false }),
-  ).toBe("open");
+  expect(resolveTaskPanelLayoutPhase({ layoutPresent: false, exiting: false, fullscreen: false })).toBe(
+    "closed",
+  );
+  expect(resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: true, fullscreen: true })).toBe(
+    "closing",
+  );
+  expect(resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: false, fullscreen: true })).toBe(
+    "fullscreen",
+  );
+  expect(resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: false, fullscreen: false })).toBe(
+    "open",
+  );
 });
 
 test("browser tab switches keep fullscreen while the task panel is already open", () => {
@@ -142,15 +132,9 @@ test("browser tab switches keep fullscreen while the task panel is already open"
 });
 
 test("fullscreen chrome only while docked open and wide", () => {
-  expect(
-    shouldShowTaskFullscreenChrome({ phase: "open", viewportMatchesTaskOverlay: false }),
-  ).toBe(true);
-  expect(
-    shouldShowTaskFullscreenChrome({ phase: "open", viewportMatchesTaskOverlay: true }),
-  ).toBe(false);
-  expect(
-    shouldShowTaskFullscreenChrome({ phase: "closing", viewportMatchesTaskOverlay: false }),
-  ).toBe(false);
+  expect(shouldShowTaskFullscreenChrome({ phase: "open", viewportMatchesTaskOverlay: false })).toBe(true);
+  expect(shouldShowTaskFullscreenChrome({ phase: "open", viewportMatchesTaskOverlay: true })).toBe(false);
+  expect(shouldShowTaskFullscreenChrome({ phase: "closing", viewportMatchesTaskOverlay: false })).toBe(false);
 });
 
 test("panel chrome button strip width grows only for the FS slot", () => {

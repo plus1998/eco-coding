@@ -332,9 +332,7 @@ test("finalized tombstones are bounded and cleared by thread/attempt", () => {
   expect(registry.listFinalized(threadId).length).toBe(THREAD_LIVE_REQUEST_MAX_FINALIZED_PER_THREAD);
 
   registry.clearFinalizedForAttempt(threadId, "attempt_new");
-  expect(
-    registry.listFinalized(threadId).every((entry) => entry.runAttemptId !== "attempt_new"),
-  ).toBe(true);
+  expect(registry.listFinalized(threadId).every((entry) => entry.runAttemptId !== "attempt_new")).toBe(true);
 
   registry.clearThread(threadId);
   expect(registry.listActive(threadId)).toHaveLength(0);

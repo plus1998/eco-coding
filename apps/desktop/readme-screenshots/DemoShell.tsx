@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import { Bot, FolderOpen, MessageCirclePlus, Search, Settings } from "lucide-react";
+import type { ReactNode } from "react";
 
 interface DemoShellProps {
   children: ReactNode;

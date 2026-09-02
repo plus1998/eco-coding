@@ -2,16 +2,16 @@
  * Eco extension factory for PI: registers the Agent delegation tool.
  * Schema agent enum comes only from the thread orchestration snapshot.
  */
-import { Type, type Static, type TSchema } from "typebox";
+import { type Static, type TSchema, Type } from "typebox";
 import type { AgentEvent } from "../../shared/src";
+import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
 import {
   listEnabledPiSubagents,
   PI_AGENT_TOOL_NAME,
-  truncatePiSubagentResult,
   type PiEnabledSubagent,
   type PiSubagentSpawnHandler,
+  truncatePiSubagentResult,
 } from "./pi-subagent.js";
-import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
 
 type SideEventEmitter = (event: AgentEvent) => void;
 
@@ -27,7 +27,9 @@ export interface EcoPiExtensionApi {
       toolCallId: string,
       params: Record<string, unknown>,
       signal: AbortSignal | undefined,
-      onUpdate: ((partial: { content: Array<{ type: "text"; text: string }>; details: unknown }) => void) | undefined,
+      onUpdate:
+        | ((partial: { content: Array<{ type: "text"; text: string }>; details: unknown }) => void)
+        | undefined,
       ctx: { cwd: string },
     ) => Promise<{ content: Array<{ type: "text"; text: string }>; details: unknown }>;
   }): void;

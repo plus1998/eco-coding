@@ -52,13 +52,7 @@ function sampleCoverage(x, y, size, radius, samplesPerAxis) {
  * Bake rounded corners with transparent pixels outside the product shape.
  * Opaque white fills are invisible on this logo and look square on the desktop.
  */
-export function applyTransparentRoundedProductIcon(
-  rgba,
-  width,
-  height,
-  cornerFraction,
-  samplesPerAxis = 4,
-) {
+export function applyTransparentRoundedProductIcon(rgba, width, height, cornerFraction, samplesPerAxis = 4) {
   if (rgba.length !== width * height * 4) {
     throw new Error("RGBA buffer size does not match image dimensions.");
   }

@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
+import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
 import {
   applyDisableThinkingUpstreamPatch,
   buildDisableThinkingChatPatch,
 } from "../src/main/disable-thinking-patch";
-import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
 
 test("buildDisableThinkingChatPatch only applies to openai chat completions", () => {
   expect(buildDisableThinkingChatPatch("openai_chat_completions")).toEqual({

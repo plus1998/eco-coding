@@ -56,10 +56,7 @@ export interface EcoToolPolicy {
   allowSpawn?: boolean;
 }
 
-export type CodexTurnSandboxPolicy =
-  | "readOnly"
-  | "workspaceWrite"
-  | "dangerFullAccess";
+export type CodexTurnSandboxPolicy = "readOnly" | "workspaceWrite" | "dangerFullAccess";
 
 export type CodexAppServerSandboxPolicyWire =
   | { type: "readOnly"; networkAccess?: boolean }
@@ -94,7 +91,10 @@ export function isCodexWebSearchMode(value: unknown): value is CodexWebSearchMod
  * Legacy Claude fields (`allowed`/`disallowed`/`bash`/`filesystem`/`network`) map once;
  * invalid values throw (no silent defaults that hide gaps).
  */
-export function normalizeEcoToolPolicy(raw: unknown, options: { allowSpawnDefault?: boolean } = {}): EcoToolPolicy {
+export function normalizeEcoToolPolicy(
+  raw: unknown,
+  options: { allowSpawnDefault?: boolean } = {},
+): EcoToolPolicy {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("Tool policy must be an object.");
   }
@@ -182,8 +182,7 @@ function migrateLegacyClaudeToolPolicy(
   // (`bashReviewMode`). Old resources may still carry the field; it must not affect approvalPolicy.
 
   const writeNone =
-    filesystem?.write === "none" ||
-    [...CLAUDE_WRITE_TOOLS].every((tool) => disallowedSet.has(tool));
+    filesystem?.write === "none" || [...CLAUDE_WRITE_TOOLS].every((tool) => disallowedSet.has(tool));
   const writeWorkspace = filesystem?.write === "workspace" || !writeNone;
 
   // Codex has no separate "disable shell" switch. Legacy bash:false + write:none → read-only.
@@ -203,8 +202,7 @@ function migrateLegacyClaudeToolPolicy(
 
   const delegation = isRecord(record.delegation) ? record.delegation : undefined;
   const delegationBlocked =
-    delegation?.enabled === false ||
-    [...CLAUDE_DELEGATION_TOOLS].some((tool) => disallowedSet.has(tool));
+    delegation?.enabled === false || [...CLAUDE_DELEGATION_TOOLS].some((tool) => disallowedSet.has(tool));
 
   const coreOverrides = isRecord(record.coreOverrides) ? record.coreOverrides : undefined;
   const codexOverride = isRecord(coreOverrides?.codex) ? coreOverrides.codex : undefined;

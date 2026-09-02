@@ -6,10 +6,7 @@ export const TURN_COMPLETION_NOTIFY_MODES = ["unfocused", "never", "always"] as 
 export type DesktopNotificationKind = "completion" | "approval" | "question";
 
 export function isTurnCompletionNotifyMode(value: unknown): value is TurnCompletionNotifyMode {
-  return (
-    typeof value === "string" &&
-    (TURN_COMPLETION_NOTIFY_MODES as readonly string[]).includes(value)
-  );
+  return typeof value === "string" && (TURN_COMPLETION_NOTIFY_MODES as readonly string[]).includes(value);
 }
 
 export interface NotificationSettingsSnapshot {
@@ -32,9 +29,7 @@ export function normalizeNotificationSettingsSnapshot(value: unknown): Notificat
   }
   const record = value as Record<string, unknown>;
   return {
-    turnCompletion: isTurnCompletionNotifyMode(record.turnCompletion)
-      ? record.turnCompletion
-      : "unfocused",
+    turnCompletion: isTurnCompletionNotifyMode(record.turnCompletion) ? record.turnCompletion : "unfocused",
     permissionEnabled: record.permissionEnabled !== false,
     questionEnabled: record.questionEnabled !== false,
   };
@@ -57,10 +52,7 @@ export function isNotificationSettingsSnapshot(value: unknown): value is Notific
   return true;
 }
 
-export function shouldNotifyTurnCompletion(
-  mode: TurnCompletionNotifyMode,
-  activelyViewed: boolean,
-): boolean {
+export function shouldNotifyTurnCompletion(mode: TurnCompletionNotifyMode, activelyViewed: boolean): boolean {
   if (mode === "never") {
     return false;
   }

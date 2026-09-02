@@ -4,11 +4,7 @@ export { resolveFileChangeCardDisplay } from "./file-change";
 import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/runtime/agent-mission";
 import { shortenModelId } from "@eco/runtime/usage";
 import { ecoAgentBrowserToolSuffix } from "./browser";
-import {
-  formatActionLine,
-  resolveActionKind,
-  type ActionKindTranslate,
-} from "./feed-action-kind";
+import { type ActionKindTranslate, formatActionLine, resolveActionKind } from "./feed-action-kind";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
@@ -69,10 +65,7 @@ export function parseReconnectActivityMessage(message: string): ParsedReconnectA
 }
 
 /** Retry-in-progress placeholders — not evidence that upstream recovered. */
-const reconnectInProgressPatterns = [
-  /^Requesting model/i,
-  /^API error/i,
-];
+const reconnectInProgressPatterns = [/^Requesting model/i, /^API error/i];
 
 /** True when a new activity line means the upstream connection resumed — drop reconnect status. */
 export function shouldClearReconnectActivity(line: { message: string; role: string }): boolean {
@@ -135,8 +128,7 @@ export function pathBasename(filePath: string): string {
   return parts[parts.length - 1] ?? filePath;
 }
 
-const TOOL_LINE_PATTERN =
-  /^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/;
+const TOOL_LINE_PATTERN = /^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/;
 
 const MCP_TOOL_LINE_PATTERN = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/;
 
@@ -199,12 +191,18 @@ export function formatMcpToolDisplayName(tool: string, t: ActionKindTranslate): 
     const toolName = match[2].replace(/_/g, " ");
     return `${server} · ${toolName}`;
   }
-  return tool.replace(/^mcp__/, "").replace(/__/g, " · ").replace(/_/g, " ");
+  return tool
+    .replace(/^mcp__/, "")
+    .replace(/__/g, " · ")
+    .replace(/_/g, " ");
 }
 
 /** Display label for a tool action row (icon conveys the verb; text shows target/detail). */
 export function normalizeAgentLabelToken(value: string): string {
-  return value.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
 }
 
 export function isRedundantAgentModelShort(roleLabel: string, modelShort: string): boolean {
@@ -362,8 +360,7 @@ export function resolveWebSearchCardDisplay(
   if (!isNetworkToolName(input.toolName)) {
     return undefined;
   }
-  const kind =
-    input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
+  const kind = input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
   const structured = input.webSearch;
   const query =
     structured?.query?.trim() ||
@@ -385,16 +382,8 @@ export function resolveWebSearchCardDisplay(
   const url = structured?.url?.trim() || (kind === "fetch" ? query : undefined);
   const pattern = structured?.pattern?.trim();
   const queries = structured?.queries?.filter((entry) => entry.trim()).map((entry) => entry.trim());
-  const displayQuery =
-    query ||
-    (queries && queries.length > 0 ? queries[0]! : "") ||
-    url ||
-    "";
-  const title = formatToolDisplayLabel(
-    input.toolName ?? "WebSearch",
-    displayQuery || undefined,
-    t,
-  );
+  const displayQuery = query || (queries && queries.length > 0 ? queries[0]! : "") || url || "";
+  const title = formatToolDisplayLabel(input.toolName ?? "WebSearch", displayQuery || undefined, t);
   const meta =
     input.durationMs !== undefined && Number.isFinite(input.durationMs)
       ? `${(input.durationMs / 1000).toFixed(1)}s`
@@ -432,7 +421,9 @@ export function resolveWebSearchCardDisplay(
   return {
     kind,
     title,
-    query: displayQuery || (kind === "fetch" ? t("activity.webSearch.fetchKicker") : t("activity.webSearch.kicker")),
+    query:
+      displayQuery ||
+      (kind === "fetch" ? t("activity.webSearch.fetchKicker") : t("activity.webSearch.kicker")),
     ...(meta && { meta }),
     ...(statusText && { statusText }),
     ...(actionKind && { actionKind }),
@@ -507,8 +498,7 @@ export function formatToolDisplayLabel(
     (normalizedDetail && normalizedDetail.endsWith(" 技能"))
   ) {
     return (
-      normalizedDetail ??
-      formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t)
+      normalizedDetail ?? formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t)
     );
   }
   if (lowerName === "mcp_tool" && normalizedDetail?.startsWith("mcp__")) {
@@ -519,14 +509,11 @@ export function formatToolDisplayLabel(
   }
   if (lowerName === "agent" || lowerName === "task") {
     return (
-      normalizedDetail ??
-      formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t)
+      normalizedDetail ?? formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t)
     );
   }
   if (lowerName === "websearch" || lowerName === "webfetch") {
-    const verb = t(
-      lowerName === "websearch" ? "activity.named.web_search" : "activity.named.web_fetch",
-    );
+    const verb = t(lowerName === "websearch" ? "activity.named.web_search" : "activity.named.web_fetch");
     return normalizedDetail ? `${verb} · ${normalizedDetail}` : verb;
   }
   if (normalizedDetail) {
@@ -664,8 +651,7 @@ export function readBashApprovalMetadata(
     return undefined;
   }
   const detail = typeof record.detail === "string" ? record.detail.trim() : "";
-  const description =
-    typeof record.description === "string" ? record.description.trim() : "";
+  const description = typeof record.description === "string" ? record.description.trim() : "";
   return {
     toolUseId,
     phase,

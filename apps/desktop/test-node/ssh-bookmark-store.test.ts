@@ -22,7 +22,10 @@ async function createTestDirectory(t: test.TestContext, prefix: string): Promise
 
 test("SshBookmarkStore persists bookmarks and encrypted secrets", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-ssh-bookmarks-");
-  const store = await createSshBookmarkStore(path.join(directory, "eco-coding.sqlite"), createLocalSecretCodec());
+  const store = await createSshBookmarkStore(
+    path.join(directory, "eco-coding.sqlite"),
+    createLocalSecretCodec(),
+  );
 
   assert.deepEqual(store.list(), []);
 
@@ -51,7 +54,10 @@ test("SshBookmarkStore persists bookmarks and encrypted secrets", async (t) => {
   assert.match(store.getStoredKey(keyBookmark.id) ?? "", /BEGIN PRIVATE KEY/);
   store.close();
 
-  const reopened = await createSshBookmarkStore(path.join(directory, "eco-coding.sqlite"), createLocalSecretCodec());
+  const reopened = await createSshBookmarkStore(
+    path.join(directory, "eco-coding.sqlite"),
+    createLocalSecretCodec(),
+  );
   const list = reopened.list();
   assert.equal(list.length, 2);
   assert.equal(reopened.getPassword(saved.id), "secret-pass");
@@ -75,7 +81,10 @@ test("SshBookmarkStore persists bookmarks and encrypted secrets", async (t) => {
 
 test("SshBookmarkStore rejects duplicate bookmark names", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-ssh-bookmarks-dup-");
-  const store = await createSshBookmarkStore(path.join(directory, "eco-coding.sqlite"), createLocalSecretCodec());
+  const store = await createSshBookmarkStore(
+    path.join(directory, "eco-coding.sqlite"),
+    createLocalSecretCodec(),
+  );
   store.save({
     name: "Server A",
     host: "a.example",

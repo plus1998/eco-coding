@@ -1,15 +1,10 @@
-import {
-  createPairingCode,
-  createRandomToken,
-  normalizePairingCode,
-  sha256Hex,
-} from "./crypto.ts";
+import { createPairingCode, createRandomToken, normalizePairingCode, sha256Hex } from "./crypto.ts";
 import {
   DEFAULT_BINDING_CAPABILITIES,
-  requireOwnedDevice,
-  toPublicDevice,
   type DeviceRow,
   type PublicDevice,
+  requireOwnedDevice,
+  toPublicDevice,
 } from "./devices.ts";
 import { HttpError } from "./http.ts";
 import type { AdminClient } from "./supabase.ts";
@@ -195,12 +190,7 @@ export async function joinPairingSession(
   }
 
   const desktop = desktopData as DeviceRow | null;
-  if (
-    !desktop ||
-    desktop.user_id !== input.userId ||
-    desktop.kind !== "desktop" ||
-    desktop.disabled_at
-  ) {
+  if (!desktop || desktop.user_id !== input.userId || desktop.kind !== "desktop" || desktop.disabled_at) {
     await unclaim();
     throw new HttpError(403, "Desktop device is not active.", "device_inactive");
   }
@@ -233,9 +223,7 @@ export async function joinPairingSession(
 
   const { data: existingBinding, error: existingBindingError } = await admin
     .from("device_bindings")
-    .select(
-      "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-    )
+    .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
     .eq("desktop_device_id", desktop.id)
     .eq("mobile_device_id", deviceRow.id)
     .is("revoked_at", null)
@@ -264,18 +252,14 @@ export async function joinPairingSession(
       mobile_device_id: deviceRow.id,
       capabilities: [...DEFAULT_BINDING_CAPABILITIES],
     })
-    .select(
-      "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-    )
+    .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
     .single();
 
   if (bindingError || !bindingData) {
     if (bindingError?.code === "23505") {
       const { data: raced } = await admin
         .from("device_bindings")
-        .select(
-          "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-        )
+        .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
         .eq("desktop_device_id", desktop.id)
         .eq("mobile_device_id", deviceRow.id)
         .maybeSingle();

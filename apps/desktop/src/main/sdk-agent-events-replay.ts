@@ -1,36 +1,39 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DEFAULT_CONTEXT_LIMIT } from "@eco/runtime";
-import {
-  createSubagentLaunchPreToolHook,
-  createSubagentStartHook,
-  createSubagentStopHook,
-  normalizeAgentToolInputSubagentType,
-  readAgentSubagentType,
-  type AgentEvent,
-  type EcoSubagentAttributionHooks,
-} from "@eco/runtime";
 import type {
   PreToolUseHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+  type AgentEvent,
+  createSubagentLaunchPreToolHook,
+  createSubagentStartHook,
+  createSubagentStopHook,
+  DEFAULT_CONTEXT_LIMIT,
+  type EcoSubagentAttributionHooks,
+  normalizeAgentToolInputSubagentType,
+  readAgentSubagentType,
+} from "@eco/runtime";
 import type { ThreadRunEvent, ThreadSummary } from "../shared/ipc";
 import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
-import type { ContextMonitorSnapshot } from "./context-window-monitor";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { createContextLifecycleService } from "./context-lifecycle-service";
+import type { ContextMonitorSnapshot } from "./context-window-monitor";
 import { createConversationStore } from "./conversation-store";
 import { createSdkStreamActivityIngestion } from "./sdk-stream-activity-ingestion";
-import { createSubagentSessionHooks } from "./subagent-session-hooks";
-import { clearThreadSubagentLaunchRegistry, getThreadSubagentLaunchRegistry } from "./subagent-launch-registry-store";
+import {
+  clearThreadSubagentLaunchRegistry,
+  getThreadSubagentLaunchRegistry,
+} from "./subagent-launch-registry-store";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
+import { createSubagentSessionHooks } from "./subagent-session-hooks";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
-import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import { buildThreadRunProjection } from "./thread-run-projection";
 import { trimProjectionForFeed } from "./thread-run-projection-feed";
+import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
+import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 
 export interface SdkAgentEventsReplayResult {
   threadId: string;
@@ -144,7 +147,11 @@ function buildSubagentTaskLinksFromAgentEvents(events: readonly AgentEvent[]): M
 
   const links = new Map<string, SubagentTaskLink>();
   for (const event of events) {
-    if (event.type === "todo.updated" && isRecord(event.payload) && event.payload.sdkKind === "task_started") {
+    if (
+      event.type === "todo.updated" &&
+      isRecord(event.payload) &&
+      event.payload.sdkKind === "task_started"
+    ) {
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
       const parentToolUseId =
         (typeof event.payload.parent_tool_use_id === "string" && event.payload.parent_tool_use_id.trim()) ||
@@ -159,7 +166,11 @@ function buildSubagentTaskLinksFromAgentEvents(events: readonly AgentEvent[]): M
       }
       continue;
     }
-    if (event.type !== "todo.updated" || !isRecord(event.payload) || event.payload.sdkKind !== "task_notification") {
+    if (
+      event.type !== "todo.updated" ||
+      !isRecord(event.payload) ||
+      event.payload.sdkKind !== "task_notification"
+    ) {
       continue;
     }
     const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
@@ -181,11 +192,17 @@ function buildSubagentTaskLinksFromAgentEvents(events: readonly AgentEvent[]): M
   }
 
   for (const event of events) {
-    if (event.type !== "agent.completed" || !isRecord(event.payload) || event.payload.type !== "agent_output") {
+    if (
+      event.type !== "agent.completed" ||
+      !isRecord(event.payload) ||
+      event.payload.type !== "agent_output"
+    ) {
       continue;
     }
     const taskId =
-      (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) || event.agentId?.trim() || "";
+      (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) ||
+      event.agentId?.trim() ||
+      "";
     const parentToolUseId =
       typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id.trim() : "";
     const agentType =
@@ -221,8 +238,7 @@ function buildSubagentTaskLinksFromAgentEvents(events: readonly AgentEvent[]): M
     for (let nextIndex = index + 1; nextIndex < events.length; nextIndex += 1) {
       const next = events[nextIndex]!;
       if (next.type === "tool.started" && isRecord(next.payload) && next.payload.input_complete === true) {
-        const nextToolName =
-          typeof next.payload.tool_name === "string" ? next.payload.tool_name.trim() : "";
+        const nextToolName = typeof next.payload.tool_name === "string" ? next.payload.tool_name.trim() : "";
         if (nextToolName === "Task" || nextToolName === "Agent") {
           break;
         }
@@ -428,7 +444,11 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       }
     }
 
-    if (event.type === "todo.updated" && isRecord(event.payload) && event.payload.sdkKind === "task_started") {
+    if (
+      event.type === "todo.updated" &&
+      isRecord(event.payload) &&
+      event.payload.sdkKind === "task_started"
+    ) {
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
       const agentType =
         (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
@@ -450,7 +470,11 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       }
     }
 
-    if (event.type === "todo.updated" && isRecord(event.payload) && event.payload.sdkKind === "task_notification") {
+    if (
+      event.type === "todo.updated" &&
+      isRecord(event.payload) &&
+      event.payload.sdkKind === "task_notification"
+    ) {
       const status = event.payload.status;
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
       const agentType =
@@ -468,9 +492,15 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       }
     }
 
-    if (event.type === "agent.completed" && isRecord(event.payload) && event.payload.type === "agent_output") {
+    if (
+      event.type === "agent.completed" &&
+      isRecord(event.payload) &&
+      event.payload.type === "agent_output"
+    ) {
       const agentId =
-        (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) || event.agentId?.trim() || "";
+        (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) ||
+        event.agentId?.trim() ||
+        "";
       const agentType =
         (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
       if (agentId) {
@@ -498,9 +528,7 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
           subagentReplayTimings.set(childSessionId, {
             startedAt: existingTiming?.startedAt ?? observedAt,
             endedAt: observedAt,
-            ...(existingTiming?.parentToolUseId
-              ? { parentToolUseId: existingTiming.parentToolUseId }
-              : {}),
+            ...(existingTiming?.parentToolUseId ? { parentToolUseId: existingTiming.parentToolUseId } : {}),
           });
           await subagentStopHook(
             {

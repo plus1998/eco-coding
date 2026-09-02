@@ -36,9 +36,7 @@ test("workflow settings preserve and normalize defaultBashReviewMode", () => {
       defaultBashReviewMode: "nope",
     }).defaultBashReviewMode,
   ).toBe("always");
-  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" }).defaultBashReviewMode).toBe(
-    "always",
-  );
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" }).defaultBashReviewMode).toBe("always");
   expect(
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
@@ -83,8 +81,7 @@ test("workflow settings preserve ACP Cursor model id without treating it as an E
   expect(snapshot.acpCursorModelId).toBe("gpt-5.3-codex");
   expect(isWorkflowSettingsSnapshot(snapshot)).toBe(true);
   expect(
-    normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorModelId: "   " })
-      .acpCursorModelId,
+    normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorModelId: "   " }).acpCursorModelId,
   ).toBeUndefined();
 });
 
@@ -175,22 +172,25 @@ test.skipIf(!sqliteAvailable)("clears deleted subagent orchestration from the gl
   });
 });
 
-test.skipIf(!sqliteAvailable)("clearDefaultMainAgentConfigReference drops the global default selection", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-settings-clear-main-"));
-  const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
-  store.save({
-    sessionMode: "agent",
-    defaultCoreKind: "codex",
-    defaultOrchestrationSelection: {
-      mainAgentConfigId: "user.main",
-      mainPrompt: { mode: "builtin" },
-      subagents: { mode: "none" },
-    },
-  });
+test.skipIf(!sqliteAvailable)(
+  "clearDefaultMainAgentConfigReference drops the global default selection",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-settings-clear-main-"));
+    const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
+    store.save({
+      sessionMode: "agent",
+      defaultCoreKind: "codex",
+      defaultOrchestrationSelection: {
+        mainAgentConfigId: "user.main",
+        mainPrompt: { mode: "builtin" },
+        subagents: { mode: "none" },
+      },
+    });
 
-  expect(store.clearDefaultMainAgentConfigReference("user.main")).toBe(true);
-  expect(store.get().defaultOrchestrationSelection).toBeUndefined();
-});
+    expect(store.clearDefaultMainAgentConfigReference("user.main")).toBe(true);
+    expect(store.get().defaultOrchestrationSelection).toBeUndefined();
+  },
+);
 
 test("workflow settings default acpAgentsEnabled.cursor is off", () => {
   const snapshot = normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" });
@@ -216,8 +216,7 @@ test("workflow settings preserve ACP Cursor API key (trimmed, bounded) and clear
   expect(snapshot.acpCursorApiKey).toBe("ck-test-123");
   expect(isWorkflowSettingsSnapshot(snapshot)).toBe(true);
   expect(
-    normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorApiKey: "   " })
-      .acpCursorApiKey,
+    normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorApiKey: "   " }).acpCursorApiKey,
   ).toBeUndefined();
   expect(
     normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorApiKey: "x".repeat(513) })

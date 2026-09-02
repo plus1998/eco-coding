@@ -1,10 +1,10 @@
-import { normalizeAnthropicContentBlocks } from "@eco/runtime/anthropic-content-normalize";
 import {
-  responsesAnthropicEventToSse,
   type AnthropicContentBlock,
   type AnthropicResponse,
   type AnthropicStreamEvent,
+  responsesAnthropicEventToSse,
 } from "@eco/openai-anthropic-bridge";
+import { normalizeAnthropicContentBlocks } from "@eco/runtime/anthropic-content-normalize";
 
 /** Turn a completed Anthropic message into SSE when upstream returned JSON for a stream request. */
 export function anthropicResponseToStreamEvents(message: AnthropicResponse): AnthropicStreamEvent[] {

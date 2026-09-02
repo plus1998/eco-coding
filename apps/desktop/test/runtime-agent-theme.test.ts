@@ -41,7 +41,9 @@ const settings: ModelSettingsSnapshot = {
   subagentOrchestrations: [bundle.subagentOrchestration],
 };
 
-function runtimeConfig(snapshot = resolveOrchestrationSnapshot(bundle.selection, settings)): ThreadRuntimeConfig {
+function runtimeConfig(
+  snapshot = resolveOrchestrationSnapshot(bundle.selection, settings),
+): ThreadRuntimeConfig {
   return {
     orchestrationSelection: snapshot.selection,
     resolvedOrchestrationSnapshot: snapshot,

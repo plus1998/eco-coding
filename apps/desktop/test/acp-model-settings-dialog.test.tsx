@@ -1,16 +1,13 @@
 import { expect, test } from "bun:test";
+import type { TFunction } from "i18next";
 import { createElement } from "react";
 import { AcpModelSettingsDialog } from "../src/renderer/AcpModelSettingsDialog";
+import { filterModelCascadeGroups, groupModelCascadeOptions } from "../src/renderer/ModelCascadeSelect";
 import {
   createAcpCurrentExtra,
   mapAcpModelOptions,
   resolveAcpVendorNames,
 } from "../src/renderer/model-cascade-options";
-import {
-  filterModelCascadeGroups,
-  groupModelCascadeOptions,
-} from "../src/renderer/ModelCascadeSelect";
-import type { TFunction } from "i18next";
 import { renderLocalized } from "./i18n-test";
 
 const models = [
@@ -48,14 +45,10 @@ test("ACP model options are grouped by vendor, never flat", () => {
   const options = mapAcpModelOptions(models, resolveAcpVendorNames(zh));
   const groups = groupModelCascadeOptions(options);
   const byProvider = Object.fromEntries(groups.map((group) => [group.providerId, group]));
-  expect(byProvider["anthropic"].options.map((option) => option.modelId)).toEqual([
-    "claude-4-sonnet",
-  ]);
+  expect(byProvider["anthropic"].options.map((option) => option.modelId)).toEqual(["claude-4-sonnet"]);
   expect(byProvider["gpt"].options.map((option) => option.modelId)).toEqual(["gpt-5.3-codex"]);
   expect(byProvider["grok"].options.map((option) => option.modelId)).toEqual(["grok-4"]);
-  expect(byProvider["google"].options.map((option) => option.modelId)).toEqual([
-    "gemini-2.5-pro",
-  ]);
+  expect(byProvider["google"].options.map((option) => option.modelId)).toEqual(["gemini-2.5-pro"]);
   expect(byProvider["other"].options.map((option) => option.modelId)).toEqual(["auto"]);
   // Vendor icons ride along for the provider column.
   expect(byProvider["anthropic"].providerIcon).toBe("./agent-icons/claude-code.ico");

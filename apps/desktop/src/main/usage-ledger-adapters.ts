@@ -9,8 +9,8 @@ import {
   type UsageLedgerSource,
 } from "./usage-ledger";
 import {
-  USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY,
   serializeUsageLedgerComputedBilling,
+  USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY,
 } from "./usage-ledger-cost-metadata";
 
 export interface UsageLedgerModelUsage {
@@ -55,12 +55,9 @@ export interface BuildSingleUsageLedgerEventInput {
   attribution?: UsageAttribution;
 }
 
-export function buildSdkUsageLedgerEvents(
-  input: BuildSdkUsageLedgerEventsInput,
-): UsageLedgerEvent[] {
+export function buildSdkUsageLedgerEvents(input: BuildSdkUsageLedgerEventsInput): UsageLedgerEvent[] {
   return input.models.map((entry) => {
-    const reportedCostUsd =
-      entry.sdkCostUsd ?? (input.models.length === 1 ? input.totalCostUsd : undefined);
+    const reportedCostUsd = entry.sdkCostUsd ?? (input.models.length === 1 ? input.totalCostUsd : undefined);
     return buildSingleUsageLedgerEvent({
       threadId: input.threadId,
       role: entry.role ?? input.role,
@@ -84,9 +81,7 @@ export function buildSdkUsageLedgerEvents(
   });
 }
 
-export function buildSingleUsageLedgerEvent(
-  input: BuildSingleUsageLedgerEventInput,
-): UsageLedgerEvent {
+export function buildSingleUsageLedgerEvent(input: BuildSingleUsageLedgerEventInput): UsageLedgerEvent {
   const usageKind = input.usageKind ?? "request_final";
   const modelId = input.modelId ?? input.usage.modelId;
   const metadata = buildMetadata(input.metadata, input.computedBilling);
@@ -139,8 +134,7 @@ function buildMetadata(
 ): Record<string, unknown> | undefined {
   const output = { ...(metadata ?? {}) };
   if (computedBilling) {
-    output[USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY] =
-      serializeUsageLedgerComputedBilling(computedBilling);
+    output[USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY] = serializeUsageLedgerComputedBilling(computedBilling);
   }
   return Object.keys(output).length > 0 ? output : undefined;
 }

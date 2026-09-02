@@ -150,7 +150,10 @@ export function resolveGrepToolTargetDisplayFromDetail(
     return undefined;
   }
   if (trimmed.includes("|")) {
-    const parts = trimmed.split("|").map((part) => part.trim()).filter(Boolean);
+    const parts = trimmed
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean);
     const pattern = parts[0];
     if (!pattern) {
       return undefined;

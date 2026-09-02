@@ -235,18 +235,9 @@ test("MCP proxy stays uninitialized until bindExtensions emits session_start", a
   await mkdir(path.join(agentDir, "skills"), { recursive: true });
 
   const pi = await import("@earendil-works/pi-coding-agent");
-  const {
-    createAgentSession,
-    DefaultResourceLoader,
-    ModelRuntime,
-    SessionManager,
-    SettingsManager,
-  } = pi;
+  const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = pi;
 
-  const factory = await createPiMcpExtensionFactory(
-    { demo: { command: "true", args: [] } },
-    { agentDir },
-  );
+  const factory = await createPiMcpExtensionFactory({ demo: { command: "true", args: [] } }, { agentDir });
   expect(factory).toBeDefined();
 
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
@@ -283,7 +274,14 @@ test("MCP proxy stays uninitialized until bindExtensions emits session_start", a
 
   const mcpTool = (
     session as {
-      agent?: { state?: { tools?: Array<{ name: string; execute: (...args: unknown[]) => Promise<{ content?: Array<{ text?: string }> }> }> } };
+      agent?: {
+        state?: {
+          tools?: Array<{
+            name: string;
+            execute: (...args: unknown[]) => Promise<{ content?: Array<{ text?: string }> }>;
+          }>;
+        };
+      };
     }
   ).agent?.state?.tools?.find((tool) => tool.name === "mcp");
   expect(mcpTool).toBeDefined();

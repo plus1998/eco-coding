@@ -1,7 +1,7 @@
 import type { CoreKind } from "@eco/runtime";
-import type { AppLocale } from "../shared/locale";
 import { translateCatalog } from "../shared/i18n-catalogs";
 import type { ThreadStatus } from "../shared/ipc";
+import type { AppLocale } from "../shared/locale";
 
 export interface RunningThreadSnapshot {
   threadId: string;
@@ -90,10 +90,7 @@ export function shouldBypassQuitConfirmation(): boolean {
   return bypassQuitConfirmation;
 }
 
-export function isThreadActivelyRunning(input: {
-  status: ThreadStatus;
-  runtimeActive: boolean;
-}): boolean {
+export function isThreadActivelyRunning(input: { status: ThreadStatus; runtimeActive: boolean }): boolean {
   return input.runtimeActive || ACTIVE_THREAD_STATUSES.has(input.status);
 }
 

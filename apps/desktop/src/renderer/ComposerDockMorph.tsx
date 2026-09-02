@@ -7,12 +7,7 @@ interface ComposerDockMorphProps {
   approval: ReactNode;
 }
 
-export function ComposerDockMorph({
-  showApproval,
-  surfaceKey,
-  composer,
-  approval,
-}: ComposerDockMorphProps) {
+export function ComposerDockMorph({ showApproval, surfaceKey, composer, approval }: ComposerDockMorphProps) {
   return (
     <div
       className={["composer-dock-morph", showApproval ? "is-approval" : "is-composer"]

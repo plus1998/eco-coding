@@ -10,9 +10,7 @@ export function defaultProxyBridgeSettings(): ProxyBridgeSettingsSnapshot {
   return {};
 }
 
-export async function createProxyBridgeSettingsStore(
-  dbPath: string,
-): Promise<ProxyBridgeSettingsStore> {
+export async function createProxyBridgeSettingsStore(dbPath: string): Promise<ProxyBridgeSettingsStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
   const store = new ProxyBridgeSettingsStore(new sqlite.DatabaseSync(dbPath));
@@ -61,17 +59,14 @@ export class ProxyBridgeSettingsStore {
   }
 }
 
-export function normalizeProxyBridgeSettingsSnapshot(
-  value: unknown,
-): ProxyBridgeSettingsSnapshot {
+export function normalizeProxyBridgeSettingsSnapshot(value: unknown): ProxyBridgeSettingsSnapshot {
   if (!value || typeof value !== "object") {
     return defaultProxyBridgeSettings();
   }
   const record = value as Record<string, unknown>;
   const result: ProxyBridgeSettingsSnapshot = {};
 
-  const rawUa =
-    typeof record.upstreamUserAgent === "string" ? record.upstreamUserAgent.trim() : "";
+  const rawUa = typeof record.upstreamUserAgent === "string" ? record.upstreamUserAgent.trim() : "";
   if (rawUa) {
     if (rawUa.includes("\r") || rawUa.includes("\n")) {
       throw new Error("上游 User-Agent 不能包含换行符。");
@@ -82,8 +77,7 @@ export function normalizeProxyBridgeSettingsSnapshot(
     result.upstreamUserAgent = rawUa;
   }
 
-  const rawProxy =
-    typeof record.upstreamProxyUrl === "string" ? record.upstreamProxyUrl.trim() : "";
+  const rawProxy = typeof record.upstreamProxyUrl === "string" ? record.upstreamProxyUrl.trim() : "";
   if (rawProxy) {
     if (rawProxy.includes("\r") || rawProxy.includes("\n")) {
       throw new Error("上游代理 URL 不能包含换行符。");
@@ -107,32 +101,22 @@ export function normalizeProxyBridgeSettingsSnapshot(
   return result;
 }
 
-export function isProxyBridgeSettingsSnapshot(
-  value: unknown,
-): value is ProxyBridgeSettingsSnapshot {
+export function isProxyBridgeSettingsSnapshot(value: unknown): value is ProxyBridgeSettingsSnapshot {
   if (!value || typeof value !== "object") {
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (
-    record.upstreamUserAgent !== undefined &&
-    typeof record.upstreamUserAgent !== "string"
-  ) {
+  if (record.upstreamUserAgent !== undefined && typeof record.upstreamUserAgent !== "string") {
     return false;
   }
-  if (
-    record.upstreamProxyUrl !== undefined &&
-    typeof record.upstreamProxyUrl !== "string"
-  ) {
+  if (record.upstreamProxyUrl !== undefined && typeof record.upstreamProxyUrl !== "string") {
     return false;
   }
   return true;
 }
 
 /** Resolved override for upstream requests; undefined means passthrough SDK UA. */
-export function resolveUpstreamUserAgentOverride(
-  settings: ProxyBridgeSettingsSnapshot,
-): string | undefined {
+export function resolveUpstreamUserAgentOverride(settings: ProxyBridgeSettingsSnapshot): string | undefined {
   const trimmed = settings.upstreamUserAgent?.trim();
   return trimmed ? trimmed : undefined;
 }

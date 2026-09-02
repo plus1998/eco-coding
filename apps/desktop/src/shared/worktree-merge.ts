@@ -13,8 +13,7 @@ export interface WorktreeMergeSummary {
 
 export const WORKTREE_MERGE_MESSAGE_PREFIX = "__eco_worktree_merge__\n";
 
-const LEGACY_WORKTREE_MERGE_PATTERN =
-  /^已合并\s*(\d+)\s*个文件的更改到工作区（未自动提交）[：:]\s*(.*)$/u;
+const LEGACY_WORKTREE_MERGE_PATTERN = /^已合并\s*(\d+)\s*个文件的更改到工作区（未自动提交）[：:]\s*(.*)$/u;
 
 export function parseUnifiedDiffStats(diff: string): WorktreeMergeSummary {
   const fileStats = new Map<string, { additions: number; deletions: number }>();
@@ -86,10 +85,7 @@ export function parseUnifiedDiffStats(diff: string): WorktreeMergeSummary {
   };
 }
 
-export function buildWorktreeMergeSummary(
-  diff: string,
-  filePaths: readonly string[],
-): WorktreeMergeSummary {
+export function buildWorktreeMergeSummary(diff: string, filePaths: readonly string[]): WorktreeMergeSummary {
   const fromDiff = parseUnifiedDiffStats(diff);
   if (fromDiff.files.length > 0) {
     return {

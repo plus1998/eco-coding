@@ -1,8 +1,8 @@
 import type { EcoAgentRuntimeConfig } from "@eco/runtime";
 import {
+  type ExecutionConfirmationMode,
   evaluateBashConfirmation,
   resolveAgentBashPolicyForConfirmation,
-  type ExecutionConfirmationMode,
   type ToolConfirmationDecision,
 } from "@eco/runtime";
 import { commandMatchesAnyRememberedBashPrefix } from "../shared/bash-approval-ui";
@@ -22,9 +22,7 @@ export interface ThreadToolConfirmationInput {
 }
 
 /** Desktop canUseTool：Bash 的单一确认决策入口。 */
-export function evaluateThreadToolConfirmation(
-  input: ThreadToolConfirmationInput,
-): ToolConfirmationDecision {
+export function evaluateThreadToolConfirmation(input: ThreadToolConfirmationInput): ToolConfirmationDecision {
   if (
     input.sessionBashRememberPrefixes?.length &&
     commandMatchesAnyRememberedBashPrefix(input.command, input.sessionBashRememberPrefixes)
@@ -47,9 +45,7 @@ export function evaluateThreadToolConfirmation(
     cwd: input.cwd,
     workspacePath: input.workspacePath,
     confirmationMode: input.confirmationMode,
-    ...(input.phaseAllowsExecution !== undefined
-      ? { phaseAllowsExecution: input.phaseAllowsExecution }
-      : {}),
+    ...(input.phaseAllowsExecution !== undefined ? { phaseAllowsExecution: input.phaseAllowsExecution } : {}),
     ...(agentBash ? { agentBash } : {}),
   });
 }

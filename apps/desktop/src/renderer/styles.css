@@ -17013,7 +17013,8 @@ button.composer-session-mode-tag:focus-visible {
   color: var(--status-warn-text);
 }
 
-.composer-toolbar-trigger.is-clickable[data-mode="allow_all"]:hover:not(:disabled) .composer-toolbar-trigger-icon,
+.composer-toolbar-trigger.is-clickable[data-mode="allow_all"]:hover:not(:disabled)
+  .composer-toolbar-trigger-icon,
 .composer-toolbar-trigger.is-clickable[data-mode="allow_all"].is-active .composer-toolbar-trigger-icon {
   color: var(--status-warn-text);
 }
@@ -24071,7 +24072,6 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   font-family: var(--font-mono);
 }
 
-
 .section-heading {
   display: flex;
   align-items: baseline;
@@ -26341,7 +26341,6 @@ html:not([data-platform="darwin"])
   opacity: 0.55;
   cursor: not-allowed;
 }
-
 
 .git-commit-popover-branch-select {
   position: absolute;
@@ -31001,9 +31000,6 @@ body,
   color: var(--accent);
 }
 
-  }
-}
-
 .codex-composer.is-compact .composer-model-trigger {
   height: 30px;
   max-width: min(190px, 40vw);
@@ -32384,7 +32380,9 @@ body,
   background: var(--terminal-tab-active-bg);
   color: var(--terminal-fg);
   text-align: left;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .ssh-bookmarks-item:hover:not(:disabled) {
@@ -32445,7 +32443,10 @@ body,
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .ssh-bookmarks-icon-btn {
@@ -32526,7 +32527,9 @@ body,
   font: inherit;
   font-size: 13px;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .ssh-bookmarks-dialog .ssh-bookmarks-field input,

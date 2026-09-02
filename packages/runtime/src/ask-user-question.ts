@@ -23,9 +23,7 @@ export type SdkToolPermissionHandler = (
 ) => Promise<SdkToolPermissionDecision>;
 
 /** Matches Claude Code AskUserQuestionTool.mapToolResultToToolResultBlockParam content. */
-export function formatAskUserQuestionToolResult(
-  answers: Record<string, string | string[]>,
-): string {
+export function formatAskUserQuestionToolResult(answers: Record<string, string | string[]>): string {
   const answersText = Object.entries(answers)
     .map(([questionText, answer]) => {
       const value = Array.isArray(answer) ? answer.join(", ") : answer;
@@ -103,9 +101,7 @@ export function createAskUserQuestionHandler(
   };
 }
 
-export function composeCanUseToolHandlers(
-  ...handlers: SdkToolPermissionHandler[]
-): SdkToolPermissionHandler {
+export function composeCanUseToolHandlers(...handlers: SdkToolPermissionHandler[]): SdkToolPermissionHandler {
   return async (request) => {
     let currentInput = request.input;
 

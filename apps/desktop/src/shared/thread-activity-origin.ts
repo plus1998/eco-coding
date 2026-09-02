@@ -1,4 +1,8 @@
-import { parseReconnectActivityMessage, shouldClearReconnectActivity, type ParsedReconnectActivity } from "./activity-display";
+import {
+  type ParsedReconnectActivity,
+  parseReconnectActivityMessage,
+  shouldClearReconnectActivity,
+} from "./activity-display";
 
 /** Who produced an activity/run-event line — used for feed dedupe, never inferred from message text in UI. */
 export type ThreadActivityOrigin =
@@ -155,10 +159,7 @@ export function shouldClearReconnectTimelineItem(item: {
     return false;
   }
 
-  if (
-    item.eventType === "request.completed" ||
-    item.eventType === "request.first_token"
-  ) {
+  if (item.eventType === "request.completed" || item.eventType === "request.first_token") {
     return true;
   }
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
@@ -178,9 +179,20 @@ export function shouldClearReconnectTimelineItem(item: {
 }
 
 export function isTimelineItemSupersededByRecovery(
-  timeline: readonly { at: string; sequence: number; id: string; eventType: string; text: string; role?: string; metadata?: Record<string, unknown> }[],
+  timeline: readonly {
+    at: string;
+    sequence: number;
+    id: string;
+    eventType: string;
+    text: string;
+    role?: string;
+    metadata?: Record<string, unknown>;
+  }[],
   anchor: { at: string; sequence: number; id: string },
-  compare: (left: { at: string; sequence: number; id: string }, right: { at: string; sequence: number; id: string }) => number,
+  compare: (
+    left: { at: string; sequence: number; id: string },
+    right: { at: string; sequence: number; id: string },
+  ) => number,
 ): boolean {
   for (const later of timeline) {
     if (compare(anchor, later) >= 0) {

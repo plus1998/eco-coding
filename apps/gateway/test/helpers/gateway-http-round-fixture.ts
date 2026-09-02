@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTestGatewayFetchHandler } from "../test-bridge-rewrite.js";
 import type { GatewayProvider } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "../test-bridge-rewrite.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -43,8 +43,12 @@ function readJsonl(filePath: string): GatewayHttpExchange[] {
     .map((line) => JSON.parse(line) as GatewayHttpExchange);
 }
 
-export function resolveGatewayHttpRoundFixtureDir(layer: "gateway" | "upstream", configured?: string): string {
-  const explicit = configured?.trim() || process.env[`ECO_GATEWAY_HTTP_ROUND_FIXTURE_${layer.toUpperCase()}`]?.trim();
+export function resolveGatewayHttpRoundFixtureDir(
+  layer: "gateway" | "upstream",
+  configured?: string,
+): string {
+  const explicit =
+    configured?.trim() || process.env[`ECO_GATEWAY_HTTP_ROUND_FIXTURE_${layer.toUpperCase()}`]?.trim();
   if (explicit) {
     if (path.isAbsolute(explicit) && fs.existsSync(explicit)) return explicit;
     const resolved = path.resolve(repoRoot, explicit);
@@ -62,7 +66,10 @@ export function resolveGatewayHttpRoundFixtureDir(layer: "gateway" | "upstream",
     throw new Error(`No ${layer} fixture pointer. Run record-${layer}.mts first.`);
   }
   const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf8")) as { path?: string; runId?: string };
-  const dir = pointer.path && fs.existsSync(pointer.path) ? pointer.path : path.join(path.dirname(pointerPath), pointer.runId ?? "");
+  const dir =
+    pointer.path && fs.existsSync(pointer.path)
+      ? pointer.path
+      : path.join(path.dirname(pointerPath), pointer.runId ?? "");
   if (!fs.existsSync(dir)) {
     throw new Error(`${layer} fixture dir missing: ${dir}`);
   }
@@ -147,12 +154,15 @@ export function replayGatewayClientExchange(input: {
 }) {
   const upstreamBody = readExchangeBody(input.fixture, input.upstreamExchange);
   const upstreamContentType = input.upstreamExchange.response.headers["content-type"] ?? "application/json";
-  const handler = createTestGatewayFetchHandler({ host: "127.0.0.1", port: 0, providers: [input.provider] }, async () => {
-    return new Response(upstreamBody, {
-      status: input.upstreamExchange.response.status,
-      headers: { "content-type": upstreamContentType },
-    });
-  });
+  const handler = createTestGatewayFetchHandler(
+    { host: "127.0.0.1", port: 0, providers: [input.provider] },
+    async () => {
+      return new Response(upstreamBody, {
+        status: input.upstreamExchange.response.status,
+        headers: { "content-type": upstreamContentType },
+      });
+    },
+  );
   return handler(
     new Request(input.clientExchange.request.url, {
       method: input.clientExchange.request.method,

@@ -32,9 +32,7 @@ export function RoutePricingDisplay({ rates, title }: RoutePricingDisplayProps) 
               <span className="models-route-pricing-key" aria-hidden>
                 ⊙读
               </span>
-              <span className="models-route-pricing-val">
-                {formatRatePerMillion(rates.cacheReadPerM)}/M
-              </span>
+              <span className="models-route-pricing-val">{formatRatePerMillion(rates.cacheReadPerM)}/M</span>
             </span>
           ) : null}
           {rates.cacheWritePerM !== undefined ? (
@@ -42,9 +40,7 @@ export function RoutePricingDisplay({ rates, title }: RoutePricingDisplayProps) 
               <span className="models-route-pricing-key" aria-hidden>
                 ⊙写
               </span>
-              <span className="models-route-pricing-val">
-                {formatRatePerMillion(rates.cacheWritePerM)}/M
-              </span>
+              <span className="models-route-pricing-val">{formatRatePerMillion(rates.cacheWritePerM)}/M</span>
             </span>
           ) : null}
         </div>

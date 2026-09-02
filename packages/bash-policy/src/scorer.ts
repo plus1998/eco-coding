@@ -1,7 +1,7 @@
+import type { ApprovalRiskLevel } from "../../shared/src";
 import { collectCommandSegments } from "./parser";
 import { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
 import { scoreMatchesRule, scorePipeline } from "./rules/match";
-import type { ApprovalRiskLevel } from "../../shared/src";
 import type { BashPolicyRules, ShellAst } from "./types";
 
 export function scoreShellAst(ast: ShellAst, rules: BashPolicyRules = DEFAULT_BASH_POLICY_RULES): number {

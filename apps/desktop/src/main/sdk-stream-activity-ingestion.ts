@@ -1,35 +1,35 @@
 import {
+  type AgentEvent,
   normalizeSdkSubagentType,
+  type RuntimeAgentRole,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
-  type AgentEvent,
-  type RuntimeAgentRole,
 } from "@eco/runtime";
+import { repairActivityText } from "../shared/activity-text";
 import type { AgentRole } from "../shared/ipc";
 import { resolveActivityAgentId } from "./activity-agent-id";
 import type { AgentLifecycleService } from "./agent-lifecycle-service";
 import type { ContextLifecycleService } from "./context-lifecycle-service";
 import type { ConversationStore } from "./conversation-store";
 import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliation";
-import { SdkStreamActivityBridge, type SdkLocalStreamUpdate } from "./sdk-stream-activity";
-import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import { type SdkLocalStreamUpdate, SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { getThreadSubagentLaunchRegistry } from "./subagent-launch-registry-store";
-import {
-  buildSubagentLifecycleRunEvent,
-  buildSubagentMissionAttributedRunEvent,
-} from "./thread-run-event-normalizer";
+import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import {
   applyExactLogicalRequestLateBind,
   resolveLiveRequestIdForEvent,
   resolveSdkLateBindAttribution,
 } from "./thread-live-request-coordinator";
 import type { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
-import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import {
   createThreadRunEventLivePersister,
   type ThreadRunEventLivePersistExtras,
 } from "./thread-run-event-live-persist";
-import { repairActivityText } from "../shared/activity-text";
+import {
+  buildSubagentLifecycleRunEvent,
+  buildSubagentMissionAttributedRunEvent,
+} from "./thread-run-event-normalizer";
+import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId" | "timestamp">;
 
@@ -88,7 +88,9 @@ export interface SdkStreamActivityIngestion {
   ): void;
 }
 
-export function createSdkStreamActivityIngestion(deps: SdkStreamActivityIngestionDeps): SdkStreamActivityIngestion {
+export function createSdkStreamActivityIngestion(
+  deps: SdkStreamActivityIngestionDeps,
+): SdkStreamActivityIngestion {
   const bridge = deps.bridge ?? new SdkStreamActivityBridge();
   const logDiagnostic = deps.logDiagnostic ?? (() => {});
   const delegationLinkers = new Map<string, SubagentDelegationLinker>();
@@ -152,7 +154,8 @@ export function createSdkStreamActivityIngestion(deps: SdkStreamActivityIngestio
   };
 
   function tryResolveStreamSubagentDelegation(threadId: string, parentToolUseId: string): void {
-    const linked = getThreadSubagentLaunchRegistry(threadId).resolveFromStreamParentToolUseId(parentToolUseId);
+    const linked =
+      getThreadSubagentLaunchRegistry(threadId).resolveFromStreamParentToolUseId(parentToolUseId);
     if (!linked) {
       return;
     }
@@ -165,7 +168,11 @@ export function createSdkStreamActivityIngestion(deps: SdkStreamActivityIngestio
     });
   }
 
-  function maybeHandleAcpNestedSubagentLifecycle(threadId: string, event: AgentEventLike, observedAt: string): boolean {
+  function maybeHandleAcpNestedSubagentLifecycle(
+    threadId: string,
+    event: AgentEventLike,
+    observedAt: string,
+  ): boolean {
     if (event.type !== "agent.started" && event.type !== "agent.completed") {
       return false;
     }
@@ -512,7 +519,10 @@ function readSdkEventLogicalRequestId(event: AgentEventLike): string | undefined
   return typeof fromPayload === "string" && fromPayload.trim() ? fromPayload.trim() : undefined;
 }
 
-function readStreamAttributedAgentId(agentId: string | undefined, plannerSessionId: string | undefined): string | undefined {
+function readStreamAttributedAgentId(
+  agentId: string | undefined,
+  plannerSessionId: string | undefined,
+): string | undefined {
   const trimmed = agentId?.trim();
   if (!trimmed || trimmed === "unknown-session" || trimmed === plannerSessionId) {
     return undefined;

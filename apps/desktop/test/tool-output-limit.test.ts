@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import {
   appendToolOutputPreviewCapture,
   createToolOutputPreview,
-  materializeToolOutputPreviewCapture,
   MAX_BASH_OUTPUT_PREVIEW_CHARS,
+  materializeToolOutputPreviewCapture,
   type ToolOutputPreviewCapture,
 } from "@eco/runtime";
 

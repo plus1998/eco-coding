@@ -48,9 +48,7 @@ test("incomplete fence holds from open fence and is structural", () => {
 });
 
 test("completed fence with following unfinished prose splits after fence", () => {
-  expect(
-    partitionStreamingMarkdown("intro\n```bash\necho hi\n```\nnext", true),
-  ).toEqual({
+  expect(partitionStreamingMarkdown("intro\n```bash\necho hi\n```\nnext", true)).toEqual({
     stable: "intro\n```bash\necho hi\n```\n",
     tail: "next",
   });

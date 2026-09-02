@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  tableMatrixToHtml,
-  tableMatrixToMarkdown,
-} from "../src/renderer/markdown-table-clipboard";
+import { tableMatrixToHtml, tableMatrixToMarkdown } from "../src/renderer/markdown-table-clipboard";
 
 test("tableMatrixToMarkdown emits GFM with padded columns", () => {
   expect(
@@ -14,19 +11,32 @@ test("tableMatrixToMarkdown emits GFM with padded columns", () => {
 });
 
 test("tableMatrixToMarkdown escapes pipes", () => {
-  expect(tableMatrixToMarkdown([["a|b", "c"], ["1", "2"]])).toBe(
-    ["| a\\|b | c |", "| --- | --- |", "| 1 | 2 |"].join("\n"),
-  );
+  expect(
+    tableMatrixToMarkdown([
+      ["a|b", "c"],
+      ["1", "2"],
+    ]),
+  ).toBe(["| a\\|b | c |", "| --- | --- |", "| 1 | 2 |"].join("\n"));
 });
 
 test("tableMatrixToHtml emits a clean table", () => {
-  expect(tableMatrixToHtml([["Name", "Value"], ["alpha", "1"]])).toBe(
+  expect(
+    tableMatrixToHtml([
+      ["Name", "Value"],
+      ["alpha", "1"],
+    ]),
+  ).toBe(
     "<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>alpha</td><td>1</td></tr></tbody></table>",
   );
 });
 
 test("tableMatrixToHtml escapes markup in cells", () => {
-  expect(tableMatrixToHtml([["<b>", "x"], ["a&b", '"']])).toBe(
+  expect(
+    tableMatrixToHtml([
+      ["<b>", "x"],
+      ["a&b", '"'],
+    ]),
+  ).toBe(
     "<table><thead><tr><th>&lt;b&gt;</th><th>x</th></tr></thead><tbody><tr><td>a&amp;b</td><td>&quot;</td></tr></tbody></table>",
   );
 });

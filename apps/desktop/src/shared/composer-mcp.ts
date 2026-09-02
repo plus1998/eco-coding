@@ -1,5 +1,5 @@
-import { sanitizeMcpServerName } from "./mcp";
 import type { McpServerConfigView } from "./ipc";
+import { sanitizeMcpServerName } from "./mcp";
 
 export type McpServersEnabledSettings = Record<string, boolean>;
 

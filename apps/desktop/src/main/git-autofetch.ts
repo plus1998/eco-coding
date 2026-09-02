@@ -1,8 +1,4 @@
-import {
-  DEFAULT_GIT_AUTOFETCH_PERIOD_SECONDS,
-  fetchFromOrigin,
-  type GitRunner,
-} from "./git-operations";
+import { DEFAULT_GIT_AUTOFETCH_PERIOD_SECONDS, fetchFromOrigin, type GitRunner } from "./git-operations";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -136,13 +136,14 @@ export function buildThreadRunTurnFeedSections(
       // Skeleton Feed clears agent timelines, so agent-card sequence may be 0.
       // Bump past the preceding user prompt (same rule as mobile) so the turn
       // cannot sort above the bubble that opened the segment.
-      sequence: minEntrySequence === Number.MAX_SAFE_INTEGER
-        ? turn.afterUserSequence > 0
-          ? turn.afterUserSequence + 1
-          : Number.MAX_SAFE_INTEGER
-        : turn.afterUserSequence > 0
-          ? Math.max(minEntrySequence, turn.afterUserSequence + 1)
-          : minEntrySequence,
+      sequence:
+        minEntrySequence === Number.MAX_SAFE_INTEGER
+          ? turn.afterUserSequence > 0
+            ? turn.afterUserSequence + 1
+            : Number.MAX_SAFE_INTEGER
+          : turn.afterUserSequence > 0
+            ? Math.max(minEntrySequence, turn.afterUserSequence + 1)
+            : minEntrySequence,
     });
   }
 

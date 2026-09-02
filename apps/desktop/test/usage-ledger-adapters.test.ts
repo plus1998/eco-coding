@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  buildSdkUsageLedgerEvents,
-  buildSingleUsageLedgerEvent,
-} from "../src/main/usage-ledger-adapters";
+import { buildSdkUsageLedgerEvents, buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 
 test("buildSdkUsageLedgerEvents writes one row per model without duplicating total cost", () => {
   const events = buildSdkUsageLedgerEvents({

@@ -33,30 +33,46 @@ const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infini
 lines.on("line", (line) => {
   void (async () => {
     let message;
-    try { message = JSON.parse(line); } catch { return; }
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
     const { id, method, params } = message;
     if (typeof method !== "string" || method.startsWith("notifications/")) return;
     try {
       if (method === "initialize") {
-        write({ jsonrpc: "2.0", id, result: {
-          protocolVersion: params?.protocolVersion || "2024-11-05",
-          capabilities: { tools: {} },
-          serverInfo: { name: "eco_image_generation", version: "1.0.0" },
-          instructions: "Eco image generation. Every call requires user approval and returns saved file paths.",
-        } });
+        write({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion: params?.protocolVersion || "2024-11-05",
+            capabilities: { tools: {} },
+            serverInfo: { name: "eco_image_generation", version: "1.0.0" },
+            instructions:
+              "Eco image generation. Every call requires user approval and returns saved file paths.",
+          },
+        });
       } else if (method === "ping") {
         write({ jsonrpc: "2.0", id, result: {} });
       } else if (method === "tools/list") {
         const result = await control("/v1/tools/list", {});
         write({ jsonrpc: "2.0", id, result: { tools: result.tools || [] } });
       } else if (method === "tools/call") {
-        const result = await control("/v1/tools/call", { name: params?.name, arguments: params?.arguments || {} });
+        const result = await control("/v1/tools/call", {
+          name: params?.name,
+          arguments: params?.arguments || {},
+        });
         write({ jsonrpc: "2.0", id, result: result.result });
       } else {
         write({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
       }
     } catch (error) {
-      write({ jsonrpc: "2.0", id, error: { code: -32000, message: error instanceof Error ? error.message : String(error) } });
+      write({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+      });
     }
   })();
 });

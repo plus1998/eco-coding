@@ -11,26 +11,20 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  createGatewayFetchHandler,
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
-  createGatewayFetchHandler,
 } from "@eco/gateway";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import type { ProviderConfigSecret } from "../src/main/provider-store";
-import {
-  configureEcoGatewayLifecycle,
-  stopGlobalEcoGateway,
-} from "../src/main/eco-gateway-lifecycle";
-import {
-  createEcoSdkBridgeHandler,
-  buildEcoBridgeCompactInterceptResponse,
-} from "../src/main/eco-sdk-bridge";
+import { type AnthropicProxyRoute, startAnthropicModelProxy } from "../src/main/anthropic-proxy";
 import { postAuxiliaryBridgeRequest } from "../src/main/bridge-auxiliary-request";
+import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
 import {
-  startAnthropicModelProxy,
-  type AnthropicProxyRoute,
-} from "../src/main/anthropic-proxy";
+  buildEcoBridgeCompactInterceptResponse,
+  createEcoSdkBridgeHandler,
+} from "../src/main/eco-sdk-bridge";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
 import { countProviderInputTokens } from "../src/main/provider-token-counter";
 
 function providerSecret(
@@ -230,8 +224,7 @@ describe("2A: Bridge compact intercept（不调 gateway/upstream）", () => {
 
 describe("1B: 辅助 HTTP 只打 Bridge，不直连 provider baseUrl", () => {
   test("prebound provider header wins over model table when ids collide", async () => {
-    const seen: Array<{ providerId: string | null; model: string | null; kind: string | null }> =
-      [];
+    const seen: Array<{ providerId: string | null; model: string | null; kind: string | null }> = [];
     const gateway = {
       handleRequest: async (request: Request) => {
         const body = (await request.json()) as { model?: string };

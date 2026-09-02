@@ -134,8 +134,7 @@ export function formatTokenSpeedStats(
 
   // Cherry model TPS: tokens / ((completionMs - firstTokenMs) / 1000).
   const endedMs = span.endedAt ? Date.parse(span.endedAt) : NaN;
-  const streamingMs =
-    Number.isFinite(endedMs) && endedMs > firstTokenMs ? endedMs - firstTokenMs : NaN;
+  const streamingMs = Number.isFinite(endedMs) && endedMs > firstTokenMs ? endedMs - firstTokenMs : NaN;
   const rateTps = streamingMs > 0 ? (streamedTokens * 1000) / streamingMs : undefined;
 
   return {

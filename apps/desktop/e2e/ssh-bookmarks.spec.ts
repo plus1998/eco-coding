@@ -28,11 +28,9 @@ test("SSH bookmarks CRUD in Electron task panel", async ({ ecoPage: page }) => {
     await window.eco.openWorkspacePath(workspacePath);
   }, repoRoot);
 
-  await page.waitForFunction(
-    () => document.querySelector(".codex-main-has-toolbar") !== null,
-    undefined,
-    { timeout: 15_000 },
-  );
+  await page.waitForFunction(() => document.querySelector(".codex-main-has-toolbar") !== null, undefined, {
+    timeout: 15_000,
+  });
 
   await ensureTaskPanelOpen(page);
   await openSshBookmarksTab(page);

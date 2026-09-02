@@ -72,7 +72,9 @@ export function resolveConversationRoundFixtureDir(configured?: string): string 
   );
 }
 
-export function loadConversationRoundFixture(fixtureDir = resolveConversationRoundFixtureDir()): ConversationRoundFixture {
+export function loadConversationRoundFixture(
+  fixtureDir = resolveConversationRoundFixtureDir(),
+): ConversationRoundFixture {
   const rpcPath = path.join(fixtureDir, "rpc-log.jsonl");
   if (!existsSync(rpcPath)) {
     throw new Error(`Missing rpc-log.jsonl in ${fixtureDir}`);
@@ -89,7 +91,10 @@ export function loadConversationRoundFixture(fixtureDir = resolveConversationRou
     ? (JSON.parse(readFileSync(path.join(fixtureDir, "meta.json"), "utf8")) as Record<string, unknown>)
     : {};
   const workspaceFiles = existsSync(path.join(fixtureDir, "workspace-files.json"))
-    ? (JSON.parse(readFileSync(path.join(fixtureDir, "workspace-files.json"), "utf8")) as Record<string, string>)
+    ? (JSON.parse(readFileSync(path.join(fixtureDir, "workspace-files.json"), "utf8")) as Record<
+        string,
+        string
+      >)
     : {};
   const skillsListResult = existsSync(path.join(fixtureDir, "skills-list.json"))
     ? JSON.parse(readFileSync(path.join(fixtureDir, "skills-list.json"), "utf8"))

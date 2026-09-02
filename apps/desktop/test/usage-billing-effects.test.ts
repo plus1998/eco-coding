@@ -1,19 +1,10 @@
 import { expect, test } from "bun:test";
 import type { ModelPricingLookup, ParsedUsage } from "@eco/runtime";
-import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
-import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
-import {
-  InMemoryUsageLedger,
-  type AgentInstanceRecord,
-  type UsageLedgerEvent,
-} from "../src/main/usage-ledger";
-import {
-  UsageLedgerCoordinator,
-  type UsageLedgerBillingSnapshotSelectionOptions,
-  type UsageLedgerCoordinatorStore,
-} from "../src/main/usage-ledger-coordinator";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
+import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import {
   resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
@@ -28,7 +19,16 @@ import {
   type UsageBillingUpdatedEvent,
 } from "../src/main/usage-billing-effects";
 import { createUsageContextService } from "../src/main/usage-context-effects";
-import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import {
+  type AgentInstanceRecord,
+  InMemoryUsageLedger,
+  type UsageLedgerEvent,
+} from "../src/main/usage-ledger";
+import {
+  type UsageLedgerBillingSnapshotSelectionOptions,
+  UsageLedgerCoordinator,
+  type UsageLedgerCoordinatorStore,
+} from "../src/main/usage-ledger-coordinator";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };

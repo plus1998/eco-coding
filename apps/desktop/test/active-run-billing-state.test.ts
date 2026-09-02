@@ -2,9 +2,7 @@ import { expect, test } from "bun:test";
 import { ActiveRunBillingStateStore } from "../src/main/active-run-billing-state";
 import type { UsageBillingObservation } from "../src/main/billing-orchestration";
 
-function observation(
-  overrides: Partial<UsageBillingObservation> = {},
-): UsageBillingObservation {
+function observation(overrides: Partial<UsageBillingObservation> = {}): UsageBillingObservation {
   return {
     source: "sdk",
     role: "coder",

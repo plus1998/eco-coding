@@ -4,10 +4,10 @@ import {
   isGenericMissionSummary,
   isSubagentMissionEnvelope,
   isWeakAgentToolDetail,
+  missionFromAgentToolDetail,
   parseSubagentMissionMessage,
   resolveMissionDisplayText,
   summarizeAgentObjective,
-  missionFromAgentToolDetail,
 } from "../src/agent-mission";
 
 test("summarizes reviewer objective from changed files", () => {

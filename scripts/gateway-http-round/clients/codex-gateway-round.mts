@@ -6,25 +6,30 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CodexAppServerClient } from "../../../packages/runtime/src/codex-app-server-client.ts";
 import {
   buildCodexGatewayModelAlias,
   buildCodexModelProviderSlug,
 } from "../../../packages/runtime/src/codex-config-sync.ts";
-import { CodexAppServerClient } from "../../../packages/runtime/src/codex-app-server-client.ts";
-import { listCodexSkills } from "../../../packages/runtime/src/codex-skills-list.ts";
 import { syncEcoCodexHooks } from "../../../packages/runtime/src/codex-hooks-sync.ts";
+import { listCodexSkills } from "../../../packages/runtime/src/codex-skills-list.ts";
 import { evaluateScenarioChecklist } from "../../codex-scenario-smoke/assert.mjs";
-import { buildScenarioPrompt } from "../../conversation-round/lib/scenario-prompt.mjs";
+import {
+  appendJsonl,
+  redactSecrets,
+  snapshotWorkspace,
+  writeJson,
+} from "../../conversation-round/lib/fixture-io.mjs";
 import {
   resolveCodexExecutable,
   resolveMcpEchoServerPath,
   resolveNodeExecutable,
 } from "../../conversation-round/lib/resolve-executables.mjs";
+import { buildScenarioPrompt } from "../../conversation-round/lib/scenario-prompt.mjs";
 import { setupScenarioWorkspace } from "../../conversation-round/lib/scenario-workspace.mjs";
-import { appendJsonl, redactSecrets, snapshotWorkspace, writeJson } from "../../conversation-round/lib/fixture-io.mjs";
 import { FULL_ROUND_SCENARIO_ID } from "../lib/client-matrix.mjs";
-import { resolveProfile } from "../lib/profiles.mjs";
 import type { GatewayRecordingStack } from "../lib/gateway-stack.mts";
+import { resolveProfile } from "../lib/profiles.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,13 +48,12 @@ export interface CodexGatewayRoundResult {
   errors: string[];
 }
 
-export async function runCodexGatewayRound(
-  input: CodexGatewayRoundInput,
-): Promise<CodexGatewayRoundResult> {
+export async function runCodexGatewayRound(input: CodexGatewayRoundInput): Promise<CodexGatewayRoundResult> {
   const profile = resolveProfile(input.profileId);
   const providerSlug = buildCodexModelProviderSlug(profile.id);
   const modelAlias = buildCodexGatewayModelAlias(profile.id, profile.model);
-  const timeoutMs = input.timeoutMs ?? Number.parseInt(process.env.ECO_CODEX_SMOKE_TIMEOUT_MS ?? "600000", 10);
+  const timeoutMs =
+    input.timeoutMs ?? Number.parseInt(process.env.ECO_CODEX_SMOKE_TIMEOUT_MS ?? "600000", 10);
   const gatewayBaseUrl = input.stack.gatewayBaseUrl;
 
   input.stack.setActiveCell({
@@ -297,12 +301,7 @@ function writeAgentRole(codexHome: string, modelAlias: string, providerSlug: str
   return rolePath;
 }
 
-function waitForNotification(
-  client: CodexAppServerClient,
-  method: string,
-  threadId: string,
-  waitMs: number,
-) {
+function waitForNotification(client: CodexAppServerClient, method: string, threadId: string, waitMs: number) {
   return new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
       remove();

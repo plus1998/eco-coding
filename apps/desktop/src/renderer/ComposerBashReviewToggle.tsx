@@ -9,15 +9,12 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import { BASH_REVIEW_UI, bashReviewUi } from "../shared/bash-review-ui";
-import { useTranslation } from "react-i18next";
-import {
-  COMPOSER_TOOLBAR_ICON_PX,
-  COMPOSER_TOOLBAR_ICON_STROKE,
-} from "./composer-icon-metrics";
 import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
+import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
@@ -194,11 +191,7 @@ function ComposerBashReviewPopover({
                 aria-pressed={selected}
                 onClick={() => onSelect(option.value)}
               >
-                <span
-                  className="composer-bash-review-popover-icon"
-                  data-mode={option.value}
-                  aria-hidden
-                >
+                <span className="composer-bash-review-popover-icon" data-mode={option.value} aria-hidden>
                   <BashReviewModeIcon mode={option.value} />
                 </span>
                 <span className="composer-codex-popover-body">

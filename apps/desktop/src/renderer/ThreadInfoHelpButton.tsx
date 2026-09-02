@@ -1,10 +1,7 @@
-import { useCallback, useId, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
-import {
-  clampComposerFloatingLeft,
-  composerFloatingAvailableWidth,
-} from "./composer-floating";
+import { type ReactNode, useCallback, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 
 const TOOLTIP_MAX_WIDTH = 248;
@@ -80,12 +77,7 @@ export function ThreadInfoHelpButton({ label, children }: ThreadInfoHelpButtonPr
         onFocus={show}
         onBlur={hide}
       >
-        <button
-          type="button"
-          className="thread-info-help"
-          aria-describedby={tooltipId}
-          aria-label={label}
-        >
+        <button type="button" className="thread-info-help" aria-describedby={tooltipId} aria-label={label}>
           <CircleHelp size={ICON_SIZE.xs} strokeWidth={ICON_STROKE} aria-hidden />
         </button>
       </span>

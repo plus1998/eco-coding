@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import type { RuntimeAgentRole } from "../src/shared/ipc";
 import { resolveSdkEventUsageBilling, type SdkUsageEventLike } from "../src/main/sdk-event-usage-billing";
 import type { SubagentUsageAttributionResolver } from "../src/main/subagent-usage-attribution";
+import type { RuntimeAgentRole } from "../src/shared/ipc";
 
 function event(input: Partial<SdkUsageEventLike> = {}): SdkUsageEventLike {
   return {

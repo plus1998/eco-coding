@@ -16,9 +16,7 @@ test("tryParseSerializedAnthropicContentBlocks detects embedded content array", 
 });
 
 test("normalizeAnthropicContentBlocks expands a single text block", () => {
-  const normalized = normalizeAnthropicContentBlocks([
-    { type: "text", text: sampleJson },
-  ]);
+  const normalized = normalizeAnthropicContentBlocks([{ type: "text", text: sampleJson }]);
   expect(normalized).toHaveLength(2);
   expect(normalized[0]?.type).toBe("text");
   expect(normalized[1]?.type).toBe("tool_use");

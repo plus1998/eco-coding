@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
-import {
-  createSdkModelResolver,
-  resolveMainSdkModelId,
-  resolveSdkModelId,
-} from "../src/sdk-model-alias";
+import { createSdkModelResolver, resolveMainSdkModelId, resolveSdkModelId } from "../src/sdk-model-alias";
 
 function route(
   role: ResolvedModelRoute["role"],

@@ -1,5 +1,3 @@
-import { definedProps } from "@eco/shared";
-import type { WorktreePlan } from "@eco/workspace";
 import {
   ACP_IMAGE_ONLY_PROMPT,
   ACP_LOAD_SESSION_UNSUPPORTED,
@@ -11,6 +9,8 @@ import {
   type AgentEvent,
 } from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
+import { definedProps } from "@eco/shared";
+import type { WorktreePlan } from "@eco/workspace";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { RequestAttemptResult } from "./request-retry";
@@ -74,10 +74,7 @@ export interface AcpRuntimeOrchestrationDeps {
     workspacePath: string;
   }) => AcpAskQuestionHandler;
   /** Eco takes over session/request_permission (always/auto ask; allow_all auto-allow). */
-  resolveAcpPermissionHandler?: (input: {
-    threadId: string;
-    workspacePath: string;
-  }) => AcpPermissionHandler;
+  resolveAcpPermissionHandler?: (input: { threadId: string; workspacePath: string }) => AcpPermissionHandler;
   /** True when Eco still has a stored pending plan for this thread. */
   hasStoredPendingPlan: (threadId: string) => boolean;
   /**
@@ -85,10 +82,7 @@ export interface AcpRuntimeOrchestrationDeps {
    * approve can continue asynchronously (Cursor may already have disconnected).
    */
   releasePlanBridgeKeepPending: (threadId: string, reason: string) => void;
-  applyRunDecision: (input: {
-    threadId: string;
-    decision: ThreadRunOutcomeDecision;
-  }) => Promise<void>;
+  applyRunDecision: (input: { threadId: string; decision: ThreadRunOutcomeDecision }) => Promise<void>;
   /** Zero-output start failure: drop the user turn and restore composer. */
   discardUnstartedTurn: (input: {
     threadId: string;
@@ -161,7 +155,9 @@ export function toAcpThreadStartRunInput(input: {
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     ...(input.continuation ? { continuation: true } : {}),
     ...(input.restorePrompt !== undefined ? { restorePrompt: input.restorePrompt } : {}),
-    ...(input.recordedUserActivityLineId ? { recordedUserActivityLineId: input.recordedUserActivityLineId } : {}),
+    ...(input.recordedUserActivityLineId
+      ? { recordedUserActivityLineId: input.recordedUserActivityLineId }
+      : {}),
   };
 }
 
@@ -258,24 +254,24 @@ export async function startAcpThreadRun(
     const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
       deps.consumeEvents({
         events: driver.run({
-            threadId: input.thread.id,
-            prompt: input.prompt,
-            workspacePath: input.workspace.path,
-            signal: controller.signal,
-            acpAgentId,
-            sessionMode: mode,
-            userPromptForPlan: input.prompt,
-            ...(input.thread.runtimeConfig?.cursorModelId
-              ? { model: input.thread.runtimeConfig.cursorModelId }
-              : {}),
-            ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
-            ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
-            ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-            mcpServers,
-            ...(onCreatePlan ? { onCreatePlan } : {}),
-            ...(onAskQuestion ? { onAskQuestion } : {}),
-            ...(onRequestPermission ? { onRequestPermission } : {}),
-          } as Parameters<AcpAgentDriver["run"]>[0]),
+          threadId: input.thread.id,
+          prompt: input.prompt,
+          workspacePath: input.workspace.path,
+          signal: controller.signal,
+          acpAgentId,
+          sessionMode: mode,
+          userPromptForPlan: input.prompt,
+          ...(input.thread.runtimeConfig?.cursorModelId
+            ? { model: input.thread.runtimeConfig.cursorModelId }
+            : {}),
+          ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
+          ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
+          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          mcpServers,
+          ...(onCreatePlan ? { onCreatePlan } : {}),
+          ...(onAskQuestion ? { onAskQuestion } : {}),
+          ...(onRequestPermission ? { onRequestPermission } : {}),
+        } as Parameters<AcpAgentDriver["run"]>[0]),
         threadId: input.thread.id,
         worktreePath: input.workspace.path,
         signal: controller.signal,

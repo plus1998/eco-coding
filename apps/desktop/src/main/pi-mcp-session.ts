@@ -1,12 +1,9 @@
 import path from "node:path";
-import type { McpSdkConfig } from "../shared/mcp";
-import {
-  filterMcpSdkConfigByAssignedServers,
-  sanitizeMcpServerName,
-} from "../shared/mcp";
+import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../shared/image-generation";
-import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
+import type { McpSdkConfig } from "../shared/mcp";
+import { filterMcpSdkConfigByAssignedServers, sanitizeMcpServerName } from "../shared/mcp";
 import { prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 
 export type PiMcpSessionResolution = {
@@ -27,9 +24,7 @@ export function mergePiAppendSystemPrompt(parts: {
   const rules = parts.globalUserRules?.trim() ?? "";
   return [
     ...(rules ? [rules] : []),
-    ...(parts.integrationAppend ?? [])
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0),
+    ...(parts.integrationAppend ?? []).map((entry) => entry.trim()).filter((entry) => entry.length > 0),
   ];
 }
 
@@ -68,10 +63,7 @@ export function buildPiMcpSessionConfig(input: {
         key !== ECO_IMAGE_VIEW_MCP_SERVER,
     );
 
-  const filtered = filterMcpSdkConfigByAssignedServers(
-    input.globalSdkConfig,
-    assignedUserKeys,
-  );
+  const filtered = filterMcpSdkConfigByAssignedServers(input.globalSdkConfig, assignedUserKeys);
 
   const mcpServers: Record<string, unknown> = { ...filtered.mcpServers };
   const appendSystemPrompt: string[] = [];
@@ -109,8 +101,6 @@ export function buildPiMcpSessionConfig(input: {
   return {
     mcpServers: runtime.mcpServers,
     appendSystemPrompt,
-    extraSkillDirectories: [...new Set(extraSkillDirectories)].sort((a, b) =>
-      a.localeCompare(b),
-    ),
+    extraSkillDirectories: [...new Set(extraSkillDirectories)].sort((a, b) => a.localeCompare(b)),
   };
 }

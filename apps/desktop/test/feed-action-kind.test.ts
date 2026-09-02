@@ -55,12 +55,8 @@ test("resolveActionKind classifies eco browser and image tools", () => {
   });
   expect(click.kind).toBe("browser");
   expect(click.namedSuffix).toBe("agent_browser_click");
-  expect(resolveActionKind({ toolName: "mcp__eco_ab_ea4a60abe66__agent_browser_open" }).kind).toBe(
-    "browser",
-  );
-  expect(resolveActionKind({ toolName: "mcp__eco_image_generation__create_image" }).kind).toBe(
-    "imageCreate",
-  );
+  expect(resolveActionKind({ toolName: "mcp__eco_ab_ea4a60abe66__agent_browser_open" }).kind).toBe("browser");
+  expect(resolveActionKind({ toolName: "mcp__eco_image_generation__create_image" }).kind).toBe("imageCreate");
   expect(resolveActionKind({ toolName: "mcp__eco_image_generation__create_image" }).icon).toBe("image");
   expect(resolveActionKind({ toolName: "ViewImage" }).kind).toBe("imageView");
   expect(resolveActionKind({ toolName: "ViewImage" }).icon).toBe("images");
@@ -85,12 +81,9 @@ test("resolveActionKind unknown tools use kind tool and icon tool", () => {
 
 test("formatActionLine done includes basename target", () => {
   const resolved = resolveActionKind({ toolName: "Read" });
-  expect(
-    formatActionLine(
-      { resolved, phase: "done", rawTarget: "/repo/src/auth.ts" },
-      tZh,
-    ),
-  ).toBe("读取了 auth.ts");
+  expect(formatActionLine({ resolved, phase: "done", rawTarget: "/repo/src/auth.ts" }, tZh)).toBe(
+    "读取了 auth.ts",
+  );
 });
 
 test("formatActionLine read appends lineRange to the basename", () => {
@@ -120,12 +113,9 @@ test("formatActionLine done falls back without target", () => {
 
 test("formatActionLine running includes target", () => {
   const resolved = resolveActionKind({ toolName: "Read" });
-  expect(
-    formatActionLine(
-      { resolved, phase: "running", rawTarget: "auth.ts" },
-      tZh,
-    ),
-  ).toBe("正在读取 auth.ts");
+  expect(formatActionLine({ resolved, phase: "running", rawTarget: "auth.ts" }, tZh)).toBe(
+    "正在读取 auth.ts",
+  );
 });
 
 test("formatActionLine webFetch does not use webSearch copy", () => {
@@ -170,9 +160,7 @@ test("summarizeActionGroup en joinMany does not use Chinese顿号", () => {
 });
 
 test("summarizeActionGroup icon priority uses network for mcp-only and browser for browser-only", () => {
-  expect(summarizeActionGroup([resolveActionKind({ toolName: "mcp" })], tZh).icon).toBe(
-    "network",
-  );
+  expect(summarizeActionGroup([resolveActionKind({ toolName: "mcp" })], tZh).icon).toBe("network");
   expect(
     summarizeActionGroup(
       [resolveActionKind({ toolName: "mcp__eco_agent_browser__agent_browser_click" })],
@@ -181,10 +169,7 @@ test("summarizeActionGroup icon priority uses network for mcp-only and browser f
   ).toBe("browser");
   expect(
     summarizeActionGroup(
-      [
-        resolveActionKind({ toolName: "Read" }),
-        resolveActionKind({ toolName: "mcp" }),
-      ],
+      [resolveActionKind({ toolName: "Read" }), resolveActionKind({ toolName: "mcp" })],
       tZh,
     ).icon,
   ).toBe("read");

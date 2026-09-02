@@ -11,14 +11,8 @@ import {
 import { createPortal } from "react-dom";
 import type { SessionMode } from "../shared/session-mode";
 import { SESSION_MODE_UI, sessionModeUi } from "../shared/session-mode-ui";
-import {
-  COMPOSER_TOOLBAR_ICON_STROKE,
-  sessionModeIconPx,
-} from "./composer-icon-metrics";
-import {
-  clampComposerFloatingLeft,
-  composerFloatingAvailableWidth,
-} from "./composer-floating";
+import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
+import { COMPOSER_TOOLBAR_ICON_STROKE, sessionModeIconPx } from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
@@ -217,21 +211,24 @@ function ComposerSessionModePopover({
   );
 }
 
-export function SessionModeIcon({
-  mode,
-  className,
-}: {
-  mode: SessionMode;
-  className?: string;
-}) {
+export function SessionModeIcon({ mode, className }: { mode: SessionMode; className?: string }) {
   const iconSize = sessionModeIconPx(mode);
   if (mode === "plan") {
-    return <List size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />;
+    return (
+      <List size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />
+    );
   }
   if (mode === "ask") {
     return (
-      <MessageCircle size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />
+      <MessageCircle
+        size={iconSize}
+        strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
+        aria-hidden
+        className={className}
+      />
     );
   }
-  return <Infinity size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />;
+  return (
+    <Infinity size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />
+  );
 }

@@ -25,11 +25,7 @@ export function resolvePiAgentDir(ecoDataDir: string, threadId: string): string 
 }
 
 /** Absolute path to `ecoDataDir/pi-agent/<threadId>/subagents/<agentId>`. */
-export function resolvePiSubagentAgentDir(
-  ecoDataDir: string,
-  threadId: string,
-  agentId: string,
-): string {
+export function resolvePiSubagentAgentDir(ecoDataDir: string, threadId: string, agentId: string): string {
   const id = agentId.trim();
   if (!id) {
     throw new Error("PI subagent agentDir requires a non-empty agentId.");
@@ -94,10 +90,7 @@ export async function clearPiSessionFiles(agentDir: string): Promise<number> {
  * Find a persisted session file for `sessionId` under sessionsDir
  * (`{timestamp}_{sessionId}.jsonl`).
  */
-export async function findPiSessionFile(
-  sessionsDir: string,
-  sessionId: string,
-): Promise<string | undefined> {
+export async function findPiSessionFile(sessionsDir: string, sessionId: string): Promise<string | undefined> {
   const id = sessionId.trim();
   if (!id) {
     return undefined;
@@ -120,10 +113,7 @@ export async function findPiSessionFile(
 }
 
 /** Remove the entire `pi-agent/<threadId>` tree (sessions, skills, auth, …). */
-export async function removePiAgentThreadDir(
-  ecoDataDir: string,
-  threadId: string,
-): Promise<boolean> {
+export async function removePiAgentThreadDir(ecoDataDir: string, threadId: string): Promise<boolean> {
   const target = resolvePiAgentDir(ecoDataDir, threadId);
   try {
     await fs.lstat(target);
@@ -138,10 +128,7 @@ export async function removePiAgentThreadDir(
 }
 
 /** True when `sessionFile` exists, is a regular file, and lives under `sessionsDir`. */
-export async function isUsablePiSessionFile(
-  sessionFile: string,
-  sessionsDir: string,
-): Promise<boolean> {
+export async function isUsablePiSessionFile(sessionFile: string, sessionsDir: string): Promise<boolean> {
   const resolvedFile = path.resolve(sessionFile);
   const resolvedDir = path.resolve(sessionsDir);
   const relative = path.relative(resolvedDir, resolvedFile);

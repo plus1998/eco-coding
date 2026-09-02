@@ -1,6 +1,6 @@
 import type { GatewayRequestLifecycleEvent } from "@eco/gateway";
-import type { ClaudeBridgeBindingRoute } from "./claude-bridge-binding";
 import type { RuntimeAgentRole } from "../shared/ipc";
+import type { ClaudeBridgeBindingRoute } from "./claude-bridge-binding";
 import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
 
 export function clearGatewayRequestLifecycleStateForTests(): void {
@@ -162,9 +162,7 @@ export function handleGatewayRequestLifecycleEvent(
   }
 
   const providerRequestId =
-    "providerRequestId" in event && event.providerRequestId
-      ? event.providerRequestId
-      : undefined;
+    "providerRequestId" in event && event.providerRequestId ? event.providerRequestId : undefined;
 
   if (event.type === "logical.completed") {
     handlers.onLogicalCompleted?.({

@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { computeRequestBilling, emptyCostBreakdown } from "@eco/runtime";
 import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
 import { projectSubagentMetricsEntriesFromBillingProjection } from "../src/main/subagent-metrics-projection";
-import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 import type { SubagentMetricsEntry } from "../src/main/subagent-metrics-registry";
+import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };

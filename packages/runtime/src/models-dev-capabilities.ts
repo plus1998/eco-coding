@@ -1,8 +1,8 @@
 import {
+  lookupModelCostInCatalog,
   type ModelsDevCatalog,
   type ModelsDevModelEntry,
   type ModelsDevProviderEntry,
-  lookupModelCostInCatalog,
 } from "./models-dev-pricing";
 
 const MODEL_ALIASES: Record<string, string[]> = {

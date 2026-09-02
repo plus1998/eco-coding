@@ -161,12 +161,7 @@ function shouldIgnoreUnknownLabel(label: string): boolean {
   return CONTEXT_TOTAL_LABEL_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
-function shouldSkipSdkCategory(
-  name: string,
-  tokens: number,
-  limit: number,
-  isDeferred?: boolean,
-): boolean {
+function shouldSkipSdkCategory(name: string, tokens: number, limit: number, isDeferred?: boolean): boolean {
   if (tokens <= 0 || !name.trim()) {
     return true;
   }
@@ -298,9 +293,7 @@ function segmentsFromMessageBreakdown(
       const name = typeof entry.name === "string" ? entry.name : "";
       const tokens = readNumber(entry.tokens);
       if (tokens > 0 && name) {
-        rows.push(
-          buildBreakdownSegment("conversation", `附件 · ${formatSdkBreakdownName(name)}`, tokens),
-        );
+        rows.push(buildBreakdownSegment("conversation", `附件 · ${formatSdkBreakdownName(name)}`, tokens));
       }
     }
   } else {
@@ -489,11 +482,7 @@ export function parseSdkGetContextUsageBreakdown(payload: unknown): SdkContextUs
     }
   }
 
-  const addNamedEntries = (
-    entries: unknown,
-    nameKey: string,
-    tokensKey = "tokens",
-  ) => {
+  const addNamedEntries = (entries: unknown, nameKey: string, tokensKey = "tokens") => {
     if (!Array.isArray(entries)) {
       return;
     }
@@ -552,10 +541,7 @@ export function alignBreakdownSegmentsToOccupied(
   }
   let rows = filtered;
   if (occupied > sum) {
-    rows = [
-      ...filtered,
-      buildBreakdownSegment("unattributed", "未归因上下文", occupied - sum),
-    ];
+    rows = [...filtered, buildBreakdownSegment("unattributed", "未归因上下文", occupied - sum)];
   } else if (occupied < sum) {
     const factor = occupied / sum;
     rows = filtered.map((segment) => ({

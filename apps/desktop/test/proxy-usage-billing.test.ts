@@ -1,12 +1,9 @@
 import { expect, test } from "bun:test";
 import type { ParsedUsage } from "@eco/runtime";
-import type { AgentRole } from "../src/shared/ipc";
 import type { AnthropicProxyUsageInfo } from "../src/main/anthropic-proxy";
-import {
-  buildProxyUsageRequestKey,
-  resolveProxyUsageBilling,
-} from "../src/main/proxy-usage-billing";
+import { buildProxyUsageRequestKey, resolveProxyUsageBilling } from "../src/main/proxy-usage-billing";
 import type { SubagentUsageAttributionResolver } from "../src/main/subagent-usage-attribution";
+import type { AgentRole } from "../src/shared/ipc";
 
 function proxyUsage(input: Partial<AnthropicProxyUsageInfo> = {}): AnthropicProxyUsageInfo {
   return {
@@ -33,10 +30,7 @@ function parsedUsage(input: Partial<ParsedUsage> = {}): ParsedUsage {
 }
 
 function resolver(
-  input: {
-    agentByRole?: Partial<Record<AgentRole, string>>;
-    roleByAgent?: Record<string, AgentRole>;
-  } = {},
+  input: { agentByRole?: Partial<Record<AgentRole, string>>; roleByAgent?: Record<string, AgentRole> } = {},
 ): SubagentUsageAttributionResolver {
   return {
     resolveAgentId(_threadId, request) {

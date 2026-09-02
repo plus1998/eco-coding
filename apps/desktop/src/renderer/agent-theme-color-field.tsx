@@ -52,7 +52,9 @@ export function AgentThemeColorField({
             id={inputId}
             className={`models-agent-theme-color-input${invalid ? " is-invalid" : ""}`}
             type="color"
-            value={isValidThemeColorHex(resolvedValue) ? resolvedValue : defaultThemeColorForAgentKey(agentKey)}
+            value={
+              isValidThemeColorHex(resolvedValue) ? resolvedValue : defaultThemeColorForAgentKey(agentKey)
+            }
             disabled={disabled}
             onChange={(event) => onChange(event.target.value.toUpperCase())}
           />

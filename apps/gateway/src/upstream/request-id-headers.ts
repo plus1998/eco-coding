@@ -61,8 +61,7 @@ export function headersWithLogicalRequestIdentity(
 
   const rawUpstreamId = readUpstreamRequestId(upstream);
   const providerRequestId =
-    existingProviderMeta ||
-    (rawUpstreamId && rawUpstreamId !== trimmedLogical ? rawUpstreamId : undefined);
+    existingProviderMeta || (rawUpstreamId && rawUpstreamId !== trimmedLogical ? rawUpstreamId : undefined);
   if (providerRequestId && providerRequestId !== trimmedLogical) {
     headers.set(ECO_PROVIDER_REQUEST_ID_HEADER, providerRequestId);
   }

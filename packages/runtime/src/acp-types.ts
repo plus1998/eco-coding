@@ -105,12 +105,13 @@ export type AcpPermissionHandler = (
   request: AcpPermissionRequest,
 ) => Promise<AcpPermissionOutcome> | AcpPermissionOutcome;
 
-import type { AcpFsHandler } from "./acp-fs.js";
 import type {
   AcpGenerateImageHandler,
   AcpTaskHandler,
   AcpUpdateTodosHandler,
 } from "./acp-cursor-extensions.js";
+import type { AcpFsHandler } from "./acp-fs.js";
+
 export type {
   AcpCursorSubagentType,
   AcpTaskHandler,

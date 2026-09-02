@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import type { GatewayConfig, GatewayProvider } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 function testConfig(providers: GatewayProvider[]): GatewayConfig {
   return {

@@ -59,11 +59,7 @@ export function composerFloatingPlacementViewportWidth(margin = DEFAULT_MARGIN):
   return composerFloatingViewport(margin).right + margin;
 }
 
-export function clampComposerFloatingLeft(
-  rawLeft: number,
-  width: number,
-  margin = DEFAULT_MARGIN,
-): number {
+export function clampComposerFloatingLeft(rawLeft: number, width: number, margin = DEFAULT_MARGIN): number {
   const viewport = composerFloatingViewport(margin);
   return clamp(rawLeft, viewport.left, viewport.right - width);
 }
@@ -100,10 +96,7 @@ export function composerFloatingStyleForAnchor(
       : prefer === "below"
         ? !(spaceBelow < minHeight && spaceAbove > spaceBelow)
         : spaceBelow < minHeight && spaceAbove > spaceBelow;
-  const availableSpace = Math.max(
-    MIN_FLOATING_HEIGHT,
-    Math.floor(placeAbove ? spaceAbove : spaceBelow),
-  );
+  const availableSpace = Math.max(MIN_FLOATING_HEIGHT, Math.floor(placeAbove ? spaceAbove : spaceBelow));
   const fixedHeight =
     options.fixedHeight !== undefined
       ? Math.min(Math.max(options.fixedHeight, MIN_FLOATING_HEIGHT), availableSpace)
@@ -118,9 +111,7 @@ export function composerFloatingStyleForAnchor(
     maxHeight: fixedHeight ?? availableSpace,
     ...(fixedHeight !== undefined ? { height: fixedHeight } : {}),
     zIndex: 10000,
-    ...(placeAbove
-      ? { bottom: windowHeight - rect.top + gap }
-      : { top: rect.bottom + gap }),
+    ...(placeAbove ? { bottom: windowHeight - rect.top + gap } : { top: rect.bottom + gap }),
   };
 }
 

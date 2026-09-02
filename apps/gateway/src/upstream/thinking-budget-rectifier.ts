@@ -19,16 +19,13 @@ export interface BudgetRectifyResult {
   after: BudgetRectifySnapshot;
 }
 
-export function shouldRectifyThinkingBudget(
-  errorMessage: string | undefined,
-): boolean {
+export function shouldRectifyThinkingBudget(errorMessage: string | undefined): boolean {
   if (errorMessage === undefined || errorMessage === "") {
     return false;
   }
   const lower = errorMessage.toLowerCase();
 
-  const hasBudgetTokensReference =
-    lower.includes("budget_tokens") || lower.includes("budget tokens");
+  const hasBudgetTokensReference = lower.includes("budget_tokens") || lower.includes("budget tokens");
   const hasThinkingReference = lower.includes("thinking");
   const has1024Constraint =
     lower.includes("greater than or equal to 1024") ||
@@ -52,12 +49,8 @@ function snapshotBudget(body: JsonRecord): BudgetRectifySnapshot {
   const thinking = isRecord(body.thinking) ? body.thinking : undefined;
   return {
     maxTokens: asNumber(body.max_tokens),
-    thinkingType:
-      thinking !== undefined && typeof thinking.type === "string"
-        ? thinking.type
-        : undefined,
-    thinkingBudgetTokens:
-      thinking !== undefined ? asNumber(thinking.budget_tokens) : undefined,
+    thinkingType: thinking !== undefined && typeof thinking.type === "string" ? thinking.type : undefined,
+    thinkingBudgetTokens: thinking !== undefined ? asNumber(thinking.budget_tokens) : undefined,
   };
 }
 
@@ -76,10 +69,7 @@ export function rectifyThinkingBudget(body: JsonRecord): BudgetRectifyResult {
   thinking.type = "enabled";
   thinking.budget_tokens = MAX_THINKING_BUDGET;
 
-  if (
-    before.maxTokens === undefined ||
-    before.maxTokens < MIN_MAX_TOKENS_FOR_BUDGET
-  ) {
+  if (before.maxTokens === undefined || before.maxTokens < MIN_MAX_TOKENS_FOR_BUDGET) {
     body.max_tokens = MAX_TOKENS_VALUE;
   }
 

@@ -28,10 +28,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 /** Prefer HTML+plain ClipboardItem; plain mirrors HTML for text-only paste targets. */
-export async function copyHtmlToClipboard(
-  html: string,
-  plainText: string = html,
-): Promise<boolean> {
+export async function copyHtmlToClipboard(html: string, plainText: string = html): Promise<boolean> {
   if (!html.trim()) {
     return false;
   }

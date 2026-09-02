@@ -6,18 +6,18 @@ import { randomUUID } from "node:crypto";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
-  type EcoAgentRuntimeConfig,
-  type EcoApiCompat,
-  type PiSubagentSpawnHandler,
-  type PiSubagentSpawnResult,
   buildEcoPiModel,
   collectPiSubagentFinalText,
   computePiRouteFingerprint,
   createDefaultPiSession,
+  type EcoAgentRuntimeConfig,
+  type EcoApiCompat,
   filterMcpServersForPiSubagent,
   globalPiSessionRegistry,
   listEnabledPiSubagents,
   mapEcoThinkingEffortToPiThinkingLevel,
+  type PiSubagentSpawnHandler,
+  type PiSubagentSpawnResult,
   piChildSessionKey,
   piParentSessionKey,
   resolvePiRouteByRole,
@@ -27,13 +27,13 @@ import {
 } from "@eco/runtime";
 import { createAgentEvent } from "@eco/shared";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
+import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
+import type { ConversationStore } from "./conversation-store.js";
 import type { StartedGatewayRouteBinding } from "./gateway-route-binding";
 import { buildPiGatewayRequestHeaders } from "./gateway-route-binding";
-import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
-import type { ConversationStore } from "./conversation-store.js";
-import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
-import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { buildPiSessionToolApprovalFields } from "./pi-runtime-run.js";
+import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
+import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 
 export interface CreatePiSubagentSpawnHandlerInput {
   threadId: string;
@@ -90,9 +90,7 @@ export function createPiSubagentSpawnHandler(
       armed.binding.routes.find((entry) => entry.role === agent.agentKey) ??
       armed.binding.routes.find((entry) => entry.aliasModelId === route.primary.modelId);
     if (!bindingRoute) {
-      throw new Error(
-        `PI Gateway binding is missing alias route for subagent "${agent.agentKey}".`,
-      );
+      throw new Error(`PI Gateway binding is missing alias route for subagent "${agent.agentKey}".`);
     }
 
     const apiCompat = resolveUpstreamApiCompat(
@@ -101,11 +99,7 @@ export function createPiSubagentSpawnHandler(
     ) as EcoApiCompat;
 
     const agentId = `pi_${agent.agentKey}_${randomUUID().slice(0, 8)}`;
-    const childAgentDir = resolvePiSubagentAgentDir(
-      input.ecoDataDir,
-      input.threadId,
-      agentId,
-    );
+    const childAgentDir = resolvePiSubagentAgentDir(input.ecoDataDir, input.threadId, agentId);
     const childKey = piChildSessionKey(input.threadId, agentId);
 
     const headers = buildPiGatewayRequestHeaders({
@@ -132,10 +126,7 @@ export function createPiSubagentSpawnHandler(
     });
     const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(route.thinkingEffort);
 
-    const childMcp = filterMcpServersForPiSubagent(
-      input.parentMcpServers,
-      agent.mcpServers,
-    );
+    const childMcp = filterMcpServersForPiSubagent(input.parentMcpServers, agent.mcpServers);
     const hasMcp = Boolean(childMcp && Object.keys(childMcp).length > 0);
     const toolsAllowlist = resolvePiSubagentToolAllowlist(agent.tools, hasMcp);
 
@@ -155,15 +146,10 @@ export function createPiSubagentSpawnHandler(
       routes: [route],
     });
 
-    const sessionHooks = createSubagentSessionHooks(
-      input.conversationStore,
-      input.threadId,
-      "execution",
-      {
-        ...(input.lifecycle ? { lifecycle: input.lifecycle } : {}),
-        ...(input.metricsRegistry ? { metricsRegistry: input.metricsRegistry } : {}),
-      },
-    );
+    const sessionHooks = createSubagentSessionHooks(input.conversationStore, input.threadId, "execution", {
+      ...(input.lifecycle ? { lifecycle: input.lifecycle } : {}),
+      ...(input.metricsRegistry ? { metricsRegistry: input.metricsRegistry } : {}),
+    });
 
     sessionHooks.onStart({
       agentId,

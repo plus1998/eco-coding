@@ -81,10 +81,7 @@ export function listClientIds(clientArg) {
  */
 export function listRecordableProfileIds(profileArg, options = {}) {
   const requireApiKey = options.requireApiKey !== false;
-  const ids =
-    profileArg && profileArg !== "all"
-      ? [profileArg]
-      : Object.keys(GATEWAY_HTTP_PROFILES);
+  const ids = profileArg && profileArg !== "all" ? [profileArg] : Object.keys(GATEWAY_HTTP_PROFILES);
 
   const out = [];
   for (const id of ids) {

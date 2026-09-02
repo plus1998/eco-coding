@@ -6,12 +6,12 @@ import {
   buildEcoJsonRpcSuccess,
   buildEcoUserTopic,
   buildEcoVaultTopic,
+  decryptSecretWithVaultKey,
   ECO_REALTIME_BROADCAST_EVENT,
   ECO_REALTIME_TOPIC_PREFIX,
   ECO_RPC_METHODS,
   ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
   ECO_VAULT_WRAP_ALGORITHM,
-  decryptSecretWithVaultKey,
   encryptSecretWithVaultKey,
   generateVaultClaimCode,
   generateVaultClaimKeyPair,
@@ -146,9 +146,7 @@ test("wraps and unwraps vault_key with account login password", async () => {
   expect(isPasswordWrappedVaultKey(wrapped)).toBe(true);
   expect(wrapped.ciphertext).not.toContain(vaultKey);
   expect(await unwrapVaultKeyWithPassword(wrapped, password)).toBe(vaultKey);
-  await expect(unwrapVaultKeyWithPassword(wrapped, "wrong-password")).rejects.toThrow(
-    /Incorrect password/,
-  );
+  await expect(unwrapVaultKeyWithPassword(wrapped, "wrong-password")).rejects.toThrow(/Incorrect password/);
 });
 
 test("vault wrap fails across mismatched claim key pairs", async () => {
@@ -168,7 +166,5 @@ test("encrypts and decrypts API secrets with vault_key", async () => {
   expect(await decryptSecretWithVaultKey(vaultKey, sealed.ciphertext, sealed.nonce)).toBe(plaintext);
 
   const otherKey = await generateVaultKey();
-  await expect(
-    decryptSecretWithVaultKey(otherKey, sealed.ciphertext, sealed.nonce),
-  ).rejects.toThrow();
+  await expect(decryptSecretWithVaultKey(otherKey, sealed.ciphertext, sealed.nonce)).rejects.toThrow();
 });

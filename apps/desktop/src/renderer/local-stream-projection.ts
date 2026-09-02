@@ -221,9 +221,7 @@ function overlayTimeline(
   ];
 }
 
-function readOverlayReasoningDisplay(
-  update: ThreadLocalStreamUpdate,
-): "summary" | "raw" | undefined {
+function readOverlayReasoningDisplay(update: ThreadLocalStreamUpdate): "summary" | "raw" | undefined {
   return update.reasoningDisplay === "summary" || update.reasoningDisplay === "raw"
     ? update.reasoningDisplay
     : undefined;

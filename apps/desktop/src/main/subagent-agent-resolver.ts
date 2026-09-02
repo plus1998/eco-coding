@@ -20,9 +20,7 @@ export interface SubagentAgentResolveResult {
   activeAgentIds?: readonly string[];
 }
 
-export function resolveSubagentAgentId(
-  input: SubagentAgentResolveInput,
-): SubagentAgentResolveResult {
+export function resolveSubagentAgentId(input: SubagentAgentResolveInput): SubagentAgentResolveResult {
   const explicit = input.explicitAgentId?.trim();
   if (explicit) {
     return { agentId: explicit };

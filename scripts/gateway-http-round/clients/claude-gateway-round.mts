@@ -3,10 +3,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentEvent } from "../../../packages/shared/src";
 import type { EcoAgentRuntimeConfig } from "../../../packages/runtime/src/agent-orchestration";
 import { ClaudeAgentSdkDriver } from "../../../packages/runtime/src/claude-agent-sdk";
-import { buildScenarioPrompt } from "../../conversation-round/lib/scenario-prompt.mjs";
+import type { AgentEvent } from "../../../packages/shared/src";
 import {
   appendJsonl,
   ensureDir,
@@ -14,18 +13,19 @@ import {
   snapshotWorkspace,
   writeJson,
 } from "../../conversation-round/lib/fixture-io.mjs";
-import { evaluateSdkScenarioChecklist } from "../../conversation-round/lib/sdk-checklist.mjs";
 import {
   resolveClaudeExecutable,
   resolveMcpEchoServerPath,
   resolveNodeExecutable,
 } from "../../conversation-round/lib/resolve-executables.mjs";
+import { buildScenarioPrompt } from "../../conversation-round/lib/scenario-prompt.mjs";
 import { setupScenarioWorkspace } from "../../conversation-round/lib/scenario-workspace.mjs";
+import { evaluateSdkScenarioChecklist } from "../../conversation-round/lib/sdk-checklist.mjs";
 import { FULL_ROUND_SCENARIO_ID } from "../lib/client-matrix.mjs";
 import {
+  type GatewayRecordingStack,
   resolveProfileApiCompat,
   resolveProfileModelAlias,
-  type GatewayRecordingStack,
 } from "../lib/gateway-stack.mts";
 import { resolveProfile } from "../lib/profiles.mjs";
 
@@ -52,7 +52,8 @@ export async function runClaudeGatewayRound(
   const profile = resolveProfile(input.profileId);
   const modelAlias = resolveProfileModelAlias(input.profileId);
   const apiCompat = resolveProfileApiCompat(input.profileId);
-  const timeoutMs = input.timeoutMs ?? Number.parseInt(process.env.ECO_CLAUDE_SMOKE_TIMEOUT_MS ?? "600000", 10);
+  const timeoutMs =
+    input.timeoutMs ?? Number.parseInt(process.env.ECO_CLAUDE_SMOKE_TIMEOUT_MS ?? "600000", 10);
   const baseUrl = input.stack.bridgeBaseUrl;
 
   input.stack.setActiveCell({

@@ -59,10 +59,7 @@ export function resolveGrepTargetFromToolInput(
   if (!pattern) {
     return undefined;
   }
-  const path =
-    readString(input.path) ??
-    readString(input.file_path) ??
-    readString(input.filePath);
+  const path = readString(input.path) ?? readString(input.file_path) ?? readString(input.filePath);
   const glob = readString(input.glob);
   const outputMode = readString(input.output_mode) ?? readString(input.outputMode);
   const contextBefore = readNonNegativeInt(input["-B"]) ?? readNonNegativeInt(input.context_before);

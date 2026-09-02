@@ -274,7 +274,9 @@ test("desktop feed keeps narrative edge spacing stable when streaming settles to
 
 test("desktop feed disables overflow-anchor so tail tables cannot pull the scroller up", () => {
   expect(styles).toMatch(/\.activity-messages\s*\{[^}]*overflow-anchor:\s*none;/s);
-  expect(styles).toMatch(/\.markdown-content\s+table,\s*\n\s*\.markdown-content\s+\.markdown-table\s*\{[^}]*overflow-anchor:\s*none;/s);
+  expect(styles).toMatch(
+    /\.markdown-content\s+table,\s*\n\s*\.markdown-content\s+\.markdown-table\s*\{[^}]*overflow-anchor:\s*none;/s,
+  );
 });
 
 test("ActivityLogView waits for thread stop before exposing final output copy", () => {
@@ -1306,12 +1308,13 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
 
 test("splitThinkingCarouselLines separates camel-cased Summary stages", () => {
   expect(
-    splitThinkingCarouselLines("Planning summary placement after tool outputsRefining summary and tool collapse logic"),
-  ).toEqual([
-    "Planning summary placement after tool outputs",
-    "Refining summary and tool collapse logic",
+    splitThinkingCarouselLines(
+      "Planning summary placement after tool outputsRefining summary and tool collapse logic",
+    ),
+  ).toEqual(["Planning summary placement after tool outputs", "Refining summary and tool collapse logic"]);
+  expect(splitThinkingCarouselLines("HTTPServer remains one stage")).toEqual([
+    "HTTPServer remains one stage",
   ]);
-  expect(splitThinkingCarouselLines("HTTPServer remains one stage")).toEqual(["HTTPServer remains one stage"]);
 });
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {

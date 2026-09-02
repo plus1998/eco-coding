@@ -91,9 +91,7 @@ for (const profileId of listProfileIds(profileArg)) {
   report.profiles[profileId] = profileReport;
 }
 
-report.ok = Object.values(report.profiles).every((p) =>
-  Object.values(p.scenarios).every((s) => s.ok),
-);
+report.ok = Object.values(report.profiles).every((p) => Object.values(p.scenarios).every((s) => s.ok));
 
 writeJson(path.join(outDir, "summary.json"), report);
 writeJson(path.join(outDir, "meta.json"), {

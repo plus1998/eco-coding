@@ -46,11 +46,7 @@ export class AgentLifecycleService {
     private readonly options: AgentLifecycleServiceOptions = {},
   ) {}
 
-  startRunAttempt(input: {
-    threadId: string;
-    phase: RunAttemptPhase;
-    retryIndex: number;
-  }): RunAttemptRecord {
+  startRunAttempt(input: { threadId: string; phase: RunAttemptPhase; retryIndex: number }): RunAttemptRecord {
     const state = this.getOrCreateThread(input.threadId);
     if (state.currentAttempt) {
       this.finishRunAttempt(input.threadId, "failed");
@@ -332,11 +328,7 @@ export class AgentLifecycleService {
     return this.options.now?.() ?? new Date().toISOString();
   }
 
-  private createAttemptId(input: {
-    threadId: string;
-    phase: RunAttemptPhase;
-    retryIndex: number;
-  }): string {
+  private createAttemptId(input: { threadId: string; phase: RunAttemptPhase; retryIndex: number }): string {
     if (this.options.attemptId) {
       return this.options.attemptId(input);
     }

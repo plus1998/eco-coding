@@ -115,9 +115,7 @@ function resolveShiftClickAnchor(
  * - full-buffer selectAll
  * - Shift+click / Shift+drag to extend selection from the existing anchor (or cursor)
  */
-export function installTerminalSelectionEnhancements(
-  terminal: GhosttyTerminalType,
-): () => void {
+export function installTerminalSelectionEnhancements(terminal: GhosttyTerminalType): () => void {
   const manager = getSelectionManager(terminal);
   const canvas = getCanvas(terminal);
   if (!manager || !canvas) {
@@ -203,14 +201,7 @@ export function handleTerminalSelectionShortcut(
   }
 
   // Ctrl+C copies when there is a selection; otherwise let ^C reach the PTY.
-  if (
-    event.ctrlKey &&
-    !event.shiftKey &&
-    !event.altKey &&
-    !event.metaKey &&
-    isC &&
-    terminal.hasSelection()
-  ) {
+  if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && isC && terminal.hasSelection()) {
     void copyTerminalSelection(terminal);
     return true;
   }

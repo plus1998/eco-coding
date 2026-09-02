@@ -24,19 +24,13 @@ test("does not invent activity when the timeline has no valid timestamps", () =>
 test("does not warn before the idle threshold", () => {
   const updatedAt = new Date(BASE_TIME).toISOString();
   expect(
-    resolveThreadIdleDuration(
-      updatedAt,
-      BASE_TIME + THREAD_IDLE_CACHE_WARNING_THRESHOLD_MS - 1,
-    ),
+    resolveThreadIdleDuration(updatedAt, BASE_TIME + THREAD_IDLE_CACHE_WARNING_THRESHOLD_MS - 1),
   ).toBeUndefined();
 });
 
 test("returns minute-level idle duration at the threshold", () => {
   const updatedAt = new Date(BASE_TIME).toISOString();
-  const duration = resolveThreadIdleDuration(
-    updatedAt,
-    BASE_TIME + THREAD_IDLE_CACHE_WARNING_THRESHOLD_MS,
-  );
+  const duration = resolveThreadIdleDuration(updatedAt, BASE_TIME + THREAD_IDLE_CACHE_WARNING_THRESHOLD_MS);
 
   expect(duration).toEqual({
     idleMs: THREAD_IDLE_CACHE_WARNING_THRESHOLD_MS,

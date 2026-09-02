@@ -3,8 +3,6 @@ import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { createBuiltInAgentTemplates } from "../shared/agent-orchestration";
 import { normalizeUpstreamApiCompat } from "../shared/api-compat";
-import { normalizeStoredPriceMultiplier } from "../shared/manual-spec-pricing";
-import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
 import {
   AGENT_ROLES,
   type AgentRole,
@@ -19,6 +17,8 @@ import {
   type RouteProfileView,
   type ThinkingEffort,
 } from "../shared/ipc";
+import { normalizeStoredPriceMultiplier } from "../shared/manual-spec-pricing";
+import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
 import { normalizeApiVersion, normalizeRequestPath, splitBaseUrlAndRequestPath } from "./provider-models";
 
 interface ProviderRow {

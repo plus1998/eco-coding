@@ -68,10 +68,7 @@ export function normalizeWebChatUrl(raw: unknown): string | undefined {
   return normalizeBrowserNavigateUrl(raw);
 }
 
-export function normalizeCustomWebChatItem(
-  value: unknown,
-  fallbackOrder: number,
-): WebChatItem | undefined {
+export function normalizeCustomWebChatItem(value: unknown, fallbackOrder: number): WebChatItem | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -177,8 +174,7 @@ export function createCustomWebChatItem(
     return { ok: false, reason: "duplicate_url" };
   }
   const order =
-    snapshot.customs.reduce((max, item) => Math.max(max, item.order), BUILTIN_WEB_CHATS.length - 1) +
-    1;
+    snapshot.customs.reduce((max, item) => Math.max(max, item.order), BUILTIN_WEB_CHATS.length - 1) + 1;
   const item: WebChatItem = {
     id: idFactory(),
     title,
@@ -193,10 +189,7 @@ export function createCustomWebChatItem(
   };
 }
 
-export function removeCustomWebChatItem(
-  id: string,
-  existing: WebChatListSnapshot,
-): WebChatListSnapshot {
+export function removeCustomWebChatItem(id: string, existing: WebChatListSnapshot): WebChatListSnapshot {
   const snapshot = normalizeWebChatListSnapshot(existing);
   return {
     customs: snapshot.customs.filter((item) => item.id !== id),

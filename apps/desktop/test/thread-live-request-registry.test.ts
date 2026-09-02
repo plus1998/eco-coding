@@ -52,7 +52,10 @@ test("ThreadLiveRequestRegistry does not resolve same-role subagents by role alo
 test("ThreadLiveRequestRegistry does not fall back to the last active request", () => {
   const registry = new ThreadLiveRequestRegistry();
   registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
-  const lastRequestId = registry.beginRequest("thr_1", { role: "reviewer", agentId: "agent_b" }).logicalRequestId;
+  const lastRequestId = registry.beginRequest("thr_1", {
+    role: "reviewer",
+    agentId: "agent_b",
+  }).logicalRequestId;
 
   expect(registry.resolve("thr_1", { role: "explorer" })).toBeUndefined();
   expect(registry.resolve("thr_1", {})).toBeUndefined();

@@ -3,14 +3,19 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import { AcpClient } from "./acp-client.js";
-import { AcpFsHandler } from "./acp-fs.js";
 import {
   cursorAcpSpawnError,
   getCursorAcpDiagnostics,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "./acp-cursor-agent.js";
-import { type AcpEventMapContext, mapAcpCursorTask, mapAcpCursorUpdateTodos, mapAcpSessionUpdate } from "./acp-event-map.js";
+import {
+  type AcpEventMapContext,
+  mapAcpCursorTask,
+  mapAcpCursorUpdateTodos,
+  mapAcpSessionUpdate,
+} from "./acp-event-map.js";
+import { AcpFsHandler } from "./acp-fs.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
 import {
@@ -313,8 +318,7 @@ export class AcpAgentDriver {
           const events = mapAcpCursorTask(request, mapCtx);
           enqueue(events);
           const agentStarted = events.find((event) => event.type === "agent.started");
-          const agentId =
-            typeof agentStarted?.agentId === "string" ? agentStarted.agentId : undefined;
+          const agentId = typeof agentStarted?.agentId === "string" ? agentStarted.agentId : undefined;
           return {
             outcome: "completed" as const,
             ...(agentId ? { agentId } : {}),

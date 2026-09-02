@@ -1,7 +1,7 @@
 import type { AgentEvent } from "@eco/runtime";
+import { replaySdkAgentEventsThroughLivePipeline } from "../main/sdk-agent-events-replay";
 import type { ThreadRunEvent } from "../shared/ipc";
 import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
-import { replaySdkAgentEventsThroughLivePipeline } from "../main/sdk-agent-events-replay";
 
 export interface SdkFeedReplayResult {
   threadId: string;

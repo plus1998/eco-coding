@@ -60,11 +60,7 @@ export function SidebarAttentionButton({
       </button>
 
       {open ? (
-        <div
-          className="sidebar-core-attention-menu"
-          role="dialog"
-          aria-label={t("nav.attentionTitle")}
-        >
+        <div className="sidebar-core-attention-menu" role="dialog" aria-label={t("nav.attentionTitle")}>
           <div className="sidebar-core-attention-menu-header">{t("nav.attentionTitle")}</div>
           {hasItems ? (
             <ul className="sidebar-core-attention-list">

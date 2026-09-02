@@ -12,11 +12,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
 
 const marker = process.env.ECO_SMOKE_MARKER?.trim() || `LC${Date.now().toString(36).toUpperCase()}`;
-const proc = spawnSync("bun", ["scripts/gateway-http-round/record-client-round.mts", ...process.argv.slice(2)], {
-  cwd: root,
-  env: { ...process.env, ECO_SMOKE_MARKER: marker },
-  stdio: "inherit",
-});
+const proc = spawnSync(
+  "bun",
+  ["scripts/gateway-http-round/record-client-round.mts", ...process.argv.slice(2)],
+  {
+    cwd: root,
+    env: { ...process.env, ECO_SMOKE_MARKER: marker },
+    stdio: "inherit",
+  },
+);
 
 const fixturesRoot = path.join(__dirname, "fixtures");
 fs.writeFileSync(

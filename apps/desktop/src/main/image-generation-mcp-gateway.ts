@@ -1,18 +1,18 @@
 import fs from "node:fs";
 import http from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
+  buildImageGenerationPromptAppend,
   ECO_IMAGE_GENERATION_FULL_TOOL,
   ECO_IMAGE_GENERATION_MCP_SERVER,
   ECO_IMAGE_GENERATION_TOOL,
-  ImageGenerationError,
   type ImageGenerationArtifact,
+  ImageGenerationError,
   type ImageGenerationToolInput,
-  buildImageGenerationPromptAppend,
 } from "../shared/image-generation";
 import type { McpSdkConfig } from "../shared/mcp";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
@@ -48,7 +48,10 @@ export class ImageGenerationMcpGateway {
   constructor(private readonly deps: ImageGenerationGatewayDeps) {}
 
   noteUpcomingTool(threadId: string, toolName?: string, toolUseId?: string): void {
-    if (toolName?.includes(ECO_IMAGE_GENERATION_MCP_SERVER) || toolName?.includes(ECO_IMAGE_GENERATION_TOOL)) {
+    if (
+      toolName?.includes(ECO_IMAGE_GENERATION_MCP_SERVER) ||
+      toolName?.includes(ECO_IMAGE_GENERATION_TOOL)
+    ) {
       this.claims.noteUpcoming(threadId, toolName, toolUseId);
     }
   }
@@ -78,7 +81,10 @@ export class ImageGenerationMcpGateway {
     };
   }
 
-  async resolveInjection(input: { threadId: string; sessionEnabled: boolean }): Promise<ImageGenerationMcpInjection> {
+  async resolveInjection(input: {
+    threadId: string;
+    sessionEnabled: boolean;
+  }): Promise<ImageGenerationMcpInjection> {
     const settings = this.deps.store.getSettings();
     if (!settings.enabled || !input.sessionEnabled) {
       return { enabled: false, serverName: ECO_IMAGE_GENERATION_MCP_SERVER };
@@ -151,10 +157,7 @@ export class ImageGenerationMcpGateway {
   private resolveThread(authToken: string | undefined): { threadId: string; toolUseId?: string } {
     const authenticated = this.auth.resolve(authToken);
     if (authenticated) {
-      const claimed = this.claims.claimDetails(
-        ECO_IMAGE_GENERATION_TOOL,
-        authenticated.threadId,
-      );
+      const claimed = this.claims.claimDetails(ECO_IMAGE_GENERATION_TOOL, authenticated.threadId);
       return {
         threadId: authenticated.threadId,
         ...(claimed?.toolUseId && { toolUseId: claimed.toolUseId }),
@@ -184,9 +187,11 @@ export class ImageGenerationMcpGateway {
       sendJson(response, 400, { error: body.__error });
       return;
     }
-    const bearer = typeof request.headers.authorization === "string" && request.headers.authorization.toLowerCase().startsWith("bearer ")
-      ? request.headers.authorization.slice(7).trim()
-      : undefined;
+    const bearer =
+      typeof request.headers.authorization === "string" &&
+      request.headers.authorization.toLowerCase().startsWith("bearer ")
+        ? request.headers.authorization.slice(7).trim()
+        : undefined;
     const authToken = typeof body.authToken === "string" ? body.authToken : bearer;
     try {
       if (request.url === "/v1/tools/list") {
@@ -205,7 +210,10 @@ export class ImageGenerationMcpGateway {
       if (!workspacePath || !generationRoot) throw new Error("图片创建会话缺少 workspace 或运行目录。");
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
       const config = this.deps.store.getActiveClientConfig();
-      const normalized = normalizeImageGenerationToolInput(rawArgs as unknown as ImageGenerationToolInput, config.provider);
+      const normalized = normalizeImageGenerationToolInput(
+        rawArgs as unknown as ImageGenerationToolInput,
+        config.provider,
+      );
       const { prompt, ...parameters } = normalized;
       const artifact = this.deps.store.createArtifact({
         threadId,
@@ -228,29 +236,64 @@ export class ImageGenerationMcpGateway {
         this.deps.onArtifactChanged(completed);
         sendJson(response, 200, {
           result: {
-            content: [{ type: "text", text: JSON.stringify({ status: "completed", artifactId: artifact.id, images }, null, 2) }],
-            structuredContent: { status: "completed", artifactId: artifact.id, provider: config.provider, model: config.model, images },
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ status: "completed", artifactId: artifact.id, images }, null, 2),
+              },
+            ],
+            structuredContent: {
+              status: "completed",
+              artifactId: artifact.id,
+              provider: config.provider,
+              model: config.model,
+              images,
+            },
           },
         });
       } catch (error) {
-        const failure = error instanceof ImageGenerationError
-          ? error
-          : new ImageGenerationError("internal_error", error instanceof Error ? error.message : String(error));
-        const failed = this.deps.store.failArtifact(artifact.id, failure.code, failure.message, failure.partialImages);
+        const failure =
+          error instanceof ImageGenerationError
+            ? error
+            : new ImageGenerationError(
+                "internal_error",
+                error instanceof Error ? error.message : String(error),
+              );
+        const failed = this.deps.store.failArtifact(
+          artifact.id,
+          failure.code,
+          failure.message,
+          failure.partialImages,
+        );
         this.deps.onArtifactChanged(failed);
         sendJson(response, 200, {
           result: {
-            content: [{ type: "text", text: JSON.stringify({
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    status: "failed",
+                    artifactId: artifact.id,
+                    code: failure.code,
+                    message: failure.message,
+                    ...(failure.providerStatus ? { providerStatus: failure.providerStatus } : {}),
+                    ...(failure.requestId ? { requestId: failure.requestId } : {}),
+                    partialImages: failure.partialImages,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: true,
+            structuredContent: {
               status: "failed",
               artifactId: artifact.id,
               code: failure.code,
               message: failure.message,
-              ...(failure.providerStatus ? { providerStatus: failure.providerStatus } : {}),
-              ...(failure.requestId ? { requestId: failure.requestId } : {}),
               partialImages: failure.partialImages,
-            }, null, 2) }],
-            isError: true,
-            structuredContent: { status: "failed", artifactId: artifact.id, code: failure.code, message: failure.message, partialImages: failure.partialImages },
+            },
           },
         });
       }
@@ -262,14 +305,21 @@ export class ImageGenerationMcpGateway {
 
 function resolveStdioScriptPath(): string {
   const candidates = [
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../packaging/eco-image-generation-mcp-stdio.mjs"),
+    path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../packaging/eco-image-generation-mcp-stdio.mjs",
+    ),
     path.join(process.cwd(), "apps/desktop/packaging/eco-image-generation-mcp-stdio.mjs"),
     path.join(process.cwd(), "packaging/eco-image-generation-mcp-stdio.mjs"),
   ];
   try {
     const electron = require("electron") as { app?: { getAppPath?: () => string } };
-    if (electron.app?.getAppPath) candidates.unshift(path.join(electron.app.getAppPath(), "packaging/eco-image-generation-mcp-stdio.mjs"));
-    if (typeof process.resourcesPath === "string") candidates.unshift(path.join(process.resourcesPath, "eco-image-generation-mcp-stdio.mjs"));
+    if (electron.app?.getAppPath)
+      candidates.unshift(
+        path.join(electron.app.getAppPath(), "packaging/eco-image-generation-mcp-stdio.mjs"),
+      );
+    if (typeof process.resourcesPath === "string")
+      candidates.unshift(path.join(process.resourcesPath, "eco-image-generation-mcp-stdio.mjs"));
   } catch {
     // Tests run without Electron.
   }
@@ -279,7 +329,8 @@ function resolveStdioScriptPath(): string {
 function imageGenerationToolDefinition(): Record<string, unknown> {
   return {
     name: ECO_IMAGE_GENERATION_TOOL,
-    description: "Create images with Eco's active image provider and save them into the current conversation work directory. Every call requires user approval.",
+    description:
+      "Create images with Eco's active image provider and save them into the current conversation work directory. Every call requires user approval.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -288,9 +339,18 @@ function imageGenerationToolDefinition(): Record<string, unknown> {
         prompt: { type: "string", minLength: 1, maxLength: 32000 },
         size: { type: "string", description: "OpenAI: auto or WIDTHxHEIGHT; Gemini: 1K, 2K, or 4K." },
         aspect_ratio: { type: "string", description: "Gemini only, for example 1:1 or 16:9." },
-        quality: { type: "string", enum: ["auto", "low", "medium", "high"], description: "OpenAI-style providers only." },
+        quality: {
+          type: "string",
+          enum: ["auto", "low", "medium", "high"],
+          description: "OpenAI-style providers only.",
+        },
         count: { type: "integer", minimum: 1, maximum: 4, default: 1 },
-        output_name: { type: "string", minLength: 1, maxLength: 80, description: "Safe filename prefix, never a path." },
+        output_name: {
+          type: "string",
+          minLength: 1,
+          maxLength: 80,
+          description: "Safe filename prefix, never a path.",
+        },
       },
     },
   };

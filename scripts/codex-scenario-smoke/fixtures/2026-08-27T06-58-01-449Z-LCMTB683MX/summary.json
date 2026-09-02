@@ -7,8 +7,6 @@
   "startedAt": "2026-08-27T06:58:01.482Z",
   "ok": false,
   "checklist": null,
-  "errors": [
-    "Error: thread not idle"
-  ],
+  "errors": ["Error: thread not idle"],
   "finishedAt": "2026-08-27T06:59:11.080Z"
 }

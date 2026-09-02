@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  isContextSnapshotLogEnabled,
-  logContextSnapshot,
-} from "../src/main/context-snapshot-log";
+import { isContextSnapshotLogEnabled, logContextSnapshot } from "../src/main/context-snapshot-log";
 
 test("logContextSnapshot is a no-op when logging disabled", () => {
   const previous = process.env.ECO_CONTEXT_SNAPSHOT_LOG;

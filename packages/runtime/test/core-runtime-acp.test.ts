@@ -1,10 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  ACP_CORE_CAPABILITIES,
-  CORE_KINDS,
-  isCoreKind,
-  type AcpAgentId,
-} from "../src/core-runtime";
+import { ACP_CORE_CAPABILITIES, type AcpAgentId, CORE_KINDS, isCoreKind } from "../src/core-runtime";
 
 test("CORE_KINDS includes acp and excludes first-class cursor", () => {
   expect(CORE_KINDS).toContain("acp");

@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  extractUpstreamErrorMessage,
-  formatUpstreamHttpError,
-} from "../src/upstream/upstream-error.js";
+import { extractUpstreamErrorMessage, formatUpstreamHttpError } from "../src/upstream/upstream-error.js";
 
 describe("upstream-error", () => {
   test("extracts OpenAI-style error.message", () => {

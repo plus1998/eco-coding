@@ -1,12 +1,7 @@
 import type { BillingUsageSource } from "../shared/ipc";
 import type { UsageLedgerSource } from "./usage-ledger";
 
-export const DEFAULT_BILLING_SOURCE_PRIORITY: readonly BillingUsageSource[] = [
-  "sdk",
-  "proxy",
-  "codex",
-  "pi",
-];
+export const DEFAULT_BILLING_SOURCE_PRIORITY: readonly BillingUsageSource[] = ["sdk", "proxy", "codex", "pi"];
 export const PROXY_FIRST_BILLING_SOURCE_PRIORITY: readonly BillingUsageSource[] = [
   "proxy",
   "sdk",
@@ -26,12 +21,7 @@ export const PI_FIRST_BILLING_SOURCE_PRIORITY: readonly BillingUsageSource[] = [
   "codex",
 ];
 
-export const DEFAULT_LEDGER_SOURCE_PRIORITY: readonly UsageLedgerSource[] = [
-  "sdk",
-  "proxy",
-  "codex",
-  "pi",
-];
+export const DEFAULT_LEDGER_SOURCE_PRIORITY: readonly UsageLedgerSource[] = ["sdk", "proxy", "codex", "pi"];
 export const PROXY_FIRST_LEDGER_SOURCE_PRIORITY: readonly UsageLedgerSource[] = [
   "proxy",
   "sdk",
@@ -44,12 +34,7 @@ export const CODEX_FIRST_LEDGER_SOURCE_PRIORITY: readonly UsageLedgerSource[] = 
   "sdk",
   "pi",
 ];
-export const PI_FIRST_LEDGER_SOURCE_PRIORITY: readonly UsageLedgerSource[] = [
-  "pi",
-  "proxy",
-  "sdk",
-  "codex",
-];
+export const PI_FIRST_LEDGER_SOURCE_PRIORITY: readonly UsageLedgerSource[] = ["pi", "proxy", "sdk", "codex"];
 
 export function resolveBillingSourcePriority(
   sourceBreakdown: Partial<Record<BillingUsageSource, unknown>>,

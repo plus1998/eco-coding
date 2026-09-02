@@ -1,13 +1,13 @@
-import type { GatewayProvider } from "../../../apps/gateway/src/types.ts";
+import { type EcoSdkBridgeServer, startEcoSdkBridge } from "../../../apps/desktop/src/main/eco-sdk-bridge.ts";
 import { normalizeProvider } from "../../../apps/gateway/src/provider-config.ts";
 import { startEcoGateway } from "../../../apps/gateway/src/server.ts";
-import { startEcoSdkBridge, type EcoSdkBridgeServer } from "../../../apps/desktop/src/main/eco-sdk-bridge.ts";
+import type { GatewayProvider } from "../../../apps/gateway/src/types.ts";
 import {
   buildCodexGatewayModelAlias,
   resolveEcoGatewayPort,
 } from "../../../packages/runtime/src/codex-config-sync.ts";
-import { resolveProfile } from "./profiles.mjs";
 import { upstreamKindToApiCompat } from "./client-matrix.mjs";
+import { resolveProfile } from "./profiles.mjs";
 import { createUpstreamLoggingFetch } from "./upstream-logger.mjs";
 
 export interface GatewayRecordingCell {

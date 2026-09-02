@@ -26,7 +26,5 @@ export function canRegenerateThreadTitle(
   titleGenerating: boolean,
   coreKind?: string | null,
 ): boolean {
-  return (
-    !coreOwnsSessionTitle(coreKind) && !titleGenerating && isPendingThreadTitle(title)
-  );
+  return !coreOwnsSessionTitle(coreKind) && !titleGenerating && isPendingThreadTitle(title);
 }

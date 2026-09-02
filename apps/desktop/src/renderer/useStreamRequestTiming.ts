@@ -107,7 +107,9 @@ export function useStreamRequestTiming(
     if (persistedFields) {
       const startedMs = Date.parse(persistedFields.startedAt);
       setTtftMs(
-        Number.isFinite(startedMs) ? Math.max(0, Date.now() - startedMs) : Math.max(0, performance.now() - (startedAtRef.current ?? performance.now())),
+        Number.isFinite(startedMs)
+          ? Math.max(0, Date.now() - startedMs)
+          : Math.max(0, performance.now() - (startedAtRef.current ?? performance.now())),
       );
     } else if (startedAtRef.current) {
       setTtftMs(Math.max(0, performance.now() - startedAtRef.current));
@@ -115,8 +117,7 @@ export function useStreamRequestTiming(
     startedAtRef.current = undefined;
   }, [hasContent, persistedFields, persistedTtftMs]);
 
-  const phase: StreamRequestTimingPhase =
-    ttftMs !== undefined ? "done" : active ? "waiting" : "idle";
+  const phase: StreamRequestTimingPhase = ttftMs !== undefined ? "done" : active ? "waiting" : "idle";
 
   return { phase, waitingMs, elapsedMs: waitingMs, ...(ttftMs !== undefined && { ttftMs }) };
 }

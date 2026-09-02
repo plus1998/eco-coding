@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  isAppTheme,
-  readStoredAppTheme,
-  readSystemAppTheme,
-  resolveAppTheme,
-} from "../src/renderer/theme";
+import { isAppTheme, readStoredAppTheme, readSystemAppTheme, resolveAppTheme } from "../src/renderer/theme";
 
 describe("theme", () => {
   test("isAppTheme accepts dark, light, and system", () => {

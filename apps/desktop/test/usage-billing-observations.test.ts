@@ -5,9 +5,7 @@ import {
   usageBillingObservationKey,
 } from "../src/main/usage-billing-observations";
 
-function observation(
-  overrides: Partial<UsageBillingObservation> = {},
-): UsageBillingObservation {
+function observation(overrides: Partial<UsageBillingObservation> = {}): UsageBillingObservation {
   return {
     source: "sdk",
     role: "coder",

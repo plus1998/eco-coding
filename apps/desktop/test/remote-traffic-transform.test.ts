@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { transformRemoteInvokeResult } from "../src/main/event-center";
+import type { WorkspaceDiffResult } from "../src/main/git-operations";
 import {
   REMOTE_THREAD_LIST_MESSAGE_MAX_CHARS,
   REMOTE_THREAD_LIST_PROMPT_MAX_CHARS,
   summarizeThreadForRemoteList,
 } from "../src/main/remote-thread-list";
 import { IPC_CHANNELS, type ThreadSummary } from "../src/shared/ipc";
-import type { WorkspaceDiffResult } from "../src/main/git-operations";
 
 const thread: ThreadSummary = {
   id: "thr_1",

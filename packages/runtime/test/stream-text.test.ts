@@ -74,15 +74,7 @@ test("appends repeated single-char deltas", () => {
 
 test("reconstructs a realistic identifier-heavy plan sentence", () => {
   let text = "";
-  for (const chunk of [
-    "is",
-    "Ad",
-    "qx",
-    "K",
-    "efu",
-    "Enabled",
-    ":true",
-  ]) {
+  for (const chunk of ["is", "Ad", "qx", "K", "efu", "Enabled", ":true"]) {
     text = mergeStreamText(text, chunk);
   }
   expect(text).toBe("isAdqxKefuEnabled:true");

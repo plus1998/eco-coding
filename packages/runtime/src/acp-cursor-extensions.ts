@@ -172,8 +172,7 @@ export function parseAcpUpdateTodosRequest(params: unknown): AcpUpdateTodosReque
     if (!content) {
       continue;
     }
-    const id =
-      typeof record.id === "string" && record.id.trim() ? record.id.trim() : String(index);
+    const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : String(index);
     todos.push({
       id,
       content,

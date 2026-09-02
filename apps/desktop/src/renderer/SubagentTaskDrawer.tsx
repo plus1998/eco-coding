@@ -17,6 +17,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
+import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
 import type {
   BackgroundTerminalTask,
   ImageGenerationArtifact,
@@ -26,32 +29,22 @@ import type {
   ThreadStatus,
   WorkspaceDiffResult,
 } from "../shared/ipc";
-import {
-  imageGenerationTaskTabId,
-  parseImageGenerationTaskTabId,
-} from "../shared/image-generation";
+import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
+import { BrowserPanel } from "./BrowserPanel";
 import { useBrowserTaskInstances } from "./browser-state-store";
+import { i18n } from "./i18n";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
+import { SshBookmarksPanel } from "./SshBookmarksPanel";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
-import { WorkspaceDiffPanel, useEcoWorkspaceFileDiffLoader } from "./WorkspaceDiffDrawer";
+import { useEcoWorkspaceFileDiffLoader, WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
 import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
-import { BrowserPanel } from "./BrowserPanel";
-import { i18n } from "./i18n";
 import { basename } from "./workspace-file-browser-logic";
 import type { WorkspaceFileReference } from "./workspace-file-reference";
-import { SshBookmarksPanel } from "./SshBookmarksPanel";
-import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
-import type { SshBookmarkView } from "../shared/ssh-bookmarks";
-import {
-  browserTaskTabId,
-  isBrowserTaskTabId,
-  parseBrowserTaskTabId,
-} from "../shared/browser";
 import "./subagent-task-drawer-home.css";
 
 export const TASK_PANEL_HOME_TAB_ID = "__home__";
@@ -72,13 +65,7 @@ export type TaskPanelBrowserInstance = {
   isLoading?: boolean;
 };
 
-function TaskBrowserTabIcon({
-  faviconUrl,
-  label,
-}: {
-  faviconUrl?: string;
-  label: string;
-}) {
+function TaskBrowserTabIcon({ faviconUrl, label }: { faviconUrl?: string; label: string }) {
   const [failed, setFailed] = useState(false);
   if (!faviconUrl || failed) {
     return <Globe size={15} aria-hidden />;
@@ -318,10 +305,7 @@ function SubagentProjectionDetail({
   const feedSequence = useMemo(() => {
     if (!projection) return undefined;
     let maximum: number | undefined;
-    for (const item of [
-      ...projection.timeline,
-      ...projection.agents.flatMap((agent) => agent.timeline),
-    ]) {
+    for (const item of [...projection.timeline, ...projection.agents.flatMap((agent) => agent.timeline)]) {
       maximum = maximum === undefined ? item.sequence : Math.max(maximum, item.sequence);
     }
     return maximum;
@@ -473,20 +457,21 @@ function SubagentProjectionDetail({
       .finally(() => setLoadingEarlier(false));
   }, []);
 
-  const resolvedAgent = detail
-    ? { ...card.agent, ...detail.agent, timeline: detail.timeline }
-    : card.agent;
+  const resolvedAgent = detail ? { ...card.agent, ...detail.agent, timeline: detail.timeline } : card.agent;
 
   return (
     <>
       {detail?.hasEarlier ? (
-        <button type="button" className="task-panel-load-earlier" disabled={loadingEarlier} onClick={loadEarlier}>
+        <button
+          type="button"
+          className="task-panel-load-earlier"
+          disabled={loadingEarlier}
+          onClick={loadEarlier}
+        >
           {loadingEarlier ? t("task.loadingEarlier") : t("task.loadEarlier")}
         </button>
       ) : null}
-      {loading ? (
-        <div className="subagent-task-detail-status">{t("task.loadingFull")}</div>
-      ) : null}
+      {loading ? <div className="subagent-task-detail-status">{t("task.loadingFull")}</div> : null}
       {error ? <div className="subagent-task-detail-status is-error">{error}</div> : null}
       <ProjectionSubagentDetailFeed
         agent={resolvedAgent}
@@ -645,11 +630,14 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
       artifact.images.map((_, imageIndex) =>
         window.eco!.readImageGenerationArtifact({ artifactId: artifact.id, imageIndex }),
       ),
-    ).then((results) => {
-      if (!cancelled) setImages(results.map((result) => `data:${result.mimeType};base64,${result.dataBase64}`));
-    }).catch((error) => {
-      if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
-    });
+    )
+      .then((results) => {
+        if (!cancelled)
+          setImages(results.map((result) => `data:${result.mimeType};base64,${result.dataBase64}`));
+      })
+      .catch((error) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+      });
     return () => {
       cancelled = true;
     };
@@ -674,7 +662,9 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
         <span className={`image-artifact-status is-${artifact.status}`}>
           {t(`task.image.status.${artifact.status}`)}
         </span>
-        <span>{artifact.profileName} · {artifact.model}</span>
+        <span>
+          {artifact.profileName} · {artifact.model}
+        </span>
       </header>
       <section>
         <h3>{t("task.image.prompt")}</h3>
@@ -691,7 +681,11 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
         </section>
       ) : null}
       {loadError ? <p className="image-artifact-error">{loadError}</p> : null}
-      {revealError ? <p className="image-artifact-error" role="alert">{revealError}</p> : null}
+      {revealError ? (
+        <p className="image-artifact-error" role="alert">
+          {revealError}
+        </p>
+      ) : null}
       {images.length > 0 ? (
         <div className="image-artifact-gallery">
           {images.map((source, index) => (
@@ -844,10 +838,7 @@ export function SubagentTaskDrawer({
       return known ?? { id, title: t("browser.title"), url: "about:blank" };
     })
     .filter((item): item is TaskPanelBrowserInstance => Boolean(item));
-  const browserTabs =
-    openBrowserInstances.length > 0
-      ? openBrowserInstances
-      : browserTabsFromOpenIds;
+  const browserTabs = openBrowserInstances.length > 0 ? openBrowserInstances : browserTabsFromOpenIds;
   const filesOpen = openTabIds.includes(TASK_PANEL_FILES_TAB_ID);
   const fileViewerOpen = openTabIds.includes(TASK_PANEL_FILE_VIEWER_TAB_ID);
   const reviewOpen = openTabIds.includes(TASK_PANEL_REVIEW_TAB_ID);
@@ -895,9 +886,7 @@ export function SubagentTaskDrawer({
       <header className="subagent-task-panel-topbar">
         <div className="subagent-task-panel-tabs" role="tablist" aria-label={t("task.tabs")}>
           {filesOpen ? (
-            <span
-              className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}
-            >
+            <span className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}>
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--files${
@@ -923,9 +912,7 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {fileViewerOpen ? (
-            <span
-              className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}
-            >
+            <span className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}>
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--file-viewer${
@@ -957,9 +944,7 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {reviewOpen ? (
-            <span
-              className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}
-            >
+            <span className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}>
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--review${
@@ -1010,11 +995,7 @@ export function SubagentTaskDrawer({
                   onClick={() => onSelectBrowser(instance.id)}
                 >
                   {isLoading ? (
-                    <LoaderCircle
-                      size={15}
-                      className="subagent-task-panel-tab-spinner"
-                      aria-hidden
-                    />
+                    <LoaderCircle size={15} className="subagent-task-panel-tab-spinner" aria-hidden />
                   ) : (
                     <TaskBrowserTabIcon
                       {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
@@ -1076,7 +1057,12 @@ export function SubagentTaskDrawer({
                   <ImageIcon size={15} aria-hidden />
                   <span className="subagent-task-panel-tab-label">{t("task.image.title")}</span>
                 </button>
-                <button type="button" className="subagent-task-panel-tab-close" title={t("task.closeTabTitle")} onClick={() => onCloseTab(tabId)}>
+                <button
+                  type="button"
+                  className="subagent-task-panel-tab-close"
+                  title={t("task.closeTabTitle")}
+                  onClick={() => onCloseTab(tabId)}
+                >
                   <X size={13} aria-hidden />
                 </button>
               </span>
@@ -1135,9 +1121,7 @@ export function SubagentTaskDrawer({
             );
           })}
           {terminalTasksOpen ? (
-            <span
-              className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}
-            >
+            <span className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}>
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--terminal${
@@ -1163,9 +1147,7 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {sshBookmarksOpen ? (
-            <span
-              className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}
-            >
+            <span className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}>
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--ssh${

@@ -10,8 +10,8 @@ import {
   toggleAgentTemplateAdvancedDisallowedTool,
   toggleAgentTemplateListValue,
 } from "../src/renderer/agent-template-form";
-import type { AgentTemplate } from "../src/shared/ipc";
 import { createDefaultToolCapabilityFields } from "../src/renderer/tool-capability-groups";
+import type { AgentTemplate } from "../src/shared/ipc";
 
 const builtInTemplate: AgentTemplate = {
   id: "builtin.research.researcher",
@@ -28,9 +28,7 @@ const builtInTemplate: AgentTemplate = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function templateForm(
-  overrides: Partial<ReturnType<typeof createBlankAgentTemplateForm>> = {},
-) {
+function templateForm(overrides: Partial<ReturnType<typeof createBlankAgentTemplateForm>> = {}) {
   return {
     id: "user.research.custom",
     name: "Custom Research",
@@ -150,15 +148,9 @@ test("template list toggles preserve unknown values and advanced toggles update 
   expect(toggleAgentTemplateListValue("docs, missing", "docs", false)).toBe("missing");
   expect(toggleAgentTemplateListValue("docs", "mcp__docs__*", true)).toBe("docs, mcp__docs__*");
 
-  expect(
-    toggleAgentTemplateAdvancedDisallowedTool("Bash, Write", "Read", true),
-  ).toBe("");
-  expect(
-    toggleAgentTemplateAdvancedDisallowedTool("Bash, Custom", "Bash", false),
-  ).toBe("Custom");
-  expect(
-    toggleAgentTemplateAdvancedDisallowedTool("Agent, Custom", "Agent", true),
-  ).toBe("Custom");
+  expect(toggleAgentTemplateAdvancedDisallowedTool("Bash, Write", "Read", true)).toBe("");
+  expect(toggleAgentTemplateAdvancedDisallowedTool("Bash, Custom", "Bash", false)).toBe("Custom");
+  expect(toggleAgentTemplateAdvancedDisallowedTool("Agent, Custom", "Agent", true)).toBe("Custom");
 });
 
 test("buildAgentTemplatePermissionChips summarizes capability policy", () => {

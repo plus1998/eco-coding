@@ -1,19 +1,20 @@
-import type { WorktreePlan } from "@eco/workspace";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
   type CoreKind,
   type EcoAgentRuntimeConfig,
   type EcoApiCompat,
-  PiCodingAgentDriver,
   globalPiSessionRegistry,
   listEnabledPiSubagents,
+  PiCodingAgentDriver,
   probePiCoreAvailability,
   removePiAgentThreadDir,
   resolvePiAgentDir,
   resolvePiPlannerRoute,
   resolvePiRouteByRole,
 } from "@eco/runtime";
+import type { WorktreePlan } from "@eco/workspace";
+import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import type {
   PromptImageAttachment,
   RuntimeRoleRouteConfig,
@@ -21,19 +22,15 @@ import type {
   WorkspaceInfo,
 } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
-import type { RuntimeRoute } from "./billing-resolver";
-import {
-  type StartedGatewayRouteBinding,
-  buildPiGatewayRequestHeaders,
-} from "./gateway-route-binding";
-import type { RequestAttemptResult } from "./request-retry";
-import { buildDriverRoutes } from "./thread-runtime-routes";
-import type { RunAttemptContext } from "./thread-run-attempt";
-import { resolveUpstreamApiCompat } from "../shared/api-compat";
-import { createPiSubagentSpawnHandler } from "./pi-subagent-host.js";
-import type { ConversationStore } from "./conversation-store.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
+import type { RuntimeRoute } from "./billing-resolver";
+import type { ConversationStore } from "./conversation-store.js";
+import { buildPiGatewayRequestHeaders, type StartedGatewayRouteBinding } from "./gateway-route-binding";
+import { createPiSubagentSpawnHandler } from "./pi-subagent-host.js";
+import type { RequestAttemptResult } from "./request-retry";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
+import type { RunAttemptContext } from "./thread-run-attempt";
+import { buildDriverRoutes } from "./thread-runtime-routes";
 
 export interface PiThreadStartRunInput {
   thread: ThreadSummary;
@@ -55,11 +52,7 @@ export interface PiThreadStartRunInput {
 
 export interface PiRuntimeOrchestrationDeps {
   ecoDataDir: string;
-  requireThreadCore: (
-    thread: Pick<ThreadSummary, "id" | "coreKind">,
-    expected: CoreKind,
-    op: string,
-  ) => void;
+  requireThreadCore: (thread: Pick<ThreadSummary, "id" | "coreKind">, expected: CoreKind, op: string) => void;
   resolveSessionMode: (runtimeConfig: ThreadSummary["runtimeConfig"]) => "agent" | "plan" | "ask";
   startActiveRun: (threadId: string, run: ActiveRunRuntimeStateInput) => void;
   createSessionPlan: (workspacePath: string, threadId: string) => WorktreePlan;
@@ -73,7 +66,9 @@ export interface PiRuntimeOrchestrationDeps {
     signal: AbortSignal,
     run: (context: RunAttemptContext) => Promise<RequestAttemptResult>,
   ) => Promise<RequestAttemptResult>;
-  resolveRuntimeConfigForThreadId: (threadId: string) =>
+  resolveRuntimeConfigForThreadId: (
+    threadId: string,
+  ) =>
     | { ok: true; routes: RuntimeRoute[]; reason?: undefined }
     | { ok: false; routes?: undefined; reason: string }
     | { ok: true; routes: RuntimeRoute[] }
@@ -198,8 +193,7 @@ export function getPiCodingAgentDriver(ecoDataDir: string): PiCodingAgentDriver 
         const selectedRole = role?.trim();
         const bindingRoute = selectedRole
           ? armed.binding.routes.find((entry) => entry.role === selectedRole)
-          : armed.binding.routes.find((entry) => entry.role === "planner") ??
-            armed.binding.routes[0];
+          : (armed.binding.routes.find((entry) => entry.role === "planner") ?? armed.binding.routes[0]);
         if (!bindingRoute) {
           throw new Error(
             selectedRole
@@ -278,8 +272,7 @@ export async function startPiThreadRun(
       worktreePlan: resolved.worktreePlan,
     });
 
-    const requestPhase =
-      mode === "ask" ? "ask" : mode === "plan" ? "planning" : "execution";
+    const requestPhase = mode === "ask" ? "ask" : mode === "plan" ? "planning" : "execution";
 
     let planningPlanCaptured = false;
     const outcome = await deps.runThreadRequestOnce(
@@ -301,11 +294,7 @@ export async function startPiThreadRun(
             : {}),
           signal: controller.signal,
         });
-        const binding = await deps.startRuntimeProxy(
-          config.routes,
-          undefined,
-          attemptContext,
-        );
+        const binding = await deps.startRuntimeProxy(config.routes, undefined, attemptContext);
         const agentDir = resolvePiAgentDir(deps.ecoDataDir, input.thread.id);
         const driverRoutes = buildDriverRoutes(binding.routes);
         const diskResume = resolvePiDiskResume({
@@ -317,9 +306,7 @@ export async function startPiThreadRun(
           driverRoutes,
           agentDir,
           globalContextWindowLimit: deps.getGlobalContextWindowLimit(),
-          ...(attemptContext.runAttemptId
-            ? { runAttemptId: attemptContext.runAttemptId }
-            : {}),
+          ...(attemptContext.runAttemptId ? { runAttemptId: attemptContext.runAttemptId } : {}),
         });
         try {
           // Do not surface local gateway baseUrl/port to the user — internal orchestration only.
@@ -370,15 +357,11 @@ export async function startPiThreadRun(
             worktreePath: cwd,
             routes: driverRoutes,
             signal: controller.signal,
-            ...(input.agentRegistry && mode === "agent"
-              ? { agentRegistry: input.agentRegistry }
-              : {}),
+            ...(input.agentRegistry && mode === "agent" ? { agentRegistry: input.agentRegistry } : {}),
             piSession: {
               skillPaths: input.skillPaths ?? [],
               sessionMode: mode,
-              ...(input.mcpServers &&
-              Object.keys(input.mcpServers).length > 0 &&
-              mode === "agent"
+              ...(input.mcpServers && Object.keys(input.mcpServers).length > 0 && mode === "agent"
                 ? { mcpServers: input.mcpServers }
                 : {}),
               ...(input.appendSystemPrompt && input.appendSystemPrompt.length > 0
@@ -444,8 +427,7 @@ export async function startPiThreadRun(
                           typeof payload.userPrompt === "string" && payload.userPrompt.trim()
                             ? payload.userPrompt
                             : input.prompt,
-                        analysis:
-                          typeof payload.analysis === "string" ? payload.analysis : "",
+                        analysis: typeof payload.analysis === "string" ? payload.analysis : "",
                         plan,
                         ...(typeof payload.planFilePath === "string" && payload.planFilePath.trim()
                           ? { planFilePath: payload.planFilePath }
@@ -495,10 +477,7 @@ export function disposePiThreadSession(threadId: string): void {
 }
 
 /** Remove Eco-owned `pi-agent/<threadId>` tree after disposing the in-process session. */
-export async function removePiThreadAgentDir(
-  ecoDataDir: string,
-  threadId: string,
-): Promise<void> {
+export async function removePiThreadAgentDir(ecoDataDir: string, threadId: string): Promise<void> {
   await removePiAgentThreadDir(ecoDataDir, threadId);
 }
 
@@ -531,17 +510,13 @@ export function resolvePiDiskResume(input: {
     return undefined;
   }
   const metadata = binding.metadata ?? {};
-  const sessionFile =
-    typeof metadata.sessionFile === "string" ? metadata.sessionFile.trim() : "";
+  const sessionFile = typeof metadata.sessionFile === "string" ? metadata.sessionFile.trim() : "";
   if (!sessionFile) {
     return undefined;
   }
   const identityFingerprint =
-    typeof metadata.identityFingerprint === "string"
-      ? metadata.identityFingerprint.trim()
-      : "";
-  const mcpFingerprint =
-    typeof metadata.mcpFingerprint === "string" ? metadata.mcpFingerprint.trim() : "";
+    typeof metadata.identityFingerprint === "string" ? metadata.identityFingerprint.trim() : "";
+  const mcpFingerprint = typeof metadata.mcpFingerprint === "string" ? metadata.mcpFingerprint.trim() : "";
   return {
     sessionFile,
     resumeIdentityFingerprint: identityFingerprint,

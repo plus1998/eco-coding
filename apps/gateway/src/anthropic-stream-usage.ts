@@ -85,8 +85,7 @@ export function trackAnthropicStreamUsage(
     if (
       delta.outputTokens < tracker.usage.outputTokens ||
       (delta.inputTokens !== undefined && delta.inputTokens < tracker.usage.inputTokens) ||
-      (delta.cacheReadTokens !== undefined &&
-        delta.cacheReadTokens < tracker.usage.cacheReadTokens) ||
+      (delta.cacheReadTokens !== undefined && delta.cacheReadTokens < tracker.usage.cacheReadTokens) ||
       (delta.cacheCreationTokens !== undefined &&
         delta.cacheCreationTokens < tracker.usage.cacheCreationTokens)
     ) {
@@ -153,10 +152,7 @@ function parseAnthropicMessageDeltaUsage(usage: unknown): {
   }
   const inputTokens = readOptionalCumulativeTokenCount(usage, "input_tokens");
   const cacheReadTokens = readOptionalCumulativeTokenCount(usage, "cache_read_input_tokens");
-  const cacheCreationTokens = readOptionalCumulativeTokenCount(
-    usage,
-    "cache_creation_input_tokens",
-  );
+  const cacheCreationTokens = readOptionalCumulativeTokenCount(usage, "cache_creation_input_tokens");
   if (!inputTokens.valid || !cacheReadTokens.valid || !cacheCreationTokens.valid) {
     return null;
   }
@@ -182,9 +178,7 @@ function readOptionalCumulativeTokenCount(
 }
 
 function readExactNonNegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function readNonEmptyString(value: unknown): string | undefined {

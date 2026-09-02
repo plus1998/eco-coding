@@ -1,6 +1,6 @@
 import parser, { type Change, type File } from "gitdiff-parser";
 import type { Node as PMNode } from "prosemirror-model";
-import { createEmptyDiffDoc, diffViewerSchema, type DiffLineKind } from "./diff-viewer-schema";
+import { createEmptyDiffDoc, type DiffLineKind, diffViewerSchema } from "./diff-viewer-schema";
 
 function isDelete(change: Change): change is Extract<Change, { type: "delete" }> {
   return change.type === "delete";
@@ -47,7 +47,11 @@ function normalizeDiffText(text: string): string {
   const secondBreak = trimmed.indexOf("\n", firstBreak + 1);
   if (firstBreak < 0 || secondBreak < 0) return trimmed;
   const oldPath = trimmed.slice(0, firstBreak).split(" ").slice(1, -3).join(" ");
-  const newPath = trimmed.slice(firstBreak + 1, secondBreak).split(" ").slice(1, -3).join(" ");
+  const newPath = trimmed
+    .slice(firstBreak + 1, secondBreak)
+    .split(" ")
+    .slice(1, -3)
+    .join(" ");
   return [
     `diff --git a/${oldPath} b/${newPath}`,
     "index 1111111..2222222 100644",
@@ -152,9 +156,7 @@ function changeLineAttrs(change: Change): {
 
 export function buildDiffDocFromFile(file: File): PMNode {
   const hunkNodes = file.hunks.map((hunk) => {
-    const lines = hunk.changes.map((change) =>
-      diffViewerSchema.node("diff_line", changeLineAttrs(change)),
-    );
+    const lines = hunk.changes.map((change) => diffViewerSchema.node("diff_line", changeLineAttrs(change)));
     return diffViewerSchema.node("hunk", null, lines);
   });
   if (hunkNodes.length === 0) return createEmptyDiffDoc();
@@ -170,9 +172,7 @@ export function buildDiffDocFromPatch(patch: string, selectedPath?: string): PMN
   } catch {
     return null;
   }
-  const visible = selectedPath
-    ? files.filter((file) => diffFilePath(file) === selectedPath)
-    : files;
+  const visible = selectedPath ? files.filter((file) => diffFilePath(file) === selectedPath) : files;
   if (visible.length === 0) return null;
   // Review shows one selected file; multiple files only when no selection.
   if (visible.length === 1) return buildDiffDocFromFile(visible[0]!);

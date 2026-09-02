@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  SdkStreamActivityBridge,
-  toThreadLocalStreamUpdate,
-} from "../src/main/sdk-stream-activity";
+import { SdkStreamActivityBridge, toThreadLocalStreamUpdate } from "../src/main/sdk-stream-activity";
 
 test("emits every SDK text update locally while throttling the remote stream", async () => {
   const bridge = new SdkStreamActivityBridge();
@@ -1303,13 +1300,7 @@ test("persists task terminal aggregate usage as diagnostics metadata only", () =
 test("flushPendingAndReset finalizes open narrative text instead of dropping it", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ type: string; message: string; stream: boolean }> = [];
-  const emit = (
-    _threadId: string,
-    type: string,
-    message: string,
-    _role: string,
-    stream: boolean,
-  ) => {
+  const emit = (_threadId: string, type: string, message: string, _role: string, stream: boolean) => {
     emitted.push({ type, message, stream });
   };
 
@@ -1345,23 +1336,12 @@ test("keeps unkeyed ACP thinking and text on separate stream identities", () => 
   }> = [];
   const remote: Array<{ role: string; message: string; stream: boolean }> = [];
 
-  const emit = (
-    _threadId: string,
-    _type: string,
-    message: string,
-    role: string,
-    stream: boolean,
-  ) => {
+  const emit = (_threadId: string, _type: string, message: string, role: string, stream: boolean) => {
     remote.push({ role, message, stream });
   };
   const options = {
     activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: {
-      role: string;
-      message: string;
-      streamKey: string;
-      stream: boolean;
-    }) {
+    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
       local.push({
         role: update.role,
         text: update.message,
@@ -1387,8 +1367,12 @@ test("keeps unkeyed ACP thinking and text on separate stream identities", () => 
   send({ type: "eco_stream", text: "文" });
   send({ type: "eco_stream", blockKind: "thinking", text: "再想" });
 
-  const thinkingKeys = [...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey))];
-  const messageKeys = [...new Set(local.filter((item) => item.role === "planner").map((item) => item.streamKey))];
+  const thinkingKeys = [
+    ...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey)),
+  ];
+  const messageKeys = [
+    ...new Set(local.filter((item) => item.role === "planner").map((item) => item.streamKey)),
+  ];
   expect(thinkingKeys).toHaveLength(2);
   expect(messageKeys).toHaveLength(1);
   expect(thinkingKeys[0]).not.toBe(messageKeys[0]);
@@ -1405,9 +1389,9 @@ test("keeps unkeyed ACP thinking and text on separate stream identities", () => 
   expect(secondThinking[0]?.text).toBe("再想");
   expect(secondThinking.every((item) => !item.text.includes("正文"))).toBe(true);
 
-  expect(remote.some((item) => item.role === "thinking" && item.message === "想一下" && item.stream === false)).toBe(
-    true,
-  );
+  expect(
+    remote.some((item) => item.role === "thinking" && item.message === "想一下" && item.stream === false),
+  ).toBe(true);
 });
 
 test("finalizes unkeyed ACP thinking when a tool starts and opens a new block after", () => {
@@ -1420,23 +1404,12 @@ test("finalizes unkeyed ACP thinking when a tool starts and opens a new block af
   }> = [];
   const remote: Array<{ type: string; role: string; message: string; stream: boolean }> = [];
 
-  const emit = (
-    _threadId: string,
-    type: string,
-    message: string,
-    role: string,
-    stream: boolean,
-  ) => {
+  const emit = (_threadId: string, type: string, message: string, role: string, stream: boolean) => {
     remote.push({ type, role, message, stream });
   };
   const options = {
     activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: {
-      role: string;
-      message: string;
-      streamKey: string;
-      stream: boolean;
-    }) {
+    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
       local.push({
         role: update.role,
         text: update.message,
@@ -1449,7 +1422,11 @@ test("finalizes unkeyed ACP thinking when a tool starts and opens a new block af
   const sendThinking = (text: string) => {
     bridge.handleEvent(
       "thr_acp_tool",
-      { type: "message.delta", role: "planner", payload: { type: "eco_stream", blockKind: "thinking", text } },
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: { type: "eco_stream", blockKind: "thinking", text },
+      },
       emit,
       undefined,
       options,
@@ -1476,7 +1453,9 @@ test("finalizes unkeyed ACP thinking when a tool starts and opens a new block af
   );
   sendThinking("再想");
 
-  const thinkingKeys = [...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey))];
+  const thinkingKeys = [
+    ...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey)),
+  ];
   expect(thinkingKeys).toHaveLength(2);
 
   const firstThinking = local.filter((item) => item.streamKey === thinkingKeys[0]);

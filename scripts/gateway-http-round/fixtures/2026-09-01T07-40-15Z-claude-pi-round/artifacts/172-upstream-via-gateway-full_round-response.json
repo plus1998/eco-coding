@@ -1,1 +1,15 @@
-{"id":"msg_1788249138334","type":"message","role":"assistant","content":[{"text":"Understood.","type":"text"}],"model":"claude-sonnet-5","stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1020,"output_tokens":4,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
+{
+  "id": "msg_1788249138334",
+  "type": "message",
+  "role": "assistant",
+  "content": [{ "text": "Understood.", "type": "text" }],
+  "model": "claude-sonnet-5",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1020,
+    "output_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  }
+}

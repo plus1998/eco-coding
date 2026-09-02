@@ -14,18 +14,18 @@ import {
   resolveProviderRoute,
   UnsupportedUpstreamKindError,
 } from "../provider-router.js";
+import {
+  buildRequestLifecycleContext,
+  type RequestLifecycleContext,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCompleted,
+} from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
 import {
   codexToolArgumentFailureCircuitBreaker,
   normalizeResponsesToolArgumentResponse,
   toolArgumentCircuitBreakResponse,
 } from "../tool-argument-guard.js";
-import {
-  buildRequestLifecycleContext,
-  reportLogicalUpstreamFailure,
-  tryEmitLogicalCompleted,
-  type RequestLifecycleContext,
-} from "../request-lifecycle.js";
 import type {
   GatewayCodexTurnMetadata,
   GatewayConfig,

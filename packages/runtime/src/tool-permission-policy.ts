@@ -90,14 +90,18 @@ export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
     ...(policy.interaction ? { interaction: { ...policy.interaction } } : {}),
     ...(policy.taskProgress ? { taskProgress: { ...policy.taskProgress } } : {}),
     ...(policy.delegation ? { delegation: { ...policy.delegation } } : {}),
-    ...(policy.coreOverrides ? {
-      coreOverrides: {
-        ...(policy.coreOverrides.claude ? {
-          claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] },
-        } : {}),
-        ...(policy.coreOverrides.codex ? { codex: { ...policy.coreOverrides.codex } } : {}),
-      },
-    } : {}),
+    ...(policy.coreOverrides
+      ? {
+          coreOverrides: {
+            ...(policy.coreOverrides.claude
+              ? {
+                  claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] },
+                }
+              : {}),
+            ...(policy.coreOverrides.codex ? { codex: { ...policy.coreOverrides.codex } } : {}),
+          },
+        }
+      : {}),
   };
   return materialized;
 }

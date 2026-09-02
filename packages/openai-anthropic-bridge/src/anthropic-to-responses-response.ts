@@ -1,16 +1,13 @@
-import { toResponsesCallID } from './anthropic-to-responses.js';
-import {
-  CUSTOM_TOOL_INPUT_FIELD,
-  customToolInputFromChatArguments,
-} from './codex-chat-common.js';
+import { toResponsesCallID } from "./anthropic-to-responses.js";
+import { CUSTOM_TOOL_INPUT_FIELD, customToolInputFromChatArguments } from "./codex-chat-common.js";
 import {
   buildCodexToolContextFromRequest,
+  type CodexToolContext,
   isCustomToolChatName,
   lookupChatName,
-  type CodexToolContext,
-} from './codex-tool-context.js';
-import { jsonMarshal } from './json.js';
-import { responsesStreamEventToJSON } from './responses-stream-event-wire.js';
+} from "./codex-tool-context.js";
+import { jsonMarshal } from "./json.js";
+import { responsesStreamEventToJSON } from "./responses-stream-event-wire.js";
 import type {
   AnthropicResponse,
   AnthropicStreamEvent,
@@ -21,7 +18,7 @@ import type {
   ResponsesResponse,
   ResponsesStreamEvent,
   ResponsesUsage,
-} from './types.js';
+} from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Non-streaming: AnthropicResponse → ResponsesResponse
@@ -32,13 +29,13 @@ export function anthropicToResponsesResponse(
   toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): ResponsesResponse {
   let id = resp.id;
-  if (id === '') {
+  if (id === "") {
     id = generateResponsesId();
   }
 
   const out: ResponsesResponse = {
     id,
-    object: 'response',
+    object: "response",
     model: resp.model,
   };
 
@@ -47,62 +44,59 @@ export function anthropicToResponsesResponse(
 
   for (const block of resp.content) {
     switch (block.type) {
-      case 'thinking':
-        if (block.thinking !== '') {
+      case "thinking":
+        if (block.thinking !== "") {
           outputs.push({
-            type: 'reasoning',
+            type: "reasoning",
             id: block.id ?? generateItemId(),
-            summary: [{ type: 'summary_text', text: block.thinking ?? '' }],
+            summary: [{ type: "summary_text", text: block.thinking ?? "" }],
           });
         }
         break;
-      case 'redacted_thinking':
-        if (block.data !== undefined && block.data !== '') {
+      case "redacted_thinking":
+        if (block.data !== undefined && block.data !== "") {
           outputs.push({
-            type: 'reasoning',
+            type: "reasoning",
             id: block.id ?? generateItemId(),
             encrypted_content: block.data,
             summary: [],
           });
         }
         break;
-      case 'text':
-        if (block.text !== '') {
-          msgParts.push({ type: 'output_text', text: block.text });
+      case "text":
+        if (block.text !== "") {
+          msgParts.push({ type: "output_text", text: block.text });
         }
         break;
-      case 'tool_use': {
-        const chatName = block.name ?? '';
+      case "tool_use": {
+        const chatName = block.name ?? "";
         if (isCustomToolChatName(toolContext, chatName)) {
           outputs.push({
-            type: 'custom_tool_call',
+            type: "custom_tool_call",
             id: generateItemId(),
-            call_id: toResponsesCallID(block.id ?? ''),
+            call_id: toResponsesCallID(block.id ?? ""),
             name: chatName,
             input: freeformInputFromAnthropicToolUse(block.input),
-            status: 'completed',
+            status: "completed",
           });
           break;
         }
-        let args = '{}';
+        let args = "{}";
         if (block.input !== undefined && block.input !== null) {
-          const s =
-            typeof block.input === 'string'
-              ? block.input
-              : jsonMarshal(block.input);
+          const s = typeof block.input === "string" ? block.input : jsonMarshal(block.input);
           if (s.length > 0) {
             args = s;
           }
         }
         const spec = lookupChatName(toolContext, chatName);
         outputs.push({
-          type: 'function_call',
+          type: "function_call",
           id: generateItemId(),
-          call_id: toResponsesCallID(block.id ?? ''),
+          call_id: toResponsesCallID(block.id ?? ""),
           name: spec?.name ?? chatName,
           ...(spec?.namespace ? { namespace: spec.namespace } : {}),
           arguments: args,
-          status: 'completed',
+          status: "completed",
         });
         break;
       }
@@ -111,34 +105,32 @@ export function anthropicToResponsesResponse(
 
   if (msgParts.length > 0) {
     outputs.push({
-      type: 'message',
+      type: "message",
       id: generateItemId(),
-      role: 'assistant',
+      role: "assistant",
       content: msgParts,
-      status: 'completed',
+      status: "completed",
     });
   }
 
   if (outputs.length === 0) {
     outputs.push({
-      type: 'message',
+      type: "message",
       id: generateItemId(),
-      role: 'assistant',
-      content: [{ type: 'output_text', text: '' }],
-      status: 'completed',
+      role: "assistant",
+      content: [{ type: "output_text", text: "" }],
+      status: "completed",
     });
   }
   out.output = outputs;
 
   out.status = anthropicStopReasonToResponsesStatus(resp.stop_reason);
-  if (out.status === 'incomplete') {
-    out.incomplete_details = { reason: 'max_output_tokens' };
+  if (out.status === "incomplete") {
+    out.incomplete_details = { reason: "max_output_tokens" };
   }
 
   const totalInputTokens =
-    resp.usage.input_tokens +
-    resp.usage.cache_read_input_tokens +
-    resp.usage.cache_creation_input_tokens;
+    resp.usage.input_tokens + resp.usage.cache_read_input_tokens + resp.usage.cache_creation_input_tokens;
   out.usage = {
     input_tokens: totalInputTokens,
     output_tokens: resp.usage.output_tokens,
@@ -155,14 +147,14 @@ export function anthropicToResponsesResponse(
 
 function anthropicStopReasonToResponsesStatus(stopReason: string): string {
   switch (stopReason) {
-    case 'max_tokens':
-      return 'incomplete';
-    case 'end_turn':
-    case 'tool_use':
-    case 'stop_sequence':
-      return 'completed';
+    case "max_tokens":
+      return "incomplete";
+    case "end_turn":
+    case "tool_use":
+    case "stop_sequence":
+      return "completed";
     default:
-      return 'completed';
+      return "completed";
   }
 }
 
@@ -202,23 +194,23 @@ export function newAnthropicEventToResponsesState(
   toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): AnthropicEventToResponsesState {
   return {
-    responseId: '',
-    model: '',
+    responseId: "",
+    model: "",
     created: Math.floor(Date.now() / 1000),
     sequenceNumber: 0,
     createdSent: false,
     completedSent: false,
     outputIndex: 0,
-    currentItemId: '',
-    currentItemType: '',
-    currentEncryptedContent: '',
-    currentText: '',
-    currentReasoningSummary: '',
+    currentItemId: "",
+    currentItemType: "",
+    currentEncryptedContent: "",
+    currentText: "",
+    currentReasoningSummary: "",
     contentIndex: 0,
-    currentCallId: '',
-    currentName: '',
-    currentResponsesName: '',
-    currentArguments: '',
+    currentCallId: "",
+    currentName: "",
+    currentResponsesName: "",
+    currentArguments: "",
     inputTokens: 0,
     outputTokens: 0,
     cacheReadInputTokens: 0,
@@ -232,17 +224,17 @@ export function anthropicEventToResponsesEvents(
   state: AnthropicEventToResponsesState,
 ): ResponsesStreamEvent[] {
   switch (evt.type) {
-    case 'message_start':
+    case "message_start":
       return anthToResHandleMessageStart(evt, state);
-    case 'content_block_start':
+    case "content_block_start":
       return anthToResHandleContentBlockStart(evt, state);
-    case 'content_block_delta':
+    case "content_block_delta":
       return anthToResHandleContentBlockDelta(evt, state);
-    case 'content_block_stop':
+    case "content_block_stop":
       return anthToResHandleContentBlockStop(state);
-    case 'message_delta':
+    case "message_delta":
       return anthToResHandleMessageDelta(evt, state);
-    case 'message_stop':
+    case "message_stop":
       return anthToResHandleMessageStop(state);
     default:
       return [];
@@ -258,7 +250,7 @@ export function finalizeAnthropicResponsesStream(
 
   const events: ResponsesStreamEvent[] = [];
   events.push(...closeCurrentResponsesItem(state));
-  events.push(makeResponsesCompletedEvent(state, 'completed', undefined));
+  events.push(makeResponsesCompletedEvent(state, "completed", undefined));
   state.completedSent = true;
   return events;
 }
@@ -274,7 +266,7 @@ function anthToResHandleMessageStart(
 ): ResponsesStreamEvent[] {
   if (evt.message !== undefined) {
     state.responseId = evt.message.id;
-    if (state.model === '') {
+    if (state.model === "") {
       state.model = evt.message.model;
     }
     if (evt.message.usage.input_tokens > 0) {
@@ -284,8 +276,7 @@ function anthToResHandleMessageStart(
       state.cacheReadInputTokens = evt.message.usage.cache_read_input_tokens;
     }
     if (evt.message.usage.cache_creation_input_tokens > 0) {
-      state.cacheCreationInputTokens =
-        evt.message.usage.cache_creation_input_tokens;
+      state.cacheCreationInputTokens = evt.message.usage.cache_creation_input_tokens;
     }
   }
 
@@ -308,36 +299,36 @@ function anthToResHandleContentBlockStart(
   const events: ResponsesStreamEvent[] = [];
 
   switch (evt.content_block.type) {
-    case 'thinking':
+    case "thinking":
       state.currentItemId = generateItemId();
-      state.currentItemType = 'reasoning';
-      state.currentEncryptedContent = '';
-      state.currentReasoningSummary = evt.content_block.thinking ?? '';
+      state.currentItemType = "reasoning";
+      state.currentEncryptedContent = "";
+      state.currentReasoningSummary = evt.content_block.thinking ?? "";
       state.contentIndex = 0;
 
       events.push(
-        makeResponsesEvent(state, 'response.output_item.added', {
+        makeResponsesEvent(state, "response.output_item.added", {
           output_index: state.outputIndex,
           item: {
-            type: 'reasoning',
+            type: "reasoning",
             id: state.currentItemId,
           },
         }),
       );
       break;
 
-    case 'redacted_thinking':
+    case "redacted_thinking":
       state.currentItemId = generateItemId();
-      state.currentItemType = 'reasoning';
-      state.currentEncryptedContent = evt.content_block.data ?? '';
-      state.currentReasoningSummary = '';
+      state.currentItemType = "reasoning";
+      state.currentEncryptedContent = evt.content_block.data ?? "";
+      state.currentReasoningSummary = "";
       state.contentIndex = 0;
 
       events.push(
-        makeResponsesEvent(state, 'response.output_item.added', {
+        makeResponsesEvent(state, "response.output_item.added", {
           output_index: state.outputIndex,
           item: {
-            type: 'reasoning',
+            type: "reasoning",
             id: state.currentItemId,
             encrypted_content: state.currentEncryptedContent,
             summary: [],
@@ -346,36 +337,36 @@ function anthToResHandleContentBlockStart(
       );
       break;
 
-    case 'text':
-      if (state.currentItemType !== 'message') {
+    case "text":
+      if (state.currentItemType !== "message") {
         state.currentItemId = generateItemId();
-        state.currentItemType = 'message';
-        state.currentText = evt.content_block.text ?? '';
+        state.currentItemType = "message";
+        state.currentText = evt.content_block.text ?? "";
         state.contentIndex = 0;
 
         events.push(
-          makeResponsesEvent(state, 'response.output_item.added', {
+          makeResponsesEvent(state, "response.output_item.added", {
             output_index: state.outputIndex,
             item: {
-              type: 'message',
+              type: "message",
               id: state.currentItemId,
-              role: 'assistant',
-              status: 'in_progress',
+              role: "assistant",
+              status: "in_progress",
             },
           }),
         );
       }
       break;
 
-    case 'tool_use': {
+    case "tool_use": {
       events.push(...closeCurrentResponsesItem(state));
 
-      const toolChatName = evt.content_block.name ?? '';
+      const toolChatName = evt.content_block.name ?? "";
       const isCustom = isCustomToolChatName(state.toolContext, toolChatName);
       const spec = lookupChatName(state.toolContext, toolChatName);
       state.currentItemId = generateItemId();
-      state.currentItemType = isCustom ? 'custom_tool_call' : 'function_call';
-      state.currentCallId = toResponsesCallID(evt.content_block.id ?? '');
+      state.currentItemType = isCustom ? "custom_tool_call" : "function_call";
+      state.currentCallId = toResponsesCallID(evt.content_block.id ?? "");
       // Chat-facing name stays flattened for custom; Responses wire uses unflattened name+namespace.
       state.currentName = isCustom ? toolChatName : (spec?.name ?? toolChatName);
       state.currentResponsesName = state.currentName;
@@ -390,7 +381,7 @@ function anthToResHandleContentBlockStart(
         : initialToolArguments(evt.content_block.input);
 
       events.push(
-        makeResponsesEvent(state, 'response.output_item.added', {
+        makeResponsesEvent(state, "response.output_item.added", {
           output_index: state.outputIndex,
           item: {
             type: state.currentItemType,
@@ -398,7 +389,7 @@ function anthToResHandleContentBlockStart(
             call_id: state.currentCallId,
             name: state.currentName,
             ...(state.currentNamespace ? { namespace: state.currentNamespace } : {}),
-            status: 'in_progress',
+            status: "in_progress",
           },
         }),
       );
@@ -418,13 +409,13 @@ function anthToResHandleContentBlockDelta(
   }
 
   switch (evt.delta.type) {
-    case 'text_delta':
-      if (evt.delta.text === '') {
+    case "text_delta":
+      if (evt.delta.text === "") {
         return [];
       }
-      state.currentText += evt.delta.text ?? '';
+      state.currentText += evt.delta.text ?? "";
       return [
-        makeResponsesEvent(state, 'response.output_text.delta', {
+        makeResponsesEvent(state, "response.output_text.delta", {
           output_index: state.outputIndex,
           content_index: state.contentIndex,
           delta: evt.delta.text,
@@ -432,13 +423,13 @@ function anthToResHandleContentBlockDelta(
         }),
       ];
 
-    case 'thinking_delta':
-      if (evt.delta.thinking === '') {
+    case "thinking_delta":
+      if (evt.delta.thinking === "") {
         return [];
       }
-      state.currentReasoningSummary += evt.delta.thinking ?? '';
+      state.currentReasoningSummary += evt.delta.thinking ?? "";
       return [
-        makeResponsesEvent(state, 'response.reasoning_summary_text.delta', {
+        makeResponsesEvent(state, "response.reasoning_summary_text.delta", {
           output_index: state.outputIndex,
           summary_index: 0,
           delta: evt.delta.thinking,
@@ -446,17 +437,17 @@ function anthToResHandleContentBlockDelta(
         }),
       ];
 
-    case 'input_json_delta':
-      if (evt.delta.partial_json === '') {
+    case "input_json_delta":
+      if (evt.delta.partial_json === "") {
         return [];
       }
-      state.currentArguments += evt.delta.partial_json ?? '';
+      state.currentArguments += evt.delta.partial_json ?? "";
       // Buffer freeform custom tool JSON fragments; unwrap on content_block_stop.
-      if (state.currentItemType === 'custom_tool_call') {
+      if (state.currentItemType === "custom_tool_call") {
         return [];
       }
       return [
-        makeResponsesEvent(state, 'response.function_call_arguments.delta', {
+        makeResponsesEvent(state, "response.function_call_arguments.delta", {
           output_index: state.outputIndex,
           delta: evt.delta.partial_json,
           item_id: state.currentItemId,
@@ -465,20 +456,18 @@ function anthToResHandleContentBlockDelta(
         }),
       ];
 
-    case 'signature_delta':
+    case "signature_delta":
       return [];
   }
 
   return [];
 }
 
-function anthToResHandleContentBlockStop(
-  state: AnthropicEventToResponsesState,
-): ResponsesStreamEvent[] {
+function anthToResHandleContentBlockStop(state: AnthropicEventToResponsesState): ResponsesStreamEvent[] {
   switch (state.currentItemType) {
-    case 'reasoning': {
+    case "reasoning": {
       const events: ResponsesStreamEvent[] = [
-        makeResponsesEvent(state, 'response.reasoning_summary_text.done', {
+        makeResponsesEvent(state, "response.reasoning_summary_text.done", {
           output_index: state.outputIndex,
           summary_index: 0,
           item_id: state.currentItemId,
@@ -489,9 +478,9 @@ function anthToResHandleContentBlockStop(
       return events;
     }
 
-    case 'function_call': {
+    case "function_call": {
       const events: ResponsesStreamEvent[] = [
-        makeResponsesEvent(state, 'response.function_call_arguments.done', {
+        makeResponsesEvent(state, "response.function_call_arguments.done", {
           output_index: state.outputIndex,
           item_id: state.currentItemId,
           call_id: state.currentCallId,
@@ -503,16 +492,16 @@ function anthToResHandleContentBlockStop(
       return events;
     }
 
-    case 'custom_tool_call': {
+    case "custom_tool_call": {
       const input = freeformInputFromAnthropicToolUse(
-        state.currentArguments === ''
+        state.currentArguments === ""
           ? undefined
           : (tryParseJsonObject(state.currentArguments) ?? state.currentArguments),
       );
       // Keep unwrapped freeform text for output_item.done.
       state.currentArguments = input;
       const events: ResponsesStreamEvent[] = [
-        makeResponsesEvent(state, 'response.custom_tool_call_input.done', {
+        makeResponsesEvent(state, "response.custom_tool_call_input.done", {
           output_index: state.outputIndex,
           item_id: state.currentItemId,
           call_id: state.currentCallId,
@@ -524,9 +513,9 @@ function anthToResHandleContentBlockStop(
       return events;
     }
 
-    case 'message':
+    case "message":
       return [
-        makeResponsesEvent(state, 'response.output_text.done', {
+        makeResponsesEvent(state, "response.output_text.done", {
           output_index: state.outputIndex,
           content_index: state.contentIndex,
           item_id: state.currentItemId,
@@ -558,24 +547,20 @@ function anthToResHandleMessageDelta(
   return [];
 }
 
-function anthToResHandleMessageStop(
-  state: AnthropicEventToResponsesState,
-): ResponsesStreamEvent[] {
+function anthToResHandleMessageStop(state: AnthropicEventToResponsesState): ResponsesStreamEvent[] {
   if (state.completedSent) {
     return [];
   }
 
   const events: ResponsesStreamEvent[] = [];
   events.push(...closeCurrentResponsesItem(state));
-  events.push(makeResponsesCompletedEvent(state, 'completed', undefined));
+  events.push(makeResponsesCompletedEvent(state, "completed", undefined));
   state.completedSent = true;
   return events;
 }
 
-function closeCurrentResponsesItem(
-  state: AnthropicEventToResponsesState,
-): ResponsesStreamEvent[] {
-  if (state.currentItemType === '') {
+function closeCurrentResponsesItem(state: AnthropicEventToResponsesState): ResponsesStreamEvent[] {
+  if (state.currentItemType === "") {
     return [];
   }
 
@@ -588,55 +573,42 @@ function closeCurrentResponsesItem(
   const name = state.currentName;
   const namespace = state.currentNamespace;
   const rawArgs = state.currentArguments;
-  const args =
-    itemType === 'custom_tool_call' ? rawArgs : completedToolArguments(rawArgs);
+  const args = itemType === "custom_tool_call" ? rawArgs : completedToolArguments(rawArgs);
 
-  state.currentItemType = '';
-  state.currentItemId = '';
-  state.currentEncryptedContent = '';
-  state.currentText = '';
-  state.currentReasoningSummary = '';
-  state.currentCallId = '';
-  state.currentName = '';
-  state.currentResponsesName = '';
+  state.currentItemType = "";
+  state.currentItemId = "";
+  state.currentEncryptedContent = "";
+  state.currentText = "";
+  state.currentReasoningSummary = "";
+  state.currentCallId = "";
+  state.currentName = "";
+  state.currentResponsesName = "";
   delete state.currentNamespace;
-  state.currentArguments = '';
+  state.currentArguments = "";
   state.outputIndex++;
   state.contentIndex = 0;
 
   return [
-    makeResponsesEvent(state, 'response.output_item.done', {
+    makeResponsesEvent(state, "response.output_item.done", {
       output_index: state.outputIndex - 1,
       item: {
         type: itemType,
         id: itemId,
-        role: itemType === 'message' ? 'assistant' : undefined,
-        content:
-          itemType === 'message'
-            ? [{ type: 'output_text', text }]
-            : undefined,
-        call_id:
-          itemType === 'function_call' || itemType === 'custom_tool_call'
-            ? callId
-            : undefined,
-        name:
-          itemType === 'function_call' || itemType === 'custom_tool_call'
-            ? name
-            : undefined,
-        ...(itemType === 'function_call' && namespace ? { namespace } : {}),
-        arguments: itemType === 'function_call' ? args : undefined,
-        input: itemType === 'custom_tool_call' ? args : undefined,
-        encrypted_content:
-          itemType === 'reasoning' && encryptedContent !== ''
-            ? encryptedContent
-            : undefined,
+        role: itemType === "message" ? "assistant" : undefined,
+        content: itemType === "message" ? [{ type: "output_text", text }] : undefined,
+        call_id: itemType === "function_call" || itemType === "custom_tool_call" ? callId : undefined,
+        name: itemType === "function_call" || itemType === "custom_tool_call" ? name : undefined,
+        ...(itemType === "function_call" && namespace ? { namespace } : {}),
+        arguments: itemType === "function_call" ? args : undefined,
+        input: itemType === "custom_tool_call" ? args : undefined,
+        encrypted_content: itemType === "reasoning" && encryptedContent !== "" ? encryptedContent : undefined,
         summary:
-          itemType === 'reasoning' && reasoningSummary !== ''
-            ? [{ type: 'summary_text', text: reasoningSummary }]
-            : itemType === 'reasoning'
+          itemType === "reasoning" && reasoningSummary !== ""
+            ? [{ type: "summary_text", text: reasoningSummary }]
+            : itemType === "reasoning"
               ? []
               : undefined,
-        status: 'completed',
+        status: "completed",
       },
     }),
   ];
@@ -644,38 +616,38 @@ function closeCurrentResponsesItem(
 
 function initialToolArguments(input: unknown): string {
   if (input === undefined || input === null) {
-    return '';
+    return "";
   }
-  if (typeof input === 'string') {
-    return input === '{}' ? '' : input;
+  if (typeof input === "string") {
+    return input === "{}" ? "" : input;
   }
-  if (typeof input === 'object' && Object.keys(input).length === 0) {
-    return '';
+  if (typeof input === "object" && Object.keys(input).length === 0) {
+    return "";
   }
   return jsonMarshal(input);
 }
 
 function completedToolArguments(args: string): string {
-  return args === '' ? '{}' : args;
+  return args === "" ? "{}" : args;
 }
 
 function freeformInputFromAnthropicToolUse(input: unknown): string {
   if (input === undefined || input === null) {
-    return '';
+    return "";
   }
-  if (typeof input === 'string') {
+  if (typeof input === "string") {
     return customToolInputFromChatArguments(input);
   }
-  if (typeof input === 'object' && !Array.isArray(input)) {
+  if (typeof input === "object" && !Array.isArray(input)) {
     const record = input as Record<string, unknown>;
     const wrapped = record[CUSTOM_TOOL_INPUT_FIELD];
-    if (typeof wrapped === 'string') {
+    if (typeof wrapped === "string") {
       return wrapped;
     }
     // Streaming tool_use blocks often start with `{}`; keep the buffer empty so
     // subsequent input_json_delta fragments form a single parseable JSON object.
     if (Object.keys(record).length === 0) {
-      return '';
+      return "";
     }
   }
   return jsonMarshal(input);
@@ -689,19 +661,17 @@ function tryParseJsonObject(value: string): unknown {
   }
 }
 
-function makeResponsesCreatedEvent(
-  state: AnthropicEventToResponsesState,
-): ResponsesStreamEvent {
+function makeResponsesCreatedEvent(state: AnthropicEventToResponsesState): ResponsesStreamEvent {
   const seq = state.sequenceNumber;
   state.sequenceNumber++;
   return {
-    type: 'response.created',
+    type: "response.created",
     sequence_number: seq,
     response: {
       id: state.responseId,
-      object: 'response',
+      object: "response",
       model: state.model,
-      status: 'in_progress',
+      status: "in_progress",
       output: [],
     },
   };
@@ -715,10 +685,7 @@ function makeResponsesCompletedEvent(
   const seq = state.sequenceNumber;
   state.sequenceNumber++;
 
-  const totalInputTokens =
-    state.inputTokens +
-    state.cacheReadInputTokens +
-    state.cacheCreationInputTokens;
+  const totalInputTokens = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
   const usage: ResponsesUsage = {
     input_tokens: totalInputTokens,
     output_tokens: state.outputTokens,
@@ -731,11 +698,11 @@ function makeResponsesCompletedEvent(
   }
 
   return {
-    type: 'response.completed',
+    type: "response.completed",
     sequence_number: seq,
     response: {
       id: state.responseId,
-      object: 'response',
+      object: "response",
       model: state.model,
       status,
       output: [],
@@ -748,7 +715,7 @@ function makeResponsesCompletedEvent(
 function makeResponsesEvent(
   state: AnthropicEventToResponsesState,
   eventType: string,
-  template: Omit<ResponsesStreamEvent, 'type' | 'sequence_number'>,
+  template: Omit<ResponsesStreamEvent, "type" | "sequence_number">,
 ): ResponsesStreamEvent {
   const seq = state.sequenceNumber;
   state.sequenceNumber++;
@@ -762,7 +729,7 @@ function makeResponsesEvent(
 function randomHex(byteLength: number): string {
   const buf = new Uint8Array(byteLength);
   crypto.getRandomValues(buf);
-  return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export function generateResponsesId(): string {

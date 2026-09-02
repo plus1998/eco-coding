@@ -1,1 +1,7 @@
-{"error":{"type":"packy_request_fail","message":"packy_api_error (request id: 01M1DVR5D6EV5R8D2RAFTWANEY)"},"type":"packy_error"}
+{
+  "error": {
+    "type": "packy_request_fail",
+    "message": "packy_api_error (request id: 01M1DVR5D6EV5R8D2RAFTWANEY)"
+  },
+  "type": "packy_error"
+}

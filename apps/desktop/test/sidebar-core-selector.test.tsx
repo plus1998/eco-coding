@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
+import { i18n } from "../src/renderer/i18n";
 import {
   coreDisplayName,
   runtimeCoreOptions,
   SidebarCoreSelector,
   visibleCoreOptions,
 } from "../src/renderer/SidebarCoreSelector";
-import { i18n } from "../src/renderer/i18n";
 import type { AppLocale } from "../src/shared/locale";
 import { renderLocalized } from "./i18n-test";
 
@@ -69,11 +69,13 @@ test("open menu partitions runtime cores and ACP as matching lists", () => {
   expect(markup).toContain("Cursor");
   expect(markup).not.toContain("启用 Cursor");
   expect(markup).not.toContain("重新检测");
-  expect(markup).not.toContain("type=\"checkbox\"");
+  expect(markup).not.toContain('type="checkbox"');
   expect(markup).not.toContain("sidebar-core-acp-enable");
   expect(markup).not.toContain("运行核心");
   expect(markup).not.toContain("Cursor · ACP");
-  expect(markup).toMatch(/sidebar-core-menu-region-label[\s\S]*集成核心[\s\S]*sidebar-core-menu-region-label[\s\S]*>ACP</);
+  expect(markup).toMatch(
+    /sidebar-core-menu-region-label[\s\S]*集成核心[\s\S]*sidebar-core-menu-region-label[\s\S]*>ACP</,
+  );
   expect(markup).toContain("sidebar-core-menu-name");
   expect(markup).not.toMatch(/menuitemradio[\s\S]*Cursor[\s\S]*disabled/);
 });

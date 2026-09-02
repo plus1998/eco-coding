@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ModelCascadeSelect, type ModelCascadeOption } from "../src/renderer/ModelCascadeSelect";
+import { type ModelCascadeOption, ModelCascadeSelect } from "../src/renderer/ModelCascadeSelect";
 import { renderLocalized } from "./i18n-test";
 
 const options: ModelCascadeOption[] = [
@@ -40,18 +40,14 @@ test("ModelCascadeSelect renders the committed provider · model label on the tr
 });
 
 test("ModelCascadeSelect shows the placeholder when nothing is selected", () => {
-  const element = (
-    <ModelCascadeSelect options={options} onChange={() => undefined} placeholder="选择模型" />
-  );
+  const element = <ModelCascadeSelect options={options} onChange={() => undefined} placeholder="选择模型" />;
   const markup = renderLocalized(element, "zh-CN");
   expect(markup).toContain("选择模型");
   expect(markup).toContain("is-placeholder");
 });
 
 test("ModelCascadeSelect never renders a flat model list inline (hierarchy only opens in the panel)", () => {
-  const element = (
-    <ModelCascadeSelect options={options} onChange={() => undefined} placeholder="选择模型" />
-  );
+  const element = <ModelCascadeSelect options={options} onChange={() => undefined} placeholder="选择模型" />;
   const markup = renderLocalized(element, "en-US");
   // The trigger is closed by default: provider/model names are not listed flat.
   expect(markup).not.toContain("model-cascade-provider-list");

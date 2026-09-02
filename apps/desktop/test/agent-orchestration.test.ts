@@ -36,12 +36,12 @@ test("built-in agent templates define the default coding library", () => {
   ]);
   expect(templates.every((template) => template.source === "built_in")).toBe(true);
   expect(
-    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools
-      .filesystem?.write,
+    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.filesystem
+      ?.write,
   ).toBe("workspace");
   expect(
-    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.architect)?.defaultTools
-      .filesystem?.write,
+    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.architect)?.defaultTools.filesystem
+      ?.write,
   ).toBe("none");
 });
 
@@ -55,8 +55,9 @@ test("route profile conversion creates resources without retaining route profile
     modelRef: { providerId: "p1", modelId: "planner-model", thinkingEffort: "high" },
   });
   expect(bundle.subagentOrchestration.id).toBe("user.route.subagents");
-  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId)
-    .toBe("coder-model");
+  expect(
+    bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId,
+  ).toBe("coder-model");
   expect(bundle).not.toHaveProperty("id");
   expect(bundle).not.toHaveProperty("sourceRouteProfileId");
 });
@@ -74,10 +75,12 @@ test("route profile conversion honors subagent availability", () => {
     },
   });
   expect(bundle.subagentOrchestration.strategy.kind).toBe("autonomous");
-  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "architect")?.enabled)
-    .toBe(false);
-  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "reviewer")?.enabled)
-    .toBe(false);
+  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "architect")?.enabled).toBe(
+    false,
+  );
+  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "reviewer")?.enabled).toBe(
+    false,
+  );
 });
 
 test("strict snapshot resolution rejects missing resource references", () => {

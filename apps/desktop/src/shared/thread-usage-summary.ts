@@ -1,7 +1,4 @@
-import {
-  isAcpHostUiFeatureVisible,
-  type AcpHostUiFeatures,
-} from "@eco/runtime/acp-host-ui-features";
+import { type AcpHostUiFeatures, isAcpHostUiFeatureVisible } from "@eco/runtime/acp-host-ui-features";
 import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "@eco/runtime/models-dev-limits";
 import type {
   RuntimeAgentRole,

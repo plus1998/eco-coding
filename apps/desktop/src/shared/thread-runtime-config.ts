@@ -4,17 +4,23 @@ import {
   SUBAGENT_ROLES,
 } from "@eco/runtime/subagent-availability";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
-import { normalizeBashReviewMode } from "./bash-review-ui";
 import {
+  type EcoOrchestrationConfig,
   isOrchestrationSelection,
   isResolvedOrchestrationSnapshot,
-  orchestrationConfigFromSnapshot,
-  resolveOrchestrationSnapshot,
-  type EcoOrchestrationConfig,
   type OrchestrationResourceLookup,
   type OrchestrationSelection,
+  orchestrationConfigFromSnapshot,
   type ResolvedOrchestrationSnapshot,
+  resolveOrchestrationSnapshot,
 } from "./agent-orchestration";
+import {
+  type AuxiliaryModelSelection,
+  isAuxiliaryModelSelection,
+  normalizeAuxiliaryModelSelection,
+} from "./auxiliary-model";
+import { normalizeBashReviewMode } from "./bash-review-ui";
+import { ECO_AGENT_BROWSER_MCP_SERVER } from "./browser";
 import {
   deriveMcpServersEnabled,
   listEnabledGlobalMcpServerKeys,
@@ -22,6 +28,8 @@ import {
   normalizeMcpServersEnabled,
   resolveEnabledMcpServerKeys,
 } from "./composer-mcp";
+import { normalizeSkillsEnabled, type SkillsEnabledSettings } from "./composer-skills-settings";
+import { type IntegrationsEnabledSettings, normalizeIntegrationsEnabled } from "./integrations";
 import type {
   McpServerConfigView,
   ModelSettingsSnapshot,
@@ -31,31 +39,23 @@ import type {
   ThinkingEffort,
   WorkflowSettingsSnapshot,
 } from "./ipc";
-import {
-  normalizeSkillsEnabled,
-  type SkillsEnabledSettings,
-} from "./composer-skills-settings";
-import {
-  isAuxiliaryModelSelection,
-  normalizeAuxiliaryModelSelection,
-  type AuxiliaryModelSelection,
-} from "./auxiliary-model";
 import { isSessionMode, normalizeSessionMode, resolveSessionMode, type SessionMode } from "./session-mode";
 import {
   isVisionModelSelection,
   normalizeVisionModelSelection,
   type VisionModelSelection,
 } from "./vision-model";
-import {
-  type IntegrationsEnabledSettings,
-  normalizeIntegrationsEnabled,
-} from "./integrations";
-import { ECO_AGENT_BROWSER_MCP_SERVER } from "./browser";
 
-export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
-export type { OrchestrationSelection, ResolvedOrchestrationSnapshot };
-export type { AuxiliaryModelSelection, VisionModelSelection };
-export type { IntegrationsEnabledSettings };
+export type {
+  AuxiliaryModelSelection,
+  BashReviewMode,
+  IntegrationsEnabledSettings,
+  McpServersEnabledSettings,
+  OrchestrationSelection,
+  ResolvedOrchestrationSnapshot,
+  SessionMode,
+  VisionModelSelection,
+};
 
 export type MainAgentSystemPromptPreset = ResolvedOrchestrationSnapshot["mainAgent"]["systemPromptPreset"];
 
@@ -121,10 +121,7 @@ export function hasCompleteOrchestrationSelection(
   if (selection.mainPrompt.mode === "custom_append" && !selection.mainPrompt.promptId.trim()) {
     return false;
   }
-  if (
-    selection.subagents.mode === "orchestration" &&
-    !selection.subagents.orchestrationId.trim()
-  ) {
+  if (selection.subagents.mode === "orchestration" && !selection.subagents.orchestrationId.trim()) {
     return false;
   }
   return true;
@@ -134,7 +131,10 @@ export function resolveThreadOrchestrationSnapshot(
   settings: ModelSettingsSnapshot,
   config: ThreadRuntimeConfig,
 ): ResolvedOrchestrationSnapshot | undefined {
-  if (config.resolvedOrchestrationSnapshot && isResolvedOrchestrationSnapshot(config.resolvedOrchestrationSnapshot)) {
+  if (
+    config.resolvedOrchestrationSnapshot &&
+    isResolvedOrchestrationSnapshot(config.resolvedOrchestrationSnapshot)
+  ) {
     return config.resolvedOrchestrationSnapshot;
   }
   if (!hasCompleteOrchestrationSelection(config.orchestrationSelection)) {
@@ -346,8 +346,7 @@ export function serializeThreadRuntimeConfigForCompare(config: ThreadRuntimeConf
   if (!normalized.resolvedOrchestrationSnapshot) {
     return JSON.stringify(normalized);
   }
-  const { resolvedAt: _resolvedAt, ...snapshotWithoutTimestamp } =
-    normalized.resolvedOrchestrationSnapshot;
+  const { resolvedAt: _resolvedAt, ...snapshotWithoutTimestamp } = normalized.resolvedOrchestrationSnapshot;
   return JSON.stringify({
     ...normalized,
     resolvedOrchestrationSnapshot: snapshotWithoutTimestamp,
@@ -358,9 +357,7 @@ export function threadRuntimeConfigsEquivalent(
   left: ThreadRuntimeConfig,
   right: ThreadRuntimeConfig,
 ): boolean {
-  return (
-    serializeThreadRuntimeConfigForCompare(left) === serializeThreadRuntimeConfigForCompare(right)
-  );
+  return serializeThreadRuntimeConfigForCompare(left) === serializeThreadRuntimeConfigForCompare(right);
 }
 
 function orchestrationSelectionsEquivalent(
@@ -383,10 +380,7 @@ export function shouldRematerializeThreadRuntimeConfigOnContinue(
 ): boolean {
   return !(
     Boolean(existing?.resolvedOrchestrationSnapshot) &&
-    orchestrationSelectionsEquivalent(
-      existing?.orchestrationSelection,
-      incoming.orchestrationSelection,
-    )
+    orchestrationSelectionsEquivalent(existing?.orchestrationSelection, incoming.orchestrationSelection)
   );
 }
 
@@ -534,8 +528,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   orchestrationSelection?: OrchestrationSelection;
   mcpServers?: readonly McpServerConfigView[];
 }): ThreadRuntimeConfig {
-  const selection =
-    input.orchestrationSelection ?? input.workflowDefaults.defaultOrchestrationSelection;
+  const selection = input.orchestrationSelection ?? input.workflowDefaults.defaultOrchestrationSelection;
   if (!hasCompleteOrchestrationSelection(selection)) {
     throw new Error("请先选择完整的主代理、提示词和子代理编排组合。");
   }
@@ -593,9 +586,7 @@ export function withAgentSessionMode(
  * keep the host's existing snapshot and preset override; comparing them would
  * falsely reject a bashReviewMode-only change.
  */
-function threadRuntimeConfigForBashReviewModeCompare(
-  config: ThreadRuntimeConfig,
-): ThreadRuntimeConfig {
+function threadRuntimeConfigForBashReviewModeCompare(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
   const {
     resolvedOrchestrationSnapshot: _snapshot,
     mainAgentSystemPromptPresetOverride: _preset,
@@ -628,10 +619,7 @@ export function resolveBusyThreadRuntimeConfigUpdate(input: {
   existing: ThreadRuntimeConfig | undefined;
   incoming: ThreadRuntimeConfig;
 }): { kind: "apply"; runtimeConfig: ThreadRuntimeConfig } | { kind: "blocked" } {
-  if (
-    !input.existing ||
-    !isBashReviewModeOnlyRuntimeConfigUpdate(input.existing, input.incoming)
-  ) {
+  if (!input.existing || !isBashReviewModeOnlyRuntimeConfigUpdate(input.existing, input.incoming)) {
     return { kind: "blocked" };
   }
   return {

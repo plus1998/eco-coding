@@ -35,8 +35,7 @@
   --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.45);
   --shadow-composer: 0 2px 20px rgba(0, 0, 0, 0.28);
   --shadow-menu:
-    0 18px 48px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.28),
-    0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    0 18px 48px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
   --search-bg: rgba(255, 255, 255, 0.08);
   --search-border: rgba(255, 255, 255, 0.1);
   --search-focus-ring: rgba(59, 130, 246, 0.25);
@@ -231,8 +230,7 @@
   --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.18);
   --shadow-composer: 0 2px 16px rgba(0, 0, 0, 0.08);
   --shadow-menu:
-    0 16px 40px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06),
-    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+    0 16px 40px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
   --search-bg: rgba(255, 255, 255, 0.72);
   --search-border: rgba(0, 0, 0, 0.06);
   --search-focus-ring: rgba(0, 122, 255, 0.15);

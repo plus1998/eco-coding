@@ -1,7 +1,7 @@
+import { expect, test } from "bun:test";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import type { ChildProcess, SpawnOptions } from "node:child_process";
-import { expect, test } from "bun:test";
 import {
   assertAcpCursorRunnable,
   handshakeAcpCursor,
@@ -74,10 +74,7 @@ test("probe maps spawn ENOENT (Cursor not installed) to missingCli without crash
   const spawnFn = ((_cmd: string, _args: readonly string[], _opts: SpawnOptions) => {
     // Real child_process delivers ENOENT asynchronously on the `error` event.
     setImmediate(() => {
-      fakeChild.emit(
-        "error",
-        Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }),
-      );
+      fakeChild.emit("error", Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }));
     });
     return fakeChild;
   }) as typeof import("node:child_process").spawn;

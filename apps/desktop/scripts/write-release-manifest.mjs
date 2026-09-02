@@ -15,8 +15,7 @@ const isReleaseBuild = Boolean(process.env.ECO_RELEASE_CHANNEL?.trim());
 const unsigned = process.env.ECO_RELEASE_UNSIGNED !== "false";
 const repository = resolveGitHubRepository();
 const releaseUrl = process.env.ECO_RELEASE_URL?.trim() || `https://github.com/${repository.slug}/releases`;
-const updateFeedUrl =
-  process.env.ECO_UPDATE_FEED_URL?.trim() || resolveDesktopUpdateFeedUrl(repository);
+const updateFeedUrl = process.env.ECO_UPDATE_FEED_URL?.trim() || resolveDesktopUpdateFeedUrl(repository);
 
 if (channel !== "beta" && channel !== "latest") {
   throw new Error(`Invalid ECO_RELEASE_CHANNEL: ${channel}`);

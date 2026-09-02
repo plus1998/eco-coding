@@ -61,10 +61,7 @@ export async function runStorageCleanup(
   }
 }
 
-export async function clearLogs(
-  logsDir: string,
-  olderThanDays?: number,
-): Promise<StorageCleanupResult> {
+export async function clearLogs(logsDir: string, olderThanDays?: number): Promise<StorageCleanupResult> {
   let entries: string[];
   try {
     entries = await fs.readdir(logsDir);
@@ -236,7 +233,8 @@ export async function clearClaudeSessions(
       }
     }
 
-    const after = (await measurePathBytes(projectsDir)).bytes + (await measurePathBytes(fileHistoryDir)).bytes;
+    const after =
+      (await measurePathBytes(projectsDir)).bytes + (await measurePathBytes(fileHistoryDir)).bytes;
     return {
       ok: errors.length === 0,
       freedBytes: Math.max(0, before - after),
@@ -323,9 +321,7 @@ export async function clearPiAgent(
     };
   }
 
-  const piThreads = deps.conversationStore
-    .listThreads()
-    .filter((thread) => thread.coreKind === "pi");
+  const piThreads = deps.conversationStore.listThreads().filter((thread) => thread.coreKind === "pi");
   const skippedThreadIds: string[] = [];
   const errors: string[] = [];
   let deletedThreadCount = 0;

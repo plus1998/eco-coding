@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 import {
   buildCommitMessageRequestBody,
   buildCommitMessageUserMessage,
@@ -7,7 +8,6 @@ import {
   summarizeCommitMessage,
 } from "../src/main/git-commit-message";
 import type { CommitDiffContext } from "../src/main/git-operations";
-import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
 const route: AnthropicProxyRoute = {
   role: "explore",
@@ -86,10 +86,7 @@ test("buildCommitMessageRequestBody disables thinking", () => {
 });
 
 test("buildCommitMessageRequestBody uses route max output tokens when configured", () => {
-  const body = buildCommitMessageRequestBody(
-    { ...route, maxOutputTokens: 4096 },
-    context,
-  );
+  const body = buildCommitMessageRequestBody({ ...route, maxOutputTokens: 4096 }, context);
   expect(body.max_tokens).toBe(4096);
 });
 

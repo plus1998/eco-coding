@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import type { RoleRouteConfig, ThreadSummary } from "../src/shared/ipc";
 import {
   resolveThreadPlanApprovalRuntime,
   type ThreadPlanApprovalRuntimeServices,
 } from "../src/main/thread-plan-approval-runtime";
-import type { RuntimeConfigResolution } from "../src/main/thread-runtime-routes";
 import type { ThreadPendingPlanWithRoutes } from "../src/main/thread-plan-ready-effects";
+import type { RuntimeConfigResolution } from "../src/main/thread-runtime-routes";
+import type { RoleRouteConfig, ThreadSummary } from "../src/shared/ipc";
 
 const thread: ThreadSummary = {
   id: "thr_approval",
@@ -60,12 +60,9 @@ test("resolveThreadPlanApprovalRuntime rejects invalid approval state before lau
       services({ getThread: () => ({ ...thread, status: "idle" }) }),
     ),
   ).toThrow("This thread is not waiting for plan approval.");
-  expect(() =>
-    resolveThreadPlanApprovalRuntime(
-      thread.id,
-      services({ hasActiveRun: () => true }),
-    ),
-  ).toThrow("Thread is already running.");
+  expect(() => resolveThreadPlanApprovalRuntime(thread.id, services({ hasActiveRun: () => true }))).toThrow(
+    "Thread is already running.",
+  );
   expect(() =>
     resolveThreadPlanApprovalRuntime(thread.id, services({ getPendingPlan: () => undefined })),
   ).toThrow("找不到待批准的计划。");

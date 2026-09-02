@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  applyAcpCursorEnableSave,
-  reconcileAcpCursorEnabled,
-} from "../src/main/acp-cursor-availability";
+import { applyAcpCursorEnableSave, reconcileAcpCursorEnabled } from "../src/main/acp-cursor-availability";
 
 test("rising-edge enable rejected when probe fails", () => {
   expect(() =>

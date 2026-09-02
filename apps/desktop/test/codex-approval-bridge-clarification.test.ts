@@ -79,10 +79,8 @@ test("parseMcpToolRunElicitationMessage extracts tool name", () => {
 });
 
 test("shouldAutoAcceptEcoBrowserToolElicitation respects open approval mode", () => {
-  const openMsg =
-    'Allow the eco_agent_browser MCP server to run tool "agent_browser_open"?';
-  const snapMsg =
-    'Allow the eco_agent_browser MCP server to run tool "agent_browser_snapshot"?';
+  const openMsg = 'Allow the eco_agent_browser MCP server to run tool "agent_browser_open"?';
+  const snapMsg = 'Allow the eco_agent_browser MCP server to run tool "agent_browser_snapshot"?';
   expect(
     shouldAutoAcceptEcoBrowserToolElicitation({
       serverName: "eco_agent_browser",

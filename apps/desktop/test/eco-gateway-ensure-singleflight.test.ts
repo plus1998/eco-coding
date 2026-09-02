@@ -11,11 +11,7 @@ afterEach(async () => {
 
 describe("eco-gateway ensure single-flight", () => {
   test("formatBridgePortInUseError includes occupant and health hint", () => {
-    const message = formatBridgePortInUseError(
-      18765,
-      "Electron 12345 … TCP 127.0.0.1:18765 (LISTEN)",
-      true,
-    );
+    const message = formatBridgePortInUseError(18765, "Electron 12345 … TCP 127.0.0.1:18765 (LISTEN)", true);
     expect(message).toContain("18765");
     expect(message).toContain("Listener:");
     expect(message).toContain("/health");

@@ -1,16 +1,15 @@
 import { expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import {
   DEFAULT_ECO_GITIGNORE_LINES,
   ensureEcoGitignore,
-  prepareWorkspaceGit,
   type GitCommandRunner,
+  prepareWorkspaceGit,
 } from "../src/main/workspace-git-setup";
-import { inspectWorkspace } from "../src/main/workspace-inspect";
-import { resolveGitExecutable } from "../src/main/workspace-inspect";
+import { inspectWorkspace, resolveGitExecutable } from "../src/main/workspace-inspect";
 
 function createRunner(): GitCommandRunner {
   return async (command, cwd) => {

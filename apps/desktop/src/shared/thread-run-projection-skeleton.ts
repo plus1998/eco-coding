@@ -1,7 +1,4 @@
-import {
-  isRecordedUserPromptLiveEvent,
-  isThreadFollowUpActivityMessage,
-} from "./thread-follow-up-events";
+import { isRecordedUserPromptLiveEvent, isThreadFollowUpActivityMessage } from "./thread-follow-up-events";
 import type {
   ThreadRunProjectionAttempt,
   ThreadRunProjectionSnapshot,

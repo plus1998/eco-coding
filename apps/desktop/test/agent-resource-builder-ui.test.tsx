@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import { createBlankSubagentOrchestrationForm } from "../src/renderer/agent-resource-form";
 import { AgentResourceEditorModal } from "../src/renderer/agent-resource-editor-modal";
+import { createBlankSubagentOrchestrationForm } from "../src/renderer/agent-resource-form";
 import { createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
 import type { ProviderConfigView } from "../src/shared/ipc";
 import { renderLocalized } from "./i18n-test";

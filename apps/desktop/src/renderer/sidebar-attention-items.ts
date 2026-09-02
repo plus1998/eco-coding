@@ -24,9 +24,7 @@ const KIND_PRIORITY: Record<SidebarAttentionKind, number> = {
   completed: 2,
 };
 
-export function buildSidebarAttentionItems(
-  input: BuildSidebarAttentionItemsInput,
-): SidebarAttentionItem[] {
+export function buildSidebarAttentionItems(input: BuildSidebarAttentionItemsInput): SidebarAttentionItem[] {
   const threadsById = new Map(input.threads.map((thread) => [thread.id, thread]));
   const items: SidebarAttentionItem[] = [];
   const planThreadIds = new Set<string>();
@@ -112,10 +110,5 @@ function bashDetail(approval: BashApprovalRequest): string | undefined {
   if (filesystemTool && filesystemPath) {
     return `${filesystemTool} ${filesystemPath}`;
   }
-  return (
-    approval.command.trim() ||
-    approval.description?.trim() ||
-    approval.reason.trim() ||
-    undefined
-  );
+  return approval.command.trim() || approval.description?.trim() || approval.reason.trim() || undefined;
 }

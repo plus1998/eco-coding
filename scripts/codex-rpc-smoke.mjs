@@ -109,12 +109,10 @@ try {
     scopes: [...new Set(skills.flatMap((e) => e.skills.map((s) => s.scope)))],
   });
 
-  await client
-    .request("skills/extraRoots/set", { extraRoots: [] })
-    .then(
-      () => pass("skills/extraRoots/set", "ok"),
-      (e) => fail("skills/extraRoots/set", String(e)),
-    );
+  await client.request("skills/extraRoots/set", { extraRoots: [] }).then(
+    () => pass("skills/extraRoots/set", "ok"),
+    (e) => fail("skills/extraRoots/set", String(e)),
+  );
 
   const started = await client.request("thread/start", {
     cwd: workspace,

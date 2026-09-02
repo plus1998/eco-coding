@@ -2,12 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { ECO_IMAGE_VIEW_FULL_TOOL, ECO_IMAGE_VIEW_MCP_SERVER, ECO_IMAGE_VIEW_TOOL } from "@eco/runtime";
 import { ImageViewMcpGateway } from "../src/main/image-view-mcp-gateway";
 import {
   ECO_IMAGE_GENERATION_FULL_TOOL,
   ECO_IMAGE_GENERATION_MCP_SERVER,
 } from "../src/shared/image-generation";
-import { ECO_IMAGE_VIEW_FULL_TOOL, ECO_IMAGE_VIEW_MCP_SERVER, ECO_IMAGE_VIEW_TOOL } from "@eco/runtime";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -24,7 +24,9 @@ afterEach(async () => {
   );
 });
 
-function createGateway(analyze: (input: { threadId: string; path: string; question?: string }) => Promise<string>) {
+function createGateway(
+  analyze: (input: { threadId: string; path: string; question?: string }) => Promise<string>,
+) {
   const gateway = new ImageViewMcpGateway({ analyze });
   gateways.push(gateway);
   return gateway;
@@ -69,7 +71,9 @@ test("relative path fails without calling analyze", async () => {
     },
     body: JSON.stringify({ name: ECO_IMAGE_VIEW_TOOL, arguments: { path: "shot.png" } }),
   });
-  const payload = (await response.json()) as { result: { isError?: boolean; content: Array<{ text: string }> } };
+  const payload = (await response.json()) as {
+    result: { isError?: boolean; content: Array<{ text: string }> };
+  };
   expect(payload.result.isError).toBe(true);
   expect(payload.result.content[0]?.text).toContain("invalid_path");
   expect(calls).toEqual([]);

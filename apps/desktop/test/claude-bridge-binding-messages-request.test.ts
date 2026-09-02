@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  type ClaudeBridgeBindingRoute,
   globalClaudeBridgeBindingRegistry,
   readClaudeBridgeMessagesRequestLogicalId,
-  type ClaudeBridgeBindingRoute,
 } from "../src/main/claude-bridge-binding";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 

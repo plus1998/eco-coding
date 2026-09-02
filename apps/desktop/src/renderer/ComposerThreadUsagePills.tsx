@@ -7,11 +7,11 @@ import {
   shouldShowBillingUsagePanel,
   shouldShowContextUsagePanel,
 } from "../shared/thread-usage-summary";
-import type { ThreadUsageSummary } from "./WorkspaceFloatingCards";
-import { resolveBillingMainModelLabel, ThreadInfoFloatStack } from "./ThreadInfoPanel";
+import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 import type { RuntimeAgentThemes } from "./runtime-agent-theme";
-import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import { resolveBillingMainModelLabel, ThreadInfoFloatStack } from "./ThreadInfoPanel";
+import type { ThreadUsageSummary } from "./WorkspaceFloatingCards";
 
 function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBillingSnapshot {
   if (!billing) {

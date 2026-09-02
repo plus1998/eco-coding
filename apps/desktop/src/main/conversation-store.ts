@@ -10,11 +10,6 @@ import {
   mergeStreamText,
   resolveAcpHostUiFeatures,
 } from "@eco/runtime";
-import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
-import {
-  isCompatibleCoreSessionKindWrite,
-  upgradeLegacyCursorCore,
-} from "../shared/upgrade-legacy-cursor-core";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
 import type {
@@ -41,13 +36,17 @@ import type {
   ThreadSummary,
   TokenCostBreakdown,
 } from "../shared/ipc";
-import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
-import type { FeedSkeletonPatchState, ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
-import type { PromptImageFileStore } from "./prompt-image-file-store";
+import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
 import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
 import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import { parseThreadRunGrepToolTarget, parseThreadRunReadToolTarget } from "../shared/tool-target.js";
+import {
+  isCompatibleCoreSessionKindWrite,
+  upgradeLegacyCursorCore,
+} from "../shared/upgrade-legacy-cursor-core";
+import type { PromptImageFileStore } from "./prompt-image-file-store";
+import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
 import { sdkActivityLineId, sdkMessageUuidFromActivityLineId } from "./sdk-session-activity.js";
 import { resolveResumeAgentIdFromRecords } from "./subagent-session-resolve.js";
 import type {
@@ -55,6 +54,7 @@ import type {
   SubagentSessionStatus,
   ThreadSubagentSessionRecord,
 } from "./subagent-session-types.js";
+import type { FeedSkeletonPatchState, ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
 import { shouldAdvanceThreadRunEventSequence } from "./thread-run-event-sequence";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 import {
@@ -2834,9 +2834,8 @@ export class ConversationStore {
     const threadId = input.threadId.trim();
     const activityLineId = input.activityLineId.trim();
     const text = input.text.trim();
-    const attachments = (input.attachments ?? []).filter(
-      (attachment): attachment is PromptImageAttachment =>
-        Boolean(attachment.data?.trim() && attachment.mediaType),
+    const attachments = (input.attachments ?? []).filter((attachment): attachment is PromptImageAttachment =>
+      Boolean(attachment.data?.trim() && attachment.mediaType),
     );
     if (!threadId || !activityLineId || (!text && attachments.length === 0)) return;
     const now = new Date().toISOString();
@@ -4474,9 +4473,7 @@ export class ConversationStore {
     }
     const now = new Date().toISOString();
     const auxiliaryJson =
-      input.patchState && input.patchState.trackedItems.length > 0
-        ? JSON.stringify(input.patchState)
-        : null;
+      input.patchState && input.patchState.trackedItems.length > 0 ? JSON.stringify(input.patchState) : null;
     this.db
       .prepare(
         `INSERT INTO thread_feed_skeleton (

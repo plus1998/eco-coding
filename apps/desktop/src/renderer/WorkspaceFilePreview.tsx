@@ -2,11 +2,7 @@ import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  clampTargetColumn,
-  clampTargetLine,
-  languageForFile,
-} from "./workspace-file-browser-logic";
+import { clampTargetColumn, clampTargetLine, languageForFile } from "./workspace-file-browser-logic";
 
 export interface WorkspaceFile {
   path: string;
@@ -123,16 +119,19 @@ const LazyCodeMirror = lazy(async () => {
       const [theme, setTheme] = useState<"dark" | "light">(() =>
         document.documentElement.dataset.theme === "dark" ? "dark" : "light",
       );
-      const scrollToTarget = useCallback((view: EditorView, lineNumber: number | undefined) => {
-        if (lineNumber === undefined || lineNumber > view.state.doc.lines) return;
-        const line = view.state.doc.line(lineNumber);
-        const column = clampTargetColumn(targetColumn, line.length) ?? 1;
-        const anchor = line.from + column - 1;
-        view.dispatch({
-          selection: { anchor },
-          effects: EditorView.scrollIntoView(anchor, { y: "center" }),
-        });
-      }, [targetColumn]);
+      const scrollToTarget = useCallback(
+        (view: EditorView, lineNumber: number | undefined) => {
+          if (lineNumber === undefined || lineNumber > view.state.doc.lines) return;
+          const line = view.state.doc.line(lineNumber);
+          const column = clampTargetColumn(targetColumn, line.length) ?? 1;
+          const anchor = line.from + column - 1;
+          view.dispatch({
+            selection: { anchor },
+            effects: EditorView.scrollIntoView(anchor, { y: "center" }),
+          });
+        },
+        [targetColumn],
+      );
       useEffect(() => {
         let active = true;
         setExtension(null);
@@ -316,19 +315,29 @@ export function WorkspaceFilePreview({
     if (!src) return <div className="workspace-file-browser__message">{t("fileBrowser.mediaMissing")}</div>;
     return (
       <div className="workspace-file-browser__media-wrap">
-        {file.kind === "image" ? <img className="workspace-file-browser__media" src={src} alt={file.name} /> : null}
-        {file.kind === "audio" ? <audio className="workspace-file-browser__audio" src={src} controls aria-label={file.name} /> : null}
-        {file.kind === "video" ? <video className="workspace-file-browser__media" src={src} controls aria-label={file.name} /> : null}
+        {file.kind === "image" ? (
+          <img className="workspace-file-browser__media" src={src} alt={file.name} />
+        ) : null}
+        {file.kind === "audio" ? (
+          <audio className="workspace-file-browser__audio" src={src} controls aria-label={file.name} />
+        ) : null}
+        {file.kind === "video" ? (
+          <video className="workspace-file-browser__media" src={src} controls aria-label={file.name} />
+        ) : null}
       </div>
     );
   }
   if (file.kind === "unsupported") {
-    return <div className="workspace-file-browser__message">{file.reason || t("fileBrowser.unsupported")}</div>;
+    return (
+      <div className="workspace-file-browser__message">{file.reason || t("fileBrowser.unsupported")}</div>
+    );
   }
   const lines = draft.split(/\r?\n/).length;
   const targetLine = clampTargetLine(target?.line, lines);
-  const selectedLineLength = targetLine === undefined ? undefined : draft.split(/\r?\n/)[targetLine - 1]?.length;
-  const targetColumn = selectedLineLength === undefined ? undefined : clampTargetColumn(target?.column, selectedLineLength);
+  const selectedLineLength =
+    targetLine === undefined ? undefined : draft.split(/\r?\n/)[targetLine - 1]?.length;
+  const targetColumn =
+    selectedLineLength === undefined ? undefined : clampTargetColumn(target?.column, selectedLineLength);
   const statusMessage =
     saveStatus === "saving"
       ? t("fileBrowser.saving")
@@ -339,7 +348,9 @@ export function WorkspaceFilePreview({
           : null;
   return (
     <div className="workspace-file-browser__preview-body">
-      <Suspense fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}>
+      <Suspense
+        fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}
+      >
         <LazyCodeMirror
           key={`${file.path}:${target?.requestId ?? 0}`}
           content={draft}

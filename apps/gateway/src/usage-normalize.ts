@@ -1,8 +1,4 @@
-import type {
-  ChatUsage,
-  ResponsesStreamEvent,
-  ResponsesUsage,
-} from "@eco/openai-anthropic-bridge";
+import type { ChatUsage, ResponsesStreamEvent, ResponsesUsage } from "@eco/openai-anthropic-bridge";
 
 /** Mirrors `@eco/runtime` ParsedUsage — kept local to avoid pulling runtime into gateway typecheck. */
 export interface ParsedUsage {
@@ -19,22 +15,14 @@ export interface ParsedUsage {
  * Missing or null cache counters are treated as zero so the full input_tokens
  * amount remains billable without applying an unreported cache discount.
  */
-export function normalizeAnthropicUsage(
-  usage: unknown,
-  modelId?: string,
-): ParsedUsage | null {
+export function normalizeAnthropicUsage(usage: unknown, modelId?: string): ParsedUsage | null {
   if (!isRecord(usage)) {
     return null;
   }
   const inputTokens = readExactTokenCount(usage, "input_tokens", false);
   const outputTokens = readExactTokenCount(usage, "output_tokens", false);
   const cacheReadTokens = readExactTokenCount(usage, "cache_read_input_tokens", true, true);
-  const cacheCreationTokens = readExactTokenCount(
-    usage,
-    "cache_creation_input_tokens",
-    true,
-    true,
-  );
+  const cacheCreationTokens = readExactTokenCount(usage, "cache_creation_input_tokens", true, true);
   if (
     inputTokens === undefined ||
     outputTokens === undefined ||
@@ -68,9 +56,7 @@ function readExactTokenCount(
   if (nullable && value === null) {
     return 0;
   }
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -201,10 +187,7 @@ export function normalizeChatCompletionsUsage(
     "cacheCreationInputTokens",
     "cache_creation_tokens",
   ]);
-  const cacheBreakdown = readChatCacheBreakdown(
-    usage.prompt_tokens_details,
-    usage.input_tokens_details,
-  );
+  const cacheBreakdown = readChatCacheBreakdown(usage.prompt_tokens_details, usage.input_tokens_details);
   const totalTokens = readExactTokenField(record, ["total_tokens", "totalTokens"]);
   if (
     !inputTokens.valid ||
@@ -260,8 +243,7 @@ function resolveCacheTokenSemantics(input: {
 }): Pick<ParsedUsage, "inputTokens" | "cacheReadTokens" | "cacheCreationTokens"> | null {
   const detailsHaveTokens =
     input.cacheBreakdown.cacheReadTokens > 0 || input.cacheBreakdown.cacheCreationTokens > 0;
-  const explicitHaveTokens =
-    input.explicitCacheRead.value > 0 || input.explicitCacheCreation.value > 0;
+  const explicitHaveTokens = input.explicitCacheRead.value > 0 || input.explicitCacheCreation.value > 0;
   if (detailsHaveTokens && explicitHaveTokens) {
     return null;
   }
@@ -385,9 +367,7 @@ function readChatCacheBreakdown(
 }
 
 function readExactNonNegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 export function extractUsageFromResponsesStreamEvent(

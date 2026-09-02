@@ -8,13 +8,11 @@ test("classifySdkStreamMessageOrigin tags SDK stream errors at emit boundary", (
     ),
   ).toBe("sdk.upstream_error");
   expect(
-    classifySdkStreamMessageOrigin(
-      "Claude Code returned an error result: API Error: 503 Loading model.",
-    ),
+    classifySdkStreamMessageOrigin("Claude Code returned an error result: API Error: 503 Loading model."),
   ).toBe("sdk.run_failure");
-  expect(
-    classifySdkStreamMessageOrigin("Error: RetriableError: [resource_exhausted] Error"),
-  ).toBe("sdk.upstream_error");
+  expect(classifySdkStreamMessageOrigin("Error: RetriableError: [resource_exhausted] Error")).toBe(
+    "sdk.upstream_error",
+  );
   expect(classifySdkStreamMessageOrigin("ConnectError: [resource_exhausted] Error")).toBe(
     "sdk.upstream_error",
   );

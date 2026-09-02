@@ -31,9 +31,7 @@ export function DiffReviewModal({ diff, fileCount, onClose }: DiffReviewModalPro
       >
         <header className="diff-review-header">
           <h3>{t("workspace.diff.review")}</h3>
-          <span className="diff-review-meta">
-            {t("workspace.diff.fileCount", { count: fileCount })}
-          </span>
+          <span className="diff-review-meta">{t("workspace.diff.fileCount", { count: fileCount })}</span>
           <button
             type="button"
             className="diff-review-close"
@@ -43,9 +41,7 @@ export function DiffReviewModal({ diff, fileCount, onClose }: DiffReviewModalPro
             <X size={18} />
           </button>
         </header>
-        <pre className="diff-review-body">
-          {diff.trim() || t("workspace.diff.emptyContent")}
-        </pre>
+        <pre className="diff-review-body">{diff.trim() || t("workspace.diff.emptyContent")}</pre>
       </div>
     </div>
   );

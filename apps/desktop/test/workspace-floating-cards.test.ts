@@ -2,10 +2,7 @@ import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ComposerAgentModelLabel } from "../src/renderer/composer-agent-model-labels";
-import {
-  defaultConfigSectionExpanded,
-  WorkspaceFloatingCards,
-} from "../src/renderer/WorkspaceFloatingCards";
+import { defaultConfigSectionExpanded, WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type { ImageGenerationArtifact } from "../src/shared/image-generation";
 import type { SubagentEnabledSettings } from "../src/shared/ipc";
 

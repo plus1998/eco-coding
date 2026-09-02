@@ -9,6 +9,12 @@ import {
 } from "../shared/agent-orchestration";
 import type { McpServerConfigView, ModelSettingsSnapshot } from "../shared/ipc";
 import {
+  type AgentCompositionEditorMode,
+  type AgentCompositionEditorScope,
+  AgentResourceEditorModal,
+} from "./agent-resource-editor-modal";
+import {
+  type AgentResourceFormState,
   buildMainAgentConfigFromForm,
   buildMainAgentPromptFromForm,
   buildSubagentOrchestrationFromForm,
@@ -21,13 +27,7 @@ import {
   mainAgentConfigToForm,
   mainAgentPromptToForm,
   subagentOrchestrationToForm,
-  type AgentResourceFormState,
 } from "./agent-resource-form";
-import {
-  AgentResourceEditorModal,
-  type AgentCompositionEditorMode,
-  type AgentCompositionEditorScope,
-} from "./agent-resource-editor-modal";
 
 interface AgentCompositionResourcesSectionProps {
   settings: ModelSettingsSnapshot;
@@ -130,7 +130,8 @@ export function AgentCompositionResourcesSection({
   );
 
   const userMainPrompts = useMemo(
-    () => mainAgentPrompts.filter((prompt) => prompt.mode === "custom_append" && prompt.source !== "built_in"),
+    () =>
+      mainAgentPrompts.filter((prompt) => prompt.mode === "custom_append" && prompt.source !== "built_in"),
     [mainAgentPrompts],
   );
 
@@ -164,12 +165,7 @@ export function AgentCompositionResourcesSection({
     }
     openCreateEditor("mainConfig", pendingCreateMainConfig);
     onPendingCreateMainConfigConsumed?.();
-  }, [
-    activeScope,
-    onPendingCreateMainConfigConsumed,
-    openCreateEditor,
-    pendingCreateMainConfig,
-  ]);
+  }, [activeScope, onPendingCreateMainConfigConsumed, openCreateEditor, pendingCreateMainConfig]);
 
   const openEditEditor = useCallback(
     (
@@ -212,13 +208,18 @@ export function AgentCompositionResourcesSection({
       }
       setEditorSession(undefined);
     });
-  }, [editorSession, handleAsyncOperation, mainAgentConfigs, mainAgentPrompts, subagentOrchestrations, templates]);
+  }, [
+    editorSession,
+    handleAsyncOperation,
+    mainAgentConfigs,
+    mainAgentPrompts,
+    subagentOrchestrations,
+    templates,
+  ]);
 
   const handleCopyMainAgent = useCallback(
     async (config: MainAgentConfigResource) => {
-      const copied = buildMainAgentConfigFromForm(
-        createCopiedMainAgentConfigForm(config, formOptions),
-      );
+      const copied = buildMainAgentConfigFromForm(createCopiedMainAgentConfigForm(config, formOptions));
       await handleAsyncOperation(() => window.eco!.saveMainAgentConfig(copied));
     },
     [formOptions, handleAsyncOperation],
@@ -236,9 +237,7 @@ export function AgentCompositionResourcesSection({
 
   const handleCopyMainPrompt = useCallback(
     async (prompt: MainAgentPromptResource) => {
-      const copied = buildMainAgentPromptFromForm(
-        createCopiedMainAgentPromptForm(prompt, formOptions),
-      );
+      const copied = buildMainAgentPromptFromForm(createCopiedMainAgentPromptForm(prompt, formOptions));
       await handleAsyncOperation(() => window.eco!.saveMainAgentPrompt(copied));
     },
     [formOptions, handleAsyncOperation],
@@ -267,7 +266,11 @@ export function AgentCompositionResourcesSection({
 
   const handleDeleteSubagentOrchestration = useCallback(
     async (orchestration: SubagentOrchestrationResource) => {
-      if (!window.confirm(t("settings.models.resources.confirmDeleteOrchestration", { name: orchestration.name }))) {
+      if (
+        !window.confirm(
+          t("settings.models.resources.confirmDeleteOrchestration", { name: orchestration.name }),
+        )
+      ) {
         return;
       }
       await handleAsyncOperation(() => window.eco!.deleteSubagentOrchestration(orchestration.id));
@@ -280,190 +283,192 @@ export function AgentCompositionResourcesSection({
       {error && <p className="settings-form-error mcp-list-error">{error}</p>}
 
       {activeScope === "mainConfig" ? (
-      <section className="mcp-list-section composition-resources-block">
-        <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainConfig")}</span>
-          <button
-            type="button"
-            className="mcp-add-button"
-            onClick={() => openCreateEditor("mainConfig")}
-            aria-label={t("settings.models.resources.mainConfigAdd")}
-            disabled={busy}
-          >
-            <Plus size={18} /> {t("settings.models.resources.add")}
-          </button>
-        </div>
-        {userMainAgentConfigs.length === 0 ? (
-          <p className="mcp-list-empty">{t("settings.models.resources.mainConfigEmpty")}</p>
-        ) : (
-          <ul className="mcp-server-list">
-            {userMainAgentConfigs.map((config) => (
-              <li key={config.id} className="mcp-server-row">
-                <div className="mcp-server-summary">
-                  <span className="mcp-server-name">{config.name}</span>
-                  <span className="mcp-server-meta">
-                    {config.modelRef.providerId}:{config.modelRef.modelId}
-                  </span>
-                </div>
-                <div className="mcp-server-actions">
-                  <button
-                    type="button"
-                    className="mcp-icon-button"
-                    onClick={() => openEditEditor("mainConfig", config)}
-                    aria-label={t("settings.models.editor.editAria", { name: config.name })}
-                    disabled={busy}
-                  >
-                    <Pencil size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mcp-icon-button"
-                    onClick={() => void handleCopyMainAgent(config)}
-                    aria-label={t("settings.models.editor.copyAria", { name: config.name })}
-                    disabled={busy}
-                  >
-                    <Copy size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mcp-icon-button danger"
-                    onClick={() => void handleDeleteMainAgent(config)}
-                    aria-label={t("settings.models.editor.deleteAria", { name: config.name })}
-                    disabled={busy}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <section className="mcp-list-section composition-resources-block">
+          <div className="mcp-list-toolbar">
+            <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainConfig")}</span>
+            <button
+              type="button"
+              className="mcp-add-button"
+              onClick={() => openCreateEditor("mainConfig")}
+              aria-label={t("settings.models.resources.mainConfigAdd")}
+              disabled={busy}
+            >
+              <Plus size={18} /> {t("settings.models.resources.add")}
+            </button>
+          </div>
+          {userMainAgentConfigs.length === 0 ? (
+            <p className="mcp-list-empty">{t("settings.models.resources.mainConfigEmpty")}</p>
+          ) : (
+            <ul className="mcp-server-list">
+              {userMainAgentConfigs.map((config) => (
+                <li key={config.id} className="mcp-server-row">
+                  <div className="mcp-server-summary">
+                    <span className="mcp-server-name">{config.name}</span>
+                    <span className="mcp-server-meta">
+                      {config.modelRef.providerId}:{config.modelRef.modelId}
+                    </span>
+                  </div>
+                  <div className="mcp-server-actions">
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => openEditEditor("mainConfig", config)}
+                      aria-label={t("settings.models.editor.editAria", { name: config.name })}
+                      disabled={busy}
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => void handleCopyMainAgent(config)}
+                      aria-label={t("settings.models.editor.copyAria", { name: config.name })}
+                      disabled={busy}
+                    >
+                      <Copy size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button danger"
+                      onClick={() => void handleDeleteMainAgent(config)}
+                      aria-label={t("settings.models.editor.deleteAria", { name: config.name })}
+                      disabled={busy}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ) : null}
 
       {activeScope === "prompt" ? (
-      <section className="mcp-list-section composition-resources-block">
-        <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainPrompt")}</span>
-          <button
-            type="button"
-            className="mcp-add-button"
-            onClick={() => openCreateEditor("prompt")}
-            aria-label={t("settings.models.resources.mainPromptAdd")}
-            disabled={busy}
-          >
-            <Plus size={18} /> {t("settings.models.resources.add")}
-          </button>
-        </div>
-        {userMainPrompts.length === 0 ? (
-          <p className="mcp-list-empty">{t("settings.models.resources.mainPromptEmpty")}</p>
-        ) : (
-          <ul className="mcp-server-list">
-            {userMainPrompts.map((prompt) => (
-              <li key={prompt.id} className="mcp-server-row">
-                <div className="mcp-server-summary">
-                  <span className="mcp-server-name">{prompt.name}</span>
-                  <span className="mcp-server-meta">
-                    {prompt.prompt.slice(0, 48)}
-                    {prompt.prompt.length > 48 ? "…" : ""}
-                  </span>
-                </div>
-                <div className="mcp-server-actions">
-                  <button
-                    type="button"
-                    className="mcp-icon-button"
-                    onClick={() => openEditEditor("prompt", prompt)}
-                    aria-label={t("settings.models.editor.editAria", { name: prompt.name })}
-                    disabled={busy}
-                  >
-                    <Pencil size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mcp-icon-button"
-                    onClick={() => void handleCopyMainPrompt(prompt)}
-                    aria-label={t("settings.models.editor.copyAria", { name: prompt.name })}
-                    disabled={busy}
-                  >
-                    <Copy size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mcp-icon-button danger"
-                    onClick={() => void handleDeleteMainPrompt(prompt)}
-                    aria-label={t("settings.models.editor.deleteAria", { name: prompt.name })}
-                    disabled={busy}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <section className="mcp-list-section composition-resources-block">
+          <div className="mcp-list-toolbar">
+            <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainPrompt")}</span>
+            <button
+              type="button"
+              className="mcp-add-button"
+              onClick={() => openCreateEditor("prompt")}
+              aria-label={t("settings.models.resources.mainPromptAdd")}
+              disabled={busy}
+            >
+              <Plus size={18} /> {t("settings.models.resources.add")}
+            </button>
+          </div>
+          {userMainPrompts.length === 0 ? (
+            <p className="mcp-list-empty">{t("settings.models.resources.mainPromptEmpty")}</p>
+          ) : (
+            <ul className="mcp-server-list">
+              {userMainPrompts.map((prompt) => (
+                <li key={prompt.id} className="mcp-server-row">
+                  <div className="mcp-server-summary">
+                    <span className="mcp-server-name">{prompt.name}</span>
+                    <span className="mcp-server-meta">
+                      {prompt.prompt.slice(0, 48)}
+                      {prompt.prompt.length > 48 ? "…" : ""}
+                    </span>
+                  </div>
+                  <div className="mcp-server-actions">
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => openEditEditor("prompt", prompt)}
+                      aria-label={t("settings.models.editor.editAria", { name: prompt.name })}
+                      disabled={busy}
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => void handleCopyMainPrompt(prompt)}
+                      aria-label={t("settings.models.editor.copyAria", { name: prompt.name })}
+                      disabled={busy}
+                    >
+                      <Copy size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button danger"
+                      onClick={() => void handleDeleteMainPrompt(prompt)}
+                      aria-label={t("settings.models.editor.deleteAria", { name: prompt.name })}
+                      disabled={busy}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ) : null}
 
       {activeScope === "orchestration" ? (
-      <section className="mcp-list-section composition-resources-block">
-        <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">{t("settings.models.resources.subagentOrchestration")}</span>
-          <button
-            type="button"
-            className="mcp-add-button"
-            onClick={() => openCreateEditor("orchestration")}
-            aria-label={t("settings.models.resources.subagentOrchestrationAdd")}
-            disabled={busy}
-          >
-            <Plus size={18} /> {t("settings.models.resources.add")}
-          </button>
-        </div>
-        {userSubagentOrchestrationResources.length === 0 ? (
-          <p className="mcp-list-empty">{t("settings.models.resources.subagentOrchestrationEmpty")}</p>
-        ) : (
-          <ul className="mcp-server-list">
-            {userSubagentOrchestrationResources.map((orchestration) => (
-              <li key={orchestration.id} className="mcp-server-row">
-                <div className="mcp-server-summary">
-                  <span className="mcp-server-name">{orchestration.name}</span>
-                  <span className="mcp-server-meta">
-                    {t("settings.models.resources.agentCount", { count: orchestration.agents.length })}
-                  </span>
-                </div>
-                <div className="mcp-server-actions">
-                  <button
-                    type="button"
-                    className="mcp-icon-button"
-                    onClick={() => openEditEditor("orchestration", orchestration)}
-                    aria-label={t("settings.models.editor.editAria", { name: orchestration.name })}
-                    disabled={busy}
-                  >
-                    <Pencil size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mcp-icon-button"
-                    onClick={() => void handleCopySubagentOrchestration(orchestration)}
-                    aria-label={t("settings.models.editor.copyAria", { name: orchestration.name })}
-                    disabled={busy}
-                  >
-                    <Copy size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mcp-icon-button danger"
-                    onClick={() => void handleDeleteSubagentOrchestration(orchestration)}
-                    aria-label={t("settings.models.editor.deleteAria", { name: orchestration.name })}
-                    disabled={busy}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <section className="mcp-list-section composition-resources-block">
+          <div className="mcp-list-toolbar">
+            <span className="mcp-list-toolbar-label">
+              {t("settings.models.resources.subagentOrchestration")}
+            </span>
+            <button
+              type="button"
+              className="mcp-add-button"
+              onClick={() => openCreateEditor("orchestration")}
+              aria-label={t("settings.models.resources.subagentOrchestrationAdd")}
+              disabled={busy}
+            >
+              <Plus size={18} /> {t("settings.models.resources.add")}
+            </button>
+          </div>
+          {userSubagentOrchestrationResources.length === 0 ? (
+            <p className="mcp-list-empty">{t("settings.models.resources.subagentOrchestrationEmpty")}</p>
+          ) : (
+            <ul className="mcp-server-list">
+              {userSubagentOrchestrationResources.map((orchestration) => (
+                <li key={orchestration.id} className="mcp-server-row">
+                  <div className="mcp-server-summary">
+                    <span className="mcp-server-name">{orchestration.name}</span>
+                    <span className="mcp-server-meta">
+                      {t("settings.models.resources.agentCount", { count: orchestration.agents.length })}
+                    </span>
+                  </div>
+                  <div className="mcp-server-actions">
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => openEditEditor("orchestration", orchestration)}
+                      aria-label={t("settings.models.editor.editAria", { name: orchestration.name })}
+                      disabled={busy}
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => void handleCopySubagentOrchestration(orchestration)}
+                      aria-label={t("settings.models.editor.copyAria", { name: orchestration.name })}
+                      disabled={busy}
+                    >
+                      <Copy size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button danger"
+                      onClick={() => void handleDeleteSubagentOrchestration(orchestration)}
+                      aria-label={t("settings.models.editor.deleteAria", { name: orchestration.name })}
+                      disabled={busy}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ) : null}
 
       {editorSession ? (
@@ -474,8 +479,7 @@ export function AgentCompositionResourcesSection({
               if (!current) {
                 return current;
               }
-              const nextForm =
-                typeof updater === "function" ? updater(current.form) : updater;
+              const nextForm = typeof updater === "function" ? updater(current.form) : updater;
               return { ...current, form: nextForm };
             })
           }

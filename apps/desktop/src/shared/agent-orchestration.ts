@@ -16,9 +16,10 @@ export function isV4aTeachingEnabled(
   return config?.v4aTeachingEnabled === true || config?.v4aCorrectionEnabled === true;
 }
 
-function v4aTeachingField(
-  config: { v4aTeachingEnabled?: boolean; v4aCorrectionEnabled?: boolean },
-): { v4aTeachingEnabled: true } | Record<string, never> {
+function v4aTeachingField(config: {
+  v4aTeachingEnabled?: boolean;
+  v4aCorrectionEnabled?: boolean;
+}): { v4aTeachingEnabled: true } | Record<string, never> {
   return isV4aTeachingEnabled(config) ? { v4aTeachingEnabled: true } : {};
 }
 
@@ -133,13 +134,9 @@ export interface MainAgentPromptResource {
   source: AgentConfigSource;
 }
 
-export type MainAgentPromptSelection =
-  | { mode: "builtin" }
-  | { mode: "custom_append"; promptId: string };
+export type MainAgentPromptSelection = { mode: "builtin" } | { mode: "custom_append"; promptId: string };
 
-export type SubagentSelection =
-  | { mode: "none" }
-  | { mode: "orchestration"; orchestrationId: string };
+export type SubagentSelection = { mode: "none" } | { mode: "orchestration"; orchestrationId: string };
 
 /** Live component references resolved when creating or switching a thread. */
 export interface OrchestrationSelection {
@@ -367,9 +364,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
 }
 
 /** Merge store/user templates with built-ins without duplicate ids. User entries win. */
-export function resolveAgentTemplateCatalog(
-  templates: readonly AgentTemplate[] = [],
-): AgentTemplate[] {
+export function resolveAgentTemplateCatalog(templates: readonly AgentTemplate[] = []): AgentTemplate[] {
   const byId = new Map<string, AgentTemplate>();
   for (const template of templates) {
     byId.set(template.id, template);
@@ -550,9 +545,7 @@ export function isMainAgentPromptSelection(value: unknown): value is MainAgentPr
     return true;
   }
   return (
-    record.mode === "custom_append" &&
-    typeof record.promptId === "string" &&
-    Boolean(record.promptId.trim())
+    record.mode === "custom_append" && typeof record.promptId === "string" && Boolean(record.promptId.trim())
   );
 }
 

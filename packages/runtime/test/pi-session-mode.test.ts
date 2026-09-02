@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { SdkToolPermissionRequest } from "../src/claude-agent-sdk";
 import {
   createPiModeAwareToolPermissionHandler,
   isPiReadOnlyBashCommand,
@@ -6,12 +7,8 @@ import {
   piSystemPromptForSessionMode,
   piToolsForSessionMode,
 } from "../src/pi-session-mode";
-import type { SdkToolPermissionRequest } from "../src/claude-agent-sdk";
 
-function request(
-  toolName: string,
-  input: Record<string, unknown> = {},
-): SdkToolPermissionRequest {
+function request(toolName: string, input: Record<string, unknown> = {}): SdkToolPermissionRequest {
   return {
     toolName,
     input,
@@ -45,7 +42,9 @@ test("isPiReadOnlyBashCommand allows rg/grep/git status", () => {
   expect(isPiReadOnlyBashCommand("echo hi > /dev/null")).toBe(true);
   expect(isPiReadOnlyBashCommand("git log 2>&1 | head -5")).toBe(true);
   // cd chains / cd links are navigation only.
-  expect(isPiReadOnlyBashCommand('cd C:/Users/admin/workspace/eco-coding && rg -n "apiCompat" --stats')).toBe(true);
+  expect(isPiReadOnlyBashCommand('cd C:/Users/admin/workspace/eco-coding && rg -n "apiCompat" --stats')).toBe(
+    true,
+  );
   expect(isPiReadOnlyBashCommand("cd src; grep -n TODO *.ts")).toBe(true);
   expect(isPiReadOnlyBashCommand("cd pkg && rg foo | head -3")).toBe(true);
 });
@@ -148,9 +147,7 @@ test("Ask mode fail-closes unknown MCP tools", async () => {
     mode: "ask",
     baseHandler: async () => ({ behavior: "allow" }),
   });
-  expect((await handler(request("mcp__browser__navigate", { url: "https://x" }))).behavior).toBe(
-    "deny",
-  );
+  expect((await handler(request("mcp__browser__navigate", { url: "https://x" }))).behavior).toBe("deny");
 });
 
 test("Ask mode does not expose grep/find/ls as tools", async () => {
@@ -185,9 +182,7 @@ test("Plan finalize_plan is allowed immediately without baseHandler", async () =
       return { behavior: "allow" };
     },
   });
-  const decision = await handler(
-    request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "1. Do the thing\n2. Test" }),
-  );
+  const decision = await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "1. Do the thing\n2. Test" }));
   expect(decision.behavior).toBe("allow");
   expect(baseCalls).toBe(0);
 });
@@ -206,9 +201,7 @@ test("Ask mode blocks finalize_plan", async () => {
     mode: "ask",
     baseHandler: async () => ({ behavior: "allow" }),
   });
-  expect(
-    (await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "step" }))).behavior,
-  ).toBe("deny");
+  expect((await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "step" }))).behavior).toBe("deny");
 });
 
 test("piSystemPromptForSessionMode differs by mode", () => {

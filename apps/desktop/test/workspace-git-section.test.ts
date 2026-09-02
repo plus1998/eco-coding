@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { formatIpcInvokeError } from "../src/renderer/AppMessage";
+import { i18n } from "../src/renderer/i18n";
 import { resolveGitRemoteSyncAction } from "../src/renderer/WorkspaceGitSection";
 import { getWorkspaceGitCommitEntryLabel } from "../src/renderer/workspace-git-action-store";
-import { i18n } from "../src/renderer/i18n";
 
 test("remote sync fetches until the local branch is behind", () => {
   expect(resolveGitRemoteSyncAction(0)).toBe("fetch");

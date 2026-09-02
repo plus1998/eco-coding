@@ -4,8 +4,9 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
-import { buildSkeletonFeedProjection } from "../shared/thread-run-projection-skeleton";
 import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
+import { buildSkeletonFeedProjection } from "../shared/thread-run-projection-skeleton";
+
 export {
   FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
@@ -34,7 +35,9 @@ function trimTimeline(
   return page.map(trimTimelineItemForFeed);
 }
 
-export function trimTimelineItemForFeed(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
+export function trimTimelineItemForFeed(
+  item: ThreadRunProjectionTimelineItem,
+): ThreadRunProjectionTimelineItem {
   const metadata = trimTimelineMetadata(item.metadata);
   // Streaming deltas keep cumulative text for merge-on-client, but remote wire applies a
   // separate streaming preview cap in trimProjectionForRemoteWire.

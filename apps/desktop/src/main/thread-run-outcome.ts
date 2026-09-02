@@ -104,7 +104,9 @@ export function resolveContinuationRunOutcome(
 
 function resolveInterruptedRunOutcome(
   result: RequestAttemptResult,
-): Extract<ThreadRunOutcomeDecision, { kind: "cancelled" | "failed" | "unstarted" | "incomplete" }> | undefined {
+):
+  | Extract<ThreadRunOutcomeDecision, { kind: "cancelled" | "failed" | "unstarted" | "incomplete" }>
+  | undefined {
   if (isRequestAttemptAborted(result)) {
     return { kind: "cancelled", reason: "cancelled by user" };
   }

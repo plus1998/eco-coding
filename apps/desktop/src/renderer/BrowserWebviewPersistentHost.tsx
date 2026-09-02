@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore, type CSSProperties } from "react";
+import { type CSSProperties, useCallback, useEffect, useSyncExternalStore } from "react";
 import {
   BROWSER_WEBVIEW_OFFSCREEN_HEIGHT,
   BROWSER_WEBVIEW_OFFSCREEN_WIDTH,

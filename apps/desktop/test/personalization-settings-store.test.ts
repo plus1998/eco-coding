@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  GLOBAL_USER_RULES_MAX_CHARS,
   defaultPersonalizationSettings,
+  GLOBAL_USER_RULES_MAX_CHARS,
   isPersonalizationSettingsSnapshot,
   normalizePersonalizationSettingsSnapshot,
 } from "../src/main/personalization-settings-store";

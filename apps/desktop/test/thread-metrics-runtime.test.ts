@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import type { ParsedUsage } from "@eco/runtime";
-import type { ThreadContextSnapshot } from "../src/shared/ipc";
 import type { ThreadMetricsRecord } from "../src/main/conversation-store";
-import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import {
   buildPersistedThreadMetrics,
   flushThreadMetrics,
+  type PersistedThreadMetricsInput,
   persistThreadMetrics,
   restoreThreadMetricsFromStore,
-  type PersistedThreadMetricsInput,
 } from "../src/main/thread-metrics-runtime";
+import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import type { UsageContextUpdateMonitor } from "../src/main/usage-context-effects";
+import type { ThreadContextSnapshot } from "../src/shared/ipc";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 
@@ -180,9 +180,7 @@ test("hydrateSubagentContextFromMetrics never treats cumulative billing usage as
     contextMonitor,
   });
 
-  expect(contextOccupancyUpdates).toEqual([
-    { occupied: 114_000, agentId: "agent_explore_ok" },
-  ]);
+  expect(contextOccupancyUpdates).toEqual([{ occupied: 114_000, agentId: "agent_explore_ok" }]);
 });
 
 test("buildPersistedThreadMetrics and persistThreadMetrics preserve snapshot shape", () => {

@@ -195,9 +195,7 @@ export function auditAnthropicMessagesBody(body: Record<string, unknown>): Proxy
   return {
     hitCount: hits.length,
     uniqueCchValues,
-    billingHeaderInSystem: hits.some(
-      (hit) => hit.kind === "billing_header" && hit.path.startsWith("system"),
-    ),
+    billingHeaderInSystem: hits.some((hit) => hit.kind === "billing_header" && hit.path.startsWith("system")),
     hits,
   };
 }
@@ -213,12 +211,7 @@ function scanAnthropicMessage(
   }
 }
 
-function scanValue(
-  value: unknown,
-  path: string,
-  hits: ProxyCchHit[],
-  cchValues: Set<string>,
-): void {
+function scanValue(value: unknown, path: string, hits: ProxyCchHit[], cchValues: Set<string>): void {
   if (hits.length >= MAX_HITS) {
     return;
   }
@@ -280,12 +273,7 @@ function scanContentBlock(
   }
 }
 
-function scanString(
-  text: string,
-  path: string,
-  hits: ProxyCchHit[],
-  cchValues: Set<string>,
-): void {
+function scanString(text: string, path: string, hits: ProxyCchHit[], cchValues: Set<string>): void {
   if (text.length === 0 || hits.length >= MAX_HITS) {
     return;
   }
@@ -329,12 +317,7 @@ function scanString(
   }
 }
 
-function recordHit(
-  hits: ProxyCchHit[],
-  cchValues: Set<string>,
-  hit: ProxyCchHit,
-  sourceText: string,
-): void {
+function recordHit(hits: ProxyCchHit[], cchValues: Set<string>, hit: ProxyCchHit, sourceText: string): void {
   collectCchValues(sourceText, cchValues);
   hits.push(hit);
 }
@@ -358,7 +341,10 @@ function collectCchValues(text: string, cchValues: Set<string>): void {
 }
 
 function snippetFor(text: string, start = 0): string {
-  const slice = text.slice(start, start + SNIPPET_MAX_CHARS).replace(/\s+/g, " ").trim();
+  const slice = text
+    .slice(start, start + SNIPPET_MAX_CHARS)
+    .replace(/\s+/g, " ")
+    .trim();
   if (text.length > start + SNIPPET_MAX_CHARS) {
     return `${slice}…`;
   }

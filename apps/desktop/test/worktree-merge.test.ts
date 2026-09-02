@@ -46,8 +46,7 @@ test("serialize and parse structured worktree merge message", () => {
 });
 
 test("parseWorktreeMergeMessage supports legacy comma-separated format", () => {
-  const legacy =
-    "已合并 2 个文件的更改到工作区（未自动提交）：src/a.ts, src/b.ts";
+  const legacy = "已合并 2 个文件的更改到工作区（未自动提交）：src/a.ts, src/b.ts";
   const parsed = parseWorktreeMergeMessage(legacy);
   expect(parsed?.fileCount).toBe(2);
   expect(parsed?.files.map((file) => file.path)).toEqual(["src/a.ts", "src/b.ts"]);

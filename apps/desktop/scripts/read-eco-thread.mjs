@@ -1,5 +1,5 @@
-import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 
 const tid = process.argv[2] ?? "thr_1788251572291";
 const dbs = [
@@ -15,16 +15,18 @@ for (const p of dbs) {
   }
   const db = new DatabaseSync(p, { readOnly: true });
   console.log(`\n=== ${p} ===`);
-  const tables = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    .all();
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
   console.log("tables:", tables.map((t) => t.name).join(", "));
 
   for (const table of tables.map((t) => t.name)) {
     if (!/thread/i.test(table)) continue;
     try {
       const cols = db.prepare(`PRAGMA table_info(${table})`).all();
-      const idCol = cols.some((c) => c.name === "id") ? "id" : cols.some((c) => c.name === "thread_id") ? "thread_id" : null;
+      const idCol = cols.some((c) => c.name === "id")
+        ? "id"
+        : cols.some((c) => c.name === "thread_id")
+          ? "thread_id"
+          : null;
       if (!idCol) continue;
       const row = db.prepare(`SELECT * FROM ${table} WHERE ${idCol} = ? LIMIT 1`).get(tid);
       if (row) console.log(`FOUND ${table}:`, JSON.stringify(row, null, 2).slice(0, 3000));

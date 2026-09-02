@@ -1,5 +1,5 @@
-import type { ThreadActivityLine, ThreadActivityRewindTarget, ThreadStatus } from "./ipc";
 import { stripSubagentBracketPrefix } from "./activity-display";
+import type { ThreadActivityLine, ThreadActivityRewindTarget, ThreadStatus } from "./ipc";
 
 export interface ActivityContextLine {
   role: string;
@@ -72,12 +72,7 @@ export interface ContinuePhaseInput {
   activityLines: readonly ActivityContextLine[];
 }
 
-const EXECUTION_ACTIVITY_MARKERS = [
-  "计划已进入执行阶段",
-  "子代理执行",
-  "执行完成",
-  "继续执行",
-] as const;
+const EXECUTION_ACTIVITY_MARKERS = ["计划已进入执行阶段", "子代理执行", "执行完成", "继续执行"] as const;
 
 /** Whether the thread has entered phase-2 execution (approved plan or coder work). */
 export function threadEnteredExecutionPhase(input: ContinuePhaseInput): boolean {
@@ -288,9 +283,7 @@ export function buildAgentPromptWithContext(
 }
 
 /** UI: show planner session context, not max across all subagents. */
-export function pickDisplayContextTokens(
-  usageByRole: Record<string, { contextTokens: number }>,
-): number {
+export function pickDisplayContextTokens(usageByRole: Record<string, { contextTokens: number }>): number {
   const planner = usageByRole.planner?.contextTokens ?? 0;
   if (planner > 0) {
     return planner;
@@ -342,7 +335,5 @@ const AGENT_OUTPUT_ROLES = new Set([
  * "session binding was lost after a prior successful turn".
  */
 export function threadHasPriorAgentOutput(lines: readonly ActivityContextLine[]): boolean {
-  return lines.some(
-    (line) => AGENT_OUTPUT_ROLES.has(line.role) && !isActivityNoiseMessage(line.message),
-  );
+  return lines.some((line) => AGENT_OUTPUT_ROLES.has(line.role) && !isActivityNoiseMessage(line.message));
 }

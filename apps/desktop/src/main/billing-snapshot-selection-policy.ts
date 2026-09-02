@@ -8,10 +8,9 @@ export const DEFAULT_BILLING_SNAPSHOT_SELECTION_POLICY: BillingSnapshotSelection
   useLedgerProjection: true,
 };
 
-export function resolveBillingSnapshotSelectionOptions(input: {
-  policy?: BillingSnapshotSelectionPolicy;
-  plannerModelLabel?: string;
-} = {}): UsageLedgerBillingSnapshotSelectionOptions {
+export function resolveBillingSnapshotSelectionOptions(
+  input: { policy?: BillingSnapshotSelectionPolicy; plannerModelLabel?: string } = {},
+): UsageLedgerBillingSnapshotSelectionOptions {
   const policy = input.policy ?? DEFAULT_BILLING_SNAPSHOT_SELECTION_POLICY;
   return {
     useLedgerProjection: policy.useLedgerProjection,

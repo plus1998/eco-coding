@@ -79,9 +79,7 @@ export function evaluateReplayScenarioChecklist(input: {
 }): ScenarioChecklistResult {
   const { persistedEvents, agents = [], workspaceFiles = {}, marker, skillsListResult } = input;
   const messages = persistedEvents.map((event) => event.message).join("\n");
-  const metadataText = persistedEvents
-    .map((event) => JSON.stringify(event.metadata ?? {}))
-    .join("\n");
+  const metadataText = persistedEvents.map((event) => JSON.stringify(event.metadata ?? {})).join("\n");
   const joinedText = `${messages}\n${metadataText}`;
 
   const notePathKeys = Object.keys(workspaceFiles).filter((pathKey) => /smoke-note/i.test(pathKey));
@@ -129,8 +127,7 @@ export function evaluateReplayScenarioChecklist(input: {
     subagentSpawned &&
     (childMarkerSeen || subagentStopped || subagentAgents.some((agent) => agent.status === "stopped"));
 
-  const turnCompleted =
-    persistedEvents.some((event) => event.eventType === "message.final") || markerHit;
+  const turnCompleted = persistedEvents.some((event) => event.eventType === "message.final") || markerHit;
 
   const checklist: Record<ReplayScenarioChecklistKey, ScenarioChecklistEntry> = {
     skills_listed: {
@@ -193,7 +190,7 @@ export function evaluateCodexRecordingScenarioChecklist(input: {
   const texts: string[] = [];
   const itemTypes = new Set<string>();
   const toolNames = new Set<string>();
-  let subagentThreadIds = new Set<string>();
+  const subagentThreadIds = new Set<string>();
   let spawnSeen = false;
   let mcpSeen = false;
   let fileWriteSeen = false;
@@ -299,8 +296,7 @@ export function evaluateCodexRecordingScenarioChecklist(input: {
     (subagentThreadIds.size > 0 ||
       [...itemTypes].some((type) => /subAgent|collab|agentTool/i.test(type)) ||
       rpcLog.some(
-        (entry) =>
-          entry.method === "thread/started" && isRecord(entry.params) && entry.params.parentThreadId,
+        (entry) => entry.method === "thread/started" && isRecord(entry.params) && entry.params.parentThreadId,
       ));
 
   const checklist: Record<ReplayScenarioChecklistKey, ScenarioChecklistEntry> = {

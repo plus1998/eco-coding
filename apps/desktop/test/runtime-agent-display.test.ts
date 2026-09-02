@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test";
 import {
+  buildRuntimeAgentDisplayNames,
+  formatRuntimeRoleModelLabel,
+  resolveRuntimeAgentName,
+} from "../src/renderer/runtime-agent-display";
+import {
   buildResourcesFromRouteProfile,
   createBuiltInAgentTemplates,
   resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, RouteProfileView, ThreadRuntimeConfig } from "../src/shared/ipc";
-import {
-  buildRuntimeAgentDisplayNames,
-  formatRuntimeRoleModelLabel,
-  resolveRuntimeAgentName,
-} from "../src/renderer/runtime-agent-display";
 
 const routeProfile: RouteProfileView = {
   id: "coding-default",

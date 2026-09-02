@@ -11,7 +11,10 @@ export const PROMPT_CACHE_TIP_STORAGE_KEY = "eco.prompt-cache-tip-preferences";
 export function normalizePromptCacheTipPreferences(value: unknown): PromptCacheTipPreferences {
   const candidate = value && typeof value === "object" ? (value as Partial<PromptCacheTipPreferences>) : {};
   return {
-    enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : DEFAULT_PROMPT_CACHE_TIP_PREFERENCES.enabled,
+    enabled:
+      typeof candidate.enabled === "boolean"
+        ? candidate.enabled
+        : DEFAULT_PROMPT_CACHE_TIP_PREFERENCES.enabled,
   };
 }
 

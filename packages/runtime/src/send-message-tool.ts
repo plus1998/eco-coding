@@ -60,9 +60,7 @@ export function formatSendMessageToolInputSummary(input: unknown): string | unde
   if (!headline) {
     return fields.recipient ? `→ ${shortRecipientLabel(fields.recipient)}` : undefined;
   }
-  return fields.recipient
-    ? `→ ${shortRecipientLabel(fields.recipient)} · ${headline}`
-    : headline;
+  return fields.recipient ? `→ ${shortRecipientLabel(fields.recipient)} · ${headline}` : headline;
 }
 
 export function parseSendMessageToolResult(output: unknown): SendMessageToolResultFields | undefined {

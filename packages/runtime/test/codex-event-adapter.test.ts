@@ -10,10 +10,7 @@ import {
 } from "../src/codex-event-adapter.js";
 import { CodexTurnRouteRegistry } from "../src/codex-turn-route-registry.js";
 
-const FIXTURE_PATH = path.resolve(
-  import.meta.dir,
-  "fixtures/codex-item-stream/plan-turn.jsonl",
-);
+const FIXTURE_PATH = path.resolve(import.meta.dir, "fixtures/codex-item-stream/plan-turn.jsonl");
 
 const ECO_THREAD = "thr_eco_fixture";
 const CODEX_THREAD = "thr_codex_fixture_001";
@@ -1476,8 +1473,7 @@ test("thread/started without role evidence waits for subAgentActivity call_id be
         recordedEvents += 1;
         record(event);
       },
-      getThreadAttributionRecord: (codexThreadId) =>
-        attributionByThread.get(codexThreadId) as never,
+      getThreadAttributionRecord: (codexThreadId) => attributionByThread.get(codexThreadId) as never,
       recordThreadAttribution: (codexThreadId, attribution) => {
         attributionByThread.set(codexThreadId, attribution);
       },
@@ -2270,10 +2266,7 @@ test("dispatch records thread attribution on spawn item/started and thread/start
 });
 
 test("spawn-turn.jsonl fixture replays to expected agent lifecycle sequence", () => {
-  const fixturePath = path.resolve(
-    import.meta.dir,
-    "fixtures/codex-item-stream/spawn-turn.jsonl",
-  );
+  const fixturePath = path.resolve(import.meta.dir, "fixtures/codex-item-stream/spawn-turn.jsonl");
   const fixture = fs.readFileSync(fixturePath, "utf8");
   const events = replayCodexNotificationFixture(fixture, {
     resolveEcoThreadId: (codexThreadId) =>

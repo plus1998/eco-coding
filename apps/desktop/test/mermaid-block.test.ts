@@ -20,9 +20,7 @@ test("readAppTheme defaults without document theme", () => {
 });
 
 test("isMermaidErrorSvg detects mermaid native error output", () => {
-  expect(isMermaidErrorSvg('<svg><text class="error-text">Syntax error in text</text></svg>')).toBe(
-    true,
-  );
+  expect(isMermaidErrorSvg('<svg><text class="error-text">Syntax error in text</text></svg>')).toBe(true);
   expect(isMermaidErrorSvg('<svg><circle r="4"/></svg>')).toBe(false);
 });
 

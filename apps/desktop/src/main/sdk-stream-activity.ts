@@ -47,9 +47,7 @@ export interface SdkLocalStreamUpdate {
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
 }
 
-export function readReasoningDisplayStamp(
-  value: unknown,
-): ThreadLocalStreamUpdate["reasoningDisplay"] {
+export function readReasoningDisplayStamp(value: unknown): ThreadLocalStreamUpdate["reasoningDisplay"] {
   return value === "summary" || value === "raw" ? value : undefined;
 }
 
@@ -118,15 +116,7 @@ export class SdkStreamActivityBridge {
       return streamKey.startsWith(`${threadId}:`) && Boolean(last.message.trim());
     });
     for (const [, last] of openLines) {
-      emit(
-        threadId,
-        "message.delta",
-        last.message,
-        last.role,
-        false,
-        last.agentId,
-        last.extras,
-      );
+      emit(threadId, "message.delta", last.message, last.role, false, last.agentId, last.extras);
     }
     this.resetThread(threadId);
   }
@@ -230,9 +220,7 @@ export class SdkStreamActivityBridge {
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
     const explicitStreamBlockKey = readSdkStreamBlockKey(event.payload);
-    let sdkStreamBlockKey = explicitStreamBlockKey
-      ? readSdkStreamIdentityKey(event.payload)
-      : undefined;
+    let sdkStreamBlockKey = explicitStreamBlockKey ? readSdkStreamIdentityKey(event.payload) : undefined;
     if (!sdkStreamBlockKey && event.type === "message.delta") {
       const messageId = readSdkMessageId(event.payload);
       sdkStreamBlockKey = this.allocateUnkeyedNarrativeBlockKey({
@@ -803,9 +791,7 @@ function isSdkToolInputPlaceholder(payload: unknown): boolean {
       return true;
     }
     const input = record.input;
-    return (
-      !input || (typeof input === "object" && !Array.isArray(input) && Object.keys(input).length === 0)
-    );
+    return !input || (typeof input === "object" && !Array.isArray(input) && Object.keys(input).length === 0);
   }
   if (record.streaming !== true || record.input_complete === true) {
     return false;
@@ -900,8 +886,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
-  const sendMessage =
-    name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const sendMessage = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -1111,9 +1096,9 @@ function canMergeAcpMessageIds(existing?: string, incoming?: string): boolean {
   return true;
 }
 
-function readThinkingStartedAtFromExtras(
-  extras?: { metadata?: Record<string, unknown> },
-): string | undefined {
+function readThinkingStartedAtFromExtras(extras?: {
+  metadata?: Record<string, unknown>;
+}): string | undefined {
   const value = extras?.metadata?.thinkingStartedAt;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -1158,11 +1143,7 @@ function mergeSdkActivityEmitExtras(
       ? payloadRecord.reasoningDisplay
       : undefined;
   const metadata =
-    activityOrigin ||
-    sdkStreamBlockKey ||
-    sdkMessageId ||
-    taskMetadata ||
-    reasoningDisplayFromPayload
+    activityOrigin || sdkStreamBlockKey || sdkMessageId || taskMetadata || reasoningDisplayFromPayload
       ? {
           ...(activityOrigin && { activityOrigin }),
           ...(sdkStreamBlockKey && { sdkStreamBlockKey }),

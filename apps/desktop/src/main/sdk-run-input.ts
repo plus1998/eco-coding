@@ -1,10 +1,10 @@
 import type {
   AgentRuntimeRunInput,
+  EcoAgentRuntimeConfig,
   EcoSdkResumeOptions,
   EcoSdkSessionOptions,
   ResumableSubagentRef,
   SubagentRunPhase,
-  EcoAgentRuntimeConfig,
 } from "@eco/runtime";
 
 export type SdkRunMode = "planning" | "execution" | "ask";

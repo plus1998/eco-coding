@@ -135,8 +135,7 @@ export function parseAcpCursorTodos(todos: unknown): AcpCursorTodo[] {
     if (!content) {
       continue;
     }
-    const id =
-      typeof record.id === "string" && record.id.trim() ? record.id.trim() : String(index);
+    const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : String(index);
     parsed.push({
       id,
       content,

@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
+import { lookupModelLimitsInCatalog } from "../src/models-dev-limits";
 import {
   buildModelPricingSummary,
   expandModelLookupCandidates,
   formatModelPricingLabel,
   formatRatePerMillion,
   isOfficialModelsDevProvider,
-  lookupModelCostInCatalog,
   listModelsDevCatalogOptions,
+  lookupModelCostInCatalog,
   parseModelsDevCatalog,
   resolveProviderKeyFromBaseUrl,
 } from "../src/models-dev-pricing";
-import { lookupModelLimitsInCatalog } from "../src/models-dev-limits";
 
 const mockCatalog = parseModelsDevCatalog({
   anthropic: {

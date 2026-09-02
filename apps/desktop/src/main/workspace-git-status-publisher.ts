@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { GitWorkingTreeStatus } from "../shared/ipc";
-import { getGitWorkingTreeStatus, type GitRunner } from "./git-operations";
+import { type GitRunner, getGitWorkingTreeStatus } from "./git-operations";
 
 export const WORKSPACE_GIT_STATUS_DEBOUNCE_MS = 500;
 

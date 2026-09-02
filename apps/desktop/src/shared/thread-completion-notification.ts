@@ -1,3 +1,4 @@
+import { translateCatalog } from "./i18n-catalogs";
 import type {
   BashApprovalRequest,
   ClarificationRequest,
@@ -6,7 +7,6 @@ import type {
   ThreadApprovalNotificationKind,
   ThreadSummary,
 } from "./ipc";
-import { translateCatalog } from "./i18n-catalogs";
 import type { AppLocale } from "./locale";
 import type { ThreadRunEvent } from "./thread-run-events";
 
@@ -79,11 +79,9 @@ export function buildThreadApprovalNotificationContent(
     return undefined;
   }
   const body = normalizeNotificationBody(
-    translateCatalog(
-      locale,
-      kind === "plan" ? "notification.planApproval" : "notification.bashApproval",
-      { detail },
-    ),
+    translateCatalog(locale, kind === "plan" ? "notification.planApproval" : "notification.bashApproval", {
+      detail,
+    }),
   );
   return body ? { title, body } : undefined;
 }
@@ -102,9 +100,7 @@ export function buildThreadClarificationNotificationContent(
   if (!detail) {
     return undefined;
   }
-  const body = normalizeNotificationBody(
-    translateCatalog(locale, "notification.clarification", { detail }),
-  );
+  const body = normalizeNotificationBody(translateCatalog(locale, "notification.clarification", { detail }));
   return body ? { title, body } : undefined;
 }
 
@@ -141,10 +137,7 @@ export function buildThreadCompletionNotificationContentFromSources(
   thread: Pick<ThreadSummary, "title">,
   sources: readonly (readonly ThreadActivityLine[])[],
 ): ThreadCompletionNotificationContent | undefined {
-  return buildThreadCompletionNotificationContent(
-    thread,
-    pickActivityForCompletionNotification(sources),
-  );
+  return buildThreadCompletionNotificationContent(thread, pickActivityForCompletionNotification(sources));
 }
 
 function normalizeNotificationBody(value: string): string {

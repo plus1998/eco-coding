@@ -8,7 +8,8 @@ import {
 } from "../src/shared/prompt-cache-timeline";
 
 function item(
-  partial: Partial<ThreadRunProjectionTimelineItem> & Pick<ThreadRunProjectionTimelineItem, "id" | "eventType">,
+  partial: Partial<ThreadRunProjectionTimelineItem> &
+    Pick<ThreadRunProjectionTimelineItem, "id" | "eventType">,
 ): ThreadRunProjectionTimelineItem {
   return {
     at: "2026-01-01T00:00:00.000Z",

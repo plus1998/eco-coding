@@ -39,13 +39,7 @@ export function CommitModelPricingCompact({ hint }: CommitModelPricingCompactPro
   );
 }
 
-export function CommitModelProviderDot({
-  color,
-  label,
-}: {
-  color: string;
-  label: string;
-}) {
+export function CommitModelProviderDot({ color, label }: { color: string; label: string }) {
   return (
     <span
       className="git-commit-model-provider-dot"

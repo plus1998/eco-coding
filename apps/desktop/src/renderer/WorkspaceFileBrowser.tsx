@@ -2,6 +2,8 @@ import { RotateCcw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MaterialFileIcon } from "./MaterialFileIcon";
+import { WorkspaceExplorerTree } from "./WorkspaceExplorerTree";
+import { type WorkspaceFile, WorkspaceFilePreview } from "./WorkspaceFilePreview";
 import {
   ancestorDirectories,
   basename,
@@ -10,8 +12,6 @@ import {
   type WorkspaceEntry,
   type WorkspaceTreeItem,
 } from "./workspace-file-browser-logic";
-import { WorkspaceExplorerTree } from "./WorkspaceExplorerTree";
-import { WorkspaceFilePreview, type WorkspaceFile } from "./WorkspaceFilePreview";
 import "./workspace-file-browser.css";
 
 interface WorkspaceApi {
@@ -63,7 +63,9 @@ function filterWorkspaceItems(
 export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBrowserProps) {
   const { t } = useTranslation();
   const api = window.eco as unknown as WorkspaceApi | undefined;
-  const [items, setItems] = useState<Record<string, WorkspaceTreeItem>>(() => buildWorkspaceRoot(workspacePath));
+  const [items, setItems] = useState<Record<string, WorkspaceTreeItem>>(() =>
+    buildWorkspaceRoot(workspacePath),
+  );
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [focusedItem, setFocusedItem] = useState<string>(workspacePath);
@@ -84,21 +86,24 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
     return window.confirm(t("fileBrowser.unsavedConfirm"));
   }, [t]);
 
-  const loadDirectory = useCallback(async (directoryPath: string) => {
-    if (!api) {
-      setTreeError(t("fileBrowser.apiUnavailable"));
-      return false;
-    }
-    try {
-      const entries = await api.listWorkspaceEntries({ workspacePath, directoryPath });
-      setItems((current) => mergeWorkspaceEntries(current, directoryPath, entries));
-      setTreeError(null);
-      return true;
-    } catch (error) {
-      setTreeError(error instanceof Error ? error.message : t("fileBrowser.directoryLoadFailed"));
-      return false;
-    }
-  }, [api, t, workspacePath]);
+  const loadDirectory = useCallback(
+    async (directoryPath: string) => {
+      if (!api) {
+        setTreeError(t("fileBrowser.apiUnavailable"));
+        return false;
+      }
+      try {
+        const entries = await api.listWorkspaceEntries({ workspacePath, directoryPath });
+        setItems((current) => mergeWorkspaceEntries(current, directoryPath, entries));
+        setTreeError(null);
+        return true;
+      } catch (error) {
+        setTreeError(error instanceof Error ? error.message : t("fileBrowser.directoryLoadFailed"));
+        return false;
+      }
+    },
+    [api, t, workspacePath],
+  );
 
   useEffect(() => {
     setItems(buildWorkspaceRoot(workspacePath));
@@ -114,39 +119,45 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
     void loadDirectory(workspacePath);
   }, [loadDirectory, workspacePath]);
 
-  const readFile = useCallback(async (filePath: string, requestId: number) => {
-    if (!api) {
-      setErrorMessage(t("fileBrowser.apiUnavailable"));
-      setStatus("error");
-      return;
-    }
-    setStatus("loading");
-    setErrorMessage(null);
-    try {
-      const result = await api.readWorkspaceFile({ workspacePath, filePath });
-      if (requestId !== requestRef.current) return;
-      setFile(result);
-      setDirty(false);
-      setStatus("idle");
-    } catch (error) {
-      if (requestId === requestRef.current) {
-        setErrorMessage(error instanceof Error ? error.message : t("fileBrowser.readFailed"));
+  const readFile = useCallback(
+    async (filePath: string, requestId: number) => {
+      if (!api) {
+        setErrorMessage(t("fileBrowser.apiUnavailable"));
         setStatus("error");
+        return;
       }
-    }
-  }, [api, t, workspacePath]);
+      setStatus("loading");
+      setErrorMessage(null);
+      try {
+        const result = await api.readWorkspaceFile({ workspacePath, filePath });
+        if (requestId !== requestRef.current) return;
+        setFile(result);
+        setDirty(false);
+        setStatus("idle");
+      } catch (error) {
+        if (requestId === requestRef.current) {
+          setErrorMessage(error instanceof Error ? error.message : t("fileBrowser.readFailed"));
+          setStatus("error");
+        }
+      }
+    },
+    [api, t, workspacePath],
+  );
 
-  const selectFile = useCallback((filePath: string) => {
-    if (filePath === activeTarget?.path) return;
-    if (!confirmDiscardIfDirty()) return;
-    const requestId = ++requestRef.current;
-    setSelectedItems([filePath]);
-    setFocusedItem(filePath);
-    setActiveTarget({ path: filePath, requestId });
-    setFile(null);
-    setDirty(false);
-    void readFile(filePath, requestId);
-  }, [activeTarget?.path, confirmDiscardIfDirty, readFile]);
+  const selectFile = useCallback(
+    (filePath: string) => {
+      if (filePath === activeTarget?.path) return;
+      if (!confirmDiscardIfDirty()) return;
+      const requestId = ++requestRef.current;
+      setSelectedItems([filePath]);
+      setFocusedItem(filePath);
+      setActiveTarget({ path: filePath, requestId });
+      setFile(null);
+      setDirty(false);
+      void readFile(filePath, requestId);
+    },
+    [activeTarget?.path, confirmDiscardIfDirty, readFile],
+  );
 
   useEffect(() => {
     if (!target || target.path === workspacePath) return;
@@ -236,7 +247,9 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
         </label>
         {treeError ? (
           <div className="workspace-file-browser__tree-error" role="status">
-            <span>{t("fileBrowser.directoryLoadFailed")}: {treeError}</span>
+            <span>
+              {t("fileBrowser.directoryLoadFailed")}: {treeError}
+            </span>
             <button type="button" onClick={() => void loadDirectory(workspacePath)}>
               <RotateCcw size={13} aria-hidden="true" />
               {t("fileBrowser.retry")}
@@ -278,10 +291,14 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
         {activeTarget?.restricted ? (
           <div className="workspace-file-browser__message">{t("fileBrowser.restricted")}</div>
         ) : status === "loading" ? (
-          <div className="workspace-file-browser__message">{t("fileBrowser.loadingFile", { name: basename(activeTarget?.path || "") })}</div>
+          <div className="workspace-file-browser__message">
+            {t("fileBrowser.loadingFile", { name: basename(activeTarget?.path || "") })}
+          </div>
         ) : status === "error" ? (
           <div className="workspace-file-browser__error">
-            <p>{t("fileBrowser.readFailed")}: {errorMessage || t("fileBrowser.unknownError")}</p>
+            <p>
+              {t("fileBrowser.readFailed")}: {errorMessage || t("fileBrowser.unknownError")}
+            </p>
             <button type="button" onClick={retryActiveFile} disabled={!activeTarget}>
               <RotateCcw size={13} aria-hidden="true" />
               {t("fileBrowser.retry")}
@@ -297,7 +314,9 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
         ) : (
           <div className="workspace-file-browser__message">{t("fileBrowser.selectFile")}</div>
         )}
-        {file?.truncated ? <div className="workspace-file-browser__status">{t("fileBrowser.truncated")}</div> : null}
+        {file?.truncated ? (
+          <div className="workspace-file-browser__status">{t("fileBrowser.truncated")}</div>
+        ) : null}
       </div>
     </div>
   );

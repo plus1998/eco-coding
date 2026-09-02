@@ -2,11 +2,7 @@
   "runId": "2026-09-01T06-56-10Z-claude-longcat-responses",
   "layer": "client-round",
   "marker": "LCMTIBCZOQ",
-  "clients": [
-    "claude"
-  ],
-  "profileIds": [
-    "longcat_responses"
-  ],
+  "clients": ["claude"],
+  "profileIds": ["longcat_responses"],
   "cellCount": 1
 }

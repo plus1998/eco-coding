@@ -85,12 +85,18 @@ describe("workspace file references", () => {
     const text = { type: "text", value: "See /tmp/example.ts:7" };
     const inlineCode = { type: "inlineCode", value: "/tmp/inline.ts" };
     const code = { type: "code", value: "/tmp/fenced.ts" };
-    const link = { type: "link", url: "https://example.com", children: [{ type: "text", value: "/tmp/linked.ts" }] };
+    const link = {
+      type: "link",
+      url: "https://example.com",
+      children: [{ type: "text", value: "/tmp/linked.ts" }],
+    };
     const tree = { type: "root", children: [text, inlineCode, code, link] };
 
     workspaceFileReferenceRemarkPlugin()(tree);
 
-    expect(tree.children.some((node) => node.type === "link" && node.url?.startsWith("eco-file:"))).toBe(true);
+    expect(tree.children.some((node) => node.type === "link" && node.url?.startsWith("eco-file:"))).toBe(
+      true,
+    );
     expect(tree.children.find((node) => node.type === "inlineCode")).toEqual(inlineCode);
     expect(tree.children.find((node) => node.type === "code")).toEqual(code);
     expect(tree.children.find((node) => node.type === "link" && node.url === link.url)).toEqual(link);
@@ -99,6 +105,8 @@ describe("workspace file references", () => {
   test("rejects malicious encoded references", () => {
     const payload = encodeURIComponent(JSON.stringify({ path: "javascript:alert(1)", line: 1 }));
     expect(decodeWorkspaceFileReference(payload)).toBeUndefined();
-    expect(decodeWorkspaceFileReference(encodeURIComponent(JSON.stringify({ path: "/tmp/a", line: 0 })))).toBeUndefined();
+    expect(
+      decodeWorkspaceFileReference(encodeURIComponent(JSON.stringify({ path: "/tmp/a", line: 0 }))),
+    ).toBeUndefined();
   });
 });

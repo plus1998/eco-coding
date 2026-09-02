@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import {
   areCodingRoutesReady,
   diagnoseOrchestrationSnapshotReadiness,
-  isOrchestrationSnapshotReady,
   invalidOrchestrationFieldsFromIssues,
+  isOrchestrationSnapshotReady,
   orchestrationIssueDetailKey,
 } from "../src/renderer/orchestration-readiness";
 import { CODING_AGENT_TEMPLATE_IDS, createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";

@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import { applyCodexTurnModel, buildCodexTurnOptions } from "../src/codex-prompt-materializer.js";
 import {
-  PLAN_IMPLEMENTATION_CLEAR_CONTEXT_PREFIX,
-  PLAN_IMPLEMENT_USER_MESSAGE,
   buildPlanHandoffContinuePlan,
   buildPlanHandoffForkThread,
   buildPlanHandoffSameThread,
+  PLAN_IMPLEMENT_USER_MESSAGE,
+  PLAN_IMPLEMENTATION_CLEAR_CONTEXT_PREFIX,
 } from "../src/codex-plan-handoff.js";
+import { applyCodexTurnModel, buildCodexTurnOptions } from "../src/codex-prompt-materializer.js";
 
 test("agent sessionMode maps to default + workspaceWrite", () => {
   const options = buildCodexTurnOptions({ sessionMode: "agent" });
@@ -67,9 +67,7 @@ test("plan handoff continue plan keeps plan collaboration mode", () => {
 
 test("plan handoff does not import legacy plan tool or finalize-plan", async () => {
   const legacyPlanTool = "Exit" + "PlanMode";
-  const source = await Bun.file(
-    new URL("../src/codex-plan-handoff.ts", import.meta.url),
-  ).text();
+  const source = await Bun.file(new URL("../src/codex-plan-handoff.ts", import.meta.url)).text();
   expect(source).not.toMatch(new RegExp(`import\\s+.*${legacyPlanTool}`));
   expect(source).not.toMatch(/import\s+.*finalize-plan/);
   expect(source).not.toMatch(/from\s+["'].*finalize-plan/);

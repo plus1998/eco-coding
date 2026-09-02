@@ -1,3 +1,15 @@
+import {
+  computeRequestBilling,
+  computeThreadBillingTotals,
+  emptyCostBreakdown,
+  type ModelCostRates,
+  mergeCostBreakdowns,
+  mergeUsageTotals,
+  type ParsedUsage,
+  type RequestBillingDelta,
+  type TokenCostBreakdown,
+  tokenTotalsFromUsage,
+} from "@eco/runtime";
 import type {
   BillingUsageSource,
   RuntimeAgentRole,
@@ -5,18 +17,6 @@ import type {
   ThreadBillingSnapshot,
   ThreadBillingSourceSnapshot,
 } from "../shared/ipc";
-import {
-  computeRequestBilling,
-  computeThreadBillingTotals,
-  emptyCostBreakdown,
-  mergeCostBreakdowns,
-  mergeUsageTotals,
-  type ModelCostRates,
-  type ParsedUsage,
-  type RequestBillingDelta,
-  type TokenCostBreakdown,
-  tokenTotalsFromUsage,
-} from "@eco/runtime";
 import { createEmptyUsage, type UsageRequestRecord } from "./usage-request-types";
 
 export type { ThreadBillingSnapshot };
@@ -281,10 +281,7 @@ export class ThreadUsageAccumulator {
     return state;
   }
 
-  private toSnapshot(
-    state: ThreadUsageAccumulatorState,
-    plannerModelLabel?: string,
-  ): ThreadBillingSnapshot {
+  private toSnapshot(state: ThreadUsageAccumulatorState, plannerModelLabel?: string): ThreadBillingSnapshot {
     const label = plannerModelLabel ?? state.plannerModelLabel;
     const sourceBreakdown = buildSourceBreakdown(state.sources);
     const primarySource = selectPrimarySource(sourceBreakdown, state.sources);
@@ -295,11 +292,7 @@ export class ThreadUsageAccumulator {
         return this.toLegacySnapshot(state, label);
       }
       const sdkReported = sourceBreakdown.sdk?.reportedCostUsd ?? 0;
-      const totals = computeThreadBillingTotals(
-        sdkReported,
-        primary.plannerTokenCostUsd,
-        primary.ecoCostUsd,
-      );
+      const totals = computeThreadBillingTotals(sdkReported, primary.plannerTokenCostUsd, primary.ecoCostUsd);
 
       return {
         totalTokens: primary.totalTokens,
@@ -406,15 +399,13 @@ function applyUsageContribution(
     source.reportedCostUsd += input.sourceReportedCostUsd;
   }
 
-  const modelState =
-    source.byModel[modelKey] ??
-    {
-      modelId: modelKey,
-      roles: [],
-      usage: createEmptyUsage(),
-      ecoCostUsd: 0,
-      reportedCostUsd: 0,
-    };
+  const modelState = source.byModel[modelKey] ?? {
+    modelId: modelKey,
+    roles: [],
+    usage: createEmptyUsage(),
+    ecoCostUsd: 0,
+    reportedCostUsd: 0,
+  };
   addRole(modelState.roles, role);
   modelState.usage = mergeUsageTotals(modelState.usage, input.usage);
   modelState.ecoCostUsd += input.billing.ecoCostUsd;
@@ -440,7 +431,8 @@ function resolveReportedRunCost(input: RecordRunUsageInput): number | undefined 
     return input.sourceReportedCostUsd;
   }
   const total = input.models.reduce(
-    (sum, model) => sum + (model.sdkCostUsd !== undefined && Number.isFinite(model.sdkCostUsd) ? model.sdkCostUsd : 0),
+    (sum, model) =>
+      sum + (model.sdkCostUsd !== undefined && Number.isFinite(model.sdkCostUsd) ? model.sdkCostUsd : 0),
     0,
   );
   return total > 0 ? total : undefined;
@@ -482,10 +474,7 @@ function buildSourceBreakdown(
   return snapshots;
 }
 
-function sourceToSnapshot(
-  source: BillingUsageSource,
-  state: SourceUsageState,
-): ThreadBillingSourceSnapshot {
+function sourceToSnapshot(source: BillingUsageSource, state: SourceUsageState): ThreadBillingSourceSnapshot {
   const byRole = buildRoleSnapshot(state.byRole, state.roleEcoCostUsd, state.roleModelIds);
   const byModel = buildModelSnapshot(state.byModel);
   return {
@@ -519,9 +508,7 @@ function buildRoleSnapshot(
   return byRole;
 }
 
-function buildModelSnapshot(
-  byModel: Record<string, SourceModelUsageState>,
-): ThreadBillingModelSnapshot[] {
+function buildModelSnapshot(byModel: Record<string, SourceModelUsageState>): ThreadBillingModelSnapshot[] {
   return Object.values(byModel)
     .filter((entry) => usageTotal(entry.usage) > 0 || entry.ecoCostUsd > 0 || entry.reportedCostUsd > 0)
     .map((entry) => ({

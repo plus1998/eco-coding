@@ -55,7 +55,13 @@ function timelineItemMatchesRewriteTarget(
   const rewind = item.metadata?.rewindTarget;
   if (rewind && typeof rewind === "object" && !Array.isArray(rewind)) {
     const record = rewind as { activityLineId?: unknown; userMessageId?: unknown };
-    if (idsMatchTarget(typeof record.activityLineId === "string" ? record.activityLineId : undefined, activityLineId, userMessageId)) {
+    if (
+      idsMatchTarget(
+        typeof record.activityLineId === "string" ? record.activityLineId : undefined,
+        activityLineId,
+        userMessageId,
+      )
+    ) {
       return true;
     }
     if (

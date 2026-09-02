@@ -1,9 +1,9 @@
+import { buildThreadRunProjectionDetail } from "../main/thread-run-projection-detail";
 import type {
   ThreadRunProjectionDetailResult,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/thread-run-projection";
-import { buildThreadRunProjectionDetail } from "../main/thread-run-projection-detail";
 
 export interface DemoFeedReplayHydrateOptions {
   /** Codex rpc-log replay has no runAttemptId on events; merge full timeline process rows instead. */

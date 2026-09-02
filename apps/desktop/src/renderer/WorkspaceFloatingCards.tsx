@@ -8,8 +8,8 @@ import {
   Image as ImageIcon,
   Lightbulb,
   ListTodo,
-  Unplug,
   Sparkles,
+  Unplug,
   Users,
   X,
 } from "lucide-react";
@@ -40,11 +40,12 @@ import type {
   WorkspaceInfo,
 } from "../shared/ipc";
 import type { SkillInfo } from "../shared/skills";
+import { formatSubagentTaskNameLabel } from "../shared/subagent-task-name";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
 import { webChatHostname } from "../shared/web-chat-list";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
-import { CoderTodoPanel } from "./CoderTodoPanel";
 import { useBrowserTaskInstances } from "./browser-state-store";
+import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerIntegrationsCardBody } from "./ComposerIntegrations";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
@@ -54,7 +55,6 @@ import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
-import { formatSubagentTaskNameLabel } from "../shared/subagent-task-name";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
@@ -139,13 +139,7 @@ export interface WorkspaceBrowserInstance {
   faviconUrl?: string;
 }
 
-function BrowserFavicon({
-  faviconUrl,
-  title,
-}: {
-  faviconUrl?: string;
-  title: string;
-}) {
+function BrowserFavicon({ faviconUrl, title }: { faviconUrl?: string; title: string }) {
   const [failed, setFailed] = useState(false);
   if (!faviconUrl || failed) {
     return <Globe size={16} strokeWidth={1.75} />;
@@ -270,9 +264,7 @@ function SubagentRunsCardBody({
       {cards.map((card) => {
         const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
         const titleLabel = card.agent.nickname?.trim() || roleLabel;
-        const taskLabel = card.agent.taskName
-          ? formatSubagentTaskNameLabel(card.agent.taskName)
-          : "";
+        const taskLabel = card.agent.taskName ? formatSubagentTaskNameLabel(card.agent.taskName) : "";
         const openable = card.openable !== false;
         const className = `workspace-subagent-run-item${selectedAgentId === card.key ? " is-active" : ""}${openable ? "" : " is-status-only"}`;
         const content = (

@@ -187,7 +187,7 @@ export async function defaultGitRunner(args: string[], cwd: string): Promise<Git
     return {
       exitCode: typeof failed.code === "number" ? failed.code : 1,
       stdout: String(failed.stdout ?? ""),
-      stderr: String(failed.stderr ?? (failed.message ?? "git command failed")),
+      stderr: String(failed.stderr ?? failed.message ?? "git command failed"),
     };
   }
 }
@@ -390,7 +390,10 @@ export async function getGitWorkingTreeStatus(
 }
 
 function parseGitLogDecorations(raw: string): string[] {
-  const trimmed = raw.trim().replace(/^\(|\)$/g, "").trim();
+  const trimmed = raw
+    .trim()
+    .replace(/^\(|\)$/g, "")
+    .trim();
   if (!trimmed) {
     return [];
   }
@@ -494,18 +497,11 @@ export async function createGitBranch(
   await runGitOk(run, path.resolve(workspacePath), ["git", "checkout", "-b", trimmed]);
 }
 
-async function workspaceHasGitCommits(
-  cwd: string,
-  run: GitRunner,
-): Promise<boolean> {
+async function workspaceHasGitCommits(cwd: string, run: GitRunner): Promise<boolean> {
   return (await run(["git", "rev-parse", "--verify", "HEAD"], cwd)).exitCode === 0;
 }
 
-async function isUntrackedWorkspaceFile(
-  cwd: string,
-  filePath: string,
-  run: GitRunner,
-): Promise<boolean> {
+async function isUntrackedWorkspaceFile(cwd: string, filePath: string, run: GitRunner): Promise<boolean> {
   const result = await run(["git", "ls-files", "--others", "--exclude-standard", "--", filePath], cwd);
   if (result.exitCode !== 0) {
     return false;
@@ -641,10 +637,7 @@ function normalizeWorkspaceDiffPath(filePath: string): string {
   return filePath.trim().replace(/\\/g, "/");
 }
 
-function inferDiffStatusFromPatch(
-  patch: string,
-  isUntracked: boolean,
-): WorkspaceDiffFileStatus {
+function inferDiffStatusFromPatch(patch: string, isUntracked: boolean): WorkspaceDiffFileStatus {
   if (isUntracked) {
     return "untracked";
   }
@@ -669,10 +662,7 @@ const IMAGE_PREVIEW_EXTENSIONS: ReadonlyMap<string, string> = new Map([
 const MAX_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
 
 function isBinaryPatch(patch: string): boolean {
-  return (
-    /(^|\n)Binary files [^\n]+ differ\n/.test(patch) ||
-    /(^|\n)GIT binary patch\n/.test(patch)
-  );
+  return /(^|\n)Binary files [^\n]+ differ\n/.test(patch) || /(^|\n)GIT binary patch\n/.test(patch);
 }
 
 /**
@@ -703,11 +693,11 @@ async function readImagePreview(
     return undefined;
   }
   try {
-    const result = await execFileAsync(
-      "git",
-      ["show", `HEAD:${repoRelative.split(path.sep).join("/")}`],
-      { cwd, encoding: "buffer", maxBuffer: MAX_IMAGE_PREVIEW_BYTES },
-    );
+    const result = await execFileAsync("git", ["show", `HEAD:${repoRelative.split(path.sep).join("/")}`], {
+      cwd,
+      encoding: "buffer",
+      maxBuffer: MAX_IMAGE_PREVIEW_BYTES,
+    });
     const stdout = result.stdout;
     if (!Buffer.isBuffer(stdout) || stdout.length === 0) return undefined;
     return { mimeType, base64: stdout.toString("base64"), source: "head" };
@@ -747,10 +737,7 @@ export async function getWorkspaceFileDiff(
   }
   const repoRoot = revParse.stdout.trim() || cwd;
 
-  const untracked = await run(
-    ["git", "ls-files", "--others", "--exclude-standard", "--", target],
-    cwd,
-  );
+  const untracked = await run(["git", "ls-files", "--others", "--exclude-standard", "--", target], cwd);
   const isUntracked =
     untracked.exitCode === 0 &&
     untracked.stdout
@@ -774,8 +761,7 @@ export async function getWorkspaceFileDiff(
   const truncated = truncatePatch(rawPatch, COMMIT_DIFF_MAX_CHARS);
   const summary = parseUnifiedDiffStats(truncated.text);
   const fileStats =
-    summary.files.find((file) => normalizeWorkspaceDiffPath(file.path) === target) ??
-    summary.files[0];
+    summary.files.find((file) => normalizeWorkspaceDiffPath(file.path) === target) ?? summary.files[0];
   const binary = isBinaryPatch(rawPatch);
   const imagePreview = binary ? await readImagePreview(cwd, repoRoot, target) : undefined;
 
@@ -809,9 +795,7 @@ export async function collectCommitDiffContext(
     const unstagedName = await run(["git", "diff", "--name-status"], cwd);
     if (unstagedName.exitCode === 0 && unstagedName.stdout.trim()) {
       unstagedNameStatus = unstagedName.stdout.trim();
-      const unstagedPatchRaw = unstagedName.stdout.trim()
-        ? await runGitOk(run, cwd, ["git", "diff"])
-        : "";
+      const unstagedPatchRaw = unstagedName.stdout.trim() ? await runGitOk(run, cwd, ["git", "diff"]) : "";
       unstagedPatch = truncatePatch(unstagedPatchRaw, COMMIT_DIFF_MAX_CHARS);
     }
   }
@@ -919,8 +903,7 @@ export async function pullChanges(
 ): Promise<GitPullResult> {
   const cwd = path.resolve(workspacePath);
   const branch =
-    options.branch?.trim() ||
-    (await runGitOk(run, cwd, ["git", "branch", "--show-current"])).trim();
+    options.branch?.trim() || (await runGitOk(run, cwd, ["git", "branch", "--show-current"])).trim();
   if (!branch || branch === "detached") {
     throw new Error("无法确定当前分支，无法拉取");
   }
@@ -930,21 +913,15 @@ export async function pullChanges(
   const output = composeGitCommandOutput(pull.stdout, pull.stderr, pull.exitCode !== 0);
   let conflictFiles = await listMergeConflictFiles(cwd, run);
   const conflicted =
-    conflictFiles.length > 0 ||
-    (pull.exitCode !== 0 && pullOutputIndicatesConflict(combinedPull));
+    conflictFiles.length > 0 || (pull.exitCode !== 0 && pullOutputIndicatesConflict(combinedPull));
 
   if (pull.exitCode !== 0 && !conflicted) {
     const fallback = await run(["git", "pull", "--no-rebase"], cwd);
     const combinedFallback = `${fallback.stdout}\n${fallback.stderr}`;
-    const fallbackOutput = composeGitCommandOutput(
-      fallback.stdout,
-      fallback.stderr,
-      fallback.exitCode !== 0,
-    );
+    const fallbackOutput = composeGitCommandOutput(fallback.stdout, fallback.stderr, fallback.exitCode !== 0);
     conflictFiles = await listMergeConflictFiles(cwd, run);
     const fallbackConflicted =
-      conflictFiles.length > 0 ||
-      (fallback.exitCode !== 0 && pullOutputIndicatesConflict(combinedFallback));
+      conflictFiles.length > 0 || (fallback.exitCode !== 0 && pullOutputIndicatesConflict(combinedFallback));
     if (fallback.exitCode !== 0 && !fallbackConflicted) {
       throw new Error(fallbackOutput || output || "git pull 失败");
     }
@@ -971,8 +948,7 @@ export async function pushChanges(
 ): Promise<{ method: "git" | "gh"; output: string }> {
   const cwd = path.resolve(workspacePath);
   const branch =
-    options.branch?.trim() ||
-    (await runGitOk(run, cwd, ["git", "branch", "--show-current"])).trim();
+    options.branch?.trim() || (await runGitOk(run, cwd, ["git", "branch", "--show-current"])).trim();
   if (!branch || branch === "detached") {
     throw new Error("无法确定当前分支，无法推送");
   }

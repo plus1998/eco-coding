@@ -64,9 +64,7 @@ export function logEcoDiagThrottled(
   logEcoDiag(topic, fields);
 }
 
-export function snapshotContextFields(
-  snapshot: ContextMonitorSnapshot | undefined,
-): Record<string, unknown> {
+export function snapshotContextFields(snapshot: ContextMonitorSnapshot | undefined): Record<string, unknown> {
   if (!snapshot) {
     return { empty: true };
   }

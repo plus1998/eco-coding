@@ -27,5 +27,7 @@ test("encodeIcoFromRgba writes a multi-size 32-bit DIB ICO", () => {
   expect(buffer.subarray(0, 4)).toEqual(Buffer.from([0, 0, 1, 0]));
   expect(buffer.readUInt16LE(4)).toBe(1);
   expect(buffer[6]).toBe(16);
-  expect(buffer.readUInt16LE(6)).toBe(32);
+  expect(buffer[7]).toBe(16);
+  expect(buffer.readUInt16LE(10)).toBe(1);
+  expect(buffer.readUInt16LE(12)).toBe(32);
 });

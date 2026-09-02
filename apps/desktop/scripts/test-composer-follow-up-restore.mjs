@@ -28,10 +28,14 @@ async function readComposerText(page) {
 }
 
 async function waitForSendEnabled(page, timeoutMs = 15_000) {
-  await page.waitForFunction(() => {
-    const button = document.querySelector("button.send-button");
-    return button instanceof HTMLButtonElement && !button.disabled;
-  }, undefined, { timeout: timeoutMs });
+  await page.waitForFunction(
+    () => {
+      const button = document.querySelector("button.send-button");
+      return button instanceof HTMLButtonElement && !button.disabled;
+    },
+    undefined,
+    { timeout: timeoutMs },
+  );
 }
 
 async function getSelectedThreadStatus(page) {
@@ -100,10 +104,14 @@ try {
 
   console.log("[test] editing queued follow-up...");
   await page.locator(".follow-up-row").first().click();
-  await page.waitForFunction(() => {
-    const composer = document.querySelector('.composer-skill-input-control[role="textbox"]');
-    return composer?.textContent?.includes("排队");
-  }, undefined, { timeout: 10_000 });
+  await page.waitForFunction(
+    () => {
+      const composer = document.querySelector('.composer-skill-input-control[role="textbox"]');
+      return composer?.textContent?.includes("排队");
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
 
   const whileEditing = (await readComposerText(page)).trim();
   console.log("[test] composer while editing:", JSON.stringify(whileEditing));
@@ -114,10 +122,14 @@ try {
   console.log("[test] saving edited follow-up...");
   await fillComposer(page, EDITED_QUEUED_TEXT);
   await page.locator("button.send-button.save-follow-up").click();
-  await page.waitForFunction(() => {
-    const composer = document.querySelector('.composer-skill-input-control[role="textbox"]');
-    return composer?.textContent?.includes("草稿");
-  }, undefined, { timeout: 15_000 });
+  await page.waitForFunction(
+    () => {
+      const composer = document.querySelector('.composer-skill-input-control[role="textbox"]');
+      return composer?.textContent?.includes("草稿");
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
 
   const restored = (await readComposerText(page)).trim();
   console.log("[test] composer after save:", JSON.stringify(restored));

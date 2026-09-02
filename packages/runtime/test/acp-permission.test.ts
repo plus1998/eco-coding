@@ -17,13 +17,9 @@ test("Eco 完全访问 auto-allows host-side; 替我审批/always do not", () =>
     toolCall: { toolCallId: "call_sh", kind: "execute", title: "ls" },
     options: ALLOW_REJECT_OPTIONS,
   })!;
-  expect(shouldHostAutoAllowAcpPermission({ bashReviewMode: "allow_all", request: execute })).toBe(
-    true,
-  );
+  expect(shouldHostAutoAllowAcpPermission({ bashReviewMode: "allow_all", request: execute })).toBe(true);
   expect(shouldHostAutoAllowAcpPermission({ bashReviewMode: "auto", request: execute })).toBe(false);
-  expect(shouldHostAutoAllowAcpPermission({ bashReviewMode: "always", request: execute })).toBe(
-    false,
-  );
+  expect(shouldHostAutoAllowAcpPermission({ bashReviewMode: "always", request: execute })).toBe(false);
 });
 
 test("parseAcpPermissionRequest requires toolCallId and selectable options", () => {
@@ -40,12 +36,10 @@ test("acpPermissionIsExecute treats rawInput.command as shell even without kind"
   expect(
     acpPermissionIsExecute({ toolCallId: "call_sh", kind: "execute", rawInput: { command: "ls" } }),
   ).toBe(true);
-  expect(
-    acpPermissionIsExecute({ toolCallId: "call_sh", rawInput: { command: "ls -la" } }),
-  ).toBe(true);
-  expect(
-    acpPermissionIsExecute({ toolCallId: "call_edit", kind: "edit", rawInput: { path: "a.ts" } }),
-  ).toBe(false);
+  expect(acpPermissionIsExecute({ toolCallId: "call_sh", rawInput: { command: "ls -la" } })).toBe(true);
+  expect(acpPermissionIsExecute({ toolCallId: "call_edit", kind: "edit", rawInput: { path: "a.ts" } })).toBe(
+    false,
+  );
 });
 
 test("switch_mode permissions auto-allow even when Eco is always", () => {

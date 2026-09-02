@@ -53,10 +53,7 @@ export function ToolCapabilityPanel({
     <div className="models-tool-capability-panel">
       <div className="models-core-capability-grid">
         {diagnostics.map((diagnostic) => (
-          <div
-            key={diagnostic.core}
-            className={`models-core-capability-status ${diagnostic.support}`}
-          >
+          <div key={diagnostic.core} className={`models-core-capability-status ${diagnostic.support}`}>
             <div>
               <strong>{diagnostic.core === "claude" ? "Claude Code" : "Codex"}</strong>
               <span>
@@ -67,7 +64,9 @@ export function ToolCapabilityPanel({
                     : t("capability.unsupported")}
               </span>
             </div>
-            {diagnostic.messages.map((message) => <small key={message}>{message}</small>)}
+            {diagnostic.messages.map((message) => (
+              <small key={message}>{message}</small>
+            ))}
           </div>
         ))}
       </div>
@@ -236,13 +235,13 @@ function CapabilityToggle({
   checked,
   disabled,
   onChange,
-	}: {
-	  label: string;
-	  description: string;
-	  checked: boolean;
-	  disabled?: boolean | undefined;
-	  onChange: (checked: boolean) => void;
-	}) {
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean | undefined;
+  onChange: (checked: boolean) => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="models-agent-template-delegation-card">
@@ -250,10 +249,7 @@ function CapabilityToggle({
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
-      <label
-        className="mcp-toggle"
-        title={checked ? t("common.enabled") : t("common.disabled")}
-      >
+      <label className="mcp-toggle" title={checked ? t("common.enabled") : t("common.disabled")}>
         <input
           type="checkbox"
           checked={checked}

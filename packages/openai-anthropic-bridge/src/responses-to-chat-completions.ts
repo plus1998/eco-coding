@@ -1,4 +1,4 @@
-import { jsonMarshal } from './json.js';
+import { jsonMarshal } from "./json.js";
 import type {
   ChatCompletionsChunk,
   ChatCompletionsResponse,
@@ -15,79 +15,76 @@ import type {
   ResponsesResponse,
   ResponsesStreamEvent,
   ResponsesUsage,
-} from './types.js';
+} from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Non-streaming: ResponsesResponse → ChatCompletionsResponse
 // ---------------------------------------------------------------------------
 
-export function responsesToChatCompletions(
-  resp: ResponsesResponse,
-  model: string,
-): ChatCompletionsResponse {
+export function responsesToChatCompletions(resp: ResponsesResponse, model: string): ChatCompletionsResponse {
   let id = resp.id;
-  if (id === '') {
+  if (id === "") {
     id = generateChatCmplId();
   }
 
   const out: ChatCompletionsResponse = {
     id,
-    object: 'chat.completion',
+    object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model,
     choices: [],
   };
 
-  let contentText = '';
-  let reasoningText = '';
+  let contentText = "";
+  let reasoningText = "";
   const reasoningItems: ChatReasoningItem[] = [];
   const toolCalls: ChatToolCall[] = [];
 
   for (const item of resp.output ?? []) {
     switch (item.type) {
-      case 'message':
+      case "message":
         for (const part of item.content ?? []) {
-          if (part.type === 'output_text' && part.text !== '') {
+          if (part.type === "output_text" && part.text !== "") {
             contentText += part.text;
           }
         }
         break;
-      case 'function_call':
+      case "function_call":
         toolCalls.push({
-          id: item.call_id ?? '',
-          type: 'function',
+          id: item.call_id ?? "",
+          type: "function",
           function: {
-            name: item.name ?? '',
-            arguments: item.arguments ?? '',
+            name: item.name ?? "",
+            arguments: item.arguments ?? "",
           },
         });
         break;
-      case 'reasoning':
+      case "reasoning":
         reasoningItems.push({
-          type: 'reasoning',
+          type: "reasoning",
           id: item.id,
           encrypted_content: item.encrypted_content,
           summary: item.summary ?? [],
         });
         for (const s of item.summary ?? []) {
-          if (s.type === 'summary_text' && s.text !== '') {
+          if (s.type === "summary_text" && s.text !== "") {
             reasoningText += s.text;
           }
         }
         break;
-      case 'web_search_call':
+      case "web_search_call":
         break;
     }
   }
 
-  const msg: ChatMessage = { role: 'assistant' };
+  const msg: ChatMessage = { role: "assistant" };
   if (toolCalls.length > 0) {
     msg.tool_calls = toolCalls;
   }
-  if (contentText !== '') {
+  if (contentText !== "") {
     msg.content = contentText;
   }
-  if (reasoningText !== '') {
+  if (reasoningText !== "") {
     msg.reasoning_content = reasoningText;
   }
   if (reasoningItems.length > 0) {
@@ -95,7 +92,7 @@ export function responsesToChatCompletions(
   }
 
   const finishReason = responsesStatusToChatFinishReason(
-    resp.status ?? '',
+    resp.status ?? "",
     resp.incomplete_details,
     toolCalls,
   );
@@ -119,18 +116,18 @@ function responsesStatusToChatFinishReason(
   toolCalls: ChatToolCall[],
 ): string {
   switch (status) {
-    case 'incomplete':
-      if (details !== undefined && details.reason === 'max_output_tokens') {
-        return 'length';
+    case "incomplete":
+      if (details !== undefined && details.reason === "max_output_tokens") {
+        return "length";
       }
-      return 'stop';
-    case 'completed':
+      return "stop";
+    case "completed":
       if (toolCalls.length > 0) {
-        return 'tool_calls';
+        return "tool_calls";
       }
-      return 'stop';
+      return "stop";
     default:
-      return 'stop';
+      return "stop";
   }
 }
 
@@ -155,7 +152,7 @@ export interface ResponsesEventToChatState {
 export function newResponsesEventToChatState(): ResponsesEventToChatState {
   return {
     id: generateChatCmplId(),
-    model: '',
+    model: "",
     created: Math.floor(Date.now() / 1000),
     sentRole: false,
     sawToolCall: false,
@@ -173,49 +170,45 @@ export function responsesEventToChatChunks(
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
   switch (evt.type) {
-    case 'response.created':
+    case "response.created":
       return resToChatHandleCreated(evt, state);
-    case 'response.output_text.delta':
+    case "response.output_text.delta":
       return resToChatHandleTextDelta(evt, state);
-    case 'response.output_item.added':
+    case "response.output_item.added":
       return resToChatHandleOutputItemAdded(evt, state);
-    case 'response.function_call_arguments.delta':
+    case "response.function_call_arguments.delta":
       return resToChatHandleFuncArgsDelta(evt, state);
-    case 'response.reasoning_summary_text.delta':
+    case "response.reasoning_summary_text.delta":
       return resToChatHandleReasoningDelta(evt, state);
-    case 'response.reasoning_summary_text.done':
+    case "response.reasoning_summary_text.done":
       return [];
-    case 'response.completed':
-    case 'response.done':
-    case 'response.incomplete':
-    case 'response.failed':
+    case "response.completed":
+    case "response.done":
+    case "response.incomplete":
+    case "response.failed":
       return resToChatHandleCompleted(evt, state);
     default:
       return [];
   }
 }
 
-export function finalizeResponsesChatStream(
-  state: ResponsesEventToChatState,
-): ChatCompletionsChunk[] {
+export function finalizeResponsesChatStream(state: ResponsesEventToChatState): ChatCompletionsChunk[] {
   if (state.finalized) {
     return [];
   }
   state.finalized = true;
 
-  let finishReason = 'stop';
+  let finishReason = "stop";
   if (state.sawToolCall) {
-    finishReason = 'tool_calls';
+    finishReason = "tool_calls";
   }
 
-  const chunks: ChatCompletionsChunk[] = [
-    makeChatFinishChunk(state, finishReason),
-  ];
+  const chunks: ChatCompletionsChunk[] = [makeChatFinishChunk(state, finishReason)];
 
   if (state.includeUsage && state.usage !== undefined) {
     chunks.push({
       id: state.id,
-      object: 'chat.completion.chunk',
+      object: "chat.completion.chunk",
       created: state.created,
       model: state.model,
       choices: [],
@@ -236,10 +229,10 @@ function resToChatHandleCreated(
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
   if (evt.response !== undefined) {
-    if (evt.response.id !== '') {
+    if (evt.response.id !== "") {
       state.id = evt.response.id;
     }
-    if (state.model === '' && evt.response.model !== '') {
+    if (state.model === "" && evt.response.model !== "") {
       state.model = evt.response.model;
     }
   }
@@ -248,14 +241,14 @@ function resToChatHandleCreated(
   }
   state.sentRole = true;
 
-  return [makeChatDeltaChunk(state, { role: 'assistant' })];
+  return [makeChatDeltaChunk(state, { role: "assistant" })];
 }
 
 function resToChatHandleTextDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
-  if (evt.delta === '') {
+  if (evt.delta === "") {
     return [];
   }
   state.sawText = true;
@@ -267,7 +260,7 @@ function resToChatHandleOutputItemAdded(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
-  if (evt.item === undefined || evt.item.type !== 'function_call') {
+  if (evt.item === undefined || evt.item.type !== "function_call") {
     return [];
   }
 
@@ -282,9 +275,9 @@ function resToChatHandleOutputItemAdded(
         {
           index: idx,
           id: evt.item.call_id,
-          type: 'function',
+          type: "function",
           function: {
-            name: evt.item.name ?? '',
+            name: evt.item.name ?? "",
           },
         },
       ],
@@ -296,7 +289,7 @@ function resToChatHandleFuncArgsDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
-  if (evt.delta === '') {
+  if (evt.delta === "") {
     return [];
   }
 
@@ -311,7 +304,7 @@ function resToChatHandleFuncArgsDelta(
         {
           index: idx,
           function: {
-            name: '',
+            name: "",
             arguments: evt.delta,
           },
         },
@@ -324,7 +317,7 @@ function resToChatHandleReasoningDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
-  if (evt.delta === '') {
+  if (evt.delta === "") {
     return [];
   }
   const reasoning = evt.delta;
@@ -336,7 +329,7 @@ function resToChatHandleCompleted(
   state: ResponsesEventToChatState,
 ): ChatCompletionsChunk[] {
   state.finalized = true;
-  let finishReason = 'stop';
+  let finishReason = "stop";
 
   if (evt.usage !== undefined) {
     state.usage = chatUsageFromResponsesUsage(evt.usage);
@@ -347,32 +340,30 @@ function resToChatHandleCompleted(
     }
 
     switch (evt.response.status) {
-      case 'incomplete':
+      case "incomplete":
         if (
           evt.response.incomplete_details !== undefined &&
-          evt.response.incomplete_details.reason === 'max_output_tokens'
+          evt.response.incomplete_details.reason === "max_output_tokens"
         ) {
-          finishReason = 'length';
+          finishReason = "length";
         }
         break;
-      case 'completed':
+      case "completed":
         if (state.sawToolCall) {
-          finishReason = 'tool_calls';
+          finishReason = "tool_calls";
         }
         break;
     }
   } else if (state.sawToolCall) {
-    finishReason = 'tool_calls';
+    finishReason = "tool_calls";
   }
 
-  const chunks: ChatCompletionsChunk[] = [
-    makeChatFinishChunk(state, finishReason),
-  ];
+  const chunks: ChatCompletionsChunk[] = [makeChatFinishChunk(state, finishReason)];
 
   if (state.includeUsage && state.usage !== undefined) {
     chunks.push({
       id: state.id,
-      object: 'chat.completion.chunk',
+      object: "chat.completion.chunk",
       created: state.created,
       model: state.model,
       choices: [],
@@ -383,9 +374,7 @@ function resToChatHandleCompleted(
   return chunks;
 }
 
-export function chatUsageFromResponsesUsage(
-  u: ResponsesUsage | undefined,
-): ChatUsage | undefined {
+export function chatUsageFromResponsesUsage(u: ResponsesUsage | undefined): ChatUsage | undefined {
   if (u === undefined) {
     return undefined;
   }
@@ -394,12 +383,8 @@ export function chatUsageFromResponsesUsage(
     completion_tokens: u.output_tokens,
     total_tokens: u.input_tokens + u.output_tokens,
   };
-  usage.prompt_tokens_details = promptDetailsFromResponses(
-    u.input_tokens_details,
-  );
-  usage.completion_tokens_details = completionDetailsFromResponses(
-    u.output_tokens_details,
-  );
+  usage.prompt_tokens_details = promptDetailsFromResponses(u.input_tokens_details);
+  usage.completion_tokens_details = completionDetailsFromResponses(u.output_tokens_details);
   return usage;
 }
 
@@ -440,13 +425,10 @@ function completionDetailsFromResponses(
   };
 }
 
-function makeChatDeltaChunk(
-  state: ResponsesEventToChatState,
-  delta: ChatDelta,
-): ChatCompletionsChunk {
+function makeChatDeltaChunk(state: ResponsesEventToChatState, delta: ChatDelta): ChatCompletionsChunk {
   return {
     id: state.id,
-    object: 'chat.completion.chunk',
+    object: "chat.completion.chunk",
     created: state.created,
     model: state.model,
     choices: [
@@ -459,14 +441,11 @@ function makeChatDeltaChunk(
   };
 }
 
-function makeChatFinishChunk(
-  state: ResponsesEventToChatState,
-  finishReason: string,
-): ChatCompletionsChunk {
-  const empty = '';
+function makeChatFinishChunk(state: ResponsesEventToChatState, finishReason: string): ChatCompletionsChunk {
+  const empty = "";
   return {
     id: state.id,
-    object: 'chat.completion.chunk',
+    object: "chat.completion.chunk",
     created: state.created,
     model: state.model,
     choices: [
@@ -482,7 +461,7 @@ function makeChatFinishChunk(
 function randomHex(byteLength: number): string {
   const buf = new Uint8Array(byteLength);
   crypto.getRandomValues(buf);
-  return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function generateChatCmplId(): string {
@@ -500,34 +479,31 @@ interface BufferedFuncCall {
 }
 
 export class BufferedResponseAccumulator {
-  private text = '';
-  private reasoning = '';
+  private text = "";
+  private reasoning = "";
   private funcCalls: BufferedFuncCall[] = [];
   private outputIndexToFuncIdx = new Map<number, number>();
 
   processEvent(event: ResponsesStreamEvent): void {
     switch (event.type) {
-      case 'response.output_text.delta':
-        if (event.delta !== '') {
+      case "response.output_text.delta":
+        if (event.delta !== "") {
           this.text += event.delta;
         }
         break;
-      case 'response.output_item.added':
-        if (
-          event.item !== undefined &&
-          event.item.type === 'function_call'
-        ) {
+      case "response.output_item.added":
+        if (event.item !== undefined && event.item.type === "function_call") {
           const idx = this.funcCalls.length;
           this.outputIndexToFuncIdx.set(event.output_index ?? 0, idx);
           this.funcCalls.push({
-            callId: event.item.call_id ?? '',
-            name: event.item.name ?? '',
-            args: '',
+            callId: event.item.call_id ?? "",
+            name: event.item.name ?? "",
+            args: "",
           });
         }
         break;
-      case 'response.function_call_arguments.delta':
-        if (event.delta !== '') {
+      case "response.function_call_arguments.delta":
+        if (event.delta !== "") {
           const idx = this.outputIndexToFuncIdx.get(event.output_index ?? 0);
           if (idx !== undefined) {
             const fc = this.funcCalls[idx];
@@ -537,8 +513,8 @@ export class BufferedResponseAccumulator {
           }
         }
         break;
-      case 'response.reasoning_summary_text.delta':
-        if (event.delta !== '') {
+      case "response.reasoning_summary_text.delta":
+        if (event.delta !== "") {
           this.reasoning += event.delta;
         }
         break;
@@ -546,11 +522,7 @@ export class BufferedResponseAccumulator {
   }
 
   hasContent(): boolean {
-    return (
-      this.text.length > 0 ||
-      this.funcCalls.length > 0 ||
-      this.reasoning.length > 0
-    );
+    return this.text.length > 0 || this.funcCalls.length > 0 || this.reasoning.length > 0;
   }
 
   buildOutput(): ResponsesOutput[] {
@@ -558,22 +530,22 @@ export class BufferedResponseAccumulator {
 
     if (this.reasoning.length > 0) {
       out.push({
-        type: 'reasoning',
-        summary: [{ type: 'summary_text', text: this.reasoning }],
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: this.reasoning }],
       });
     }
 
     if (this.text.length > 0) {
       out.push({
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'output_text', text: this.text }],
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: this.text }],
       });
     }
 
     for (const fc of this.funcCalls) {
       out.push({
-        type: 'function_call',
+        type: "function_call",
         call_id: fc.callId,
         name: fc.name,
         arguments: fc.args,

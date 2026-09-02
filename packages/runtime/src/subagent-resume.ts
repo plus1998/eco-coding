@@ -24,9 +24,11 @@ export function normalizeSdkSubagentType(type: string): RuntimeAgentRole | undef
   return normalizeDynamicEcoAgentRole(trimmed);
 }
 
-export function normalizeAgentToolInputSubagentType(
-  input: Record<string, unknown>,
-): { input: Record<string, unknown>; role?: RuntimeAgentRole; changed: boolean } {
+export function normalizeAgentToolInputSubagentType(input: Record<string, unknown>): {
+  input: Record<string, unknown>;
+  role?: RuntimeAgentRole;
+  changed: boolean;
+} {
   const rawType = readAgentSubagentType(input);
   const role = rawType ? normalizeSdkSubagentType(rawType) : undefined;
   if (!role) {
@@ -170,8 +172,7 @@ export function createSubagentResumePreToolHook(
       "";
 
     const todoIdHint =
-      (typeof toolInput.eco_todo_id === "string" && toolInput.eco_todo_id) ||
-      options?.todoIdHint?.();
+      (typeof toolInput.eco_todo_id === "string" && toolInput.eco_todo_id) || options?.todoIdHint?.();
 
     if (isFreshSubagentRequest(originalPrompt)) {
       return {};

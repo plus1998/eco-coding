@@ -11,9 +11,7 @@ export const DEFAULT_TOOL_OUTPUT_TOKEN_LIMIT = 10_000;
 /** Codex applies policy * 1.2 when recording FunctionCallOutput into history. */
 export const TOOL_OUTPUT_SERIALIZATION_BUDGET_MULTIPLIER = 1.2;
 
-export type TruncationPolicy =
-  | { mode: "tokens"; limit: number }
-  | { mode: "bytes"; limit: number };
+export type TruncationPolicy = { mode: "tokens"; limit: number } | { mode: "bytes"; limit: number };
 
 export function toolOutputHistoryPolicy(
   tokenLimit: number = DEFAULT_TOOL_OUTPUT_TOKEN_LIMIT,
@@ -153,10 +151,7 @@ function truncateWithByteEstimate(s: string, maxBytes: number, useTokens: boolea
   }
   const totalChars = [...s].length;
   if (maxBytes <= 0) {
-    return formatTruncationMarker(
-      useTokens,
-      removedUnits(useTokens, byteLength(s), totalChars),
-    );
+    return formatTruncationMarker(useTokens, removedUnits(useTokens, byteLength(s), totalChars));
   }
   if (byteLength(s) <= maxBytes) {
     return s;

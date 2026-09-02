@@ -8,9 +8,10 @@ describe("applyClaudeRunTerminal last-wins", () => {
   test("later turn replaces earlier terminal for the same Query", () => {
     let state = applyClaudeRunTerminal({ kind: "running" }, { status: "completed" });
     state = applyClaudeRunTerminal(state, { status: "failed", error: "turn 2" });
-    expect(
-      resolveClaudeRunAttemptFromTerminalState(state, new AbortController().signal),
-    ).toEqual({ ok: false, reason: "turn 2" });
+    expect(resolveClaudeRunAttemptFromTerminalState(state, new AbortController().signal)).toEqual({
+      ok: false,
+      reason: "turn 2",
+    });
   });
 
   test("failed unstarted terminals keep the unstarted flag", () => {
@@ -18,9 +19,7 @@ describe("applyClaudeRunTerminal last-wins", () => {
       { kind: "running" },
       { status: "failed", error: "Error: RetriableError: [resource_exhausted] Error", unstarted: true },
     );
-    expect(
-      resolveClaudeRunAttemptFromTerminalState(state, new AbortController().signal),
-    ).toEqual({
+    expect(resolveClaudeRunAttemptFromTerminalState(state, new AbortController().signal)).toEqual({
       ok: false,
       reason: "Error: RetriableError: [resource_exhausted] Error",
       unstarted: true,

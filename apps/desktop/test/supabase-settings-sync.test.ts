@@ -1,9 +1,14 @@
 import { expect, test } from "bun:test";
-import { generateVaultClaimKeyPair, generateVaultKey, encryptSecretWithVaultKey, wrapVaultKeyForClaim } from "@eco/shared";
+import {
+  encryptSecretWithVaultKey,
+  generateVaultClaimKeyPair,
+  generateVaultKey,
+  wrapVaultKeyForClaim,
+} from "@eco/shared";
 import { MobileRemoteEventPublisher } from "../src/main/mobile-remote-event-publisher";
 import {
-  emptyEcoSyncedSettingsPayload,
   ecoSyncedSettingsPayloadEqual,
+  emptyEcoSyncedSettingsPayload,
   encryptDecryptSecretRoundtrip,
   ensureLocalVaultKey,
   isEcoSyncedSettingsPayload,
@@ -814,11 +819,9 @@ test("MobileRemoteEventPublisher throttles context notifications", async () => {
 });
 
 test("syncAccountConfigDomain push merges only the requested domain", async () => {
-  const {
-    syncAccountConfigDomain,
-    emptyEcoSyncedSettingsPayload,
-    mergeDomainIntoPayload,
-  } = await import("../src/main/supabase-settings-sync");
+  const { syncAccountConfigDomain, emptyEcoSyncedSettingsPayload, mergeDomainIntoPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
 
   const remote = {
     ...emptyEcoSyncedSettingsPayload(),
@@ -848,21 +851,25 @@ test("syncAccountConfigDomain push merges only the requested domain", async () =
       ],
     },
   };
-  const local = mergeDomainIntoPayload(remote, {
-    ...emptyEcoSyncedSettingsPayload(),
-    providers: [
-      {
-        id: "local-provider",
-        name: "Local",
-        baseUrl: "https://local",
-        requestPath: "/v1",
-        version: "1",
-        apiCompat: "openai",
-        defaultModel: "m",
-        enabled: true,
-      },
-    ],
-  }, "providers");
+  const local = mergeDomainIntoPayload(
+    remote,
+    {
+      ...emptyEcoSyncedSettingsPayload(),
+      providers: [
+        {
+          id: "local-provider",
+          name: "Local",
+          baseUrl: "https://local",
+          requestPath: "/v1",
+          version: "1",
+          apiCompat: "openai",
+          defaultModel: "m",
+          enabled: true,
+        },
+      ],
+    },
+    "providers",
+  );
 
   let pushedPayload: typeof remote | undefined;
   const client = {
@@ -929,11 +936,8 @@ test("defaultAgent is secrets-only and omitted from sync status domains", async 
 });
 
 test("defaultAgent domain push keeps remote workflow payload and only pushes secrets", async () => {
-  const {
-    syncAccountConfigDomain,
-    emptyEcoSyncedSettingsPayload,
-    ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
-  } = await import("../src/main/supabase-settings-sync");
+  const { syncAccountConfigDomain, emptyEcoSyncedSettingsPayload, ECO_WORKFLOW_CURSOR_API_KEY_SECRET } =
+    await import("../src/main/supabase-settings-sync");
 
   const remote = {
     ...emptyEcoSyncedSettingsPayload(),
@@ -1017,11 +1021,8 @@ test("defaultAgent domain push keeps remote workflow payload and only pushes sec
 });
 
 test("defaultAgent domain pull applies secrets without replacing workflow settings", async () => {
-  const {
-    syncAccountConfigDomain,
-    emptyEcoSyncedSettingsPayload,
-    ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
-  } = await import("../src/main/supabase-settings-sync");
+  const { syncAccountConfigDomain, emptyEcoSyncedSettingsPayload, ECO_WORKFLOW_CURSOR_API_KEY_SECRET } =
+    await import("../src/main/supabase-settings-sync");
 
   const remote = emptyEcoSyncedSettingsPayload();
   const vaultKey = await generateVaultKey();
@@ -1189,12 +1190,34 @@ test("mergeDomainIntoPayload replaces only user agent templates for agentLibrary
   const remote = {
     ...emptyEcoSyncedSettingsPayload(),
     agentTemplates: [userTemplate, builtInTemplate],
-    mainAgentConfigs: [{ id: "remote-main", name: "Remote", agentKey: "k", modelRef: { kind: "route" as const, routeProfileId: "r" }, tools: { allowed: [], disallowed: [] }, skills: [], source: "user" as const, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    mainAgentConfigs: [
+      {
+        id: "remote-main",
+        name: "Remote",
+        agentKey: "k",
+        modelRef: { kind: "route" as const, routeProfileId: "r" },
+        tools: { allowed: [], disallowed: [] },
+        skills: [],
+        source: "user" as const,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
   };
   const local = {
     ...emptyEcoSyncedSettingsPayload(),
     agentTemplates: [],
-    mainAgentConfigs: [{ id: "local-main", name: "Local", agentKey: "k", modelRef: { kind: "route" as const, routeProfileId: "r" }, tools: { allowed: [], disallowed: [] }, skills: [], source: "user" as const, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    mainAgentConfigs: [
+      {
+        id: "local-main",
+        name: "Local",
+        agentKey: "k",
+        modelRef: { kind: "route" as const, routeProfileId: "r" },
+        tools: { allowed: [], disallowed: [] },
+        skills: [],
+        source: "user" as const,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
   };
 
   const merged = mergeDomainIntoPayload(local, remote, "agentLibrary");

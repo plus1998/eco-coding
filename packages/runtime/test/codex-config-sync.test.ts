@@ -1,14 +1,14 @@
+import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, expect, test } from "bun:test";
 import {
   buildCodexConfigToml,
   buildCodexGatewayModelAlias,
   buildCodexModelProviderSlug,
   codexConfigContainsUpstreamSecret,
-  DEFAULT_ECO_GATEWAY_PORT,
   DEFAULT_DEV_ECO_GATEWAY_PORT,
+  DEFAULT_ECO_GATEWAY_PORT,
   parseCodexGatewayModelAlias,
   resolveCodexHomeDir,
   resolveEcoGatewayBaseUrl,
@@ -309,9 +309,7 @@ test("buildCodexGatewayModelAlias scopes upstream model to provider", () => {
   expect(buildCodexGatewayModelAlias("packeycode-deepseek-v6i2na", "deepseek-v4-flash")).toBe(
     "eco_packeycode-deepseek-v6i2na__deepseek-v4-flash",
   );
-  expect(
-    parseCodexGatewayModelAlias("eco_packeycode-deepseek-v6i2na__deepseek-v4-flash"),
-  ).toEqual({
+  expect(parseCodexGatewayModelAlias("eco_packeycode-deepseek-v6i2na__deepseek-v4-flash")).toEqual({
     providerId: "packeycode-deepseek-v6i2na",
     upstreamModelId: "deepseek-v4-flash",
   });

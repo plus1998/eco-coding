@@ -1,14 +1,11 @@
 import type { ThreadRunProjectionTimelineItem } from "./ipc";
+import type { PromptCacheConfigDriftKind } from "./prompt-cache-config";
 import {
   formatPromptCacheConfigDriftMessage as formatPromptCacheConfigDriftMessageFromConfig,
   type PromptCacheOrchestrationLabel,
 } from "./prompt-cache-config";
-import type { PromptCacheConfigDriftKind } from "./prompt-cache-config";
 
-export type PromptCacheTimelineStepKind =
-  | "config_drift"
-  | "invalidated"
-  | "hit_dropped";
+export type PromptCacheTimelineStepKind = "config_drift" | "invalidated" | "hit_dropped";
 
 export interface PromptCacheTimelineStep {
   kind: PromptCacheTimelineStepKind;
@@ -31,9 +28,7 @@ export function isPromptCacheTimelineEventType(eventType: string): eventType is 
   return (PROMPT_CACHE_TIMELINE_EVENT_TYPES as readonly string[]).includes(eventType);
 }
 
-export function readPromptCacheEpisodeId(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
+export function readPromptCacheEpisodeId(metadata: Record<string, unknown> | undefined): string | undefined {
   const direct = metadata?.[PROMPT_CACHE_EPISODE_METADATA_KEY];
   if (typeof direct === "string" && direct.trim()) {
     return direct.trim();
@@ -160,9 +155,7 @@ function parsePromptCacheTimelineStep(value: unknown): PromptCacheTimelineStep |
     return undefined;
   }
   const episodeId =
-    typeof record.episodeId === "string" && record.episodeId.trim()
-      ? record.episodeId.trim()
-      : undefined;
+    typeof record.episodeId === "string" && record.episodeId.trim() ? record.episodeId.trim() : undefined;
   return {
     kind,
     at,

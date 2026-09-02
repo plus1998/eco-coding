@@ -1,5 +1,5 @@
-import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "@eco/runtime";
 import { StringDecoder } from "node:string_decoder";
+import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "@eco/runtime";
 
 export interface StreamingUsageTracker {
   push(chunk: Uint8Array): void;
@@ -31,23 +31,19 @@ function parseRawUsageFromResponseBody(body: unknown): ParsedUsage | null {
   }
   const usage = isRecord(body.usage) ? body.usage : body;
   const cachedFromDetails = readTokenCount(usage, ["cached_tokens", "cachedTokens"]);
-  const details =
-    isRecord(usage.input_tokens_details) ? usage.input_tokens_details
-    : isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details
-    : null;
+  const details = isRecord(usage.input_tokens_details)
+    ? usage.input_tokens_details
+    : isRecord(usage.prompt_tokens_details)
+      ? usage.prompt_tokens_details
+      : null;
   const cachedFromInputDetails =
-    details !== null
-      ? readTokenCount(details, ["cached_tokens", "cachedTokens"])
-      : cachedFromDetails;
+    details !== null ? readTokenCount(details, ["cached_tokens", "cachedTokens"]) : cachedFromDetails;
   const parsed: ParsedUsage = {
     inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens", "prompt_tokens"]),
     outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens", "completion_tokens"]),
     cacheReadTokens:
-      readTokenCount(usage, [
-        "cache_read_input_tokens",
-        "cacheReadInputTokens",
-        "cache_read_tokens",
-      ]) || cachedFromInputDetails,
+      readTokenCount(usage, ["cache_read_input_tokens", "cacheReadInputTokens", "cache_read_tokens"]) ||
+      cachedFromInputDetails,
     cacheCreationTokens: readTokenCount(usage, [
       "cache_creation_input_tokens",
       "cacheCreationInputTokens",

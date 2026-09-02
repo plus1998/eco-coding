@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  FolderOpen,
-  RotateCcw,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MaterialFileIcon } from "./MaterialFileIcon";

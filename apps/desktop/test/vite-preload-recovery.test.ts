@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  clearVitePreloadRecovery,
-  recoverVitePreloadError,
-} from "../src/renderer/vite-preload-recovery";
+import { clearVitePreloadRecovery, recoverVitePreloadError } from "../src/renderer/vite-preload-recovery";
 
 function memoryStorage() {
   const values = new Map<string, string>();

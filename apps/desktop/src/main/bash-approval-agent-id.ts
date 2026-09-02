@@ -1,5 +1,5 @@
-import { isSubagentRole, normalizeSdkSubagentType } from "@eco/runtime";
 import type { SdkToolPermissionRequest } from "@eco/runtime";
+import { isSubagentRole, normalizeSdkSubagentType } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
 
 export function resolveBashApprovalAgentId(

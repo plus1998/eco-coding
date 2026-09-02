@@ -45,10 +45,7 @@ export function parseCodexTurnMetadataHeader(
   };
 }
 
-function readRequiredString(
-  record: Record<string, unknown>,
-  key: string,
-): string | undefined {
+function readRequiredString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

@@ -33,9 +33,7 @@ export class ProjectOrchestrationSettingsStore {
   get(workspacePath: string): ProjectOrchestrationSettingsSnapshot {
     const normalizedPath = path.resolve(workspacePath);
     const row = this.db
-      .prepare(
-        `SELECT selection_json FROM project_orchestration_settings WHERE workspace_path = ?`,
-      )
+      .prepare(`SELECT selection_json FROM project_orchestration_settings WHERE workspace_path = ?`)
       .get(normalizedPath) as { selection_json: string } | undefined;
     if (!row) {
       return { workspacePath: normalizedPath };
@@ -58,9 +56,7 @@ export class ProjectOrchestrationSettingsStore {
     orchestrationSelection: OrchestrationSelection;
   }): ProjectOrchestrationSettingsSnapshot {
     const workspacePath = path.resolve(snapshot.workspacePath);
-    const orchestrationSelection = normalizeProjectOrchestrationSelection(
-      snapshot.orchestrationSelection,
-    );
+    const orchestrationSelection = normalizeProjectOrchestrationSelection(snapshot.orchestrationSelection);
     if (!orchestrationSelection) {
       throw new Error("项目编排配置必须是完整有效的编排组合。");
     }
@@ -88,9 +84,7 @@ export class ProjectOrchestrationSettingsStore {
     const entries: Array<{ workspacePath: string; selection: OrchestrationSelection }> = [];
     for (const row of rows) {
       try {
-        const selection = normalizeProjectOrchestrationSelection(
-          JSON.parse(row.selection_json) as unknown,
-        );
+        const selection = normalizeProjectOrchestrationSelection(JSON.parse(row.selection_json) as unknown);
         if (selection) {
           entries.push({ workspacePath: row.workspace_path, selection });
         }
@@ -154,9 +148,7 @@ export class ProjectOrchestrationSettingsStore {
       .prepare(`SELECT workspace_path, selection_json FROM project_orchestration_settings`)
       .all() as Array<{ workspace_path: string; selection_json: string }>;
     let cleared = 0;
-    const remove = this.db.prepare(
-      `DELETE FROM project_orchestration_settings WHERE workspace_path = ?`,
-    );
+    const remove = this.db.prepare(`DELETE FROM project_orchestration_settings WHERE workspace_path = ?`);
 
     for (const row of rows) {
       let selection: OrchestrationSelection | undefined;
@@ -198,10 +190,7 @@ export class ProjectOrchestrationSettingsStore {
       } catch {
         continue;
       }
-      if (
-        selection?.mainPrompt.mode !== "custom_append" ||
-        selection.mainPrompt.promptId !== trimmedId
-      ) {
+      if (selection?.mainPrompt.mode !== "custom_append" || selection.mainPrompt.promptId !== trimmedId) {
         continue;
       }
       update.run(

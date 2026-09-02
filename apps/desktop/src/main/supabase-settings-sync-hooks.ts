@@ -1,6 +1,8 @@
 /**
  * Build SettingsSyncHooks from Desktop provider / ASR / image / workflow / orchestration stores.
  */
+
+import type { ImageGenerationProfileSaveInput } from "../shared/image-generation";
 import type {
   AsrApiMode,
   AsrProfileSaveInput,
@@ -8,33 +10,29 @@ import type {
   ProviderConfigInput,
   RouteProfileInput,
 } from "../shared/ipc";
-import type { ImageGenerationProfileSaveInput } from "../shared/image-generation";
-import type { AsrSettingsStore } from "./asr-settings-store";
 import type { AgentOrchestrationStore } from "./agent-orchestration-store";
+import type { AsrSettingsStore } from "./asr-settings-store";
+import { type GitSettingsStore, normalizeGitSettingsSnapshot } from "./git-settings-store";
 import type { ImageGenerationStore } from "./image-generation-store";
-import type { ProviderStore } from "./provider-store";
-import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
-import type { WorkflowSettingsStore } from "./workflow-settings-store";
-import { normalizeGitSettingsSnapshot, type GitSettingsStore } from "./git-settings-store";
 import type { PackageScriptArgsStore } from "./package-script-args-store";
 import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
+import type { ProviderStore } from "./provider-store";
+import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
 import type { SshBookmarkStore } from "./ssh-bookmark-store";
+import { sshBookmarkSecretKeyKey, sshBookmarkSecretPasswordKey } from "./ssh-bookmark-store";
 import {
-  sshBookmarkSecretKeyKey,
-  sshBookmarkSecretPasswordKey,
-} from "./ssh-bookmark-store";
-import {
+  type DomainSettingsSyncHooks,
   ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
-  emptyEcoSyncedSettingsPayload,
-  filterSecretsForDomain,
-  syncableAgentTemplates,
-  type DomainSettingsSyncHooks,
   type EcoPlainSecret,
   type EcoSettingsSyncDomain,
   type EcoSyncedSettingsPayload,
   type EcoSyncedWorkflowSettings,
+  emptyEcoSyncedSettingsPayload,
+  filterSecretsForDomain,
+  syncableAgentTemplates,
 } from "./supabase-settings-sync";
+import type { WorkflowSettingsStore } from "./workflow-settings-store";
 
 export function createDesktopSettingsSyncHooks(input: {
   providerStore: ProviderStore;

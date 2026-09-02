@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import type { ProviderConfigInput } from "../src/shared/ipc";
 import {
-  FREE_TOKEN_PROVIDER_PRESETS,
   applyProviderPreset,
+  FREE_TOKEN_PROVIDER_PRESETS,
   findMatchingProviderPreset,
   formatProviderPresetSelectLabel,
 } from "../src/renderer/provider-presets";
+import type { ProviderConfigInput } from "../src/shared/ipc";
 
 test("free token provider presets are valid service roots", () => {
   expect(FREE_TOKEN_PROVIDER_PRESETS.length).toBeGreaterThanOrEqual(2);
@@ -74,7 +74,6 @@ test("provider preset select labels show free badge without model ids", () => {
   expect(label).toBe("OpenCode Zen · Free");
   expect(label).not.toContain(preset!.defaultModel);
 });
-
 
 test("matching provider preset ignores default model differences", () => {
   const preset = FREE_TOKEN_PROVIDER_PRESETS.find((entry) => entry.id === "opencode-zen-free");

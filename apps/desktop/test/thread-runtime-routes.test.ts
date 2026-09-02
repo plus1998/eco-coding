@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createModelAlias } from "../src/main/anthropic-proxy";
-import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { ModelsDevPricingCache } from "../src/main/models-dev-pricing-cache";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
 import {
   buildDriverRoutes,
   buildDriverRoutesFromRuntime,
@@ -42,7 +42,14 @@ function routes(providerId = "p1"): RoleRouteConfig[] {
 
 test("resolveThreadRuntimeConfig validates full role routes and keeps route metadata", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     routes(),
   );
@@ -67,14 +74,28 @@ test("resolveThreadRuntimeConfig validates full role routes and keeps route meta
 test("resolveThreadRuntimeConfig reports missing providers and disabled providers", () => {
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+      {
+        providers: [],
+        routeProfiles: [],
+        agentTemplates: [],
+        mainAgentConfigs: [],
+        mainAgentPrompts: [],
+        subagentOrchestrations: [],
+      },
       [],
       routes(),
     ).ok,
   ).toBe(false);
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+      {
+        providers: [],
+        routeProfiles: [],
+        agentTemplates: [],
+        mainAgentConfigs: [],
+        mainAgentPrompts: [],
+        subagentOrchestrations: [],
+      },
       [provider("p1", false)],
       routes(),
     ),
@@ -86,7 +107,14 @@ test("resolveThreadRuntimeConfig reports missing providers and disabled provider
 
 test("resolveThreadRuntimeConfig accepts partial routes for generic orchestrations", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     [{ role: "planner", providerId: "p1", modelId: "research-model" }],
     { requireCompleteCodingRoutes: false },
@@ -99,7 +127,14 @@ test("resolveThreadRuntimeConfig accepts partial routes for generic orchestratio
 
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+      {
+        providers: [],
+        routeProfiles: [],
+        agentTemplates: [],
+        mainAgentConfigs: [],
+        mainAgentPrompts: [],
+        subagentOrchestrations: [],
+      },
       [provider("p1")],
       [],
       { requireCompleteCodingRoutes: false },
@@ -112,7 +147,14 @@ test("resolveThreadRuntimeConfig accepts partial routes for generic orchestratio
 
 test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic orchestrations", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     [
       { role: "planner", providerId: "p1", modelId: "main-model" },
@@ -140,7 +182,14 @@ test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic orc
 test("resolveThreadRuntimeConfig still requires full coding routes by default", () => {
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+      {
+        providers: [],
+        routeProfiles: [],
+        agentTemplates: [],
+        mainAgentConfigs: [],
+        mainAgentPrompts: [],
+        subagentOrchestrations: [],
+      },
       [provider("p1")],
       [{ role: "planner", providerId: "p1", modelId: "planner-model" }],
     ),
@@ -152,7 +201,14 @@ test("resolveThreadRuntimeConfig still requires full coding routes by default", 
 
 test("buildDriverRoutes and buildDriverRoutesFromRuntime both expose eco aliases to the SDK", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     routes(),
   );
@@ -176,7 +232,14 @@ test("buildDriverRoutes and buildDriverRoutesFromRuntime both expose eco aliases
 
 test("buildDriverRoutes copies contextTokens onto primary.contextWindow", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     routes(),
   );
@@ -198,7 +261,14 @@ test("resolveContextTokensByRole caps catalog windows to the global limit", asyn
     resolveContextLimit: async () => ({ limit: 1_000_000, limitsResolved: true }),
   } as ModelsDevPricingCache;
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     routes(),
   );
@@ -215,7 +285,14 @@ test("resolveContextTokensByRole keeps a model window smaller than the global ca
     resolveContextLimit: async () => ({ limit: 128_000, limitsResolved: true }),
   } as ModelsDevPricingCache;
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    {
+      providers: [],
+      routeProfiles: [],
+      agentTemplates: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
+    },
     [provider("p1")],
     routes(),
   );

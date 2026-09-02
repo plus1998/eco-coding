@@ -26,18 +26,13 @@ export function resolveAcpWireModelId(
     return trimmed;
   }
   if (trimmed === "auto") {
-    const auto = available.find(
-      (m) => m.modelId === "default[]" || m.name?.toLowerCase() === "auto",
-    );
+    const auto = available.find((m) => m.modelId === "default[]" || m.name?.toLowerCase() === "auto");
     if (auto) return auto.modelId;
   }
   const bare = trimmed.replace(/\[.*$/, "");
   const byBare = available.find(
     (m) =>
-      m.modelId === `${bare}[]` ||
-      m.modelId.startsWith(`${bare}[`) ||
-      m.name === trimmed ||
-      m.name === bare,
+      m.modelId === `${bare}[]` || m.modelId.startsWith(`${bare}[`) || m.name === trimmed || m.name === bare,
   );
   if (byBare) return byBare.modelId;
   const sample = available

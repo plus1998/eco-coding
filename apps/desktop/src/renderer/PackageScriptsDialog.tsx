@@ -1,22 +1,12 @@
-import {
-  Copy,
-  Loader2,
-  Play,
-  RefreshCw,
-  TextCursorInput,
-  X,
-} from "lucide-react";
+import { Copy, Loader2, Play, RefreshCw, TextCursorInput, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
+import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
 import { formatRunCommand } from "../shared/package-script-run";
 import { copyTextToClipboard } from "./clipboard";
-import {
-  readWorkspaceScriptArgs,
-  saveScriptArgs,
-} from "./package-script-args-storage";
+import { readWorkspaceScriptArgs, saveScriptArgs } from "./package-script-args-storage";
 import { PACKAGE_SCRIPT_OVERLAY_TRANSITION_MS } from "./package-script-ui";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
@@ -177,8 +167,7 @@ export function PackageScriptsDialog({
     }
     return scripts.filter(
       (entry) =>
-        entry.name.toLowerCase().includes(normalized) ||
-        entry.command.toLowerCase().includes(normalized),
+        entry.name.toLowerCase().includes(normalized) || entry.command.toLowerCase().includes(normalized),
     );
   }, [query, scripts]);
 
@@ -208,9 +197,7 @@ export function PackageScriptsDialog({
           <header className="package-scripts-header">
             <div className="package-scripts-header-text">
               <h2 className="package-scripts-title">{t("dialog.scripts.title")}</h2>
-              <p className="package-scripts-subtitle">
-                {subtitleParts.join(" · ")}
-              </p>
+              <p className="package-scripts-subtitle">{subtitleParts.join(" · ")}</p>
             </div>
             <div className="package-scripts-header-actions">
               {onSyncDomain ? (
@@ -230,7 +217,12 @@ export function PackageScriptsDialog({
               >
                 <RefreshCw size={15} className={busy ? "spinning" : undefined} />
               </button>
-              <button type="button" className="package-scripts-icon-btn" aria-label={t("common.close")} onClick={onClose}>
+              <button
+                type="button"
+                className="package-scripts-icon-btn"
+                aria-label={t("common.close")}
+                onClick={onClose}
+              >
                 <X size={15} />
               </button>
             </div>
@@ -261,19 +253,12 @@ export function PackageScriptsDialog({
                 {filteredScripts.map((entry) => {
                   const savedArgs = scriptArgsByName[entry.name] ?? "";
                   const isEditingArgs = editingScript === entry.name;
-                  const runCommand = formatRunCommand(
-                    packageManager,
-                    entry.name,
-                    savedArgs || undefined,
-                  );
+                  const runCommand = formatRunCommand(packageManager, entry.name, savedArgs || undefined);
                   const isCopied = copiedScript === entry.name;
                   return (
                     <li
                       key={entry.name}
-                      className={[
-                        "package-scripts-item",
-                        isEditingArgs ? "is-editing" : "",
-                      ]
+                      className={["package-scripts-item", isEditingArgs ? "is-editing" : ""]
                         .filter(Boolean)
                         .join(" ")}
                     >
@@ -324,7 +309,11 @@ export function PackageScriptsDialog({
                                 ? t("dialog.scripts.copiedCommand", { name: entry.name })
                                 : t("dialog.scripts.copy", { name: entry.name })
                             }
-                            title={isCopied ? t("dialog.scripts.copied") : t("dialog.scripts.copy", { name: runCommand })}
+                            title={
+                              isCopied
+                                ? t("dialog.scripts.copied")
+                                : t("dialog.scripts.copy", { name: runCommand })
+                            }
                             disabled={busy}
                             onClick={() => void copyScriptCommand(entry.name, savedArgs || undefined)}
                           >

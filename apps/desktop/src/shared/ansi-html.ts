@@ -72,10 +72,7 @@ const XTERM_16: readonly string[] = [
 ];
 
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function escapeAttribute(value: string): string {
@@ -279,10 +276,7 @@ function renderChunk(chunk: string, style: AnsiStyle): string {
   return `<span${classAttr}${styleAttr}>${escaped}</span>`;
 }
 
-function consumeCsi(
-  value: string,
-  index: number,
-): { nextIndex: number; sgrBody?: string } {
+function consumeCsi(value: string, index: number): { nextIndex: number; sgrBody?: string } {
   if (value[index] === "\u001b") {
     if (value[index + 1] !== "[") {
       return { nextIndex: index + 2 };
@@ -322,7 +316,7 @@ function isEscapeStart(value: string, index: number): boolean {
 export function ansiToHtml(value: string): string {
   const normalized = normalizeTerminalOutput(value);
   let result = "";
-  let style = cloneStyle(DEFAULT_STYLE);
+  const style = cloneStyle(DEFAULT_STYLE);
   let index = 0;
 
   while (index < normalized.length) {

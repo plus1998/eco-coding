@@ -4,11 +4,11 @@ import type {
   ThreadBillingDiagnosticType,
   ThreadBillingSnapshot,
 } from "../shared/ipc";
-import type { UsageLedgerEvent } from "./usage-ledger";
 import type {
   BillingProjectionReconciliationIssue,
   BillingProjectionReconciliationResult,
 } from "./billing-projector-reconciliation";
+import type { UsageLedgerEvent } from "./usage-ledger";
 
 export function withBillingDiagnostics(
   billing: ThreadBillingSnapshot,
@@ -17,11 +17,7 @@ export function withBillingDiagnostics(
     ledgerEvents?: readonly UsageLedgerEvent[];
   } = {},
 ): ThreadBillingSnapshot {
-  const diagnostics = buildBillingDiagnostics(
-    billing,
-    input.projectionReconciliation,
-    input.ledgerEvents,
-  );
+  const diagnostics = buildBillingDiagnostics(billing, input.projectionReconciliation, input.ledgerEvents);
   return diagnostics.length > 0 ? { ...billing, diagnostics } : billing;
 }
 
@@ -107,9 +103,7 @@ function formatTokenCount(total: number): string {
   return String(total);
 }
 
-function diagnosticFromProjectionIssue(
-  issue: BillingProjectionReconciliationIssue,
-): ThreadBillingDiagnostic {
+function diagnosticFromProjectionIssue(issue: BillingProjectionReconciliationIssue): ThreadBillingDiagnostic {
   const base = {
     severity: issue.severity === "error" ? "error" : ("info" as ThreadBillingDiagnosticSeverity),
     ...(issue.source && { source: issue.source }),
@@ -210,9 +204,7 @@ function formatCostDelta(delta: number | undefined): string {
   return `${sign}$${delta.toFixed(6)}`;
 }
 
-function dedupeDiagnostics(
-  diagnostics: readonly ThreadBillingDiagnostic[],
-): ThreadBillingDiagnostic[] {
+function dedupeDiagnostics(diagnostics: readonly ThreadBillingDiagnostic[]): ThreadBillingDiagnostic[] {
   const seen = new Set<string>();
   const output: ThreadBillingDiagnostic[] = [];
   for (const diagnostic of diagnostics) {

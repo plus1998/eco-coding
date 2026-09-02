@@ -1,7 +1,7 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import type {
   SkillCatalogEntry,
   SkillCatalogInstallRequest,
@@ -44,9 +44,7 @@ export async function searchSkillsCatalog(
   return {
     query: typeof payload.query === "string" ? payload.query : normalized,
     searchType:
-      payload.searchType === "fuzzy" || payload.searchType === "semantic"
-        ? payload.searchType
-        : "unknown",
+      payload.searchType === "fuzzy" || payload.searchType === "semantic" ? payload.searchType : "unknown",
     entries,
     ...(typeof payload.duration_ms === "number" ? { durationMs: payload.duration_ms } : {}),
   };
@@ -148,13 +146,7 @@ async function recordCatalogInstall(
   request: SkillCatalogInstallRequest,
 ): Promise<void> {
   const layoutDirectory =
-    layout === "agents"
-      ? ".agents"
-      : layout === "codex"
-        ? ".codex"
-        : layout === "pi"
-          ? ".pi"
-          : ".claude";
+    layout === "agents" ? ".agents" : layout === "codex" ? ".codex" : layout === "pi" ? ".pi" : ".claude";
   const lockPath = path.join(homedir, layoutDirectory, ".skill-lock.json");
   let lock: { version: number; skills: Record<string, unknown> } = { version: 3, skills: {} };
   try {
@@ -188,14 +180,16 @@ function parseCatalogEntry(value: unknown): SkillCatalogEntry[] {
   const name = readString(value.name);
   const source = readString(value.source);
   if (!id || !skillId || !name || !source) return [];
-  return [{
-    id,
-    skillId,
-    name,
-    source,
-    installs: typeof value.installs === "number" && value.installs >= 0 ? value.installs : 0,
-    url: `${CATALOG_BASE_URL}/${id}`,
-  }];
+  return [
+    {
+      id,
+      skillId,
+      name,
+      source,
+      installs: typeof value.installs === "number" && value.installs >= 0 ? value.installs : 0,
+      url: `${CATALOG_BASE_URL}/${id}`,
+    },
+  ];
 }
 
 function parseLeaderboardEntry(value: unknown): SkillCatalogEntry[] {
@@ -205,14 +199,16 @@ function parseLeaderboardEntry(value: unknown): SkillCatalogEntry[] {
   const source = readString(value.source);
   if (!skillId || !name || !source) return [];
   const id = `${source}/${skillId}`;
-  return [{
-    id,
-    skillId,
-    name,
-    source,
-    installs: typeof value.installs === "number" && value.installs >= 0 ? value.installs : 0,
-    url: `${CATALOG_BASE_URL}/${id}`,
-  }];
+  return [
+    {
+      id,
+      skillId,
+      name,
+      source,
+      installs: typeof value.installs === "number" && value.installs >= 0 ? value.installs : 0,
+      url: `${CATALOG_BASE_URL}/${id}`,
+    },
+  ];
 }
 
 function parseLeaderboardFromPage(html: string): { initialSkills: unknown[] } | undefined {
@@ -234,13 +230,9 @@ function parseLeaderboardFromPage(html: string): { initialSkills: unknown[] } | 
           const frameValue = JSON.parse(line.slice(separator + 1).trim()) as unknown;
           const leaderboard = findLeaderboardPayload(frameValue);
           if (leaderboard) return leaderboard;
-        } catch {
-          continue;
-        }
+        } catch {}
       }
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return undefined;
 }

@@ -1,1 +1,41 @@
-{"id":"resp_abb46330f9cf492db163bd5f64ccc0a7","object":"response","created_at":1788245828,"status":"incomplete","background":false,"incomplete_details":{"reason":"max_output_tokens"},"max_output_tokens":128,"model":"LongCat-2.0","output":[{"type":"reasoning","id":"rs_resp_abb46330f9cf492db163bd5f64ccc0a7","summary":[],"content":[{"type":"reasoning_text","text":"\nWe are asked: \"When the user types `/<skill-name>`, invoke it via Skill. Only use skills listed in the user-invocable skills section — don't guess.\"\n\nBut the user didn't provide any skill name or a list of skills. The prompt is just that instruction. So I need to respond appropriately. The user might be expecting me to list the skills I have available? Or maybe they want me to wait for a specific command? The instruction says \"When the user types `/<skill-name>`, invoke it via Skill.\" It's a meta-instruction. So I should probably acknowledge that I'm"}]}],"parallel_tool_calls":true,"conversation":{"id":"conv_9ab3eebb40da4f31a78f212abcded0bb"},"reasoning":{"effort":null,"summary":null},"service_tier":"auto","store":false,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"truncation":"disabled","usage":{"input_tokens":46,"input_tokens_details":{"cached_tokens":0},"output_tokens":128,"output_tokens_details":{"reasoning_tokens":127},"total_tokens":174,"prompt_tokens_details":{"cached_tokens":0}},"metadata":{}}
+{
+  "id": "resp_abb46330f9cf492db163bd5f64ccc0a7",
+  "object": "response",
+  "created_at": 1788245828,
+  "status": "incomplete",
+  "background": false,
+  "incomplete_details": { "reason": "max_output_tokens" },
+  "max_output_tokens": 128,
+  "model": "LongCat-2.0",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_resp_abb46330f9cf492db163bd5f64ccc0a7",
+      "summary": [],
+      "content": [
+        {
+          "type": "reasoning_text",
+          "text": "\nWe are asked: \"When the user types `/<skill-name>`, invoke it via Skill. Only use skills listed in the user-invocable skills section — don't guess.\"\n\nBut the user didn't provide any skill name or a list of skills. The prompt is just that instruction. So I need to respond appropriately. The user might be expecting me to list the skills I have available? Or maybe they want me to wait for a specific command? The instruction says \"When the user types `/<skill-name>`, invoke it via Skill.\" It's a meta-instruction. So I should probably acknowledge that I'm"
+        }
+      ]
+    }
+  ],
+  "parallel_tool_calls": true,
+  "conversation": { "id": "conv_9ab3eebb40da4f31a78f212abcded0bb" },
+  "reasoning": { "effort": null, "summary": null },
+  "service_tier": "auto",
+  "store": false,
+  "text": { "format": { "type": "text" }, "verbosity": "medium" },
+  "tool_choice": "auto",
+  "tools": [],
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 46,
+    "input_tokens_details": { "cached_tokens": 0 },
+    "output_tokens": 128,
+    "output_tokens_details": { "reasoning_tokens": 127 },
+    "total_tokens": 174,
+    "prompt_tokens_details": { "cached_tokens": 0 }
+  },
+  "metadata": {}
+}

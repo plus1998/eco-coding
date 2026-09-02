@@ -22,11 +22,7 @@ describe("eco gateway provider model limits", () => {
 
     expect(result.providers[0]).toMatchObject({
       baseUrl: "https://api.example.test",
-      models: expect.arrayContaining([
-        "deepseek-v4-flash",
-        "deepseek-v4-pro",
-        "route-only-model",
-      ]),
+      models: expect.arrayContaining(["deepseek-v4-flash", "deepseek-v4-pro", "route-only-model"]),
       modelMaxOutputTokens: {
         "deepseek-v4-flash": 32_768,
         "deepseek-v4-pro": 32_768,

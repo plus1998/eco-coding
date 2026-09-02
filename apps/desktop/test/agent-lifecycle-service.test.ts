@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  AgentLifecycleService,
-  type AgentLifecycleStore,
-} from "../src/main/agent-lifecycle-service";
+import { AgentLifecycleService, type AgentLifecycleStore } from "../src/main/agent-lifecycle-service";
 import type { AgentInstanceRecord, RunAttemptRecord } from "../src/main/usage-ledger";
 
 class FakeLifecycleStore implements AgentLifecycleStore {
@@ -52,15 +49,11 @@ test("AgentLifecycleService rehydrates in-flight attempt after history prune wip
   expect(store.getAttempt("thr_rehydrate", attempt.attemptId)).toBeUndefined();
 
   expect(service.rehydrateCurrentRunAttempt("thr_rehydrate")).toBe(true);
-  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt).toBe(
-    "2026-01-01T00:00:01.000Z",
-  );
+  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt).toBe("2026-01-01T00:00:01.000Z");
   expect(store.getAgent("thr_rehydrate", `planner:${attempt.attemptId}`)?.status).toBe("active");
 
   expect(service.rehydrateCurrentRunAttempt("thr_rehydrate", "2026-01-01T00:00:05.000Z")).toBe(true);
-  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt).toBe(
-    "2026-01-01T00:00:05.000Z",
-  );
+  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt).toBe("2026-01-01T00:00:05.000Z");
 });
 
 test("AgentLifecycleService records run attempts and planner agent lifecycle", () => {

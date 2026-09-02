@@ -70,7 +70,7 @@ export function buildPlanHandoffForkThread(input: PlanHandoffInput): PlanHandoff
   const agentOptions = buildCodexTurnOptions({ sessionMode: "agent" });
   const prefix = input.planUserEdited
     ? "The user edited the plan in Eco before approval. Treat the plan below as authoritative.\n\n"
-  : "";
+    : "";
 
   return {
     choice: "fork_thread",

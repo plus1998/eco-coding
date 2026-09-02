@@ -1,26 +1,23 @@
-import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import {
-  postAuxiliaryBridgeRequest,
-  resolveRouteApiCompat,
-} from "./bridge-auxiliary-request";
-import { logUpstreamError } from "./upstream-log";
-import {
-  LEGACY_PENDING_THREAD_TITLES,
-  PENDING_THREAD_TITLE_EN,
-  PENDING_THREAD_TITLE_ZH,
   canRegenerateThreadTitle,
   coreOwnsSessionTitle,
   isPendingThreadTitle,
+  LEGACY_PENDING_THREAD_TITLES,
+  PENDING_THREAD_TITLE_EN,
+  PENDING_THREAD_TITLE_ZH,
   pendingThreadTitles,
 } from "../shared/thread-title-pending";
+import type { AnthropicProxyRoute } from "./anthropic-proxy";
+import { postAuxiliaryBridgeRequest, resolveRouteApiCompat } from "./bridge-auxiliary-request";
+import { logUpstreamError } from "./upstream-log";
 
 export {
-  LEGACY_PENDING_THREAD_TITLES,
-  PENDING_THREAD_TITLE_EN,
-  PENDING_THREAD_TITLE_ZH,
   canRegenerateThreadTitle,
   coreOwnsSessionTitle,
   isPendingThreadTitle,
+  LEGACY_PENDING_THREAD_TITLES,
+  PENDING_THREAD_TITLE_EN,
+  PENDING_THREAD_TITLE_ZH,
   pendingThreadTitles,
 };
 
@@ -32,9 +29,7 @@ export const TITLE_OUTPUT_MAX_CHARS = 42;
 export const pendingThreadTitle = PENDING_THREAD_TITLE_ZH;
 
 export function resolvePendingThreadTitle(locale: string): string {
-  return locale.trim().toLowerCase().startsWith("zh")
-    ? PENDING_THREAD_TITLE_ZH
-    : PENDING_THREAD_TITLE_EN;
+  return locale.trim().toLowerCase().startsWith("zh") ? PENDING_THREAD_TITLE_ZH : PENDING_THREAD_TITLE_EN;
 }
 
 export function resolveFailedThreadTitle(prompt: string, locale: string): string {
@@ -62,7 +57,7 @@ const THREAD_TITLE_JSON_SCHEMA = {
 } as const;
 
 const THREAD_TITLE_SYSTEM_PROMPT = [
-  "你是会话标题生成器。根据用户任务概括意图，只输出 JSON：{\"title\":\"...\"}。",
+  '你是会话标题生成器。根据用户任务概括意图，只输出 JSON：{"title":"..."}。',
   "中文不超过 18 个字，英文 3-7 个词，sentence case。",
   `标题总长度不超过 ${TITLE_OUTPUT_MAX_CHARS} 个字符。`,
   "使用与用户消息相同的语言。",
@@ -296,8 +291,7 @@ async function requestThreadTitle(
   useStructuredOutput: boolean,
   onTitleDelta?: (preview: string) => void,
 ): Promise<string | undefined> {
-  const tryStructuredOutput =
-    useStructuredOutput && resolveRouteApiCompat(titleRoute) === "anthropic";
+  const tryStructuredOutput = useStructuredOutput && resolveRouteApiCompat(titleRoute) === "anthropic";
   let lastPreview = "";
   const result = await postAuxiliaryBridgeRequest({
     route: titleRoute,
@@ -360,7 +354,6 @@ export function extractTitleJsonFromThinking(body: unknown): string | undefined 
       continue;
     }
     if (block.type === "redacted_thinking") {
-      continue;
     }
   }
   const joined = chunks.join("\n").trim();
@@ -382,7 +375,6 @@ export function extractTitleText(body: unknown): string | undefined {
       continue;
     }
     if (block.type === "thinking" || block.type === "redacted_thinking") {
-      continue;
     }
   }
   return chunks.join("\n").trim() || undefined;

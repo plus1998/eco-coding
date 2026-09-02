@@ -1,4 +1,4 @@
-import { app, dialog, type BrowserWindow } from "electron";
+import { app, type BrowserWindow, dialog } from "electron";
 import {
   type ApplicationShutdownDeps,
   buildQuitConfirmationDialogOptions,
@@ -11,15 +11,15 @@ import {
 
 export {
   type ApplicationShutdownDeps,
-  type QuitConfirmationChoice,
-  type QuitConfirmationDialogOptions,
-  type RunningThreadSnapshot,
-  type RunningWorkSummary,
   buildQuitConfirmationDialogOptions,
   collectRunningWorkSummary,
   hasRunningWork,
   interruptAllRunningWork,
   isThreadActivelyRunning,
+  type QuitConfirmationChoice,
+  type QuitConfirmationDialogOptions,
+  type RunningThreadSnapshot,
+  type RunningWorkSummary,
   setApplicationQuitBypassConfirmation,
   shouldBypassQuitConfirmation,
   shouldConfirmQuit,

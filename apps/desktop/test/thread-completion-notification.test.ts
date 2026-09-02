@@ -72,10 +72,7 @@ test("builds notification body from codex-style main message.final run events", 
   ]);
 
   expect(
-    buildThreadCompletionNotificationContentFromSources(
-      { title: "问候" },
-      [[], [], fromRunEvents],
-    ),
+    buildThreadCompletionNotificationContentFromSources({ title: "问候" }, [[], [], fromRunEvents]),
   ).toEqual({
     title: "问候",
     body: "你好！需要我帮你做些什么？",
@@ -199,7 +196,5 @@ test("builds clarification notification from the first question", () => {
 });
 
 test("does not fabricate clarification detail", () => {
-  expect(
-    buildThreadClarificationNotificationContent({ title: "空问题" }, { questions: [] }),
-  ).toBeUndefined();
+  expect(buildThreadClarificationNotificationContent({ title: "空问题" }, { questions: [] })).toBeUndefined();
 });

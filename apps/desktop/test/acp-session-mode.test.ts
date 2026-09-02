@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  coreSupportsPlanAskModes,
-  resolveSessionModeForCore,
-} from "../src/shared/acp-session-mode";
+import { coreSupportsPlanAskModes, resolveSessionModeForCore } from "../src/shared/acp-session-mode";
 
 test("coreSupportsPlanAskModes includes acp", () => {
   expect(coreSupportsPlanAskModes("acp")).toBe(true);

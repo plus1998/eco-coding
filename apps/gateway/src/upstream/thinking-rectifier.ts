@@ -10,9 +10,7 @@ export interface ThinkingRectifyResult {
   removedSignatureFields: number;
 }
 
-export function shouldRectifyThinkingSignature(
-  errorMessage: string | undefined,
-): boolean {
+export function shouldRectifyThinkingSignature(errorMessage: string | undefined): boolean {
   if (errorMessage === undefined || errorMessage === "") {
     return false;
   }
@@ -27,10 +25,7 @@ export function shouldRectifyThinkingSignature(
     return true;
   }
 
-  if (
-    lower.includes("thought signature") &&
-    (lower.includes("not valid") || lower.includes("invalid"))
-  ) {
+  if (lower.includes("thought signature") && (lower.includes("not valid") || lower.includes("invalid"))) {
     return true;
   }
 
@@ -62,11 +57,7 @@ export function shouldRectifyThinkingSignature(
     return true;
   }
 
-  if (
-    lower.includes("非法请求") ||
-    lower.includes("illegal request") ||
-    lower.includes("invalid request")
-  ) {
+  if (lower.includes("非法请求") || lower.includes("illegal request") || lower.includes("invalid request")) {
     return true;
   }
 
@@ -173,13 +164,10 @@ function shouldRemoveTopLevelThinking(body: JsonRecord): boolean {
   }
 
   const first = content[0];
-  const firstType =
-    isRecord(first) && typeof first.type === "string" ? first.type : undefined;
+  const firstType = isRecord(first) && typeof first.type === "string" ? first.type : undefined;
   if (firstType === "thinking" || firstType === "redacted_thinking") {
     return false;
   }
 
-  return content.some(
-    (block) => isRecord(block) && block.type === "tool_use",
-  );
+  return content.some((block) => isRecord(block) && block.type === "tool_use");
 }

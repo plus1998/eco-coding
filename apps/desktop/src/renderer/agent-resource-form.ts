@@ -1,23 +1,23 @@
 import {
-  CODING_AGENT_TEMPLATE_IDS,
-  resolveAgentTemplateCatalog,
   type AgentConfigSource,
   type AgentInstanceConfig,
   type AgentTemplate,
+  CODING_AGENT_TEMPLATE_IDS,
+  isV4aTeachingEnabled,
   type MainAgentConfigResource,
   type MainAgentPromptResource,
+  resolveAgentTemplateCatalog,
   type SubagentOrchestrationResource,
-  isV4aTeachingEnabled,
 } from "../shared/agent-orchestration";
 import type { ModelRef, ProviderConfigView, ThinkingEffort, UpstreamApiCompat } from "../shared/ipc";
 import { defaultThemeColorForAgentKey, normalizeThemeColorHex } from "../shared/subagent-theme";
+import { i18n } from "./i18n";
 import {
   capabilityFieldsToToolPolicy,
   createDefaultToolCapabilityFields,
   type ToolCapabilityFieldValues,
   toolPolicyToCapabilityFields,
 } from "./tool-capability-groups";
-import { i18n } from "./i18n";
 
 export type AgentResourceAgentCapabilityFields = Omit<ToolCapabilityFieldValues, "allowDelegation">;
 
@@ -211,7 +211,9 @@ export function createBlankMainAgentPromptForm(options: ResourceFormOptions = {}
   };
 }
 
-export function createBlankSubagentOrchestrationForm(options: ResourceFormOptions = {}): AgentResourceFormState {
+export function createBlankSubagentOrchestrationForm(
+  options: ResourceFormOptions = {},
+): AgentResourceFormState {
   const form = createBlankAgentResourceForm(options);
   return {
     ...form,
@@ -341,7 +343,7 @@ export function buildMainAgentConfigFromForm(
   } = {},
 ): MainAgentConfigResource {
   const id = form.id.trim();
-  const name = (form.mainName.trim() || form.name.trim());
+  const name = form.mainName.trim() || form.name.trim();
   if (!id) {
     throw new Error(i18n.t("orchestrationResource.validation.idRequired"));
   }
@@ -471,10 +473,7 @@ function buildAgentsFromForm(
     resolveAgentTemplateCatalog(options.templates).map((template) => [template.id, template]),
   );
   const existingAgentByKey = new Map(
-    (options.existing?.agents ?? []).map((agent) => [
-      agent.agentKey,
-      agent,
-    ]),
+    (options.existing?.agents ?? []).map((agent) => [agent.agentKey, agent]),
   );
   const agentKeys = new Set<string>();
   return form.agents.map((agentForm) => {

@@ -67,15 +67,8 @@
       "reasoning",
       "userMessage"
     ],
-    "toolNames": [
-      "eco_smoke/smoke_ping",
-      "smoke_ping",
-      "spawnAgent",
-      "wait"
-    ],
-    "subagentThreadIds": [
-      "01a05be6-20c4-7e62-92f8-a85714d9f359"
-    ],
+    "toolNames": ["eco_smoke/smoke_ping", "smoke_ping", "spawnAgent", "wait"],
+    "subagentThreadIds": ["01a05be6-20c4-7e62-92f8-a85714d9f359"],
     "textSample": "Model metadata for `eco_packy_responses__gpt-5.6-luna` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\nYou are running an Eco conversation-round scenario smoke. Marker=LCMTICSEDF.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTICSEDF\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTICSEDF\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTICSEDF\n\nDo not skip steps. Prefer tools over guessing.\nYou are running an Eco conversation-round scenario smoke. Marker=LCMTICSEDF.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTICSEDF\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTICSEDF\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTICSEDF\n\nDo not skip steps. Prefer tools over guessing.\n**Planning ordered file reading**\n**Planning ordered file reading**\nLoading\n `\nsm\noke\n-s\nkill\n`,\n then"
   }
 }

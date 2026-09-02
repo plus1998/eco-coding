@@ -37,9 +37,7 @@ export interface ProviderRequestError {
   providerName?: string;
 }
 
-export type ListUpstreamModelsResult =
-  | { ok: true; models: UpstreamModelOption[] }
-  | ProviderRequestError;
+export type ListUpstreamModelsResult = { ok: true; models: UpstreamModelOption[] } | ProviderRequestError;
 
 /** Thinking effort sent on connectivity tests (always disabled). */
 export const ROUTE_TEST_THINKING_EFFORT = "off" as const;
@@ -56,9 +54,7 @@ export interface TestProviderConnectionRequest {
   thinkingEffort?: typeof ROUTE_TEST_THINKING_EFFORT;
 }
 
-export type TestProviderConnectionResult =
-  | { ok: true; reply: string }
-  | ProviderRequestError;
+export type TestProviderConnectionResult = { ok: true; reply: string } | ProviderRequestError;
 
 export interface TestRoleRouteItem {
   role: string;

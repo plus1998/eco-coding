@@ -1,16 +1,15 @@
-import { type AnthropicRequest, responsesInputTokensToAnthropicCount, anthropicToResponses, responsesToChatCompletionsRequest } from "@eco/openai-anthropic-bridge";
+import { GATEWAY_PROVIDER_ID_HEADER, GATEWAY_UPSTREAM_KIND_HEADER } from "@eco/gateway";
 import {
-  GATEWAY_PROVIDER_ID_HEADER,
-  GATEWAY_UPSTREAM_KIND_HEADER,
-} from "@eco/gateway";
+  type AnthropicRequest,
+  anthropicToResponses,
+  responsesInputTokensToAnthropicCount,
+  responsesToChatCompletionsRequest,
+} from "@eco/openai-anthropic-bridge";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { ProviderTokenCountMode } from "../shared/provider-token-count";
 import { estimateAnthropicRequestTokens } from "../shared/token-estimate";
 import { stripSemanticCompactionDirectives } from "./bridge-upstream";
-import {
-  ensureGlobalEcoGateway,
-  handleGlobalEcoGatewayRequest,
-} from "./eco-gateway-lifecycle";
+import { ensureGlobalEcoGateway, handleGlobalEcoGatewayRequest } from "./eco-gateway-lifecycle";
 import {
   buildProviderRequestBaseUrl,
   buildResponsesInputTokensUrl,

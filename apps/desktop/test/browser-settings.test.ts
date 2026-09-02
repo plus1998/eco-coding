@@ -1,18 +1,19 @@
 import { expect, test } from "bun:test";
 import fs from "node:fs";
+import { FORBIDDEN_CDP_PORT } from "../src/main/browser-cdp-proxy";
+import { isHttpishHref } from "../src/renderer/browser-link";
 import {
-  ECO_AGENT_BROWSER_ALLOWED_TOOL,
-  ECO_AGENT_BROWSER_MCP_SERVER,
   appendBrowserPrompt,
   browserAgentSessionKey,
   browserTaskTabId,
-  defaultBrowserSettings,
-  isBrowserHttpUrl,
-  isBrowserHtmlDataUrl,
-  isBrowserPreviewFileUrl,
   buildHtmlDataNavigateUrl,
-  resolveBrowserNavigateTarget,
+  defaultBrowserSettings,
+  ECO_AGENT_BROWSER_ALLOWED_TOOL,
+  ECO_AGENT_BROWSER_MCP_SERVER,
   ECO_HTML_PREVIEW_FILE_PREFIX,
+  isBrowserHtmlDataUrl,
+  isBrowserHttpUrl,
+  isBrowserPreviewFileUrl,
   isBrowserSettingsSnapshot,
   isBrowserTaskTabId,
   isEcoAgentBrowserEnabledInSettingsMap,
@@ -22,11 +23,10 @@ import {
   partitionForBrowserWorkspace,
   planAdoptPersonalBrowsersToThread,
   requiresBrowserOpenApproval,
+  resolveBrowserNavigateTarget,
   resolveBrowserScopePartition,
   shouldAutoApproveEcoAgentBrowserTools,
 } from "../src/shared/browser";
-import { FORBIDDEN_CDP_PORT } from "../src/main/browser-cdp-proxy";
-import { isHttpishHref } from "../src/renderer/browser-link";
 
 test("normalizeBrowserSettingsSnapshot defaults agent integration off and open always allow", () => {
   expect(normalizeBrowserSettingsSnapshot({})).toEqual({
@@ -74,9 +74,7 @@ test("isBrowserSettingsSnapshot validates shape", () => {
 test("requiresBrowserOpenApproval only for open / tab_new navigations", () => {
   expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_open")).toBe(true);
   expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_tab_new")).toBe(true);
-  expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(
-    false,
-  );
+  expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(false);
   expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_click")).toBe(false);
   expect(requiresBrowserOpenApproval("Bash")).toBe(false);
 });
@@ -159,15 +157,11 @@ test("resolveBrowserScopePartition aligns landing with workspace when known", ()
   expect(resolveBrowserScopePartition("__personal__", { workspacePath: ws })).toBe(
     partitionForBrowserWorkspace(ws),
   );
-  expect(resolveBrowserScopePartition("__personal__")).toBe(
-    partitionForBrowserWorkspace("__personal__"),
-  );
+  expect(resolveBrowserScopePartition("__personal__")).toBe(partitionForBrowserWorkspace("__personal__"));
   expect(resolveBrowserScopePartition("__personal__")).not.toBe(
     resolveBrowserScopePartition("__personal__", { workspacePath: ws }),
   );
-  expect(resolveBrowserScopePartition("thr_1", { workspacePath: ws })).toBe(
-    partitionForBrowserWorkspace(ws),
-  );
+  expect(resolveBrowserScopePartition("thr_1", { workspacePath: ws })).toBe(partitionForBrowserWorkspace(ws));
   expect(() => resolveBrowserScopePartition("thr_1")).toThrow(/workspacePath/);
 });
 

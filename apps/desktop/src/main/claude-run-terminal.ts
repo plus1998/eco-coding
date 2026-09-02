@@ -13,9 +13,7 @@ export type { ClaudeRunTerminal };
  *
  * Payload contract lives in `@eco/shared` (`ClaudeRunTerminal`).
  */
-export type ClaudeRunTerminalState =
-  | { kind: "running" }
-  | { kind: "terminal"; terminal: ClaudeRunTerminal };
+export type ClaudeRunTerminalState = { kind: "running" } | { kind: "terminal"; terminal: ClaudeRunTerminal };
 
 export function isClaudeRunTerminalPayload(payload: unknown): payload is ClaudeRunTerminal {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {

@@ -1,15 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveCodexHomeDir } from "@eco/runtime/codex-config-sync";
-import type {
-  StorageCategoryId,
-  StorageCategoryUsage,
-  StorageUsageSnapshot,
-} from "../shared/storage-usage";
-import {
-  resolveClaudeFileHistoryDir,
-  resolveClaudeProjectsDir,
-} from "./claude-session-paths";
+import type { StorageCategoryId, StorageCategoryUsage, StorageUsageSnapshot } from "../shared/storage-usage";
+import { resolveClaudeFileHistoryDir, resolveClaudeProjectsDir } from "./claude-session-paths";
 import { getUpstreamLogBaseDir } from "./upstream-log";
 
 export interface StorageInventoryPaths {

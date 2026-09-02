@@ -6,10 +6,10 @@
  */
 
 import {
+  type EcoJsonRpcMessage,
   isEcoJsonRpcNotification,
   isEcoJsonRpcRequest,
   isEcoJsonRpcResponse,
-  type EcoJsonRpcMessage,
 } from "./event-rpc";
 
 export const ECO_REALTIME_BROADCAST_EVENT = "eco.rpc" as const;

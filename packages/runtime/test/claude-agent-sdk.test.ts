@@ -28,6 +28,7 @@ import {
   formatAgentEventLine,
   formatSdkPayloadMessage,
   getDefaultAllowedTools,
+  type HeldPromptStream,
   inferActivityRole,
   isCompactBoundarySdkMessage,
   isSdkInitMessage,
@@ -45,7 +46,6 @@ import {
   teardownClaudeQueryHandle,
   toSdkAgentModel,
   toStreamingUserPrompt,
-  type HeldPromptStream,
 } from "../src/claude-agent-sdk";
 import { executionCoderPrompt, executionTesterPrompt, reviewerAgentPrompt } from "../src/prompts/index";
 import { createSdkStreamContext } from "../src/sdk-stream-events";
@@ -1238,9 +1238,7 @@ test("adapter contract: assistant request_id is threaded into usage.recorded pay
 
   const usageEvent = events.find((event) => event.type === "usage.recorded");
   expect(usageEvent).toBeDefined();
-  expect((usageEvent?.payload as { request_id?: string }).request_id).toBe(
-    "req_logical_from_gateway",
-  );
+  expect((usageEvent?.payload as { request_id?: string }).request_id).toBe("req_logical_from_gateway");
   const textEvent = events.find(
     (event) =>
       event.type === "message.delta" &&
@@ -1523,10 +1521,14 @@ test("canUseTool denies honestly when the permission AbortSignal is already abor
   const controller = new AbortController();
   controller.abort();
 
-  const decision = await canUseTool("Read", { file_path: "a.ts" }, {
-    toolUseID: "tool_aborted",
-    signal: controller.signal,
-  });
+  const decision = await canUseTool(
+    "Read",
+    { file_path: "a.ts" },
+    {
+      toolUseID: "tool_aborted",
+      signal: controller.signal,
+    },
+  );
 
   expect(handlerCalled).toBe(false);
   expect(decision).toMatchObject({
@@ -1870,8 +1872,9 @@ test("resolveResumeSessionAtBeforeUserMessage returns undefined for first user m
 });
 
 test("extractSdkRunFailure formats resumeDropsTurn refusals without inviting retry", async () => {
-  const { extractSdkRunFailure, isResumeDropsTurnRejection, formatResumeDropsTurnRejection } =
-    await import("../src/claude-agent-sdk");
+  const { extractSdkRunFailure, isResumeDropsTurnRejection, formatResumeDropsTurnRejection } = await import(
+    "../src/claude-agent-sdk"
+  );
   const raw = "Resume rejected by --resume-drops-turn: discarded range has extra user message";
   expect(isResumeDropsTurnRejection(raw)).toBe(true);
   const failure = extractSdkRunFailure({
@@ -3481,9 +3484,7 @@ test("maps failed SDK tool results onto the original tool use", () => {
       message: "String to replace not found in file.",
     },
   });
-  expect(formatAgentEventLine(events[0]!)).toBe(
-    "Tool failed: Edit: String to replace not found in file.",
-  );
+  expect(formatAgentEventLine(events[0]!)).toBe("Tool failed: Edit: String to replace not found in file.");
 });
 
 test("toStreamingUserPrompt yields a single user message then completes", async () => {
@@ -3901,10 +3902,7 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
 
   await run;
   expect(streamInputCalls).toBe(0);
-  expect(promptMessages).toEqual([
-    { text: "Start" },
-    { text: "Inject mid-turn", uuid: "tfu_mid_1" },
-  ]);
+  expect(promptMessages).toEqual([{ text: "Start" }, { text: "Inject mid-turn", uuid: "tfu_mid_1" }]);
   expect(openHandle?.phase).toBe("closed");
 });
 

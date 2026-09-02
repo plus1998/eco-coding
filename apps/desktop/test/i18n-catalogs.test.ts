@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  expectedIpcErrorKey,
-  i18nCatalogs,
-  translateCatalog,
-} from "../src/shared/i18n-catalogs";
+import { expectedIpcErrorKey, i18nCatalogs, translateCatalog } from "../src/shared/i18n-catalogs";
 
 test("desktop catalogs expose the same keys in both supported languages", () => {
   const chineseKeys = Object.keys(i18nCatalogs["zh-CN"].translation).sort();
@@ -22,7 +18,7 @@ test("catalog translation interpolates variables without changing raw detail", (
 test("known application IPC errors localize without raw Chinese in en-US", () => {
   const messages = [
     "子代理模板名称不能为空。",
-    "导入文件没有包含智能体配置。",
+    "导入文件没有包含 agent templates。",
     "内置子代理模板不可直接修改，请先复制为用户模板。",
     "没有可提交的变更。",
     "模型未能生成有效的提交信息，请手动填写。",

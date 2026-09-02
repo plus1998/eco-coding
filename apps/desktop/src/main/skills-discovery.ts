@@ -33,12 +33,7 @@ export async function listDiscoveredSkills(
   }
   // Pi global skills live under ~/.pi/agent/skills (not ~/.pi/skills).
   userSkills.push(
-    ...(await scanSkillsDirectory(
-      path.join(homedir, ".pi", "agent", "skills"),
-      "user",
-      "pi",
-      homedir,
-    )),
+    ...(await scanSkillsDirectory(path.join(homedir, ".pi", "agent", "skills"), "user", "pi", homedir)),
   );
   await applySdkReadyFlags(userSkills, homedir);
   const visibleUserSkills = userSkills.filter(
@@ -235,13 +230,7 @@ async function readCatalogSkillLock(
   layout: SkillLayout,
 ): Promise<Map<string, CatalogSkillIdentity>> {
   const layoutDirectory =
-    layout === "agents"
-      ? ".agents"
-      : layout === "codex"
-        ? ".codex"
-        : layout === "pi"
-          ? ".pi"
-          : ".claude";
+    layout === "agents" ? ".agents" : layout === "codex" ? ".codex" : layout === "pi" ? ".pi" : ".claude";
   return readCatalogSkillLockFile(path.join(baseDir, layoutDirectory, ".skill-lock.json"));
 }
 

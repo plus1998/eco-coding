@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
+import { resolveDevEcoGatewayPortForLog } from "./dev-gateway-port.mjs";
 import {
   devRemoteDebuggingElectronArgs,
   resolveDevRemoteDebuggingPort,
 } from "./dev-remote-debugging-port.mjs";
-import { resolveDevEcoGatewayPortForLog } from "./dev-gateway-port.mjs";
 
 const rendererPort = readPort(process.env.ECO_RENDERER_PORT ?? "5173", "renderer");
 const rendererUrl = `http://127.0.0.1:${rendererPort}/`;
@@ -18,9 +18,7 @@ console.error(
 );
 const devCdpPort = resolveDevRemoteDebuggingPort();
 if (devCdpPort !== undefined) {
-  console.error(
-    `[eco] Dev CDP: http://127.0.0.1:${devCdpPort}/json（Electron 主窗口；关闭: ECO_DEV_CDP=0）`,
-  );
+  console.error(`[eco] Dev CDP: http://127.0.0.1:${devCdpPort}/json（Electron 主窗口；关闭: ECO_DEV_CDP=0）`);
 }
 const devGatewayPort = resolveDevEcoGatewayPortForLog();
 console.error(

@@ -1,15 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import {
+  type AcpTaskRequest,
   formatAcpCursorSubagentType,
   parseAcpTaskRequest,
   parseAcpUpdateTodosRequest,
-  type AcpTaskRequest,
 } from "./acp-cursor-extensions.js";
-import {
-  isAcpUnstartedProviderFailure,
-  splitAcpProviderExhaustion,
-} from "./acp-provider-exhaustion.js";
+import { isAcpUnstartedProviderFailure, splitAcpProviderExhaustion } from "./acp-provider-exhaustion.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -91,10 +88,7 @@ function readSubagentOutputText(content: unknown): string | undefined {
  * `{ sessionId, update: { sessionUpdate, ... } }`.
  * Turn end is on `session/prompt` result `{ stopReason }`, not on session/update.
  */
-export function mapAcpSessionUpdate(
-  params: unknown,
-  ctx: AcpEventMapContext,
-): AgentEvent[] {
+export function mapAcpSessionUpdate(params: unknown, ctx: AcpEventMapContext): AgentEvent[] {
   const base = { threadId: ctx.threadId, agentId: ctx.agentId, role: "planner" as const };
   const id = `${ctx.threadId}:acp:${ctx.sessionRunId}:${randomUUID()}`;
 
@@ -108,8 +102,7 @@ export function mapAcpSessionUpdate(
   }
 
   const update = isRecord(params.update) ? params.update : undefined;
-  const kind =
-    update && typeof update.sessionUpdate === "string" ? update.sessionUpdate : undefined;
+  const kind = update && typeof update.sessionUpdate === "string" ? update.sessionUpdate : undefined;
 
   // Eco already persisted the user prompt; load replay also emits these.
   if (kind === "user_message_chunk" || kind === "available_commands_update") {
@@ -256,7 +249,7 @@ export function mapAcpSessionUpdate(
       ctx.openSubagents.delete(toolCallId!);
     }
     const subagentOutput = openSubagent
-      ? readSubagentOutputText(update?.content) ?? readSubagentOutputText(update?.rawOutput)
+      ? (readSubagentOutputText(update?.content) ?? readSubagentOutputText(update?.rawOutput))
       : undefined;
     const events: AgentEvent[] = [
       createAgentEvent({
@@ -320,8 +313,7 @@ export function mapAcpSessionUpdate(
   }
 
   if (kind === "current_mode_update") {
-    const modeId =
-      typeof update?.currentModeId === "string" ? update.currentModeId.trim() : "";
+    const modeId = typeof update?.currentModeId === "string" ? update.currentModeId.trim() : "";
     return modeId
       ? [
           createAgentEvent({
@@ -356,16 +348,11 @@ export function mapAcpSessionUpdate(
     ];
   }
 
-  return kind
-    ? [unhandledSessionUpdate(id, base, params, kind)]
-    : [rawOutput(id, base, params)];
+  return kind ? [unhandledSessionUpdate(id, base, params, kind)] : [rawOutput(id, base, params)];
 }
 
 /** Map `cursor/update_todos` (request or notification params) → `todo.updated`. */
-export function mapAcpCursorUpdateTodos(
-  params: unknown,
-  ctx: AcpEventMapContext,
-): AgentEvent[] {
+export function mapAcpCursorUpdateTodos(params: unknown, ctx: AcpEventMapContext): AgentEvent[] {
   const parsed = parseAcpUpdateTodosRequest(params);
   if (!parsed) {
     return [];
@@ -393,10 +380,7 @@ export function mapAcpCursorUpdateTodos(
  * Map `cursor/task` → Eco subagent Cards (`tool.started` + `agent.started`).
  * This is the source of truth for Cursor ACP nested agents — not tool_call titles.
  */
-export function mapAcpCursorTask(
-  params: unknown,
-  ctx: AcpEventMapContext,
-): AgentEvent[] {
+export function mapAcpCursorTask(params: unknown, ctx: AcpEventMapContext): AgentEvent[] {
   const request = parseAcpTaskRequest(params) ?? (isAcpTaskRequestShape(params) ? params : undefined);
   if (!request) {
     return [];
@@ -689,10 +673,7 @@ function resolveAcpToolInput(update: JsonRecord | undefined): Record<string, unk
  * `{ type: "content", content: ... }` block). Fold those into tool input so
  * Eco's file-change UI can render a preview without `fs/write_text_file`.
  */
-function mergeAcpDiffContentIntoToolInput(
-  input: Record<string, unknown>,
-  content: unknown,
-): void {
+function mergeAcpDiffContentIntoToolInput(input: Record<string, unknown>, content: unknown): void {
   const diffs = collectAcpDiffBlocks(content);
   if (diffs.length === 0) {
     return;

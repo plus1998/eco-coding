@@ -20,7 +20,15 @@ export function resolveSkillDisplayName(toolName: string, input: unknown): strin
 
   const normalizedTool = toolName.trim().toLowerCase();
   if (normalizedTool === "skill") {
-    for (const key of ["skill", "name", "skill_name", "skillName", "skill_id", "skillId", "display_name"] as const) {
+    for (const key of [
+      "skill",
+      "name",
+      "skill_name",
+      "skillName",
+      "skill_id",
+      "skillId",
+      "display_name",
+    ] as const) {
       const value = record[key];
       if (typeof value === "string" && value.trim()) {
         return value.trim();

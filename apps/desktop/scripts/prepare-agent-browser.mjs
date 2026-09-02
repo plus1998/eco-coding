@@ -33,9 +33,7 @@ const candidates = [
 
 const source = candidates.find((candidate) => fs.existsSync(candidate));
 if (!source) {
-  console.error(
-    `agent-browser binary not found (${binaryName}). Install agent-browser dependency first.`,
-  );
+  console.error(`agent-browser binary not found (${binaryName}). Install agent-browser dependency first.`);
   process.exit(1);
 }
 

@@ -1,5 +1,5 @@
-import type { ConversationStore } from "./conversation-store";
 import type { CodexThreadAttributionRecord, CodexThreadMap } from "./codex-thread-map";
+import type { ConversationStore } from "./conversation-store";
 
 export class ConversationStoreCodexThreadMap implements CodexThreadMap {
   private readonly attribution = new Map<string, CodexThreadAttributionRecord>();

@@ -4,28 +4,25 @@ import {
   GATEWAY_REQUESTED_MODEL_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
 } from "@eco/gateway";
+import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
+import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
 import {
   buildThreadTitleRequestBody,
   buildThreadTitleUserMessage,
   canRegenerateThreadTitle,
   extractTitleJsonFromThinking,
   extractTitleText,
-  previewThreadTitleFromStream,
+  normalizeAcpSessionTitle,
   parseThreadTitleJson,
+  previewThreadTitleFromStream,
   resolveFailedThreadTitle,
   resolvePendingThreadTitle,
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
   shouldReplaceAutoThreadTitle,
-  normalizeAcpSessionTitle,
   summarizeThreadTitle,
   TITLE_PROMPT_MAX_CHARS,
 } from "../src/main/thread-title";
-import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
-import {
-  configureEcoGatewayLifecycle,
-  stopGlobalEcoGateway,
-} from "../src/main/eco-gateway-lifecycle";
 
 const routes: AnthropicProxyRoute[] = [
   {
@@ -132,8 +129,7 @@ test("parseThreadTitleJson returns undefined for missing title field", () => {
 });
 
 test("summarizes thread title through the auxiliary route with structured output", async () => {
-  const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> =
-    [];
+  const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = [];
   const title = await summarizeThreadTitle(routes, "实现 TODO 列表", async (url, init) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
@@ -198,12 +194,10 @@ test("summarizeThreadTitle retries without structured output when schema request
 
 test("rejects empty, copied, refusal, or garbage thread titles", () => {
   expect(sanitizeThreadTitle("实现 TODO 列表", "实现 TODO 列表")).toBeUndefined();
-  expect(sanitizeThreadTitle("标题：\"任务状态面板\"", "实现 TODO 列表")).toBe("任务状态面板");
+  expect(sanitizeThreadTitle('标题："任务状态面板"', "实现 TODO 列表")).toBe("任务状态面板");
   expect(sanitizeThreadTitle("对不起我不能，只能生成任务标题。", "找 skills")).toBeUndefined();
   expect(sanitizeThreadTitle("导出筛选功能 })]}'}}}", "实现导出")).toBeUndefined();
-  expect(
-    sanitizeThreadTitle("辅助模型审批失败或返回了无效 JSON，已转人工审批", "实现导出"),
-  ).toBeUndefined();
+  expect(sanitizeThreadTitle("辅助模型审批失败或返回了无效 JSON，已转人工审批", "实现导出")).toBeUndefined();
 });
 
 test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
@@ -241,9 +235,7 @@ test("resolvePendingThreadTitle uses locale language", () => {
 });
 
 test("resolveFailedThreadTitle falls back to the original request first line", () => {
-  expect(resolveFailedThreadTitle("\n  修复导出筛选问题  \n错误详情", "zh-CN")).toBe(
-    "修复导出筛选问题",
-  );
+  expect(resolveFailedThreadTitle("\n  修复导出筛选问题  \n错误详情", "zh-CN")).toBe("修复导出筛选问题");
   expect(resolveFailedThreadTitle("", "zh-CN")).toBe("新任务");
   expect(resolveFailedThreadTitle("", "en-US")).toBe("New Task");
   expect(resolveFailedThreadTitle("x".repeat(80), "zh-CN")).toBe(`${"x".repeat(39)}...`);
@@ -270,11 +262,7 @@ test("buildThreadTitleRequestBody disables thinking", () => {
 });
 
 test("buildThreadTitleRequestBody uses route max output tokens when configured", () => {
-  const body = buildThreadTitleRequestBody(
-    { ...routes[0]!, maxOutputTokens: 4096 },
-    "实现导出筛选",
-    false,
-  );
+  const body = buildThreadTitleRequestBody({ ...routes[0]!, maxOutputTokens: 4096 }, "实现导出筛选", false);
   expect(body.max_tokens).toBe(4096);
 });
 

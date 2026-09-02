@@ -70,9 +70,7 @@ test("same skill name in .claude and .agents loads once and skips agents-only hi
     await writeSkill(path.join(tmp, ".claude", "skills"), "dup", "dup");
     await writeSkill(path.join(tmp, ".agents", "skills"), "dup", "dup");
     const result = await listDiscoveredSkills(tmp);
-    expect(listSdkReadyProjectSkills(result.projectSkills).filter((s) => s.name === "dup")).toHaveLength(
-      1,
-    );
+    expect(listSdkReadyProjectSkills(result.projectSkills).filter((s) => s.name === "dup")).toHaveLength(1);
     expect(result.agentsOnlySkills.some((s) => s.name === "dup")).toBe(false);
     expect(dedupeSkillsByName(result.projectSkills).filter((s) => s.name === "dup")).toHaveLength(1);
   } finally {
@@ -87,9 +85,7 @@ test("discovers both .claude and .agents layouts in one repo", async () => {
     await writeSkill(path.join(tmp, ".agents", "skills"), "agents-skill", "agents-skill");
     const result = await listDiscoveredSkills(tmp);
     expect(result.projectSkills.some((s) => s.name === "claude-skill" && s.sdkReady)).toBe(true);
-    expect(result.projectSkills.some((s) => s.name === "agents-skill" && s.layout === "agents")).toBe(
-      true,
-    );
+    expect(result.projectSkills.some((s) => s.name === "agents-skill" && s.layout === "agents")).toBe(true);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
@@ -101,11 +97,7 @@ test("discovers Claude, Agents, Codex, and Pi user skill roots", async () => {
     await writeSkill(path.join(tmp, ".claude", "skills"), "claude-skill", "claude-skill");
     await writeSkill(path.join(tmp, ".agents", "skills"), "agents-skill", "agents-skill");
     await writeSkill(path.join(tmp, ".codex", "skills"), "codex-skill", "codex-skill");
-    await writeSkill(
-      path.join(tmp, ".codex", "skills", ".system"),
-      "system-skill",
-      "system-skill",
-    );
+    await writeSkill(path.join(tmp, ".codex", "skills", ".system"), "system-skill", "system-skill");
     await writeSkill(path.join(tmp, ".pi", "agent", "skills"), "pi-skill", "pi-skill");
 
     const result = await listDiscoveredSkills(undefined, { homedir: tmp });
@@ -145,9 +137,7 @@ test("hides only the Codex system imagegen skill", async () => {
     await writeSkill(path.join(project, ".codex", "skills"), "imagegen-project", "imagegen");
 
     const result = await listDiscoveredSkills(project, { homedir: tmp });
-    expect(
-      result.userSkills.some((skill) => skill.skillFilePath.includes(".system/imagegen")),
-    ).toBe(false);
+    expect(result.userSkills.some((skill) => skill.skillFilePath.includes(".system/imagegen"))).toBe(false);
     expect(result.userSkills.some((skill) => skill.name === "imagegen")).toBe(true);
     expect(result.projectSkills.some((skill) => skill.name === "imagegen")).toBe(true);
   } finally {

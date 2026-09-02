@@ -309,12 +309,15 @@ test("resolveRouteMaxOutputTokens reads positive manualSpec values only", () => 
 
 test("runtimeRouteToProxyRoute maps manualSpec maxOutputTokens onto proxy route", () => {
   const provider = createProvider("anthropic", "Anthropic", "provider-secret");
-  const route = runtimeRouteToProxyRoute({
-    role: "coder",
-    provider,
-    modelId: "claude-sonnet-4-6",
-    manualSpec: { maxOutputTokens: 32_768 },
-  }, { globalMaxOutputTokens: 64_000 });
+  const route = runtimeRouteToProxyRoute(
+    {
+      role: "coder",
+      provider,
+      modelId: "claude-sonnet-4-6",
+      manualSpec: { maxOutputTokens: 32_768 },
+    },
+    { globalMaxOutputTokens: 64_000 },
+  );
   expect(route.maxOutputTokens).toBe(32_768);
 });
 

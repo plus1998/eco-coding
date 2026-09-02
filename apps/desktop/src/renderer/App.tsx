@@ -58,14 +58,11 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider, useTranslation } from "react-i18next";
+import { isAcpSubagentAgentId } from "../shared/acp-subagent";
+import { type BashReviewMode, normalizeBashReviewMode } from "../shared/bash-review-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import type { BrowserSettingsSnapshot } from "../shared/browser";
 import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
-import {
-  browserStateStore,
-  useBrowserInstanceIds,
-} from "./browser-state-store";
-import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import { deriveSkillsEnabled, type ProjectSkillsSettingsSnapshot } from "../shared/composer-skills-settings";
 import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
@@ -93,6 +90,7 @@ import {
   type ClarificationRequest,
   type CoderTodoItem,
   type CoreAvailabilitySnapshot,
+  type CursorAgentsListResult,
   type CursorModelOption,
   deriveMcpServersEnabled,
   deriveSubagentEnabledFromSnapshot,
@@ -125,7 +123,6 @@ import {
   resolveThreadOrchestrationSnapshot,
   runtimeRoleRoutesFromOrchestrationSnapshot,
   type SkillsListResult,
-  type CursorAgentsListResult,
   type SubagentRole,
   type SubagentSelection,
   type TerminalSessionView,
@@ -171,6 +168,7 @@ import {
   type SkillInfo,
   type SkillLayout,
 } from "../shared/skills";
+import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
   extractPlanFailureMessage,
@@ -194,15 +192,18 @@ import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
-import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
 import { ActivityLogView } from "./ActivityLogView";
+import type { PendingMainAgentConfigCreateSeed } from "./AgentCompositionResourcesSection";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import {
   type ActivityWorkspaceLayoutMode,
+  activityUserMessageNavListMaxHeightPx,
+  activityUserMessageNavShellMaxHeightPx,
   clampTaskPanelWidth,
+  computeActivityUserMessageNavDensity,
   MAIN_SHELL_MEDIA_QUERIES,
   measureFeedColumnLeftGutterPx,
   panelChromeCssVariables,
@@ -210,9 +211,6 @@ import {
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
   shouldResetTaskPanelFullscreenOnBrowserOpen,
-  activityUserMessageNavListMaxHeightPx,
-  activityUserMessageNavShellMaxHeightPx,
-  computeActivityUserMessageNavDensity,
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowWorkspaceActionGroupA,
@@ -224,15 +222,11 @@ import {
 import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
-import {
-  normalizeBashReviewMode,
-  type BashReviewMode,
-} from "../shared/bash-review-ui";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
-import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { BrowserWebviewLayer } from "./BrowserWebviewLayer";
+import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import { browserStateStore, useBrowserInstanceIds } from "./browser-state-store";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
-import { SettingsSyncControl } from "./SettingsSyncControl";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
@@ -263,12 +257,12 @@ import {
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
-import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
-  captureComposerBeforeFollowUpEdit,
   type ComposerFollowUpEditSnapshot,
+  captureComposerBeforeFollowUpEdit,
   resolveComposerAfterFollowUpEdit,
 } from "./composer-follow-up-edit-draft";
+import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
   composerRequiresOrchestration,
   composerShowsRouteConfig,
@@ -282,7 +276,6 @@ import {
   parseSlashQuery,
 } from "./composer-skills";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
-import { SidebarSettingsUpdateControl } from "./SidebarSettingsUpdateControl";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
@@ -299,7 +292,6 @@ import {
 } from "./local-stream-projection";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
-import type { PendingMainAgentConfigCreateSeed } from "./AgentCompositionResourcesSection";
 import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
 import {
   diagnoseOrchestrationSnapshotReadiness,
@@ -330,8 +322,10 @@ import type { RequestFailureRetryTarget } from "./request-failure-retry";
 import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
 import { SidebarSearchDialog } from "./SidebarSearchDialog";
+import { SidebarSettingsUpdateControl } from "./SidebarSettingsUpdateControl";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
@@ -376,6 +370,11 @@ import {
 } from "./terminal-session-cache";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import {
+  persistThinkingDisplayPreferences,
+  readStoredThinkingDisplayPreferences,
+  type ThinkingDisplayPreferences,
+} from "./thinking-display-preferences";
+import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
@@ -397,11 +396,6 @@ import {
   readStoredTokenSpeedPreferences,
   type TokenSpeedPreferences,
 } from "./token-speed-preferences";
-import {
-  persistThinkingDisplayPreferences,
-  readStoredThinkingDisplayPreferences,
-  type ThinkingDisplayPreferences,
-} from "./thinking-display-preferences";
 import {
   persistTypographyPreferences,
   readStoredTypographyPreferences,
@@ -885,8 +879,7 @@ function ActivityUserMessageNavigator({
     () => computeActivityUserMessageNavDensity(items.length, listMaxHeightPx),
     [items.length, listMaxHeightPx],
   );
-  const resolvedActiveId =
-    activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
+  const resolvedActiveId = activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
 
   useLayoutEffect(() => {
     if (hidden || items.length === 0 || !resolvedActiveId || !listRef.current) {
@@ -894,14 +887,7 @@ function ActivityUserMessageNavigator({
     }
     const activeButton = listRef.current.querySelector<HTMLElement>('button[aria-current="location"]');
     activeButton?.scrollIntoView({ block: "nearest" });
-  }, [
-    hidden,
-    items.length,
-    resolvedActiveId,
-    density.buttonHeightPx,
-    density.itemGapPx,
-    density.scrollable,
-  ]);
+  }, [hidden, items.length, resolvedActiveId, density.buttonHeightPx, density.itemGapPx, density.scrollable]);
 
   useLayoutEffect(() => {
     if (!hoveredId || !listRef.current || !navRef.current) {
@@ -954,10 +940,7 @@ function ActivityUserMessageNavigator({
     >
       <ol
         ref={listRef}
-        className={[
-          "activity-user-message-nav-list",
-          density.scrollable ? "is-scrollable" : "",
-        ]
+        className={["activity-user-message-nav-list", density.scrollable ? "is-scrollable" : ""]
           .filter(Boolean)
           .join(" ")}
       >
@@ -1043,8 +1026,9 @@ function App() {
   const [tokenSpeedPreferences, setTokenSpeedPreferences] = useState<TokenSpeedPreferences>(() =>
     readStoredTokenSpeedPreferences(),
   );
-  const [thinkingDisplayPreferences, setThinkingDisplayPreferences] =
-    useState<ThinkingDisplayPreferences>(() => readStoredThinkingDisplayPreferences());
+  const [thinkingDisplayPreferences, setThinkingDisplayPreferences] = useState<ThinkingDisplayPreferences>(
+    () => readStoredThinkingDisplayPreferences(),
+  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(compactSidebarMediaQuery);
@@ -1313,8 +1297,7 @@ function App() {
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [composerRouteAnchor, setComposerRouteAnchor] = useState<"plus" | "model-empty">("plus");
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
-  const [pendingCreateMainConfig, setPendingCreateMainConfig] =
-    useState<PendingMainAgentConfigCreateSeed>();
+  const [pendingCreateMainConfig, setPendingCreateMainConfig] = useState<PendingMainAgentConfigCreateSeed>();
   const composerPlusButtonRef = useRef<HTMLButtonElement>(null);
   const composerModelEmptyTriggerRef = useRef<HTMLButtonElement>(null);
   const composerImageInputRef = useRef<HTMLInputElement>(null);
@@ -3697,10 +3680,10 @@ function App() {
           sessionMode: current?.sessionMode ?? workflowSettings.sessionMode,
           bashReviewMode: current?.bashReviewMode ?? "always",
           ...(current?.subagentEnabled ? { subagentEnabled: current.subagentEnabled } : {}),
-          ...(current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel
+          ...((current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel)
             ? { auxiliaryModel: current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel }
             : {}),
-          ...(current?.visionModel ?? workflowSettings.defaultVisionModel
+          ...((current?.visionModel ?? workflowSettings.defaultVisionModel)
             ? { visionModel: current?.visionModel ?? workflowSettings.defaultVisionModel }
             : {}),
           ...(current?.mcpServersEnabled ? { mcpServersEnabled: current.mcpServersEnabled } : {}),
@@ -3826,12 +3809,13 @@ function App() {
       return buildAcpThreadRuntimeConfig({
         ...(resolvedCursorModelId ? { cursorModelId: resolvedCursorModelId } : {}),
         sessionMode: base?.sessionMode ?? workflowSettings.sessionMode,
-        bashReviewMode: base?.bashReviewMode ?? normalizeBashReviewMode(workflowSettings.defaultBashReviewMode),
+        bashReviewMode:
+          base?.bashReviewMode ?? normalizeBashReviewMode(workflowSettings.defaultBashReviewMode),
         ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
-        ...(base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel
+        ...((base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel)
           ? { auxiliaryModel: base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel }
           : {}),
-        ...(base?.visionModel ?? workflowSettings.defaultVisionModel
+        ...((base?.visionModel ?? workflowSettings.defaultVisionModel)
           ? { visionModel: base?.visionModel ?? workflowSettings.defaultVisionModel }
           : {}),
         ...(base?.mcpServersEnabled ? { mcpServersEnabled: base.mcpServersEnabled } : {}),
@@ -7281,8 +7265,12 @@ function App() {
       (composerCoreKind === "acp"
         ? buildAcpThreadRuntimeConfig({
             sessionMode: workflowSettings.sessionMode,
-            ...(workflowSettings.acpCursorModelId ? { cursorModelId: workflowSettings.acpCursorModelId } : {}),
-            ...(workflowSettings.defaultVisionModel ? { visionModel: workflowSettings.defaultVisionModel } : {}),
+            ...(workflowSettings.acpCursorModelId
+              ? { cursorModelId: workflowSettings.acpCursorModelId }
+              : {}),
+            ...(workflowSettings.defaultVisionModel
+              ? { visionModel: workflowSettings.defaultVisionModel }
+              : {}),
           })
         : null);
     if (!base) {
@@ -7309,7 +7297,9 @@ function App() {
       (composerCoreKind === "acp"
         ? buildAcpThreadRuntimeConfig({
             sessionMode: workflowSettings.sessionMode,
-            ...(workflowSettings.acpCursorModelId ? { cursorModelId: workflowSettings.acpCursorModelId } : {}),
+            ...(workflowSettings.acpCursorModelId
+              ? { cursorModelId: workflowSettings.acpCursorModelId }
+              : {}),
             ...(workflowSettings.defaultAuxiliaryModel
               ? { auxiliaryModel: workflowSettings.defaultAuxiliaryModel }
               : {}),
@@ -8721,7 +8711,9 @@ function App() {
           sshBookmarks={sshBookmarks}
           onSshBookmarksChange={setSshBookmarks}
           onSelectSshBookmarks={() => {
-            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_SSH_BOOKMARKS_TAB_ID));
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_SSH_BOOKMARKS_TAB_ID),
+            );
             setTaskPanelActiveTab(TASK_PANEL_SSH_BOOKMARKS_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
@@ -10123,10 +10115,7 @@ function App() {
               {settingsSection === "storage" && <StorageSettingsPanel />}
 
               {settingsSection === "browser" && (
-                <BrowserSettingsPanel
-                  settings={browserSettings}
-                  onSave={saveBrowserSettingsSnapshot}
-                />
+                <BrowserSettingsPanel settings={browserSettings} onSave={saveBrowserSettingsSnapshot} />
               )}
 
               {settingsSection === "imageGeneration" && (
@@ -10401,8 +10390,7 @@ function FollowUpQueuePanel({
       <div className="follow-up-queue-rows">
         {followUps.map((followUp) => {
           const isEditing = editingFollowUpId === followUp.id;
-          const actionBusy =
-            cancelBusyId === followUp.id || escalateBusyId === followUp.id || isEditing;
+          const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id || isEditing;
           const isEscalating = escalateBusyId === followUp.id;
           const canEscalate = allowEscalate && followUp.priority !== "escalated";
 
@@ -10464,48 +10452,48 @@ function FollowUpQueuePanel({
                   <span className="follow-up-card-editing-badge">{t("thread.followUpEditing")}</span>
                 ) : (
                   <>
-                {allowEscalate ? (
-                  canEscalate ? (
-                    <span
-                      className="follow-up-card-type follow-up-card-type-action"
-                      role="button"
-                      tabIndex={actionBusy ? -1 : 0}
-                      aria-disabled={actionBusy}
-                      aria-label={t("thread.followUpNowAria")}
-                      title={t("thread.followUpNow")}
-                      onClick={() => {
-                        if (!actionBusy) {
-                          onEscalate(followUp);
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
-                          return;
-                        }
-                        event.preventDefault();
-                        onEscalate(followUp);
-                      }}
+                    {allowEscalate ? (
+                      canEscalate ? (
+                        <span
+                          className="follow-up-card-type follow-up-card-type-action"
+                          role="button"
+                          tabIndex={actionBusy ? -1 : 0}
+                          aria-disabled={actionBusy}
+                          aria-label={t("thread.followUpNowAria")}
+                          title={t("thread.followUpNow")}
+                          onClick={() => {
+                            if (!actionBusy) {
+                              onEscalate(followUp);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
+                              return;
+                            }
+                            event.preventDefault();
+                            onEscalate(followUp);
+                          }}
+                        >
+                          <CornerDownRight size={11} aria-hidden />
+                          {isEscalating ? t("thread.processing") : t("thread.guide")}
+                        </span>
+                      ) : (
+                        <span className="follow-up-card-type">
+                          <CornerDownRight size={11} aria-hidden />
+                          {t("thread.guide")}
+                        </span>
+                      )
+                    ) : null}
+                    <button
+                      type="button"
+                      className="follow-up-card-action"
+                      onClick={() => onCancel(followUp)}
+                      disabled={actionBusy}
+                      title={t("common.delete")}
+                      aria-label={t("thread.deleteFollowUpAria")}
                     >
-                      <CornerDownRight size={11} aria-hidden />
-                      {isEscalating ? t("thread.processing") : t("thread.guide")}
-                    </span>
-                  ) : (
-                    <span className="follow-up-card-type">
-                      <CornerDownRight size={11} aria-hidden />
-                      {t("thread.guide")}
-                    </span>
-                  )
-                ) : null}
-                <button
-                  type="button"
-                  className="follow-up-card-action"
-                  onClick={() => onCancel(followUp)}
-                  disabled={actionBusy}
-                  title={t("common.delete")}
-                  aria-label={t("thread.deleteFollowUpAria")}
-                >
-                  {cancelBusyId === followUp.id ? <Activity size={12} /> : <Trash2 size={12} />}
-                </button>
+                      {cancelBusyId === followUp.id ? <Activity size={12} /> : <Trash2 size={12} />}
+                    </button>
                   </>
                 )}
               </div>

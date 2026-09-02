@@ -1,13 +1,15 @@
-import { Check, ChevronDown, CloudDownload, Diff, GitBranch, GitCommitHorizontal, Loader2, Play, Plus } from "lucide-react";
-import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+  Check,
+  ChevronDown,
+  CloudDownload,
+  Diff,
+  GitBranch,
+  GitCommitHorizontal,
+  Loader2,
+  Play,
+  Plus,
+} from "lucide-react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type {
@@ -19,16 +21,14 @@ import type {
   SubagentEnabledSettings,
   WorkspaceDiffResult,
 } from "../shared/ipc";
+import { formatIpcInvokeError } from "./AppMessage";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { GitCommitDialog } from "./GitCommitDialog";
 import { GitPullConflictDialog } from "./GitPullConflictDialog";
-import { WorkspaceDiffDrawer, useEcoWorkspaceFileDiffLoader } from "./WorkspaceDiffDrawer";
-import {
-  getWorkspaceGitCommitEntryLabel,
-  useWorkspaceGitAction,
-} from "./workspace-git-action-store";
-import { formatIpcInvokeError } from "./AppMessage";
+import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import { useEcoWorkspaceFileDiffLoader, WorkspaceDiffDrawer } from "./WorkspaceDiffDrawer";
+import { getWorkspaceGitCommitEntryLabel, useWorkspaceGitAction } from "./workspace-git-action-store";
 
 export interface WorkspaceGitSectionProps {
   workspacePath?: string;
@@ -132,10 +132,7 @@ export function WorkspaceGitSection({
   }, [workspacePath, commitDialogWorkspacePath]);
 
   const showCommitEntry = Boolean(
-    workspacePath &&
-      onSaveCommitModelPreference &&
-      onCommitSuccess &&
-      gitStatus?.isGitRepository,
+    workspacePath && onSaveCommitModelPreference && onCommitSuccess && gitStatus?.isGitRepository,
   );
   const commitDialogVisible = Boolean(
     commitDialogOpen &&
@@ -158,7 +155,7 @@ export function WorkspaceGitSection({
   const branchLabel = isGitStatusPending
     ? t("workspaceGit.fetching")
     : gitStatus?.isGitRepository
-      ? gitStatus.branch ?? "detached"
+      ? (gitStatus.branch ?? "detached")
       : t("workspaceGit.notRepository");
   const showBranchPicker = Boolean(
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
@@ -250,7 +247,10 @@ export function WorkspaceGitSection({
     }
     function onPointerDown(event: MouseEvent) {
       const target = event.target as Node;
-      if (branchWrapRef.current?.contains(target) || (event.target as HTMLElement).closest(".thread-info-workspace-git-branch-menu")) {
+      if (
+        branchWrapRef.current?.contains(target) ||
+        (event.target as HTMLElement).closest(".thread-info-workspace-git-branch-menu")
+      ) {
         return;
       }
       closeBranchMenu();
@@ -335,9 +335,7 @@ export function WorkspaceGitSection({
       });
       if (result.conflicted) {
         setPullConflict(
-          result.conflictFiles.length > 0
-            ? result.conflictFiles
-            : [t("workspaceGit.unknownConflictFiles")],
+          result.conflictFiles.length > 0 ? result.conflictFiles : [t("workspaceGit.unknownConflictFiles")],
         );
         await onPullSuccess?.();
         await syncWorkspaceChangesState();
@@ -405,9 +403,7 @@ export function WorkspaceGitSection({
     if (!workspacePath || !window.eco || discardBusy || !changesDiff?.fileCount) {
       return;
     }
-    const confirmed = window.confirm(
-      t("workspaceGit.confirmDiscardAll", { count: changesDiff.fileCount }),
-    );
+    const confirmed = window.confirm(t("workspaceGit.confirmDiscardAll", { count: changesDiff.fileCount }));
     if (!confirmed) {
       return;
     }
@@ -678,7 +674,9 @@ export function WorkspaceGitSection({
           open={commitDialogOpen && commitDialogWorkspacePath === workspacePath}
           workspacePath={commitDialogWorkspacePath}
           {...(mainAgentConfigId ? { mainAgentConfigId } : {})}
-          {...(defaultCommitCandidateModelId ? { defaultCandidateModelId: defaultCommitCandidateModelId } : {})}
+          {...(defaultCommitCandidateModelId
+            ? { defaultCandidateModelId: defaultCommitCandidateModelId }
+            : {})}
           {...(gitStatus && commitDialogWorkspacePath === workspacePath ? { gitStatus } : {})}
           {...(gitBusy !== undefined && { busy: gitBusy })}
           {...(commitDisabled !== undefined && { disabled: commitDisabled })}

@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import http from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {

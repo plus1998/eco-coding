@@ -99,10 +99,7 @@ export function flushThreadMetrics(input: FlushThreadMetricsInput): void {
     threadIds.add(thread.id);
   }
   for (const threadId of threadIds) {
-    if (
-      input.accumulator.serializeState(threadId) ||
-      input.contextSnapshots.getDisplaySnapshot(threadId)
-    ) {
+    if (input.accumulator.serializeState(threadId) || input.contextSnapshots.getDisplaySnapshot(threadId)) {
       persistThreadMetrics(input, threadId);
     }
   }
@@ -116,10 +113,7 @@ export function flushThreadMetrics(input: FlushThreadMetricsInput): void {
  * (e.g. explore occupied = input + cache_read totals). Only trusted
  * `contextOccupied` is restored; missing/zero skips.
  */
-function hydrateSubagentContextFromMetrics(
-  input: RestoreThreadMetricsInput,
-  threadId: string,
-): void {
+function hydrateSubagentContextFromMetrics(input: RestoreThreadMetricsInput, threadId: string): void {
   for (const entry of input.subagentMetrics.listEntries(threadId)) {
     if (!(entry.contextOccupied > 0)) {
       continue;
@@ -128,8 +122,7 @@ function hydrateSubagentContextFromMetrics(
       .updateOccupied(threadId, entry.role, entry.contextOccupied, {
         agentId: entry.agentId,
         ...(entry.modelId && { modelId: entry.modelId }),
-        ...(entry.contextLimit !== undefined &&
-          entry.contextLimit > 0 && { limit: entry.contextLimit }),
+        ...(entry.contextLimit !== undefined && entry.contextLimit > 0 && { limit: entry.contextLimit }),
       })
       .catch(() => undefined);
   }

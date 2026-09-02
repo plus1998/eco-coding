@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { RuntimeAgentRole } from "../shared/ipc";
 import type { UpstreamApiCompat } from "../shared/api-compat";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import { logEcoDiag, shortThreadId } from "./eco-diag-log";
 
 export interface ProxyRequestShapeRoute {
@@ -258,7 +258,7 @@ function countNestedKey(value: unknown, key: string): number {
   if (!isRecord(value)) {
     return 0;
   }
-  let total = Object.prototype.hasOwnProperty.call(value, key) ? 1 : 0;
+  let total = Object.hasOwn(value, key) ? 1 : 0;
   for (const entry of Object.values(value)) {
     total += countNestedKey(entry, key);
   }

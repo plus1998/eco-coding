@@ -4,25 +4,20 @@ import {
   buildBashApprovalRememberPrefixLabel,
   commandMatchesAnyRememberedBashPrefix,
   commandMatchesRememberedBashPrefix,
-  formatBashApprovalDenyMessage,
   deriveBashApprovalRememberPrefix,
+  formatBashApprovalDenyMessage,
 } from "../src/shared/bash-approval-ui";
 
 test("commandMatchesRememberedBashPrefix matches exact and continuing commands", () => {
   expect(commandMatchesRememberedBashPrefix("bun -e 'console.log(1)'", "bun -e 'console.log(1)'")).toBe(true);
-  expect(
-    commandMatchesRememberedBashPrefix(
-      "bun -e 'console.log(2)'",
-      "bun -e 'console.log(1)'",
-    ),
-  ).toBe(false);
+  expect(commandMatchesRememberedBashPrefix("bun -e 'console.log(2)'", "bun -e 'console.log(1)'")).toBe(
+    false,
+  );
   expect(commandMatchesRememberedBashPrefix("bun test apps/desktop", "bun test")).toBe(true);
 });
 
 test("commandMatchesAnyRememberedBashPrefix checks all prefixes", () => {
-  expect(
-    commandMatchesAnyRememberedBashPrefix("bun test ipc", ["npm test", "bun test"]),
-  ).toBe(true);
+  expect(commandMatchesAnyRememberedBashPrefix("bun test ipc", ["npm test", "bun test"])).toBe(true);
   expect(commandMatchesAnyRememberedBashPrefix("pnpm test", ["bun test"])).toBe(false);
 });
 
@@ -36,12 +31,7 @@ test("buildBashApprovalRememberPrefixLabel truncates long commands", () => {
 });
 
 test("buildBashApprovalChoices includes approve deny and custom", () => {
-  expect(buildBashApprovalChoices()).toEqual([
-    "approve",
-    "approve_remember_prefix",
-    "deny",
-    "deny_custom",
-  ]);
+  expect(buildBashApprovalChoices()).toEqual(["approve", "approve_remember_prefix", "deny", "deny_custom"]);
   expect(buildBashApprovalChoices({ includeRememberPrefix: false })).toEqual([
     "approve",
     "deny",

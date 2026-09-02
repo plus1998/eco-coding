@@ -1,21 +1,13 @@
 /** Serialize / copy helpers for feed markdown tables (desktop). */
 
-import {
-  copyHtmlToClipboard,
-  copyPngBlobToClipboard,
-  copyTextToClipboard,
-} from "./clipboard";
+import { copyHtmlToClipboard, copyPngBlobToClipboard, copyTextToClipboard } from "./clipboard";
 
 function escapeMarkdownCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 /** Read visible cell text from a rendered markdown table. */
@@ -42,7 +34,9 @@ export function tableMatrixToMarkdown(rows: string[][]): string {
   };
 
   const format = (row: string[]) =>
-    `| ${pad(row).map((cell) => escapeMarkdownCell(cell)).join(" | ")} |`;
+    `| ${pad(row)
+      .map((cell) => escapeMarkdownCell(cell))
+      .join(" | ")} |`;
 
   const header = pad(rows[0] ?? []);
   const separator = `| ${header.map(() => "---").join(" | ")} |`;
@@ -132,11 +126,7 @@ function padMatrix(rows: string[][]): string[][] {
   });
 }
 
-function wrapLines(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-): string[] {
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   if (!text) return [""];
   const lines: string[] = [];
   let current = "";
@@ -186,18 +176,13 @@ export function paintTableMatrixToCanvas(
     ctx.font = r === 0 ? headFont : bodyFont;
     for (let c = 0; c < colCount; c += 1) {
       const textWidth = ctx.measureText(matrix[r]![c] ?? "").width;
-      colWidths[c] = Math.min(
-        MAX_COL_WIDTH,
-        Math.max(colWidths[c]!, Math.ceil(textWidth) + CELL_PAD_X * 2),
-      );
+      colWidths[c] = Math.min(MAX_COL_WIDTH, Math.max(colWidths[c]!, Math.ceil(textWidth) + CELL_PAD_X * 2));
     }
   }
 
   const cellLines: string[][][] = matrix.map((row, r) => {
     ctx.font = r === 0 ? headFont : bodyFont;
-    return row.map((cell, c) =>
-      wrapLines(ctx, cell, Math.max(8, colWidths[c]! - CELL_PAD_X * 2)),
-    );
+    return row.map((cell, c) => wrapLines(ctx, cell, Math.max(8, colWidths[c]! - CELL_PAD_X * 2)));
   });
 
   const rowHeights = cellLines.map((row) => {
@@ -209,10 +194,7 @@ export function paintTableMatrixToCanvas(
   const tableHeight = rowHeights.reduce((sum, h) => sum + h, 0);
   const cssWidth = tableWidth + OUTER_PAD * 2;
   const cssHeight = tableHeight + OUTER_PAD * 2;
-  const pixelRatio = Math.max(
-    1,
-    Math.min(2, options?.pixelRatio ?? (window.devicePixelRatio || 1)),
-  );
+  const pixelRatio = Math.max(1, Math.min(2, options?.pixelRatio ?? (window.devicePixelRatio || 1)));
 
   canvas.width = Math.ceil(cssWidth * pixelRatio);
   canvas.height = Math.ceil(cssHeight * pixelRatio);

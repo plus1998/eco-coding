@@ -15,7 +15,10 @@ function ledgerRowMatchesRequest(
     return false;
   }
   const providerRequestId = row.providerRequestId?.trim();
-  if (providerRequestId && (providerRequestId === requestId || providerRequestId === span.providerRequestId)) {
+  if (
+    providerRequestId &&
+    (providerRequestId === requestId || providerRequestId === span.providerRequestId)
+  ) {
     return true;
   }
   const requestKey = row.requestKey?.trim();

@@ -3,16 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  ECO_AGENT_BROWSER_PROMPT_APPEND,
-  ECO_AGENT_BROWSER_SKILL_NAME,
-} from "../src/shared/browser";
-import {
   ensureClaudeUserEcoAgentBrowserSkill,
   isEcoManagedClaudeSkillDir,
   removeClaudeUserEcoAgentBrowserSkill,
   resolveBundledEcoAgentBrowserSkillDir,
   resolveEcoAgentBrowserSkillFileForCodex,
 } from "../src/main/eco-agent-browser-skill";
+import { ECO_AGENT_BROWSER_PROMPT_APPEND, ECO_AGENT_BROWSER_SKILL_NAME } from "../src/shared/browser";
 
 test("bundled eco-agent-browser skill resolves in monorepo / desktop cwd", () => {
   const dir = resolveBundledEcoAgentBrowserSkillDir({

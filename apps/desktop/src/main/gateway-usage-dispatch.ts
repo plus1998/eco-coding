@@ -25,11 +25,7 @@ export function classifyGatewayUsageEvent(
   }
 
   // Messages / Chat Completions / Responses with explicit Bridge binding → product billing.
-  if (
-    event.source === "messages" ||
-    event.source === "chat_completions" ||
-    Boolean(event.bridgeBindingId?.trim())
-  ) {
+  if (event.source === "messages" || event.source === "chat_completions" || event.bridgeBindingId?.trim()) {
     return { kind: "claude_messages" };
   }
 

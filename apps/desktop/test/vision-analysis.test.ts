@@ -1,9 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
-import {
-  runVisionAnalysis,
-  type VisionAnalysisHost,
-} from "../src/main/vision-analysis";
+import { runVisionAnalysis, type VisionAnalysisHost } from "../src/main/vision-analysis";
 import type { PromptImageAttachment } from "../src/shared/ipc";
 
 const originalFetch = globalThis.fetch;
@@ -56,9 +53,7 @@ function createHost(options?: {
     fetch: [],
   };
   const host: VisionAnalysisHost = {
-    resolveRoute:
-      options?.resolveRoute ??
-      ((_threadId, _routesOverride) => options?.route ?? fakeRoute()),
+    resolveRoute: options?.resolveRoute ?? ((_threadId, _routesOverride) => options?.route ?? fakeRoute()),
     startProxy:
       options?.startProxy ??
       (async (route, attachments, stamp) => {

@@ -4,6 +4,12 @@
  */
 import type { ChatCompletionsRequest, ChatCompletionsResponse } from "@eco/openai-anthropic-bridge";
 import { buildUpstreamUrl } from "../provider-router.js";
+import {
+  type RequestLifecycleContext,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCancelled,
+  tryEmitLogicalCompleted,
+} from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
 import {
   appendStreamUtf8Chunk,
@@ -12,17 +18,7 @@ import {
   parseChatCompletionsChunkBlock,
   splitSseBlocks,
 } from "../sse.js";
-import type {
-  GatewayUsageEvent,
-  GatewayUsageObserver,
-  ResolvedProviderRoute,
-} from "../types.js";
-import {
-  reportLogicalUpstreamFailure,
-  tryEmitLogicalCancelled,
-  tryEmitLogicalCompleted,
-  type RequestLifecycleContext,
-} from "../request-lifecycle.js";
+import type { GatewayUsageEvent, GatewayUsageObserver, ResolvedProviderRoute } from "../types.js";
 import { normalizeChatCompletionsUsage, type ParsedUsage } from "../usage-normalize.js";
 import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
@@ -91,11 +87,7 @@ export async function forwardOpenAIChatPassthrough(
   }
 
   const upstreamUrl = buildUpstreamUrl(route.provider, "openai-chat");
-  const upstreamHeaders = buildOpenAIUpstreamHeaders(
-    route.provider.apiKey,
-    clientHeaders,
-    upstreamUserAgent,
-  );
+  const upstreamHeaders = buildOpenAIUpstreamHeaders(route.provider.apiKey, clientHeaders, upstreamUserAgent);
   const payload = JSON.stringify(upstreamBody);
   onLog(
     `upstream POST ${upstreamUrl} face=chat_completions provider=${route.provider.id} model=${route.upstreamModelId} bytes=${payload.length}`,
@@ -209,10 +201,7 @@ function observeChatJsonUsage(input: {
   } catch {
     return;
   }
-  const usage = normalizeChatCompletionsUsage(
-    parsed.usage,
-    parsed.model || input.route.upstreamModelId,
-  );
+  const usage = normalizeChatCompletionsUsage(parsed.usage, parsed.model || input.route.upstreamModelId);
   if (!usage) {
     return;
   }
@@ -291,10 +280,7 @@ function observeChatSseBody(input: {
         continue;
       }
       if (!usageEmitted && chunk.usage && input.onUsage) {
-        const usage = normalizeChatCompletionsUsage(
-          chunk.usage,
-          chunk.model || input.route.upstreamModelId,
-        );
+        const usage = normalizeChatCompletionsUsage(chunk.usage, chunk.model || input.route.upstreamModelId);
         if (usage) {
           usageEmitted = true;
           emitChatCompletionsUsage({
@@ -334,11 +320,7 @@ function observeChatSseBody(input: {
               }
               if (!sawDone && !streamFailed) {
                 streamFailed = true;
-                settleTerminal(
-                  controller,
-                  "fail",
-                  "Upstream stream ended before the [DONE] terminator.",
-                );
+                settleTerminal(controller, "fail", "Upstream stream ended before the [DONE] terminator.");
                 return;
               }
               settleTerminal(controller, streamFailed ? "fail" : "complete");
@@ -392,12 +374,11 @@ function emitChatCompletionsUsage(input: {
   onLog: GatewayLogFn;
 }): void {
   chatCompletionsUsageSeq += 1;
-  const sourceEventId =
-    input.responseId
-      ? `chat_completions:${input.route.provider.id}:response:${input.responseId}`
-      : input.providerRequestId
-        ? `chat_completions:${input.route.provider.id}:req:${input.providerRequestId}`
-        : `chat_completions:${input.route.provider.id}:seq:${chatCompletionsUsageSeq}`;
+  const sourceEventId = input.responseId
+    ? `chat_completions:${input.route.provider.id}:response:${input.responseId}`
+    : input.providerRequestId
+      ? `chat_completions:${input.route.provider.id}:req:${input.providerRequestId}`
+      : `chat_completions:${input.route.provider.id}:seq:${chatCompletionsUsageSeq}`;
   const event: GatewayUsageEvent = {
     source: "chat_completions",
     sourceEventId,

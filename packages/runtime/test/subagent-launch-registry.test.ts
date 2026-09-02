@@ -54,9 +54,7 @@ test("SubagentLaunchRegistry resolveFromStreamParentToolUseId pairs structured p
   });
   registry.noteSubagentAwaitingStream("agent_cpu", "explore");
 
-  expect(
-    registry.resolveFromStreamParentToolUseId("call_00_cpu"),
-  ).toMatchObject({
+  expect(registry.resolveFromStreamParentToolUseId("call_00_cpu")).toMatchObject({
     agentId: "agent_cpu",
     launch: {
       parentToolUseId: "call_00_cpu",
@@ -76,9 +74,7 @@ test("SubagentLaunchRegistry resolveFromStreamParentToolUseId supports stream-be
   });
 
   expect(registry.resolveFromStreamParentToolUseId("call_01_gpu")).toBeUndefined();
-  expect(
-    registry.noteSubagentAwaitingStream("agent_gpu", "explore"),
-  ).toMatchObject({
+  expect(registry.noteSubagentAwaitingStream("agent_gpu", "explore")).toMatchObject({
     agentId: "agent_gpu",
     launch: {
       parentToolUseId: "call_01_gpu",

@@ -12,10 +12,14 @@ const png = { mediaType: "image/png" as const, data: "abc" };
 
 test("agentSupportsImagePrompt is true only for image === true", () => {
   expect(agentSupportsImagePrompt({ agentCapabilities: { promptCapabilities: { image: true } } })).toBe(true);
-  expect(agentSupportsImagePrompt({ agentCapabilities: { promptCapabilities: { image: false } } })).toBe(false);
+  expect(agentSupportsImagePrompt({ agentCapabilities: { promptCapabilities: { image: false } } })).toBe(
+    false,
+  );
   expect(agentSupportsImagePrompt({ agentCapabilities: { promptCapabilities: {} } })).toBe(false);
   expect(agentSupportsImagePrompt({})).toBe(false);
-  expect(agentSupportsImagePrompt({ agentCapabilities: { promptCapabilities: { image: "true" } } })).toBe(false);
+  expect(agentSupportsImagePrompt({ agentCapabilities: { promptCapabilities: { image: "true" } } })).toBe(
+    false,
+  );
 });
 
 test("buildAcpPromptBlocks returns a single text block when there are no attachments", () => {
@@ -50,9 +54,9 @@ test("buildAcpPromptBlocks uses the default look-at-image sentence when text is 
 });
 
 test("buildAcpPromptBlocks throws when attachments exist but image is unsupported", () => {
-  expect(() =>
-    buildAcpPromptBlocks({ prompt: "look", attachments: [png], imageSupported: false }),
-  ).toThrow(ACP_IMAGE_CAPABILITY_MISSING);
+  expect(() => buildAcpPromptBlocks({ prompt: "look", attachments: [png], imageSupported: false })).toThrow(
+    ACP_IMAGE_CAPABILITY_MISSING,
+  );
 });
 
 test("buildAcpPromptBlocks throws for blank data or illegal mime", () => {

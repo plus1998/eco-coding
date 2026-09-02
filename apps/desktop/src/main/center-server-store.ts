@@ -253,7 +253,9 @@ export class CenterServerStore {
       return {};
     }
     try {
-      const parsed = JSON.parse(row.domain_sync_times_json) as Partial<Record<CenterServerSyncDomain, string>>;
+      const parsed = JSON.parse(row.domain_sync_times_json) as Partial<
+        Record<CenterServerSyncDomain, string>
+      >;
       return parsed && typeof parsed === "object" ? parsed : {};
     } catch {
       return {};
@@ -452,7 +454,9 @@ export function createElectronSafeStorageCenterServerSecretCodec(
         throw new Error("Refusing to read an unencrypted Center secret. Reconnect the Supabase account.");
       }
       try {
-        return safeStorage.decryptString(Buffer.from(value.slice(SAFE_STORAGE_SECRET_PREFIX.length), "base64"));
+        return safeStorage.decryptString(
+          Buffer.from(value.slice(SAFE_STORAGE_SECRET_PREFIX.length), "base64"),
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         process.stderr.write(

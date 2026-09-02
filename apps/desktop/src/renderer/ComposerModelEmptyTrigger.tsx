@@ -18,9 +18,7 @@ export function ComposerModelEmptyTrigger({
 }: ComposerModelEmptyTriggerProps) {
   const { t } = useTranslation();
   const label =
-    state === "no-provider"
-      ? t("composer.model.addProvider")
-      : t("composer.model.selectOrchestration");
+    state === "no-provider" ? t("composer.model.addProvider") : t("composer.model.selectOrchestration");
 
   return (
     <span className="composer-model-selector">

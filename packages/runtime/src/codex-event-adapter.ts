@@ -15,7 +15,6 @@
  */
 
 import { summarizeAgentObjective } from "./agent-mission.js";
-import { readImageViewPathFromToolArgs } from "./eco-image-view-tool.js";
 import {
   type CodexContextSnapshotResolution,
   parseCodexThreadTokenUsage,
@@ -24,6 +23,7 @@ import {
 import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spawn-role-queue.js";
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
+import { readImageViewPathFromToolArgs } from "./eco-image-view-tool.js";
 import { CODEX_GENERAL_SPAWN_ROLE } from "./subagent-availability.js";
 import {
   appendToolOutputPreviewCapture,
@@ -213,7 +213,7 @@ const POC_HANDLERS: Record<string, NotificationHandler> = {
   "item/reasoning/textDelta": handleReasoningTextDelta,
   "item/commandExecution/outputDelta": handleCommandExecutionOutputDelta,
   "item/completed": handleItemCompleted,
-  "deprecationNotice": handleDeprecationNotice,
+  deprecationNotice: handleDeprecationNotice,
 };
 
 export class CodexEventAdapter {
@@ -366,7 +366,10 @@ function handleTurnCompleted(ctx: AdapterContext, params: Record<string, unknown
   if (attribution?.isSubagentThread && attribution.agentId === codexThreadId) {
     const record = ctx.getThreadAttributionRecord?.(codexThreadId);
     const parentCodexThreadId = record?.parentThreadId?.trim();
-    const lifecycleRole = resolveSubagentDisplayRole(ctx, resolveChosenOrchestrationRole(ctx, record?.agentRole));
+    const lifecycleRole = resolveSubagentDisplayRole(
+      ctx,
+      resolveChosenOrchestrationRole(ctx, record?.agentRole),
+    );
     if (parentCodexThreadId && parentCodexThreadId !== codexThreadId) {
       const interrupted = status === "interrupted" || status === "failed";
       emitAgentLifecycle(ctx, {
@@ -442,10 +445,7 @@ function handleTurnPlanUpdated(ctx: AdapterContext, params: Record<string, unkno
   const attribution = ctx.resolveThreadAttribution?.(codexThreadId);
   const attributionRecord = ctx.getThreadAttributionRecord?.(codexThreadId);
   const parentCodexThreadId = attributionRecord?.parentThreadId?.trim();
-  if (
-    attribution?.isSubagentThread ||
-    (parentCodexThreadId && parentCodexThreadId !== codexThreadId)
-  ) {
+  if (attribution?.isSubagentThread || (parentCodexThreadId && parentCodexThreadId !== codexThreadId)) {
     return;
   }
 
@@ -511,11 +511,7 @@ function parseTurnPlanSteps(
   return { ok: true, value: steps };
 }
 
-function emitTurnPlanProtocolGap(
-  ctx: AdapterContext,
-  params: Record<string, unknown>,
-  reason: string,
-): void {
+function emitTurnPlanProtocolGap(ctx: AdapterContext, params: Record<string, unknown>, reason: string): void {
   const codexThreadId = readCodexThreadId(params);
   const turnId = readString(params, "turnId");
   if (!codexThreadId) {
@@ -595,7 +591,11 @@ function handleThreadStarted(ctx: AdapterContext, params: Record<string, unknown
   const preview = readString(thread, "preview")?.trim();
   // agentRole is the spawn agent_type (orchestration role). Do not fall back to nickname:
   // nickname/preview/task labels are not roles and must not open a subagent card.
-  const chosenOrchestrationRole = resolveChosenOrchestrationRole(ctx, explicitOrchestrationRole, existingOrchestrationRole);
+  const chosenOrchestrationRole = resolveChosenOrchestrationRole(
+    ctx,
+    explicitOrchestrationRole,
+    existingOrchestrationRole,
+  );
   const displayRole = resolveSubagentDisplayRole(ctx, chosenOrchestrationRole);
   // Parent link is required for Feed FK resolution.
   if (!codexThreadId || !parentThreadId || codexThreadId === parentThreadId) {
@@ -901,8 +901,7 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
 
   if (itemType === "reasoning") {
     const text = readReasoningItemText(item) || ctx.reasoningTextByItemId.get(itemId) || "";
-    const reasoningDisplay =
-      readReasoningDisplay(item) ?? ctx.reasoningDisplayByItemId.get(itemId);
+    const reasoningDisplay = readReasoningDisplay(item) ?? ctx.reasoningDisplayByItemId.get(itemId);
     ctx.reasoningTextByItemId.delete(itemId);
     ctx.reasoningDisplayByItemId.delete(itemId);
     if (!ctx.reasoningStartedAtByItemId.has(itemId)) {
@@ -1283,9 +1282,7 @@ function emitMcpToolEvent(
     ctx.emittedImageViewPaths.add(imageViewPath);
   }
   const urlHint = readMcpToolUrlHint(item, mcpInput);
-  const detailParts = imageViewPath
-    ? [imageViewPath]
-    : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+  const detailParts = imageViewPath ? [imageViewPath] : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
   const messageHint = imageViewPath ?? urlHint;
 
   emit(ctx, {
@@ -1740,7 +1737,12 @@ function handleSubAgentActivityLifecycle(
     kind === "started" && itemId ? ctx.dequeueSpawnPayloadMatching?.({ toolUseId: itemId }) : undefined;
   const queuedRole = queuedPayload?.agentRole;
   const pathRoleHint = agentRoleFromAgentPath(ctx, agentPath);
-  const chosenOrchestrationRole = resolveChosenOrchestrationRole(ctx, queuedRole, existingOrchestrationRole, pathRoleHint);
+  const chosenOrchestrationRole = resolveChosenOrchestrationRole(
+    ctx,
+    queuedRole,
+    existingOrchestrationRole,
+    pathRoleHint,
+  );
   const displayRole = resolveSubagentDisplayRole(ctx, chosenOrchestrationRole);
   const queuedTaskName = queuedPayload?.taskName ?? taskName;
   const persistedSpawnMessage = ctx.getThreadAttributionRecord?.(agentThreadId)?.spawnMessage;
@@ -2132,8 +2134,7 @@ function emit(ctx: AdapterContext, input: EmitInput): void {
   // Only take agentId from attribution when this Codex thread is a real subagent.
   // Root threads with a corrupted isSubagent label must not stamp agentId=self.
   const agentId =
-    input.agentId?.trim() ||
-    (attribution?.isSubagentThread ? attribution.agentId?.trim() : undefined);
+    input.agentId?.trim() || (attribution?.isSubagentThread ? attribution.agentId?.trim() : undefined);
   const persistedRole = ctx.getThreadAttributionRecord?.(input.codexThreadId)?.agentRole?.trim();
   const role = attribution?.isSubagentThread
     ? resolveSubagentDisplayRole(ctx, resolveChosenOrchestrationRole(ctx, input.role?.trim(), persistedRole))
@@ -2265,10 +2266,7 @@ function readCodexItemId(
   return resolvedItem ? readString(resolvedItem, "id") : undefined;
 }
 
-function resolveObservedDurationMs(
-  startedAt: string | undefined,
-  endedAt: string,
-): number | undefined {
+function resolveObservedDurationMs(startedAt: string | undefined, endedAt: string): number | undefined {
   if (!startedAt) {
     return undefined;
   }

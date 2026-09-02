@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { hydrateDemoFeedReplayTurnDetails } from "../src/demo/feed-replay-turn-hydrate";
 import {
-  RECORDING_CELL_SPECS,
+  listDiscoveredMatrixCells,
+  replayGatewayClientRoundCellFeed,
+  replayGatewayClientRoundFeedSelector,
+} from "../src/feed-replay/gateway-client-round-feed-replay";
+import {
   cellKey,
   discoverGatewayClientRoundCells,
   loadGatewayClientRoundCell,
+  RECORDING_CELL_SPECS,
 } from "../src/feed-replay/gateway-client-round-fixture";
-import { replayGatewayClientRoundCellFeed, replayGatewayClientRoundFeedSelector, listDiscoveredMatrixCells } from "../src/feed-replay/gateway-client-round-feed-replay";
-import { hydrateDemoFeedReplayTurnDetails } from "../src/demo/feed-replay-turn-hydrate";
 
 function hasAnyClientRoundCells(): boolean {
   return discoverGatewayClientRoundCells().size > 0;
@@ -25,8 +29,13 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
     const cells = listDiscoveredMatrixCells();
     for (const cell of cells) {
       const result = await replayGatewayClientRoundCellFeed(cell);
-      expect(result.persistedEvents.length, `${cellKey(cell.client, cell.profileId)} events`).toBeGreaterThan(2);
-      expect(result.projection.timeline.length, `${cellKey(cell.client, cell.profileId)} timeline`).toBeGreaterThan(0);
+      expect(result.persistedEvents.length, `${cellKey(cell.client, cell.profileId)} events`).toBeGreaterThan(
+        2,
+      );
+      expect(
+        result.projection.timeline.length,
+        `${cellKey(cell.client, cell.profileId)} timeline`,
+      ).toBeGreaterThan(0);
       expect(result.feedTimelineIds.length).toBeGreaterThan(0);
       expect(cell.checklistOk, `${cellKey(cell.client, cell.profileId)} recorded checklist`).toBe(true);
       expect(
@@ -45,7 +54,9 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
         (event) => event.eventType === "tool.started" || event.eventType === "tool.completed",
       );
       if (cell.client === "codex" && cell.profileId === "longcat_chat" && !hasToolProcess) {
-        expect.fail(`${cellKey(cell.client, cell.profileId)} replay missing tool process events (${cell.runId})`);
+        expect.fail(
+          `${cellKey(cell.client, cell.profileId)} replay missing tool process events (${cell.runId})`,
+        );
       }
       expect(hasToolProcess).toBe(true);
     }
@@ -71,14 +82,16 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
   test("codex responses closes subagent lifecycle and hydrates subagent timeline", async () => {
     const cell = loadGatewayClientRoundCell({ client: "codex", profileId: "packy_responses" });
     const result = await replayGatewayClientRoundCellFeed(cell);
-    const hydrated = hydrateDemoFeedReplayTurnDetails(result.projection, result.fullProjection, { codex: true });
+    const hydrated = hydrateDemoFeedReplayTurnDetails(result.projection, result.fullProjection, {
+      codex: true,
+    });
     const subagent = hydrated.agents.find((agent) => agent.kind === "subagent");
     expect(subagent?.status).toBe("stopped");
     expect(subagent?.timeline.length).toBeGreaterThan(0);
     expect(result.persistedEvents.some((event) => event.eventType === "agent.stopped")).toBe(true);
-    expect(hydrated.agents.some((agent) => agent.timeline.some((item) => item.text.includes("SMOKE_CHILD")))).toBe(
-      true,
-    );
+    expect(
+      hydrated.agents.some((agent) => agent.timeline.some((item) => item.text.includes("SMOKE_CHILD"))),
+    ).toBe(true);
     const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
     const vm = buildThreadRunProjectionViewModel(hydrated, {
       id: result.threadId,
@@ -107,9 +120,9 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
     expect(subagent?.status).toBe("stopped");
     expect(subagent?.timeline.length).toBeGreaterThan(0);
     expect(result.persistedEvents.some((event) => event.eventType === "agent.stopped")).toBe(true);
-    expect(hydrated.agents.some((agent) => agent.timeline.some((item) => item.text.includes("SMOKE_CHILD")))).toBe(
-      true,
-    );
+    expect(
+      hydrated.agents.some((agent) => agent.timeline.some((item) => item.text.includes("SMOKE_CHILD"))),
+    ).toBe(true);
     const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
     const vm = buildThreadRunProjectionViewModel(hydrated, {
       id: result.threadId,
@@ -144,7 +157,9 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
       return;
     }
     const result = await replayGatewayClientRoundCellFeed(cell);
-    const hydrated = hydrateDemoFeedReplayTurnDetails(result.projection, result.fullProjection, { codex: true });
+    const hydrated = hydrateDemoFeedReplayTurnDetails(result.projection, result.fullProjection, {
+      codex: true,
+    });
     const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
     const { buildThreadRunTurnFeedSections } = await import("../src/renderer/thread-run-turn-feed");
     const vm = buildThreadRunProjectionViewModel(hydrated, {
@@ -156,13 +171,9 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
       if (section.kind === "entry") {
         return { at: section.entry.at, sequence: section.entry.sequence };
       }
-      const entries = [
-        ...section.processEntries,
-        ...(section.finalEntry ? [section.finalEntry] : []),
-      ];
+      const entries = [...section.processEntries, ...(section.finalEntry ? [section.finalEntry] : [])];
       const first = entries.reduce(
-        (earliest, entry) =>
-          !earliest || entry.at.localeCompare(earliest.at) < 0 ? entry : earliest,
+        (earliest, entry) => (!earliest || entry.at.localeCompare(earliest.at) < 0 ? entry : earliest),
         undefined as (typeof entries)[number] | undefined,
       );
       return { at: first?.at ?? section.attempt.startedAt, sequence: first?.sequence ?? 0 };

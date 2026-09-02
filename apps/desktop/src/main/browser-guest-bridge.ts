@@ -6,10 +6,7 @@ import type { BrowserHost } from "./browser-host";
  * Wire Electron `<webview>` guest attach to BrowserHost.
  * Renderer owns the DOM webview; main process receives guest WebContents for CDP.
  */
-export function installBrowserGuestBridge(
-  mainWindow: BrowserWindow,
-  host: BrowserHost,
-): () => void {
+export function installBrowserGuestBridge(mainWindow: BrowserWindow, host: BrowserHost): () => void {
   const onWillAttach = (
     _event: Electron.Event,
     webPreferences: WebPreferences,

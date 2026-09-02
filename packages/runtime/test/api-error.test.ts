@@ -40,9 +40,7 @@ test("parseSdkApiErrorAttribute maps model_not_found", () => {
     '404 {"error":{"message":"model not found","code":"model_not_found"}}',
   );
   expect(parsed?.code).toBe("model_not_found");
-  expect(formatApiErrorUserMessage(parsed!)).toBe(
-    "模型不存在或无权访问，请检查 Provider 配置与模型 ID。",
-  );
+  expect(formatApiErrorUserMessage(parsed!)).toBe("模型不存在或无权访问，请检查 Provider 配置与模型 ID。");
 });
 
 test("formatApiErrorUserMessage maps HTTP 529 overload structurally", () => {

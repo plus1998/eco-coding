@@ -90,10 +90,7 @@ export function resolvePromptCacheRuntimeSignature(input: {
   availableMcpServerKeys: readonly string[];
 }): PromptCacheRuntimeSignature {
   const snapshot = resolveThreadOrchestrationSnapshot(input.settings, input.runtimeConfig);
-  const orchestrationKey = buildOrchestrationRuntimeKey(
-    snapshot,
-    input.runtimeConfig.orchestrationSelection,
-  );
+  const orchestrationKey = buildOrchestrationRuntimeKey(snapshot, input.runtimeConfig.orchestrationSelection);
   const mainAgentModelKey = buildMainAgentModelKey(
     resolveEffectiveMainAgentModel(snapshot, input.runtimeConfig),
   );
@@ -214,7 +211,9 @@ function formatPromptCacheDriftChangeParts(
 ): string[] {
   const parts: string[] = [];
   if (kinds.includes("orchestration")) {
-    parts.push(orchestrationLabel ? formatPromptCacheOrchestrationSwitchPhrase(orchestrationLabel) : "编排组合已变更");
+    parts.push(
+      orchestrationLabel ? formatPromptCacheOrchestrationSwitchPhrase(orchestrationLabel) : "编排组合已变更",
+    );
   }
   if (kinds.includes("main_model")) {
     parts.push("主代理模型或思考强度已变更");

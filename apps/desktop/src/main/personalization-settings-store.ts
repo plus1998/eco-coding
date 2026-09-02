@@ -64,9 +64,7 @@ export class PersonalizationSettingsStore {
   }
 }
 
-export function normalizePersonalizationSettingsSnapshot(
-  value: unknown,
-): PersonalizationSettingsSnapshot {
+export function normalizePersonalizationSettingsSnapshot(value: unknown): PersonalizationSettingsSnapshot {
   if (!value || typeof value !== "object") {
     return defaultPersonalizationSettings();
   }
@@ -91,9 +89,7 @@ function normalizeGlobalRules(value: unknown): string | undefined {
   return trimmed;
 }
 
-export function isPersonalizationSettingsSnapshot(
-  value: unknown,
-): value is PersonalizationSettingsSnapshot {
+export function isPersonalizationSettingsSnapshot(value: unknown): value is PersonalizationSettingsSnapshot {
   if (!value || typeof value !== "object") {
     return false;
   }

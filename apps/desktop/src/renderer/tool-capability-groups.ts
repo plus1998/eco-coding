@@ -1,5 +1,5 @@
-import type { ToolPolicy } from "../shared/ipc";
 import { materializeEcoToolPolicy } from "@eco/runtime/tool-permission-policy";
+import type { ToolPolicy } from "../shared/ipc";
 import { parseList, uniqueValues } from "./agent-template-form-utils";
 import { i18n } from "./i18n";
 
@@ -52,9 +52,7 @@ export interface CoreCapabilityDiagnostic {
   messages: string[];
 }
 
-export function diagnoseCoreCapabilities(
-  values: ToolCapabilityFieldValues,
-): CoreCapabilityDiagnostic[] {
+export function diagnoseCoreCapabilities(values: ToolCapabilityFieldValues): CoreCapabilityDiagnostic[] {
   const claudeMessages: string[] = [];
   const codexMessages: string[] = [];
   let codexSupport: CoreCapabilitySupport = "native";
@@ -214,16 +212,14 @@ export function toolPolicyToCapabilityFields(
   const readCodebase = readScope !== "none";
   const writeCodebase = !FILESYSTEM_WRITE_TOOL_NAMES.every((tool) => disallowed.has(tool));
   const bash = !disallowed.has("Bash");
-  const webSearchAllowed =
-    materialized.network?.webSearch !== false && !disallowed.has("WebSearch");
+  const webSearchAllowed = materialized.network?.webSearch !== false && !disallowed.has("WebSearch");
   const webFetchAllowed = materialized.network?.webFetch !== false && !disallowed.has("WebFetch");
   const network = webSearchAllowed || webFetchAllowed;
   const skill = !disallowed.has("Skill");
   const askUser = !disallowed.has("AskUserQuestion");
   const taskProgress = !TASK_PROGRESS_TOOL_NAMES.some((tool) => disallowed.has(tool));
   const allowDelegation =
-    options.allowDelegation ??
-    !DELEGATION_TOOL_NAMES.some((tool) => disallowed.has(tool));
+    options.allowDelegation ?? !DELEGATION_TOOL_NAMES.some((tool) => disallowed.has(tool));
 
   return {
     readCodebase,
@@ -305,7 +301,7 @@ export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues):
     interaction: { askUser: values.askUser },
     taskProgress: { enabled: values.taskProgress },
     delegation: { enabled: values.allowDelegation },
-    ...((parseList(values.advancedDisallowedTools).length > 0 || values.codexSandboxOverride)
+    ...(parseList(values.advancedDisallowedTools).length > 0 || values.codexSandboxOverride
       ? {
           coreOverrides: {
             ...(parseList(values.advancedDisallowedTools).length > 0
@@ -375,9 +371,7 @@ export function buildCapabilityPermissionChips(
       tone: values.readCodebase ? "allow" : "deny",
     },
     {
-      label: values.writeCodebase
-        ? i18n.t("agent.chip.write")
-        : i18n.t("agent.chip.writeDisabled"),
+      label: values.writeCodebase ? i18n.t("agent.chip.write") : i18n.t("agent.chip.writeDisabled"),
       tone: values.writeCodebase ? "allow" : "deny",
     },
     {
@@ -385,15 +379,11 @@ export function buildCapabilityPermissionChips(
       tone: values.bash ? "allow" : "deny",
     },
     {
-      label: values.network
-        ? i18n.t("agent.chip.network")
-        : i18n.t("agent.chip.networkDisabled"),
+      label: values.network ? i18n.t("agent.chip.network") : i18n.t("agent.chip.networkDisabled"),
       tone: values.network ? "allow" : "deny",
     },
     {
-      label: values.taskProgress
-        ? i18n.t("agent.chip.progress")
-        : i18n.t("agent.chip.progressDisabled"),
+      label: values.taskProgress ? i18n.t("agent.chip.progress") : i18n.t("agent.chip.progressDisabled"),
       tone: values.taskProgress ? "allow" : "deny",
     },
     {

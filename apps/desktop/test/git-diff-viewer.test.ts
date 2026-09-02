@@ -3,18 +3,18 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  GitDiffViewer,
   countDiffFileStats,
+  GitDiffViewer,
   parseDiff,
   resolveDiffLanguage,
 } from "../src/renderer/GitDiffViewer";
-import { buildDiffTree } from "../src/renderer/WorkspaceDiffFileTree";
 import {
   buildDiffDocFromFile,
   buildDiffDocFromPatch,
   collectDiffLineTexts,
   diffFilePath,
 } from "../src/renderer/prosemirror/diff-from-patch";
+import { buildDiffTree } from "../src/renderer/WorkspaceDiffFileTree";
 
 const typescriptPatch = [
   "diff --git a/src/example.ts b/src/example.ts",
@@ -101,10 +101,7 @@ test("buildDiffDocFromFile round-trips line attrs via schema nodes", () => {
 });
 
 test("file browser code editor keeps configurable code font size", () => {
-  const styles = readFileSync(
-    new URL("../src/renderer/workspace-file-browser.css", import.meta.url),
-    "utf8",
-  );
+  const styles = readFileSync(new URL("../src/renderer/workspace-file-browser.css", import.meta.url), "utf8");
 
   expect(styles).toContain(".workspace-file-browser__editor .cm-content");
   expect(styles).toContain("font-size: var(--code-font-size, 13px);");
@@ -112,17 +109,27 @@ test("file browser code editor keeps configurable code font size", () => {
 
 test("buildDiffTree includes only changed files and expands every directory", () => {
   const tree = buildDiffTree([
-    { path: "src/app/main.ts", additions: 2, deletions: 1, status: "modified", originalContent: "", currentContent: "" },
-    { path: "src/styles.css", additions: 1, deletions: 0, status: "modified", originalContent: "", currentContent: "" },
+    {
+      path: "src/app/main.ts",
+      additions: 2,
+      deletions: 1,
+      status: "modified",
+      originalContent: "",
+      currentContent: "",
+    },
+    {
+      path: "src/styles.css",
+      additions: 1,
+      deletions: 0,
+      status: "modified",
+      originalContent: "",
+      currentContent: "",
+    },
   ]);
 
   expect(tree.items["file:src/app/main.ts"]?.filePath).toBe("src/app/main.ts");
   expect(tree.items["file:README.md"]).toBeUndefined();
-  expect(tree.expandedItems).toEqual([
-    "__workspace-diff-root__",
-    "directory:src",
-    "directory:src/app",
-  ]);
+  expect(tree.expandedItems).toEqual(["__workspace-diff-root__", "directory:src", "directory:src/app"]);
 });
 
 test("buildDiffTree collapses single-child directories", () => {

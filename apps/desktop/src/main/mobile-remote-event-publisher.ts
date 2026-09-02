@@ -190,10 +190,7 @@ export class MobileRemoteEventPublisher {
     );
   }
 
-  private publishThrottledNonProjection(
-    key: string,
-    notification: EventCenterJsonRpcNotification,
-  ): void {
+  private publishThrottledNonProjection(key: string, notification: EventCenterJsonRpcNotification): void {
     const existing = this.pendingContextUsage.get(key);
     if (existing) {
       existing.notification = notification;

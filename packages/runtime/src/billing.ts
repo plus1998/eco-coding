@@ -114,13 +114,15 @@ export function computeRequestBilling(
   };
 }
 
-export function computeSavings(plannerTokenCostUsd: number, ecoCostUsd: number): {
+export function computeSavings(
+  plannerTokenCostUsd: number,
+  ecoCostUsd: number,
+): {
   savedUsd: number;
   savedPct: number;
 } {
   const savedUsd = plannerTokenCostUsd - ecoCostUsd;
-  const savedPct =
-    plannerTokenCostUsd > 0 ? (savedUsd / plannerTokenCostUsd) * 100 : 0;
+  const savedPct = plannerTokenCostUsd > 0 ? (savedUsd / plannerTokenCostUsd) * 100 : 0;
   return { savedUsd, savedPct };
 }
 

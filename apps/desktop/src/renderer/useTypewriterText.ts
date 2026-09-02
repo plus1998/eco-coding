@@ -12,9 +12,7 @@ export function useTypewriterText(
   options: TypewriterOptions = {},
 ): { visibleText: string; catchingUp: boolean } {
   const charsPerSecond = options.charsPerSecond ?? DEFAULT_TYPEWRITER_CHARS_PER_SECOND;
-  const [visibleLength, setVisibleLength] = useState(() =>
-    streaming ? 0 : targetText.length,
-  );
+  const [visibleLength, setVisibleLength] = useState(() => (streaming ? 0 : targetText.length));
   const visibleLengthRef = useRef(visibleLength);
   const targetRef = useRef(targetText);
   const rafRef = useRef<number | null>(null);

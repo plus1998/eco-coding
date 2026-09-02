@@ -25,9 +25,7 @@ test("resolveShikiLanguage aliases shell extensions", () => {
 });
 
 test("themedTokensToHtml escapes content and applies color", () => {
-  const html = themedTokensToHtml([
-    { content: "<x>", offset: 0, color: "#ff0000", fontStyle: 0 },
-  ]);
+  const html = themedTokensToHtml([{ content: "<x>", offset: 0, color: "#ff0000", fontStyle: 0 }]);
   expect(html).toContain("&lt;x&gt;");
   expect(html).toContain("color:#ff0000");
 });

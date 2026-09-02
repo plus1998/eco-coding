@@ -20,17 +20,14 @@ test("Codex bash approval completes thread with marker", async ({ ecoPage: page 
       : "No idle Codex thread is available for approval smoke testing.",
   ).toBeTruthy();
 
-  await page.evaluate(
-    async ({ threadId, prompt }) => window.eco.continueThread({ threadId, prompt }),
-    {
-      threadId: codexThread!.id,
-      prompt: [
-        `Run this shell command: sleep 2 && printf ${marker}.`,
-        "Do not modify files.",
-        `After it completes, reply only with ${marker}.`,
-      ].join(" "),
-    },
-  );
+  await page.evaluate(async ({ threadId, prompt }) => window.eco.continueThread({ threadId, prompt }), {
+    threadId: codexThread!.id,
+    prompt: [
+      `Run this shell command: sleep 2 && printf ${marker}.`,
+      "Do not modify files.",
+      `After it completes, reply only with ${marker}.`,
+    ].join(" "),
+  });
 
   const startedAt = Date.now();
   let approval: Awaited<ReturnType<typeof page.evaluate<unknown, string>>> | undefined;
@@ -59,9 +56,11 @@ test("Codex bash approval completes thread with marker", async ({ ecoPage: page 
   let completedThread: Awaited<ReturnType<typeof page.evaluate<unknown, string>>> | undefined;
   let projection: unknown;
   while (Date.now() - startedAt < timeoutMs) {
-    [completedThread, projection] = await page.evaluate(async (threadId) =>
-      Promise.all([window.eco.getThread(threadId), window.eco.getThreadRunProjection(threadId)]),
-    codexThread!.id);
+    [completedThread, projection] = await page.evaluate(
+      async (threadId) =>
+        Promise.all([window.eco.getThread(threadId), window.eco.getThreadRunProjection(threadId)]),
+      codexThread!.id,
+    );
     if (
       (completedThread as { status?: string } | undefined)?.status !== "running" &&
       (completedThread as { status?: string } | undefined)?.status !== "queued"

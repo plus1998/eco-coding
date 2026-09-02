@@ -83,9 +83,7 @@ export function AcpApiKeySettingsDialog({
                 }
               }}
             />
-            <span className="settings-field-hint">
-              {t("settings.defaultAgent.cursorApiKeyHint")}
-            </span>
+            <span className="settings-field-hint">{t("settings.defaultAgent.cursorApiKeyHint")}</span>
           </div>
         </div>
         <footer className="settings-modal-footer">

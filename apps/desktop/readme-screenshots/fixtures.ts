@@ -1,3 +1,4 @@
+import type { AgentResourceAgentFormState } from "../src/renderer/agent-resource-form";
 import { CODING_AGENT_TEMPLATE_IDS, resolveAgentTemplateCatalog } from "../src/shared/agent-orchestration";
 import type {
   ProviderConfigView,
@@ -6,7 +7,6 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../src/shared/ipc";
-import type { AgentResourceAgentFormState } from "../src/renderer/agent-resource-form";
 
 export const demoProvider: ProviderConfigView = {
   id: "provider_mycodex",

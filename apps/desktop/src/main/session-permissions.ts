@@ -2,11 +2,7 @@
 export function isLocalRendererUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return (
-      parsed.protocol === "file:" ||
-      parsed.hostname === "127.0.0.1" ||
-      parsed.hostname === "localhost"
-    );
+    return parsed.protocol === "file:" || parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
   } catch {
     return false;
   }

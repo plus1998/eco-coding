@@ -1,5 +1,5 @@
-import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing.js";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc.js";
+import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing.js";
 import type { ThreadSubagentSessionRecord } from "./subagent-session-types.js";
 
 export function buildSubagentSessionTimings(

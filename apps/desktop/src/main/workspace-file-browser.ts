@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { TextDecoder } from "node:util";
 import type {
@@ -53,11 +53,7 @@ function openReadFlags(): number {
 
 function openWriteFlags(): number {
   const noFollow = (fsConstants as typeof fsConstants & { O_NOFOLLOW?: number }).O_NOFOLLOW;
-  return (
-    fsConstants.O_WRONLY |
-    fsConstants.O_TRUNC |
-    (typeof noFollow === "number" ? noFollow : 0)
-  );
+  return fsConstants.O_WRONLY | fsConstants.O_TRUNC | (typeof noFollow === "number" ? noFollow : 0);
 }
 
 async function readHandleBytes(handle: fs.FileHandle, length: number): Promise<Buffer> {
@@ -80,7 +76,10 @@ async function resolveWorkspace(workspacePath: string): Promise<string> {
   return resolved;
 }
 
-async function resolveContainedTarget(workspacePath: string, targetPath: string): Promise<{
+async function resolveContainedTarget(
+  workspacePath: string,
+  targetPath: string,
+): Promise<{
   workspaceRealPath: string;
   requestedPath: string;
   realPath: string;
@@ -97,7 +96,10 @@ async function resolveContainedTarget(workspacePath: string, targetPath: string)
 export async function listWorkspaceEntries(
   request: WorkspaceFileBrowserRequest,
 ): Promise<WorkspaceFileEntry[]> {
-  const { requestedPath, realPath } = await resolveContainedTarget(request.workspacePath, request.directoryPath);
+  const { requestedPath, realPath } = await resolveContainedTarget(
+    request.workspacePath,
+    request.directoryPath,
+  );
   const stat = await fs.stat(realPath);
   if (!stat.isDirectory()) {
     throw new Error("Directory path must be a directory.");
@@ -128,8 +130,7 @@ export async function listWorkspaceEntries(
 }
 
 function hasMediaSignature(kind: "image" | "audio" | "video", buffer: Buffer): boolean {
-  const startsWith = (...bytes: number[]): boolean =>
-    bytes.every((byte, index) => buffer[index] === byte);
+  const startsWith = (...bytes: number[]): boolean => bytes.every((byte, index) => buffer[index] === byte);
   switch (kind) {
     case "image":
       return (
@@ -137,26 +138,25 @@ function hasMediaSignature(kind: "image" | "audio" | "video", buffer: Buffer): b
         startsWith(0xff, 0xd8, 0xff) ||
         buffer.subarray(0, 6).toString("ascii") === "GIF87a" ||
         buffer.subarray(0, 6).toString("ascii") === "GIF89a" ||
-        startsWith(0x52, 0x49, 0x46, 0x46) &&
-          buffer.subarray(8, 12).toString("ascii") === "WEBP"
+        (startsWith(0x52, 0x49, 0x46, 0x46) && buffer.subarray(8, 12).toString("ascii") === "WEBP")
       );
     case "audio":
       return (
         buffer.subarray(0, 3).toString("ascii") === "ID3" ||
         (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1]! & 0xe0) === 0xe0) ||
-        buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
-          buffer.subarray(8, 12).toString("ascii") === "WAVE" ||
+        (buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+          buffer.subarray(8, 12).toString("ascii") === "WAVE") ||
         buffer.subarray(0, 4).toString("ascii") === "OggS" ||
-        buffer.subarray(4, 8).toString("ascii") === "ftyp" &&
-          buffer.subarray(8, 12).toString("ascii").toLowerCase().startsWith("m4")
+        (buffer.subarray(4, 8).toString("ascii") === "ftyp" &&
+          buffer.subarray(8, 12).toString("ascii").toLowerCase().startsWith("m4"))
       );
     case "video":
       return (
-        buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
-          buffer.subarray(8, 12).toString("ascii") === "WEBM" ||
+        (buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+          buffer.subarray(8, 12).toString("ascii") === "WEBM") ||
         buffer.subarray(0, 4).toString("ascii") === "OggS" ||
         buffer.subarray(4, 8).toString("ascii") === "ftyp" ||
-        startsWith(0x1a, 0x45, 0xdf, 0xa3) && buffer.includes(Buffer.from("webm"))
+        (startsWith(0x1a, 0x45, 0xdf, 0xa3) && buffer.includes(Buffer.from("webm")))
       );
   }
 }
@@ -182,7 +182,13 @@ function findUtf8Boundary(buffer: Buffer, allowIncompleteAtEnd: boolean): number
     }
 
     const sequenceLength =
-      first >= 0xc2 && first <= 0xdf ? 2 : first >= 0xe0 && first <= 0xef ? 3 : first >= 0xf0 && first <= 0xf4 ? 4 : 0;
+      first >= 0xc2 && first <= 0xdf
+        ? 2
+        : first >= 0xe0 && first <= 0xef
+          ? 3
+          : first >= 0xf0 && first <= 0xf4
+            ? 4
+            : 0;
     if (sequenceLength === 0) return undefined;
     if (index + sequenceLength > buffer.length) {
       return allowIncompleteAtEnd ? index : undefined;
@@ -194,10 +200,8 @@ function findUtf8Boundary(buffer: Buffer, allowIncompleteAtEnd: boolean): number
       if (continuation === undefined || continuation < 0x80 || continuation > 0xbf) return undefined;
     }
     if (
-      (sequenceLength === 3 && ((first === 0xe0 && second < 0xa0) ||
-        (first === 0xed && second > 0x9f))) ||
-      (sequenceLength === 4 && ((first === 0xf0 && second < 0x90) ||
-        (first === 0xf4 && second > 0x8f)))
+      (sequenceLength === 3 && ((first === 0xe0 && second < 0xa0) || (first === 0xed && second > 0x9f))) ||
+      (sequenceLength === 4 && ((first === 0xf0 && second < 0x90) || (first === 0xf4 && second > 0x8f)))
     ) {
       return undefined;
     }
@@ -206,10 +210,16 @@ function findUtf8Boundary(buffer: Buffer, allowIncompleteAtEnd: boolean): number
   return index;
 }
 
-function readTextSample(sample: Buffer, size: number, bytesRead: number): {
-  content: string;
-  truncated: boolean;
-} | undefined {
+function readTextSample(
+  sample: Buffer,
+  size: number,
+  bytesRead: number,
+):
+  | {
+      content: string;
+      truncated: boolean;
+    }
+  | undefined {
   const boundary = findUtf8Boundary(sample, size > bytesRead);
   if (boundary === undefined) return undefined;
 
@@ -223,9 +233,7 @@ function readTextSample(sample: Buffer, size: number, bytesRead: number): {
   };
 }
 
-export async function readWorkspaceFile(
-  request: WorkspaceFileReadRequest,
-): Promise<WorkspaceFileReadResult> {
+export async function readWorkspaceFile(request: WorkspaceFileReadRequest): Promise<WorkspaceFileReadResult> {
   const { requestedPath } = await resolveContainedTarget(request.workspacePath, request.filePath);
   const name = path.basename(requestedPath);
   const extension = path.extname(name).toLowerCase();
@@ -251,8 +259,16 @@ export async function readWorkspaceFile(
         return unsupportedResult(requestedPath, name, size, "Media file exceeds the 20 MiB limit.");
       }
       const mediaBuffer = await readHandleBytes(handle, size);
-      if (mediaBuffer.length !== size || !hasMediaSignature(media.kind, mediaBuffer.subarray(0, MEDIA_SIGNATURE_BYTES))) {
-        return unsupportedResult(requestedPath, name, size, "Media signature does not match the file extension.");
+      if (
+        mediaBuffer.length !== size ||
+        !hasMediaSignature(media.kind, mediaBuffer.subarray(0, MEDIA_SIGNATURE_BYTES))
+      ) {
+        return unsupportedResult(
+          requestedPath,
+          name,
+          size,
+          "Media signature does not match the file extension.",
+        );
       }
       return {
         path: requestedPath,

@@ -6,24 +6,18 @@ import { logUpstreamError } from "./upstream-log";
 const COMMIT_MESSAGE_TIMEOUT_MS = 90_000;
 const COMMIT_MESSAGE_MAX_CHARS = 2_000;
 
-const COMMIT_REFUSAL_PATTERN =
-  /(?:对不起|抱歉|无法|不能|I\s*(?:can't|cannot)|I\s*am\s*unable|unable\s+to)/i;
+const COMMIT_REFUSAL_PATTERN = /(?:对不起|抱歉|无法|不能|I\s*(?:can't|cannot)|I\s*am\s*unable|unable\s+to)/i;
 
 type Fetcher = typeof fetch;
 
-export function buildCommitMessageUserMessage(
-  context: CommitDiffContext,
-  instructions?: string,
-): string {
+export function buildCommitMessageUserMessage(context: CommitDiffContext, instructions?: string): string {
   const trimmedInstructions = instructions?.trim();
   const parts = [
     "请根据以下 Git 变更生成一条提交信息。",
     "使用 Conventional Commits 风格：type(scope): subject，必要时附 2-4 条简短 bullet body。",
     `提交信息总长度不超过 ${COMMIT_MESSAGE_MAX_CHARS} 个字符。`,
     "只输出最终 commit message 正文，不要引号、不要 markdown 代码块、不要解释。",
-    ...(trimmedInstructions
-      ? ["", "## 提交指令", trimmedInstructions]
-      : []),
+    ...(trimmedInstructions ? ["", "## 提交指令", trimmedInstructions] : []),
     "",
     "## Staged files",
     context.stagedNameStatus || "(empty)",
@@ -169,7 +163,6 @@ export function extractCommitMessageText(body: unknown): string | undefined {
       continue;
     }
     if (block.type === "thinking" || block.type === "redacted_thinking") {
-      continue;
     }
   }
   return chunks.join("\n").trim() || undefined;

@@ -1,9 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
-import {
-  buildHomeProjectPath,
-  HOME_PROJECT_DISPLAY_NAME,
-} from "../shared/home-project";
+import { buildHomeProjectPath, HOME_PROJECT_DISPLAY_NAME } from "../shared/home-project";
 import type { WorkspaceInfo } from "../shared/ipc";
 import { inspectWorkspace } from "./workspace-inspect";
 

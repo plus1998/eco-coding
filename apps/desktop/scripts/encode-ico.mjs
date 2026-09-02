@@ -78,7 +78,9 @@ export function encodeIcoFromRgba(frames) {
     const rgba = frame.data instanceof Uint8Array ? frame.data : new Uint8Array(frame.data);
     const expected = frame.size * frame.size * 4;
     if (rgba.byteLength !== expected) {
-      throw new Error(`ICO frame at ${frame.size}px expected ${expected} RGBA bytes, got ${rgba.byteLength}.`);
+      throw new Error(
+        `ICO frame at ${frame.size}px expected ${expected} RGBA bytes, got ${rgba.byteLength}.`,
+      );
     }
     return { size: frame.size, data: rgbaFrameToIcoBitmap(rgba, frame.size) };
   });
@@ -110,4 +112,3 @@ export function encodeIcoFromRgba(frames) {
   chunks.splice(1, 0, entries);
   return Buffer.concat(chunks);
 }
-

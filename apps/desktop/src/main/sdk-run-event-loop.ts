@@ -1,13 +1,13 @@
 import {
+  type ClaudeRunTerminal,
   extractSdkRunFailure,
   extractSdkRunIncompleteReason,
-  type ClaudeRunTerminal,
 } from "@eco/runtime/sdk";
 import {
   applyClaudeRunTerminal,
+  type ClaudeRunTerminalState,
   isClaudeRunTerminalPayload,
   resolveClaudeRunAttemptFromTerminalState,
-  type ClaudeRunTerminalState,
 } from "./claude-run-terminal";
 import type { RequestAttemptResult } from "./request-retry";
 

@@ -28,10 +28,7 @@ test("formatAgentBrowserTabList returns empty sentinel without minting tabs", ()
 });
 
 test("formatAgentBrowserTabList matches agent-browser tab list lines", () => {
-  expect(
-    formatAgentBrowserTabList([
-      { url: "about:blank" },
-      { url: "https://example.com/" },
-    ]),
-  ).toBe("[t1] about:blank\n[t2] https://example.com/");
+  expect(formatAgentBrowserTabList([{ url: "about:blank" }, { url: "https://example.com/" }])).toBe(
+    "[t1] about:blank\n[t2] https://example.com/",
+  );
 });

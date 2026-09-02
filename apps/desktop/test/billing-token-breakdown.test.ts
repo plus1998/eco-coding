@@ -6,9 +6,7 @@ import {
 } from "../src/shared/billing-token-breakdown";
 import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 
-function makeBilling(
-  byRole: NonNullable<ThreadBillingSnapshot["byRole"]>,
-): ThreadBillingSnapshot {
+function makeBilling(byRole: NonNullable<ThreadBillingSnapshot["byRole"]>): ThreadBillingSnapshot {
   const total = Object.values(byRole).reduce(
     (acc, entry) => ({
       input: acc.input + entry.inputTokens,
@@ -111,7 +109,7 @@ test("buildBillingTokenBreakdown includes dynamic orchestration roles", () => {
 
   expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "researcher"]);
   expect(breakdown?.byAgent.find((row) => row.role === "researcher")?.tokenBadge).toBe("↑4k ↓400");
-  expect(breakdown?.byModel.map((row) => row.roles).flat()).toContain("researcher");
+  expect(breakdown?.byModel.flatMap((row) => row.roles)).toContain("researcher");
 });
 
 test("buildBillingTokenBreakdown does not supplement roles from non-primary sources", () => {

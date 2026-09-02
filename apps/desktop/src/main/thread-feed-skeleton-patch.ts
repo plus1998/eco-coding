@@ -4,9 +4,6 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/thread-run-projection";
-import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
-import { trimTimelineItemForFeed } from "./thread-run-projection-feed";
-import { eventToTimelineItem } from "./thread-run-projection";
 import {
   buildFeedSkeletonSegmentKey,
   compareFeedSkeletonTimelineItems,
@@ -16,6 +13,9 @@ import {
   selectSkeletonTimelineItems,
 } from "../shared/thread-run-projection-skeleton";
 import type { FeedSkeletonPatchState, ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
+import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
+import { eventToTimelineItem } from "./thread-run-projection";
+import { trimTimelineItemForFeed } from "./thread-run-projection-feed";
 
 export interface FeedSkeletonPatchContext {
   attempts: readonly ThreadRunProjectionAttempt[];
@@ -30,9 +30,7 @@ const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = new Set([
   "run.attempt.cancelled",
 ]);
 
-export function createFeedSkeletonPatchState(
-  snapshot: ThreadRunProjectionSnapshot,
-): FeedSkeletonPatchState {
+export function createFeedSkeletonPatchState(snapshot: ThreadRunProjectionSnapshot): FeedSkeletonPatchState {
   return {
     trackedItems: snapshot.timeline.map((item) => ({ ...item })),
   };
@@ -73,9 +71,7 @@ export function shouldTrackEventForFeedSkeletonPatch(
   }
 
   const attemptId = event.runAttemptId?.trim();
-  const attempt = attemptId
-    ? attempts.find((candidate) => candidate.attemptId === attemptId)
-    : undefined;
+  const attempt = attemptId ? attempts.find((candidate) => candidate.attemptId === attemptId) : undefined;
   if (attempt?.status === "running") {
     return true;
   }
@@ -151,8 +147,7 @@ export function patchThreadFeedSkeletonFromEvent(
       generatedAt: new Date().toISOString(),
       ...((): { currentAttemptId?: string } => {
         const currentAttemptId =
-          attempts.find((attempt) => attempt.status === "running")?.attemptId ??
-          attempts.at(-1)?.attemptId;
+          attempts.find((attempt) => attempt.status === "running")?.attemptId ?? attempts.at(-1)?.attemptId;
         return currentAttemptId ? { currentAttemptId } : {};
       })(),
     },

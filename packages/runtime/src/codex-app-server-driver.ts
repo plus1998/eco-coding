@@ -182,18 +182,10 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
     | ((input: { ecoThreadId: string; codexThreadId: string; turnId: string }) => void)
     | undefined;
   private readonly onTurnClosing:
-    | ((input: {
-        ecoThreadId: string;
-        codexThreadId: string;
-        turnId?: string;
-      }) => void | Promise<void>)
+    | ((input: { ecoThreadId: string; codexThreadId: string; turnId?: string }) => void | Promise<void>)
     | undefined;
   private readonly onTurnClosed:
-    | ((input: {
-        ecoThreadId: string;
-        codexThreadId: string;
-        turnId?: string;
-      }) => void | Promise<void>)
+    | ((input: { ecoThreadId: string; codexThreadId: string; turnId?: string }) => void | Promise<void>)
     | undefined;
   private readonly onItemNotification: ((method: string, params: unknown) => void) | undefined;
   private readonly logNotifications: boolean;

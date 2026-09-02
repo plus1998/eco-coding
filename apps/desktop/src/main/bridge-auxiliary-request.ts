@@ -10,14 +10,8 @@ import {
   mapApiCompatToUpstreamKind,
 } from "@eco/gateway";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
-import {
-  applyRouteMaxOutputTokens,
-  type AnthropicProxyRoute,
-} from "./anthropic-proxy";
-import {
-  ensureGlobalEcoGateway,
-  getGlobalEcoBridgeBaseUrl,
-} from "./eco-gateway-lifecycle";
+import { type AnthropicProxyRoute, applyRouteMaxOutputTokens } from "./anthropic-proxy";
+import { ensureGlobalEcoGateway, getGlobalEcoBridgeBaseUrl } from "./eco-gateway-lifecycle";
 import { applyProxyCchToAnthropicMessagesBody } from "./proxy-cch-audit";
 import { headersToLoggable, logUpstream, logUpstreamError, truncateForLog } from "./upstream-log";
 

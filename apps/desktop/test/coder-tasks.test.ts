@@ -71,13 +71,13 @@ test("rehydrates tasks from planner activity lines", () => {
 });
 
 test("preserves todo status while replacing parsed task details", () => {
-  const initial = mergeCoderTodoItems("thr_1", [
-    { title: "Add todo IPC", detail: "title: Add todo IPC" },
-  ]);
+  const initial = mergeCoderTodoItems("thr_1", [{ title: "Add todo IPC", detail: "title: Add todo IPC" }]);
   const running = updateCoderTodoStatus(initial, initial[0]!.id, "running");
-  const merged = mergeCoderTodoItems("thr_1", [
-    { title: "Add todo IPC", detail: "title: Add todo IPC\nscope: updated" },
-  ], running);
+  const merged = mergeCoderTodoItems(
+    "thr_1",
+    [{ title: "Add todo IPC", detail: "title: Add todo IPC\nscope: updated" }],
+    running,
+  );
 
   expect(merged[0]).toMatchObject({
     id: initial[0]!.id,

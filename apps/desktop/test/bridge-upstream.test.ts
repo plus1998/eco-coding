@@ -110,24 +110,14 @@ test("buildBridgeUpstreamMessagesPayload prunes tool results for Anthropic and R
     ],
   };
 
-  const anthropicBody = buildBridgeUpstreamMessagesPayload(
-    "anthropic",
-    request,
-    "claude-sonnet-4-6",
-    false,
-  );
+  const anthropicBody = buildBridgeUpstreamMessagesPayload("anthropic", request, "claude-sonnet-4-6", false);
   const anthropicMessages = anthropicBody.messages as Array<{ content: unknown }>;
   const anthropicToolResult = (
     anthropicMessages[1]?.content as Array<{ type?: string; content?: string }>
   ).find((block) => block.type === "tool_result");
   expect(String(anthropicToolResult?.content)).toContain("Warning: truncated output");
 
-  const responsesBody = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "gpt-test",
-    false,
-  );
+  const responsesBody = buildBridgeUpstreamMessagesPayload("openai_responses", request, "gpt-test", false);
   const input = responsesBody.input as Array<{ type?: string; output?: string }>;
   const outputItem = input.find((item) => item.type === "function_call_output");
   expect(String(outputItem?.output ?? "")).toContain("Warning: truncated output");
@@ -173,12 +163,7 @@ test("buildBridgeUpstreamMessagesPayload preserves JSON-shaped user text for ope
     messages: [{ role: "user", content }],
   };
 
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "local-model",
-    true,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "local-model", true);
   const messages = body.messages as Array<{ role: string; content: unknown }>;
 
   expect(messages).toEqual([
@@ -277,12 +262,7 @@ test("buildBridgeUpstreamMessagesPayload maps structured output for Responses an
     output_format: { type: "json_schema", schema },
   } satisfies AnthropicRequest;
 
-  const responses = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "review-model",
-    true,
-  );
+  const responses = buildBridgeUpstreamMessagesPayload("openai_responses", request, "review-model", true);
   expect(responses.text).toEqual({
     verbosity: "medium",
     format: {
@@ -293,12 +273,7 @@ test("buildBridgeUpstreamMessagesPayload maps structured output for Responses an
     },
   });
 
-  const chat = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "review-model",
-    true,
-  );
+  const chat = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "review-model", true);
   expect(chat.response_format).toEqual({
     type: "json_schema",
     json_schema: {
@@ -316,9 +291,7 @@ test("OpenAI bridge preserves SDK Read tool output byte-for-byte", () => {
     messages: [
       {
         role: "assistant",
-        content: [
-          { type: "tool_use", id: "call_read", name: "Read", input: { file_path: "panel.dart" } },
-        ],
+        content: [{ type: "tool_use", id: "call_read", name: "Read", input: { file_path: "panel.dart" } }],
       },
       {
         role: "user",

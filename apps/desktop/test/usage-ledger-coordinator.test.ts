@@ -1,18 +1,18 @@
 import { expect, test } from "bun:test";
 import { computeRequestBilling, emptyCostBreakdown, type ParsedUsage } from "@eco/runtime";
+import type { SubagentMetricsEntry } from "../src/main/subagent-metrics-registry";
+import { buildSubagentMetricsSummaries } from "../src/main/subagent-metrics-summary";
 import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import {
-  InMemoryUsageLedger,
   type AgentInstanceRecord,
+  InMemoryUsageLedger,
   type UsageLedgerEvent,
 } from "../src/main/usage-ledger";
+import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 import {
   UsageLedgerCoordinator,
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
-import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
-import { buildSubagentMetricsSummaries } from "../src/main/subagent-metrics-summary";
-import type { SubagentMetricsEntry } from "../src/main/subagent-metrics-registry";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
@@ -107,7 +107,9 @@ test("UsageLedgerCoordinator flushes async partial writes before interrupted set
   );
 
   await coordinator.flushUsageUpdates("thr_coord");
-  expect(ledger.listUsageEvents("thr_coord").filter((event) => event.usageKind === "request_final")).toHaveLength(1);
+  expect(
+    ledger.listUsageEvents("thr_coord").filter((event) => event.usageKind === "request_final"),
+  ).toHaveLength(1);
 });
 
 test("UsageLedgerCoordinator enriches billing snapshots from ledger projection", () => {

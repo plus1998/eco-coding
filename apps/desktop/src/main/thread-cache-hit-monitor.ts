@@ -72,10 +72,7 @@ export function detectPromptCacheHitDrop(
     Math.max(0, previous.inputTokens) + Math.max(0, previous.cacheCreationTokens);
   const currentUncachedInputTokens =
     Math.max(0, current.inputTokens) + Math.max(0, current.cacheCreationTokens);
-  const addedUncachedInputTokens = Math.max(
-    0,
-    currentUncachedInputTokens - previousUncachedInputTokens,
-  );
+  const addedUncachedInputTokens = Math.max(0, currentUncachedInputTokens - previousUncachedInputTokens);
   const unexplainedCacheReadLossTokens = Math.max(0, cacheReadLossTokens - addedUncachedInputTokens);
   const currentPromptTokens = computeBilledPromptTokens(current);
   const cacheReadLossShare =

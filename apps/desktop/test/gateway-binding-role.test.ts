@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
-import {
-  resolveBindingRoleForRoutes,
-} from "../src/main/gateway-request-lifecycle";
 import type { ClaudeBridgeBindingRoute } from "../src/main/claude-bridge-binding";
+import { resolveBindingRoleForRoutes } from "../src/main/gateway-request-lifecycle";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 
 function providerSecret(id: string): ProviderConfigSecret {

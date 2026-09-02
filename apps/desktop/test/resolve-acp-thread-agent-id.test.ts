@@ -67,9 +67,9 @@ test("toAcpThreadStartRunInput forwards attachments on start and continuation", 
   const attachments = [{ mediaType: "image/png" as const, data: "abc" }];
   const thread = { id: "thr_1" } as Parameters<typeof toAcpThreadStartRunInput>[0]["thread"];
   const workspace = { path: "/tmp/ws" } as Parameters<typeof toAcpThreadStartRunInput>[0]["workspace"];
-  expect(
-    toAcpThreadStartRunInput({ thread, workspace, prompt: "look", attachments }).attachments,
-  ).toEqual(attachments);
+  expect(toAcpThreadStartRunInput({ thread, workspace, prompt: "look", attachments }).attachments).toEqual(
+    attachments,
+  );
   expect(
     toAcpThreadStartRunInput({
       thread,
@@ -84,8 +84,8 @@ test("toAcpThreadStartRunInput forwards attachments on start and continuation", 
 
 test("resolveAcpRunPrompt fills the default look-at-image sentence", () => {
   expect(resolveAcpRunPrompt({ prompt: "  hi  " })).toBe("hi");
-  expect(
-    resolveAcpRunPrompt({ prompt: "  ", attachments: [{ mediaType: "image/png", data: "abc" }] }),
-  ).toBe(ACP_IMAGE_ONLY_PROMPT);
+  expect(resolveAcpRunPrompt({ prompt: "  ", attachments: [{ mediaType: "image/png", data: "abc" }] })).toBe(
+    ACP_IMAGE_ONLY_PROMPT,
+  );
   expect(resolveAcpRunPrompt({ prompt: "   " })).toBe("");
 });

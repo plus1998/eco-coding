@@ -1,4 +1,8 @@
-import { alignBreakdownSegmentsToOccupied, normalizeContextSegments, parseSdkGetContextUsageBreakdown } from "@eco/runtime";
+import {
+  alignBreakdownSegmentsToOccupied,
+  normalizeContextSegments,
+  parseSdkGetContextUsageBreakdown,
+} from "@eco/runtime";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
 import { logEcoDiag, shortThreadId } from "./eco-diag-log";

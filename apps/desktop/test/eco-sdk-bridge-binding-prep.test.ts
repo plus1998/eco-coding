@@ -4,20 +4,21 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+  type EcoGatewayServer,
   GATEWAY_BRIDGE_BINDING_ID_HEADER,
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
   GATEWAY_RUN_ATTEMPT_ID_HEADER,
   GATEWAY_THREAD_ID_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
-  type EcoGatewayServer,
 } from "@eco/gateway";
+import {
+  ECO_BRIDGE_BINDING_ID_HEADER,
+  ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
+} from "../src/main/claude-bridge-binding";
 import { createEcoSdkBridgeHandler } from "../src/main/eco-sdk-bridge";
-import { ECO_BRIDGE_BINDING_ID_HEADER, ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER } from "../src/main/claude-bridge-binding";
 
-function stubGateway(
-  onRequest: (request: Request) => void | Promise<void>,
-): EcoGatewayServer {
+function stubGateway(onRequest: (request: Request) => void | Promise<void>): EcoGatewayServer {
   return {
     port: 0,
     handleRequest: async (request) => {
@@ -88,16 +89,16 @@ describe("eco-sdk-bridge binding prep with prebound provider header", () => {
     expect(gatewayBodyModel).not.toBe("eco_planner__llama__llama-local");
     expect(gatewayHeaders?.get(GATEWAY_PROVIDER_ID_HEADER)).toBe("llama");
     expect(gatewayHeaders?.get(GATEWAY_UPSTREAM_KIND_HEADER)).toBe("openai-chat");
-    expect(gatewayHeaders?.get(GATEWAY_REQUESTED_MODEL_HEADER)).toBe(
-      "eco_planner__llama__llama-local",
-    );
+    expect(gatewayHeaders?.get(GATEWAY_REQUESTED_MODEL_HEADER)).toBe("eco_planner__llama__llama-local");
     expect(gatewayHeaders?.get(GATEWAY_THREAD_ID_HEADER)).toBe("thr_pi");
-    expect(gatewayHeaders?.get(GATEWAY_BRIDGE_BINDING_ID_HEADER) ?? gatewayHeaders?.get(ECO_BRIDGE_BINDING_ID_HEADER)).toBe(
-      "cbb_pi_1",
-    );
-    expect(gatewayHeaders?.get(GATEWAY_RUN_ATTEMPT_ID_HEADER) ?? gatewayHeaders?.get(ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER)).toBe(
-      "attempt_9",
-    );
+    expect(
+      gatewayHeaders?.get(GATEWAY_BRIDGE_BINDING_ID_HEADER) ??
+        gatewayHeaders?.get(ECO_BRIDGE_BINDING_ID_HEADER),
+    ).toBe("cbb_pi_1");
+    expect(
+      gatewayHeaders?.get(GATEWAY_RUN_ATTEMPT_ID_HEADER) ??
+        gatewayHeaders?.get(ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER),
+    ).toBe("attempt_9");
   });
 
   test("chat_completions: PI openai-completions api posts /chat/completions (no /v1 prefix)", async () => {

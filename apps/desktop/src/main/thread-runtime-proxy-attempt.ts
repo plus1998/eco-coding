@@ -1,11 +1,11 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import type { PromptImageAttachment } from "../shared/ipc";
 import type { AnthropicProxyResolvedRoute } from "./anthropic-proxy";
-import type { StartedGatewayRouteBinding } from "./gateway-route-binding";
 import type { RuntimeRoute } from "./billing-resolver";
+import type { StartedGatewayRouteBinding } from "./gateway-route-binding";
 import type { RequestAttemptResult } from "./request-retry";
-import { buildDriverRoutes, type RuntimeConfigResolution } from "./thread-runtime-routes";
 import type { RunAttemptContext } from "./thread-run-attempt";
+import { buildDriverRoutes, type RuntimeConfigResolution } from "./thread-runtime-routes";
 
 export type ThreadRuntimeProxyResult = RequestAttemptResult & Record<string, unknown>;
 
@@ -44,11 +44,7 @@ export async function runThreadRequestWithRuntimeProxy(
     return { ok: false, reason: freshConfig.reason };
   }
 
-  const proxy = await input.startRuntimeProxy(
-    freshConfig.routes,
-    input.attachments,
-    input.context,
-  );
+  const proxy = await input.startRuntimeProxy(freshConfig.routes, input.attachments, input.context);
   try {
     const plannerRoute = proxy.routes.find((route) => route.role === "planner");
     const attempt: ThreadRuntimeProxyAttempt = {

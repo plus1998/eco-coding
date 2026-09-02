@@ -1,5 +1,5 @@
-import type { RuntimeAgentRole, TokenCostBreakdown } from "../shared/ipc";
 import type { ParsedUsage } from "@eco/runtime";
+import type { RuntimeAgentRole, TokenCostBreakdown } from "../shared/ipc";
 import type { SubagentMetricsEntry } from "./subagent-metrics-state";
 
 export type SubagentMetricsPersistenceStatus = "active" | "stopped";
@@ -40,10 +40,7 @@ export interface UpsertSubagentMetricsPersistenceInput {
 
 export interface SubagentMetricsPersistenceStore {
   listSubagentMetrics(threadId: string): SubagentMetricsPersistenceRecord[];
-  upsertSubagentMetrics(
-    threadId: string,
-    input: UpsertSubagentMetricsPersistenceInput,
-  ): void;
+  upsertSubagentMetrics(threadId: string, input: UpsertSubagentMetricsPersistenceInput): void;
   clearSubagentMetrics(threadId: string): void;
 }
 

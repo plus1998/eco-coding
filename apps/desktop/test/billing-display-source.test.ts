@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 import {
   enrichBillingDisplaySource,
   resolveBillingDisplaySource,
 } from "../src/shared/billing-display-source";
+import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 
 function billingSnapshot(input: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnapshot {
   return {

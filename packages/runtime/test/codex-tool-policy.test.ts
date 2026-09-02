@@ -14,9 +14,9 @@ test("maps Eco execution-confirmation modes to Codex approval policies", () => {
   expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "auto").approvalPolicy).toBe(
     "on-request",
   );
-  expect(
-    applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all").approvalPolicy,
-  ).toBe("never");
+  expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all").approvalPolicy).toBe(
+    "never",
+  );
   expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "always").sandboxMode).toBe(
     "workspace-write",
   );

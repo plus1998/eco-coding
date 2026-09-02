@@ -29,8 +29,7 @@ const runCodex = !onlyPi && !onlyClaude;
 const runPi = !onlyCodex && !onlyClaude;
 const runClaude = !onlyCodex && !onlyPi;
 
-const longcatKey =
-  process.env.LONGCAT_API_KEY?.trim() || process.env.ECO_CODEX_SMOKE_API_KEY?.trim() || "";
+const longcatKey = process.env.LONGCAT_API_KEY?.trim() || process.env.ECO_CODEX_SMOKE_API_KEY?.trim() || "";
 
 const results = [];
 

@@ -39,7 +39,7 @@ export function evaluateScenarioChecklist(input) {
   const itemTypes = new Set();
   const toolNames = new Set();
   const texts = [];
-  let subagentThreadIds = new Set();
+  const subagentThreadIds = new Set();
   let spawnSeen = false;
   let mcpSeen = false;
   let fileWriteSeen = false;
@@ -144,7 +144,8 @@ export function evaluateScenarioChecklist(input) {
   }
 
   const joinedText = texts.join("\n");
-  const markerHit = joinedText.includes(marker) || Object.values(workspaceFiles).some((v) => v.includes(marker));
+  const markerHit =
+    joinedText.includes(marker) || Object.values(workspaceFiles).some((v) => v.includes(marker));
 
   // Workspace evidence is authoritative for file write/read
   const notePathKeys = Object.keys(workspaceFiles).filter((p) => /smoke-note/i.test(p));
@@ -166,11 +167,8 @@ export function evaluateScenarioChecklist(input) {
   // mcpSeen is set only from successful native mcpToolCall(smoke_ping|smoke_echo) above.
   // Do NOT accept list_mcp_resources, prose, or shell bridging that prints SMOKE_MCP_*.
 
-
   const skillMentioned =
-    skillItemSeen ||
-    /skill/i.test(joinedText) ||
-    /smoke-skill|SMOKE_SKILL/i.test(joinedText);
+    skillItemSeen || /skill/i.test(joinedText) || /smoke-skill|SMOKE_SKILL/i.test(joinedText);
 
   const subagentEvents =
     spawnSeen &&

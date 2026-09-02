@@ -18,7 +18,9 @@ test("buildEcoAuthEmailConfirmRedirect points at project Edge Function", () => {
 });
 
 test("normalizeCenterServerHttpUrl trims trailing slashes", () => {
-  expect(normalizeCenterServerHttpUrl("https://center.example.com/api/")).toBe("https://center.example.com/api");
+  expect(normalizeCenterServerHttpUrl("https://center.example.com/api/")).toBe(
+    "https://center.example.com/api",
+  );
 });
 
 test("buildCenterServerWebSocketUrl maps http to ws and appends access token", () => {

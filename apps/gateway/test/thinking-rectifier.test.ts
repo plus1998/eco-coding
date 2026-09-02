@@ -1,4 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
+import type { GatewayProvider, ResolvedProviderRoute } from "../src/types.js";
+import {
+  forwardAnthropicMessages,
+  forwardAnthropicMessagesBody,
+} from "../src/upstream/anthropic-messages.js";
 import {
   rectifyThinkingBudget,
   shouldRectifyThinkingBudget,
@@ -7,27 +13,17 @@ import {
   rectifyAnthropicRequest,
   shouldRectifyThinkingSignature,
 } from "../src/upstream/thinking-rectifier.js";
-import {
-  forwardAnthropicMessages,
-  forwardAnthropicMessagesBody,
-} from "../src/upstream/anthropic-messages.js";
-import type { GatewayProvider, ResolvedProviderRoute } from "../src/types.js";
-import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
 
 describe("thinking signature rectifier", () => {
   test("detects invalid signature in thinking block", () => {
     expect(
-      shouldRectifyThinkingSignature(
-        "messages.1.content.0: Invalid `signature` in `thinking` block",
-      ),
+      shouldRectifyThinkingSignature("messages.1.content.0: Invalid `signature` in `thinking` block"),
     ).toBe(true);
   });
 
   test("detects thought signature is not valid", () => {
     expect(
-      shouldRectifyThinkingSignature(
-        "Unable to submit request because Thought signature is not valid",
-      ),
+      shouldRectifyThinkingSignature("Unable to submit request because Thought signature is not valid"),
     ).toBe(true);
   });
 
@@ -64,8 +60,7 @@ describe("thinking signature rectifier", () => {
     expect(result.removedRedactedThinkingBlocks).toBe(1);
     expect(result.removedSignatureFields).toBe(2);
 
-    const content = (body.messages as Array<{ content: Array<{ type: string }> }>)[0]
-      ?.content;
+    const content = (body.messages as Array<{ content: Array<{ type: string }> }>)[0]?.content;
     expect(content).toHaveLength(2);
     expect(content?.[0]?.type).toBe("text");
     expect(content?.[1]?.type).toBe("tool_use");
@@ -76,16 +71,12 @@ describe("thinking signature rectifier", () => {
 describe("thinking budget rectifier", () => {
   test("detects budget_tokens + thinking + 1024 constraint", () => {
     expect(
-      shouldRectifyThinkingBudget(
-        "thinking.budget_tokens: Input should be greater than or equal to 1024",
-      ),
+      shouldRectifyThinkingBudget("thinking.budget_tokens: Input should be greater than or equal to 1024"),
     ).toBe(true);
   });
 
   test("does not trigger without 1024 constraint", () => {
-    expect(
-      shouldRectifyThinkingBudget("budget_tokens must be less than max_tokens"),
-    ).toBe(false);
+    expect(shouldRectifyThinkingBudget("budget_tokens must be less than max_tokens")).toBe(false);
   });
 
   test("rectify sets budget and max_tokens", () => {
@@ -151,11 +142,7 @@ describe("forwardAnthropicMessages rectifier retries", () => {
         messages: Array<{ content: Array<{ type: string }> }>;
       };
       if (calls === 1) {
-        expect(
-          body.messages.some((m) =>
-            m.content.some((b) => b.type === "thinking"),
-          ),
-        ).toBe(true);
+        expect(body.messages.some((m) => m.content.some((b) => b.type === "thinking"))).toBe(true);
         return new Response(
           JSON.stringify({
             error: {
@@ -166,11 +153,7 @@ describe("forwardAnthropicMessages rectifier retries", () => {
           { status: 400, headers: { "content-type": "application/json" } },
         );
       }
-      expect(
-        body.messages.every((m) =>
-          m.content.every((b) => b.type !== "thinking"),
-        ),
-      ).toBe(true);
+      expect(body.messages.every((m) => m.content.every((b) => b.type !== "thinking"))).toBe(true);
       return Response.json({
         id: "msg_ok",
         type: "message",
@@ -216,8 +199,7 @@ describe("forwardAnthropicMessages rectifier retries", () => {
         return new Response(
           JSON.stringify({
             error: {
-              message:
-                "thinking.budget_tokens: Input should be greater than or equal to 1024",
+              message: "thinking.budget_tokens: Input should be greater than or equal to 1024",
             },
           }),
           { status: 400 },

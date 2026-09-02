@@ -1,7 +1,7 @@
 /**
  * Spawn agent-browser native CLI (bypasses MCP stdio — reliable on Windows).
  */
-import { spawnSync, execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { arch, platform } from "node:os";
 import path from "node:path";
@@ -95,10 +95,7 @@ export function runAgentBrowser(args, extraEnv = {}, options = {}) {
     ...extraEnv,
   };
 
-  const spawnArgs =
-    resolved.kind === "node-wrapper"
-      ? [resolved.path, ...args]
-      : args;
+  const spawnArgs = resolved.kind === "node-wrapper" ? [resolved.path, ...args] : args;
   const command = resolved.kind === "node-wrapper" ? process.execPath : resolved.path;
 
   const run = spawnSync(command, spawnArgs, {

@@ -1,10 +1,6 @@
 import type { ParsedUsage } from "./usage-normalize.js";
 
-export type UpstreamKind =
-  | "anthropic-messages"
-  | "responses"
-  | "openai-chat"
-  | "gateway-delegated";
+export type UpstreamKind = "anthropic-messages" | "responses" | "openai-chat" | "gateway-delegated";
 
 export interface GatewayProvider {
   id: string;
@@ -183,6 +179,4 @@ export type GatewayRequestLifecycleEvent =
       observedAt: string;
     };
 
-export type GatewayRequestLifecycleObserver = (
-  event: GatewayRequestLifecycleEvent,
-) => void | Promise<void>;
+export type GatewayRequestLifecycleObserver = (event: GatewayRequestLifecycleEvent) => void | Promise<void>;

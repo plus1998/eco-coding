@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test as base, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { test as base, type ElectronApplication, _electron as electron, type Page } from "@playwright/test";
 import {
   devRemoteDebuggingElectronArgs,
   resolveDevRemoteDebuggingPort,
@@ -30,7 +30,9 @@ export const test = base.extend<{
     const { rendererUrl } = readE2eEnv();
     const env: Record<string, string> = {
       ...Object.fromEntries(
-        Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        Object.entries(process.env).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
       ),
       VITE_DEV_SERVER_URL: rendererUrl,
       ELECTRON_ENABLE_LOGGING: "1",

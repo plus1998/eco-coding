@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { i18n } from "../src/renderer/i18n";
 import {
   createProjectTerminalState,
   createTerminalTab,
   nextTerminalTabLabel,
+  type ProjectTerminalState,
   readTerminalWorkspaceState,
   resolveTerminalTabForInjectedSession,
   saveTerminalWorkspaceState,
-  type ProjectTerminalState,
 } from "../src/renderer/terminal-panel-storage";
-import { i18n } from "../src/renderer/i18n";
 
 const storage = new Map<string, string>();
 

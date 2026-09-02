@@ -19,9 +19,7 @@ export interface SidebarUpdateAction {
   manualReason?: DesktopUpdateState["reason"];
 }
 
-export function resolveSidebarUpdateAction(
-  state: DesktopUpdateState | undefined,
-): SidebarUpdateAction {
+export function resolveSidebarUpdateAction(state: DesktopUpdateState | undefined): SidebarUpdateAction {
   const currentVersion = state?.currentVersion?.trim() ?? "";
   if (!state) {
     return { kind: "version", currentVersion };

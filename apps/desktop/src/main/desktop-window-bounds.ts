@@ -7,11 +7,7 @@ export interface WindowBounds {
   height: number;
 }
 
-export function centerBoundsInWorkArea(
-  workArea: Rectangle,
-  width: number,
-  height: number,
-): WindowBounds {
+export function centerBoundsInWorkArea(workArea: Rectangle, width: number, height: number): WindowBounds {
   const boundedWidth = Math.min(width, workArea.width);
   const boundedHeight = Math.min(height, workArea.height);
   const x = Math.round(workArea.x + (workArea.width - boundedWidth) / 2);

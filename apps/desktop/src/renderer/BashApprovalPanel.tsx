@@ -1,20 +1,12 @@
-import {
-  AlertTriangle,
-  Loader2,
-  Pencil,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  Terminal,
-} from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import {
+  type BashApprovalChoice,
   buildBashApprovalChoices,
   formatBashApprovalRememberPrefix,
-  type BashApprovalChoice,
 } from "../shared/bash-approval-ui";
+import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import { ExpandablePreBlock } from "./ExpandablePreBlock";
 
 export interface BashApprovalResolutionInput {
@@ -41,11 +33,7 @@ const CIRCLED_OPTION_MARKERS = ["①", "②", "③", "④", "⑤"] as const;
 // unavailable). A genuine risk-control rejection rationale is written in the
 // user's locale and never contains them, so they reliably distinguish
 // "couldn't review" from "reviewed and declined" — regardless of locale.
-const REVIEW_REQUEST_ERROR_MARKERS = [
-  "辅助模型审批失败",
-  "辅助模型不可用",
-  "审批失败或返回了无效 JSON",
-];
+const REVIEW_REQUEST_ERROR_MARKERS = ["辅助模型审批失败", "辅助模型不可用", "审批失败或返回了无效 JSON"];
 
 function isReviewRequestError(rationale: string): boolean {
   return REVIEW_REQUEST_ERROR_MARKERS.some((marker) => rationale.includes(marker));
@@ -159,9 +147,7 @@ export function BashApprovalPanel({
   const runningLabel = request.filesystemTool
     ? t("approval.bash.runningTool", { tool: request.filesystemTool })
     : t("approval.bash.runningCommand", { command: request.command });
-  const panelLabel = request.filesystemTool
-    ? t("approval.bash.fileLabel")
-    : t("approval.bash.label");
+  const panelLabel = request.filesystemTool ? t("approval.bash.fileLabel") : t("approval.bash.label");
   const detail = request.filesystemPath ?? request.command;
   const docked = variant === "dock";
 
@@ -221,9 +207,7 @@ export function BashApprovalPanel({
               {CIRCLED_OPTION_MARKERS[optionIndex] ?? `${optionIndex + 1}.`}
             </span>
             <span className="bash-approval-option-label bash-approval-option-remember">
-              <span className="bash-approval-option-remember-intro">
-                {t("approval.bash.rememberPrefix")}
-              </span>
+              <span className="bash-approval-option-remember-intro">{t("approval.bash.rememberPrefix")}</span>
               <span className="bash-approval-option-remember-command" title={rememberCommand}>
                 {rememberCommandPreview}
               </span>
@@ -233,8 +217,7 @@ export function BashApprovalPanel({
       );
     }
 
-    const label =
-      option.choice === "deny" ? t("approval.bash.deny") : t("approval.bash.approve");
+    const label = option.choice === "deny" ? t("approval.bash.deny") : t("approval.bash.approve");
 
     return (
       <li key={option.choice}>
@@ -277,9 +260,7 @@ export function BashApprovalPanel({
             <span className="bash-approval-risk-icon" aria-hidden>
               <RiskLevelIcon level={request.riskLevel} />
             </span>
-            <span className="bash-approval-risk-label">
-              {t(`approval.bash.risk.${request.riskLevel}`)}
-            </span>
+            <span className="bash-approval-risk-label">{t(`approval.bash.risk.${request.riskLevel}`)}</span>
             <span className="bash-approval-risk-score">{request.riskScore}</span>
           </span>
         ) : null}
@@ -303,9 +284,7 @@ export function BashApprovalPanel({
               <p className="bash-approval-review-rationale-title">
                 {t("approval.bash.autoReviewFailedTitle")}
               </p>
-              <p className="bash-approval-review-rationale-hint">
-                {t("approval.bash.autoReviewFailedHint")}
-              </p>
+              <p className="bash-approval-review-rationale-hint">{t("approval.bash.autoReviewFailedHint")}</p>
               <p className="bash-approval-review-rationale-body">{reviewRationale}</p>
             </>
           )}

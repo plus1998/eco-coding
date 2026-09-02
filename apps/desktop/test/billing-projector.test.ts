@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { computeRequestBilling, type ParsedUsage } from "@eco/runtime";
 import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
-import { buildSdkUsageLedgerEvents, buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 import type { AgentInstanceRecord } from "../src/main/usage-ledger";
+import { buildSdkUsageLedgerEvents, buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
@@ -326,7 +326,12 @@ test("projectBillingFromUsageLedger prefers proxy primary when proxy events exis
 });
 
 test("projectBillingFromUsageLedger does not let a vision-only proxy source replace SDK primary", () => {
-  const visionUsage = { inputTokens: 147_000, outputTokens: 2_000, cacheReadTokens: 4_000, cacheCreationTokens: 0 };
+  const visionUsage = {
+    inputTokens: 147_000,
+    outputTokens: 2_000,
+    cacheReadTokens: 4_000,
+    cacheCreationTokens: 0,
+  };
   const mainUsage = { inputTokens: 403, outputTokens: 347, cacheReadTokens: 0, cacheCreationTokens: 0 };
   const visionEvent = buildSingleUsageLedgerEvent({
     threadId: "thr_projector_vision",

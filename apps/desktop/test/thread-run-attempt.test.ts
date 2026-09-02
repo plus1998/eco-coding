@@ -48,9 +48,7 @@ test("runThreadRequestWithLifecycle passes attempt context to runOnce", async ()
     settlements: harness.settlementQueue,
   });
 
-  expect(contexts).toEqual([
-    { threadId: "thr_ctx", runAttemptId: "attempt_0", phase: "execution" },
-  ]);
+  expect(contexts).toEqual([{ threadId: "thr_ctx", runAttemptId: "attempt_0", phase: "execution" }]);
 });
 
 test("runThreadRequestWithLifecycle settles completed attempts", async () => {
@@ -141,7 +139,5 @@ test("runThreadRequestWithLifecycle marks thrown aborted attempts as cancelled",
 test("runAttemptStatusFromResult maps attempt result statuses", () => {
   expect(runAttemptStatusFromResult({ ok: true })).toBe("completed");
   expect(runAttemptStatusFromResult({ ok: false, reason: "failed" })).toBe("failed");
-  expect(runAttemptStatusFromResult({ ok: false, reason: "cancelled", aborted: true })).toBe(
-    "cancelled",
-  );
+  expect(runAttemptStatusFromResult({ ok: false, reason: "cancelled", aborted: true })).toBe("cancelled");
 });

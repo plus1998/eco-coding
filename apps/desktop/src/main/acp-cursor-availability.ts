@@ -1,7 +1,13 @@
-import { createInterface } from "node:readline";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import path from "node:path";
-import { AcpClient, AcpJsonRpcPeer, cursorAcpSpawnError, resolveCursorAgentExecutable, spawnCursorAcpProcess } from "@eco/runtime";
+import { createInterface } from "node:readline";
+import {
+  AcpClient,
+  AcpJsonRpcPeer,
+  cursorAcpSpawnError,
+  resolveCursorAgentExecutable,
+  spawnCursorAcpProcess,
+} from "@eco/runtime";
 
 export type AcpCursorProbeResult =
   | { available: true }
@@ -16,11 +22,7 @@ export interface AcpCursorProbeDeps {
 
 export type AcpCursorHandshakeOptions = {
   resolveExecutable?: () => string;
-  spawnFn?: (
-    command: string,
-    args: readonly string[],
-    options: SpawnOptions,
-  ) => ChildProcess;
+  spawnFn?: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
   env?: NodeJS.ProcessEnv;
 };
 
@@ -46,9 +48,7 @@ function isFilesystemPath(executable: string): boolean {
  * Probe Cursor ACP availability.
  * Success = executable present (when path-like) + handshake completes.
  */
-export async function probeAcpCursorAvailability(
-  deps: AcpCursorProbeDeps,
-): Promise<AcpCursorProbeResult> {
+export async function probeAcpCursorAvailability(deps: AcpCursorProbeDeps): Promise<AcpCursorProbeResult> {
   const executablePath = deps.resolveExecutable();
   if (isFilesystemPath(executablePath) && !deps.executableExists(executablePath)) {
     return { available: false, reasonKey: "missingCli" };
@@ -75,9 +75,12 @@ export async function probeAcpCursorAvailability(
  * Injectable spawn for unit tests; CI may skip live integration.
  */
 export async function handshakeAcpCursor(options: AcpCursorHandshakeOptions = {}): Promise<void> {
-  const resolveExecutable = options.resolveExecutable ?? (() => resolveCursorAgentExecutable(undefined, {
-    ...(options.env ? { env: options.env } : {}),
-  }));
+  const resolveExecutable =
+    options.resolveExecutable ??
+    (() =>
+      resolveCursorAgentExecutable(undefined, {
+        ...(options.env ? { env: options.env } : {}),
+      }));
   const executable = resolveExecutable();
   const child = spawnCursorAcpProcess({
     executable,

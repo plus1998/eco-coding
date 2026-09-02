@@ -70,11 +70,7 @@ test("keeps web markdown links external", () => {
 test("turns soft newlines into a single break between file refs", () => {
   const html = renderToStaticMarkup(
     createElement(MarkdownContent, {
-      text: [
-        "相关文件：",
-        "/tmp/platform.ts",
-        "/tmp/douyinSession.ts",
-      ].join("\n"),
+      text: ["相关文件：", "/tmp/platform.ts", "/tmp/douyinSession.ts"].join("\n"),
     }),
   );
 

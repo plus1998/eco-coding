@@ -11,7 +11,7 @@
  * No recovery codes. Creating a claim requires that some other device already has
  * vault_synced_at (not that it is online right now).
  */
-import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+
 import {
   buildEcoVaultTopic,
   generateVaultClaimCode,
@@ -21,9 +21,10 @@ import {
   normalizeVaultClaimCode,
   unwrapVaultKeyFromClaim,
   verifyVaultClaimCode,
-  wrapVaultKeyForClaim,
   type WrappedVaultKey,
+  wrapVaultKeyForClaim,
 } from "@eco/shared";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { listVaultSyncedDeviceIds } from "./supabase-settings-sync";
 
 /** Pending claim lifetime — long enough for the peer device to be opened later. */

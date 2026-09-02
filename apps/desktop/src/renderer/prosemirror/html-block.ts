@@ -1,5 +1,7 @@
 export function isHtmlLang(params: unknown): boolean {
-  const raw = String(params ?? "").trim().toLowerCase();
+  const raw = String(params ?? "")
+    .trim()
+    .toLowerCase();
   if (!raw) return false;
   const first = raw.split(/\s+/)[0] ?? "";
   return first === "html" || first === "htm";

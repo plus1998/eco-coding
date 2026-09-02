@@ -1,22 +1,14 @@
 import MarkdownIt from "markdown-it";
-import {
-  defaultMarkdownParser,
-  schema as markdownSchema,
-  MarkdownParser,
-} from "prosemirror-markdown";
-import { Fragment, type Mark, type Node as PMNode, Schema, type NodeSpec } from "prosemirror-model";
+import { defaultMarkdownParser, MarkdownParser, schema as markdownSchema } from "prosemirror-markdown";
+import { Fragment, type Mark, type NodeSpec, type Node as PMNode, Schema } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import type { NodeViewConstructor } from "prosemirror-view";
 import { buildHtmlDataNavigateUrl } from "../../shared/browser";
 import { dispatchBrowserHtmlOpen, dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 import { copyTextToClipboard } from "../clipboard";
-import {
-  copyTableAsHtml,
-  copyTableAsImage,
-  copyTableAsMarkdown,
-} from "../markdown-table-clipboard";
 import { i18n } from "../i18n";
 import { repairMarkdown } from "../markdown-repair";
+import { copyTableAsHtml, copyTableAsImage, copyTableAsMarkdown } from "../markdown-table-clipboard";
 import { getMaterialIconUrl, resolveMaterialIconName } from "../material-file-icon";
 import {
   dispatchWorkspaceFileReference,
@@ -25,17 +17,17 @@ import {
   parseWorkspaceFileReferenceHref,
   type WorkspaceFileReference,
 } from "../workspace-file-reference";
+import { countHtmlLines, extractHtmlDocumentTitle, isHtmlLang } from "./html-block";
 import {
   isMermaidLang,
+  type MermaidAppTheme,
   observeAppTheme,
   readAppTheme,
   renderMermaidSvg,
-  type MermaidAppTheme,
 } from "./mermaid-block";
-import { countHtmlLines, extractHtmlDocumentTitle, isHtmlLang } from "./html-block";
 
-export { isMermaidLang } from "./mermaid-block";
 export { isHtmlLang } from "./html-block";
+export { isMermaidLang } from "./mermaid-block";
 
 function fileRefTitle(reference: WorkspaceFileReference): string {
   if (reference.line !== undefined) {
@@ -302,15 +294,15 @@ export const feedMarkdownParser = new MarkdownParser(
   feedMarkdownSchema,
   tokenizer as unknown as ConstructorParameters<typeof MarkdownParser>[1],
   {
-  ...defaultMarkdownParser.tokens,
-  softbreak: { node: "hard_break" },
-  table: { block: "table" },
-  thead: { ignore: true },
-  tbody: { ignore: true },
-  tr: { block: "table_row" },
-  th: { block: "table_header" },
-  td: { block: "table_cell" },
-  s: { mark: "strikethrough" },
+    ...defaultMarkdownParser.tokens,
+    softbreak: { node: "hard_break" },
+    table: { block: "table" },
+    thead: { ignore: true },
+    tbody: { ignore: true },
+    tr: { block: "table_row" },
+    th: { block: "table_header" },
+    td: { block: "table_cell" },
+    s: { mark: "strikethrough" },
   },
 );
 
@@ -503,9 +495,7 @@ function serializeTable(node: PMNode): string {
       const attrs =
         (colspan > 1 ? ` colspan="${colspan}"` : "") +
         (rowspan > 1 ? ` rowspan="${rowspan}"` : "") +
-        (isHeader
-          ? ` style="min-width:${markdownTableHeaderMinWidthCh(cell.textContent)}ch"`
-          : "");
+        (isHeader ? ` style="min-width:${markdownTableHeaderMinWidthCh(cell.textContent)}ch"` : "");
       body += isHeader
         ? `<${tag}${attrs}><span class="markdown-table-th">${serializeInline(cell)}</span></${tag}>`
         : `<${tag}${attrs}>${serializeInline(cell)}</${tag}>`;
@@ -622,10 +612,7 @@ function openMarkdownLightbox(options: {
   bar.append(title, closeBtn);
 
   const stage = document.createElement("div");
-  stage.className = [
-    "markdown-lightbox__stage",
-    options.bodyClassName ? options.bodyClassName : "",
-  ]
+  stage.className = ["markdown-lightbox__stage", options.bodyClassName ? options.bodyClassName : ""]
     .filter(Boolean)
     .join(" ");
   stage.innerHTML = options.bodyHtml;
@@ -864,11 +851,9 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   let previewOpen = true;
   let lastSvg = "";
 
-  const { toolbar, language, expandBtn, previewBtn } = createCodeBlockToolbar(
-    "mermaid",
-    () => source,
-    { mermaidActions: true },
-  );
+  const { toolbar, language, expandBtn, previewBtn } = createCodeBlockToolbar("mermaid", () => source, {
+    mermaidActions: true,
+  });
   language.textContent = "mermaid";
 
   const body = document.createElement("div");

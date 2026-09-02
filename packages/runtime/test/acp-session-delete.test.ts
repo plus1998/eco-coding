@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -21,18 +20,18 @@ import {
 } from "../src/acp-session-delete.js";
 
 test("agentSupportsSessionDelete is true only for delete object", () => {
-  expect(
-    agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { delete: {} } } }),
-  ).toBe(true);
+  expect(agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { delete: {} } } })).toBe(
+    true,
+  );
   expect(agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { list: {} } } })).toBe(
     false,
   );
-  expect(
-    agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { delete: null } } }),
-  ).toBe(false);
-  expect(
-    agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { delete: true } } }),
-  ).toBe(false);
+  expect(agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { delete: null } } })).toBe(
+    false,
+  );
+  expect(agentSupportsSessionDelete({ agentCapabilities: { sessionCapabilities: { delete: true } } })).toBe(
+    false,
+  );
   expect(agentSupportsSessionDelete({})).toBe(false);
 });
 
@@ -98,9 +97,7 @@ test("removeCursorAcpSessionDir refuses non-directories", async () => {
 });
 
 test("isAcpSessionDeleteMethodNotFound detects JSON-RPC method missing", () => {
-  expect(isAcpSessionDeleteMethodNotFound(new Error('"Method not found": session/delete'))).toBe(
-    true,
-  );
+  expect(isAcpSessionDeleteMethodNotFound(new Error('"Method not found": session/delete'))).toBe(true);
   expect(isAcpSessionDeleteMethodNotFound(new Error("Method not found"))).toBe(true);
   expect(isAcpSessionDeleteMethodNotFound(new Error("not authenticated"))).toBe(false);
 });

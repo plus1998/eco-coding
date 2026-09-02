@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
 import { resolveCursorAgentExecutable, wrapForWindowsShellScript } from "./acp-cursor-agent.js";
 
 export interface CursorAgentModelOption {
@@ -14,18 +14,11 @@ export interface CursorAgentModelListOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   /** Test seam — defaults to `node:child_process.spawn`. */
-  spawnFn?: (
-    command: string,
-    args: readonly string[],
-    options: SpawnOptions,
-  ) => ChildProcess;
+  spawnFn?: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 }
 
 /** Builds the env for Cursor Agent CLI children (e.g. CURSOR_API_KEY). */
-export function buildCursorAgentCliEnv(
-  env?: NodeJS.ProcessEnv,
-  apiKey?: string,
-): NodeJS.ProcessEnv {
+export function buildCursorAgentCliEnv(env?: NodeJS.ProcessEnv, apiKey?: string): NodeJS.ProcessEnv {
   const merged = { ...process.env, ...env };
   const key = apiKey?.trim();
   if (key) {
@@ -87,7 +80,7 @@ export async function listCursorAgentModels(
 }
 
 export function parseCursorAgentModelsOutput(output: string): CursorAgentModelOption[] {
-  const ansi = /\u001b\[[0-?]*[ -\/]*[@-~]/g;
+  const ansi = /\u001b\[[0-?]*[ -/]*[@-~]/g;
   const models: CursorAgentModelOption[] = [];
   for (const rawLine of output.replace(ansi, "").split(/\r?\n/)) {
     const line = rawLine.trim();

@@ -1,4 +1,8 @@
 import { ipcMain, type WebContents } from "electron";
+import {
+  buildThreadRunProjectionDetail,
+  parseThreadRunProjectionDetailRequest,
+} from "../main/thread-run-projection-detail";
 import type { BrowserViewState } from "../shared/browser";
 import { defaultBrowserSettings } from "../shared/browser";
 import type { DesktopUpdateState } from "../shared/desktop-update";
@@ -33,10 +37,6 @@ import {
   demoWorkspaceInspect,
   resolveDemoThreadId,
 } from "./fixtures";
-import {
-  buildThreadRunProjectionDetail,
-  parseThreadRunProjectionDetailRequest,
-} from "../main/thread-run-projection-detail";
 
 export interface DemoRuntimeState {
   pendingThreadOpenId?: string;
@@ -62,8 +62,7 @@ function buildDemoSessionBootstrapForThread(threadId: string) {
     thread,
     followUps: [],
     subagentSessions:
-      replayProjection?.subagentTimings ??
-      (threadId === DEMO_THREAD_ID ? demoSubagentSessions : []),
+      replayProjection?.subagentTimings ?? (threadId === DEMO_THREAD_ID ? demoSubagentSessions : []),
     usage: {
       ...(replayProjection?.billing
         ? { billing: replayProjection.billing }
@@ -335,11 +334,13 @@ const handlers: Partial<Record<string, DemoHandler>> = {
     return installing;
   },
   [IPC_CHANNELS.appUpdateOpenRelease]: () => ({ ok: true as const }),
-  [IPC_CHANNELS.appConsumePendingThreadOpen]: () =>
-    demoRuntimeState.pendingThreadOpenId ?? DEMO_THREAD_ID,
+  [IPC_CHANNELS.appConsumePendingThreadOpen]: () => demoRuntimeState.pendingThreadOpenId ?? DEMO_THREAD_ID,
   [IPC_CHANNELS.appShowThreadCompletionNotification]: () => ({ shown: false, reason: "preference_disabled" }),
   [IPC_CHANNELS.appShowThreadApprovalNotification]: () => ({ shown: false, reason: "preference_disabled" }),
-  [IPC_CHANNELS.appShowThreadClarificationNotification]: () => ({ shown: false, reason: "preference_disabled" }),
+  [IPC_CHANNELS.appShowThreadClarificationNotification]: () => ({
+    shown: false,
+    reason: "preference_disabled",
+  }),
   [IPC_CHANNELS.coreAvailabilityGet]: () => demoCoreAvailability,
   [IPC_CHANNELS.cursorModelsList]: () => [],
   [IPC_CHANNELS.workspaceGetCurrent]: () => demoWorkspace,

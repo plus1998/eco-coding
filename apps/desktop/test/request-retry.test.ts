@@ -33,9 +33,9 @@ test("formatUserFacingRequestError translates structured upstream 502 failures",
 });
 
 test("formatUserFacingRequestError maps raw OpenAI overloaded text", () => {
-  expect(
-    formatUserFacingRequestError("Our servers are currently overloaded. Please try again later."),
-  ).toBe("上游模型过载，请稍后重试或切换 Provider。");
+  expect(formatUserFacingRequestError("Our servers are currently overloaded. Please try again later.")).toBe(
+    "上游模型过载，请稍后重试或切换 Provider。",
+  );
 });
 
 test("formatUserFacingRequestError surfaces local route misses as SDK model leaks", () => {

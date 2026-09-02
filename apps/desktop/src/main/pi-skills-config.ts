@@ -1,13 +1,8 @@
 import path from "node:path";
-import {
-  skillsEnabledSettingsChanged,
-} from "./codex-skills-config-reload";
-import { listDiscoveredSkills } from "./skills-discovery";
-import {
-  isSkillAvailableForCore,
-  type SkillInfo,
-} from "../shared/skills";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
+import { isSkillAvailableForCore, type SkillInfo } from "../shared/skills";
+import { skillsEnabledSettingsChanged } from "./codex-skills-config-reload";
+import { listDiscoveredSkills } from "./skills-discovery";
 
 export type PiThreadSkillEntry = {
   skill: SkillInfo;
@@ -33,15 +28,9 @@ export async function resolvePiThreadSkills(input: {
 }
 
 /** Absolute directories passed to PI ResourceLoader for this thread. */
-export function piSkillDirectoriesForSession(
-  entries: readonly PiThreadSkillEntry[],
-): string[] {
+export function piSkillDirectoriesForSession(entries: readonly PiThreadSkillEntry[]): string[] {
   return [
-    ...new Set(
-      entries
-        .filter((entry) => entry.enabled)
-        .map((entry) => path.resolve(entry.skill.directory)),
-    ),
+    ...new Set(entries.filter((entry) => entry.enabled).map((entry) => path.resolve(entry.skill.directory))),
   ].sort((a, b) => a.localeCompare(b));
 }
 

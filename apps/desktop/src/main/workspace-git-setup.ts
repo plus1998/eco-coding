@@ -9,10 +9,7 @@ export interface GitCommandResult {
   stderr: string;
 }
 
-export type GitCommandRunner = (
-  command: string[],
-  cwd: string,
-) => Promise<GitCommandResult>;
+export type GitCommandRunner = (command: string[], cwd: string) => Promise<GitCommandResult>;
 
 export const DEFAULT_ECO_GITIGNORE_LINES = [
   "node_modules/",

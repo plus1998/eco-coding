@@ -1,6 +1,15 @@
-import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
-import type { AcpMcpServer } from "./acp-mcp.js";
-import { agentSupportsSessionDelete } from "./acp-session-delete.js";
+import {
+  type AcpGenerateImageHandler,
+  type AcpGenerateImageOutcome,
+  type AcpTaskHandler,
+  type AcpTaskOutcome,
+  type AcpUpdateTodosHandler,
+  type AcpUpdateTodosOutcome,
+  isCursorMethod,
+  parseAcpGenerateImageRequest,
+  parseAcpTaskRequest,
+  parseAcpUpdateTodosRequest,
+} from "./acp-cursor-extensions.js";
 import {
   type AcpFsHandler,
   type AcpFsReadRequest,
@@ -9,23 +18,14 @@ import {
   parseAcpFsReadRequest,
   parseAcpFsWriteRequest,
 } from "./acp-fs.js";
+import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
+import type { AcpMcpServer } from "./acp-mcp.js";
 import {
   parseAcpPermissionRequest,
   resolveAcpPermissionAutoAllow,
   resolveAcpPermissionReject,
 } from "./acp-permission.js";
-import {
-  isCursorMethod,
-  parseAcpGenerateImageRequest,
-  parseAcpTaskRequest,
-  parseAcpUpdateTodosRequest,
-  type AcpGenerateImageHandler,
-  type AcpGenerateImageOutcome,
-  type AcpTaskHandler,
-  type AcpTaskOutcome,
-  type AcpUpdateTodosHandler,
-  type AcpUpdateTodosOutcome,
-} from "./acp-cursor-extensions.js";
+import { agentSupportsSessionDelete } from "./acp-session-delete.js";
 import {
   ACP_IDLE_TIMEOUT_MS,
   ACP_LOAD_SESSION_UNSUPPORTED,
@@ -127,9 +127,7 @@ export class AcpClient {
   }): Promise<Record<string, unknown>> {
     const caps = this.initializeResult?.agentCapabilities;
     if (!caps || caps.loadSession !== true) {
-      throw new Error(
-        `${ACP_LOAD_SESSION_UNSUPPORTED}: agent did not advertise loadSession: true`,
-      );
+      throw new Error(`${ACP_LOAD_SESSION_UNSUPPORTED}: agent did not advertise loadSession: true`);
     }
     try {
       const result = await this.peer.request(
@@ -145,9 +143,7 @@ export class AcpClient {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/method not found/i.test(message)) {
-        throw new Error(
-          `${ACP_LOAD_SESSION_UNSUPPORTED}: session/load not available (${message})`,
-        );
+        throw new Error(`${ACP_LOAD_SESSION_UNSUPPORTED}: session/load not available (${message})`);
       }
       throw error;
     }
@@ -229,10 +225,7 @@ export class AcpClient {
     });
   }
 
-  private async handleIncomingRequest(request: {
-    method: string;
-    params?: unknown;
-  }): Promise<unknown> {
+  private async handleIncomingRequest(request: { method: string; params?: unknown }): Promise<unknown> {
     if (request.method === ACP_PROTOCOL.clientMethods.sessionRequestPermission) {
       return this.resolvePermission(request.params);
     }

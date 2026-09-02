@@ -68,9 +68,7 @@ export function resolveProfile(profileId) {
   }
   const apiKey =
     process.env[profile.apiKeyEnv]?.trim() ||
-    (profile.id === "packy_responses"
-      ? process.env.GATEWAY_RECORD_PACKY_RESPONSES_KEY?.trim()
-      : "") ||
+    (profile.id === "packy_responses" ? process.env.GATEWAY_RECORD_PACKY_RESPONSES_KEY?.trim() : "") ||
     "";
   if (!apiKey) {
     throw new Error(`Missing env ${profile.apiKeyEnv} for profile ${profileId}`);

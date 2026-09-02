@@ -53,12 +53,8 @@ export interface ActivityUserMessageNavDensity {
 
 /** Shell max-height in px — keep in sync with message-nav CSS. */
 export function activityUserMessageNavShellMaxHeightPx(viewportHeightPx: number): number {
-  const safeViewport =
-    Number.isFinite(viewportHeightPx) && viewportHeightPx > 0 ? viewportHeightPx : 800;
-  return Math.min(
-    safeViewport * ACTIVITY_MESSAGE_NAV.maxHeightVhRatio,
-    ACTIVITY_MESSAGE_NAV.maxHeightPx,
-  );
+  const safeViewport = Number.isFinite(viewportHeightPx) && viewportHeightPx > 0 ? viewportHeightPx : 800;
+  return Math.min(safeViewport * ACTIVITY_MESSAGE_NAV.maxHeightVhRatio, ACTIVITY_MESSAGE_NAV.maxHeightPx);
 }
 
 /** List content box height inside the shell (excludes list padding). */
@@ -137,8 +133,7 @@ export const MAIN_SHELL_BREAKPOINTS = {
    * Approximate feed-column width where left gutter first fits the message-nav rail
    * (`feedMaxWidth + 2 * railClearance`). Prefer {@link shouldShowActivityMessageNav}.
    */
-  messageNavMinFeed:
-    ACTIVITY_MESSAGE_NAV.feedMaxWidth + 2 * ACTIVITY_MESSAGE_NAV.railClearancePx,
+  messageNavMinFeed: ACTIVITY_MESSAGE_NAV.feedMaxWidth + 2 * ACTIVITY_MESSAGE_NAV.railClearancePx,
   /** Composer toolbar collapses labels (composer card / viewport). */
   composerIconOnly: 640,
 } as const;
@@ -275,7 +270,6 @@ export function shouldShowActivityMessageNav(
   return leftGutterPx >= ACTIVITY_MESSAGE_NAV.railClearancePx;
 }
 
-
 export const MAIN_SHELL_MEDIA_QUERIES = {
   sidebarOverlay: `(max-width: ${MAIN_SHELL_BREAKPOINTS.sidebarOverlay}px)`,
   taskOverlay: `(max-width: ${MAIN_SHELL_BREAKPOINTS.taskOverlay}px)`,
@@ -410,9 +404,7 @@ export function shouldResetTaskPanelFullscreenOnBrowserOpen(panelOpen: boolean):
  * CSS custom properties for the MainPane chrome *overlay* strip (top toolbar only).
  * Content columns ignore this width; only topbar padding uses --panel-chrome-strip-width.
  */
-export function panelChromeCssVariables(options: {
-  fullscreenSlotOpen: boolean;
-}): Record<string, string> {
+export function panelChromeCssVariables(options: { fullscreenSlotOpen: boolean }): Record<string, string> {
   const buttons = panelChromeButtonsWidthPx(options.fullscreenSlotOpen);
   return {
     "--panel-chrome-button-size": `${PANEL_CHROME_GEOMETRY.buttonPx}px`,

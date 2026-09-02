@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import {
-  normalizeMcpServersEnabled,
-  type ProjectMcpSettingsSnapshot,
-} from "../shared/composer-mcp";
+import { normalizeMcpServersEnabled, type ProjectMcpSettingsSnapshot } from "../shared/composer-mcp";
 
 export async function createProjectMcpSettingsStore(dbPath: string): Promise<ProjectMcpSettingsStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });

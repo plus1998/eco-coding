@@ -20,14 +20,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentEvent } from "../../packages/shared/src";
 import type { EcoAgentRuntimeConfig } from "../../packages/runtime/src/agent-orchestration";
 import { ClaudeAgentSdkDriver } from "../../packages/runtime/src/claude-agent-sdk";
-import { buildScenarioPrompt } from "./lib/scenario-prompt.mjs";
+import type { AgentEvent } from "../../packages/shared/src";
 import { appendJsonl, ensureDir, redactSecrets, snapshotWorkspace, writeJson } from "./lib/fixture-io.mjs";
-import { evaluateSdkScenarioChecklist } from "./lib/sdk-checklist.mjs";
-import { resolveClaudeExecutable, resolveMcpEchoServerPath, resolveNodeExecutable } from "./lib/resolve-executables.mjs";
+import {
+  resolveClaudeExecutable,
+  resolveMcpEchoServerPath,
+  resolveNodeExecutable,
+} from "./lib/resolve-executables.mjs";
+import { buildScenarioPrompt } from "./lib/scenario-prompt.mjs";
 import { setupScenarioWorkspace } from "./lib/scenario-workspace.mjs";
+import { evaluateSdkScenarioChecklist } from "./lib/sdk-checklist.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(__dirname, "fixtures");
@@ -39,9 +43,10 @@ const apiKey =
   process.env.ECO_CLAUDE_SMOKE_API_KEY?.trim() ||
   "";
 // Claude SDK appends `/v1/messages` to ANTHROPIC_BASE_URL.
-const baseUrl = (
-  process.env.ECO_CLAUDE_SMOKE_BASE_URL ?? "https://api.longcat.chat/anthropic"
-).replace(/\/$/, "");
+const baseUrl = (process.env.ECO_CLAUDE_SMOKE_BASE_URL ?? "https://api.longcat.chat/anthropic").replace(
+  /\/$/,
+  "",
+);
 const model = process.env.ECO_CLAUDE_SMOKE_MODEL?.trim() || "LongCat-2.0";
 const providerId = process.env.ECO_CLAUDE_SMOKE_PROVIDER?.trim() || "longcat";
 const TIMEOUT_MS = Number.parseInt(process.env.ECO_CLAUDE_SMOKE_TIMEOUT_MS ?? "600000", 10);
@@ -107,7 +112,8 @@ const agentRegistry: EcoAgentRuntimeConfig = {
       id: "smoke.worker",
       name: "Smoke Worker",
       description: "Short-lived worker for Eco scenario smoke.",
-      prompt: "You are smoke_worker. Reply with exactly the marker string the parent asked for. Do not call tools unless required.",
+      prompt:
+        "You are smoke_worker. Reply with exactly the marker string the parent asked for. Do not call tools unless required.",
       whenToUse: "When the parent delegates a smoke task.",
       defaultTools: {
         allowed: [],

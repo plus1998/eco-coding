@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { computeRequestBilling, type ParsedUsage } from "@eco/runtime";
-import type { AgentRole } from "../src/shared/ipc";
 import {
   resolveSdkRunBillingAttribution,
   type SdkRunBillingAttributionResolver,
 } from "../src/main/sdk-run-billing-attribution";
 import type { ResolvedSdkRunBillingModel } from "../src/main/usage-billing-artifacts";
+import type { AgentRole } from "../src/shared/ipc";
 
 function usage(): ParsedUsage {
   return { inputTokens: 1_000, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0 };

@@ -113,11 +113,7 @@ export async function verifyVaultClaimCode(code: string, codeHash: string): Prom
 
 /** Ephemeral P-256 key pair for the vault claim requester. */
 export async function generateVaultClaimKeyPair(): Promise<VaultClaimKeyPair> {
-  const pair = await crypto.subtle.generateKey(
-    { name: "ECDH", namedCurve: "P-256" },
-    true,
-    ["deriveBits"],
-  );
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
   const publicKey = await crypto.subtle.exportKey("spki", pair.publicKey);
   const privateKey = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
   return {
@@ -137,11 +133,9 @@ export async function wrapVaultKeyForClaim(
   const vaultKeyBytes = vaultKeyToBytes(vaultKey);
   const requesterKey = await importSpkiPublicKey(requesterPublicKey);
 
-  const ephemeral = await crypto.subtle.generateKey(
-    { name: "ECDH", namedCurve: "P-256" },
-    true,
-    ["deriveBits"],
-  );
+  const ephemeral = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+    "deriveBits",
+  ]);
   const aesKey = await deriveWrapAesKey(ephemeral.privateKey, requesterKey);
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
@@ -260,11 +254,7 @@ export async function unwrapVaultKeyWithPassword(
   if (!Number.isInteger(wrapped.iterations) || wrapped.iterations < 100_000) {
     throw new Error("Invalid PBKDF2 iterations on password wrap");
   }
-  const aesKey = await derivePasswordAesKey(
-    password,
-    base64UrlToBytes(wrapped.salt),
-    wrapped.iterations,
-  );
+  const aesKey = await derivePasswordAesKey(password, base64UrlToBytes(wrapped.salt), wrapped.iterations);
   let plaintext: ArrayBuffer;
   try {
     plaintext = await crypto.subtle.decrypt(
@@ -306,13 +296,9 @@ async function derivePasswordAesKey(
   salt: Uint8Array,
   iterations: number,
 ): Promise<CryptoKey> {
-  const baseKey = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
-  );
+  const baseKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
+    "deriveKey",
+  ]);
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
@@ -385,15 +371,8 @@ async function importVaultAesKey(vaultKey: string): Promise<CryptoKey> {
   );
 }
 
-async function deriveWrapAesKey(
-  privateKey: CryptoKey,
-  publicKey: CryptoKey,
-): Promise<CryptoKey> {
-  const bits = await crypto.subtle.deriveBits(
-    { name: "ECDH", public: publicKey },
-    privateKey,
-    256,
-  );
+async function deriveWrapAesKey(privateKey: CryptoKey, publicKey: CryptoKey): Promise<CryptoKey> {
+  const bits = await crypto.subtle.deriveBits({ name: "ECDH", public: publicKey }, privateKey, 256);
   const hkdfKey = await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     {

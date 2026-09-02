@@ -82,9 +82,7 @@ interface PackagedExecutableInput {
   arch?: string;
 }
 
-export function resolvePackagedCodexExecutableCandidate(
-  input: PackagedExecutableInput,
-): string | undefined {
+export function resolvePackagedCodexExecutableCandidate(input: PackagedExecutableInput): string | undefined {
   const resourcesPath = input.resourcesPath?.trim();
   const platform = input.platform ?? process.platform;
   const arch = input.arch ?? process.arch;
@@ -104,9 +102,7 @@ export function resolvePackagedCodexExecutableCandidate(
   );
 }
 
-export function resolvePackagedClaudeExecutableCandidate(
-  input: PackagedExecutableInput,
-): string | undefined {
+export function resolvePackagedClaudeExecutableCandidate(input: PackagedExecutableInput): string | undefined {
   const resourcesPath = input.resourcesPath?.trim();
   const platform = input.platform ?? process.platform;
   const arch = input.arch ?? process.arch;

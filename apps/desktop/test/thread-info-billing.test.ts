@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 import {
   formatBillingCacheHitRate,
   resolveBillingMainModelLabel,
   shouldShowBillingSavings,
 } from "../src/renderer/ThreadInfoPanel";
+import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 
 const billing = {
   plannerModelLabel: "gpt-5.5 · OpenAI",

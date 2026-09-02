@@ -21,8 +21,8 @@ import {
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
   type CenterServerApproveVaultClaimResult,
-  type CenterServerConnectQrResult,
   type CenterServerConnectionStatus,
+  type CenterServerConnectQrResult,
   type CenterServerCreatePairingResult,
   type CenterServerDeviceBindingView,
   type CenterServerDevicePresenceView,
@@ -64,11 +64,11 @@ import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center"
 import { MobileRemoteEventPublisher } from "./mobile-remote-event-publisher";
 import { SupabaseRealtimeRpc } from "./supabase-realtime-rpc";
 import {
-  markDeviceVaultSynced,
   computeDomainSyncStatuses,
-  decryptUserSecrets,
   type DomainSettingsSyncHooks,
+  decryptUserSecrets,
   isEcoSyncedSettingsPayload,
+  markDeviceVaultSynced,
   pullUserSecrets,
   pullUserSettings,
   SettingsSyncConflictError,
@@ -789,8 +789,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       const localPayload = this.settingsSyncHooks.collectSettingsPayload();
       const localSecrets = this.settingsSyncHooks.collectPlainSecrets();
       const remote = await pullUserSettings(client, userId);
-      const remotePayload =
-        remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
+      const remotePayload = remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
       let remoteSecrets: ReturnType<DomainSettingsSyncHooks["collectPlainSecrets"]> = [];
       const vaultKey = this.store.getVaultKey().trim();
       if (vaultKey && remotePayload) {

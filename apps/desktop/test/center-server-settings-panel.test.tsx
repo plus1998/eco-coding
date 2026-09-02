@@ -29,8 +29,14 @@ function renderPanel(snapshot: CenterServerSettingsSnapshot = connectedSnapshot,
       busy,
       onSave: async () => snapshot,
       onTestConnection: async () => ({ ok: true }),
-      onSignUp: async () => ({ ...snapshot, user: { id: "u1", email: "a@b.c", displayName: null, createdAt: "2026-08-18T00:00:00.000Z" } }),
-      onSignIn: async () => ({ ...snapshot, user: { id: "u1", email: "a@b.c", displayName: null, createdAt: "2026-08-18T00:00:00.000Z" } }),
+      onSignUp: async () => ({
+        ...snapshot,
+        user: { id: "u1", email: "a@b.c", displayName: null, createdAt: "2026-08-18T00:00:00.000Z" },
+      }),
+      onSignIn: async () => ({
+        ...snapshot,
+        user: { id: "u1", email: "a@b.c", displayName: null, createdAt: "2026-08-18T00:00:00.000Z" },
+      }),
       onCreatePairing: async () => ({
         pairingId: "pair_1",
         code: "123456",
@@ -111,7 +117,10 @@ test("saving still disables switch and delete", () => {
 });
 
 test("bindings loading is not part of connection action busy", () => {
-  const source = readFileSync(new URL("../src/renderer/CenterServerSettingsPanel.tsx", import.meta.url), "utf8");
+  const source = readFileSync(
+    new URL("../src/renderer/CenterServerSettingsPanel.tsx", import.meta.url),
+    "utf8",
+  );
   expect(source).toContain("connectionBusy || saveBusy || authBusy || vaultBusy");
   expect(source).not.toContain("connectionBusy || bindingsLoading || saveBusy");
 });

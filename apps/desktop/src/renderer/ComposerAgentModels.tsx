@@ -12,9 +12,9 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
-import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 function rowClassName(options: { subagent: boolean; enabled: boolean; planner: boolean }): string {

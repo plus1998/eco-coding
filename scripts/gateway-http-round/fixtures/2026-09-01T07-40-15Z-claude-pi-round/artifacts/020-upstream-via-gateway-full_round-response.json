@@ -1,1 +1,35 @@
-{"id":"2eab020c57214a708085298a04cc7ce5","object":"chat.completion","created":1788249551,"model":"LongCat-2.0","choices":[{"delta":null,"index":0,"finish_reason":"stop","matched_stop":2,"message":{"role":"assistant","content":"I'm not sure what you'd like me to count! Could you clarify? For example:\n\n- Count **to a certain number** (e.g., \"count to 10\")\n- Count **items** (e.g., \"count the words in this sentence\")\n- Count **something specific** you have in mind\n\nLet me know and I'll be happy to help!","reasoning_content":"\nThe user just said \"count\". Without more context, I'm not sure what they're asking me to count. I should ask for clarification."},"logprobs":null}],"usage":{"completion_tokens":110,"prompt_tokens":233,"total_tokens":343,"completion_tokens_details":{"reasoning_tokens":30},"prompt_tokens_details":{"cached_tokens":0,"audio_tokens":0,"image_tokens":0,"video_tokens":0,"text_tokens":0,"cache_write_tokens":0}},"lastOne":false}
+{
+  "id": "2eab020c57214a708085298a04cc7ce5",
+  "object": "chat.completion",
+  "created": 1788249551,
+  "model": "LongCat-2.0",
+  "choices": [
+    {
+      "delta": null,
+      "index": 0,
+      "finish_reason": "stop",
+      "matched_stop": 2,
+      "message": {
+        "role": "assistant",
+        "content": "I'm not sure what you'd like me to count! Could you clarify? For example:\n\n- Count **to a certain number** (e.g., \"count to 10\")\n- Count **items** (e.g., \"count the words in this sentence\")\n- Count **something specific** you have in mind\n\nLet me know and I'll be happy to help!",
+        "reasoning_content": "\nThe user just said \"count\". Without more context, I'm not sure what they're asking me to count. I should ask for clarification."
+      },
+      "logprobs": null
+    }
+  ],
+  "usage": {
+    "completion_tokens": 110,
+    "prompt_tokens": 233,
+    "total_tokens": 343,
+    "completion_tokens_details": { "reasoning_tokens": 30 },
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0,
+      "video_tokens": 0,
+      "text_tokens": 0,
+      "cache_write_tokens": 0
+    }
+  },
+  "lastOne": false
+}

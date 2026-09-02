@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CodexFileCheckpointStore } from "../src/main/codex-file-checkpoints";
-import { clearCodexHomeCaches, clearLogs, runStorageCleanup } from "../src/main/storage-cleanup";
 import { createConversationStore } from "../src/main/conversation-store";
+import { clearCodexHomeCaches, clearLogs, runStorageCleanup } from "../src/main/storage-cleanup";
 import type { ThreadSummary } from "../src/shared/ipc";
 
 const sqliteAvailable = await (async () => {
@@ -358,10 +358,12 @@ test("clearPiAgent full wipe with no running PI threads removes all agent dirs",
 
   expect(result.ok).toBe(true);
   expect(deleted).toEqual(["thr_pi"]);
-  expect(await fs.readdir(piAgentDir).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  })).toEqual([]);
+  expect(
+    await fs.readdir(piAgentDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }),
+  ).toEqual([]);
 });

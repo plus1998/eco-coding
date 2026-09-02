@@ -7,18 +7,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
+  ACP_IMAGE_ONLY_PROMPT,
   type AgentEvent,
+  acpSessionIdToDelete,
+  type CodexGatewayCatalogRoute,
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
+  deleteCursorAcpSession,
   type EcoAgentRuntimeConfig,
-  type CodexGatewayCatalogRoute,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
   type EcoSubagentAttributionHooks,
   evaluateFilesystemReadConfirmation,
   evaluateFilesystemWriteConfirmation,
+  isAcpProviderExhaustionMessage,
   isCoreKind,
   isReadFilesystemTool,
   isWriteFilesystemTool,
@@ -27,6 +31,8 @@ import {
   parsePiUsage,
   probePiCoreAvailability,
   readFilesystemPath,
+  resolveAcpHostUiFeatures,
+  resolveCursorAgentExecutable,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
   type SdkAskUserQuestionRequest,
@@ -34,29 +40,18 @@ import {
   type SdkToolPermissionRequest,
   type SessionCapturedPayload,
   type SubagentRunPhase,
-  resolveAcpHostUiFeatures,
-  resolveCursorAgentExecutable,
-  acpSessionIdToDelete,
-  deleteCursorAcpSession,
   toAcpMcpServers,
-  ACP_IMAGE_ONLY_PROMPT,
-  isAcpProviderExhaustionMessage,
 } from "@eco/runtime";
+import { steerCodexTurn } from "@eco/runtime/codex-turn-steer";
 import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
 import {
   ClaudeAgentSdkDriver,
   deleteClaudeAgentSdkSession,
-  forkClaudeSessionAt,
   type EcoHookContext,
   extractCompactPostTokens,
+  forkClaudeSessionAt,
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
-import { steerCodexTurn } from "@eco/runtime/codex-turn-steer";
-import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
-import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-decision";
-import { assertSdkSessionRetainedOnRunFailure } from "./sdk-session-run-failure";
-import { getCodexVersion, getClaudeVersion, getCursorVersion } from "./core-version";
-import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import { definedProps, isRemoteCommandChannel } from "@eco/shared";
 import {
   type CommandRunner,
@@ -72,26 +67,31 @@ import {
   dialog,
   ipcMain,
   Menu,
-  net,
   type NativeImage,
   Notification,
   nativeImage,
   nativeTheme,
+  net,
   safeStorage,
   session,
   shell,
 } from "electron";
-import { ensureDesktopPath } from "./fix-desktop-path";
+import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
+import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-decision";
+import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
+import { getClaudeVersion, getCodexVersion, getCursorVersion } from "./core-version";
 import { configureDesktopDevIdentity } from "./desktop-app-identity";
+import { ensureDesktopPath } from "./fix-desktop-path";
 import { ImageViewReadError, readImageViewFile } from "./image-view-reader";
 import { buildApplicationMenuTemplate } from "./native-menu";
-import { isReloadShortcutInput } from "./packaged-window-shortcuts";
 import {
   readElectronResourcesPath,
   resolvePackagedClaudeExecutableCandidate,
 } from "./packaged-runtime-executables";
-import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
+import { isReloadShortcutInput } from "./packaged-window-shortcuts";
+import { assertSdkSessionRetainedOnRunFailure } from "./sdk-session-run-failure";
 import { isAllowedSessionPermission, isLocalRendererUrl } from "./session-permissions";
+import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
 import {
   resolveWindowsBackdropVersion,
   resolveWindowsBackgroundMaterial,
@@ -99,15 +99,10 @@ import {
 
 ensureDesktopPath();
 
+import { repairActivityText } from "../shared/activity-text";
+import { isOrchestrationSelection, orchestrationConfigFromSnapshot } from "../shared/agent-orchestration";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
-import { expectedIpcErrorKey, translateCatalog } from "../shared/i18n-catalogs";
-import {
-  type AppLocale,
-  type AppLocalePreference,
-  normalizeLocalePreference,
-  resolveAppLocale,
-} from "../shared/locale";
 import {
   deriveBashApprovalRememberPrefix,
   formatBashApprovalDenyMessage,
@@ -115,7 +110,42 @@ import {
 } from "../shared/bash-approval-ui";
 import { didSwitchToAllowAllBashReviewMode } from "../shared/bash-review-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
+import {
+  type BrowserCloseRequest,
+  type BrowserFocusRequest,
+  type BrowserNavigateRequest,
+  type BrowserOpenRequest,
+  type BrowserRegisterGuestRequest,
+  type BrowserSetUiScopeRequest,
+  type BrowserSetVisibleRequest,
+  type BrowserViewState,
+  ECO_AGENT_BROWSER_MCP_SERVER,
+  ECO_AGENT_BROWSER_SKILL_NAME,
+  extractUrlFromBrowserOpenToolPayload,
+  isEcoAgentBrowserOpenToolName,
+  requiresBrowserOpenApproval,
+  resolveToolNameFromActivityPayload,
+} from "../shared/browser";
+import { codexTurnHasRetryBlockingProgress } from "../shared/codex-request-retry-gate";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
+import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
+import type { DesktopUpdateState } from "../shared/desktop-update";
+import { computeGlobalSettingsDigest } from "../shared/global-settings-digest";
+import { expectedIpcErrorKey, translateCatalog } from "../shared/i18n-catalogs";
+import {
+  buildImageGenerationPromptAppend,
+  ECO_IMAGE_GENERATION_MCP_SERVER,
+  type ImageGenerationArtifact,
+  type ImageGenerationProfileSaveInput,
+  isEcoImageGenerationToolName,
+} from "../shared/image-generation";
+import {
+  buildImageViewPromptAppend,
+  ECO_IMAGE_VIEW_MCP_SERVER,
+  ECO_IMAGE_VIEW_TOOL,
+  isEcoImageViewToolName,
+} from "../shared/image-view-tool";
+import { integrationEnabled } from "../shared/integrations";
 import {
   type AgentRole,
   type AgentTemplate,
@@ -132,6 +162,7 @@ import {
   type CenterServerTestConnectionRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
+  hasCompleteOrchestrationSelection,
   IPC_CHANNELS,
   type IpcChannel,
   isBackgroundTerminalListRequest,
@@ -139,13 +170,10 @@ import {
   isBackgroundTerminalStartRequest,
   isBackgroundTerminalStopRequest,
   isBashReviewModeOnlyRuntimeConfigUpdate,
-  resolveBusyThreadRuntimeConfigUpdate,
   isGitCommitRequest,
   isGitFetchRequest,
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
-  parseGitListCommitModelOptionsRequest,
-  parseGitSaveCommitModelPreferenceRequest,
   isGitPullRequest,
   isGitPushRequest,
   isKnownIpcChannel,
@@ -162,30 +190,32 @@ import {
   isTerminalSpawnRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
+  lockThreadRuntimeConfigSnapshotOnContinue,
   type MainAgentConfigResource,
   type MainAgentPromptResource,
-  type OrchestrationSelection,
-  type SubagentOrchestrationResource,
   type McpServerConfigInput,
   type ModelSettingsSnapshot,
+  materializeThreadOrchestrationSnapshot,
   normalizeThreadRuntimeConfig,
+  type OrchestrationSelection,
   type PlanApprovalRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
+  parseGitListCommitModelOptionsRequest,
+  parseGitSaveCommitModelPreferenceRequest,
   type RouteManualSpec,
   type RouteProfileInput,
   type RuntimeAgentRole,
   type RuntimeRoleRouteConfig,
+  resolveBusyThreadRuntimeConfigUpdate,
   resolveMainAgentSystemPromptPreset,
   resolveSessionMode,
   resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromOrchestrationSnapshot,
-  hasCompleteOrchestrationSelection,
-  lockThreadRuntimeConfigSnapshotOnContinue,
-  materializeThreadOrchestrationSnapshot,
-  shouldRematerializeThreadRuntimeConfigOnContinue,
   SUBAGENT_ROLES,
+  type SubagentOrchestrationResource,
+  shouldRematerializeThreadRuntimeConfigOnContinue,
   type TerminalListRequest,
   type TestProviderConnectionRequest,
   type TestRoleRoutesRequest,
@@ -196,10 +226,6 @@ import {
   type ThreadContextSnapshot,
   type ThreadContinueRequest,
   type ThreadContinueResult,
-  type ThreadRewriteFromMessageRequest,
-  type ThreadRetryFromMessageRequest,
-  type ThreadUserMessageEditGetRequest,
-  type ThreadUserMessageEditGetResult,
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEditingRequest,
   type ThreadFollowUpEnqueueRequest,
@@ -212,9 +238,11 @@ import {
   type ThreadModelUsageEntry,
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
+  type ThreadRetryFromMessageRequest,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
+  type ThreadRewriteFromMessageRequest,
   type ThreadRollbackResult,
   type ThreadRunBashApprovalMetadata,
   type ThreadRunBashApprovalPhase,
@@ -232,18 +260,26 @@ import {
   type ThreadUsageLedgerEventView,
   type ThreadUsageSnapshot,
   type ThreadUsageSnapshotResult,
+  type ThreadUserMessageEditGetRequest,
+  type ThreadUserMessageEditGetResult,
   type WorkspaceInfo,
   type WorktreeApplyResult,
   type WorktreeCancelDisposition,
   type WorktreeStatusResult,
   withAgentSessionMode,
 } from "../shared/ipc";
-import { computeGlobalSettingsDigest } from "../shared/global-settings-digest";
+import {
+  type AppLocale,
+  type AppLocalePreference,
+  normalizeLocalePreference,
+  resolveAppLocale,
+} from "../shared/locale";
 import { buildCodexMcpServersForConfigSync, filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
+import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
-  buildOrchestrationRuntimeKey,
   buildMainAgentModelKey,
+  buildOrchestrationRuntimeKey,
   diffPromptCacheRuntimeSignatures,
   resolveMainAgentModelKey,
   resolvePromptCacheOrchestrationLabel,
@@ -251,6 +287,7 @@ import {
 } from "../shared/prompt-cache-config";
 import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
 import { BUILTIN_VISION_AGENT_ROLE, buildPromptWithVisionAnalysis } from "../shared/prompt-image-vision";
+import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
@@ -265,11 +302,10 @@ import {
   type SkillInfo,
   type SkillUninstallRequest,
 } from "../shared/skills";
-import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import {
+  activityLinesFromThreadRunEvents,
   buildThreadApprovalNotificationContent,
   buildThreadClarificationNotificationContent,
-  activityLinesFromThreadRunEvents,
   buildThreadCompletionNotificationContentFromSources,
 } from "../shared/thread-completion-notification";
 import {
@@ -287,16 +323,6 @@ import {
   persistThreadSummaryMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
-import { codexTurnHasRetryBlockingProgress } from "../shared/codex-request-retry-gate";
-import {
-  requiresEmptyTurnForRequestRetry,
-  supportsOneClickRequestRetry,
-  usesRewindOnRequestRetry,
-} from "../shared/thread-request-retry";
-import {
-  projectThreadRunToolMetadata,
-  projectThreadRunToolMetadataForFeed,
-} from "../shared/thread-run-tool-projection";
 import {
   assertAcpFollowUpEscalateAllowed,
   coreSupportsMidTurnFollowUp,
@@ -309,27 +335,47 @@ import {
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
 } from "../shared/thread-follow-up-drain";
-import { isOrchestrationSelection, orchestrationConfigFromSnapshot } from "../shared/agent-orchestration";
+import {
+  requiresEmptyTurnForRequestRetry,
+  supportsOneClickRequestRetry,
+  usesRewindOnRequestRetry,
+} from "../shared/thread-request-retry";
+import {
+  projectThreadRunToolMetadata,
+  projectThreadRunToolMetadataForFeed,
+} from "../shared/thread-run-tool-projection";
 import {
   buildWorktreeMergeSummary,
   formatWorktreeMergeThreadMessage,
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
-import { ActiveRunBillingStateStore } from "./active-run-billing-state";
+import { createAcpAskQuestionHandler } from "./acp-ask-question-bridge";
 import {
-  attachThreadCancelling,
-  attachThreadListCancelling,
-  clearThreadCancelling,
-  isThreadCancelling,
-  markThreadCancelling,
-  shouldKeepThreadCancelling,
-} from "./thread-cancelling-state";
+  type AcpCursorProbeResult,
+  assertAcpCursorRunnable,
+  handshakeAcpCursor,
+  probeAcpCursorAvailability,
+  reconcileAcpCursorEnabled,
+} from "./acp-cursor-availability";
+import { createAcpPermissionHandler } from "./acp-permission-bridge";
+import {
+  applyAcpPlanProgress,
+  applyAcpUpdateTodos,
+  isAcpPlanTodoPayload,
+  isAcpUpdateTodosPayload,
+} from "./acp-plan-progress";
+import {
+  cancelAcpThread,
+  resolveAcpRunPrompt,
+  startAcpThreadRun,
+  toAcpThreadStartRunInput,
+} from "./acp-runtime-run";
+import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
-import { collectProviderDeleteReferences, partitionProviderDeleteReferences } from "./provider-deletion";
 import {
   type AnthropicProxyRoute,
   type AnthropicProxyStartOptions,
@@ -340,13 +386,15 @@ import {
   runtimeRouteToProxyRoute,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
-import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
+import { attachMainWindowQuitGuard, installApplicationShutdownHook } from "./application-shutdown";
+import { transcribeAsr } from "./asr-client";
+import { type AsrSecretCodec, type AsrSettingsStore, createAsrSettingsStore } from "./asr-settings-store";
+import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
-import { createAcpPermissionHandler } from "./acp-permission-bridge";
 import {
-  type BashApprovalResolution,
   approveAllPendingBashApprovalsForThread,
+  type BashApprovalResolution,
   buildResolvedBashApprovalThreadPatch,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
@@ -368,18 +416,24 @@ import {
   createBillingRuntimeEnvironment,
   resolveBillingRuntimeContext,
 } from "./billing-runtime-environment";
+import { installBrowserGuestBridge } from "./browser-guest-bridge";
+import { appendBrowserPrompt, BrowserHost } from "./browser-host";
+import {
+  type BrowserSettingsStore,
+  createBrowserSettingsStore,
+  isBrowserSettingsSnapshot,
+  normalizeBrowserSettingsSnapshot,
+} from "./browser-settings-store";
 import {
   type FinalizeCancelledRunDeps,
   finalizeCancelledRun,
   parseThreadCancelRequest,
   takePendingCancelDisposition,
 } from "./cancel-worktree";
-import { SupabaseCenterDesktopClient } from "./supabase-center-client";
 import {
   createCenterServerStore,
   createElectronSafeStorageCenterServerSecretCodec,
 } from "./center-server-store";
-import { createDesktopSettingsSyncHooks } from "./supabase-settings-sync-hooks";
 import {
   buildAskUserQuestionUpdatedInput,
   buildClarificationToolMetadata,
@@ -391,19 +445,13 @@ import {
   registerPendingClarification,
   submitClarification,
 } from "./clarification-bridge";
+import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
 import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
-import {
-  attachMainWindowQuitGuard,
-  installApplicationShutdownHook,
-} from "./application-shutdown";
-import { runStorageCleanup } from "./storage-cleanup";
-import { buildStorageUsageSnapshot } from "./storage-inventory";
 import {
   CodexGatewayUsageDeduplicator,
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
-import { classifyGatewayUsageEvent } from "./gateway-usage-dispatch";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
@@ -411,34 +459,40 @@ import {
   configureCodexRuntimeRun,
   createCodexRuntimeDriver,
   ensureCodexControlPlaneClient,
+  forkCodexThreadForEcoThread,
   getCodexTurnRouteRegistry,
   isCodexCliAvailable,
   queryCodexThreadStatusForEcoThread,
   registerResolvedCodexGatewayTurnRoute,
-  forkCodexThreadForEcoThread,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
   scheduleCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
-import { applyAcpPlanProgress, applyAcpUpdateTodos, isAcpPlanTodoPayload, isAcpUpdateTodosPayload } from "./acp-plan-progress";
-import { createAcpAskQuestionHandler } from "./acp-ask-question-bridge";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor } from "./context-window-monitor";
-import { repairActivityText } from "../shared/activity-text";
-import { type ConversationStore, type ThreadListCursor, createConversationStore } from "./conversation-store";
-import { PromptImageFileStore, isPromptImageAttachmentRecord } from "./prompt-image-file-store";
+import { type ConversationStore, createConversationStore, type ThreadListCursor } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
-import { presentDesktopWindow } from "./desktop-single-instance";
-import { resolveInitialWindowBounds } from "./desktop-window-placement";
+import { listDiscoveredCursorAgents } from "./cursor-agents-discovery";
 import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
+import { presentDesktopWindow } from "./desktop-single-instance";
 import { DesktopUpdateService } from "./desktop-update-service";
-import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
-import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
+import { resolveInitialWindowBounds } from "./desktop-window-placement";
+import {
+  buildEcoAgentBrowserCodexSkillInfo,
+  ensureClaudeUserEcoAgentBrowserSkill,
+  removeClaudeUserEcoAgentBrowserSkill,
+  resolveEcoAgentBrowserSkillFileForCodex,
+} from "./eco-agent-browser-skill";
+import {
+  buildThreadApprovalEnvelope,
+  type EcoApprovalReviewResult,
+  reviewEcoApproval,
+} from "./eco-approval-reviewer";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import {
   configureEcoGatewayLifecycle,
@@ -446,7 +500,8 @@ import {
   stopGlobalEcoGateway,
 } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
-import { REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE } from "./remote-thread-list";
+import { handleGatewayRequestLifecycleEvent } from "./gateway-request-lifecycle";
+import { classifyGatewayUsageEvent } from "./gateway-usage-dispatch";
 import { GitAutoFetcher } from "./git-autofetch";
 import {
   checkoutGitBranch,
@@ -459,9 +514,9 @@ import {
   handleGitCommit,
   handleGitGenerateCommitMessage,
   handleGitListCommitModelOptions,
-  handleGitSaveCommitModelPreference,
   handleGitPull,
   handleGitPush,
+  handleGitSaveCommitModelPreference,
   listGitCommits,
 } from "./git-service";
 import {
@@ -470,91 +525,27 @@ import {
   isGitSettingsSnapshot,
   normalizeGitSettingsSnapshot,
 } from "./git-settings-store";
-import { transcribeAsr } from "./asr-client";
-import { createAsrSettingsStore, type AsrSecretCodec, type AsrSettingsStore } from "./asr-settings-store";
-import {
-  createPersonalizationSettingsStore,
-  type PersonalizationSettingsStore,
-  isPersonalizationSettingsSnapshot,
-  normalizePersonalizationSettingsSnapshot,
-} from "./personalization-settings-store";
-import {
-  createBrowserSettingsStore,
-  type BrowserSettingsStore,
-  isBrowserSettingsSnapshot,
-  normalizeBrowserSettingsSnapshot,
-} from "./browser-settings-store";
-import {
-  createWebChatListStore,
-  type WebChatListStore,
-  isWebChatListSnapshot,
-  normalizeWebChatListSnapshot,
-} from "./web-chat-list-store";
-import {
-  createSshBookmarkStore,
-  type SshBookmarkStore,
-} from "./ssh-bookmark-store";
-import { connectSshBookmark, type SshConnectSecrets } from "./ssh-connect";
-import { createLocalSecretCodec } from "./local-secret-codec";
-import {
-  createNotificationSettingsStore,
-  type NotificationSettingsStore,
-  isNotificationSettingsSnapshot,
-  normalizeNotificationSettingsSnapshot,
-} from "./notification-settings-store";
-import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
-import { appendBrowserPrompt, BrowserHost } from "./browser-host";
-import { installBrowserGuestBridge } from "./browser-guest-bridge";
+import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
+import { ImageGenerationMcpGateway } from "./image-generation-mcp-gateway";
 import {
   createImageGenerationStore,
   type ImageGenerationSecretCodec,
   type ImageGenerationStore,
 } from "./image-generation-store";
-import { ImageGenerationMcpGateway } from "./image-generation-mcp-gateway";
 import { ImageViewMcpGateway } from "./image-view-mcp-gateway";
-import {
-  ECO_IMAGE_GENERATION_MCP_SERVER,
-  buildImageGenerationPromptAppend,
-  isEcoImageGenerationToolName,
-  type ImageGenerationArtifact,
-  type ImageGenerationProfileSaveInput,
-} from "../shared/image-generation";
-import {
-  ECO_IMAGE_VIEW_MCP_SERVER,
-  ECO_IMAGE_VIEW_TOOL,
-  buildImageViewPromptAppend,
-  isEcoImageViewToolName,
-} from "../shared/image-view-tool";
-import { integrationEnabled } from "../shared/integrations";
-import {
-  ECO_AGENT_BROWSER_MCP_SERVER,
-  ECO_AGENT_BROWSER_SKILL_NAME,
-  extractUrlFromBrowserOpenToolPayload,
-  isEcoAgentBrowserOpenToolName,
-  requiresBrowserOpenApproval,
-  resolveToolNameFromActivityPayload,
-  type BrowserCloseRequest,
-  type BrowserFocusRequest,
-  type BrowserNavigateRequest,
-  type BrowserOpenRequest,
-  type BrowserRegisterGuestRequest,
-  type BrowserSetUiScopeRequest,
-  type BrowserSetVisibleRequest,
-  type BrowserViewState,
-} from "../shared/browser";
-import {
-  buildEcoAgentBrowserCodexSkillInfo,
-  ensureClaudeUserEcoAgentBrowserSkill,
-  removeClaudeUserEcoAgentBrowserSkill,
-  resolveEcoAgentBrowserSkillFileForCodex,
-} from "./eco-agent-browser-skill";
-import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
-import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-browser";
+import { createLocalSecretCodec } from "./local-secret-codec";
 import { checkMcpServerConnection } from "./mcp-checker";
 import { prepareCodexGlobalMcpServerPool, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import {
+  createNotificationSettingsStore,
+  isNotificationSettingsSnapshot,
+  type NotificationSettingsStore,
+  normalizeNotificationSettingsSnapshot,
+} from "./notification-settings-store";
+import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { PackageJsonWatcher } from "./package-json-watcher";
 import { createPackageScriptArgsStore, type PackageScriptArgsStore } from "./package-script-args-store";
 import {
@@ -563,6 +554,25 @@ import {
   runPreparedPackageScriptAsBackgroundTask,
 } from "./package-scripts";
 import {
+  createPersonalizationSettingsStore,
+  isPersonalizationSettingsSnapshot,
+  normalizePersonalizationSettingsSnapshot,
+  type PersonalizationSettingsStore,
+} from "./personalization-settings-store";
+import { buildPiMcpSessionConfig, mergePiAppendSystemPrompt } from "./pi-mcp-session";
+import {
+  abortPiThread,
+  disposePiThreadSession,
+  removePiThreadAgentDir,
+  startPiThreadRun,
+} from "./pi-runtime-run";
+import {
+  piSkillDirectoriesForSession,
+  resolvePiThreadSkills,
+  shouldBlockPiSkillsConfigReload,
+  skillsEnabledSettingsChanged,
+} from "./pi-skills-config";
+import {
   cancelPlanApprovalsForThread,
   getPendingPlanApprovalByToolUseId,
   getPendingPlanApprovalForThread,
@@ -570,11 +580,11 @@ import {
   registerPendingPlanApproval,
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
-import { createProjectMcpSettingsStore, type ProjectMcpSettingsStore } from "./project-mcp-settings-store";
 import {
   createProjectIntegrationsSettingsStore,
   type ProjectIntegrationsSettingsStore,
 } from "./project-integrations-settings-store";
+import { createProjectMcpSettingsStore, type ProjectMcpSettingsStore } from "./project-mcp-settings-store";
 import {
   createProjectOrchestrationSettingsStore,
   type ProjectOrchestrationSettingsStore,
@@ -585,6 +595,8 @@ import {
 } from "./project-skills-settings-store";
 import { formatPromptCacheBreakLog, resolveClaudeMdDigest } from "./prompt-cache-fingerprint";
 import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
+import { isPromptImageAttachmentRecord, PromptImageFileStore } from "./prompt-image-file-store";
+import { collectProviderDeleteReferences, partitionProviderDeleteReferences } from "./provider-deletion";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
 import { reconcileProxyAttributionContexts } from "./proxy-attribution-context-reconciliation";
@@ -597,13 +609,14 @@ import {
   resolveUpstreamUserAgentOverride,
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
+import { REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE } from "./remote-thread-list";
 import { formatUserFacingRequestError, type RequestAttemptResult } from "./request-retry";
+import { resolveCommandExecutable } from "./resolve-command-executable";
 import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliation";
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
-import { resolveCommandExecutable } from "./resolve-command-executable";
-import { buildSdkRunInput, type BuildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
+import { type BuildSdkRunInput, buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
   listSdkSessionActivityLines,
   listSdkSubagentActivityLines,
@@ -618,7 +631,6 @@ import {
   createSdkStreamActivityIngestion,
   type SdkStreamActivityIngestion,
 } from "./sdk-stream-activity-ingestion";
-import { createThreadRunEventLivePersister } from "./thread-run-event-live-persist";
 import {
   resolveSdkStreamPartialBillingOrchestration,
   type SdkStreamPartialBillingRequest,
@@ -632,9 +644,13 @@ import {
 } from "./single-usage-billing-orchestration";
 import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from "./skills-catalog";
 import { listDiscoveredSkills } from "./skills-discovery";
-import { listDiscoveredCursorAgents } from "./cursor-agents-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { uninstallDiscoveredSkill } from "./skills-uninstall";
+import { createSshBookmarkStore, type SshBookmarkStore } from "./ssh-bookmark-store";
+import { connectSshBookmark, type SshConnectSecrets } from "./ssh-connect";
+import { runStorageCleanup } from "./storage-cleanup";
+import { buildStorageUsageSnapshot } from "./storage-inventory";
+import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
 import {
   clearThreadSubagentLaunchRegistry,
   getThreadSubagentLaunchRegistry,
@@ -644,44 +660,39 @@ import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconciliation.js";
-import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
+import { SupabaseCenterDesktopClient } from "./supabase-center-client";
+import { createDesktopSettingsSyncHooks } from "./supabase-settings-sync-hooks";
 import { resolveThreadApprovePlanRoute } from "./thread-approve-plan-route";
+import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
+import {
+  attachThreadCancelling,
+  attachThreadListCancelling,
+  clearThreadCancelling,
+  isThreadCancelling,
+  markThreadCancelling,
+  shouldKeepThreadCancelling,
+} from "./thread-cancelling-state";
 import { requireThreadCore } from "./thread-core-routing";
 import {
-  abortPiThread,
-  disposePiThreadSession,
-  removePiThreadAgentDir,
-  startPiThreadRun,
-} from "./pi-runtime-run";
+  createThreadFeedSkeletonRecord,
+  type FeedSkeletonPatchContext,
+  patchThreadFeedSkeletonFromEvent,
+  shouldTrackEventForFeedSkeletonPatch,
+} from "./thread-feed-skeleton-patch";
+import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
 import {
-  assertAcpCursorRunnable,
-  handshakeAcpCursor,
-  probeAcpCursorAvailability,
-  reconcileAcpCursorEnabled,
-  type AcpCursorProbeResult,
-} from "./acp-cursor-availability";
+  hydrateThreadFeedSkeletonSnapshot,
+  isThreadFeedSkeletonFresh,
+  mapRunAttemptsForFeedSkeleton,
+} from "./thread-feed-skeleton-store";
 import {
-  cancelAcpThread,
-  resolveAcpRunPrompt,
-  startAcpThreadRun,
-  toAcpThreadStartRunInput,
-} from "./acp-runtime-run";
-import {
-  piSkillDirectoriesForSession,
-  resolvePiThreadSkills,
-  shouldBlockPiSkillsConfigReload,
-  skillsEnabledSettingsChanged,
-} from "./pi-skills-config";
-import { buildPiMcpSessionConfig, mergePiAppendSystemPrompt } from "./pi-mcp-session";
-import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
-import {
+  applyExactLogicalRequestLateBind,
   applyLogicalRequestTerminal,
+  clearFinalizedLiveRequestsForAttempt,
   finalizeDisplayRequestTerminal,
   finalizeLiveRequest,
   GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN,
   handleBridgeMessagesRequest,
-  applyExactLogicalRequestLateBind,
-  clearFinalizedLiveRequestsForAttempt,
   markBridgeRequestStartedPersisted,
   recordProviderRequestIdForLogical,
   resolveExplicitBridgeRequestAgentId,
@@ -693,6 +704,7 @@ import {
   shouldEmitSdkShadowRequestTerminal,
   shouldPersistRequestStartedShadowEvent,
 } from "./thread-live-request-coordinator.js";
+import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   flushThreadMetrics,
   persistThreadMetrics,
@@ -714,8 +726,7 @@ import {
   requestTerminalLiveType,
   requestTerminalMessage,
 } from "./thread-request-lifecycle.js";
-import { handleGatewayRequestLifecycleEvent } from "./gateway-request-lifecycle";
-import { runThreadRequestWithLifecycle, type RunAttemptContext } from "./thread-run-attempt";
+import { type RunAttemptContext, runThreadRequestWithLifecycle } from "./thread-run-attempt";
 import {
   type FinalizeThreadRunCleanupInput,
   finalizeThreadRunCleanup,
@@ -726,6 +737,7 @@ import {
   type ApplyThreadRunDecisionEffectsInput,
   applyThreadRunDecisionEffects,
 } from "./thread-run-decision-effects";
+import { createThreadRunEventLivePersister } from "./thread-run-event-live-persist";
 import {
   buildSubagentLifecycleRunEvent,
   buildSubagentMissionAttributedRunEvent,
@@ -736,9 +748,9 @@ import {
 import {
   resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
-  resolvePlanningRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
+  resolvePlanningRunOutcome,
   resolvePlanSessionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
@@ -747,7 +759,6 @@ import {
   buildThreadRunProjectionDetail,
   parseThreadRunProjectionDetailRequest,
 } from "./thread-run-projection-detail";
-import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
 import {
   buildFeedProjectionSignature,
   filterFeedProjectionAfterSequence,
@@ -756,18 +767,6 @@ import {
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
-import {
-  createThreadFeedSkeletonRecord,
-  patchThreadFeedSkeletonFromEvent,
-  shouldTrackEventForFeedSkeletonPatch,
-  type FeedSkeletonPatchContext,
-} from "./thread-feed-skeleton-patch";
-import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
-import {
-  hydrateThreadFeedSkeletonSnapshot,
-  isThreadFeedSkeletonFresh,
-  mapRunAttemptsForFeedSkeleton,
-} from "./thread-feed-skeleton-store";
 import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
 import {
   runThreadRequestWithRuntimeProxy,
@@ -792,14 +791,6 @@ import {
   shouldReplaceAutoThreadTitle,
   summarizeThreadTitle,
 } from "./thread-title";
-import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
-import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
-import { runVisionAnalysis, type VisionAnalysisHost } from "./vision-analysis";
-import {
-  buildThreadApprovalEnvelope,
-  reviewEcoApproval,
-  type EcoApprovalReviewResult,
-} from "./eco-approval-reviewer";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import {
@@ -818,24 +809,32 @@ import {
 import { createUsageContextService } from "./usage-context-effects";
 import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
+import { runVisionAnalysis, type VisionAnalysisHost } from "./vision-analysis";
+import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
+import {
+  createWebChatListStore,
+  isWebChatListSnapshot,
+  normalizeWebChatListSnapshot,
+  type WebChatListStore,
+} from "./web-chat-list-store";
 import {
   createWorkflowSettingsStore,
   isWorkflowSettingsSnapshot,
   normalizeWorkflowSettingsSnapshot,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
+import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-browser";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
-import type { DesktopUpdateState } from "../shared/desktop-update";
 import { WorkspaceGitStatusPublisher } from "./workspace-git-status-publisher";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
+  type ApprovedPlanSnapshot,
   approvedPlanRelativePath,
   claudePlanFileExists,
   readApprovedPlanSnapshot,
   readClaudePlanFile,
   resolveWorktreePathHint,
   writeApprovedPlanSnapshot,
-  type ApprovedPlanSnapshot,
 } from "./worktree-lifecycle";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2999,8 +2998,7 @@ async function reconcileAcpCursorAgainstProbe(probe?: AcpCursorProbeResult): Pro
   if (resolved.available) {
     return;
   }
-  const shouldClear =
-    current.acpAgentsEnabled?.cursor === true || current.defaultCoreKind === "acp";
+  const shouldClear = current.acpAgentsEnabled?.cursor === true || current.defaultCoreKind === "acp";
   if (!shouldClear) {
     return;
   }
@@ -4863,10 +4861,7 @@ function registerIpcHandlers(): void {
     ) {
       throw new Error("Invalid browser guest registration payload.");
     }
-    return requireBrowserHost().registerGuestByWebContentsId(
-      request.browserId.trim(),
-      request.webContentsId,
-    );
+    return requireBrowserHost().registerGuestByWebContentsId(request.browserId.trim(), request.webContentsId);
   });
 
   registerDesktopCommand(IPC_CHANNELS.browserNavigate, async (payload: unknown) => {
@@ -4889,8 +4884,7 @@ function registerIpcHandlers(): void {
     const request = (payload && typeof payload === "object" ? payload : {}) as BrowserOpenRequest;
     const url =
       typeof request.url === "string" ? request.url : typeof payload === "string" ? payload : undefined;
-    const htmlContent =
-      typeof request.htmlContent === "string" ? request.htmlContent : undefined;
+    const htmlContent = typeof request.htmlContent === "string" ? request.htmlContent : undefined;
     return requireBrowserHost().openSharedSession({
       revealUi: request.reveal !== false,
       ...(url && url.trim() && url !== "about:blank" ? { url } : {}),
@@ -5433,29 +5427,23 @@ function registerIpcHandlers(): void {
     centerServerClient.getSyncStatus(),
   );
 
-  registerDesktopCommand(
-    IPC_CHANNELS.centerServerUnlockVaultWithPassword,
-    async (password: string) => {
-      if (typeof password !== "string") {
-        throw new Error("password is required.");
-      }
-      const result = await centerServerClient.unlockVaultWithPassword(password);
-      emitSettingsUpdated();
-      return result;
-    },
-  );
+  registerDesktopCommand(IPC_CHANNELS.centerServerUnlockVaultWithPassword, async (password: string) => {
+    if (typeof password !== "string") {
+      throw new Error("password is required.");
+    }
+    const result = await centerServerClient.unlockVaultWithPassword(password);
+    emitSettingsUpdated();
+    return result;
+  });
 
-  registerDesktopCommand(
-    IPC_CHANNELS.centerServerWrapVaultWithPassword,
-    async (password: string) => {
-      if (typeof password !== "string") {
-        throw new Error("password is required.");
-      }
-      const result = await centerServerClient.wrapVaultWithPassword(password);
-      emitSettingsUpdated();
-      return result;
-    },
-  );
+  registerDesktopCommand(IPC_CHANNELS.centerServerWrapVaultWithPassword, async (password: string) => {
+    if (typeof password !== "string") {
+      throw new Error("password is required.");
+    }
+    const result = await centerServerClient.wrapVaultWithPassword(password);
+    emitSettingsUpdated();
+    return result;
+  });
 
   registerDesktopCommand(IPC_CHANNELS.centerServerRequestVaultClaim, async () =>
     centerServerClient.requestVaultClaim(),
@@ -11218,9 +11206,7 @@ function maybeHandleAcpNestedSubagentLifecycle(threadId: string, event: AgentEve
   const parentAgentId = agentLifecycle.currentPlannerAgentId(threadId);
 
   if (event.type === "agent.started") {
-    const existing = conversationStore
-      .listAgentInstances(threadId)
-      .find((row) => row.agentId === agentId);
+    const existing = conversationStore.listAgentInstances(threadId).find((row) => row.agentId === agentId);
     if (existing) {
       return true;
     }
@@ -12628,7 +12614,9 @@ function recordThreadRunEventFromLiveEvent(input: {
       displayMessage: input.displayMessage,
       role: input.role,
       stream: input.stream,
-      extras: input.extras as import("./thread-run-event-live-persist").ThreadRunEventLivePersistExtras | undefined,
+      extras: input.extras as
+        | import("./thread-run-event-live-persist").ThreadRunEventLivePersistExtras
+        | undefined,
       persistedActivityLine: input.persistedActivityLine,
     }),
   );
@@ -12843,9 +12831,7 @@ function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPha
   return normalizeThreadFollowUpRunPhase(value) !== undefined;
 }
 
-function buildThreadFeedSkeletonHydrationContext(): Parameters<
-  typeof hydrateThreadFeedSkeletonSnapshot
->[2] {
+function buildThreadFeedSkeletonHydrationContext(): Parameters<typeof hydrateThreadFeedSkeletonSnapshot>[2] {
   return {
     getThread: (threadId) => conversationStore.getThread(threadId),
     listRunAttempts: (threadId) => conversationStore.listRunAttempts(threadId),
@@ -13091,7 +13077,7 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
   const cached = conversationStore.getThreadFeedSkeleton(threadId);
-  let feedProjection =
+  const feedProjection =
     cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)
       ? cached.snapshot
       : rebuildThreadFeedSkeleton(threadId);

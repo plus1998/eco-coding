@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
+  type CoreKind,
   DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
   DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
-  type CoreKind,
   type EcoOrchestrationMode,
   isCoreKind,
   isGlobalContextWindowLimit,
@@ -12,31 +12,24 @@ import {
   normalizeGlobalContextWindowLimit,
   normalizeGlobalMaxOutputTokens,
 } from "@eco/runtime";
-import { type McpServersEnabledSettings, normalizeMcpServersEnabled } from "../shared/composer-mcp";
-import { isSessionMode, normalizeSessionMode, type SessionMode } from "../shared/session-mode";
 import type { OrchestrationSelection } from "../shared/agent-orchestration";
 import { isOrchestrationSelection } from "../shared/agent-orchestration";
 import {
+  type AuxiliaryModelSelection,
   isAuxiliaryModelSelection,
   normalizeAuxiliaryModelSelection,
-  type AuxiliaryModelSelection,
 } from "../shared/auxiliary-model";
+import { type BashReviewMode, isBashReviewMode, normalizeBashReviewMode } from "../shared/bash-review-ui";
+import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
+import { type McpServersEnabledSettings, normalizeMcpServersEnabled } from "../shared/composer-mcp";
+import { type IntegrationsEnabledSettings, normalizeIntegrationsEnabled } from "../shared/integrations";
+import type { FollowUpDeliveryMode } from "../shared/ipc";
+import { isSessionMode, normalizeSessionMode, type SessionMode } from "../shared/session-mode";
 import {
   isVisionModelSelection,
   normalizeVisionModelSelection,
   type VisionModelSelection,
 } from "../shared/vision-model";
-import {
-  normalizeIntegrationsEnabled,
-  type IntegrationsEnabledSettings,
-} from "../shared/integrations";
-import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
-import {
-  isBashReviewMode,
-  normalizeBashReviewMode,
-  type BashReviewMode,
-} from "../shared/bash-review-ui";
-import type { FollowUpDeliveryMode } from "../shared/ipc";
 
 export type { SessionMode };
 
@@ -138,8 +131,7 @@ export class WorkflowSettingsStore {
     const storedIntegrations = this.readIntegrationsEnabled();
     const legacyBrowser = mcpServersEnabled?.[ECO_AGENT_BROWSER_MCP_SERVER];
     const integrationsEnabled =
-      storedIntegrations ??
-      (typeof legacyBrowser === "boolean" ? { browser: legacyBrowser } : undefined);
+      storedIntegrations ?? (typeof legacyBrowser === "boolean" ? { browser: legacyBrowser } : undefined);
     const cleanedMcp = mcpServersEnabled
       ? Object.fromEntries(
           Object.entries(mcpServersEnabled).filter(([key]) => key !== ECO_AGENT_BROWSER_MCP_SERVER),
@@ -253,11 +245,7 @@ export class WorkflowSettingsStore {
          VALUES (?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
       )
-      .run(
-        "default_bash_review_mode",
-        JSON.stringify(normalized.defaultBashReviewMode ?? "always"),
-        now,
-      );
+      .run("default_bash_review_mode", JSON.stringify(normalized.defaultBashReviewMode ?? "always"), now);
     this.db
       .prepare(
         `INSERT INTO workflow_settings (key, value_json, updated_at)
@@ -683,8 +671,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const defaultCoreKind = normalizeDefaultCoreKind(record.defaultCoreKind);
   const acpAgentsEnabled = resolveAcpAgentsEnabled(record);
   const acpCursorModelId =
-    normalizeAcpCursorModelId(record.acpCursorModelId) ??
-    normalizeAcpCursorModelId(record.cursorModelId);
+    normalizeAcpCursorModelId(record.acpCursorModelId) ?? normalizeAcpCursorModelId(record.cursorModelId);
   const acpCursorApiKey = normalizeAcpCursorApiKey(record.acpCursorApiKey);
   const defaultAcpAgentId = resolveDefaultAcpAgentId(record, defaultCoreKind);
   const showBilling = record.showBilling !== false;
@@ -702,9 +689,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const acpCursorApiKeyPart = acpCursorApiKey ? { acpCursorApiKey } : {};
   const mcpPart = mcpServersEnabled ? { mcpServersEnabled } : {};
   const integrationsPart = integrationsEnabled ? { integrationsEnabled } : {};
-  const defaultOrchestrationPart = defaultOrchestrationSelection
-    ? { defaultOrchestrationSelection }
-    : {};
+  const defaultOrchestrationPart = defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {};
   const defaultAuxiliaryPart = defaultAuxiliaryModel ? { defaultAuxiliaryModel } : {};
   const defaultVisionPart = defaultVisionModel ? { defaultVisionModel } : {};
   if (isSessionMode(record.sessionMode)) {
@@ -814,14 +799,13 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
     (record.cursorCoreEnabled === undefined || typeof record.cursorCoreEnabled === "boolean") &&
     (record.contextWindowLimitTokens === undefined ||
       isGlobalContextWindowLimit(record.contextWindowLimitTokens)) &&
-    (record.maxOutputLimitTokens === undefined ||
-      isGlobalMaxOutputTokens(record.maxOutputLimitTokens)) &&
+    (record.maxOutputLimitTokens === undefined || isGlobalMaxOutputTokens(record.maxOutputLimitTokens)) &&
     (record.followUpDeliveryMode === undefined || isFollowUpDeliveryMode(record.followUpDeliveryMode)) &&
     (record.defaultOrchestrationSelection === undefined ||
       isOrchestrationSelection(record.defaultOrchestrationSelection)) &&
-    (record.defaultAuxiliaryModel === undefined ||
-      isAuxiliaryModelSelection(record.defaultAuxiliaryModel)) &&
+    (record.defaultAuxiliaryModel === undefined || isAuxiliaryModelSelection(record.defaultAuxiliaryModel)) &&
     (record.defaultVisionModel === undefined || isVisionModelSelection(record.defaultVisionModel)) &&
-    (record.integrationsEnabled === undefined || normalizeIntegrationsEnabled(record.integrationsEnabled) !== undefined)
+    (record.integrationsEnabled === undefined ||
+      normalizeIntegrationsEnabled(record.integrationsEnabled) !== undefined)
   );
 }

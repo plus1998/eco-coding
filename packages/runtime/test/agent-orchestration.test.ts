@@ -430,15 +430,7 @@ test("resolveToolPermissionEntryForActor inherits planning phase cap for general
   });
   const generalPurposeEntry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
   expect(generalPurposeEntry?.disallowed).toEqual(
-    expect.arrayContaining([
-      "Write",
-      "Bash",
-      "Edit",
-      "MultiEdit",
-      "NotebookEdit",
-      "Agent",
-      "Task",
-    ]),
+    expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit", "Agent", "Task"]),
   );
 });
 
@@ -670,15 +662,21 @@ test("subagent delegation tools require allowDelegation", () => {
     allowDelegation: false,
   };
 
-  const blockedDefinitions = createAgentDefinitionsFromOrchestration(delegatingOrchestration, [blockedTemplate]);
+  const blockedDefinitions = createAgentDefinitionsFromOrchestration(delegatingOrchestration, [
+    blockedTemplate,
+  ]);
   const blockedDefinition = blockedDefinitions.definitions.eco_researcher as Record<string, unknown>;
   expect(blockedDefinition.tools).toEqual(["Read", "LS", "NotebookRead"]);
   expect(blockedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task", "TaskList", "TaskOutput"]);
 
-  const blockedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [blockedTemplate], {
-    runtimeMcpServers: ["sources", "browser"],
-  });
+  const blockedPolicy = buildToolPermissionPolicyFromOrchestration(
+    delegatingOrchestration,
+    [blockedTemplate],
+    {
+      runtimeMcpServers: ["sources", "browser"],
+    },
+  );
   expect(blockedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Skill", "LS", "NotebookRead"],
     disallowed: ["Agent", "Task", "TaskList", "TaskOutput"],
@@ -686,7 +684,9 @@ test("subagent delegation tools require allowDelegation", () => {
   });
 
   const allowedTemplate: EcoAgentTemplateConfig = { ...blockedTemplate, allowDelegation: true };
-  const allowedDefinitions = createAgentDefinitionsFromOrchestration(delegatingOrchestration, [allowedTemplate]);
+  const allowedDefinitions = createAgentDefinitionsFromOrchestration(delegatingOrchestration, [
+    allowedTemplate,
+  ]);
   const allowedDefinition = allowedDefinitions.definitions.eco_researcher as Record<string, unknown>;
   expect(allowedDefinition.tools).toEqual([
     "Read",
@@ -700,9 +700,13 @@ test("subagent delegation tools require allowDelegation", () => {
   expect(allowedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(allowedDefinition).not.toHaveProperty("disallowedTools");
 
-  const allowedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [allowedTemplate], {
-    runtimeMcpServers: ["sources", "browser"],
-  });
+  const allowedPolicy = buildToolPermissionPolicyFromOrchestration(
+    delegatingOrchestration,
+    [allowedTemplate],
+    {
+      runtimeMcpServers: ["sources", "browser"],
+    },
+  );
   expect(allowedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Agent", "Task", "Skill", "LS", "NotebookRead", "TaskList", "TaskOutput"],
     disallowed: [],

@@ -1,14 +1,5 @@
 import { formatRatePerMillion } from "@eco/runtime/models-dev-pricing";
-import {
-  ArrowDown,
-  ArrowUp,
-  Brain,
-  HardDrive,
-  Image,
-  Layers,
-  Maximize2,
-  Save,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Brain, HardDrive, Image, Layers, Maximize2, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { CandidateModelView, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import type { ManualSpecOverrideField } from "./agent-resource-manual-spec-form";
@@ -51,7 +42,9 @@ export function formatCandidateModelsDevLabel(candidate: CandidateModelView): st
   return undefined;
 }
 
-export function candidateCapabilityHint(candidate: CandidateModelView | undefined): RouteCapabilityHint | undefined {
+export function candidateCapabilityHint(
+  candidate: CandidateModelView | undefined,
+): RouteCapabilityHint | undefined {
   if (!candidate) {
     return undefined;
   }
@@ -97,7 +90,9 @@ export function candidateCapabilityHint(candidate: CandidateModelView | undefine
   };
 }
 
-export function candidatePricingHint(candidate: CandidateModelView | undefined): RoutePricingHint | undefined {
+export function candidatePricingHint(
+  candidate: CandidateModelView | undefined,
+): RoutePricingHint | undefined {
   if (!candidate || candidate.resolvedInputPerM === undefined || candidate.resolvedOutputPerM === undefined) {
     return undefined;
   }
@@ -170,7 +165,9 @@ export function ModelSpecSummary({
           <Layers size={13} strokeWidth={2} />
           <span className="model-spec-chip-value">{formatTokenCount(cap!.contextTokens!)}</span>
           {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.context")}</span> : null}
-          {overrides.has("contextTokens") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+          {overrides.has("contextTokens") ? (
+            <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+          ) : null}
         </span>
       ) : null}
       {hasOutput ? (
@@ -181,7 +178,9 @@ export function ModelSpecSummary({
           <Maximize2 size={13} strokeWidth={2} />
           <span className="model-spec-chip-value">{formatTokenCount(cap!.maxOutputTokens!)}</span>
           {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.output")}</span> : null}
-          {overrides.has("maxOutputTokens") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+          {overrides.has("maxOutputTokens") ? (
+            <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+          ) : null}
         </span>
       ) : null}
       {hasImage ? (
@@ -191,7 +190,9 @@ export function ModelSpecSummary({
         >
           <Image size={13} strokeWidth={2} />
           {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.multimodal")}</span> : null}
-          {overrides.has("supportsImageInput") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+          {overrides.has("supportsImageInput") ? (
+            <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+          ) : null}
         </span>
       ) : null}
       {hasReasoning ? (
@@ -201,18 +202,26 @@ export function ModelSpecSummary({
         >
           <Brain size={13} strokeWidth={2} />
           {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.reasoning")}</span> : null}
-          {overrides.has("supportsReasoning") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+          {overrides.has("supportsReasoning") ? (
+            <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+          ) : null}
         </span>
       ) : null}
       {hasPricing ? (
         <>
           <span
-            className={chipClass("model-spec-chip model-spec-chip-price model-spec-chip-price-in", "inputPerM", overrides)}
+            className={chipClass(
+              "model-spec-chip model-spec-chip-price model-spec-chip-price-in",
+              "inputPerM",
+              overrides,
+            )}
             title={t("modelSpec.inputPrice")}
           >
             <ArrowUp size={13} strokeWidth={2} />
             <span className="model-spec-chip-value">{formatRatePerMillion(rates!.inputPerM)}</span>
-            {overrides.has("inputPerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+            {overrides.has("inputPerM") ? (
+              <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+            ) : null}
           </span>
           <span
             className={chipClass(
@@ -224,7 +233,9 @@ export function ModelSpecSummary({
           >
             <ArrowDown size={13} strokeWidth={2} />
             <span className="model-spec-chip-value">{formatRatePerMillion(rates!.outputPerM)}</span>
-            {overrides.has("outputPerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+            {overrides.has("outputPerM") ? (
+              <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+            ) : null}
           </span>
         </>
       ) : null}
@@ -242,7 +253,9 @@ export function ModelSpecSummary({
               >
                 <HardDrive size={13} strokeWidth={2} />
                 <span className="model-spec-chip-value">{formatRatePerMillion(rates!.cacheReadPerM!)}</span>
-                {overrides.has("cacheReadPerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+                {overrides.has("cacheReadPerM") ? (
+                  <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+                ) : null}
               </span>
             ) : null,
             rates?.cacheWritePerM !== undefined ? (
@@ -257,7 +270,9 @@ export function ModelSpecSummary({
               >
                 <Save size={13} strokeWidth={2} />
                 <span className="model-spec-chip-value">{formatRatePerMillion(rates!.cacheWritePerM!)}</span>
-                {overrides.has("cacheWritePerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
+                {overrides.has("cacheWritePerM") ? (
+                  <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+                ) : null}
               </span>
             ) : null,
           ].filter(Boolean)
@@ -301,9 +316,7 @@ export function ModelsDevCatalogReferencePanel({
           {...(catalogPricing ? { pricing: catalogPricing } : {})}
         />
       ) : (
-        <p className="model-manual-spec-catalog-ref-hint">
-          {t("modelSpec.selectMappingHint")}
-        </p>
+        <p className="model-manual-spec-catalog-ref-hint">{t("modelSpec.selectMappingHint")}</p>
       )}
     </div>
   );

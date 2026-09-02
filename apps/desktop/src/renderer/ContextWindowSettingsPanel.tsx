@@ -163,21 +163,14 @@ function TokenSlider({
         onPointerUp={handlePointerUp}
         onKeyDown={handleKeyDown}
       >
-        <div
-          className="token-slider-fill"
-          style={{ width: `${positionPct}%` }}
-        />
+        <div className="token-slider-fill" style={{ width: `${positionPct}%` }} />
         {flags.map((flag) => {
           const flagPct = ((flag.value - min) / (max - min)) * 100;
           const isAtValue = value === flag.value;
           return (
             <div
               key={flag.value}
-              className={
-                isAtValue
-                  ? "token-slider-flag is-active"
-                  : "token-slider-flag"
-              }
+              className={isAtValue ? "token-slider-flag is-active" : "token-slider-flag"}
               style={{ left: `${flagPct}%` }}
             >
               <span className="token-slider-flag-dot" aria-hidden />
@@ -185,11 +178,7 @@ function TokenSlider({
             </div>
           );
         })}
-        <div
-          className="token-slider-handle"
-          style={{ left: `${positionPct}%` }}
-          aria-hidden
-        >
+        <div className="token-slider-handle" style={{ left: `${positionPct}%` }} aria-hidden>
           <span className="token-slider-value-badge">{format(displayValue)}</span>
         </div>
       </div>

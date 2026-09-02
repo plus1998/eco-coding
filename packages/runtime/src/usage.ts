@@ -159,9 +159,7 @@ function findModelBillingEntry(
   subagentModelId: string,
 ) {
   const normalized = normalizeSdkModelIdForMatch(subagentModelId);
-  let match = modelBillings.find(
-    (entry) => normalizeSdkModelIdForMatch(entry.modelId) === normalized,
-  );
+  let match = modelBillings.find((entry) => normalizeSdkModelIdForMatch(entry.modelId) === normalized);
   if (match) {
     return match;
   }
@@ -170,9 +168,7 @@ function findModelBillingEntry(
     return match;
   }
   if (normalized.startsWith("eco-")) {
-    return modelBillings.find((entry) =>
-      normalizeSdkModelIdForMatch(entry.modelId).startsWith("eco-"),
-    );
+    return modelBillings.find((entry) => normalizeSdkModelIdForMatch(entry.modelId).startsWith("eco-"));
   }
   return undefined;
 }
@@ -256,10 +252,12 @@ export function parseSdkContextUsage(
 }
 
 export function mergeModelUsages(usages: readonly ParsedUsage[]): ParsedUsage {
-  return usages.reduce(
-    (total, usage) => mergeUsageTotals(total, usage),
-    { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
-  );
+  return usages.reduce((total, usage) => mergeUsageTotals(total, usage), {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  });
 }
 
 export function parseSdkUsageBilling(payload: unknown): {
@@ -283,8 +281,7 @@ export function parseSdkUsageBilling(payload: unknown): {
       : typeof payload.total_cost_usd === "number"
         ? payload.total_cost_usd
         : undefined;
-  const modelCostTotal = modelBillings
-    ?.reduce((sum, entry) => sum + (entry.sdkCostUsd ?? 0), 0);
+  const modelCostTotal = modelBillings?.reduce((sum, entry) => sum + (entry.sdkCostUsd ?? 0), 0);
   const totalCostUsd =
     explicitTotalCostUsd !== undefined
       ? explicitTotalCostUsd
@@ -294,8 +291,7 @@ export function parseSdkUsageBilling(payload: unknown): {
 
   if (modelBillings) {
     const contextUsage =
-      parseSdkContextUsage(payload) ??
-      mergeModelUsages(modelBillings.map((entry) => entry.usage));
+      parseSdkContextUsage(payload) ?? mergeModelUsages(modelBillings.map((entry) => entry.usage));
     return {
       models: modelBillings,
       contextUsage,
@@ -386,10 +382,7 @@ export function formatTokenCount(value: number): string {
 
 /** Activity / billing badge: ↑ input, ↓ output, ⊙ cache (read + write tokens). */
 export function formatUsageBadge(usage: ParsedUsage): string {
-  const parts = [
-    `↑${formatTokenCount(usage.inputTokens)}`,
-    `↓${formatTokenCount(usage.outputTokens)}`,
-  ];
+  const parts = [`↑${formatTokenCount(usage.inputTokens)}`, `↓${formatTokenCount(usage.outputTokens)}`];
   if (usage.cacheReadTokens > 0 || usage.cacheCreationTokens > 0) {
     parts.push(`⊙${formatTokenCount(usage.cacheReadTokens + usage.cacheCreationTokens)}`);
   }

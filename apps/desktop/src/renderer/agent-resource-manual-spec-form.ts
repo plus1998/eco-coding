@@ -51,7 +51,9 @@ export function emptyManualSpecForm(): ManualSpecFormFields {
   };
 }
 
-function pricingFieldsFromManual(spec?: RouteManualSpec): Pick<
+function pricingFieldsFromManual(
+  spec?: RouteManualSpec,
+): Pick<
   ManualSpecFormFields,
   "priceMultiplier" | "inputPerM" | "outputPerM" | "cacheReadPerM" | "cacheWritePerM"
 > {
@@ -122,10 +124,8 @@ export function prefillManualSpecFormFromHints(
   const catalogPrice = catalogPricingHint(pricing);
   const contextTokens = catalogCap?.catalogContextTokens ?? catalogCap?.contextTokens;
   const maxOutputTokens = catalogCap?.catalogMaxOutputTokens ?? catalogCap?.maxOutputTokens;
-  const supportsImageInput =
-    catalogCap?.catalogSupportsImageInput ?? catalogCap?.supportsImageInput;
-  const supportsReasoning =
-    catalogCap?.catalogSupportsReasoning ?? catalogCap?.supportsReasoning;
+  const supportsImageInput = catalogCap?.catalogSupportsImageInput ?? catalogCap?.supportsImageInput;
+  const supportsReasoning = catalogCap?.catalogSupportsReasoning ?? catalogCap?.supportsReasoning;
 
   return {
     contextTokens: formatManualTokenValue(contextTokens),
@@ -230,17 +230,11 @@ export function mergeEffectiveCapabilityHint(
   if (!auto && !manualSpec) {
     return undefined;
   }
-  const contextTokens =
-    manualSpec?.contextTokens ?? auto?.contextTokens;
-  const maxOutputTokens =
-    manualSpec?.maxOutputTokens ?? auto?.maxOutputTokens;
-  const supportsImageInput =
-    manualSpec?.supportsImageInput ?? auto?.supportsImageInput ?? false;
-  const supportsReasoning =
-    manualSpec?.supportsReasoning ?? auto?.supportsReasoning ?? false;
-  const contextLimitResolved =
-    manualSpec?.contextTokens !== undefined ||
-    auto?.contextLimitResolved === true;
+  const contextTokens = manualSpec?.contextTokens ?? auto?.contextTokens;
+  const maxOutputTokens = manualSpec?.maxOutputTokens ?? auto?.maxOutputTokens;
+  const supportsImageInput = manualSpec?.supportsImageInput ?? auto?.supportsImageInput ?? false;
+  const supportsReasoning = manualSpec?.supportsReasoning ?? auto?.supportsReasoning ?? false;
+  const contextLimitResolved = manualSpec?.contextTokens !== undefined || auto?.contextLimitResolved === true;
   const capabilitiesResolved =
     countManualCapabilityOverrides(manualSpec) > 0 || auto?.capabilitiesResolved === true;
 
@@ -294,8 +288,7 @@ export function mergeEffectivePricingHint(
           ...(scaledRates.cacheWritePerM !== undefined && { cacheWritePerM: scaledRates.cacheWritePerM }),
         }
       : undefined;
-  const pricingResolved =
-    hasManualPricingOverride(manualSpec) || auto?.pricingResolved === true;
+  const pricingResolved = hasManualPricingOverride(manualSpec) || auto?.pricingResolved === true;
 
   if (!rates && !auto) {
     return undefined;
@@ -366,9 +359,7 @@ export function formatCatalogMappingLabel(
   );
 }
 
-export function catalogCapabilityHint(
-  hint?: RouteCapabilityHint,
-): RouteCapabilityHint | undefined {
+export function catalogCapabilityHint(hint?: RouteCapabilityHint): RouteCapabilityHint | undefined {
   if (!hint) {
     return undefined;
   }

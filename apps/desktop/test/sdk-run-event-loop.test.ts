@@ -155,13 +155,13 @@ test("consumeSdkRunEvents fails incomplete when Claude emits incomplete run.term
 
 test("resolveClaudeRunAttemptFromTerminalState marks running as incomplete", async () => {
   const { resolveClaudeRunAttemptFromTerminalState } = await import("../src/main/claude-run-terminal");
-  expect(
-    resolveClaudeRunAttemptFromTerminalState({ kind: "running" }, new AbortController().signal),
-  ).toEqual({
-    ok: false,
-    reason: "Claude run ended without a terminal result.",
-    incomplete: true,
-  });
+  expect(resolveClaudeRunAttemptFromTerminalState({ kind: "running" }, new AbortController().signal)).toEqual(
+    {
+      ok: false,
+      reason: "Claude run ended without a terminal result.",
+      incomplete: true,
+    },
+  );
 });
 
 test("consumeSdkRunEvents preserves resumable incomplete terminal results", async () => {

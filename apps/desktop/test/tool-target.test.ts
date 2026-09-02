@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { isToolProgressStatusText } from "../src/shared/activity-display";
 import {
   formatGrepTargetInlineDetail,
   formatThreadRunToolDetailLabel,
@@ -11,7 +12,6 @@ import {
   resolveReadToolTargetDisplayFromToolMetadata,
   resolveThreadRunToolTargets,
 } from "../src/shared/tool-target";
-import { isToolProgressStatusText } from "../src/shared/activity-display";
 
 test("resolveThreadRunToolTargets prefers read target over grep", () => {
   expect(
@@ -82,9 +82,7 @@ test("resolveReadToolTargetDisplayFromToolMetadata ignores progress detail", () 
 });
 
 test("resolveGrepToolTargetDisplayFromDetail parses pattern and scope", () => {
-  expect(
-    resolveGrepToolTargetDisplayFromDetail("ThreadRunToolMetadata · thread-run-events.ts"),
-  ).toEqual({
+  expect(resolveGrepToolTargetDisplayFromDetail("ThreadRunToolMetadata · thread-run-events.ts")).toEqual({
     pattern: "ThreadRunToolMetadata",
     path: "thread-run-events.ts",
     scopeLabel: "thread-run-events.ts",

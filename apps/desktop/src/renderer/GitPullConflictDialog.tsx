@@ -49,28 +49,16 @@ export function GitPullConflictDialog({
               </li>
             ))}
             {hiddenCount > 0 ? (
-              <li className="git-pull-conflict-more">
-                {t("git.conflict.more", { count: hiddenCount })}
-              </li>
+              <li className="git-pull-conflict-more">{t("git.conflict.more", { count: hiddenCount })}</li>
             ) : null}
           </ul>
         </div>
         <footer className="settings-modal-footer git-pull-conflict-footer">
-          <button
-            type="button"
-            className="settings-modal-cancel"
-            onClick={onDismiss}
-            disabled={busy}
-          >
+          <button type="button" className="settings-modal-cancel" onClick={onDismiss} disabled={busy}>
             {t("git.conflict.manual")}
           </button>
           <div className="settings-modal-footer-actions git-pull-conflict-actions">
-            <button
-              type="button"
-              className="plan-button primary"
-              onClick={onConfirmAgent}
-              disabled={busy}
-            >
+            <button type="button" className="plan-button primary" onClick={onConfirmAgent} disabled={busy}>
               {busy ? t("git.conflict.handingOff") : t("git.conflict.agent")}
             </button>
           </div>
@@ -79,4 +67,5 @@ export function GitPullConflictDialog({
     </div>
   );
 }
+
 import { useTranslation } from "react-i18next";

@@ -1,13 +1,5 @@
-import type {
-  BillingUsageSource,
-  ThreadBillingSnapshot,
-  ThreadBillingSourceSnapshot,
-} from "../shared/ipc";
-import type {
-  UsageLedgerEvent,
-  UsageLedgerSource,
-  UsageLedgerTotals,
-} from "./usage-ledger";
+import type { BillingUsageSource, ThreadBillingSnapshot, ThreadBillingSourceSnapshot } from "../shared/ipc";
+import type { UsageLedgerEvent, UsageLedgerSource, UsageLedgerTotals } from "./usage-ledger";
 import { createEmptyUsageLedgerTotals } from "./usage-ledger";
 
 export type UsageLedgerReconciliationIssueType =
@@ -44,12 +36,7 @@ export interface UsageLedgerReconciliationResult {
   comparisons: UsageLedgerSourceComparison[];
 }
 
-const TOKEN_FIELDS = [
-  "inputTokens",
-  "outputTokens",
-  "cacheReadTokens",
-  "cacheCreationTokens",
-] as const;
+const TOKEN_FIELDS = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens"] as const;
 
 const TOKEN_FIELD_TO_BILLING = {
   inputTokens: "input",
@@ -173,9 +160,7 @@ function buildLedgerSourceTotals(
 
   for (const cost of requestCosts.values()) {
     if (totals[cost.source]) {
-      totals[cost.source]!.reportedCostUsd += cost.hasExplicit
-        ? cost.explicitSum
-        : (cost.metadataTotal ?? 0);
+      totals[cost.source]!.reportedCostUsd += cost.hasExplicit ? cost.explicitSum : (cost.metadataTotal ?? 0);
     }
   }
 
@@ -230,10 +215,7 @@ function createEmptySourceTotals(): UsageLedgerSourceTotals {
   return { ...createEmptyUsageLedgerTotals(), eventCount: 0 };
 }
 
-function readNumberMetadata(
-  metadata: Record<string, unknown> | undefined,
-  key: string,
-): number | undefined {
+function readNumberMetadata(metadata: Record<string, unknown> | undefined, key: string): number | undefined {
   const value = metadata?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

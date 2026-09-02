@@ -18,7 +18,9 @@ test("default Agent settings renders Claude Code and Codex choices", () => {
   expect(markup).toContain("深度集成以获得更佳体验");
   expect(markup).toContain("Claude Code");
   expect(markup).toContain("Codex");
-  expect(markup).toContain("Claude Code 是智能体编程工具，能阅读代码库、编辑文件、运行命令，并接入你的开发工具。");
+  expect(markup).toContain(
+    "Claude Code 是智能体编程工具，能阅读代码库、编辑文件、运行命令，并接入你的开发工具。",
+  );
   expect(markup).toContain("ChatGPT 中的 Codex 是智能体编程的指挥中心。");
   expect(markup).toContain("Pi 是一套极简的 Agent 运行框架。");
   expect(markup).not.toContain("新会话默认使用");
@@ -64,7 +66,7 @@ test("ACP section is a core list without an enable checkbox", () => {
   expect(markup).toContain("sidebar-core-acp-tag");
   expect(markup).toContain('value="acp"');
   expect(markup).not.toContain("启用 Cursor");
-  expect(markup).not.toContain("type=\"checkbox\"");
+  expect(markup).not.toContain('type="checkbox"');
   expect(markup).not.toContain("default-agent-acp-card");
   expect(markup).not.toContain("<select");
   expect(markup).not.toContain("外置");
@@ -98,9 +100,7 @@ test("model settings dialog uses the unified provider → model cascade", () => 
       cursorAvailable: true,
       onChange: () => undefined,
       acpCursorModelId: "gpt-5.3-codex",
-      cursorModels: [
-        { id: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", current: true, default: false },
-      ],
+      cursorModels: [{ id: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", current: true, default: false }],
       initialModelSettingsOpen: true,
     }),
     "zh-CN",

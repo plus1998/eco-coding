@@ -1,1 +1,41 @@
-{"id":"resp_df10783e84724d2cac0652d35b6795f3","object":"response","created_at":1788245828,"status":"incomplete","background":false,"incomplete_details":{"reason":"max_output_tokens"},"max_output_tokens":128,"model":"LongCat-2.0","output":[{"type":"reasoning","id":"rs_resp_df10783e84724d2cac0652d35b6795f3","summary":[],"content":[{"type":"reasoning_text","text":"\nWe are asked: \"# Context management\nWhen the conversation grows long, some or all of the current context is summarized; the summary, along with any remaining unsummarized context, is provided in the next context window so work can continue — you don't need to wrap up early or hand off mid-task.\"\n\nThis appears to be an instruction or system message for a language model. The user might be testing if I understand this or perhaps wants me to summarize something? The message is simply a statement about context management. It says that when conversation grows long, some or all of the current context is summarized; the summary, along with"}]}],"parallel_tool_calls":true,"conversation":{"id":"conv_c9dc2d0dca434f508b750b8284c9166c"},"reasoning":{"effort":null,"summary":null},"service_tier":"auto","store":false,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"truncation":"disabled","usage":{"input_tokens":66,"input_tokens_details":{"cached_tokens":0},"output_tokens":128,"output_tokens_details":{"reasoning_tokens":127},"total_tokens":194,"prompt_tokens_details":{"cached_tokens":0}},"metadata":{}}
+{
+  "id": "resp_df10783e84724d2cac0652d35b6795f3",
+  "object": "response",
+  "created_at": 1788245828,
+  "status": "incomplete",
+  "background": false,
+  "incomplete_details": { "reason": "max_output_tokens" },
+  "max_output_tokens": 128,
+  "model": "LongCat-2.0",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_resp_df10783e84724d2cac0652d35b6795f3",
+      "summary": [],
+      "content": [
+        {
+          "type": "reasoning_text",
+          "text": "\nWe are asked: \"# Context management\nWhen the conversation grows long, some or all of the current context is summarized; the summary, along with any remaining unsummarized context, is provided in the next context window so work can continue — you don't need to wrap up early or hand off mid-task.\"\n\nThis appears to be an instruction or system message for a language model. The user might be testing if I understand this or perhaps wants me to summarize something? The message is simply a statement about context management. It says that when conversation grows long, some or all of the current context is summarized; the summary, along with"
+        }
+      ]
+    }
+  ],
+  "parallel_tool_calls": true,
+  "conversation": { "id": "conv_c9dc2d0dca434f508b750b8284c9166c" },
+  "reasoning": { "effort": null, "summary": null },
+  "service_tier": "auto",
+  "store": false,
+  "text": { "format": { "type": "text" }, "verbosity": "medium" },
+  "tool_choice": "auto",
+  "tools": [],
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 66,
+    "input_tokens_details": { "cached_tokens": 0 },
+    "output_tokens": 128,
+    "output_tokens_details": { "reasoning_tokens": 127 },
+    "total_tokens": 194,
+    "prompt_tokens_details": { "cached_tokens": 0 }
+  },
+  "metadata": {}
+}

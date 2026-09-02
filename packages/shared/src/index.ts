@@ -39,17 +39,15 @@ export {
   isEcoJsonRpcRequest,
   isEcoJsonRpcResponse,
 } from "./event-rpc";
-export type { RemoteCommandArgsValidation, RemoteCommandDefinition } from "./remote-command-registry";
+export type { EcoRealtimeRpcEnvelope } from "./realtime-envelope";
 export {
-  getRemoteCommandDefinition,
-  isRemoteCommandChannel,
-  listRemoteCommandDefinitions,
-  REMOTE_COMMAND_DEFINITIONS,
-  validateRemoteCommandArgs,
-} from "./remote-command-registry";
-export type { EventStore, SecretStore, ThreadRecord } from "./store";
-export { InMemoryEventStore, InMemorySecretStore, redactSecrets } from "./store";
-
+  ECO_REALTIME_BROADCAST_EVENT,
+  ECO_REALTIME_ENVELOPE_VERSION,
+  isEcoJsonRpcMessage,
+  isEcoRealtimeRpcEnvelope,
+  unwrapEcoRpcFromBroadcast,
+  wrapEcoRpcForBroadcast,
+} from "./realtime-envelope";
 export type {
   EcoRealtimeTopic,
   EcoRealtimeTopicKind,
@@ -67,16 +65,16 @@ export {
   parseEcoUserTopic,
   parseEcoVaultTopic,
 } from "./realtime-topics";
-
-export type { EcoRealtimeRpcEnvelope } from "./realtime-envelope";
+export type { RemoteCommandArgsValidation, RemoteCommandDefinition } from "./remote-command-registry";
 export {
-  ECO_REALTIME_BROADCAST_EVENT,
-  ECO_REALTIME_ENVELOPE_VERSION,
-  isEcoJsonRpcMessage,
-  isEcoRealtimeRpcEnvelope,
-  unwrapEcoRpcFromBroadcast,
-  wrapEcoRpcForBroadcast,
-} from "./realtime-envelope";
+  getRemoteCommandDefinition,
+  isRemoteCommandChannel,
+  listRemoteCommandDefinitions,
+  REMOTE_COMMAND_DEFINITIONS,
+  validateRemoteCommandArgs,
+} from "./remote-command-registry";
+export type { EventStore, SecretStore, ThreadRecord } from "./store";
+export { InMemoryEventStore, InMemorySecretStore, redactSecrets } from "./store";
 
 export type {
   PasswordWrappedVaultKey,
@@ -86,10 +84,10 @@ export type {
   WrappedVaultKey,
 } from "./vault-crypto";
 export {
+  decryptSecretWithVaultKey,
   ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
   ECO_VAULT_PASSWORD_WRAP_ITERATIONS,
   ECO_VAULT_WRAP_ALGORITHM,
-  decryptSecretWithVaultKey,
   encryptSecretWithVaultKey,
   generateVaultClaimCode,
   generateVaultClaimKeyPair,

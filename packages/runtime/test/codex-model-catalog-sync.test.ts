@@ -1,12 +1,14 @@
+import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "../src/codex-config-sync";
 import {
   applyManualCatalogCapabilities,
   buildAliasCatalogEntry,
   buildEcoCodexModelCatalogDocument,
+  type CodexBundledModelEntry,
+  type CodexGatewayCatalogRoute,
   collectCodexGatewayCatalogRoutes,
   fingerprintEcoModelCatalog,
   mergeCodexGatewayCatalogRoutes,
@@ -16,8 +18,6 @@ import {
   selectNativeTemplateForModel,
   syncEcoCodexModelCatalog,
   writeEcoCodexModelCatalog,
-  type CodexBundledModelEntry,
-  type CodexGatewayCatalogRoute,
 } from "../src/codex-model-catalog-sync";
 
 const tempDirs: string[] = [];
@@ -70,9 +70,9 @@ test("parseBundledCodexModelCatalog rejects invalid JSON and empty catalogs", ()
   expect(() => parseBundledCodexModelCatalog("{")).toThrow(/invalid/i);
   expect(() => parseBundledCodexModelCatalog("{}")).toThrow(/models/i);
   expect(() => parseBundledCodexModelCatalog(JSON.stringify({ models: [] }))).toThrow(/no models/i);
-  expect(() =>
-    parseBundledCodexModelCatalog(JSON.stringify({ models: [{ display_name: "x" }] })),
-  ).toThrow(/slug/i);
+  expect(() => parseBundledCodexModelCatalog(JSON.stringify({ models: [{ display_name: "x" }] }))).toThrow(
+    /slug/i,
+  );
 });
 
 test("selectFreeformApplyPatchTemplate prefers lowest priority freeform entry", () => {
@@ -397,9 +397,7 @@ test("syncEcoCodexModelCatalog writes catalog under CODEX_HOME with freeform ali
   const written = JSON.parse(await fs.readFile(result.catalogPath, "utf8")) as {
     models: CodexBundledModelEntry[];
   };
-  const alias = written.models.find((entry) =>
-    entry.slug.startsWith("eco_route_v1."),
-  );
+  const alias = written.models.find((entry) => entry.slug.startsWith("eco_route_v1."));
   expect(alias?.apply_patch_tool_type).toBe("freeform");
   expect(alias?.context_window).toBe(96_000);
 });

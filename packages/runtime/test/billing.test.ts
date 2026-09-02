@@ -56,5 +56,5 @@ test("computeThreadBillingTotals aggregates four metrics", () => {
 });
 
 test("formatSavingsLine for positive savings", () => {
-  expect(formatSavingsLine(2.575, 67.4)).toContain("节省了");
+  expect(formatSavingsLine(2.575, 67.4)).toContain("saved");
 });

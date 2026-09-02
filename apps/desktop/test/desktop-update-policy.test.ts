@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   applyDesktopAutoUpdaterPolicy,
-  formatDesktopUpdateError,
   type DesktopAutoUpdaterPolicyTarget,
+  formatDesktopUpdateError,
 } from "../src/main/desktop-update-policy";
 
 test("desktop updater policy disables downgrades and GitHub prerelease heuristics", () => {

@@ -206,9 +206,7 @@ test("registers git remote command definitions", () => {
     validateRemoteCommandArgs("git:list-commit-model-options", [{ mainAgentConfigId: "main_1" }]),
   ).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("git:save-commit-model-preference", [
-      { candidateModelId: "candidate_1" },
-    ]),
+    validateRemoteCommandArgs("git:save-commit-model-preference", [{ candidateModelId: "candidate_1" }]),
   ).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("git:save-commit-model-preference", [

@@ -44,10 +44,7 @@ import {
   buildProviderRequestBaseUrl,
 } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
-import {
-  applyProxyCchToAnthropicMessagesBody,
-  isProxyCchAuditEnabled,
-} from "./proxy-cch-audit";
+import { applyProxyCchToAnthropicMessagesBody, isProxyCchAuditEnabled } from "./proxy-cch-audit";
 import { logProxyRequestShape } from "./proxy-request-shape-log";
 import {
   formatUpstreamFetchError,
@@ -853,7 +850,7 @@ export function resolveBridgeUpstreamUrl(
   }
 
   const root = buildProviderRequestBaseUrl(baseUrl, requestPath);
-  const ver = (version?.trim().replace(/^\/+|\/+$/g, "") || "v1");
+  const ver = version?.trim().replace(/^\/+|\/+$/g, "") || "v1";
   const path = clientRequestUrl?.split("?")[0] ?? `/${ver}/messages`;
   return `${trimTrailingSlash(root)}${path.startsWith("/") ? path : `/${path}`}`;
 }

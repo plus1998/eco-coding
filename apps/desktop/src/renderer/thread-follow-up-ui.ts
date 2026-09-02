@@ -5,15 +5,11 @@ export function isLiveFollowUpThreadStatus(status?: ThreadStatus): boolean {
   return status === "running" || status === "queued";
 }
 
-export function sortThreadFollowUps(
-  followUps: readonly ThreadPendingFollowUp[],
-): ThreadPendingFollowUp[] {
+export function sortThreadFollowUps(followUps: readonly ThreadPendingFollowUp[]): ThreadPendingFollowUp[] {
   return [...followUps].sort(compareThreadFollowUps);
 }
 
-export function queuedThreadFollowUps(
-  followUps: readonly ThreadPendingFollowUp[],
-): ThreadPendingFollowUp[] {
+export function queuedThreadFollowUps(followUps: readonly ThreadPendingFollowUp[]): ThreadPendingFollowUp[] {
   return sortThreadFollowUps(followUps).filter((followUp) => followUp.status === "queued");
 }
 
@@ -41,8 +37,8 @@ export function formatThreadFollowUpPreview(followUp: ThreadPendingFollowUp): st
 }
 
 function compareThreadFollowUps(left: ThreadPendingFollowUp, right: ThreadPendingFollowUp): number {
-  const positionDelta = (left.queuePosition ?? Number.MAX_SAFE_INTEGER) -
-    (right.queuePosition ?? Number.MAX_SAFE_INTEGER);
+  const positionDelta =
+    (left.queuePosition ?? Number.MAX_SAFE_INTEGER) - (right.queuePosition ?? Number.MAX_SAFE_INTEGER);
   if (positionDelta !== 0) {
     return positionDelta;
   }

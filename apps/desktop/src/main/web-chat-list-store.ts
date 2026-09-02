@@ -2,11 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
-  type WebChatListSnapshot,
-  type WebChatListView,
   defaultWebChatListSnapshot,
   mergeWebChatList,
   normalizeWebChatListSnapshot,
+  type WebChatListSnapshot,
+  type WebChatListView,
 } from "../shared/web-chat-list";
 
 export type { WebChatListSnapshot, WebChatListView } from "../shared/web-chat-list";
@@ -39,9 +39,9 @@ export class WebChatListStore {
   }
 
   getSnapshot(): WebChatListSnapshot {
-    const row = this.db
-      .prepare(`SELECT value_json FROM web_chat_list WHERE key = ?`)
-      .get("snapshot") as { value_json: string } | undefined;
+    const row = this.db.prepare(`SELECT value_json FROM web_chat_list WHERE key = ?`).get("snapshot") as
+      | { value_json: string }
+      | undefined;
     if (!row) {
       return defaultWebChatListSnapshot();
     }

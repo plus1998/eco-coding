@@ -5,26 +5,28 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  createAgentSession,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
   SettingsManager,
-  createAgentSession,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentEvent } from "../../../packages/shared/src";
-import { createAgentEvent } from "../../../packages/shared/src";
 import type { EcoAgentRuntimeConfig } from "../../../packages/runtime/src/agent-orchestration";
 import { PiCodingAgentDriver, PiSessionRegistry } from "../../../packages/runtime/src/pi-coding-agent-driver";
-import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../../../packages/runtime/src/pi-event-adapter";
-import { collectPiSubagentFinalText } from "../../../packages/runtime/src/pi-subagent";
+import {
+  createPiEventAdapterState,
+  mapPiSessionEventToAgentEvents,
+} from "../../../packages/runtime/src/pi-event-adapter";
 import { createPiMcpExtensionFactory, piMcpToolAllowlist } from "../../../packages/runtime/src/pi-mcp";
 import {
+  type EcoApiCompat,
   mapApiCompatToPiApi,
   mapApiCompatToPiAuthProvider,
-  type EcoApiCompat,
 } from "../../../packages/runtime/src/pi-model-bridge";
 import { resolvePiSessionSkillPaths } from "../../../packages/runtime/src/pi-skills";
-import { buildScenarioPrompt } from "../../conversation-round/lib/scenario-prompt.mjs";
+import { collectPiSubagentFinalText } from "../../../packages/runtime/src/pi-subagent";
+import type { AgentEvent } from "../../../packages/shared/src";
+import { createAgentEvent } from "../../../packages/shared/src";
 import {
   appendJsonl,
   ensureDir,
@@ -32,14 +34,18 @@ import {
   snapshotWorkspace,
   writeJson,
 } from "../../conversation-round/lib/fixture-io.mjs";
-import { evaluateSdkScenarioChecklist } from "../../conversation-round/lib/sdk-checklist.mjs";
-import { resolveMcpEchoServerPath, resolveNodeExecutable } from "../../conversation-round/lib/resolve-executables.mjs";
+import {
+  resolveMcpEchoServerPath,
+  resolveNodeExecutable,
+} from "../../conversation-round/lib/resolve-executables.mjs";
+import { buildScenarioPrompt } from "../../conversation-round/lib/scenario-prompt.mjs";
 import { setupScenarioWorkspace } from "../../conversation-round/lib/scenario-workspace.mjs";
+import { evaluateSdkScenarioChecklist } from "../../conversation-round/lib/sdk-checklist.mjs";
 import { FULL_ROUND_SCENARIO_ID } from "../lib/client-matrix.mjs";
 import {
+  type GatewayRecordingStack,
   resolveProfileApiCompat,
   resolveProfileModelAlias,
-  type GatewayRecordingStack,
 } from "../lib/gateway-stack.mts";
 import { resolveProfile } from "../lib/profiles.mjs";
 
@@ -234,7 +240,10 @@ export async function runPiGatewayRound(input: PiGatewayRoundInput): Promise<PiG
     });
     await resourceLoader.reload();
 
-    const sessionManager = SessionManager.create(sessionInput.cwd, path.join(sessionInput.agentDir, "sessions"));
+    const sessionManager = SessionManager.create(
+      sessionInput.cwd,
+      path.join(sessionInput.agentDir, "sessions"),
+    );
     const toolsAllowlist =
       sessionInput.toolsAllowlist && sessionInput.toolsAllowlist.length > 0
         ? [...sessionInput.toolsAllowlist]
@@ -254,7 +263,9 @@ export async function runPiGatewayRound(input: PiGatewayRoundInput): Promise<PiG
       settingsManager,
     });
 
-    const hasAgentExtension = (sessionInput.extensionFactories ?? []).some((ef) => ef.name === "eco-pi-agent");
+    const hasAgentExtension = (sessionInput.extensionFactories ?? []).some(
+      (ef) => ef.name === "eco-pi-agent",
+    );
     if (typeof session.bindExtensions === "function" && (hasMcp || hasAgentExtension)) {
       await session.bindExtensions({ mode: "rpc" });
     }

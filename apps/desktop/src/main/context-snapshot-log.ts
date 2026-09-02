@@ -1,5 +1,5 @@
-import { isUpstreamLogVerbose } from "./upstream-proxy-log";
 import { appendUpstreamLogLine } from "./upstream-log";
+import { isUpstreamLogVerbose } from "./upstream-proxy-log";
 
 export function isContextSnapshotLogEnabled(): boolean {
   const flag = process.env.ECO_CONTEXT_SNAPSHOT_LOG?.trim().toLowerCase();

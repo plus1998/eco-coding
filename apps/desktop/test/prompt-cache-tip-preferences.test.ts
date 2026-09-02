@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_PROMPT_CACHE_TIP_PREFERENCES,
   normalizePromptCacheTipPreferences,
-  persistPromptCacheTipPreferences,
   PROMPT_CACHE_TIP_STORAGE_KEY,
+  persistPromptCacheTipPreferences,
   readStoredPromptCacheTipPreferences,
 } from "../src/renderer/prompt-cache-tip-preferences";
 

@@ -49,10 +49,7 @@ export function runtimeRouteToProxyRoute(route: RuntimeRouteProxySource): Anthro
 }
 
 /** Apply configured per-role output cap before bridge/upstream conversion. */
-export function applyRouteMaxOutputTokens(
-  body: Record<string, unknown>,
-  maxOutputTokens?: number,
-): void {
+export function applyRouteMaxOutputTokens(body: Record<string, unknown>, maxOutputTokens?: number): void {
   if (maxOutputTokens === undefined || maxOutputTokens <= 0) {
     return;
   }
@@ -120,9 +117,7 @@ export function toSdkModelAlias(baseAlias: string, contextTokens?: number): stri
 
 /** Family ids for configured model variants (e.g. gpt-5.4-mini → gpt-5.4). */
 export function canonicalModelFamilyIds(modelId: string): readonly string[] {
-  const match = modelId.match(
-    /^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i,
-  );
+  const match = modelId.match(/^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i);
   const family = match?.groups?.family?.trim();
   return family ? [family] : [];
 }

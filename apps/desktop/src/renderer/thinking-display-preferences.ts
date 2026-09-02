@@ -13,8 +13,7 @@ export const THINKING_DISPLAY_STORAGE_KEY = "eco.thinking-display-preferences";
 export const THINKING_DISPLAY_CHANGE_EVENT = "eco:thinking-display-change";
 
 export function normalizeThinkingDisplayPreferences(value: unknown): ThinkingDisplayPreferences {
-  const candidate =
-    value && typeof value === "object" ? (value as Partial<ThinkingDisplayPreferences>) : {};
+  const candidate = value && typeof value === "object" ? (value as Partial<ThinkingDisplayPreferences>) : {};
   return {
     thinkingContentDefaultExpanded:
       typeof candidate.thinkingContentDefaultExpanded === "boolean"

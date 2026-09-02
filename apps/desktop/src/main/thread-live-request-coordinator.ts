@@ -1,18 +1,15 @@
-import type {
-  BindLogicalAgentIdResult,
-  ThreadLiveRequestRegistry,
-} from "./thread-live-request-registry.js";
+import { resolveActivityAgentId } from "./activity-agent-id.js";
+import {
+  readClaudeCodeAgentIdFromRequestHeaders,
+  readProxyBillingStampFromRequestHeaders,
+} from "./proxy-billing-stamp.js";
+import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
+import type { BindLogicalAgentIdResult, ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   clearRequestStartedPersisted,
   markRequestStartedPersisted,
   type RequestTerminalStage,
 } from "./thread-request-lifecycle.js";
-import { resolveActivityAgentId } from "./activity-agent-id.js";
-import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
-import {
-  readClaudeCodeAgentIdFromRequestHeaders,
-  readProxyBillingStampFromRequestHeaders,
-} from "./proxy-billing-stamp.js";
 
 export const GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN = "proxy.connection_error";
 
@@ -86,9 +83,7 @@ function readSdkPayloadParentToolUseId(payload: unknown): string | undefined {
     return undefined;
   }
   const parentToolUseId = (payload as { parent_tool_use_id?: unknown }).parent_tool_use_id;
-  return typeof parentToolUseId === "string" && parentToolUseId.trim()
-    ? parentToolUseId.trim()
-    : undefined;
+  return typeof parentToolUseId === "string" && parentToolUseId.trim() ? parentToolUseId.trim() : undefined;
 }
 
 export interface SdkLateBindAttributionInput {
@@ -265,10 +260,7 @@ export function isGatewayAttemptConnectionDiagnostic(input: {
   eventType: string;
   activityOrigin?: string;
 }): boolean {
-  return (
-    input.eventType === "api.error" &&
-    input.activityOrigin === GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN
-  );
+  return input.eventType === "api.error" && input.activityOrigin === GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN;
 }
 
 /**
@@ -298,9 +290,7 @@ export interface GatewayUpstreamConnectionErrorInput {
 }
 
 /** Named-field adapter — never treat statusCode as a request id. */
-export function resolveConnectionErrorLogicalRequestId(
-  input: GatewayUpstreamConnectionErrorInput,
-): string {
+export function resolveConnectionErrorLogicalRequestId(input: GatewayUpstreamConnectionErrorInput): string {
   return input.logicalRequestId.trim();
 }
 
@@ -356,10 +346,7 @@ export function recordProviderRequestIdForLogical(
   return registry.recordProviderRequestIdByLogicalId(threadId, logicalRequestId, providerRequestId);
 }
 
-export function markBridgeRequestStartedPersisted(
-  threadId: string,
-  logicalRequestId: string,
-): boolean {
+export function markBridgeRequestStartedPersisted(threadId: string, logicalRequestId: string): boolean {
   return markRequestStartedPersisted(threadId, logicalRequestId.trim());
 }
 
@@ -446,14 +433,10 @@ export function applyExactLogicalRequestLateBind(
 
   let updated = 0;
   if (preview.emitTimelineActivity) {
-    const patched = store.attributeThreadRunEventsByLogicalRequestId(
-      input.threadId,
-      input.logicalRequestId,
-      {
-        agentId: input.agentId,
-        ...(input.role ? { role: input.role } : {}),
-      },
-    );
+    const patched = store.attributeThreadRunEventsByLogicalRequestId(input.threadId, input.logicalRequestId, {
+      agentId: input.agentId,
+      ...(input.role ? { role: input.role } : {}),
+    });
     if (patched.conflict) {
       return { ok: false, reason: "db_conflict" };
     }

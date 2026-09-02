@@ -1,9 +1,9 @@
 import {
-  OSC8LinkProvider,
-  UrlRegexProvider,
+  type Terminal as GhosttyTerminalType,
   type ILink,
   type ILinkProvider,
-  type Terminal as GhosttyTerminalType,
+  OSC8LinkProvider,
+  UrlRegexProvider,
 } from "ghostty-web";
 import { dispatchBrowserLinkOpen, isHttpishHref } from "./browser-link";
 
@@ -99,12 +99,8 @@ export function installTerminalLinkHandling(terminal: GhosttyTerminalType): () =
   }
 
   detector.providers.length = 0;
-  detector.registerProvider(
-    wrapLinkProvider(new OSC8LinkProvider(terminal), activateTerminalLink),
-  );
-  detector.registerProvider(
-    wrapLinkProvider(new UrlRegexProvider(terminal), activateTerminalLink),
-  );
+  detector.registerProvider(wrapLinkProvider(new OSC8LinkProvider(terminal), activateTerminalLink));
+  detector.registerProvider(wrapLinkProvider(new UrlRegexProvider(terminal), activateTerminalLink));
 
   return () => {
     // Terminal.dispose tears down the detector; nothing else to clean up.

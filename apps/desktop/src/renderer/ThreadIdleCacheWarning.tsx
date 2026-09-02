@@ -1,11 +1,8 @@
-import { Clock3, MessageCirclePlus } from "lucide-react";
 import type { TFunction } from "i18next";
+import { Clock3, MessageCirclePlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  resolveThreadIdleDuration,
-  type ThreadIdleDuration,
-} from "./thread-idle-cache-warning";
+import { resolveThreadIdleDuration, type ThreadIdleDuration } from "./thread-idle-cache-warning";
 
 interface ThreadIdleCacheWarningProps {
   lastActivityAt: string | undefined;
@@ -25,10 +22,7 @@ function formatIdleDuration(duration: ThreadIdleDuration, t: TFunction): string 
   });
 }
 
-export function ThreadIdleCacheWarning({
-  lastActivityAt,
-  onStartNewThread,
-}: ThreadIdleCacheWarningProps) {
+export function ThreadIdleCacheWarning({ lastActivityAt, onStartNewThread }: ThreadIdleCacheWarningProps) {
   const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
   const duration = resolveThreadIdleDuration(lastActivityAt, now);

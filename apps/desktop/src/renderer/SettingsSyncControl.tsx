@@ -1,11 +1,4 @@
-import {
-  Check,
-  Cloud,
-  CloudDownload,
-  CloudUpload,
-  Loader2,
-  X,
-} from "lucide-react";
+import { Check, Cloud, CloudDownload, CloudUpload, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -59,9 +52,12 @@ export function SettingsSyncControl({
     if (!syncSheet || syncSheet.stage === "running") {
       return;
     }
-    const timer = window.setTimeout(() => {
-      setSyncSheet(null);
-    }, syncSheet.stage === "done" ? 1600 : 3200);
+    const timer = window.setTimeout(
+      () => {
+        setSyncSheet(null);
+      },
+      syncSheet.stage === "done" ? 1600 : 3200,
+    );
     return () => window.clearTimeout(timer);
   }, [syncSheet]);
 
@@ -113,10 +109,7 @@ export function SettingsSyncControl({
       } else if (/settings_sync_vault_required/i.test(raw)) {
         message = t("settings.center.vault.vaultRequired");
         onVaultRefresh?.();
-      } else if (
-        /settings_sync_vault_decrypt/i.test(raw) ||
-        /OperationError|Cipher job failed/i.test(raw)
-      ) {
+      } else if (/settings_sync_vault_decrypt/i.test(raw) || /OperationError|Cipher job failed/i.test(raw)) {
         message = `${t("settings.center.vault.vaultDecryptFailed")} ${raw}`;
         onVaultRefresh?.();
       } else {
@@ -143,11 +136,21 @@ export function SettingsSyncControl({
         </button>
         {menuOpen ? (
           <div className="settings-sync-menu" role="menu">
-            <button type="button" role="menuitem" className="settings-sync-menu-item" onClick={() => startSync("pull")}>
+            <button
+              type="button"
+              role="menuitem"
+              className="settings-sync-menu-item"
+              onClick={() => startSync("pull")}
+            >
               <CloudDownload size={15} strokeWidth={1.75} />
               {t("settings.center.vault.pull")}
             </button>
-            <button type="button" role="menuitem" className="settings-sync-menu-item" onClick={() => startSync("push")}>
+            <button
+              type="button"
+              role="menuitem"
+              className="settings-sync-menu-item"
+              onClick={() => startSync("push")}
+            >
               <CloudUpload size={15} strokeWidth={1.75} />
               {t("settings.center.vault.push")}
             </button>

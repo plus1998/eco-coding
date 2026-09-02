@@ -130,11 +130,7 @@ export function buildThreadRunEventFromLiveEvent(
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(requestId && { requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
-    metadata: enrichThinkingTimingMetadata(
-      buildLiveEventMetadata(input),
-      eventType,
-      input.observedAt,
-    ),
+    metadata: enrichThinkingTimingMetadata(buildLiveEventMetadata(input), eventType, input.observedAt),
   };
 }
 

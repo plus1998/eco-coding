@@ -1,8 +1,8 @@
 import {
-  SKILL_NAME_TOKEN,
-  type SkillInfo,
   parseExplicitSkillNames,
   promptIncludesSkillName,
+  SKILL_NAME_TOKEN,
+  type SkillInfo,
 } from "../shared/skills";
 import { filterUserSkills, type SkillFuzzyMatch } from "./skill-fuzzy";
 

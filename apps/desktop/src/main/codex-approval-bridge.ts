@@ -1,22 +1,16 @@
 import {
-  isEcoAgentBrowserRuntimeServerName,
-  type BrowserOpenApprovalMode,
-  requiresBrowserOpenApproval,
-} from "../shared/browser";
-import {
-  ECO_IMAGE_GENERATION_MCP_SERVER,
-  ECO_IMAGE_GENERATION_TOOL,
-} from "../shared/image-generation";
-import {
-  ECO_IMAGE_VIEW_MCP_SERVER,
-  ECO_IMAGE_VIEW_TOOL,
-} from "../shared/image-view-tool";
-import {
   CODEX_JSON_RPC_INVALID_PARAMS,
   CODEX_JSON_RPC_METHOD_NOT_FOUND,
   CodexAppServerRequestError,
 } from "@eco/runtime";
+import {
+  type BrowserOpenApprovalMode,
+  isEcoAgentBrowserRuntimeServerName,
+  requiresBrowserOpenApproval,
+} from "../shared/browser";
 import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
+import { ECO_IMAGE_GENERATION_MCP_SERVER, ECO_IMAGE_GENERATION_TOOL } from "../shared/image-generation";
+import { ECO_IMAGE_VIEW_MCP_SERVER, ECO_IMAGE_VIEW_TOOL } from "../shared/image-view-tool";
 import type {
   BashApprovalRequest,
   ClarificationAnswers,
@@ -32,11 +26,11 @@ import {
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
 import {
+  buildClarificationToolMetadata,
   cancelClarificationsForThread,
   formatClarificationAnswersSummary,
   registerPendingClarification,
   submitClarification,
-  buildClarificationToolMetadata,
 } from "./clarification-bridge";
 import { cancelPlanApprovalsForThread, registerPendingPlanApproval } from "./plan-approval-bridge";
 import { applyThreadPlanReadyEffects, type ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
@@ -51,10 +45,7 @@ export const CODEX_MCP_SERVER_ELICITATION_REQUEST = "mcpServer/elicitation/reque
  * Detect Codex / MCP “Allow the X MCP server to run tool "Y"?” tool-run confirmations.
  * Returns full MCP tool name when recognized.
  */
-export function parseMcpToolRunElicitationMessage(
-  serverName: string,
-  message: string,
-): string | undefined {
+export function parseMcpToolRunElicitationMessage(serverName: string, message: string): string | undefined {
   const match = message.match(/run tool\s+["']([^"']+)["']/i);
   if (!match?.[1]) {
     return undefined;
@@ -66,7 +57,11 @@ export function parseMcpToolRunElicitationMessage(
   if (tool.startsWith("mcp__")) {
     return tool;
   }
-  const server = serverName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "mcp-server";
+  const server =
+    serverName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-") || "mcp-server";
   return `mcp__${server}__${tool}`;
 }
 
@@ -80,7 +75,10 @@ export function shouldAutoAcceptEcoBrowserToolElicitation(input: {
   message: string;
   openApprovalMode: BrowserOpenApprovalMode;
 }): boolean {
-  const server = input.serverName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  const server = input.serverName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-");
   if (!isEcoAgentBrowserRuntimeServerName(server)) {
     return false;
   }
@@ -242,11 +240,7 @@ async function handleCommandExecutionRequestApproval(
     toolInput: params,
   });
   if (automatic?.action === "allow") {
-    emitAutomaticApproval(
-      deps,
-      { ...approvalRequest, reviewRationale: automatic.rationale },
-      command,
-    );
+    emitAutomaticApproval(deps, { ...approvalRequest, reviewRationale: automatic.rationale }, command);
     return { decision: "accept" };
   }
   if (automatic?.action === "deny") {
@@ -315,11 +309,7 @@ async function handleFileChangeRequestApproval(
     toolInput: params,
   });
   if (automatic?.action === "allow") {
-    emitAutomaticApproval(
-      deps,
-      { ...approvalRequest, reviewRationale: automatic.rationale },
-      command,
-    );
+    emitAutomaticApproval(deps, { ...approvalRequest, reviewRationale: automatic.rationale }, command);
     return { decision: "accept" };
   }
   if (automatic?.action === "deny") {
@@ -475,9 +465,7 @@ async function handleMcpServerElicitationRequest(
   if (
     mode === "form" &&
     serverName.trim().toLowerCase() === ECO_IMAGE_GENERATION_MCP_SERVER &&
-    parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(
-      `__${ECO_IMAGE_GENERATION_TOOL}`,
-    )
+    parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(`__${ECO_IMAGE_GENERATION_TOOL}`)
   ) {
     const thread = deps.getThread(ecoThreadId);
     if (!thread) {
@@ -514,9 +502,7 @@ async function handleMcpServerElicitationRequest(
         feedback: resolution.feedback,
       });
     }
-    return resolution.decision === "approved"
-      ? { action: "accept", content: {} }
-      : { action: "decline" };
+    return resolution.decision === "approved" ? { action: "accept", content: {} } : { action: "decline" };
   }
 
   if (mode === "url") {
@@ -1895,10 +1881,7 @@ function emitBashApprovalRequested(
 }
 
 /** Eco「完全访问」: host auto-allows Codex requestApproval without parking (mid-run simulation). */
-function shouldHostAutoAllowCodexApproval(
-  deps: CodexApprovalBridgeDeps,
-  threadId: string,
-): boolean {
+function shouldHostAutoAllowCodexApproval(deps: CodexApprovalBridgeDeps, threadId: string): boolean {
   return deps.getApprovalMode?.(threadId) === "allow_all";
 }
 

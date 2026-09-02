@@ -24,9 +24,7 @@ Deno.serve(async (req) => {
     const deviceSecret = requireString(body, "deviceSecret");
     const metadata = optionalObject(body, "metadata");
     const deviceName =
-      typeof body.deviceName === "string" && body.deviceName.trim()
-        ? body.deviceName.trim()
-        : undefined;
+      typeof body.deviceName === "string" && body.deviceName.trim() ? body.deviceName.trim() : undefined;
 
     const admin = createServiceClient();
     const joined = await joinPairingSession(admin, {

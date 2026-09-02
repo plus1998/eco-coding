@@ -9,12 +9,7 @@
   "ok": false,
   "checklist": {
     "ok": false,
-    "failed": [
-      "file_written",
-      "file_read_back",
-      "mcp_tool_called",
-      "subagent_turn_events"
-    ],
+    "failed": ["file_written", "file_read_back", "mcp_tool_called", "subagent_turn_events"],
     "checklist": {
       "skills_listed": {
         "ok": true,

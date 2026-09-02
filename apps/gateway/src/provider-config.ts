@@ -1,4 +1,4 @@
-import { normalizeRequestPath, normalizeApiVersion } from "./provider-router.js";
+import { normalizeApiVersion, normalizeRequestPath } from "./provider-router.js";
 import type { GatewayConfig, GatewayProvider } from "./types.js";
 
 const DEFAULT_PORT = 18_765;
@@ -29,9 +29,7 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
   if (!provider.upstreamModelId?.trim()) {
     throw new Error(`Gateway provider ${provider.id}: upstreamModelId is required`);
   }
-  const models = provider.models?.length
-    ? provider.models
-    : [provider.upstreamModelId];
+  const models = provider.models?.length ? provider.models : [provider.upstreamModelId];
   const modelMaxOutputTokens = normalizeModelMaxOutputTokens(provider.modelMaxOutputTokens);
   const requestPath = normalizeRequestPath(provider.requestPath);
   const version = normalizeApiVersion(provider.version);

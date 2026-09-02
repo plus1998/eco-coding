@@ -41,9 +41,7 @@ export class AgentSkillsStore {
     for (const role of AGENT_ROLES) {
       if (!existing.has(role)) {
         this.db
-          .prepare(
-            `INSERT INTO agent_skill_assignments (role, skills_json, updated_at) VALUES (?, ?, ?)`,
-          )
+          .prepare(`INSERT INTO agent_skill_assignments (role, skills_json, updated_at) VALUES (?, ?, ?)`)
           .run(role, "[]", now);
       }
     }
@@ -90,7 +88,9 @@ export class AgentSkillsStore {
     const rows = this.db.prepare(`SELECT role FROM agent_skill_assignments`).all() as {
       role: string;
     }[];
-    return rows.map((row) => row.role).filter((role): role is AgentRole => AGENT_ROLES.includes(role as AgentRole));
+    return rows
+      .map((row) => row.role)
+      .filter((role): role is AgentRole => AGENT_ROLES.includes(role as AgentRole));
   }
 }
 

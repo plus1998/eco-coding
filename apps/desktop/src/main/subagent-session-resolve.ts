@@ -20,10 +20,7 @@ export function resolveResumeAgentIdFromRecords(
   }
 
   const stopped = records.filter(
-    (row) =>
-      row.role === input.role &&
-      row.phase === input.phase &&
-      row.status === "stopped",
+    (row) => row.role === input.role && row.phase === input.phase && row.status === "stopped",
   );
   if (stopped.length === 0) {
     return undefined;
@@ -52,7 +49,9 @@ export function resolveResumeAgentIdFromRecords(
   return latestStopped(stopped)?.agentId;
 }
 
-function latestStopped(rows: readonly ThreadSubagentSessionRecord[]): ThreadSubagentSessionRecord | undefined {
+function latestStopped(
+  rows: readonly ThreadSubagentSessionRecord[],
+): ThreadSubagentSessionRecord | undefined {
   return rows.reduce<ThreadSubagentSessionRecord | undefined>((best, row) => {
     if (!best || row.updatedAt > best.updatedAt) {
       return row;

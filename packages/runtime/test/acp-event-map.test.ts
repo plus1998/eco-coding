@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mapAcpSessionUpdate, mapAcpCursorUpdateTodos, mapAcpCursorTask, acpSubagentAgentId, isAcpSubagentAgentId } from "../src/acp-event-map.js";
+import {
+  acpSubagentAgentId,
+  isAcpSubagentAgentId,
+  mapAcpCursorTask,
+  mapAcpCursorUpdateTodos,
+  mapAcpSessionUpdate,
+} from "../src/acp-event-map.js";
 
 const CTX = {
   threadId: "thr_1",

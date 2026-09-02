@@ -4,13 +4,13 @@ import path from "node:path";
 import {
   CURSOR_AGENT_ROOTS,
   CURSOR_BUILTIN_SUBAGENT_TYPES,
+  type CursorAgentInfo,
+  type CursorAgentLayout,
+  type CursorAgentSource,
+  type CursorAgentsListResult,
   mergeCursorAgentsByPrecedence,
   parseCursorAgentFrontmatter,
   resolveCursorAgentName,
-  type CursorAgentInfo,
-  type CursorAgentLayout,
-  type CursorAgentsListResult,
-  type CursorAgentSource,
 } from "../shared/cursor-agents";
 
 export async function listDiscoveredCursorAgents(
@@ -21,17 +21,13 @@ export async function listDiscoveredCursorAgents(
   const ordered: CursorAgentInfo[] = [];
 
   for (const root of CURSOR_AGENT_ROOTS) {
-    ordered.push(
-      ...(await scanAgentsDirectory(path.join(homedir, root.rel), "user", root.layout)),
-    );
+    ordered.push(...(await scanAgentsDirectory(path.join(homedir, root.rel), "user", root.layout)));
   }
 
   if (workspacePath?.trim()) {
     const resolved = path.resolve(workspacePath.trim());
     for (const root of CURSOR_AGENT_ROOTS) {
-      ordered.push(
-        ...(await scanAgentsDirectory(path.join(resolved, root.rel), "project", root.layout)),
-      );
+      ordered.push(...(await scanAgentsDirectory(path.join(resolved, root.rel), "project", root.layout)));
     }
   }
 
@@ -92,9 +88,6 @@ async function scanAgentsDirectory(
 
 function isNotFound(error: unknown): boolean {
   return Boolean(
-    error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code?: string }).code === "ENOENT",
+    error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT",
   );
 }

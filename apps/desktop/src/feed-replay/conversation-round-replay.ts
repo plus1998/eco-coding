@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  CodexEventAdapter,
   type CodexEventAdapterOptions,
   type CodexSpawnPayload,
   type CodexSpawnPayloadMatchInput,
@@ -9,16 +10,13 @@ import {
   type CodexThreadAttributionRecord,
   type CodexThreadRunEventInput,
   type CodexTurnPlanUpdatedInput,
-  CodexEventAdapter,
   resolveDefaultCodexThreadAttribution,
 } from "@eco/runtime";
-import { buildThreadRunProjection } from "../main/thread-run-projection";
-import { trimProjectionForFeed } from "../main/thread-run-projection-feed";
-import { normalizeCodexThreadRunEventForProjection } from "../main/codex-thread-run-event-normalizer";
 import {
   applyCodexSubagentLifecycleEvent,
   type CodexSubagentLifecycleServices,
 } from "../main/codex-subagent-lifecycle";
+import { normalizeCodexThreadRunEventForProjection } from "../main/codex-thread-run-event-normalizer";
 import { createConversationStore } from "../main/conversation-store";
 import {
   createThreadFeedSkeletonRecord,
@@ -31,16 +29,13 @@ import {
   type ThreadFeedSkeletonRecord,
 } from "../main/thread-feed-skeleton-store";
 import { isMetricsOnlyThreadRunEvent } from "../main/thread-run-event-normalizer";
+import { buildThreadRunProjection } from "../main/thread-run-projection";
+import { trimProjectionForFeed } from "../main/thread-run-projection-feed";
 import type { AgentInstanceRecord } from "../main/usage-ledger";
-import type { ThreadRunEvent } from "../shared/ipc";
-import type { RuntimeAgentRole } from "../shared/ipc";
-import type { ThreadRunProjectionAttempt, ThreadRunProjectionAgent } from "../shared/thread-run-projection";
-import type { ThreadSummary } from "../shared/ipc";
+import type { RuntimeAgentRole, ThreadRunEvent, ThreadSummary } from "../shared/ipc";
+import type { ThreadRunProjectionAgent, ThreadRunProjectionAttempt } from "../shared/thread-run-projection";
 import type { ConversationRoundFixture, RpcLogEntry } from "./conversation-round-fixture";
-import {
-  evaluateFixtureScenarioChecklist,
-  loadConversationRoundFixture,
-} from "./conversation-round-fixture";
+import { evaluateFixtureScenarioChecklist, loadConversationRoundFixture } from "./conversation-round-fixture";
 
 export const CONVERSATION_ROUND_ECO_THREAD_ID = "thr_conversation_round";
 
@@ -88,9 +83,7 @@ export interface ReplayConversationRoundOptions {
 export async function replayConversationRound(
   options: ReplayConversationRoundOptions = {},
 ): Promise<ConversationRoundReplayResult> {
-  const loaded =
-    options.fixture ??
-    loadConversationRoundFixture(options.fixtureDir);
+  const loaded = options.fixture ?? loadConversationRoundFixture(options.fixtureDir);
   const ecoThreadId = options.ecoThreadId ?? CONVERSATION_ROUND_ECO_THREAD_ID;
   const scenarioChecklist = evaluateFixtureScenarioChecklist(loaded);
 
@@ -188,7 +181,10 @@ export async function replayConversationRound(
   };
 }
 
-export function writeConversationRoundExpected(fixtureDir: string, result: ConversationRoundReplayResult): void {
+export function writeConversationRoundExpected(
+  fixtureDir: string,
+  result: ConversationRoundReplayResult,
+): void {
   const expectedDir = path.join(fixtureDir, "expected");
   fs.mkdirSync(expectedDir, { recursive: true });
 
@@ -237,8 +233,7 @@ function buildCodexThreadContext(rpcLog: RpcLogEntry[]) {
     if (!thread || typeof thread.id !== "string") {
       continue;
     }
-    const parentThreadId =
-      typeof thread.parentThreadId === "string" ? thread.parentThreadId.trim() : "";
+    const parentThreadId = typeof thread.parentThreadId === "string" ? thread.parentThreadId.trim() : "";
     if (!parentThreadId) {
       continue;
     }
@@ -396,7 +391,8 @@ function collectScenarioEventSignals(events: ThreadRunEvent[], marker: string): 
       (event) =>
         event.metadata?.liveType === "thread.user_prompt" || event.metadata?.liveType === "message.user",
     ).length,
-    assistantFinals: events.filter((event) => event.eventType === "message.final" && event.role !== "user").length,
+    assistantFinals: events.filter((event) => event.eventType === "message.final" && event.role !== "user")
+      .length,
     mcpTools: events.filter((event) => {
       const toolName = String((event.metadata?.tool as { name?: string } | undefined)?.name ?? "");
       return (
@@ -410,15 +406,17 @@ function collectScenarioEventSignals(events: ThreadRunEvent[], marker: string): 
       return toolName === "Bash" || /smoke-note|cat|read|write|echo/i.test(command);
     }).length,
     subagentStarts: events.filter((event) => event.eventType === "agent.started").length,
-    subagentStops: events.filter((event) =>
-      ["agent.stopped", "agent.abandoned"].includes(event.eventType),
-    ).length,
+    subagentStops: events.filter((event) => ["agent.stopped", "agent.abandoned"].includes(event.eventType))
+      .length,
     markerInFinal: joined.includes(`SMOKE_DONE:${marker}`) || joined.includes(marker),
     skillMentioned: /SMOKE_SKILL_OK|smoke-skill/i.test(joined),
   };
 }
 
-export function replayNotificationsOnly(fixture: ConversationRoundFixture, ecoThreadId: string): CodexThreadRunEventInput[] {
+export function replayNotificationsOnly(
+  fixture: ConversationRoundFixture,
+  ecoThreadId: string,
+): CodexThreadRunEventInput[] {
   const codexContext = buildCodexThreadContext(fixture.rpcLog);
   const spawnPayloads = buildSpawnPayloadQueue(fixture.rpcLog);
   return replayCodexNotificationsFromRpcLog(

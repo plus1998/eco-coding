@@ -11,13 +11,13 @@ import { globalClaudeBridgeBindingRegistry } from "../src/main/claude-bridge-bin
 import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
 import { handleGatewayRequestLifecycleEvent } from "../src/main/gateway-request-lifecycle";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
-import { BUILTIN_VISION_AGENT_ROLE } from "../src/shared/prompt-image-vision";
-import { ThreadLiveRequestRegistry } from "../src/main/thread-live-request-registry";
 import {
   applyLogicalRequestTerminal,
   handleBridgeMessagesRequest,
   recordProviderRequestIdForLogical,
 } from "../src/main/thread-live-request-coordinator";
+import { ThreadLiveRequestRegistry } from "../src/main/thread-live-request-registry";
+import { BUILTIN_VISION_AGENT_ROLE } from "../src/shared/prompt-image-vision";
 
 afterEach(async () => {
   globalClaudeBridgeBindingRegistry.clearAllForTests();
@@ -170,7 +170,7 @@ describe("Claude Bridge logical request integration", () => {
         }),
     });
     const baseUrl = `http://127.0.0.1:${upstream.port}`;
-  try {
+    try {
       const threadId = "logical-concurrent";
       const wiring = createRegistryWiring(threadId);
       configureLifecycle([providerEntry("pa", baseUrl, "model-a")], wiring.onRequestLifecycle);

@@ -1,12 +1,6 @@
 import { ensureDeviceBinding } from "../_shared/bindings.ts";
 import { handleCors } from "../_shared/cors.ts";
-import {
-  errorResponse,
-  json,
-  readJsonObject,
-  requireMethod,
-  requireString,
-} from "../_shared/http.ts";
+import { errorResponse, json, readJsonObject, requireMethod, requireString } from "../_shared/http.ts";
 import { createServiceClient, requireUser } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {

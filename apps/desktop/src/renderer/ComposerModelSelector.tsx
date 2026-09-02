@@ -18,16 +18,13 @@ import type {
   ProviderConfigView,
   ThinkingEffort,
 } from "../shared/ipc";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import {
   ComposerModelLabel,
   formatComposerModelName,
   formatComposerThinkingEffortLabel,
 } from "./ComposerModelLabel";
-import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
-import {
-  composerFloatingPlacementViewportWidth,
-  composerFloatingStyleForAnchor,
-} from "./composer-floating";
+import { composerFloatingPlacementViewportWidth, composerFloatingStyleForAnchor } from "./composer-floating";
 
 export { formatComposerModelName, formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
 
@@ -779,9 +776,7 @@ export function ComposerModelSelector({
         >
           <ChevronLeft size={14} aria-hidden />
         </button>
-        <span>
-          {activeMenu === "models" ? t("composer.model.model") : t("composer.model.effort")}
-        </span>
+        <span>{activeMenu === "models" ? t("composer.model.model") : t("composer.model.effort")}</span>
       </div>
 
       {activeMenu === "models" ? (
@@ -978,11 +973,7 @@ export function ComposerModelSelector({
 
   return (
     <ComposerHoverTooltip
-      content={
-        value
-          ? t("composer.model.temporaryOverride", { label: triggerLabel })
-          : triggerLabel
-      }
+      content={value ? t("composer.model.temporaryOverride", { label: triggerLabel }) : triggerLabel}
       disabled={open || interactionDisabled || !nameTruncated}
     >
       <span className="composer-model-selector">

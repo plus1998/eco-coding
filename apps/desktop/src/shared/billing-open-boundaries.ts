@@ -17,9 +17,7 @@ function sourceTokenTotal(
 
 function hasBillingUsage(billing: ThreadBillingSnapshot): boolean {
   const total = billing.totalTokens;
-  return (
-    total.input + total.output + total.cacheRead + total.cacheCreation > 0 || billing.ecoCostUsd > 0
-  );
+  return total.input + total.output + total.cacheRead + total.cacheCreation > 0 || billing.ecoCostUsd > 0;
 }
 
 function hasPrimaryAttributionWarning(diagnostics: readonly ThreadBillingDiagnostic[]): boolean {
@@ -55,8 +53,7 @@ export function collectBillingOpenBoundaryNotes(billing: ThreadBillingSnapshot):
   if (hasPrimaryAttributionWarning(diagnostics)) {
     notes.push({
       id: "B16",
-      message:
-        "部分主账请求未能经 Proxy 路由或未及时归属 agent：将显式失败或记入未归属桶，不会静默错账。",
+      message: "部分主账请求未能经 Proxy 路由或未及时归属 agent：将显式失败或记入未归属桶，不会静默错账。",
     });
     notes.push({
       id: "B14",

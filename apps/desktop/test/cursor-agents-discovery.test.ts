@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { listDiscoveredCursorAgents } from "../src/main/cursor-agents-discovery";
 import {
+  type CursorAgentInfo,
   mergeCursorAgentsByPrecedence,
   parseCursorAgentFrontmatter,
   resolveCursorAgentName,
-  type CursorAgentInfo,
 } from "../src/shared/cursor-agents";
 
 test("parseCursorAgentFrontmatter reads scalar and multiline description", () => {
@@ -33,9 +33,7 @@ You verify work.
 });
 
 test("resolveCursorAgentName falls back to filename stem", () => {
-  expect(resolveCursorAgentName("", "/tmp/.cursor/agents/security-reviewer.md")).toBe(
-    "security-reviewer",
-  );
+  expect(resolveCursorAgentName("", "/tmp/.cursor/agents/security-reviewer.md")).toBe("security-reviewer");
   expect(resolveCursorAgentName("custom", "/tmp/x.md")).toBe("custom");
 });
 

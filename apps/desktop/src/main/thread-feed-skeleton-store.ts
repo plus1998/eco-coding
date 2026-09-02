@@ -4,9 +4,9 @@ import type {
   ThreadRunProjectionAttempt,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
+  ThreadSubagentSessionTiming,
   ThreadSummary,
 } from "../shared/ipc";
-import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import type { RunAttemptRecord } from "./usage-ledger";
 
 export interface FeedSkeletonPatchState {
@@ -50,8 +50,7 @@ export function mapRunAttemptsForFeedSkeleton(
       ...(attempt.endedAt && { endedAt: attempt.endedAt }),
     }))
     .sort(
-      (left, right) =>
-        left.startedAt.localeCompare(right.startedAt) || left.retryIndex - right.retryIndex,
+      (left, right) => left.startedAt.localeCompare(right.startedAt) || left.retryIndex - right.retryIndex,
     );
 }
 

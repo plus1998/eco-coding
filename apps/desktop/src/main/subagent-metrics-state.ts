@@ -118,9 +118,7 @@ export class SubagentMetricsState {
   }
 
   agentIdsForRole(role: RuntimeAgentRole): string[] {
-    return [...this.byAgentId.values()]
-      .filter((entry) => entry.role === role)
-      .map((entry) => entry.agentId);
+    return [...this.byAgentId.values()].filter((entry) => entry.role === role).map((entry) => entry.agentId);
   }
 
   getEntry(agentId: string): SubagentMetricsEntry | undefined {

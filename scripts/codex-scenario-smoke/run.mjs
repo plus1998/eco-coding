@@ -23,33 +23,30 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildScenarioPrompt } from "../conversation-round/lib/scenario-prompt.mjs";
 import { CodexAppServerClient } from "../../packages/runtime/src/codex-app-server-client.ts";
-import { listCodexSkills } from "../../packages/runtime/src/codex-skills-list.ts";
 import { syncEcoCodexHooks } from "../../packages/runtime/src/codex-hooks-sync.ts";
-import { evaluateScenarioChecklist, diffAgainstBaseline } from "./assert.mjs";
+import { listCodexSkills } from "../../packages/runtime/src/codex-skills-list.ts";
+import { buildScenarioPrompt } from "../conversation-round/lib/scenario-prompt.mjs";
+import { diffAgainstBaseline, evaluateScenarioChecklist } from "./assert.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
 const fixturesRoot = path.join(__dirname, "fixtures");
 const mcpServerPath = path.join(__dirname, "mcp-echo-server.mjs");
 
-const apiKey =
-  process.env.LONGCAT_API_KEY?.trim() ||
-  process.env.ECO_CODEX_SMOKE_API_KEY?.trim() ||
-  "";
+const apiKey = process.env.LONGCAT_API_KEY?.trim() || process.env.ECO_CODEX_SMOKE_API_KEY?.trim() || "";
 // Codex appends `/responses` to model_provider.base_url (no `/v1`).
 // LongCat OpenAI surface expects `/openai/v1/responses`.
-const baseUrl = (
-  process.env.ECO_CODEX_SMOKE_BASE_URL ?? "https://api.longcat.chat/openai/v1"
-).replace(/\/$/, "");
+const baseUrl = (process.env.ECO_CODEX_SMOKE_BASE_URL ?? "https://api.longcat.chat/openai/v1").replace(
+  /\/$/,
+  "",
+);
 const model = process.env.ECO_CODEX_SMOKE_MODEL?.trim() || "LongCat-2.0";
 const timeoutMs = Number.parseInt(process.env.ECO_CODEX_SMOKE_TIMEOUT_MS ?? "600000", 10);
 const providerSlug = "longcat";
 const marker = process.env.ECO_SMOKE_MARKER?.trim() || `LC${Date.now().toString(36).toUpperCase()}`;
 const runId =
-  process.env.ECO_CODEX_SMOKE_RUN_ID?.trim() ||
-  new Date().toISOString().replace(/[:.]/g, "-") + `-${marker}`;
+  process.env.ECO_CODEX_SMOKE_RUN_ID?.trim() || new Date().toISOString().replace(/[:.]/g, "-") + `-${marker}`;
 
 if (!apiKey) {
   console.error("Missing LONGCAT_API_KEY or ECO_CODEX_SMOKE_API_KEY");
@@ -293,7 +290,13 @@ try {
     JSON.stringify({ runId, path: outDir, marker, ok: report.ok, recordedAt: report.finishedAt }, null, 2),
   );
 
-  console.log(JSON.stringify({ ok: report.ok, runId, outDir, failed: report.failed, checklist: report.checklist }, null, 2));
+  console.log(
+    JSON.stringify(
+      { ok: report.ok, runId, outDir, failed: report.failed, checklist: report.checklist },
+      null,
+      2,
+    ),
+  );
   if (!report.ok) process.exitCode = 1;
 } catch (error) {
   report.errors.push(String(error));

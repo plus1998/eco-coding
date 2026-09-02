@@ -2,9 +2,7 @@ import type { ParsedUsage } from "@eco/runtime";
 import type { ContextWindowMonitor } from "./context-window-monitor";
 import type { UsageBillingContextUpdate } from "./usage-billing-artifacts";
 
-export type UsageContextUpdateOptions = NonNullable<
-  Parameters<ContextWindowMonitor["updateFromUsage"]>[2]
->;
+export type UsageContextUpdateOptions = NonNullable<Parameters<ContextWindowMonitor["updateFromUsage"]>[2]>;
 
 export interface UsageContextUpdateMonitor {
   updateFromUsage: ContextWindowMonitor["updateFromUsage"];
@@ -73,9 +71,7 @@ export async function applyUsageContextUpdate(
   return true;
 }
 
-export function createUsageContextService(
-  input: CreateUsageContextServiceInput,
-): UsageContextService {
+export function createUsageContextService(input: CreateUsageContextServiceInput): UsageContextService {
   return {
     applyUpdate: (update) => applyUsageContextUpdate(input.monitor, update),
     getSnapshot: (threadId) => input.monitor.getSnapshot(threadId),

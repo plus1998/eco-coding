@@ -1,17 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
+import { buildRequestLifecycleContext, reportLogicalUpstreamFailure } from "../src/request-lifecycle.js";
 import type {
   GatewayProvider,
   GatewayRequestLifecycleEvent,
   GatewayRequestLifecycleObserver,
   ResolvedProviderRoute,
 } from "../src/types.js";
-import {
-  buildRequestLifecycleContext,
-  reportLogicalUpstreamFailure,
-} from "../src/request-lifecycle.js";
-import { fetchUpstreamWithRetry } from "../src/upstream/fetch-with-retry.js";
 import { forwardAnthropicMessagesBody } from "../src/upstream/anthropic-messages.js";
-import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
+import { fetchUpstreamWithRetry } from "../src/upstream/fetch-with-retry.js";
 
 function collectLifecycle(observer: GatewayRequestLifecycleObserver) {
   const events: GatewayRequestLifecycleEvent[] = [];

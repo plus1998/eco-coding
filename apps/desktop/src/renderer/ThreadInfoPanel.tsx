@@ -1,5 +1,6 @@
+import type { AcpHostUiFeatures } from "@eco/runtime/acp-host-ui-features";
+import { formatCostUsd, formatUsageBadge, shortenModelId } from "@eco/runtime/usage";
 import { ListTodo, X } from "lucide-react";
-import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import {
   type CSSProperties,
   type FocusEvent,
@@ -12,23 +13,21 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
-import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
-import type { AcpHostUiFeatures } from "@eco/runtime/acp-host-ui-features";
-import {
-  formatCostUsd,
-  formatUsageBadge,
-  shortenModelId,
-} from "@eco/runtime/usage";
 import type {
   BillingUsageSource,
   CoderTodoItem,
+  GitSettingsSnapshot,
+  GitWorkingTreeStatus,
+  RoutePricingHint,
+  RuntimeAgentRole,
+  RuntimeRoleRouteConfig,
+  SubagentEnabledSettings,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadStatus,
+  WorkspaceDiffResult,
   WorkspaceInfo,
 } from "../shared/ipc";
-import { CoderTodoPanel } from "./CoderTodoPanel";
 import {
   billingEmptyHint,
   contextCardPlaceholder,
@@ -36,23 +35,18 @@ import {
   shouldShowContextUsagePanel,
   shouldShowThreadUsagePanels,
 } from "../shared/thread-usage-summary";
+import { CoderTodoPanel } from "./CoderTodoPanel";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import { ContextCard } from "./ContextCard";
-import { UsageBreakdownPanel, ExpandableBillingSection } from "./UsageBreakdownPanel";
+import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
+import { i18n } from "./i18n";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 import type { RuntimeAgentThemes } from "./runtime-agent-theme";
-import { WorkspaceGitSection } from "./WorkspaceGitSection";
+import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
+import { ExpandableBillingSection, UsageBreakdownPanel } from "./UsageBreakdownPanel";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
-import type {
-  GitSettingsSnapshot,
-  GitWorkingTreeStatus,
-  RoutePricingHint,
-  RuntimeAgentRole,
-  RuntimeRoleRouteConfig,
-  SubagentEnabledSettings,
-  WorkspaceDiffResult,
-} from "../shared/ipc";
-import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
-import { i18n } from "./i18n";
+import { WorkspaceGitSection } from "./WorkspaceGitSection";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -67,9 +61,7 @@ export function shouldShowBillingSavings(savedUsd: number): boolean {
 export function formatBillingCacheHitRate(billing: ThreadBillingSnapshot): string {
   const cacheRead = Math.max(0, billing.totalTokens.cacheRead);
   const promptTokens =
-    Math.max(0, billing.totalTokens.input) +
-    cacheRead +
-    Math.max(0, billing.totalTokens.cacheCreation);
+    Math.max(0, billing.totalTokens.input) + cacheRead + Math.max(0, billing.totalTokens.cacheCreation);
   const ratio = promptTokens > 0 ? cacheRead / promptTokens : 0;
   return `${Math.round(ratio * 100)}%`;
 }
@@ -79,9 +71,7 @@ export function resolveBillingMainModelLabel(
   agentModelLabels: readonly ComposerAgentModelLabel[] | undefined,
   fallback: string,
 ): string {
-  const selectedMainModel = agentModelLabels
-    ?.find((label) => label.main)
-    ?.modelId?.trim();
+  const selectedMainModel = agentModelLabels?.find((label) => label.main)?.modelId?.trim();
   if (selectedMainModel) {
     return shortenModelId(selectedMainModel);
   }
@@ -208,7 +198,10 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
                 <span className="thread-info-source-cost">
                   {formatCostUsd(row.ecoCostUsd)}
                   {row.reportedCostUsd !== undefined ? (
-                    <span className="thread-info-source-reported"> / {formatCostUsd(row.reportedCostUsd)}</span>
+                    <span className="thread-info-source-reported">
+                      {" "}
+                      / {formatCostUsd(row.reportedCostUsd)}
+                    </span>
                   ) : null}
                 </span>
               </div>
@@ -393,17 +386,11 @@ function BillingFloatingCard({
 
       {showBilling && billing ? (
         <div
-          className={[
-            "thread-info-billing-focus",
-            showComparison ? "is-orchestrated" : "",
-          ]
+          className={["thread-info-billing-focus", showComparison ? "is-orchestrated" : ""]
             .filter(Boolean)
             .join(" ")}
         >
-          <div
-            className="thread-info-billing-focus-tokens"
-            title={i18n.t("billing.tokenDetail")}
-          >
+          <div className="thread-info-billing-focus-tokens" title={i18n.t("billing.tokenDetail")}>
             {tokenBadge}
           </div>
           <div className="thread-info-billing-focus-metrics">
@@ -431,11 +418,7 @@ function BillingFloatingCard({
                   billing.savedUsd > 0 ? "is-saving" : "is-over",
                 ].join(" ")}
               >
-                <span>
-                  {i18n.t(
-                    billing.savedUsd > 0 ? "billing.saved" : "billing.overpaid",
-                  )}
-                </span>
+                <span>{i18n.t(billing.savedUsd > 0 ? "billing.saved" : "billing.overpaid")}</span>
                 <strong>{formatCostUsd(Math.abs(billing.savedUsd))}</strong>
                 <span className="thread-info-billing-outcome-percent">
                   {Math.abs(billing.savedPct).toFixed(1)}%
@@ -652,9 +635,7 @@ function ThreadInfoFloatControl({
           ref={triggerRef}
           type="button"
           className={
-            open
-              ? "thread-info-float-reopen is-clickable is-active"
-              : "thread-info-float-reopen is-clickable"
+            open ? "thread-info-float-reopen is-clickable is-active" : "thread-info-float-reopen is-clickable"
           }
           aria-label={ariaLabel}
           aria-haspopup="dialog"
@@ -721,8 +702,7 @@ export function ThreadInfoFloatStack({
 }) {
   const { t } = useTranslation();
   const showContextFloat = showContext ?? shouldShowContextUsagePanel(threadStatus, hostUiFeatures);
-  const showBillingFloat =
-    showBillingSection && shouldShowBillingUsagePanel(threadStatus, hostUiFeatures);
+  const showBillingFloat = showBillingSection && shouldShowBillingUsagePanel(threadStatus, hostUiFeatures);
   const contextOccupancyPct = resolvePlannerOccupancyPct(context);
   const floatOpenOn = variant === "composer" ? "click" : "hover";
   const floatAlign = variant === "composer" ? "end" : "start";
@@ -733,18 +713,12 @@ export function ThreadInfoFloatStack({
 
   return (
     <div
-      className={[
-        "thread-info-float-stack",
-        variant === "composer" ? "thread-info-float-stack-composer" : "",
-      ]
+      className={["thread-info-float-stack", variant === "composer" ? "thread-info-float-stack-composer" : ""]
         .filter(Boolean)
         .join(" ")}
     >
       <div
-        className={[
-          "thread-info-float-pills",
-          variant === "composer" ? "composer-usage-pills" : "",
-        ]
+        className={["thread-info-float-pills", variant === "composer" ? "composer-usage-pills" : ""]
           .filter(Boolean)
           .join(" ")}
       >
@@ -886,9 +860,7 @@ export function ThreadInfoPanel({
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
   const showProgress = hasProgressInfo(todos);
   const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
-  const showCommitGraph = Boolean(
-    workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits,
-  );
+  const showCommitGraph = Boolean(workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits);
 
   async function handleCommitSuccess() {
     setCommitsRefreshKey((current) => current + 1);

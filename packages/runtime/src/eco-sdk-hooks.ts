@@ -35,18 +35,14 @@ export {
   readAgentSubagentType,
 } from "./subagent-resume.js";
 
-import {
-  evaluateBashHookGate,
-  evaluateFilesystemHookGate,
-  type ExecutionConfirmationMode,
-} from "./tool-confirmation.js";
 import type { RuntimeAgentRole } from "../../shared/src";
 import {
   type EcoRuntimeToolPermissionEntry,
   type EcoRuntimeToolPermissionPolicy,
+  parseMcpToolServerName,
   resolveToolPermissionEntryForActor,
+  sanitizeMcpServerName,
 } from "./agent-orchestration.js";
-import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
 import {
   isSubagentEnabled,
   isSubagentRole,
@@ -55,10 +51,15 @@ import {
   SDK_PLAN_AGENT_KEY,
   type SubagentAvailability,
 } from "./subagent-availability";
-import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 import { SubagentLaunchRegistry } from "./subagent-launch-registry.js";
+import {
+  type ExecutionConfirmationMode,
+  evaluateBashHookGate,
+  evaluateFilesystemHookGate,
+} from "./tool-confirmation.js";
+import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 
-export { SubagentLaunchRegistry, type SubagentLaunchRecord } from "./subagent-launch-registry.js";
+export { type SubagentLaunchRecord, SubagentLaunchRegistry } from "./subagent-launch-registry.js";
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
@@ -128,10 +129,7 @@ export function createBrowserOpenApprovalPreToolHook(
     if (!isEcoBrowserOpenApprovalToolName(preInput.tool_name)) {
       return {};
     }
-    return askTool(
-      preInput.tool_name,
-      "Agent is about to open a website in the built-in browser.",
-    );
+    return askTool(preInput.tool_name, "Agent is about to open a website in the built-in browser.");
   };
 }
 
@@ -164,9 +162,7 @@ export interface EcoSubagentSessionHooks {
   onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
 }
 
-export type EcoSubagentLaunchGateDecision =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type EcoSubagentLaunchGateDecision = { ok: true } | { ok: false; reason: string };
 
 export interface EcoSubagentLaunchGate {
   tryReserveLaunch(input: {
@@ -174,11 +170,7 @@ export interface EcoSubagentLaunchGate {
     role?: RuntimeAgentRole;
     prompt?: string;
   }): EcoSubagentLaunchGateDecision;
-  releaseLaunch?(input: {
-    toolUseId?: string;
-    agentId?: string;
-    role?: RuntimeAgentRole;
-  }): void;
+  releaseLaunch?(input: { toolUseId?: string; agentId?: string; role?: RuntimeAgentRole }): void;
 }
 
 export interface EcoSubagentRuntimeLimitHooks {
@@ -868,10 +860,7 @@ export function createNestedSubagentDenyPreToolHook(): HookCallback {
     }
     const actorAgentId = typeof preInput.agent_id === "string" ? preInput.agent_id.trim() : "";
     if (actorAgentId) {
-      return denyTool(
-        preInput.tool_name,
-        "Subagents cannot launch other subagents.",
-      );
+      return denyTool(preInput.tool_name, "Subagents cannot launch other subagents.");
     }
     return {};
   };
@@ -1695,11 +1684,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
   );
-  pushHook(
-    hooks,
-    "PreToolUse",
-    createBrowserOpenApprovalPreToolHook(ctx.resolveBrowserOpenApprovalMode),
-  );
+  pushHook(hooks, "PreToolUse", createBrowserOpenApprovalPreToolHook(ctx.resolveBrowserOpenApprovalMode));
   pushHook(hooks, "PreToolUse", createSubagentLaunchGatePreToolHook(ctx.subagentLaunchGate), "Agent|Task");
   const subagentLaunchRegistry =
     ctx.subagentLaunchRegistry ??

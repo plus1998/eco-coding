@@ -8,8 +8,6 @@
   "startedAt": "2026-09-01T05:26:41.167Z",
   "ok": false,
   "checklist": null,
-  "errors": [
-    "TypeError: undefined is not an object (evaluating 'plannerRoute.fallbacks[0]')"
-  ],
+  "errors": ["TypeError: undefined is not an object (evaluating 'plannerRoute.fallbacks[0]')"],
   "finishedAt": "2026-09-01T05:26:41.260Z"
 }

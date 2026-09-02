@@ -48,8 +48,7 @@ export function buildSidebarSearchResults(
       kind: "thread",
       key: `thread:${thread.id}`,
       thread,
-      projectName:
-        projectNames.get(thread.workspacePath) ?? thread.workspacePath.split("/").at(-1) ?? "项目",
+      projectName: projectNames.get(thread.workspacePath) ?? thread.workspacePath.split("/").at(-1) ?? "项目",
     }),
   );
   const projectResults = projects
@@ -179,7 +178,12 @@ export function SidebarSearchDialog({
           <kbd>esc</kbd>
         </div>
 
-        <div id={listboxId} className="sidebar-search-results" role="listbox" aria-label={t("nav.searchResults")}>
+        <div
+          id={listboxId}
+          className="sidebar-search-results"
+          role="listbox"
+          aria-label={t("nav.searchResults")}
+        >
           {results.length === 0 ? (
             <div className="sidebar-search-empty">{t("nav.noSearchResults")}</div>
           ) : (

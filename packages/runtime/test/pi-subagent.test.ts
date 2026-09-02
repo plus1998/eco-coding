@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
+import { PI_CORE_CAPABILITIES } from "../src/core-runtime";
+import { resolvePiRouteByRole } from "../src/pi-model-bridge";
 import {
   collectPiSubagentFinalText,
   filterMcpServersForPiSubagent,
@@ -9,9 +12,6 @@ import {
   resolvePiSubagentToolAllowlist,
   truncatePiSubagentResult,
 } from "../src/pi-subagent";
-import { resolvePiRouteByRole } from "../src/pi-model-bridge";
-import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
-import { PI_CORE_CAPABILITIES } from "../src/core-runtime";
 
 function sampleRegistry(enabled: boolean): EcoAgentRuntimeConfig {
   return {
@@ -151,10 +151,7 @@ test("session keys isolate parent and child slots", () => {
 
 test("filterMcpServersForPiSubagent only keeps assigned servers", () => {
   expect(
-    filterMcpServersForPiSubagent(
-      { browser: { command: "x" }, other: { command: "y" } },
-      ["browser"],
-    ),
+    filterMcpServersForPiSubagent({ browser: { command: "x" }, other: { command: "y" } }, ["browser"]),
   ).toEqual({ browser: { command: "x" } });
   expect(filterMcpServersForPiSubagent({ browser: { command: "x" } }, [])).toBeUndefined();
 });
@@ -190,9 +187,7 @@ test("parent tools allowlist must include Agent when eco-pi-agent is loaded", ()
   // Documents PI SDK contract: options.tools is an allowlist; extension tools
   // omitted here are stripped in AgentSession._refreshToolRegistry.
   const base = ["read", "bash", "edit", "write", "mcp", "mcpScript"];
-  const withAgent = base.includes(PI_AGENT_TOOL_NAME)
-    ? base
-    : [...base, PI_AGENT_TOOL_NAME];
+  const withAgent = base.includes(PI_AGENT_TOOL_NAME) ? base : [...base, PI_AGENT_TOOL_NAME];
   expect(withAgent).toContain(PI_AGENT_TOOL_NAME);
   expect(PI_AGENT_TOOL_NAME).toBe("Agent");
 });

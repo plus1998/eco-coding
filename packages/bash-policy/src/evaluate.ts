@@ -1,6 +1,6 @@
+import { matchBashAntiBypass } from "./anti-bypass";
 import { collectCommandSegments, parseShellCommand } from "./parser";
 import { isInsidePath } from "./path-utils";
-import { matchBashAntiBypass } from "./anti-bypass";
 import { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
 import { matchDeny } from "./rules/match";
 import { AUTO_APPROVAL_SCORE_THRESHOLD, riskLevelFromScore, scoreShellAst } from "./scorer";
@@ -82,7 +82,9 @@ function decideByMode(
         action: "ask",
         riskScore,
         riskLevel,
-        reason: autoAskReason?.reason ?? `Command risk score ${riskScore} exceeds threshold ${AUTO_APPROVAL_SCORE_THRESHOLD}`,
+        reason:
+          autoAskReason?.reason ??
+          `Command risk score ${riskScore} exceeds threshold ${AUTO_APPROVAL_SCORE_THRESHOLD}`,
         matchedRule: autoAskReason?.matchedRule ?? "auto_threshold",
       };
     }
@@ -103,9 +105,7 @@ function decideByMode(
   };
 }
 
-function resolveAutoAskReason(
-  ast: ShellAst,
-): { reason: string; matchedRule: string } | undefined {
+function resolveAutoAskReason(ast: ShellAst): { reason: string; matchedRule: string } | undefined {
   for (const segment of collectCommandSegments(ast)) {
     const program = segment.program.split("/").pop() ?? segment.program;
     if (program === "rm") {

@@ -31,13 +31,10 @@ test("Codex effort mapping keeps max and ultra distinct", () => {
 });
 
 test("Codex thread Skill visibility is path-scoped", () => {
-  const config = withCodexSkillConfig(
-    { mcp_servers: {} },
-    [
-      { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
-      { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
-    ],
-  );
+  const config = withCodexSkillConfig({ mcp_servers: {} }, [
+    { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
+    { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
+  ]);
   expect(config.skills).toEqual({
     config: [
       { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
@@ -263,11 +260,7 @@ test("role TOML carries an explicit apiCompat override in the V1 gateway alias",
   expect(roleSync.roles[0]?.apiCompat).toBe("openai_chat_completions");
   const exploreToml = await fs.readFile(path.join(roleSync.agentsDir, "explore.toml"), "utf8");
   expect(exploreToml).toContain(
-    `model = "${buildCodexGatewayModelAlias(
-      "mixed-wire",
-      "chat/model.__v1",
-      "openai_chat_completions",
-    )}"`,
+    `model = "${buildCodexGatewayModelAlias("mixed-wire", "chat/model.__v1", "openai_chat_completions")}"`,
   );
 });
 
@@ -377,9 +370,7 @@ test("assertCodexRoleProvidersAvailable fails when role provider is missing", as
   });
 
   expect(() =>
-    assertCodexRoleProvidersAvailable(roleSync.roles, [
-      { id: "main", name: "Main", enabled: true },
-    ]),
+    assertCodexRoleProvidersAvailable(roleSync.roles, [{ id: "main", name: "Main", enabled: true }]),
   ).toThrow(/requires provider 'missing-provider'/);
 });
 

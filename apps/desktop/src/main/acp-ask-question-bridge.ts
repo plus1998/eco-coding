@@ -57,10 +57,7 @@ export function parseAcpAskQuestionQuestions(raw: unknown): AcpAskQuestionMapped
     if (!isRecord(entry)) {
       continue;
     }
-    const id =
-      typeof entry.id === "string" && entry.id.trim()
-        ? entry.id.trim()
-        : `q${index}`;
+    const id = typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : `q${index}`;
     const prompt =
       typeof entry.prompt === "string" && entry.prompt.trim()
         ? entry.prompt.trim()
@@ -81,9 +78,7 @@ export function parseAcpAskQuestionQuestions(raw: unknown): AcpAskQuestionMapped
           continue;
         }
         const optionId =
-          typeof option.id === "string" && option.id.trim()
-            ? option.id.trim()
-            : `opt${optionIndex}`;
+          typeof option.id === "string" && option.id.trim() ? option.id.trim() : `opt${optionIndex}`;
         options.push({ id: optionId, label });
       }
     }
@@ -114,9 +109,7 @@ export function mapAcpAskQuestionToClarification(
   }
   const clarificationQuestions: ClarificationQuestion[] = questions.map((question) => ({
     question: question.prompt,
-    ...(typeof request.title === "string" && request.title.trim()
-      ? { header: request.title.trim() }
-      : {}),
+    ...(typeof request.title === "string" && request.title.trim() ? { header: request.title.trim() } : {}),
     options: question.options.map((option) => ({ label: option.label })),
     ...(question.allowMultiple ? { multiSelect: true } : {}),
     allowCustom: true,
@@ -172,9 +165,7 @@ export function mapClarificationAnswersToAcpAskQuestion(
         selectedOptionIds.push(byId.id);
         continue;
       }
-      const freeform = question.options.find(
-        (option) => option.id === ACP_ASK_QUESTION_FREEFORM_OPTION_ID,
-      );
+      const freeform = question.options.find((option) => option.id === ACP_ASK_QUESTION_FREEFORM_OPTION_ID);
       if (freeform && (trimmed === freeform.label || trimmed === freeform.id)) {
         selectedOptionIds.push(freeform.id);
         continue;
@@ -207,29 +198,15 @@ export function createAcpAskQuestionHandler(
 
     deps.updateThreadRunning();
     // Park before UI emit so submit cannot race an empty pending map.
-    const answersPromise = registerPending(
-      threadId,
-      mapped.request.toolUseId,
-      mapped.request.questions,
-    );
-    deps.emit(
-      "clarification.requested",
-      "Planner 需要你回答几个问题。",
-      mapped.request,
-      "started",
-    );
+    const answersPromise = registerPending(threadId, mapped.request.toolUseId, mapped.request.questions);
+    deps.emit("clarification.requested", "Planner 需要你回答几个问题。", mapped.request, "started");
 
     try {
       const answers = await answersPromise;
       deps.updateThreadRunning();
 
       if (isIgnoredClarificationAnswers(mapped.request, answers)) {
-        deps.emit(
-          "clarification.answered",
-          "已跳过澄清问题。",
-          mapped.request,
-          "completed",
-        );
+        deps.emit("clarification.answered", "已跳过澄清问题。", mapped.request, "completed");
         return { outcome: "skipped", reason: "user dismissed clarification" };
       }
 

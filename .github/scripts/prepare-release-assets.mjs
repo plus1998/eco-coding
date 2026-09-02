@@ -84,11 +84,7 @@ copiedNames.add(channelLinuxFile);
 copiedNames.add(channelMacFile);
 
 // Feed Release pointers use absolute binary URLs under the versioned tag.
-await writeChannelMetadata(
-  feedDirectory,
-  channelFile,
-  absolutizeUpdateMetadata(winMetadata, assetBaseUrl),
-);
+await writeChannelMetadata(feedDirectory, channelFile, absolutizeUpdateMetadata(winMetadata, assetBaseUrl));
 await writeChannelMetadata(
   feedDirectory,
   channelLinuxFile,

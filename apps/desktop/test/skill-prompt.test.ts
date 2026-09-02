@@ -7,9 +7,9 @@ import {
   listSdkReadyProjectSkills,
   mergeSkillNames,
   parseExplicitSkillNames,
+  promptIncludesSkillName,
   resolveExplicitCodexSkillInputs,
   resolveSdkSessionSkillConfig,
-  promptIncludesSkillName,
   type SkillInfo,
 } from "../src/shared/skills";
 
@@ -111,6 +111,7 @@ test("resolveImplicitSkillReadRoots includes project roots and explicit skill di
     "/repo/app/.claude/skills",
     "/repo/app/.agents/skills",
     "/repo/app/.codex/skills",
+    "/repo/app/.pi/skills",
     "/Users/alice/.claude/skills/vue-best-practices",
   ]);
 });

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
-  collectCommitDiffContext,
   COMMIT_DIFF_MAX_CHARS,
+  collectCommitDiffContext,
   createGitBranch,
   discardWorkspaceChanges,
   fetchFromOrigin,
@@ -146,8 +146,7 @@ test("getWorkspaceDiff can omit file contents and patch for remote summaries", a
     if (key === "git diff HEAD") {
       return {
         exitCode: 0,
-        stdout:
-          "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n",
+        stdout: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n",
         stderr: "",
       };
     }
@@ -185,8 +184,7 @@ test("getWorkspaceFileDiff returns unified patch for a tracked file", async () =
     if (key === "git diff HEAD -- src/a.ts") {
       return {
         exitCode: 0,
-        stdout:
-          "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+        stdout: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
         stderr: "",
       };
     }
@@ -260,9 +258,7 @@ test("getWorkspaceFileDiff marks binary patches and skips preview for missing im
 test("getWorkspaceFileDiff rejects empty and unsafe paths", async () => {
   const run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
   await expect(getWorkspaceFileDiff("/tmp/repo", "  ", run)).rejects.toThrow("File path is required.");
-  await expect(getWorkspaceFileDiff("/tmp/repo", "../outside.ts", run)).rejects.toThrow(
-    "Invalid file path.",
-  );
+  await expect(getWorkspaceFileDiff("/tmp/repo", "../outside.ts", run)).rejects.toThrow("Invalid file path.");
 });
 
 test("discardWorkspaceChanges resets tracked files and cleans untracked files", async () => {
@@ -474,9 +470,7 @@ test("pullChanges throws with stderr when stdout only has updating range", async
     return { exitCode: 0, stdout: "", stderr: "" };
   };
 
-  await expect(pullChanges("/tmp/repo", {}, run)).rejects.toThrow(
-    /local changes|overwritten by merge/,
-  );
+  await expect(pullChanges("/tmp/repo", {}, run)).rejects.toThrow(/local changes|overwritten by merge/);
   expect(pullCount).toBe(2);
 });
 
@@ -555,7 +549,7 @@ test("getGitWorkingTreeStatus uses upstream tracking branch for ahead/behind", a
   expect(status.behindCount).toBe(2);
   expect(status.aheadCount).toBe(1);
   expect(status.hasUpstream).toBe(true);
-  expect(calls.some((args) => args.join(" ") === "git rev-list --left-right --count @{upstream}...HEAD")).toBe(
-    true,
-  );
+  expect(
+    calls.some((args) => args.join(" ") === "git rev-list --left-right --count @{upstream}...HEAD"),
+  ).toBe(true);
 });

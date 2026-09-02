@@ -1,11 +1,10 @@
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen } from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen } from "electron";
 import { demoLog, installDemoStdioGuard } from "../demo/demo-log";
-import { registerDemoIpcHandlers } from "../demo/register-ipc-handlers";
 import { getDemoFeedReplayState, initDemoFeedReplayState } from "../demo/feed-replay-bootstrap";
-import { demoRuntimeState } from "../demo/register-ipc-handlers";
+import { demoRuntimeState, registerDemoIpcHandlers } from "../demo/register-ipc-handlers";
 import { resolveInitialWindowBounds } from "./desktop-window-placement";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

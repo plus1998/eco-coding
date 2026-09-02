@@ -1,10 +1,10 @@
-export { evaluateBashHardDeny, evaluateBashPolicy } from "./evaluate";
 export { matchBashAntiBypass } from "./anti-bypass";
-export { parseShellCommand, collectCommandSegments, collectPipelines } from "./parser";
+export { evaluateBashHardDeny, evaluateBashPolicy } from "./evaluate";
+export { collectCommandSegments, collectPipelines, parseShellCommand } from "./parser";
+export { isInsidePath } from "./path-utils";
 export { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
 export { matchDeny, scorePipeline } from "./rules/match";
-export { scoreShellAst, riskLevelFromScore, AUTO_APPROVAL_SCORE_THRESHOLD } from "./scorer";
-export { isInsidePath } from "./path-utils";
+export { AUTO_APPROVAL_SCORE_THRESHOLD, riskLevelFromScore, scoreShellAst } from "./scorer";
 export type {
   AgentBashPolicy,
   BashPolicyAction,

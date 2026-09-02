@@ -2773,12 +2773,7 @@ function SubagentRunCardButton({
   }
 
   return (
-    <button
-      type="button"
-      className={className}
-      onClick={onOpen}
-      aria-pressed={selected}
-    >
+    <button type="button" className={className} onClick={onOpen} aria-pressed={selected}>
       {body}
     </button>
   );
@@ -3771,9 +3766,7 @@ function UserPromptBlock({
       await onRewriteUserMessage({
         activityLineId: rewindTarget.activityLineId,
         prompt,
-        attachments: editImages.flatMap(({ mediaType, data }) =>
-          data ? [{ mediaType, data }] : [],
-        ),
+        attachments: editImages.flatMap(({ mediaType, data }) => (data ? [{ mediaType, data }] : [])),
         expectedHistoryRevision: editRevision,
       });
       setEditing(false);

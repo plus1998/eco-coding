@@ -5,8 +5,8 @@ import {
   DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
   effectiveContextLimit,
   occupancyPercent,
-  resolveEffectiveContextLimit,
   type ParsedUsage,
+  resolveEffectiveContextLimit,
 } from "@eco/runtime";
 import type {
   AgentRole,

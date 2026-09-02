@@ -49,9 +49,9 @@ export class GitSettingsStore {
   }
 
   get(): GitSettingsSnapshot {
-    const row = this.db
-      .prepare(`SELECT value_json FROM git_settings WHERE key = ?`)
-      .get("snapshot") as { value_json: string } | undefined;
+    const row = this.db.prepare(`SELECT value_json FROM git_settings WHERE key = ?`).get("snapshot") as
+      | { value_json: string }
+      | undefined;
     if (!row) {
       return defaultGitSettings();
     }
@@ -80,7 +80,9 @@ export class GitSettingsStore {
     return settings.commitMessageRoleByMainAgentConfigId[mainAgentConfigId] ?? "auto";
   }
 
-  getCommitMessageCandidateModelIdForMainAgentConfig(mainAgentConfigId: string): CommitMessageModelPreference {
+  getCommitMessageCandidateModelIdForMainAgentConfig(
+    mainAgentConfigId: string,
+  ): CommitMessageModelPreference {
     const settings = this.get();
     return settings.commitMessageCandidateModelIdByMainAgentConfigId[mainAgentConfigId] ?? "auto";
   }
@@ -91,8 +93,7 @@ export class GitSettingsStore {
     availableRoles: ReadonlySet<string>,
   ): GitSettingsSnapshot {
     const settings = this.get();
-    const nextRole =
-      role === "auto" || availableRoles.has(role) ? role : ("auto" as const);
+    const nextRole = role === "auto" || availableRoles.has(role) ? role : ("auto" as const);
     return this.save({
       ...settings,
       commitMessageRoleByMainAgentConfigId: {
@@ -127,7 +128,9 @@ export function normalizeGitSettingsSnapshot(value: unknown): GitSettingsSnapsho
     return defaultGitSettings();
   }
   const record = value as Record<string, unknown>;
-  const commitMessageRoleByMainAgentConfigId = normalizeRolePreferenceMap(record.commitMessageRoleByMainAgentConfigId);
+  const commitMessageRoleByMainAgentConfigId = normalizeRolePreferenceMap(
+    record.commitMessageRoleByMainAgentConfigId,
+  );
   const commitMessageCandidateModelIdByMainAgentConfigId = normalizeCandidateModelPreferenceMap(
     record.commitMessageCandidateModelIdByMainAgentConfigId,
   );
@@ -159,9 +162,7 @@ function normalizeRolePreferenceMap(value: unknown): Record<string, CommitMessag
   return commitMessageRoleByMainAgentConfigId;
 }
 
-function normalizeCandidateModelPreferenceMap(
-  value: unknown,
-): Record<string, CommitMessageModelPreference> {
+function normalizeCandidateModelPreferenceMap(value: unknown): Record<string, CommitMessageModelPreference> {
   if (!value || typeof value !== "object") {
     return {};
   }

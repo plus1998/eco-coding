@@ -187,9 +187,13 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("git:list-commit-model-options", "List commit message model options", "read", RPC_INVOKE, [
     objectArg([]),
   ]),
-  command("git:save-commit-model-preference", "Save commit message model preference", "write_safe", RPC_INVOKE, [
-    objectArg(["candidateModelId"]),
-  ]),
+  command(
+    "git:save-commit-model-preference",
+    "Save commit message model preference",
+    "write_safe",
+    RPC_INVOKE,
+    [objectArg(["candidateModelId"])],
+  ),
   command("git:commit", "Commit workspace changes", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "includeUnstaged"]),
   ]),

@@ -95,10 +95,7 @@ function findSubsequenceRanges(
 }
 
 /** Bold subsequence matches of `query` inside `label` (for humanized display names). */
-export function highlightQueryInLabel(
-  query: string,
-  label: string,
-): Array<{ text: string; match: boolean }> {
+export function highlightQueryInLabel(query: string, label: string): Array<{ text: string; match: boolean }> {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
     return [{ text: label, match: false }];

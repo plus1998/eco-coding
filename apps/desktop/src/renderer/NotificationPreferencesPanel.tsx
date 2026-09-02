@@ -1,18 +1,14 @@
 import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { BASH_REVIEW_MODES, type BashReviewMode, isBashReviewMode } from "../shared/bash-review-ui";
+import type { FollowUpDeliveryMode } from "../shared/ipc";
 import type { AppLocalePreference } from "../shared/locale";
 import {
   type NotificationSettingsSnapshot,
-  type TurnCompletionNotifyMode,
   TURN_COMPLETION_NOTIFY_MODES,
+  type TurnCompletionNotifyMode,
 } from "../shared/notification-settings";
-import type { FollowUpDeliveryMode } from "../shared/ipc";
-import {
-  BASH_REVIEW_MODES,
-  isBashReviewMode,
-  type BashReviewMode,
-} from "../shared/bash-review-ui";
 
 interface NotificationPreferencesPanelProps {
   settings: NotificationSettingsSnapshot;
@@ -259,21 +255,16 @@ export function NotificationPreferencesPanel({
               </span>
               <label
                 className="composer-switch notification-settings-switch"
-                title={t(
-                  settings.permissionEnabled
-                    ? "composer.enabledNamed"
-                    : "composer.disabledNamed",
-                  { name: t("settings.notifications.permission") },
-                )}
+                title={t(settings.permissionEnabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+                  name: t("settings.notifications.permission"),
+                })}
               >
                 <input
                   type="checkbox"
                   checked={settings.permissionEnabled}
                   disabled={busy}
                   aria-labelledby={permissionId}
-                  onChange={(event) =>
-                    void save({ ...settings, permissionEnabled: event.target.checked })
-                  }
+                  onChange={(event) => void save({ ...settings, permissionEnabled: event.target.checked })}
                 />
                 <span className="composer-switch-track" aria-hidden />
               </label>
@@ -288,21 +279,16 @@ export function NotificationPreferencesPanel({
               </span>
               <label
                 className="composer-switch notification-settings-switch"
-                title={t(
-                  settings.questionEnabled
-                    ? "composer.enabledNamed"
-                    : "composer.disabledNamed",
-                  { name: t("settings.notifications.question") },
-                )}
+                title={t(settings.questionEnabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+                  name: t("settings.notifications.question"),
+                })}
               >
                 <input
                   type="checkbox"
                   checked={settings.questionEnabled}
                   disabled={busy}
                   aria-labelledby={questionId}
-                  onChange={(event) =>
-                    void save({ ...settings, questionEnabled: event.target.checked })
-                  }
+                  onChange={(event) => void save({ ...settings, questionEnabled: event.target.checked })}
                 />
                 <span className="composer-switch-track" aria-hidden />
               </label>
@@ -327,10 +313,9 @@ export function NotificationPreferencesPanel({
               </span>
               <label
                 className="composer-switch notification-settings-switch"
-                title={t(
-                  showBilling ? "composer.enabledNamed" : "composer.disabledNamed",
-                  { name: t("settings.showBilling") },
-                )}
+                title={t(showBilling ? "composer.enabledNamed" : "composer.disabledNamed", {
+                  name: t("settings.showBilling"),
+                })}
               >
                 <input
                   type="checkbox"
@@ -351,10 +336,9 @@ export function NotificationPreferencesPanel({
               </span>
               <label
                 className="composer-switch notification-settings-switch"
-                title={t(
-                  showTokenSpeed ? "composer.enabledNamed" : "composer.disabledNamed",
-                  { name: t("settings.tokenSpeed") },
-                )}
+                title={t(showTokenSpeed ? "composer.enabledNamed" : "composer.disabledNamed", {
+                  name: t("settings.tokenSpeed"),
+                })}
               >
                 <input
                   type="checkbox"
@@ -416,10 +400,9 @@ export function NotificationPreferencesPanel({
               </span>
               <label
                 className="composer-switch notification-settings-switch"
-                title={t(
-                  cacheBreakTipsEnabled ? "composer.enabledNamed" : "composer.disabledNamed",
-                  { name: t("settings.cacheBreakTips") },
-                )}
+                title={t(cacheBreakTipsEnabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+                  name: t("settings.cacheBreakTips"),
+                })}
               >
                 <input
                   type="checkbox"

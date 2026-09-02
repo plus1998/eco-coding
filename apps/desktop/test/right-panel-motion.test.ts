@@ -59,9 +59,7 @@ test("right panel motion stays on transform and opacity instead of animating gri
 test("task panel close remains reversible and all close paths share the controller", () => {
   expect(taskPanelController).toContain("taskPanelAnimationControls.stop();");
   expect(taskPanelController).toContain("duration: reversingExit ? 0.28 : 0.34");
-  expect(taskPanelController).toMatch(
-    /if \(taskPanelClosingRef\.current\) \{\s*revealTaskPanel\(\);/,
-  );
+  expect(taskPanelController).toMatch(/if \(taskPanelClosingRef\.current\) \{\s*revealTaskPanel\(\);/);
   expect(taskPanelController).toMatch(
     /pendingTaskPanelTabCloseRef\.current = tabId;\s*dismissTaskPanel\(\);/,
   );

@@ -1,11 +1,11 @@
-import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "./usage";
 import {
+  expandModelLookupCandidates,
+  lookupModelCostInCatalog,
   type ModelsDevCatalog,
   type ModelsDevModelEntry,
   type ModelsDevProviderEntry,
-  expandModelLookupCandidates,
-  lookupModelCostInCatalog,
 } from "./models-dev-pricing";
+import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "./usage";
 
 const MODEL_ALIASES: Record<string, string[]> = {
   sonnet: ["claude-sonnet"],
@@ -18,12 +18,7 @@ export const DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT = 262_144;
 export const GLOBAL_CONTEXT_WINDOW_LIMIT_MIN = 32_768;
 export const GLOBAL_CONTEXT_WINDOW_LIMIT_MAX = 1_048_576;
 export const GLOBAL_CONTEXT_WINDOW_LIMIT_STEP = 1_024;
-export const GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS = [
-  131_072,
-  262_144,
-  524_288,
-  1_048_576,
-] as const;
+export const GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS = [131_072, 262_144, 524_288, 1_048_576] as const;
 
 export type GlobalContextWindowLimit = number;
 
@@ -104,15 +99,9 @@ export function resolveAppliedMaxOutputTokens(input: {
     input.modelMaxOutputTokens !== undefined &&
     Number.isFinite(input.modelMaxOutputTokens) &&
     input.modelMaxOutputTokens > 0;
-  const modelOut = modelConfigured
-    ? Math.floor(input.modelMaxOutputTokens as number)
-    : globalCap;
+  const modelOut = modelConfigured ? Math.floor(input.modelMaxOutputTokens as number) : globalCap;
   let applied = Math.min(modelOut, globalCap);
-  if (
-    input.contextTokens !== undefined &&
-    Number.isFinite(input.contextTokens) &&
-    input.contextTokens > 1
-  ) {
+  if (input.contextTokens !== undefined && Number.isFinite(input.contextTokens) && input.contextTokens > 1) {
     applied = Math.min(applied, Math.max(1, Math.floor(input.contextTokens) - 1));
   }
   return Math.max(1, applied);

@@ -21,19 +21,16 @@ import type {
   VisionModelSelection,
 } from "../shared/ipc";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
+import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import {
   createCommitModelPricingExtra,
   mapCommitModelOptions,
   toCandidateModelSelection,
   toModelCascadeSelection,
 } from "./model-cascade-options";
-import { ModelCascadeSelect } from "./ModelCascadeSelect";
-import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 import type { OrchestrationFieldIssue, OrchestrationFieldKey } from "./orchestration-readiness";
-import {
-  clampComposerFloatingLeft,
-  composerFloatingAvailableWidth,
-} from "./composer-floating";
 import { orchestrationIssueDetailKey } from "./orchestration-readiness";
 
 const POPOVER_WIDTH = 340;
@@ -166,12 +163,7 @@ export function ComposerRoutePopover({
       // Nested ComposerFieldSelect / ModelCascadeSelect menus portal to
       // document.body; treat them as inside so selecting an option does not
       // dismiss this popover before the value can commit.
-      if (
-        target instanceof Element &&
-        target.closest(
-          ".composer-field-select-menu, .model-cascade-panel",
-        )
-      ) {
+      if (target instanceof Element && target.closest(".composer-field-select-menu, .model-cascade-panel")) {
         return;
       }
       onClose();

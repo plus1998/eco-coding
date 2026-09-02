@@ -219,10 +219,7 @@ export function resolveActionKind(input: { toolName?: string; payload?: ActionKi
   return resolved("tool");
 }
 
-export type ActionKindTranslate = (
-  key: string,
-  vars?: Record<string, string | number>,
-) => string;
+export type ActionKindTranslate = (key: string, vars?: Record<string, string | number>) => string;
 
 export const ACTION_GROUP_ICON_PRIORITY: readonly ActivityActionIcon[] = [
   "edit",
@@ -330,10 +327,7 @@ export function resolveActionTarget(
       return payload?.bashRun?.command || raw;
     }
     case "browser": {
-      if (
-        resolved.namedSuffix === "agent_browser_open" ||
-        resolved.namedSuffix === "agent_browser_get_url"
-      ) {
+      if (resolved.namedSuffix === "agent_browser_open" || resolved.namedSuffix === "agent_browser_get_url") {
         const value = payload?.webSearch?.url || raw;
         return value ? hostFromUrl(value) : undefined;
       }
@@ -376,8 +370,7 @@ export function formatActionLine(
   if (kind === "browser") {
     const target = resolveActionTarget(resolved, input);
     const usesHostLine =
-      (resolved.namedSuffix === "agent_browser_open" ||
-        resolved.namedSuffix === "agent_browser_get_url") &&
+      (resolved.namedSuffix === "agent_browser_open" || resolved.namedSuffix === "agent_browser_get_url") &&
       Boolean(target);
     if (usesHostLine && target) {
       const suffix = ` ${clamp64(target)}`;

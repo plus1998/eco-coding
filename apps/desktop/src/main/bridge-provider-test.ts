@@ -4,9 +4,9 @@ import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { ThinkingEffort } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
+  type BridgeProbeParseResult,
   buildBridgeUpstreamMessagesPayload,
   parseBridgeProbeReply,
-  type BridgeProbeParseResult,
 } from "./bridge-upstream";
 
 const PROVIDER_TEST_MAX_TOKENS = 256;

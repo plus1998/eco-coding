@@ -66,9 +66,7 @@ export function resolveAgentBrowserTabSwitchArg(args: Record<string, unknown>): 
     tab = `t${index + 1}`;
   }
   if (!tab) {
-    throw new Error(
-      "agent_browser_tab_switch requires tabId (e.g. t1 from tab_list), label, or index",
-    );
+    throw new Error("agent_browser_tab_switch requires tabId (e.g. t1 from tab_list), label, or index");
   }
   const trimmed = tab.replace(/^\[|\]$/g, "").trim();
   if (/^t\d+$/i.test(trimmed)) {
@@ -81,10 +79,7 @@ export function resolveAgentBrowserTabSwitchArg(args: Record<string, unknown>): 
 }
 
 /** Zero-based index for Eco-native tab_list / tab_switch (same t1…tN labels). */
-export function resolveAgentBrowserTabIndex(
-  args: Record<string, unknown>,
-  tabCount: number,
-): number {
+export function resolveAgentBrowserTabIndex(args: Record<string, unknown>, tabCount: number): number {
   const tabArg = resolveAgentBrowserTabSwitchArg(args);
   const match = /^t(\d+)$/i.exec(tabArg);
   if (!match) {
@@ -116,10 +111,7 @@ function appendExtraArgs(cliArgs: string[], args: Record<string, unknown>): void
 }
 
 /** Map MCP tool name + JSON args → agent-browser CLI argv (after global flags). */
-export function mapAgentBrowserToolToCliArgs(
-  toolName: string,
-  args: Record<string, unknown>,
-): string[] {
+export function mapAgentBrowserToolToCliArgs(toolName: string, args: Record<string, unknown>): string[] {
   const normalized = toolName.trim().replace(/^agent_browser_/, "");
   const cliArgs: string[] = [];
 

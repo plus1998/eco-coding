@@ -1,26 +1,20 @@
 import type { ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
+import { USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY } from "./proxy-usage-pending-settlement";
 import {
   buildSubagentContextObservationInput,
   resolveSubagentBillingMetricsContext,
 } from "./subagent-billing-metrics-effects";
 import type { SubagentContextObservationInput } from "./subagent-metrics-registry";
 import type { UsageBillingContextUpdate } from "./usage-billing-artifacts";
-import { USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY } from "./proxy-usage-pending-settlement";
-import type { ProxyAttributionSettlement } from "./usage-ledger-coordinator";
 import type { UsageContextService } from "./usage-context-effects";
 import type { UsageLedgerEvent } from "./usage-ledger";
+import type { ProxyAttributionSettlement } from "./usage-ledger-coordinator";
 
 export interface ProxyAttributionContextReconciliationServices {
-  context: Pick<
-    UsageContextService,
-    "applyUpdate" | "getSnapshot" | "emitLive"
-  >;
+  context: Pick<UsageContextService, "applyUpdate" | "getSnapshot" | "emitLive">;
   subagentMetrics: {
-    recordContextObservation(
-      threadId: string,
-      input: SubagentContextObservationInput,
-    ): unknown;
+    recordContextObservation(threadId: string, input: SubagentContextObservationInput): unknown;
   };
   schedulePersistThreadMetrics(threadId: string): void;
   logDiag?: (topic: string, fields: Record<string, unknown>) => void;
@@ -35,16 +29,12 @@ export async function reconcileProxyAttributionContexts(
   for (const settlement of settlements) {
     const storedContextUpdate = readProxyUsageContextUpdate(settlement.event);
     if (!storedContextUpdate) {
-      services.logDiag?.(
-        "usage_ledger.proxy_context_reconciliation_missing_metadata",
-        {
-          threadId,
-          eventId: settlement.event.id,
-          agentId: settlement.agentId,
-          messageId:
-            settlement.messageId ?? settlement.event.sdkMessageId ?? null,
-        },
-      );
+      services.logDiag?.("usage_ledger.proxy_context_reconciliation_missing_metadata", {
+        threadId,
+        eventId: settlement.event.id,
+        agentId: settlement.agentId,
+        messageId: settlement.messageId ?? settlement.event.sdkMessageId ?? null,
+      });
       continue;
     }
 
@@ -104,9 +94,7 @@ export async function reconcileProxyAttributionContexts(
   }
 }
 
-export function readProxyUsageContextUpdate(
-  event: UsageLedgerEvent,
-): UsageBillingContextUpdate | undefined {
+export function readProxyUsageContextUpdate(event: UsageLedgerEvent): UsageBillingContextUpdate | undefined {
   const value = event.metadata?.[USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY];
   if (!isRecord(value)) {
     return undefined;
@@ -128,9 +116,7 @@ export function readProxyUsageContextUpdate(
   };
 }
 
-function readModelsDevMapping(
-  value: unknown,
-): UsageBillingContextUpdate["modelsDevMapping"] | undefined {
+function readModelsDevMapping(value: unknown): UsageBillingContextUpdate["modelsDevMapping"] | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -139,9 +125,7 @@ function readModelsDevMapping(
   return providerKey && modelId ? { providerKey, modelId } : undefined;
 }
 
-function readManualSpec(
-  value: unknown,
-): UsageBillingContextUpdate["manualSpec"] | undefined {
+function readManualSpec(value: unknown): UsageBillingContextUpdate["manualSpec"] | undefined {
   if (!isRecord(value)) {
     return undefined;
   }

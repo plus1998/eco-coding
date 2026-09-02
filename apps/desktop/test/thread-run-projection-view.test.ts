@@ -261,11 +261,7 @@ test("buildThreadRunProjectionViewModel keeps a tool between thinking groups", (
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual([
-    "timeline",
-    "tool-group",
-    "timeline",
-  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "tool-group", "timeline"]);
   const first = view.mainFeedEntries[0];
   expect(first?.kind).toBe("timeline");
   if (first?.kind === "timeline") {
@@ -599,9 +595,12 @@ test("buildThreadRunProjectionViewModel carries tool aggregation across temporar
   if (toolGroup?.kind === "tool-group") {
     expect(toolGroup.entries.map((entry) => entry.item.id)).toEqual(["edit-1", "edit-2"]);
   }
-  expect(view.mainFeedEntries.some((entry) =>
-    entry.kind === "timeline" && projectionItemToDetailBlock(entry.item)?.kind === "reasoning-stage",
-  )).toBe(false);
+  expect(
+    view.mainFeedEntries.some(
+      (entry) =>
+        entry.kind === "timeline" && projectionItemToDetailBlock(entry.item)?.kind === "reasoning-stage",
+    ),
+  ).toBe(false);
 });
 
 test("collapseConsecutiveThinkingTimelineItems does not join different summary streamKeys", () => {
@@ -729,9 +728,7 @@ test("imageView projects as an independent image Feed entry", () => {
     },
   });
 
-  const view = buildThreadRunProjectionViewModel(
-    projection({ timeline: [imageStarted, imageCompleted] }),
-  );
+  const view = buildThreadRunProjectionViewModel(projection({ timeline: [imageStarted, imageCompleted] }));
   expect(view.mainFeedEntries).toHaveLength(1);
   expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
   if (view.mainFeedEntries[0]?.kind === "timeline") {
@@ -786,9 +783,7 @@ test("eco_image_view MCP tool projects as an independent image Feed entry", () =
     },
   });
 
-  const view = buildThreadRunProjectionViewModel(
-    projection({ timeline: [imageStarted, imageCompleted] }),
-  );
+  const view = buildThreadRunProjectionViewModel(projection({ timeline: [imageStarted, imageCompleted] }));
   expect(view.mainFeedEntries).toHaveLength(1);
   expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
   if (view.mainFeedEntries[0]?.kind === "timeline") {
@@ -874,9 +869,7 @@ test("buildThreadRunProjectionViewModel attaches prompt images to the matching v
           at: "2026-01-01T00:00:00.000Z",
           metadata: {
             liveType: "thread.user_prompt",
-            promptImagePreviews: [
-              { id: "image-1", mediaType: "image/png", data: "YWJj" },
-            ],
+            promptImagePreviews: [{ id: "image-1", mediaType: "image/png", data: "YWJj" }],
           },
         }),
       ],
@@ -1966,7 +1959,12 @@ test("buildThreadRunProjectionViewModel hides ACP starting status from the feed"
         }),
         item({ id: "starting", eventType: "thread.status", role: "system", text: "正在启动 ACP…" }),
         item({ id: "starting-nospace", eventType: "thread.status", role: "system", text: "正在启动ACP…" }),
-        item({ id: "starting-future", eventType: "thread.status", role: "system", text: "正在启动 FutureAgent…" }),
+        item({
+          id: "starting-future",
+          eventType: "thread.status",
+          role: "system",
+          text: "正在启动 FutureAgent…",
+        }),
         item({ id: "answer", eventType: "message.final", role: "assistant", text: "你好！" }),
       ],
     }),
@@ -4474,9 +4472,7 @@ test("buildThreadRunProjectionViewModel hides prompt cache tips when includeProm
   expect(timelineEntries[0]?.kind).toBe("timeline");
   if (timelineEntries[0]?.kind === "timeline") {
     expect(timelineEntries[0].item.eventType).toBe("message.final");
-    expect(projectionItemToDetailBlock(timelineEntries[0].item)?.kind).not.toBe(
-      "prompt-cache-timeline",
-    );
+    expect(projectionItemToDetailBlock(timelineEntries[0].item)?.kind).not.toBe("prompt-cache-timeline");
   }
 });
 
@@ -5792,7 +5788,7 @@ test("projectionItemToDetailBlock recovers patch followed by an empty ripgrep ve
 +new
 *** End Patch
 PATCH
-rg -n \"oldSymbol\" src -g '*.ts'"`;
+rg -n "oldSymbol" src -g '*.ts'"`;
   const detail = projectionItemToDetailBlock(
     item({
       id: "bash-patch-verified",

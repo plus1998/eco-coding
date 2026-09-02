@@ -18,10 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
 const fixturesRoot = path.join(__dirname, "fixtures");
 
-const apiKey =
-  process.env.LONGCAT_API_KEY?.trim() ||
-  process.env.ECO_CODEX_SMOKE_API_KEY?.trim() ||
-  "";
+const apiKey = process.env.LONGCAT_API_KEY?.trim() || process.env.ECO_CODEX_SMOKE_API_KEY?.trim() || "";
 if (!apiKey) {
   console.error("Missing LONGCAT_API_KEY or ECO_CODEX_SMOKE_API_KEY");
   process.exit(2);
@@ -56,15 +53,11 @@ if (sourceDir !== targetDir) {
   fs.cpSync(sourceDir, targetDir, { recursive: true, force: true });
 }
 
-const build = spawnSync(
-  "bun",
-  ["scripts/conversation-round/build-expected.ts", `--fixture=${targetDir}`],
-  {
-    cwd: root,
-    env: process.env,
-    stdio: "inherit",
-  },
-);
+const build = spawnSync("bun", ["scripts/conversation-round/build-expected.ts", `--fixture=${targetDir}`], {
+  cwd: root,
+  env: process.env,
+  stdio: "inherit",
+});
 if (build.status !== 0) {
   process.exit(build.status ?? 1);
 }

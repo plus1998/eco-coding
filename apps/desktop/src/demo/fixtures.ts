@@ -1,9 +1,6 @@
-import {
-  buildResourcesFromRouteProfile,
-  resolveAgentTemplateCatalog,
-} from "../shared/agent-orchestration";
-import { buildThreadRuntimeConfigFromDefaults } from "../shared/thread-runtime-config";
+import { buildResourcesFromRouteProfile, resolveAgentTemplateCatalog } from "../shared/agent-orchestration";
 import type {
+  CandidateModelView,
   CenterServerSettingsSnapshot,
   CoreAvailabilitySnapshot,
   GitSettingsSnapshot,
@@ -16,7 +13,6 @@ import type {
   RouteProfileView,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
-  CandidateModelView,
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
@@ -28,6 +24,7 @@ import type {
   WorkflowSettingsSnapshot,
   WorkspaceInfo,
 } from "../shared/ipc";
+import { buildThreadRuntimeConfigFromDefaults } from "../shared/thread-runtime-config";
 import {
   DEMO_HOME_PROJECT_PATH,
   DEMO_THREAD_ID,

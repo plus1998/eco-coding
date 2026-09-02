@@ -7,9 +7,7 @@ import {
   normalizeBrowserSettingsSnapshot,
 } from "../shared/browser";
 
-export type {
-  BrowserSettingsSnapshot,
-} from "../shared/browser";
+export type { BrowserSettingsSnapshot } from "../shared/browser";
 export {
   defaultBrowserSettings,
   isBrowserSettingsSnapshot,
@@ -38,9 +36,9 @@ export class BrowserSettingsStore {
   }
 
   get(): BrowserSettingsSnapshot {
-    const row = this.db
-      .prepare(`SELECT value_json FROM browser_settings WHERE key = ?`)
-      .get("snapshot") as { value_json: string } | undefined;
+    const row = this.db.prepare(`SELECT value_json FROM browser_settings WHERE key = ?`).get("snapshot") as
+      | { value_json: string }
+      | undefined;
     if (!row) {
       return defaultBrowserSettings();
     }

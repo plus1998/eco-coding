@@ -3,12 +3,8 @@
   "layer": "client-round",
   "marker": "LCMTIDTJ2Y",
   "recordedAt": "2026-09-01T08:05:01.792Z",
-  "clients": [
-    "pi"
-  ],
-  "profileIds": [
-    "longcat_chat"
-  ],
+  "clients": ["pi"],
+  "profileIds": ["longcat_chat"],
   "skippedCells": [
     {
       "client": "codex",

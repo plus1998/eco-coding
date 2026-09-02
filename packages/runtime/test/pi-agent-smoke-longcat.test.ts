@@ -28,26 +28,22 @@
  * compliant tool-calling model; LongCat-2.0 is the pinned target.
  */
 import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createAgentSession,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
   SettingsManager,
-  createAgentSession,
 } from "@earendil-works/pi-coding-agent";
-import {
-  PiCodingAgentDriver,
-  PiSessionRegistry,
-  type PiSessionHandle,
-} from "../src/pi-coding-agent-driver";
+import type { AgentEvent } from "../../shared/src";
+import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
+import { PiCodingAgentDriver, type PiSessionHandle, PiSessionRegistry } from "../src/pi-coding-agent-driver";
 import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../src/pi-event-adapter";
 import { createPiMcpExtensionFactory, piMcpToolAllowlist } from "../src/pi-mcp";
 import { ensurePiPrivateSkillsDir, resolvePiSessionSkillPaths } from "../src/pi-skills";
-import type { AgentEvent } from "../../shared/src";
-import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
 
 const LONGCAT_API_KEY = process.env.LONGCAT_API_KEY ?? "";
 const LONGCAT_BASE = "https://api.longcat.chat/openai";
@@ -208,8 +204,8 @@ async function makeLongcatSession(input: {
   const toolsAllowlist =
     input.toolsAllowlist && input.toolsAllowlist.length > 0
       ? [...input.toolsAllowlist]
-      : input.opts?.toolsAllowlist ??
-        (hasMcp ? piMcpToolAllowlist(true) : ["read", "bash", "edit", "write"]);
+      : (input.opts?.toolsAllowlist ??
+        (hasMcp ? piMcpToolAllowlist(true) : ["read", "bash", "edit", "write"]));
 
   const { session } = await createAgentSession({
     cwd: input.cwd,
@@ -227,18 +223,22 @@ async function makeLongcatSession(input: {
   // Eco creates sessions headlessly and must do the same: MCP tools stay
   // "MCP not initialized" and the eco-pi-agent extension won't register the
   // Agent tool until bindExtensions runs.
-  const hasAgentExtension = (input.extensionFactories ?? []).some(
-    (ef) => ef.name === "eco-pi-agent",
-  );
+  const hasAgentExtension = (input.extensionFactories ?? []).some((ef) => ef.name === "eco-pi-agent");
   if (typeof session.bindExtensions === "function" && (hasMcp || hasAgentExtension)) {
     await session.bindExtensions({ mode: "rpc" });
   }
 
   if (process.env.LONGCAT_SMOKE_DEBUG) {
-    console.log("[LONGCAT] input.extensionFactories:", (input.extensionFactories ?? []).map((e) => e.name));
+    console.log(
+      "[LONGCAT] input.extensionFactories:",
+      (input.extensionFactories ?? []).map((e) => e.name),
+    );
     console.log("[LONGCAT] input.toolsAllowlist:", input.toolsAllowlist);
     console.log("[LONGCAT] active tools:", (session as any).getActiveToolNames?.());
-    console.log("[LONGCAT] all tools:", (session as any).getAllTools?.()?.map((t: any) => t.name));
+    console.log(
+      "[LONGCAT] all tools:",
+      (session as any).getAllTools?.()?.map((t: any) => t.name),
+    );
   }
 
   const sessionId = sessionManager.getSessionId();
@@ -394,11 +394,20 @@ test.skipIf(!haveKey)(
       textDeltas: textDeltas.length,
     });
     for (const e of toolStarts) {
-      console.log("[LONGCAT] tool.started:", (e.payload as any)?.tool_name, JSON.stringify((e.payload as any)?.input));
+      console.log(
+        "[LONGCAT] tool.started:",
+        (e.payload as any)?.tool_name,
+        JSON.stringify((e.payload as any)?.input),
+      );
     }
     for (const e of toolCompleted) {
       const p = e.payload as any;
-      console.log("[LONGCAT] tool.completed:", p?.tool_name, "content[:80]:", JSON.stringify(String(p?.content ?? "").slice(0, 80)));
+      console.log(
+        "[LONGCAT] tool.completed:",
+        p?.tool_name,
+        "content[:80]:",
+        JSON.stringify(String(p?.content ?? "").slice(0, 80)),
+      );
     }
 
     // The model must actually invoke the bash tool (not just answer in text).
@@ -467,10 +476,7 @@ test.skipIf(!haveKey)(
     const registry = new PiSessionRegistry();
     const driver = makeDriver(registry);
     // Ask the model to read a known file; the completed event must carry content.
-    const events = await runPrompt(
-      driver,
-      "只用 read 工具读取 package.json 文件，不要解释。",
-    );
+    const events = await runPrompt(driver, "只用 read 工具读取 package.json 文件，不要解释。");
 
     const readDone = events.filter(
       (e) => e.type === "tool.completed" && (e.payload as any)?.tool_name === "read",
@@ -538,7 +544,7 @@ test.skipIf(!haveKey)(
     const driver = makeDriver(registry);
     const events = await runPrompt(
       driver,
-      "只用 bash 工具执行 `grep -r \"LONGCAT smoke\" packages/runtime/test/pi-agent-smoke-longcat.test.ts | head -5`，不要解释。",
+      '只用 bash 工具执行 `grep -r "LONGCAT smoke" packages/runtime/test/pi-agent-smoke-longcat.test.ts | head -5`，不要解释。',
     );
 
     const bashDone = events.filter(
@@ -613,11 +619,9 @@ test.skipIf(!haveKey)(
       },
     });
     // The pi-mcp-adapter namespaces tools as `<server>_<tool>`.
-    const events = await runPrompt(
-      driver,
-      "使用 lc_echo_echo 工具，text 参数为 \"lc-mcp-ok\"，不要解释。",
-      { piSession: { mcpServers: { lc_echo: { command: "node", args: [mcpServerPath] } } } },
-    );
+    const events = await runPrompt(driver, '使用 lc_echo_echo 工具，text 参数为 "lc-mcp-ok"，不要解释。', {
+      piSession: { mcpServers: { lc_echo: { command: "node", args: [mcpServerPath] } } },
+    });
 
     const mcpDone = events.filter(
       (e) => e.type === "tool.completed" && (e.payload as any)?.tool_name === "mcp",
@@ -648,11 +652,9 @@ test.skipIf(!haveKey)(
     const registry = new PiSessionRegistry();
     const skillDir = join(process.cwd(), "packages/runtime/test/_lc-skill");
     const driver = makeDriver(registry, { skillPaths: [skillDir] });
-    const events = await runPrompt(
-      driver,
-      "请给出 lc-smoke-skill 的打招呼输出，只输出结果。",
-      { piSession: { mcpServers: {}, skillPaths: [skillDir] } },
-    );
+    const events = await runPrompt(driver, "请给出 lc-smoke-skill 的打招呼输出，只输出结果。", {
+      piSession: { mcpServers: {}, skillPaths: [skillDir] },
+    });
 
     const textDeltas = events.filter(
       (e) => e.type === "message.delta" && (e.payload as any)?.blockKind === "text",
@@ -757,7 +759,7 @@ test.skipIf(!haveKey)(
 
     const events = await runPrompt(
       driver,
-      "必须使用 Agent 工具（tool_name=Agent）调用 agentKey 为 smoke_child 的子代理，task 参数为 \"report hello from child\"。不要使用其他工具，只输出子代理的结果。",
+      '必须使用 Agent 工具（tool_name=Agent）调用 agentKey 为 smoke_child 的子代理，task 参数为 "report hello from child"。不要使用其他工具，只输出子代理的结果。',
       {
         // agentRegistry is read at the top level by the driver (input.agentRegistry).
         agentRegistry,

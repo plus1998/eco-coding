@@ -1,13 +1,13 @@
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { BillingUsageSource, RuntimeAgentRole } from "../shared/ipc";
-import type { RuntimeRoute } from "./billing-resolver";
 import { shouldUpdateContextFromUsageSource } from "./billing-orchestration";
+import type { RuntimeRoute } from "./billing-resolver";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
-import type { ApplySingleUsageBillingEffectsInput } from "./usage-billing-effects";
 import {
   resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingLookup,
 } from "./usage-billing-artifacts";
+import type { ApplySingleUsageBillingEffectsInput } from "./usage-billing-effects";
 
 export interface SingleUsageBillingRequest {
   threadId: string;
@@ -77,7 +77,9 @@ export async function resolveSingleUsageBillingOrchestration(
     runtimeRoutes: input.runtimeRoutes,
     lookupPricing: input.lookupPricing,
     ...(request.source && { source: request.source }),
-    ...(request.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: request.sourceReportedCostUsd }),
+    ...(request.sourceReportedCostUsd !== undefined && {
+      sourceReportedCostUsd: request.sourceReportedCostUsd,
+    }),
     ...(request.modelId && { modelId: request.modelId }),
     ...(request.messageId && { messageId: request.messageId }),
     ...(request.runAttemptId && { runAttemptId: request.runAttemptId }),
@@ -104,7 +106,9 @@ export async function resolveSingleUsageBillingOrchestration(
       updateContext,
       ...(request.agentId && { agentId: request.agentId }),
       ...(request.messageId && { messageId: request.messageId }),
-      ...(request.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: request.sourceReportedCostUsd }),
+      ...(request.sourceReportedCostUsd !== undefined && {
+        sourceReportedCostUsd: request.sourceReportedCostUsd,
+      }),
       ...(request.reconciliationOnly && { reconciliationOnly: true }),
       ...(request.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
     },

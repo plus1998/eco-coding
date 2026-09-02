@@ -1,10 +1,10 @@
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
-import { resolveThreadOrchestrationSnapshot } from "../shared/thread-runtime-config";
 import {
   defaultThemeColorForAgentKey,
   stripEcoAgentKeyPrefix,
   subagentThemeCssVars,
 } from "../shared/subagent-theme";
+import { resolveThreadOrchestrationSnapshot } from "../shared/thread-runtime-config";
 
 export type RuntimeAgentThemes = Record<string, string>;
 
@@ -12,9 +12,7 @@ export function buildRuntimeAgentThemes(
   settings: ModelSettingsSnapshot,
   runtimeConfig: ThreadRuntimeConfig | undefined,
 ): RuntimeAgentThemes {
-  const snapshot = runtimeConfig
-    ? resolveThreadOrchestrationSnapshot(settings, runtimeConfig)
-    : undefined;
+  const snapshot = runtimeConfig ? resolveThreadOrchestrationSnapshot(settings, runtimeConfig) : undefined;
   if (!snapshot) {
     return {};
   }

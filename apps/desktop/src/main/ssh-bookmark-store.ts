@@ -2,19 +2,19 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { LocalSecretCodec } from "./local-secret-codec";
 import {
   defaultSshBookmarkListSnapshot,
   normalizeSshBookmarkListSnapshot,
   normalizeSshBookmarkPublic,
-  sshBookmarkSecretKeyKey,
-  sshBookmarkSecretPasswordKey,
-  validateSshBookmarkSaveInput,
   type SshBookmarkListSnapshot,
   type SshBookmarkPublic,
   type SshBookmarkSaveInput,
   type SshBookmarkView,
+  sshBookmarkSecretKeyKey,
+  sshBookmarkSecretPasswordKey,
+  validateSshBookmarkSaveInput,
 } from "../shared/ssh-bookmarks";
+import type { LocalSecretCodec } from "./local-secret-codec";
 
 export type {
   SshBookmarkConnectResult,
@@ -67,9 +67,9 @@ export class SshBookmarkStore {
   }
 
   getSnapshot(): SshBookmarkListSnapshot {
-    const row = this.db
-      .prepare(`SELECT value_json FROM ssh_bookmarks WHERE key = ?`)
-      .get("snapshot") as { value_json: string } | undefined;
+    const row = this.db.prepare(`SELECT value_json FROM ssh_bookmarks WHERE key = ?`).get("snapshot") as
+      | { value_json: string }
+      | undefined;
     if (!row) {
       return defaultSshBookmarkListSnapshot();
     }
@@ -115,8 +115,7 @@ export class SshBookmarkStore {
 
     const id = trimmedId || randomUUID();
     const order =
-      existing?.order ??
-      snapshot.bookmarks.reduce((max, item) => Math.max(max, item.order), -1) + 1;
+      existing?.order ?? snapshot.bookmarks.reduce((max, item) => Math.max(max, item.order), -1) + 1;
     const bookmark = normalizeSshBookmarkPublic(
       {
         id,
@@ -205,7 +204,10 @@ export class SshBookmarkStore {
     this.db.close();
   }
 
-  replaceFromSync(snapshot: SshBookmarkListSnapshot, secrets: { id: string; password?: string; key?: string }[]): void {
+  replaceFromSync(
+    snapshot: SshBookmarkListSnapshot,
+    secrets: { id: string; password?: string; key?: string }[],
+  ): void {
     const normalized = normalizeSshBookmarkListSnapshot(snapshot);
     this.persistSnapshot(normalized);
     const ids = new Set(normalized.bookmarks.map((item) => item.id));

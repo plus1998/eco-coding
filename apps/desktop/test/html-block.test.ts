@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  countHtmlLines,
-  extractHtmlDocumentTitle,
-  isHtmlLang,
-} from "../src/renderer/prosemirror/html-block";
+import { countHtmlLines, extractHtmlDocumentTitle, isHtmlLang } from "../src/renderer/prosemirror/html-block";
 
 test("isHtmlLang matches html and htm fence params", () => {
   expect(isHtmlLang("html")).toBe(true);

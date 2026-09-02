@@ -5,19 +5,19 @@ import {
 } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
-  buildThreadRuntimeConfigFromDefaults,
   buildAcpThreadRuntimeConfig,
+  buildThreadRuntimeConfigFromDefaults,
   deriveSubagentEnabledFromSnapshot,
   hasCompleteOrchestrationSelection,
   isAutonomousThreadRuntime,
   isBashReviewModeOnlyRuntimeConfigUpdate,
-  resolveBusyThreadRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   lockThreadRuntimeConfigSnapshotOnContinue,
   materializeThreadOrchestrationSnapshot,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
   resolveAcpCursorModelIdForSend,
+  resolveBusyThreadRuntimeConfigUpdate,
   resolveMainAgentSystemPromptPreset,
   resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
@@ -28,23 +28,26 @@ import {
   withAgentSessionMode,
 } from "../src/shared/thread-runtime-config";
 
-const presetBundle = buildResourcesFromRouteProfile({
-  id: "coding-default",
-  name: "Default coding",
-  routes: [
-    { role: "planner", providerId: "p1", modelId: "m1" },
-    { role: "explore", providerId: "p1", modelId: "m1" },
-    { role: "architect", providerId: "p1", modelId: "m1" },
-    { role: "coder", providerId: "p1", modelId: "m1" },
-    { role: "reviewer", providerId: "p1", modelId: "m1" },
-    { role: "tester", providerId: "p1", modelId: "m1" },
-  ],
-  createdAt: "2026-07-27T00:00:00.000Z",
-  updatedAt: "2026-07-27T00:00:00.000Z",
-}, {
-  mainAgentConfigId: "user.coding.main",
-  subagentOrchestrationId: "user.coding.subagents",
-});
+const presetBundle = buildResourcesFromRouteProfile(
+  {
+    id: "coding-default",
+    name: "Default coding",
+    routes: [
+      { role: "planner", providerId: "p1", modelId: "m1" },
+      { role: "explore", providerId: "p1", modelId: "m1" },
+      { role: "architect", providerId: "p1", modelId: "m1" },
+      { role: "coder", providerId: "p1", modelId: "m1" },
+      { role: "reviewer", providerId: "p1", modelId: "m1" },
+      { role: "tester", providerId: "p1", modelId: "m1" },
+    ],
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+  },
+  {
+    mainAgentConfigId: "user.coding.main",
+    subagentOrchestrationId: "user.coding.subagents",
+  },
+);
 
 const settings: ModelSettingsSnapshot = {
   providers: [],
@@ -389,7 +392,9 @@ test("resolveThreadOrchestrationSnapshot prefers stored snapshot", () => {
       defaultOrchestrationSelection: presetBundle.selection,
     },
   });
-  expect(resolveThreadOrchestrationSnapshot(settings, config)?.mainAgentConfigName).toBe("Default coding Main Config");
+  expect(resolveThreadOrchestrationSnapshot(settings, config)?.mainAgentConfigName).toBe(
+    "Default coding Main Config",
+  );
 });
 
 test("continue keeps locked snapshot when global model rematerializes", () => {

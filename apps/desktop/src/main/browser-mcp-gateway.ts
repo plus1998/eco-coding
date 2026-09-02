@@ -1,27 +1,21 @@
-import { createRequire } from "node:module";
 import fs from "node:fs";
 import http from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
-  ECO_AGENT_BROWSER_ALLOWED_TOOL,
-  ECO_AGENT_BROWSER_MCP_SERVER,
   browserAgentSessionKey,
   buildEcoAgentBrowserPromptAppend,
+  ECO_AGENT_BROWSER_ALLOWED_TOOL,
+  ECO_AGENT_BROWSER_MCP_SERVER,
 } from "../shared/browser";
 import type { McpSdkConfig } from "../shared/mcp";
-import { resolveAgentBrowserBinary } from "./agent-browser-resolve";
-import {
-  callAgentBrowserToolViaCli,
-  type AgentBrowserMcpToolResult,
-} from "./agent-browser-cli-bridge";
+import { type AgentBrowserMcpToolResult, callAgentBrowserToolViaCli } from "./agent-browser-cli-bridge";
 import { agentBrowserCoreToolsCatalog } from "./agent-browser-core-tools";
-import {
-  BrowserMcpAuthRegistry,
-  createBrowserMcpControlSecret,
-} from "./browser-mcp-auth";
+import { resolveAgentBrowserBinary } from "./agent-browser-resolve";
+import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 
 const require = createRequire(import.meta.url);
@@ -171,10 +165,7 @@ export class BrowserMcpGateway {
     };
   }
 
-  private resolveThreadForCall(input: {
-    authToken?: string;
-    toolName?: string;
-  }): string {
+  private resolveThreadForCall(input: { authToken?: string; toolName?: string }): string {
     const fromAuth = this.auth.resolve(input.authToken);
     if (fromAuth) {
       return fromAuth.threadId;
@@ -238,8 +229,7 @@ export class BrowserMcpGateway {
       typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
         ? authHeader.slice(7).trim()
         : undefined;
-    const authToken =
-      (typeof body.authToken === "string" ? body.authToken : undefined) ?? bearer;
+    const authToken = (typeof body.authToken === "string" ? body.authToken : undefined) ?? bearer;
 
     try {
       const url = req.url || "";

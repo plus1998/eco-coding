@@ -20,18 +20,20 @@ test("finalize_plan extension submits plan asynchronously and does not block", a
     },
   });
 
-  let registered: {
-    name: string;
-    description: string;
-    promptGuidelines?: string[];
-    execute: (
-      toolCallId: string,
-      params: Record<string, unknown>,
-      signal: AbortSignal | undefined,
-      onUpdate: undefined,
-      ctx: { cwd: string },
-    ) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
-  } | undefined;
+  let registered:
+    | {
+        name: string;
+        description: string;
+        promptGuidelines?: string[];
+        execute: (
+          toolCallId: string,
+          params: Record<string, unknown>,
+          signal: AbortSignal | undefined,
+          onUpdate: undefined,
+          ctx: { cwd: string },
+        ) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
+      }
+    | undefined;
 
   factory({
     registerTool: (tool) => {
@@ -44,13 +46,9 @@ test("finalize_plan extension submits plan asynchronously and does not block", a
   expect(registered?.description).not.toMatch(/approv|asynchron|Agent execution/i);
   expect(registered?.promptGuidelines?.join("\n")).not.toMatch(/approv|Eco/i);
 
-  const result = await registered!.execute(
-    "call_1",
-    { plan: "1. Read\n2. Patch" },
-    undefined,
-    undefined,
-    { cwd: "/tmp" },
-  );
+  const result = await registered!.execute("call_1", { plan: "1. Read\n2. Patch" }, undefined, undefined, {
+    cwd: "/tmp",
+  });
   expect(submitted).toEqual([{ plan: "1. Read\n2. Patch", toolCallId: "call_1" }]);
   expect(result.content[0]?.text).toMatch(/submitted/i);
   expect(result.content[0]?.text).not.toMatch(/approv|asynchron|Eco|Agent mode/i);
@@ -63,15 +61,17 @@ test("finalize_plan extension rejects empty plan without onSubmitted", async () 
       called = true;
     },
   });
-  let registered: {
-    execute: (
-      toolCallId: string,
-      params: Record<string, unknown>,
-      signal: AbortSignal | undefined,
-      onUpdate: undefined,
-      ctx: { cwd: string },
-    ) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
-  } | undefined;
+  let registered:
+    | {
+        execute: (
+          toolCallId: string,
+          params: Record<string, unknown>,
+          signal: AbortSignal | undefined,
+          onUpdate: undefined,
+          ctx: { cwd: string },
+        ) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
+      }
+    | undefined;
   factory({
     registerTool: (tool) => {
       registered = tool as typeof registered;
@@ -90,13 +90,7 @@ test("Plan session exposes finalize_plan as an active tool and lists it in the s
   await mkdir(path.join(agentDir, "skills"), { recursive: true });
 
   const pi = await import("@earendil-works/pi-coding-agent");
-  const {
-    createAgentSession,
-    DefaultResourceLoader,
-    ModelRuntime,
-    SessionManager,
-    SettingsManager,
-  } = pi;
+  const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = pi;
 
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
   const resourceLoader = new DefaultResourceLoader({

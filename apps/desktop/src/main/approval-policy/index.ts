@@ -1,5 +1,5 @@
-import policyTemplate from "./policy_template.md" with { type: "text" };
 import policyTenant from "./policy.md" with { type: "text" };
+import policyTemplate from "./policy_template.md" with { type: "text" };
 
 const OUTPUT_CONTRACT = [
   "Return exactly one JSON object matching the supplied schema and no other text.",

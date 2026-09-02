@@ -4,10 +4,7 @@ export interface RequestSpanTimingFields {
   firstTokenAt?: string;
 }
 
-export function computeRequestSpanWaitingMs(
-  fields: RequestSpanTimingFields,
-  nowMs = Date.now(),
-): number {
+export function computeRequestSpanWaitingMs(fields: RequestSpanTimingFields, nowMs = Date.now()): number {
   const startedMs = Date.parse(fields.startedAt);
   if (!Number.isFinite(startedMs)) {
     return 0;
@@ -34,7 +31,7 @@ export function computeRequestSpanTtftMs(fields: RequestSpanTimingFields): numbe
 }
 
 export function resolveRequestSpanDurationMs(
-  span: Pick<RequestSpanTimingFields, "startedAt" | "firstTokenAt"> & { endedAt?: string } | undefined,
+  span: (Pick<RequestSpanTimingFields, "startedAt" | "firstTokenAt"> & { endedAt?: string }) | undefined,
 ): number | undefined {
   if (!span?.startedAt) {
     return undefined;

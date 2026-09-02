@@ -65,8 +65,7 @@ export function extractPlanningDeliverables(transcript: string): { analysis: str
   }
 
   const planStart = findPlanSectionStart(trimmed);
-  const plan =
-    planStart >= 0 ? trimmed.slice(planStart).trim() : extractPhaseDeliverable(trimmed, "plan");
+  const plan = planStart >= 0 ? trimmed.slice(planStart).trim() : extractPhaseDeliverable(trimmed, "plan");
 
   let analysis = "";
   const analysisStart = findAnalysisSectionStart(trimmed);

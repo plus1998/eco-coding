@@ -193,14 +193,10 @@ function locateInParent(parent: Node, target: number): { node: Node; offset: num
         return { node: child, offset: remaining };
       }
       if (child instanceof HTMLElement && child.tagName === "BR") {
-        return remaining === 0
-          ? { node: parent, offset: index }
-          : { node: parent, offset: index + 1 };
+        return remaining === 0 ? { node: parent, offset: index } : { node: parent, offset: index + 1 };
       }
       if (isSkillElement(child)) {
-        return remaining === 0
-          ? { node: parent, offset: index }
-          : { node: parent, offset: index + 1 };
+        return remaining === 0 ? { node: parent, offset: index } : { node: parent, offset: index + 1 };
       }
       const nested = locateInParent(child, remaining);
       if (nested) {

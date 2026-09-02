@@ -596,11 +596,7 @@ function resolveAgentToolPermission(
   const skillExtraAllowed = childPhaseAllowedTools
     ? [SDK_SKILL_TOOL_NAME].filter((tool) => childPhaseAllowedTools.includes(tool))
     : [SDK_SKILL_TOOL_NAME];
-  return normalizeToolPermissionEntry(
-    effectiveTools,
-    skillExtraAllowed,
-    runtimeMcpServers,
-  );
+  return normalizeToolPermissionEntry(effectiveTools, skillExtraAllowed, runtimeMcpServers);
 }
 
 function isReadOnlyChildAgentBlockedTool(toolName: string): boolean {

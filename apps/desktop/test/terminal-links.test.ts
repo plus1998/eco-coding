@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  activateTerminalLink,
-  resolveTerminalLinkOpenTarget,
-} from "../src/renderer/terminal-links";
+import { activateTerminalLink, resolveTerminalLinkOpenTarget } from "../src/renderer/terminal-links";
 
 describe("resolveTerminalLinkOpenTarget", () => {
   test("plain click on http(s) opens internal browser", () => {
@@ -48,9 +45,7 @@ describe("resolveTerminalLinkOpenTarget", () => {
         ctrlKey: false,
       }),
     ).toBe("none");
-    expect(
-      resolveTerminalLinkOpenTarget("  ", { metaKey: false, ctrlKey: false }),
-    ).toBe("none");
+    expect(resolveTerminalLinkOpenTarget("  ", { metaKey: false, ctrlKey: false })).toBe("none");
   });
 
   test("modifier still selects external for non-http schemes", () => {
@@ -63,10 +58,12 @@ describe("resolveTerminalLinkOpenTarget", () => {
   });
 });
 
-function withMockWindow(run: (state: {
-  events: Array<{ type: string; detail: unknown }>;
-  opened: Array<{ url: string; target: string; features: string }>;
-}) => void): void {
+function withMockWindow(
+  run: (state: {
+    events: Array<{ type: string; detail: unknown }>;
+    opened: Array<{ url: string; target: string; features: string }>;
+  }) => void,
+): void {
   const events: Array<{ type: string; detail: unknown }> = [];
   const opened: Array<{ url: string; target: string; features: string }> = [];
   const previousWindow = (globalThis as { window?: unknown }).window;
@@ -124,9 +121,7 @@ describe("activateTerminalLink", () => {
       });
       expect(target).toBe("internal");
       expect(prevented).toBe(true);
-      expect(events).toEqual([
-        { type: "eco:browser-link-open", detail: "https://example.com/x" },
-      ]);
+      expect(events).toEqual([{ type: "eco:browser-link-open", detail: "https://example.com/x" }]);
     });
   });
 

@@ -1,11 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { ParsedUsage } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
-import type {
-  PromptImageAttachment,
-  RuntimeAgentRole,
-  ThinkingEffort,
-} from "../shared/ipc";
+import type { PromptImageAttachment, RuntimeAgentRole, ThinkingEffort } from "../shared/ipc";
 import type { ProviderConfigSecret } from "./provider-store";
 
 export const ECO_BRIDGE_BINDING_ID_HEADER = "x-eco-bridge-binding-id";
@@ -300,10 +296,7 @@ async function waitForBindingIdle(binding: ClaudeBridgeBinding): Promise<void> {
         () => undefined,
       ),
     );
-    await Promise.race([
-      ...settledPending,
-      new Promise<void>((resolve) => setTimeout(resolve, 10)),
-    ]);
+    await Promise.race([...settledPending, new Promise<void>((resolve) => setTimeout(resolve, 10))]);
   }
   // Force-drop remaining leases so close stays idempotent under hung observers.
   binding.inFlight = 0;

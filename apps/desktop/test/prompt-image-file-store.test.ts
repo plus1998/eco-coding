@@ -2,10 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  isPromptImageAttachmentRecord,
-  PromptImageFileStore,
-} from "../src/main/prompt-image-file-store";
+import { isPromptImageAttachmentRecord, PromptImageFileStore } from "../src/main/prompt-image-file-store";
 
 const tempDirs: string[] = [];
 

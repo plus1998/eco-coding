@@ -1,23 +1,15 @@
-import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import http from "node:http";
 import { normalizeProvider } from "./provider-config.js";
+import { handlePostChatCompletions } from "./routes/chat-completions.js";
+import { handleGetModels, handlePostMessages, handlePostMessagesCountTokens } from "./routes/messages.js";
+import { handleHealth, handlePostResponses, handlePostResponsesCompact } from "./routes/responses.js";
 import type {
   GatewayConfig,
   GatewayProvider,
   GatewayRequestLifecycleObserver,
   GatewayUsageObserver,
 } from "./types.js";
-import {
-  handleHealth,
-  handlePostResponses,
-  handlePostResponsesCompact,
-} from "./routes/responses.js";
-import {
-  handleGetModels,
-  handlePostMessages,
-  handlePostMessagesCountTokens,
-} from "./routes/messages.js";
-import { handlePostChatCompletions } from "./routes/chat-completions.js";
 import {
   createUpstreamFetchController,
   parseUpstreamProxyUrl,
@@ -62,10 +54,7 @@ export function createGatewayFetchHandler(
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const startedAt = Date.now();
 
-    if (
-      request.method === "GET" &&
-      (path === "/health" || path === "/v1/health")
-    ) {
+    if (request.method === "GET" && (path === "/health" || path === "/v1/health")) {
       return handleHealth(config);
     }
 
@@ -92,16 +81,11 @@ export function createGatewayFetchHandler(
         onUsage,
         onRequestLifecycle,
       );
-      onLog(
-        `POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`,
-      );
+      onLog(`POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
     }
 
-    if (
-      request.method === "POST" &&
-      (path === "/v1/responses/compact" || path === "/responses/compact")
-    ) {
+    if (request.method === "POST" && (path === "/v1/responses/compact" || path === "/responses/compact")) {
       const response = await handlePostResponsesCompact(
         request,
         config,
@@ -123,22 +107,13 @@ export function createGatewayFetchHandler(
         onUsage,
         onRequestLifecycle,
       );
-      onLog(
-        `POST /v1/messages → ${response.status} (${Date.now() - startedAt}ms)`,
-      );
+      onLog(`POST /v1/messages → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
     }
 
     if (request.method === "POST" && path === "/v1/messages/count_tokens") {
-      const response = await handlePostMessagesCountTokens(
-        request,
-        config,
-        fetchImpl,
-        onLog,
-      );
-      onLog(
-        `POST /v1/messages/count_tokens → ${response.status} (${Date.now() - startedAt}ms)`,
-      );
+      const response = await handlePostMessagesCountTokens(request, config, fetchImpl, onLog);
+      onLog(`POST /v1/messages/count_tokens → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
     }
 
@@ -151,9 +126,7 @@ export function createGatewayFetchHandler(
         onUsage,
         onRequestLifecycle,
       );
-      onLog(
-        `POST /v1/chat/completions → ${response.status} (${Date.now() - startedAt}ms)`,
-      );
+      onLog(`POST /v1/chat/completions → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
     }
 
@@ -166,29 +139,18 @@ function defaultGatewayLog(message: string): void {
   process.stderr.write(`[eco-gateway] ${message}\n`);
 }
 
-async function handlePutProviders(
-  request: Request,
-  config: GatewayConfig,
-): Promise<Response> {
+async function handlePutProviders(request: Request, config: GatewayConfig): Promise<Response> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return Response.json(
-      { error: { message: "Invalid JSON body" } },
-      { status: 400 },
-    );
+    return Response.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
   }
   if (!Array.isArray(body) || body.length === 0) {
-    return Response.json(
-      { error: { message: "Body must be a non-empty provider array" } },
-      { status: 400 },
-    );
+    return Response.json({ error: { message: "Body must be a non-empty provider array" } }, { status: 400 });
   }
   try {
-    config.providers = body.map((entry) =>
-      normalizeProvider(entry as GatewayProvider),
-    );
+    config.providers = body.map((entry) => normalizeProvider(entry as GatewayProvider));
   } catch (error) {
     return Response.json(
       {
@@ -280,9 +242,7 @@ export async function startEcoGateway(
 
     const address = server.address();
     port =
-      address && typeof address === "object" && typeof address.port === "number"
-        ? address.port
-        : config.port;
+      address && typeof address === "object" && typeof address.port === "number" ? address.port : config.port;
   }
 
   return {
@@ -317,9 +277,7 @@ export async function startEcoGateway(
       }
       // Custom fetchImpl from host — cannot apply proxy internally.
       if (parsed) {
-        onLog(
-          "setUpstreamProxyUrl ignored because a custom fetchImpl was injected",
-        );
+        onLog("setUpstreamProxyUrl ignored because a custom fetchImpl was injected");
       }
     },
     getUpstreamProxyUrl: () => config.upstreamProxyUrl,
@@ -376,10 +334,7 @@ async function nodeRequestToWebRequest(req: IncomingMessage): Promise<Request> {
   } as RequestInit);
 }
 
-async function writeWebResponseToNode(
-  webResponse: Response,
-  res: ServerResponse,
-): Promise<void> {
+async function writeWebResponseToNode(webResponse: Response, res: ServerResponse): Promise<void> {
   res.statusCode = webResponse.status;
   webResponse.headers.forEach((value, key) => {
     if (key.toLowerCase() === "transfer-encoding") {

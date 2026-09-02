@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import type { ThreadUsageLedgerEventView } from "../src/shared/ipc";
 import {
   buildLedgerEventSummary,
   formatLedgerEventProviderModel,
@@ -7,6 +6,7 @@ import {
   formatUsageBreakdownAgentLabel,
   resolveEventsSummaryPopoverPosition,
 } from "../src/renderer/UsageBreakdownPanel";
+import type { ThreadUsageLedgerEventView } from "../src/shared/ipc";
 
 test("formatUsageBreakdownAgentLabel uses runtime agent names with instance id", () => {
   expect(
@@ -88,23 +88,13 @@ test("buildLedgerEventSummary preserves the primary event token summary", () => 
 });
 
 test("resolveEventsSummaryPopoverPosition keeps the portal inside the viewport", () => {
-  expect(
-    resolveEventsSummaryPopoverPosition(
-      { top: 20, bottom: 40, right: 360 },
-      400,
-    ),
-  ).toEqual({
+  expect(resolveEventsSummaryPopoverPosition({ top: 20, bottom: 40, right: 360 }, 400)).toEqual({
     top: 46,
     left: 80,
     width: 280,
   });
 
-  expect(
-    resolveEventsSummaryPopoverPosition(
-      { top: 20, bottom: 40, right: 24 },
-      240,
-    ),
-  ).toEqual({
+  expect(resolveEventsSummaryPopoverPosition({ top: 20, bottom: 40, right: 24 }, 240)).toEqual({
     top: 46,
     left: 8,
     width: 224,

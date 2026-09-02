@@ -2,8 +2,8 @@ import type { CoreKind } from "@eco/runtime/core-runtime";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { CursorModelOption } from "../shared/ipc";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CursorModelOption } from "../shared/ipc";
 import { AcpApiKeySettingsDialog } from "./AcpApiKeySettingsDialog";
 import { AcpModelSettingsDialog } from "./AcpModelSettingsDialog";
 
@@ -232,9 +232,7 @@ export function DefaultAgentSettingsPanel({
               {" · "}
               <span
                 className={
-                  acpCursorApiKey
-                    ? "default-agent-acp-key-state is-set"
-                    : "default-agent-acp-key-state"
+                  acpCursorApiKey ? "default-agent-acp-key-state is-set" : "default-agent-acp-key-state"
                 }
               >
                 {acpCursorApiKey

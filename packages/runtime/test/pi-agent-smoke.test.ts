@@ -13,10 +13,7 @@ import {
   mapPiSessionEventToAgentEvents,
   type PiEventAdapterContext,
 } from "../src/pi-event-adapter";
-import {
-  formatAgentEventDisplay,
-  formatAgentEventLine,
-} from "../src/runtime-activity-display";
+import { formatAgentEventDisplay, formatAgentEventLine } from "../src/runtime-activity-display";
 
 let seq = 0;
 function makeCtx(): PiEventAdapterContext {
@@ -32,10 +29,7 @@ function makeCtx(): PiEventAdapterContext {
   };
 }
 
-function mapAll(
-  ctx: PiEventAdapterContext,
-  events: Array<Record<string, unknown>>,
-) {
+function mapAll(ctx: PiEventAdapterContext, events: Array<Record<string, unknown>>) {
   const out = [];
   for (const ev of events) {
     for (const mapped of mapPiSessionEventToAgentEvents(ev, ctx)) {
@@ -45,10 +39,7 @@ function mapAll(
   return out;
 }
 
-function findLine(
-  events: ReturnType<typeof mapAll>,
-  type: string,
-): string | null {
+function findLine(events: ReturnType<typeof mapAll>, type: string): string | null {
   for (const ev of events) {
     if (ev.type === type) {
       const l = formatAgentEventLine(ev);
@@ -60,10 +51,7 @@ function findLine(
   return null;
 }
 
-function findPayload(
-  events: ReturnType<typeof mapAll>,
-  type: string,
-): Record<string, unknown> | null {
+function findPayload(events: ReturnType<typeof mapAll>, type: string): Record<string, unknown> | null {
   for (const ev of events) {
     if (ev.type === type && ev.payload && typeof ev.payload === "object") {
       return ev.payload as Record<string, unknown>;
@@ -339,7 +327,13 @@ test("SMOKE SUMMARY", () => {
     ["grep completed", "tool.completed", "Tool: bash · cmd · matches", "✅ cmd + preview", "PASS"],
     ["mcp proxy completed", "tool.completed", "Tool: mcp · result", "✅ result preview", "PASS"],
     ["skill completed", "tool.completed", "Tool: dataviz · result", "✅ result preview", "PASS"],
-    ["Agent subagent completed", "tool.completed", "Tool: Agent · mission + result", "✅ both surfaced", "PASS"],
+    [
+      "Agent subagent completed",
+      "tool.completed",
+      "Tool: Agent · mission + result",
+      "✅ both surfaced",
+      "PASS",
+    ],
     ["finalize_plan completed", "tool.completed", "Tool: finalize_plan · plan", "✅ plan preview", "PASS"],
     ["usage.recorded", "usage.recorded", "(no line, by design)", "—", "PASS"],
     ["tool.failed", "tool.failed", "Tool failed: read: EISDIR", "✅ error + input replay", "PASS"],
@@ -355,6 +349,8 @@ test("SMOKE SUMMARY", () => {
   }
   console.log("");
   const fails = rows.filter((r) => r[4] === "FAIL").length;
-  console.log(`\nFAIL=${fails}  WARN=${rows.filter((r) => r[4] === "WARN").length}  PASS=${rows.filter((r) => r[4] === "PASS").length}`);
+  console.log(
+    `\nFAIL=${fails}  WARN=${rows.filter((r) => r[4] === "WARN").length}  PASS=${rows.filter((r) => r[4] === "PASS").length}`,
+  );
   expect(fails).toBe(0);
 });

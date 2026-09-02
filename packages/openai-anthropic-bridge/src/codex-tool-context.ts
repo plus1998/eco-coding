@@ -1,12 +1,12 @@
 import {
   CUSTOM_TOOL_INPUT_FIELD,
-  TOOL_SEARCH_PROXY_NAME,
   canonicalJsonString,
   flattenNamespaceToolName,
-} from './codex-chat-common.js';
-import type { ChatFunction, ChatTool, ResponsesRequest, ResponsesTool } from './types.js';
+  TOOL_SEARCH_PROXY_NAME,
+} from "./codex-chat-common.js";
+import type { ChatFunction, ChatTool, ResponsesRequest, ResponsesTool } from "./types.js";
 
-export type CodexToolKind = 'function' | 'namespace' | 'custom' | 'tool_search';
+export type CodexToolKind = "function" | "namespace" | "custom" | "tool_search";
 
 export interface CodexToolSpec {
   kind: CodexToolKind;
@@ -32,9 +32,7 @@ export function emptyCodexToolContext(): CodexToolContext {
   };
 }
 
-export function codexToolContextFromRequestToolNames(
-  requestToolNames: readonly string[],
-): CodexToolContext {
+export function codexToolContextFromRequestToolNames(requestToolNames: readonly string[]): CodexToolContext {
   const context = emptyCodexToolContext();
   for (const chatName of requestToolNames) {
     if (!chatName) {
@@ -45,9 +43,9 @@ export function codexToolContextFromRequestToolNames(
       context,
       chatName,
       split.namespace
-        ? { kind: 'namespace', name: split.name, namespace: split.namespace }
-        : { kind: 'function', name: chatName },
-      { type: 'function', function: { name: chatName } },
+        ? { kind: "namespace", name: split.name, namespace: split.namespace }
+        : { kind: "function", name: chatName },
+      { type: "function", function: { name: chatName } },
     );
   }
   return context;
@@ -55,9 +53,9 @@ export function codexToolContextFromRequestToolNames(
 
 /** Split a flattened chat tool name for allowlist-only contexts (no Responses request). */
 function splitChatToolName(fullName: string): { name: string; namespace?: string } {
-  if (fullName.startsWith('mcp__')) {
-    const rest = fullName.slice('mcp__'.length);
-    const separatorIndex = rest.indexOf('__');
+  if (fullName.startsWith("mcp__")) {
+    const rest = fullName.slice("mcp__".length);
+    const separatorIndex = rest.indexOf("__");
     if (separatorIndex > 0) {
       const server = rest.slice(0, separatorIndex);
       const tool = rest.slice(separatorIndex + 2);
@@ -67,7 +65,7 @@ function splitChatToolName(fullName: string): { name: string; namespace?: string
     }
     return { name: fullName };
   }
-  const separatorIndex = fullName.indexOf('__');
+  const separatorIndex = fullName.indexOf("__");
   if (separatorIndex > 0) {
     const namespace = fullName.slice(0, separatorIndex);
     const name = fullName.slice(separatorIndex + 2);
@@ -78,9 +76,7 @@ function splitChatToolName(fullName: string): { name: string; namespace?: string
   return { name: fullName };
 }
 
-export function buildCodexToolContextFromRequest(
-  req: ResponsesRequest | null | undefined,
-): CodexToolContext {
+export function buildCodexToolContextFromRequest(req: ResponsesRequest | null | undefined): CodexToolContext {
   const context = emptyCodexToolContext();
   if (req === null || req === undefined) {
     return context;
@@ -93,13 +89,10 @@ export function buildCodexToolContextFromRequest(
 }
 
 export function isCustomToolChatName(context: CodexToolContext, chatName: string): boolean {
-  return context.chatNameToSpec.get(chatName)?.kind === 'custom';
+  return context.chatNameToSpec.get(chatName)?.kind === "custom";
 }
 
-export function lookupChatName(
-  context: CodexToolContext,
-  chatName: string,
-): CodexToolSpec | undefined {
+export function lookupChatName(context: CodexToolContext, chatName: string): CodexToolSpec | undefined {
   return context.chatNameToSpec.get(chatName);
 }
 
@@ -119,9 +112,7 @@ export function chatNameForResponseFunction(
 }
 
 export function requestToolNamesFromContext(context: CodexToolContext): string[] {
-  return context.chatTools
-    .map((tool) => tool.function?.name ?? '')
-    .filter((name) => name !== '');
+  return context.chatTools.map((tool) => tool.function?.name ?? "").filter((name) => name !== "");
 }
 
 function addChatTool(
@@ -130,7 +121,7 @@ function addChatTool(
   spec: CodexToolSpec,
   chatTool: ChatTool,
 ): void {
-  if (chatName.trim() === '' || context.chatNameToSpec.has(chatName)) {
+  if (chatName.trim() === "" || context.chatNameToSpec.has(chatName)) {
     return;
   }
   if (spec.namespace) {
@@ -140,18 +131,12 @@ function addChatTool(
   context.chatTools.push(chatTool);
 }
 
-function addFunctionTool(
-  context: CodexToolContext,
-  tool: ResponsesTool,
-  namespace?: string,
-): void {
+function addFunctionTool(context: CodexToolContext, tool: ResponsesTool, namespace?: string): void {
   const originalName = responsesToolName(tool);
   if (!originalName) {
     return;
   }
-  const chatName = namespace
-    ? flattenNamespaceToolName(namespace, originalName)
-    : originalName;
+  const chatName = namespace ? flattenNamespaceToolName(namespace, originalName) : originalName;
   const chatTool = responsesFunctionToolToChatTool(tool, chatName);
   if (!chatTool) {
     return;
@@ -160,7 +145,7 @@ function addFunctionTool(
     context,
     chatName,
     {
-      kind: namespace ? 'namespace' : 'function',
+      kind: namespace ? "namespace" : "function",
       name: originalName,
       ...(namespace ? { namespace } : {}),
     },
@@ -175,85 +160,85 @@ function addCustomTool(context: CodexToolContext, tool: ResponsesTool): void {
   }
   const description = responsesCustomToolDescription(tool);
   const chatTool: ChatTool = {
-    type: 'function',
+    type: "function",
     function: {
       name,
       description,
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
           [CUSTOM_TOOL_INPUT_FIELD]: {
-            type: 'string',
+            type: "string",
             description:
-              'Raw string input for the original custom tool. Preserve formatting exactly and follow the original tool definition embedded in the description.',
+              "Raw string input for the original custom tool. Preserve formatting exactly and follow the original tool definition embedded in the description.",
           },
         },
         required: [CUSTOM_TOOL_INPUT_FIELD],
       },
     },
   };
-  addChatTool(context, name, { kind: 'custom', name }, chatTool);
+  addChatTool(context, name, { kind: "custom", name }, chatTool);
 }
 
 function addToolSearchTool(context: CodexToolContext): void {
   const chatTool: ChatTool = {
-    type: 'function',
+    type: "function",
     function: {
       name: TOOL_SEARCH_PROXY_NAME,
       description:
-        'Search and load Codex tools, plugins, connectors, and MCP namespaces for the current task.',
+        "Search and load Codex tools, plugins, connectors, and MCP namespaces for the current task.",
       parameters: {
-        type: 'object',
+        type: "object",
         properties: {
           query: {
-            type: 'string',
-            description: 'Search query for tools or connectors to load.',
+            type: "string",
+            description: "Search query for tools or connectors to load.",
           },
           limit: {
-            type: 'integer',
-            description: 'Maximum number of tool groups to return.',
+            type: "integer",
+            description: "Maximum number of tool groups to return.",
           },
         },
-        required: ['query'],
+        required: ["query"],
       },
     },
   };
   addChatTool(
     context,
     TOOL_SEARCH_PROXY_NAME,
-    { kind: 'tool_search', name: TOOL_SEARCH_PROXY_NAME },
+    { kind: "tool_search", name: TOOL_SEARCH_PROXY_NAME },
     chatTool,
   );
 }
 
 function addNamespaceTool(context: CodexToolContext, namespaceTool: ResponsesTool): void {
-  const namespace = (namespaceTool.name ?? '').replace(/_+$/g, '');
+  const namespace = (namespaceTool.name ?? "").replace(/_+$/g, "");
   if (!namespace) {
     return;
   }
   for (const child of namespaceTool.tools ?? []) {
-    if (child.type === 'function') {
+    if (child.type === "function") {
       addFunctionTool(context, child, namespace);
     }
   }
 }
 
 function addResponseTool(context: CodexToolContext, tool: ResponsesTool | string): void {
-  if (typeof tool === 'string') {
-    addCustomTool(context, { type: 'custom', name: tool });
+  if (typeof tool === "string") {
+    addCustomTool(context, { type: "custom", name: tool });
     return;
   }
   switch (tool.type) {
-    case 'function':
+    case "function":
       addFunctionTool(context, tool);
       break;
-    case 'custom':
+    case "custom":
       addCustomTool(context, tool);
       break;
-    case 'tool_search':
+    case "tool_search":
       addToolSearchTool(context);
       break;
-    case 'namespace':
+    case "namespace":
       addNamespaceTool(context, tool);
       break;
     default:
@@ -268,11 +253,11 @@ function collectToolSearchOutputTools(value: unknown, context: CodexToolContext)
     }
     return;
   }
-  if (value === null || typeof value !== 'object') {
+  if (value === null || typeof value !== "object") {
     return;
   }
   const obj = value as Record<string, unknown>;
-  if (obj.type === 'tool_search_output' && Array.isArray(obj.tools)) {
+  if (obj.type === "tool_search_output" && Array.isArray(obj.tools)) {
     for (const tool of obj.tools) {
       addResponseTool(context, tool as ResponsesTool);
     }
@@ -291,11 +276,8 @@ function responsesCustomToolDescription(tool: ResponsesTool): string {
   return `Original tool definition:\n\`\`\`json\n${canonicalJsonString(tool)}\n\`\`\``;
 }
 
-function responsesFunctionToolToChatTool(
-  tool: ResponsesTool,
-  chatName: string,
-): ChatTool | undefined {
-  if (tool.type !== 'function') {
+function responsesFunctionToolToChatTool(tool: ResponsesTool, chatName: string): ChatTool | undefined {
+  if (tool.type !== "function") {
     return undefined;
   }
   const fn: ChatFunction = { name: chatName };
@@ -308,5 +290,5 @@ function responsesFunctionToolToChatTool(
   if (tool.strict !== undefined) {
     fn.strict = tool.strict;
   }
-  return { type: 'function', function: fn };
+  return { type: "function", function: fn };
 }

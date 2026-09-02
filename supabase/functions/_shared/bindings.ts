@@ -1,14 +1,6 @@
-import {
-  DEFAULT_BINDING_CAPABILITIES,
-  requireOwnedDevice,
-  type DeviceRow,
-} from "./devices.ts";
+import { DEFAULT_BINDING_CAPABILITIES, type DeviceRow, requireOwnedDevice } from "./devices.ts";
 import { HttpError } from "./http.ts";
-import {
-  toPublicBinding,
-  type DeviceBindingRow,
-  type PublicBinding,
-} from "./pairing.ts";
+import { type DeviceBindingRow, type PublicBinding, toPublicBinding } from "./pairing.ts";
 import type { AdminClient } from "./supabase.ts";
 
 /**
@@ -45,20 +37,13 @@ export async function ensureDeviceBinding(
   }
 
   const desktop = desktopData as DeviceRow | null;
-  if (
-    !desktop ||
-    desktop.user_id !== input.userId ||
-    desktop.kind !== "desktop" ||
-    desktop.disabled_at
-  ) {
+  if (!desktop || desktop.user_id !== input.userId || desktop.kind !== "desktop" || desktop.disabled_at) {
     throw new HttpError(403, "Desktop device is not active.", "device_inactive");
   }
 
   const { data: existing, error: existingError } = await admin
     .from("device_bindings")
-    .select(
-      "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-    )
+    .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
     .eq("desktop_device_id", desktop.id)
     .eq("mobile_device_id", mobile.id)
     .maybeSingle();
@@ -84,9 +69,7 @@ export async function ensureDeviceBinding(
         capabilities: [...DEFAULT_BINDING_CAPABILITIES],
       })
       .eq("id", row.id)
-      .select(
-        "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-      )
+      .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
       .single();
 
     if (reviveError || !revived) {
@@ -108,18 +91,14 @@ export async function ensureDeviceBinding(
       mobile_device_id: mobile.id,
       capabilities: [...DEFAULT_BINDING_CAPABILITIES],
     })
-    .select(
-      "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-    )
+    .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
     .single();
 
   if (bindingError || !bindingData) {
     if (bindingError?.code === "23505") {
       const { data: raced } = await admin
         .from("device_bindings")
-        .select(
-          "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-        )
+        .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
         .eq("desktop_device_id", desktop.id)
         .eq("mobile_device_id", mobile.id)
         .maybeSingle();
@@ -133,9 +112,7 @@ export async function ensureDeviceBinding(
               capabilities: [...DEFAULT_BINDING_CAPABILITIES],
             })
             .eq("id", racedRow.id)
-            .select(
-              "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-            )
+            .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
             .single();
           if (revived) {
             return {

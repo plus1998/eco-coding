@@ -164,9 +164,7 @@ export function clampPlannedAction(action: ApprovalPlannedAction): ApprovalPlann
   if (serialized.length <= MAX_PLANNED_ACTION_CHARS - 200) {
     return {
       ...action,
-      ...(action.justification
-        ? { justification: truncateText(action.justification, 500) }
-        : {}),
+      ...(action.justification ? { justification: truncateText(action.justification, 500) } : {}),
     };
   }
   return {
@@ -177,9 +175,7 @@ export function clampPlannedAction(action: ApprovalPlannedAction): ApprovalPlann
       _truncated: true,
       preview: truncateText(serialized, MAX_PLANNED_ACTION_CHARS - 80),
     },
-    ...(action.justification
-      ? { justification: truncateText(action.justification, 500) }
-      : {}),
+    ...(action.justification ? { justification: truncateText(action.justification, 500) } : {}),
   };
 }
 

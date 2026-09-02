@@ -8,18 +8,14 @@
  */
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { decryptSecretWithVaultKey, encryptSecretWithVaultKey, generateVaultKey } from "@eco/shared";
 import { createClient } from "@supabase/supabase-js";
 import {
-  decryptSecretWithVaultKey,
-  encryptSecretWithVaultKey,
-  generateVaultKey,
-} from "@eco/shared";
-import {
+  type EcoSyncedSettingsPayload,
   pullUserSecrets,
   pullUserSettings,
   pushUserSettings,
   upsertEncryptedSecret,
-  type EcoSyncedSettingsPayload,
 } from "../src/main/supabase-settings-sync";
 
 const SUPABASE_URL = "http://127.0.0.1:8000";

@@ -157,9 +157,7 @@ test("installs downloaded Skill files into the selected layout", async () => {
 
     expect(result.fileCount).toBe(2);
     expect(await fs.readFile(path.join(result.directory, "rules", "demo.md"), "utf8")).toBe("Demo");
-    const lock = JSON.parse(
-      await fs.readFile(path.join(homedir, ".codex", ".skill-lock.json"), "utf8"),
-    );
+    const lock = JSON.parse(await fs.readFile(path.join(homedir, ".codex", ".skill-lock.json"), "utf8"));
     expect(lock.skills["demo-skill"]).toMatchObject({
       source: "vercel-labs/agent-skills",
       skillId: "demo-skill",

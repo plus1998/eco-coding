@@ -9,17 +9,11 @@
  * `clearSdkSession`. If this policy ever flipped, fail loud rather than
  * silently dropping the session again.
  */
-export function shouldClearSdkSessionOnRunFailure(_input: {
-  hadResume: boolean;
-  reason: string;
-}): boolean {
+export function shouldClearSdkSessionOnRunFailure(_input: { hadResume: boolean; reason: string }): boolean {
   return false;
 }
 
-export function assertSdkSessionRetainedOnRunFailure(input: {
-  hadResume: boolean;
-  reason: string;
-}): void {
+export function assertSdkSessionRetainedOnRunFailure(input: { hadResume: boolean; reason: string }): void {
   if (shouldClearSdkSessionOnRunFailure(input)) {
     throw new Error("Run failure must not clear the Claude SDK session.");
   }

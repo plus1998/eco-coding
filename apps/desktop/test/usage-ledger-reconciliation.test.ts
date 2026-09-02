@@ -1,14 +1,11 @@
 import { expect, test } from "bun:test";
+import { buildSdkUsageLedgerEvents, buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
+import { reconcileUsageLedgerWithBilling } from "../src/main/usage-ledger-reconciliation";
 import type {
   BillingUsageSource,
   ThreadBillingSnapshot,
   ThreadBillingSourceSnapshot,
 } from "../src/shared/ipc";
-import {
-  buildSdkUsageLedgerEvents,
-  buildSingleUsageLedgerEvent,
-} from "../src/main/usage-ledger-adapters";
-import { reconcileUsageLedgerWithBilling } from "../src/main/usage-ledger-reconciliation";
 
 function makeBilling(
   sourceBreakdown: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>,
@@ -188,7 +185,5 @@ test("reconcileUsageLedgerWithBilling reports missing ledger source and unattrib
   expect(result.issues).toContainEqual(
     expect.objectContaining({ type: "missing_ledger_source", source: "proxy" }),
   );
-  expect(result.issues).toContainEqual(
-    expect.objectContaining({ type: "unattributed_usage", count: 1 }),
-  );
+  expect(result.issues).toContainEqual(expect.objectContaining({ type: "unattributed_usage", count: 1 }));
 });

@@ -1,16 +1,11 @@
-import {
-  isOrchestrationSelection,
-  type OrchestrationSelection,
-} from "./agent-orchestration";
+import { isOrchestrationSelection, type OrchestrationSelection } from "./agent-orchestration";
 
 export interface ProjectOrchestrationSettingsSnapshot {
   workspacePath: string;
   orchestrationSelection?: OrchestrationSelection;
 }
 
-export function normalizeProjectOrchestrationSelection(
-  value: unknown,
-): OrchestrationSelection | undefined {
+export function normalizeProjectOrchestrationSelection(value: unknown): OrchestrationSelection | undefined {
   if (!isOrchestrationSelection(value)) {
     return undefined;
   }

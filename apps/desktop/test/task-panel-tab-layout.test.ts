@@ -11,9 +11,7 @@ test("task panel tabs truncate labels without covering the close button", () => 
   expect(styles).toMatch(
     /\.subagent-task-panel-tab > span:not\(\.subagent-task-panel-tab-meta\)\s*\{[^}]*min-width:\s*0;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
   );
-  expect(styles).toMatch(
-    /\.subagent-task-panel-tab-close\s*\{[^}]*z-index:\s*1;[^}]*width:\s*22px;/s,
-  );
+  expect(styles).toMatch(/\.subagent-task-panel-tab-close\s*\{[^}]*z-index:\s*1;[^}]*width:\s*22px;/s);
 });
 
 test("fullscreen task tabs clear macOS traffic lights when the project sidebar is collapsed", () => {

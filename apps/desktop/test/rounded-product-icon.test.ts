@@ -1,6 +1,6 @@
+import { expect, test } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "bun:test";
 import { decodePngToRgba, encodeRgbaToPng } from "../scripts/png-rgba.mjs";
 import {
   applyTransparentRoundedProductIcon,
@@ -32,7 +32,7 @@ test("applyTransparentRoundedProductIcon clears clipped corners", () => {
   expect(data[2]).toBe(0);
   expect(data[3]).toBe(0);
 
-  const center = ((32 * width) + 32) * 4;
+  const center = (32 * width + 32) * 4;
   expect(data[center]).toBe(10);
   expect(data[center + 1]).toBe(20);
   expect(data[center + 2]).toBe(30);

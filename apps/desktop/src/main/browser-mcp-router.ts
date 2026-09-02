@@ -25,9 +25,7 @@ export class BrowserMcpToolClaimRouter {
     const normalizedToolUseId = toolUseId?.trim();
     if (
       normalizedToolUseId &&
-      this.queue.some(
-        (claim) => claim.threadId === tid && claim.toolUseId === normalizedToolUseId,
-      )
+      this.queue.some((claim) => claim.threadId === tid && claim.toolUseId === normalizedToolUseId)
     ) {
       return;
     }

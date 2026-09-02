@@ -43,9 +43,7 @@ export class MissingProviderIdError extends Error {
   readonly status = 400;
 
   constructor() {
-    super(
-      `Missing ${GATEWAY_PROVIDER_ID_HEADER}. Bridge must resolve provider before calling gateway.`,
-    );
+    super(`Missing ${GATEWAY_PROVIDER_ID_HEADER}. Bridge must resolve provider before calling gateway.`);
     this.name = "MissingProviderIdError";
   }
 }
@@ -123,14 +121,10 @@ export function resolveProviderRoute(
     requestedModel: clientRequested,
     // Concrete model ids are forwarded as-is (product layer pre-resolved).
     upstreamModelId,
-    ...(options?.bridgeBindingId?.trim()
-      ? { bridgeBindingId: options.bridgeBindingId.trim() }
-      : {}),
+    ...(options?.bridgeBindingId?.trim() ? { bridgeBindingId: options.bridgeBindingId.trim() } : {}),
     ...(options?.threadId?.trim() ? { threadId: options.threadId.trim() } : {}),
     ...(options?.runAttemptId?.trim() ? { runAttemptId: options.runAttemptId.trim() } : {}),
-    ...(options?.logicalRequestId?.trim()
-      ? { logicalRequestId: options.logicalRequestId.trim() }
-      : {}),
+    ...(options?.logicalRequestId?.trim() ? { logicalRequestId: options.logicalRequestId.trim() } : {}),
   };
 }
 
@@ -158,21 +152,15 @@ export function assertUpstreamKindCompatibleWithProviderPath(
   );
 }
 
-export function readProviderIdFromHeaders(
-  headers: Pick<Headers, "get">,
-): string | undefined {
+export function readProviderIdFromHeaders(headers: Pick<Headers, "get">): string | undefined {
   return headers.get(GATEWAY_PROVIDER_ID_HEADER)?.trim() || undefined;
 }
 
-export function readUpstreamKindFromHeaders(
-  headers: Pick<Headers, "get">,
-): string | undefined {
+export function readUpstreamKindFromHeaders(headers: Pick<Headers, "get">): string | undefined {
   return headers.get(GATEWAY_UPSTREAM_KIND_HEADER)?.trim() || undefined;
 }
 
-export function readRequestedModelFromHeaders(
-  headers: Pick<Headers, "get">,
-): string | undefined {
+export function readRequestedModelFromHeaders(headers: Pick<Headers, "get">): string | undefined {
   return headers.get(GATEWAY_REQUESTED_MODEL_HEADER)?.trim() || undefined;
 }
 
@@ -180,9 +168,7 @@ export function readThreadIdFromHeaders(headers: Pick<Headers, "get">): string |
   return headers.get(GATEWAY_THREAD_ID_HEADER)?.trim() || undefined;
 }
 
-export function readBridgeBindingIdFromHeaders(
-  headers: Pick<Headers, "get">,
-): string | undefined {
+export function readBridgeBindingIdFromHeaders(headers: Pick<Headers, "get">): string | undefined {
   return headers.get(GATEWAY_BRIDGE_BINDING_ID_HEADER)?.trim() || undefined;
 }
 
@@ -195,9 +181,7 @@ export function readLogicalRequestIdFromHeaders(headers: Pick<Headers, "get">): 
 }
 
 /** Build route options without writing `undefined` into exact-optional fields. */
-export function buildResolveProviderRouteOptions(
-  headers: Pick<Headers, "get">,
-): ResolveProviderRouteOptions {
+export function buildResolveProviderRouteOptions(headers: Pick<Headers, "get">): ResolveProviderRouteOptions {
   const providerId = readProviderIdFromHeaders(headers);
   const upstreamKindOverride = readUpstreamKindFromHeaders(headers);
   const requestedModel = readRequestedModelFromHeaders(headers);
@@ -310,9 +294,7 @@ export function resolveRequestPathForUpstreamKind(
   if (
     path &&
     MESSAGES_ONLY_REQUEST_PATHS.has(path) &&
-    (upstreamKind === "openai-chat" ||
-      upstreamKind === "responses" ||
-      upstreamKind === "gateway-delegated")
+    (upstreamKind === "openai-chat" || upstreamKind === "responses" || upstreamKind === "gateway-delegated")
   ) {
     throw new IncompatibleUpstreamKindError(
       `Cannot use upstream kind "${upstreamKind}" with requestPath ${path}: ` +

@@ -300,8 +300,7 @@ export function buildRequestLifecycleContext(
   if (!observer) {
     return undefined;
   }
-  const logicalRequestId =
-    route.logicalRequestId || `glr_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  const logicalRequestId = route.logicalRequestId || `glr_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
   return {
     source,
     route,

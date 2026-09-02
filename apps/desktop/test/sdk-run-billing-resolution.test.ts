@@ -1,14 +1,12 @@
 import { expect, test } from "bun:test";
 import type { ModelPricingLookup, ParsedUsage } from "@eco/runtime";
-import type { AgentRole } from "../src/shared/ipc";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
-import {
-  resolveSdkRunBillingResolution,
-} from "../src/main/sdk-run-billing-resolution";
-import type { SdkRunBillingAttributionResolver } from "../src/main/sdk-run-billing-attribution";
 import type { SdkUsageBillingBundle } from "../src/main/sdk-event-usage-billing";
+import type { SdkRunBillingAttributionResolver } from "../src/main/sdk-run-billing-attribution";
+import { resolveSdkRunBillingResolution } from "../src/main/sdk-run-billing-resolution";
 import type { UsageBillingPricingRoute } from "../src/main/usage-billing-artifacts";
+import type { AgentRole } from "../src/shared/ipc";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
@@ -64,10 +62,7 @@ function bundle(input: Partial<SdkUsageBillingBundle> = {}): SdkUsageBillingBund
 }
 
 function resolver(
-  input: {
-    agentByRole?: Partial<Record<AgentRole, string>>;
-    roleByAgent?: Record<string, AgentRole>;
-  } = {},
+  input: { agentByRole?: Partial<Record<AgentRole, string>>; roleByAgent?: Record<string, AgentRole> } = {},
 ): SdkRunBillingAttributionResolver {
   return {
     resolveAgentId(_threadId, request) {

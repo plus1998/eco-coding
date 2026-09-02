@@ -14,6 +14,12 @@ import {
   responsesToChatCompletionsRequest,
 } from "@eco/openai-anthropic-bridge";
 import { buildUpstreamUrl } from "../provider-router.js";
+import {
+  type RequestLifecycleContext,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCancelled,
+  tryEmitLogicalCompleted,
+} from "../request-lifecycle.js";
 import type { GatewayLogFn } from "../server.js";
 import {
   appendStreamUtf8Chunk,
@@ -27,12 +33,6 @@ import type {
   GatewayUsageObserver,
   ResolvedProviderRoute,
 } from "../types.js";
-import {
-  reportLogicalUpstreamFailure,
-  tryEmitLogicalCancelled,
-  tryEmitLogicalCompleted,
-  type RequestLifecycleContext,
-} from "../request-lifecycle.js";
 import { normalizeChatCompletionsUsage, type ParsedUsage } from "../usage-normalize.js";
 import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";

@@ -139,8 +139,7 @@ export class AcpJsonRpcPeer {
       method,
       ...(params === undefined ? {} : { params }),
     };
-    const idleTimeoutMs =
-      typeof timeout === "object" ? timeout.idleTimeoutMs : undefined;
+    const idleTimeoutMs = typeof timeout === "object" ? timeout.idleTimeoutMs : undefined;
     const timeoutMs = typeof timeout === "number" ? timeout : idleTimeoutMs;
     return new Promise<unknown>((resolve, reject) => {
       const pending: PendingRequest = {
@@ -245,9 +244,7 @@ export class AcpJsonRpcPeer {
         clearInterval(timer);
         this.pending.delete(id);
         pending.reject(
-          new Error(
-            `Timed out waiting for ${pending.method} response after ${idleTimeoutMs}ms idle`,
-          ),
+          new Error(`Timed out waiting for ${pending.method} response after ${idleTimeoutMs}ms idle`),
         );
       }, tickMs);
       return timer;
@@ -257,9 +254,7 @@ export class AcpJsonRpcPeer {
         return;
       }
       this.pending.delete(id);
-      pending.reject(
-        new Error(`Timed out waiting for ${pending.method} response after ${timeoutMs}ms`),
-      );
+      pending.reject(new Error(`Timed out waiting for ${pending.method} response after ${timeoutMs}ms`));
     }, timeoutMs);
   }
 
@@ -317,7 +312,10 @@ export class AcpJsonRpcPeer {
             ? Number((err as { code: unknown }).code)
             : undefined;
         const detail =
-          typeof err === "object" && err !== null && "data" in err && (err as { data: unknown }).data !== undefined
+          typeof err === "object" &&
+          err !== null &&
+          "data" in err &&
+          (err as { data: unknown }).data !== undefined
             ? ` data=${JSON.stringify((err as { data: unknown }).data)}`
             : "";
         const formatted = Number.isFinite(code)
@@ -377,11 +375,7 @@ export class AcpJsonRpcPeer {
       if (this.disposed) {
         return;
       }
-      this.writeError(
-        request.id,
-        -32603,
-        error instanceof Error ? error.message : String(error),
-      );
+      this.writeError(request.id, -32603, error instanceof Error ? error.message : String(error));
     } finally {
       this.endInboundRequest();
     }

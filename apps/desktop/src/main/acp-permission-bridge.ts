@@ -1,4 +1,7 @@
 import {
+  type AcpPermissionHandler,
+  type AcpPermissionOutcome,
+  type AcpPermissionRequest,
   acpPermissionCancelled,
   acpPermissionCommandPreview,
   acpPermissionFilesystemPath,
@@ -7,13 +10,10 @@ import {
   resolveAcpPermissionAutoAllow,
   resolveAcpPermissionSelection,
   shouldHostAutoAllowAcpPermission,
-  type AcpPermissionHandler,
-  type AcpPermissionOutcome,
-  type AcpPermissionRequest,
 } from "@eco/runtime";
-import type { BashApprovalRequest, BashApprovalDecision } from "../shared/ipc";
-import type { EcoApprovalReviewResult } from "./eco-approval-reviewer";
+import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import type { BashApprovalResolution } from "./bash-approval-bridge";
+import type { EcoApprovalReviewResult } from "./eco-approval-reviewer";
 import type { ThreadToolConfirmationInput, ToolConfirmationDecision } from "./thread-bash-permission";
 
 export type AcpPermissionBridgeEmitType =
@@ -64,9 +64,7 @@ export function mapAcpPermissionToBashApprovalRequest(input: {
     agentId: input.agentId,
     description: input.description ?? input.request.toolCall.title ?? toolName,
     kind,
-    ...(filesystemPath && kind === "file_change"
-      ? { filesystemTool: toolName, filesystemPath }
-      : {}),
+    ...(filesystemPath && kind === "file_change" ? { filesystemTool: toolName, filesystemPath } : {}),
   };
 }
 
@@ -91,16 +89,13 @@ export function mapBashResolutionToAcpPermission(
     resolution.decision === "approved_remember_prefix" ||
     resolution.decision === "approved_for_session";
   if (!granted) {
-    return (
-      resolveAcpPermissionSelection(request.options, "reject") ?? acpPermissionCancelled()
-    );
+    return resolveAcpPermissionSelection(request.options, "reject") ?? acpPermissionCancelled();
   }
   return (
     resolveAcpPermissionSelection(
       request.options,
       "allow",
-      resolution.decision === "approved_remember_prefix" ||
-        resolution.decision === "approved_for_session",
+      resolution.decision === "approved_remember_prefix" || resolution.decision === "approved_for_session",
     ) ?? resolveAcpPermissionAutoAllow({ options: request.options, toolCall: request.toolCall })
   );
 }
@@ -168,9 +163,7 @@ export function createAcpPermissionHandler(
           description: confirmation.userMessage,
         });
         deps.emit("bash_approval.denied", `已拒绝：${confirmation.userMessage}`, denied);
-        return (
-          resolveAcpPermissionSelection(request.options, "reject") ?? acpPermissionCancelled()
-        );
+        return resolveAcpPermissionSelection(request.options, "reject") ?? acpPermissionCancelled();
       }
       if (confirmation.action === "allow") {
         deps.log?.("acp-permission-policy-allow", {
@@ -189,7 +182,7 @@ export function createAcpPermissionHandler(
       description = confirmation.userMessage;
     }
 
-    let approvalRequest = mapAcpPermissionToBashApprovalRequest({
+    const approvalRequest = mapAcpPermissionToBashApprovalRequest({
       threadId,
       request,
       cwd,
@@ -227,8 +220,7 @@ async function applyAcpAuxiliaryReview(input: {
   toolInput: Record<string, unknown>;
   deps: AcpPermissionBridgeDeps;
 }): Promise<
-  | { kind: "resolved"; outcome: AcpPermissionOutcome }
-  | { kind: "park"; approvalRequest: BashApprovalRequest }
+  { kind: "resolved"; outcome: AcpPermissionOutcome } | { kind: "park"; approvalRequest: BashApprovalRequest }
 > {
   if (input.bashReviewMode !== "auto") {
     return { kind: "park", approvalRequest: input.approvalRequest };
@@ -267,15 +259,10 @@ async function applyAcpAuxiliaryReview(input: {
     };
   }
   if (review.action === "deny") {
-    input.deps.emit(
-      "bash_approval.denied",
-      `已拒绝 ${input.toolName}：${review.rationale}`,
-      approvalRequest,
-    );
+    input.deps.emit("bash_approval.denied", `已拒绝 ${input.toolName}：${review.rationale}`, approvalRequest);
     return {
       kind: "resolved",
-      outcome:
-        resolveAcpPermissionSelection(input.request.options, "reject") ?? acpPermissionCancelled(),
+      outcome: resolveAcpPermissionSelection(input.request.options, "reject") ?? acpPermissionCancelled(),
     };
   }
   return { kind: "park", approvalRequest };
@@ -308,8 +295,6 @@ async function parkAcpBashApproval(
 
 function isGrantedDecision(decision: BashApprovalDecision): boolean {
   return (
-    decision === "approved" ||
-    decision === "approved_remember_prefix" ||
-    decision === "approved_for_session"
+    decision === "approved" || decision === "approved_remember_prefix" || decision === "approved_for_session"
   );
 }

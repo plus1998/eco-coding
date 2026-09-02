@@ -8,11 +8,7 @@ interface PersonalizationSettingsPanelProps {
   onSave: (settings: PersonalizationSettingsSnapshot) => Promise<void>;
 }
 
-export function PersonalizationSettingsPanel({
-  settings,
-  busy,
-  onSave,
-}: PersonalizationSettingsPanelProps) {
+export function PersonalizationSettingsPanel({ settings, busy, onSave }: PersonalizationSettingsPanelProps) {
   const { t } = useTranslation();
   const savedRules = settings.globalRules ?? "";
   const [draft, setDraft] = useState(savedRules);
@@ -48,9 +44,7 @@ export function PersonalizationSettingsPanel({
         <div className="settings-section-head git-settings-section-head">
           <div>
             <span className="settings-section-label">{t("settings.personalization.rules")}</span>
-            <p className="settings-section-subtitle">
-              {t("settings.personalization.rulesSubtitle")}
-            </p>
+            <p className="settings-section-subtitle">{t("settings.personalization.rulesSubtitle")}</p>
           </div>
           <button
             type="button"

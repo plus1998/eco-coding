@@ -25,9 +25,9 @@ const pricingUnresolved: ThreadBillingDiagnostic = {
 };
 
 test("filterVisibleBillingDiagnostics hides deferred reconciliation drift while running", () => {
-  expect(filterVisibleBillingDiagnostics([tokenMismatch, costMismatch, pricingUnresolved], "running")).toEqual([
-    pricingUnresolved,
-  ]);
+  expect(
+    filterVisibleBillingDiagnostics([tokenMismatch, costMismatch, pricingUnresolved], "running"),
+  ).toEqual([pricingUnresolved]);
   expect(filterVisibleBillingDiagnostics([tokenMismatch, pricingUnresolved], "queued")).toEqual([
     pricingUnresolved,
   ]);

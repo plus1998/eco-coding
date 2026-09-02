@@ -93,9 +93,7 @@ export function resolveCursorAgentName(frontmatterName: string, filePath: string
  * Merge agents so higher-precedence entries win on `name` (case-insensitive).
  * Call with lowest-priority first.
  */
-export function mergeCursorAgentsByPrecedence(
-  entries: readonly CursorAgentInfo[],
-): CursorAgentInfo[] {
+export function mergeCursorAgentsByPrecedence(entries: readonly CursorAgentInfo[]): CursorAgentInfo[] {
   const byName = new Map<string, CursorAgentInfo>();
   for (const entry of entries) {
     const key = entry.name.trim().toLowerCase();
@@ -115,10 +113,7 @@ function readYamlScalar(block: string, key: string): string {
   if (value === "|" || value === ">" || value === "|-" || value === ">-") {
     return "";
   }
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
     value = value.slice(1, -1);
   }
   return value;
@@ -148,10 +143,7 @@ function readYamlString(block: string, key: string): string {
         .join("\n")
         .trim();
     }
-    if (
-      (rest.startsWith('"') && rest.endsWith('"')) ||
-      (rest.startsWith("'") && rest.endsWith("'"))
-    ) {
+    if ((rest.startsWith('"') && rest.endsWith('"')) || (rest.startsWith("'") && rest.endsWith("'"))) {
       return rest.slice(1, -1);
     }
     return rest;

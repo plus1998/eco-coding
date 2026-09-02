@@ -1,7 +1,7 @@
 import type { BillingUsageSource, ThreadBillingSnapshot } from "../shared/ipc";
-import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
-import type { UsageLedgerBillingProjection } from "./billing-projector";
 import { isSubagentBillingRole } from "./billing-orchestration";
+import type { UsageLedgerBillingProjection } from "./billing-projector";
+import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
 
 export type BillingProjectionReconciliationSeverity = "error" | "info";
 
@@ -124,7 +124,11 @@ function comparePrimarySource(
     }
     return;
   }
-  if (legacy.primarySource === "sdk" && projection.primarySource && isSyntheticSdkPrimary(projection, legacy)) {
+  if (
+    legacy.primarySource === "sdk" &&
+    projection.primarySource &&
+    isSyntheticSdkPrimary(projection, legacy)
+  ) {
     issues.push({
       type: "synthetic_sdk_primary",
       severity: "info",
@@ -169,13 +173,13 @@ function compareThreadCosts(
   issues: BillingProjectionReconciliationIssue[],
 ): void {
   compareCost("ecoCostUsd", projection.ecoCostUsd, legacy.ecoCostUsd, issues);
+  compareCost("plannerTokenCostUsd", projection.plannerTokenCostUsd, legacy.plannerTokenCostUsd, issues);
   compareCost(
-    "plannerTokenCostUsd",
-    projection.plannerTokenCostUsd,
-    legacy.plannerTokenCostUsd,
+    "sourceReportedCostUsd",
+    projection.sourceReportedCostUsd,
+    legacy.sourceReportedCostUsd,
     issues,
   );
-  compareCost("sourceReportedCostUsd", projection.sourceReportedCostUsd, legacy.sourceReportedCostUsd, issues);
 }
 
 function compareSubagentMetrics(
@@ -254,10 +258,7 @@ function compareCost(
   });
 }
 
-function isSyntheticSdkPrimary(
-  projection: ThreadBillingSnapshot,
-  legacy: ThreadBillingSnapshot,
-): boolean {
+function isSyntheticSdkPrimary(projection: ThreadBillingSnapshot, legacy: ThreadBillingSnapshot): boolean {
   return hasSyntheticSdkCompatibilityBreakdown(projection, legacy);
 }
 
@@ -275,9 +276,7 @@ function hasSyntheticSdkCompatibilityBreakdown(
   return TOKEN_FIELDS.every((field) => projectionPrimary.totalTokens[field] === legacySdk.totalTokens[field]);
 }
 
-function buildResult(
-  issues: BillingProjectionReconciliationIssue[],
-): BillingProjectionReconciliationResult {
+function buildResult(issues: BillingProjectionReconciliationIssue[]): BillingProjectionReconciliationResult {
   return {
     ok: issues.every((issue) => issue.severity === "info"),
     issues,

@@ -1,5 +1,5 @@
-import type { SkillInfo } from "../shared/skills";
 import { useTranslation } from "react-i18next";
+import type { SkillInfo } from "../shared/skills";
 
 interface SkillUninstallConfirmDialogProps {
   skill: SkillInfo;

@@ -1,18 +1,15 @@
-import type { CommitModelOptionView, CommitModelPricingHint } from "../shared/ipc";
+import type { TFunction } from "i18next";
+import type { ReactNode } from "react";
 import {
   ACP_MODEL_VENDOR_ICONS,
-  classifyAcpModelVendor,
   type AcpModelOption,
   type AcpModelVendor,
+  classifyAcpModelVendor,
 } from "../shared/acp-model-vendor";
 import type { I18nKey } from "../shared/i18n-catalogs";
-import type { TFunction } from "i18next";
-import type {
-  ModelCascadeOption,
-  ModelCascadeSelection,
-} from "./ModelCascadeSelect";
+import type { CommitModelOptionView, CommitModelPricingHint } from "../shared/ipc";
 import { CommitModelPricingCompact } from "./CommitModelPricingCompact";
-import type { ReactNode } from "react";
+import type { ModelCascadeOption, ModelCascadeSelection } from "./ModelCascadeSelect";
 
 const ACP_VENDOR_LABEL_KEYS: Record<AcpModelVendor, I18nKey> = {
   anthropic: "settings.acpModel.vendor.anthropic",
@@ -61,16 +58,12 @@ export function createAcpCurrentExtra(
   models: readonly AcpModelOption[],
   currentLabel: string,
 ): (option: ModelCascadeOption) => ReactNode {
-  const currentIds = new Set(
-    models.filter((model) => model.current).map((model) => model.id),
-  );
+  const currentIds = new Set(models.filter((model) => model.current).map((model) => model.id));
   return (option: ModelCascadeOption): ReactNode => {
     if (!currentIds.has(option.modelId)) {
       return null;
     }
-    return (
-      <span className="model-cascade-model-extra">{currentLabel}</span>
-    );
+    return <span className="model-cascade-model-extra">{currentLabel}</span>;
   };
 }
 
@@ -107,9 +100,7 @@ export function toModelCascadeSelection(
 }
 
 /** Map a cascade selection back into a candidate-model selection. */
-export function toCandidateModelSelection(
-  selection: ModelCascadeSelection,
-): CandidateModelSelection {
+export function toCandidateModelSelection(selection: ModelCascadeSelection): CandidateModelSelection {
   return {
     providerId: selection.providerId,
     modelId: selection.modelId,

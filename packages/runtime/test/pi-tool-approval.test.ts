@@ -28,10 +28,7 @@ test("allow returns undefined and does not block", () => {
 
 test("allow with updatedInput mutates event.input in place", () => {
   const ev = event({ input: { command: "ls" } });
-  mapSdkPermissionDecisionToPiToolCallResult(
-    { behavior: "allow", updatedInput: { command: "ls -la" } },
-    ev,
-  );
+  mapSdkPermissionDecisionToPiToolCallResult({ behavior: "allow", updatedInput: { command: "ls -la" } }, ev);
   expect(ev.input.command).toBe("ls -la");
 });
 
@@ -56,11 +53,15 @@ test("deny with interrupt sets terminate", () => {
 });
 
 test("applyPiToolCallPermission fail-closes when handler throws", async () => {
-  const result = await applyPiToolCallPermission(event(), {}, {
-    onToolPermission: async () => {
-      throw new Error("boom");
+  const result = await applyPiToolCallPermission(
+    event(),
+    {},
+    {
+      onToolPermission: async () => {
+        throw new Error("boom");
+      },
     },
-  });
+  );
   expect(result?.block).toBe(true);
   expect(result?.reason).toContain("blocked");
 });
@@ -68,22 +69,30 @@ test("applyPiToolCallPermission fail-closes when handler throws", async () => {
 test("applyPiToolCallPermission rethrows AbortError from handler", async () => {
   const abortError = new DOMException("aborted", "AbortError");
   await expect(
-    applyPiToolCallPermission(event(), {}, {
-      onToolPermission: async () => {
-        throw abortError;
+    applyPiToolCallPermission(
+      event(),
+      {},
+      {
+        onToolPermission: async () => {
+          throw abortError;
+        },
       },
-    }),
+    ),
   ).rejects.toBe(abortError);
 });
 
 test("applyPiToolCallPermission maps PI bash to Bash for handler request", async () => {
   let seen: SdkToolPermissionRequest | undefined;
-  await applyPiToolCallPermission(event({ toolName: "bash" }), {}, {
-    onToolPermission: async (request) => {
-      seen = request;
-      return { behavior: "allow" } satisfies SdkToolPermissionDecision;
+  await applyPiToolCallPermission(
+    event({ toolName: "bash" }),
+    {},
+    {
+      onToolPermission: async (request) => {
+        seen = request;
+        return { behavior: "allow" } satisfies SdkToolPermissionDecision;
+      },
     },
-  });
+  );
   expect(seen?.toolName).toBe("Bash");
 });
 
@@ -95,24 +104,32 @@ test("applyPiToolCallPermission maps PI read/write/edit to Read/Write/Edit", asy
   ] as const;
   for (const [piName, sdkName] of cases) {
     let seen: SdkToolPermissionRequest | undefined;
-    await applyPiToolCallPermission(event({ toolName: piName }), {}, {
-      onToolPermission: async (request) => {
-        seen = request;
-        return { behavior: "allow" } satisfies SdkToolPermissionDecision;
+    await applyPiToolCallPermission(
+      event({ toolName: piName }),
+      {},
+      {
+        onToolPermission: async (request) => {
+          seen = request;
+          return { behavior: "allow" } satisfies SdkToolPermissionDecision;
+        },
       },
-    });
+    );
     expect(seen?.toolName).toBe(sdkName);
   }
 });
 
 test("applyPiToolCallPermission leaves grep unmapped", async () => {
   let seen: SdkToolPermissionRequest | undefined;
-  await applyPiToolCallPermission(event({ toolName: "grep" }), {}, {
-    onToolPermission: async (request) => {
-      seen = request;
-      return { behavior: "allow" } satisfies SdkToolPermissionDecision;
+  await applyPiToolCallPermission(
+    event({ toolName: "grep" }),
+    {},
+    {
+      onToolPermission: async (request) => {
+        seen = request;
+        return { behavior: "allow" } satisfies SdkToolPermissionDecision;
+      },
     },
-  });
+  );
   expect(seen?.toolName).toBe("grep");
 });
 
@@ -158,7 +175,10 @@ test("applyPiToolCallPermission forwards SdkToolPermissionRequest fields", async
 test("factory registers tool_call and returns handler result", async () => {
   const handlers: Array<(event: PiToolCallEventLike, ctx: { cwd?: string }) => Promise<unknown>> = [];
   const pi = {
-    on(_event: "tool_call", handler: (event: PiToolCallEventLike, ctx: { cwd?: string }) => Promise<unknown>) {
+    on(
+      _event: "tool_call",
+      handler: (event: PiToolCallEventLike, ctx: { cwd?: string }) => Promise<unknown>,
+    ) {
       handlers.push(handler);
     },
   };

@@ -209,7 +209,13 @@ test("built-in browser webview and thread CDP integration", async ({ ecoPage: pa
   writeFileSync(path.join(outDir, "results.json"), JSON.stringify(results, null, 2));
   const failed = results.filter((entry) => !entry.ok).length;
   console.log(`\n[browser-webview] done: ${results.length - failed} passed, ${failed} failed`);
-  expect(failed, results.filter((entry) => !entry.ok).map((entry) => `${entry.name}: ${entry.detail}`).join("; ")).toBe(0);
+  expect(
+    failed,
+    results
+      .filter((entry) => !entry.ok)
+      .map((entry) => `${entry.name}: ${entry.detail}`)
+      .join("; "),
+  ).toBe(0);
 });
 
 async function waitForBrowserInstances(page: import("@playwright/test").Page, min = 1) {

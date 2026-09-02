@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 import {
   buildResumeAgentPrompt,
   createSubagentResumePreToolHook,
@@ -7,7 +8,6 @@ import {
   normalizeSdkSubagentType,
   readAgentSubagentType,
 } from "../src/subagent-resume";
-import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("normalizeSdkSubagentType rejects SDK built-in Explore and maps Eco keys", () => {
   expect(normalizeSdkSubagentType("Explore")).toBeUndefined();
@@ -21,15 +21,13 @@ test("normalizeSdkSubagentType rejects SDK built-in Explore and maps Eco keys", 
 });
 
 test("normalizeAgentToolInputSubagentType rewrites Eco runtime names to eco keys", () => {
-  expect(
-    normalizeAgentToolInputSubagentType({ subagent_type: "Explore", prompt: "Map auth" }),
-  ).toMatchObject({
-    changed: false,
-    input: { subagent_type: "Explore", prompt: "Map auth" },
-  });
-  expect(
-    normalizeAgentToolInputSubagentType({ agent_type: "reviewer", prompt: "Review" }),
-  ).toMatchObject({
+  expect(normalizeAgentToolInputSubagentType({ subagent_type: "Explore", prompt: "Map auth" })).toMatchObject(
+    {
+      changed: false,
+      input: { subagent_type: "Explore", prompt: "Map auth" },
+    },
+  );
+  expect(normalizeAgentToolInputSubagentType({ agent_type: "reviewer", prompt: "Review" })).toMatchObject({
     role: "reviewer",
     changed: true,
     input: { subagent_type: ecoSubagentKeyForRole("reviewer"), prompt: "Review" },
@@ -100,9 +98,7 @@ test("createSubagentResumePreToolHook rewrites Agent tool input", async () => {
   expect(result.hookSpecificOutput?.updatedInput?.prompt).toBe(
     "Resume agent rev-agent-id and Review the diff",
   );
-  expect(result.hookSpecificOutput?.updatedInput?.subagent_type).toBe(
-    ecoSubagentKeyForRole("reviewer"),
-  );
+  expect(result.hookSpecificOutput?.updatedInput?.subagent_type).toBe(ecoSubagentKeyForRole("reviewer"));
 });
 
 test("createSubagentResumePreToolHook resolves dynamic Eco agent keys", async () => {

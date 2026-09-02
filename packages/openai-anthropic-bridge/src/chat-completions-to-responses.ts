@@ -2,8 +2,8 @@ import {
   defaultReasoningSummaryMode,
   isReasoningModel,
   minMaxOutputTokens,
-} from './anthropic-to-responses.js';
-import { jsonMarshal, jsonParse } from './json.js';
+} from "./anthropic-to-responses.js";
+import { jsonMarshal, jsonParse } from "./json.js";
 import type {
   ChatCompletionsRequest,
   ChatContentPart,
@@ -16,26 +16,24 @@ import type {
   ResponsesReasoning,
   ResponsesRequest,
   ResponsesTool,
-} from './types.js';
+} from "./types.js";
 
 interface ChatMessageContent {
   text?: string;
   parts?: ChatContentPart[];
 }
 
-export function chatCompletionsToResponses(
-  req: ChatCompletionsRequest,
-): ResponsesRequest {
+export function chatCompletionsToResponses(req: ChatCompletionsRequest): ResponsesRequest {
   const converted = convertChatMessagesToResponsesInput(req.messages);
   let input = converted.input;
   const instructions = mergeInstructions(req.instructions, converted.instructions);
   let responsesInstructions = instructions;
-  if (input.length === 0 && instructions !== undefined && instructions !== '') {
+  if (input.length === 0 && instructions !== undefined && instructions !== "") {
     input = [
       {
-        type: 'message',
-        role: 'system',
-        content: [{ type: 'input_text', text: instructions }],
+        type: "message",
+        role: "system",
+        content: [{ type: "input_text", text: instructions }],
       },
     ];
     responsesInstructions = undefined;
@@ -45,10 +43,10 @@ export function chatCompletionsToResponses(
     model: req.model,
     input,
     stream: req.stream ?? false,
-    include: ['reasoning.encrypted_content'],
+    include: ["reasoning.encrypted_content"],
     service_tier: req.service_tier,
   };
-  if (responsesInstructions !== undefined && responsesInstructions !== '') {
+  if (responsesInstructions !== undefined && responsesInstructions !== "") {
     out.instructions = responsesInstructions;
   }
 
@@ -74,7 +72,7 @@ export function chatCompletionsToResponses(
     out.max_output_tokens = v;
   }
 
-  if (req.reasoning_effort !== undefined && req.reasoning_effort !== '') {
+  if (req.reasoning_effort !== undefined && req.reasoning_effort !== "") {
     out.reasoning = {
       effort: req.reasoning_effort,
     } satisfies ResponsesReasoning;
@@ -96,15 +94,16 @@ export function chatCompletionsToResponses(
   return out;
 }
 
-function convertChatMessagesToResponsesInput(
-  msgs: ChatMessage[],
-): { input: ResponsesInputItem[]; instructions: string | undefined } {
+function convertChatMessagesToResponsesInput(msgs: ChatMessage[]): {
+  input: ResponsesInputItem[];
+  instructions: string | undefined;
+} {
   const input: ResponsesInputItem[] = [];
   const instructions: string[] = [];
   for (const m of msgs) {
-    if (m.role === 'system') {
+    if (m.role === "system") {
       const systemInstruction = chatSystemInstruction(m);
-      if (systemInstruction !== '') {
+      if (systemInstruction !== "") {
         instructions.push(systemInstruction);
         continue;
       }
@@ -113,21 +112,21 @@ function convertChatMessagesToResponsesInput(
   }
   return {
     input,
-    instructions: instructions.length > 0 ? instructions.join('\n') : undefined,
+    instructions: instructions.length > 0 ? instructions.join("\n") : undefined,
   };
 }
 
 function chatMessageToResponsesItems(m: ChatMessage): ResponsesInputItem[] {
   switch (m.role) {
-    case 'system':
+    case "system":
       return chatSystemToResponses(m);
-    case 'user':
+    case "user":
       return chatUserToResponses(m);
-    case 'assistant':
+    case "assistant":
       return chatAssistantToResponses(m);
-    case 'tool':
+    case "tool":
       return chatToolToResponses(m);
-    case 'function':
+    case "function":
       return chatFunctionToResponses(m);
     default:
       return chatUserToResponses(m);
@@ -137,13 +136,13 @@ function chatMessageToResponsesItems(m: ChatMessage): ResponsesInputItem[] {
 function chatSystemToResponses(m: ChatMessage): ResponsesInputItem[] {
   const parsed = parseChatMessageContent(m.content);
   const content = marshalChatInputContent(parsed);
-  return [{ type: 'message', role: 'system', content }];
+  return [{ type: "message", role: "system", content }];
 }
 
 function chatUserToResponses(m: ChatMessage): ResponsesInputItem[] {
   const parsed = parseChatMessageContent(m.content);
   const content = marshalChatInputContent(parsed);
-  return [{ type: 'message', role: 'user', content }];
+  return [{ type: "message", role: "user", content }];
 }
 
 function chatAssistantToResponses(m: ChatMessage): ResponsesInputItem[] {
@@ -153,36 +152,34 @@ function chatAssistantToResponses(m: ChatMessage): ResponsesInputItem[] {
   items.push(...reasoningItems);
 
   const contentReasoning = extractReasoningTextFromAssistantContent(m.content);
-  if (contentReasoning !== '' && reasoningItems.length === 0) {
+  if (contentReasoning !== "" && reasoningItems.length === 0) {
     items.push(makeReasoningInputItem(contentReasoning, items.length));
   }
 
-  let content = '';
+  let content = "";
   if (m.content !== undefined) {
     const s = parseAssistantContent(m.content);
-    if (s !== '') {
+    if (s !== "") {
       content += s;
     }
   }
 
-  if (content !== '') {
-    const parts: ResponsesContentPart[] = [
-      { type: 'output_text', text: content },
-    ];
+  if (content !== "") {
+    const parts: ResponsesContentPart[] = [{ type: "output_text", text: content }];
     items.push({
-      type: 'message',
-      role: 'assistant',
+      type: "message",
+      role: "assistant",
       content: parts,
     });
   }
 
   for (const tc of m.tool_calls ?? []) {
     let args = tc.function.arguments;
-    if (args === '') {
-      args = '{}';
+    if (args === "") {
+      args = "{}";
     }
     items.push({
-      type: 'function_call',
+      type: "function_call",
       call_id: tc.id,
       name: tc.function.name,
       arguments: args,
@@ -194,47 +191,46 @@ function chatAssistantToResponses(m: ChatMessage): ResponsesInputItem[] {
 
 function parseAssistantContent(raw: unknown): string {
   if (raw === undefined || raw === null) {
-    return '';
+    return "";
   }
 
-  const serialized = typeof raw === 'string' ? raw : jsonMarshal(raw);
+  const serialized = typeof raw === "string" ? raw : jsonMarshal(raw);
   try {
     const parsed = jsonParse(serialized);
-    if (typeof parsed === 'string') {
+    if (typeof parsed === "string") {
       return parsed;
     }
     if (!Array.isArray(parsed)) {
-      return '';
+      return "";
     }
     const parts = parsed as Record<string, unknown>[];
-    let result = '';
+    let result = "";
     for (const p of parts) {
-      const typ = typeof p.type === 'string' ? p.type : '';
-      const text = typeof p.text === 'string' ? p.text : '';
-      const thinking =
-        typeof p.thinking === 'string' ? p.thinking : '';
+      const typ = typeof p.type === "string" ? p.type : "";
+      const text = typeof p.text === "string" ? p.text : "";
+      const thinking = typeof p.thinking === "string" ? p.thinking : "";
 
       switch (typ) {
-        case 'thinking':
-        case 'reasoning':
+        case "thinking":
+        case "reasoning":
           break;
         default:
-          if (text !== '') {
+          if (text !== "") {
             result += text;
           }
       }
     }
     return result;
   } catch {
-    return typeof raw === 'string' ? raw : '';
+    return typeof raw === "string" ? raw : "";
   }
 }
 
 function chatToolToResponses(m: ChatMessage): ResponsesInputItem[] {
   return [
     {
-      type: 'function_call_output',
-      call_id: m.tool_call_id ?? '',
+      type: "function_call_output",
+      call_id: m.tool_call_id ?? "",
       output: chatToolOutputToResponses(m.content),
     },
   ];
@@ -243,8 +239,8 @@ function chatToolToResponses(m: ChatMessage): ResponsesInputItem[] {
 function chatFunctionToResponses(m: ChatMessage): ResponsesInputItem[] {
   return [
     {
-      type: 'function_call_output',
-      call_id: m.name ?? '',
+      type: "function_call_output",
+      call_id: m.name ?? "",
       output: chatToolOutputToResponses(m.content),
     },
   ];
@@ -254,13 +250,13 @@ function chatToolOutputToResponses(raw: unknown): unknown {
   if (raw === undefined || raw === null) {
     return [];
   }
-  if (typeof raw === 'string') {
-    return [{ type: 'input_text', text: raw }];
+  if (typeof raw === "string") {
+    return [{ type: "input_text", text: raw }];
   }
   if (Array.isArray(raw)) {
     return convertChatContentPartsToResponses(raw as ChatContentPart[]);
   }
-  return [{ type: 'input_text', text: String(raw) }];
+  return [{ type: "input_text", text: String(raw) }];
 }
 
 function parseChatContent(raw: unknown): string {
@@ -273,13 +269,13 @@ function parseChatContent(raw: unknown): string {
 
 function parseChatMessageContent(raw: unknown): ChatMessageContent {
   if (raw === undefined || raw === null) {
-    return { text: '' };
+    return { text: "" };
   }
 
-  if (typeof raw === 'string') {
+  if (typeof raw === "string") {
     try {
       const parsed = jsonParse(raw);
-      if (typeof parsed === 'string') {
+      if (typeof parsed === "string") {
         return { text: parsed };
       }
       if (Array.isArray(parsed)) {
@@ -295,15 +291,15 @@ function parseChatMessageContent(raw: unknown): ChatMessageContent {
     return { parts: raw as ChatContentPart[] };
   }
 
-  throw new Error('parse content as string or parts array');
+  throw new Error("parse content as string or parts array");
 }
 
 function marshalChatInputContent(content: ChatMessageContent): unknown {
   if (content.text !== undefined) {
-    if (content.text === '') {
+    if (content.text === "") {
       return [];
     }
-    return [{ type: 'input_text', text: content.text }];
+    return [{ type: "input_text", text: content.text }];
   }
   const parts = convertChatContentPartsToResponses(content.parts ?? []);
   if (parts.length === 0) {
@@ -312,27 +308,21 @@ function marshalChatInputContent(content: ChatMessageContent): unknown {
   return parts;
 }
 
-function convertChatContentPartsToResponses(
-  parts: ChatContentPart[],
-): ResponsesContentPart[] {
+function convertChatContentPartsToResponses(parts: ChatContentPart[]): ResponsesContentPart[] {
   const responseParts: ResponsesContentPart[] = [];
   for (const p of parts) {
     switch (p.type) {
-      case 'text':
-        if (p.text !== '') {
-          responseParts.push({ type: 'input_text', text: p.text });
+      case "text":
+        if (p.text !== "") {
+          responseParts.push({ type: "input_text", text: p.text });
         }
         break;
-      case 'image_url':
-        if (
-          p.image_url !== undefined &&
-          p.image_url.url !== '' &&
-          !isEmptyBase64DataUri(p.image_url.url)
-        ) {
+      case "image_url":
+        if (p.image_url !== undefined && p.image_url.url !== "" && !isEmptyBase64DataUri(p.image_url.url)) {
           responseParts.push({
-            type: 'input_image',
+            type: "input_image",
             image_url: p.image_url.url,
-            detail: p.image_url.detail ?? 'auto',
+            detail: p.image_url.detail ?? "auto",
           });
         }
         break;
@@ -342,44 +332,41 @@ function convertChatContentPartsToResponses(
 }
 
 function isEmptyBase64DataUri(raw: string): boolean {
-  if (!raw.startsWith('data:')) {
+  if (!raw.startsWith("data:")) {
     return false;
   }
   let rest = raw.slice(5);
-  const semicolonIdx = rest.indexOf(';');
+  const semicolonIdx = rest.indexOf(";");
   if (semicolonIdx < 0) {
     return false;
   }
   rest = rest.slice(semicolonIdx + 1);
-  if (!rest.startsWith('base64,')) {
+  if (!rest.startsWith("base64,")) {
     return false;
   }
   const payload = rest.slice(7).trim();
-  return payload === '';
+  return payload === "";
 }
 
 function flattenChatContentParts(parts: ChatContentPart[]): string {
   const textParts: string[] = [];
   for (const p of parts) {
-    if (p.type === 'text' && p.text !== '') {
-      textParts.push(p.text ?? '');
+    if (p.type === "text" && p.text !== "") {
+      textParts.push(p.text ?? "");
     }
   }
-  return textParts.join('');
+  return textParts.join("");
 }
 
-function convertChatToolsToResponses(
-  tools: ChatTool[],
-  functions: ChatFunction[],
-): ResponsesTool[] {
+function convertChatToolsToResponses(tools: ChatTool[], functions: ChatFunction[]): ResponsesTool[] {
   const out: ResponsesTool[] = [];
 
   for (const t of tools) {
-    if (t.type !== 'function' || t.function === undefined) {
+    if (t.type !== "function" || t.function === undefined) {
       continue;
     }
     out.push({
-      type: 'function',
+      type: "function",
       name: t.function.name,
       description: t.function.description,
       parameters: t.function.parameters,
@@ -389,7 +376,7 @@ function convertChatToolsToResponses(
 
   for (const f of functions) {
     out.push({
-      type: 'function',
+      type: "function",
       name: f.name,
       description: f.description,
       parameters: f.parameters,
@@ -401,21 +388,19 @@ function convertChatToolsToResponses(
 }
 
 function convertChatFunctionCallToToolChoice(raw: unknown): unknown {
-  const serialized = typeof raw === 'string' ? raw : jsonMarshal(raw);
+  const serialized = typeof raw === "string" ? raw : jsonMarshal(raw);
   try {
     const parsed = jsonParse(serialized);
-    if (typeof parsed === 'string') {
+    if (typeof parsed === "string") {
       return parsed;
     }
     const obj = parsed as { name?: string };
     return {
-      type: 'function',
+      type: "function",
       name: obj.name,
     };
   } catch (e) {
-    throw new Error(
-      `convert function_call: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    throw new Error(`convert function_call: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -423,19 +408,17 @@ function mergeInstructions(
   explicit: string | undefined,
   fromMessages: string | undefined,
 ): string | undefined {
-  const parts = [explicit, fromMessages]
-    .map((part) => part?.trim() ?? '')
-    .filter((part) => part !== '');
-  return parts.length > 0 ? parts.join('\n') : undefined;
+  const parts = [explicit, fromMessages].map((part) => part?.trim() ?? "").filter((part) => part !== "");
+  return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
 function chatSystemInstruction(m: ChatMessage): string {
-  if (typeof m.content !== 'string') {
-    return '';
+  if (typeof m.content !== "string") {
+    return "";
   }
   try {
     const parsed = jsonParse(m.content);
-    return typeof parsed === 'string' ? parsed : '';
+    return typeof parsed === "string" ? parsed : "";
   } catch {
     return m.content;
   }
@@ -453,7 +436,7 @@ function chatReasoningItemsToResponses(m: ChatMessage): ResponsesInputItem[] {
     return items;
   }
   const text = chatMessageReasoningText(m);
-  if (text === '') {
+  if (text === "") {
     return [];
   }
   return [makeReasoningInputItem(text, 0)];
@@ -464,11 +447,11 @@ function chatReasoningItemToResponsesInput(
   index: number,
 ): ResponsesInputItem | undefined {
   const out: ResponsesInputItem = {
-    type: 'reasoning',
+    type: "reasoning",
     id: item.id ?? `rs_${index}`,
     summary: item.summary ?? [],
   };
-  if (item.encrypted_content !== undefined && item.encrypted_content !== '') {
+  if (item.encrypted_content !== undefined && item.encrypted_content !== "") {
     out.encrypted_content = item.encrypted_content;
   }
   if ((out.summary?.length ?? 0) === 0 && out.encrypted_content === undefined) {
@@ -478,63 +461,63 @@ function chatReasoningItemToResponsesInput(
 }
 
 function chatMessageReasoningText(m: ChatMessage): string {
-  if ((m.reasoning_content ?? '').trim() !== '') {
+  if ((m.reasoning_content ?? "").trim() !== "") {
     return m.reasoning_content!.trim();
   }
-  if ((m.reasoning ?? '').trim() !== '') {
+  if ((m.reasoning ?? "").trim() !== "") {
     return m.reasoning!.trim();
   }
   const parts: string[] = [];
   for (const detail of m.reasoning_details ?? []) {
-    const text = detail.text?.trim() ?? '';
-    if (text !== '') {
+    const text = detail.text?.trim() ?? "";
+    if (text !== "") {
       parts.push(text);
     }
   }
-  return parts.join('\n\n');
+  return parts.join("\n\n");
 }
 
 function makeReasoningInputItem(text: string, index: number): ResponsesInputItem {
   return {
-    type: 'reasoning',
+    type: "reasoning",
     id: `rs_${index}`,
-    summary: [{ type: 'summary_text', text }],
+    summary: [{ type: "summary_text", text }],
   };
 }
 
 function extractReasoningTextFromAssistantContent(raw: unknown): string {
   if (raw === undefined || raw === null) {
-    return '';
+    return "";
   }
-  const serialized = typeof raw === 'string' ? raw : jsonMarshal(raw);
+  const serialized = typeof raw === "string" ? raw : jsonMarshal(raw);
   try {
     const parsed = jsonParse(serialized);
     if (!Array.isArray(parsed)) {
-      return '';
+      return "";
     }
     const parts = parsed as Record<string, unknown>[];
     const out: string[] = [];
     for (const p of parts) {
-      const typ = typeof p.type === 'string' ? p.type : '';
-      if (typ !== 'thinking' && typ !== 'reasoning') {
+      const typ = typeof p.type === "string" ? p.type : "";
+      if (typ !== "thinking" && typ !== "reasoning") {
         continue;
       }
-      const thinking = typeof p.thinking === 'string' ? p.thinking : '';
-      const text = typeof p.text === 'string' ? p.text : '';
-      if (thinking !== '') {
+      const thinking = typeof p.thinking === "string" ? p.thinking : "";
+      const text = typeof p.text === "string" ? p.text : "";
+      if (thinking !== "") {
         out.push(thinking);
-      } else if (text !== '') {
+      } else if (text !== "") {
         out.push(text);
       }
     }
-    return out.join('\n\n');
+    return out.join("\n\n");
   } catch {
-    return '';
+    return "";
   }
 }
 
 function normalizeChatToolChoiceForResponses(raw: unknown): unknown {
-  if (typeof raw === 'string') {
+  if (typeof raw === "string") {
     return raw;
   }
   const serialized = jsonMarshal(raw);
@@ -544,14 +527,14 @@ function normalizeChatToolChoiceForResponses(raw: unknown): unknown {
       name?: string;
       function?: { name?: string };
     };
-    if (parsed?.type !== 'function') {
+    if (parsed?.type !== "function") {
       return raw;
     }
-    const name = (parsed.name ?? parsed.function?.name ?? '').trim();
-    if (name === '') {
+    const name = (parsed.name ?? parsed.function?.name ?? "").trim();
+    if (name === "") {
       return raw;
     }
-    return { type: 'function', name };
+    return { type: "function", name };
   } catch {
     return raw;
   }

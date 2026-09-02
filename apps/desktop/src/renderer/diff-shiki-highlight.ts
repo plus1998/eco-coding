@@ -1,6 +1,6 @@
 import { createHighlighter, type Highlighter, type ThemedToken } from "shiki";
-import { resolveDiffLanguage } from "./prosemirror/diff-from-patch";
 import type { DiffDisplayLine } from "./diff-display-lines";
+import { resolveDiffLanguage } from "./prosemirror/diff-from-patch";
 
 /** Codex-like caps: skip rich highlight on huge diffs to avoid main-thread stalls. */
 const MAX_HIGHLIGHT_LINES = 2_000;
@@ -81,25 +81,27 @@ function escapeHtml(value: string): string {
 
 export function themedTokensToHtml(tokens: ThemedToken[]): string {
   if (tokens.length === 0) return "\u00a0";
-  return tokens
-    .map((token) => {
-      const color = token.color ? `color:${token.color}` : "";
-      const fontStyle =
-        token.fontStyle && token.fontStyle > 0
-          ? [
-              token.fontStyle & 1 ? "font-style:italic" : "",
-              token.fontStyle & 2 ? "font-weight:bold" : "",
-              token.fontStyle & 4 ? "text-decoration:underline" : "",
-            ]
-              .filter(Boolean)
-              .join(";")
-          : "";
-      const style = [color, fontStyle].filter(Boolean).join(";");
-      const content = escapeHtml(token.content);
-      if (!style) return content || "";
-      return `<span style="${style}">${content}</span>`;
-    })
-    .join("") || "\u00a0";
+  return (
+    tokens
+      .map((token) => {
+        const color = token.color ? `color:${token.color}` : "";
+        const fontStyle =
+          token.fontStyle && token.fontStyle > 0
+            ? [
+                token.fontStyle & 1 ? "font-style:italic" : "",
+                token.fontStyle & 2 ? "font-weight:bold" : "",
+                token.fontStyle & 4 ? "text-decoration:underline" : "",
+              ]
+                .filter(Boolean)
+                .join(";")
+            : "";
+        const style = [color, fontStyle].filter(Boolean).join(";");
+        const content = escapeHtml(token.content);
+        if (!style) return content || "";
+        return `<span style="${style}">${content}</span>`;
+      })
+      .join("") || "\u00a0"
+  );
 }
 
 async function resolveLoadedLanguage(highlighter: Highlighter, lang: string): Promise<string> {

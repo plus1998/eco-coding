@@ -28,9 +28,7 @@ export function CursorAgentsRosterCardBody({ agents, builtins }: CursorAgentsRos
           <div key={`builtin:${type}`} className="composer-mcp-row">
             <div className="composer-mcp-row-main">
               <span className="composer-mcp-row-name">{type}</span>
-              <span className="composer-mcp-row-transport">
-                {t("workspaceCards.cursorAgents.builtin")}
-              </span>
+              <span className="composer-mcp-row-transport">{t("workspaceCards.cursorAgents.builtin")}</span>
             </div>
             <span className="composer-mcp-row-status">{t("workspaceCards.cursorAgents.readOnly")}</span>
           </div>

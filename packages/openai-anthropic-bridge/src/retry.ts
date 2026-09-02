@@ -24,12 +24,7 @@ export interface UpstreamResponseRetryOptions {
   shouldRetryStatus?: ((status: number, attempt: number) => boolean) | undefined;
   shouldRetryError?: ((error: unknown, attempt: number) => boolean) | undefined;
   onRetry?:
-    | ((info: {
-        attempt: number;
-        status?: number;
-        error?: unknown;
-        delayMs: number;
-      }) => void)
+    | ((info: { attempt: number; status?: number; error?: unknown; delayMs: number }) => void)
     | undefined;
 }
 
@@ -83,13 +78,13 @@ export function isRetryableNetworkError(error: unknown): boolean {
     return false;
   }
   return (
-    text.includes('econnreset') ||
-    text.includes('econnrefused') ||
-    text.includes('etimedout') ||
-    text.includes('fetch failed') ||
-    text.includes('network') ||
-    text.includes('socket hang up') ||
-    text.includes('terminated')
+    text.includes("econnreset") ||
+    text.includes("econnrefused") ||
+    text.includes("etimedout") ||
+    text.includes("fetch failed") ||
+    text.includes("network") ||
+    text.includes("socket hang up") ||
+    text.includes("terminated")
   );
 }
 
@@ -153,7 +148,7 @@ export async function runWithUpstreamRetry<T>(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (options?.signal?.aborted) {
-      throw options.signal.reason ?? new Error('Aborted');
+      throw options.signal.reason ?? new Error("Aborted");
     }
     if (options?.canRetry !== undefined && attempt > 1 && !options.canRetry()) {
       break;
@@ -179,7 +174,7 @@ export async function runWithUpstreamRetry<T>(
     }
   }
 
-  throw lastError ?? new Error('Upstream retry exhausted');
+  throw lastError ?? new Error("Upstream retry exhausted");
 }
 
 /**
@@ -199,7 +194,7 @@ export async function runWithUpstreamResponseRetry(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (options?.signal?.aborted) {
-      throw options.signal.reason ?? new Error('Aborted');
+      throw options.signal.reason ?? new Error("Aborted");
     }
     if (options?.canRetry !== undefined && attempt > 1 && !options.canRetry()) {
       break;
@@ -222,7 +217,7 @@ export async function runWithUpstreamResponseRetry(
 
       const delayMs = upstreamRetryDelayMs({
         attempt,
-        retryAfterHeader: response.headers.get('retry-after'),
+        retryAfterHeader: response.headers.get("retry-after"),
         baseDelayMs,
         maxDelayMs,
       });
@@ -231,8 +226,7 @@ export async function runWithUpstreamResponseRetry(
       await sleepWithSignal(delayMs, options?.signal);
     } catch (error) {
       lastError = error;
-      const shouldRetryError =
-        options?.shouldRetryError?.(error, attempt) ?? isRetryableNetworkError(error);
+      const shouldRetryError = options?.shouldRetryError?.(error, attempt) ?? isRetryableNetworkError(error);
       const canContinue =
         attempt < maxAttempts &&
         Date.now() - started < maxElapsedMs &&
@@ -249,14 +243,14 @@ export async function runWithUpstreamResponseRetry(
     }
   }
 
-  throw lastError ?? new Error('Upstream retry exhausted');
+  throw lastError ?? new Error("Upstream retry exhausted");
 }
 
 function defaultShouldRetry(error: unknown): boolean {
   if (isRetryableNetworkError(error)) {
     return true;
   }
-  if (typeof error === 'object' && error !== null && 'status' in error) {
+  if (typeof error === "object" && error !== null && "status" in error) {
     const status = (error as { status: number }).status;
     return isTransientUpstreamHttpStatus(status);
   }
@@ -289,16 +283,16 @@ async function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> 
     }, ms);
     const onAbort = () => {
       cleanup();
-      reject(signal?.reason ?? new Error('Aborted'));
+      reject(signal?.reason ?? new Error("Aborted"));
     };
     const cleanup = () => {
       clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener("abort", onAbort);
     };
     if (signal?.aborted) {
       onAbort();
       return;
     }
-    signal?.addEventListener('abort', onAbort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

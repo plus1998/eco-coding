@@ -72,9 +72,8 @@ export function resolvePiSessionSkillPaths(input: {
   skillPaths?: readonly string[];
 }): string[] {
   const privateDir = resolvePiPrivateSkillsDir(input.agentDir);
-  const merged = [
-    ...(input.skillPaths ?? []).map((entry) => entry.trim()).filter(Boolean),
-    privateDir,
-  ].map((entry) => path.resolve(entry));
+  const merged = [...(input.skillPaths ?? []).map((entry) => entry.trim()).filter(Boolean), privateDir].map(
+    (entry) => path.resolve(entry),
+  );
   return [...new Set(merged)].sort((a, b) => a.localeCompare(b));
 }

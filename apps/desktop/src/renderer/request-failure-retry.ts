@@ -1,17 +1,17 @@
-import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { isCodexRetryBlockingProgressItem } from "../shared/codex-request-retry-gate";
-import {
-  requiresEmptyTurnForRequestRetry,
-  supportsOneClickRequestRetry,
-  usesLatestTurnOnlyRequestRetry,
-} from "../shared/thread-request-retry";
+import type { ThreadRunProjectionTimelineItem } from "../shared/ipc";
+import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import {
   isReconnectActivityOrigin,
   isRedundantApiFailureBlockedMessage,
   isUpstreamErrorPhaseOrigin,
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
-import type { ThreadRunProjectionTimelineItem } from "../shared/ipc";
+import {
+  requiresEmptyTurnForRequestRetry,
+  supportsOneClickRequestRetry,
+  usesLatestTurnOnlyRequestRetry,
+} from "../shared/thread-request-retry";
 import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./thread-run-projection-view";
 
 export type RequestFailureRetryTarget = {

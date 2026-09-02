@@ -14,9 +14,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCodexGatewayRound } from "./clients/codex-gateway-round.mts";
 import { runClaudeGatewayRound } from "./clients/claude-gateway-round.mts";
+import { runCodexGatewayRound } from "./clients/codex-gateway-round.mts";
 import { runPiGatewayRound } from "./clients/pi-gateway-round.mts";
+import { countCellUpstreamExchanges, resolveCellDir, writeCellUpstreamLog } from "./lib/cell-artifacts.mjs";
 import {
   buildRecordingCells,
   listClientIds,
@@ -24,13 +25,8 @@ import {
   listSkippedRecordingCells,
   RECORDING_CELL_SPECS,
 } from "./lib/client-matrix.mjs";
-import {
-  countCellUpstreamExchanges,
-  resolveCellDir,
-  writeCellUpstreamLog,
-} from "./lib/cell-artifacts.mjs";
-import { createGatewayRecordingStack } from "./lib/gateway-stack.mts";
 import { ensureDir, writeJson } from "./lib/fixture-io.mjs";
+import { createGatewayRecordingStack } from "./lib/gateway-stack.mts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(__dirname, "fixtures");
@@ -68,9 +64,7 @@ if (skippedCells.length > 0 && (clientArg !== "all" || profileArg !== "all")) {
       "\n",
   );
 }
-process.stderr.write(
-  `[gateway-client-round] matrix: ${cells.length}/${RECORDING_CELL_SPECS.length} cells\n`,
-);
+process.stderr.write(`[gateway-client-round] matrix: ${cells.length}/${RECORDING_CELL_SPECS.length} cells\n`);
 const stack = await createGatewayRecordingStack({
   profileIds,
   upstreamLogPath: masterUpstreamLog,
@@ -161,9 +155,7 @@ writeJson(path.join(fixturesRoot, "latest-client-round.json"), {
 });
 
 process.stderr.write(
-  `\n[gateway-client-round] fixture: ${outDir}\n` +
-    `  cells: ${cells.length}\n` +
-    `  ok: ${report.ok}\n`,
+  `\n[gateway-client-round] fixture: ${outDir}\n` + `  cells: ${cells.length}\n` + `  ok: ${report.ok}\n`,
 );
 
 process.exit(report.ok ? 0 : 1);

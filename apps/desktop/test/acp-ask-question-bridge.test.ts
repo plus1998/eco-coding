@@ -174,9 +174,7 @@ test("createAcpAskQuestionHandler skips when questions are empty", async () => {
     updateThreadRunning: () => {},
     emit: () => {},
   });
-  await expect(
-    handler({ toolCallId: "call_empty", questions: [] }),
-  ).resolves.toEqual({
+  await expect(handler({ toolCallId: "call_empty", questions: [] })).resolves.toEqual({
     outcome: "skipped",
     reason: "ACP cursor/ask_question had no usable questions",
   });
