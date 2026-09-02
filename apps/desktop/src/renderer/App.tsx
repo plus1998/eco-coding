@@ -57,6 +57,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { isAcpSubagentAgentId } from "../shared/acp-subagent";
@@ -1250,6 +1251,9 @@ function App() {
   const prevThreadStatusByIdRef = useRef(new Map<string, ThreadStatus>());
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const selectedThreadIdRef = useRef<string | undefined>(undefined);
+  const [feedThreadId, setFeedThreadId] = useState<string | undefined>(undefined);
+  const feedThreadIdRef = useRef<string | undefined>(undefined);
+  const pendingFeedThreadSwitchFrameRef = useRef<number | undefined>(undefined);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [titleGeneratingThreadIds, setTitleGeneratingThreadIds] = useState<Set<string>>(() => new Set());
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
@@ -1404,15 +1408,91 @@ function App() {
   const activityFeedBootReadyRef = useRef(true);
   const activityFeedBootThreadIdRef = useRef<string | undefined>(undefined);
   const activityFeedRevealedThreadIdsRef = useRef(new Set<string>());
-  if (activityFeedBootThreadIdRef.current !== selectedThreadId) {
-    activityFeedBootThreadIdRef.current = selectedThreadId;
-    const alreadyRevealed = Boolean(
-      selectedThreadId && activityFeedRevealedThreadIdsRef.current.has(selectedThreadId),
-    );
-    const nextReady = !selectedThreadId || alreadyRevealed;
+
+  const cancelPendingFeedThreadSwitch = useCallback(() => {
+    if (pendingFeedThreadSwitchFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(pendingFeedThreadSwitchFrameRef.current);
+      pendingFeedThreadSwitchFrameRef.current = undefined;
+    }
+  }, []);
+
+  const syncActivityFeedBootForThread = useCallback((threadId: string | undefined) => {
+    activityFeedBootThreadIdRef.current = threadId;
+    const nextReady = !threadId || activityFeedRevealedThreadIdsRef.current.has(threadId);
+    if (activityFeedBootReadyRef.current === nextReady) {
+      return;
+    }
     activityFeedBootReadyRef.current = nextReady;
     setActivityFeedBootReady(nextReady);
-  }
+  }, []);
+
+  const beginActivityFeedBoot = useCallback((threadId: string) => {
+    activityFeedBootThreadIdRef.current = threadId;
+    if (activityFeedBootReadyRef.current) {
+      activityFeedBootReadyRef.current = false;
+      setActivityFeedBootReady(false);
+    }
+  }, []);
+
+  const finishActivityFeedBoot = useCallback((threadId: string) => {
+    if (activityFeedBootThreadIdRef.current !== threadId || activityFeedBootReadyRef.current) {
+      return;
+    }
+    activityFeedRevealedThreadIdsRef.current.add(threadId);
+    activityFeedBootReadyRef.current = true;
+    startTransition(() => {
+      setActivityFeedBootReady(true);
+    });
+  }, []);
+
+  const applyFeedThreadSelection = useCallback(
+    (nextThreadId: string | undefined, options?: { immediate?: boolean }) => {
+      cancelPendingFeedThreadSwitch();
+      const previousFeedThreadId = feedThreadIdRef.current;
+      if (nextThreadId === previousFeedThreadId) {
+        syncActivityFeedBootForThread(nextThreadId);
+        return;
+      }
+
+      const needsBoot = Boolean(nextThreadId && !options?.immediate);
+      if (!needsBoot) {
+        feedThreadIdRef.current = nextThreadId;
+        setFeedThreadId(nextThreadId);
+        syncActivityFeedBootForThread(nextThreadId);
+        return;
+      }
+
+      beginActivityFeedBoot(nextThreadId);
+      pendingFeedThreadSwitchFrameRef.current = window.requestAnimationFrame(() => {
+        pendingFeedThreadSwitchFrameRef.current = undefined;
+        if (selectedThreadIdRef.current !== nextThreadId) {
+          return;
+        }
+        feedThreadIdRef.current = nextThreadId;
+        setFeedThreadId(nextThreadId);
+        tryAdvanceActivityFeedBootRef.current();
+      });
+    },
+    [beginActivityFeedBoot, cancelPendingFeedThreadSwitch, syncActivityFeedBootForThread],
+  );
+
+  const commitSidebarThreadSelection = useCallback(
+    (nextThreadId: string | undefined) => {
+      const needsBoot = Boolean(nextThreadId && nextThreadId !== feedThreadIdRef.current);
+      if (needsBoot && nextThreadId) {
+        const bootThreadId = nextThreadId;
+        flushSync(() => {
+          selectedThreadIdRef.current = bootThreadId;
+          setSelectedThreadId(bootThreadId);
+          beginActivityFeedBoot(bootThreadId);
+        });
+        return;
+      }
+      selectedThreadIdRef.current = nextThreadId;
+      setSelectedThreadId(nextThreadId);
+    },
+    [beginActivityFeedBoot],
+  );
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
@@ -1579,6 +1659,14 @@ function App() {
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingFeedThreadSwitchFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(pendingFeedThreadSwitchFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(
     () =>
@@ -1767,8 +1855,8 @@ function App() {
         window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
         return next;
       });
-      selectedThreadIdRef.current = thread.id;
-      setSelectedThreadId(thread.id);
+      commitSidebarThreadSelection(thread.id);
+      applyFeedThreadSelection(thread.id);
       setSelectedProjectPath(thread.workspacePath);
       setSettingsOpen(false);
       setComposerRewindTarget(undefined);
@@ -2630,8 +2718,8 @@ function App() {
     return getProjectTerminalState(terminalByProject, currentProjectPath);
   }, [currentProjectPath, terminalByProject]);
   const activeThread = useMemo(
-    () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
-    [selectedThreadId, threads],
+    () => (feedThreadId ? threads.find((thread) => thread.id === feedThreadId) : undefined),
+    [feedThreadId, threads],
   );
   useEffect(() => {
     if (!selectedThreadId || !window.eco?.listImageGenerationArtifacts) return;
@@ -4307,7 +4395,7 @@ function App() {
   );
   const activeProjectionViewModel = useMemo(
     () =>
-      displayProjection
+      activityFeedBootReady && displayProjection
         ? buildThreadRunProjectionViewModel(
             displayProjection,
             activeThread ? { id: activeThread.id, prompt: activeThread.prompt } : undefined,
@@ -4318,6 +4406,7 @@ function App() {
           )
         : undefined,
     [
+      activityFeedBootReady,
       activeRuntimeAgentDisplayNames,
       activeThread?.id,
       activeThread?.prompt,
@@ -5536,19 +5625,20 @@ function App() {
     if (!container || container.clientHeight < 32) {
       return;
     }
+    const finish = () => finishActivityFeedBoot(threadId);
+    const hasMountedFeed = container.scrollHeight > container.clientHeight + 8;
+    if (!hasMountedFeed) {
+      finish();
+      return;
+    }
     programmaticActivityFeedScrollRef.current = true;
     container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
     activityFeedScrollTopRef.current = container.scrollTop;
     requestAnimationFrame(() => {
       programmaticActivityFeedScrollRef.current = false;
-      if (activityFeedBootThreadIdRef.current !== threadId || activityFeedBootReadyRef.current) {
-        return;
-      }
-      activityFeedRevealedThreadIdsRef.current.add(threadId);
-      activityFeedBootReadyRef.current = true;
-      setActivityFeedBootReady(true);
+      finish();
     });
-  }, []);
+  }, [finishActivityFeedBoot]);
   tryAdvanceActivityFeedBootRef.current = tryAdvanceActivityFeedBoot;
 
   const syncActivityFeedBoot = useCallback((container?: HTMLElement | null) => {
@@ -5567,15 +5657,10 @@ function App() {
     }
     const threadId = activeThread.id;
     const timer = window.setTimeout(() => {
-      if (activityFeedBootThreadIdRef.current !== threadId || activityFeedBootReadyRef.current) {
-        return;
-      }
-      activityFeedRevealedThreadIdsRef.current.add(threadId);
-      activityFeedBootReadyRef.current = true;
-      setActivityFeedBootReady(true);
+      finishActivityFeedBoot(threadId);
     }, ACTIVITY_FEED_BOOT_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [activeThread?.id, activityFeedBootReady]);
+  }, [activeThread?.id, activityFeedBootReady, finishActivityFeedBoot]);
 
   useLayoutEffect(() => {
     if (activityFeedBootReady) {
@@ -5791,6 +5876,16 @@ function App() {
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
   ]);
+
+  useLayoutEffect(() => {
+    if (!activityFeedBootReady || !activeThread?.id) {
+      return;
+    }
+    requestActivityFeedForceScroll();
+    scrollActivityFeedToEnd(true);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(true));
+    return () => cancelAnimationFrame(frame);
+  }, [activeThread?.id, activityFeedBootReady, requestActivityFeedForceScroll, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
     requestActivityFeedForceScroll();
@@ -6392,7 +6487,8 @@ function App() {
           result.thread,
           ...current.filter((thread) => thread.id !== result.thread.id),
         ]);
-        setSelectedThreadId(result.thread.id);
+        commitSidebarThreadSelection(result.thread.id);
+        applyFeedThreadSelection(result.thread.id);
         clearPendingPlanForThread(result.thread.id);
         setTodosByThread((current) => ({
           ...current,
@@ -7114,7 +7210,8 @@ function App() {
       });
       adoptLandingTaskPanelUiRef.current = true;
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
-      setSelectedThreadId(result.thread.id);
+      commitSidebarThreadSelection(result.thread.id);
+      applyFeedThreadSelection(result.thread.id);
       clearPendingPlanForThread(result.thread.id);
       await refreshThreadState(result.thread.id);
     } catch (caught) {
@@ -7927,8 +8024,8 @@ function App() {
       window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
       return next;
     });
-    selectedThreadIdRef.current = undefined;
-    setSelectedThreadId(undefined);
+    commitSidebarThreadSelection(undefined);
+    applyFeedThreadSelection(undefined, { immediate: true });
     setComposerRuntimeConfig(null);
     setTodosByThread({});
     setFollowUpsByThread({});
@@ -8070,10 +8167,13 @@ function App() {
       return next;
     });
     setSelectedProjectPath((current) => (current === projectPath ? undefined : current));
-    setSelectedThreadId((current) => {
-      const thread = current ? threads.find((item) => item.id === current) : undefined;
-      return thread?.workspacePath === projectPath ? undefined : current;
-    });
+    if (selectedThreadIdRef.current) {
+      const thread = threads.find((item) => item.id === selectedThreadIdRef.current);
+      if (thread?.workspacePath === projectPath) {
+        commitSidebarThreadSelection(undefined);
+        applyFeedThreadSelection(undefined, { immediate: true });
+      }
+    }
     resetComposerDefaultConfig();
   }
 
@@ -8095,8 +8195,8 @@ function App() {
     const leavingThread = Boolean(selectedThreadIdRef.current);
     const sameProject = nextPath === currentProjectPath || nextPath === selectedProjectPath;
     setSelectedProjectPath(nextPath);
-    selectedThreadIdRef.current = undefined;
-    setSelectedThreadId(undefined);
+    commitSidebarThreadSelection(undefined);
+    applyFeedThreadSelection(undefined, { immediate: true });
     setComposerRewindTarget(undefined);
     if (!sameProject) {
       // Different project: drop in-memory config so project/default defaults load.
@@ -8136,8 +8236,8 @@ function App() {
       window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
       return next;
     });
-    selectedThreadIdRef.current = thread.id;
-    setSelectedThreadId(thread.id);
+    commitSidebarThreadSelection(thread.id);
+    applyFeedThreadSelection(thread.id);
     setSelectedProjectPath(thread.workspacePath);
     setComposerRewindTarget(undefined);
     setCollapsedProjectPaths((current) => {
@@ -8174,10 +8274,18 @@ function App() {
       window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
       return next;
     });
-    setSelectedThreadId((current) => (current === threadId ? undefined : current));
-    if (selectedThreadId === threadId) {
+    if (selectedThreadIdRef.current === threadId) {
+      commitSidebarThreadSelection(undefined);
+      applyFeedThreadSelection(undefined, { immediate: true });
       resetComposerDefaultConfig();
       setComposerRewindTarget(undefined);
+    } else {
+      setSelectedThreadId((current) => (current === threadId ? undefined : current));
+    }
+    if (feedThreadIdRef.current === threadId) {
+      feedThreadIdRef.current = undefined;
+      setFeedThreadId(undefined);
+      syncActivityFeedBootForThread(undefined);
     }
     setRunProjectionByThread((current) => removeRecordKey(current, threadId));
     setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
@@ -8253,8 +8361,8 @@ function App() {
     const leavingThread = Boolean(selectedThreadIdRef.current);
     setComposerRoutePopoverOpen(false);
     removeComposerDraft(composerContextKeyFromParts(undefined, currentProjectPath));
-    selectedThreadIdRef.current = undefined;
-    setSelectedThreadId(undefined);
+    commitSidebarThreadSelection(undefined);
+    applyFeedThreadSelection(undefined, { immediate: true });
     setNewThreadCoreKind(workflowSettings.defaultCoreKind ?? "claude");
     // Already on an unstarted landing composer: keep orchestration / model edits.
     // Only reset when leaving an existing thread into a new landing surface.
@@ -9525,7 +9633,7 @@ function App() {
             <ProjectSidebarTree
               projectTree={projectTree}
               currentProjectPath={currentProjectPath}
-              activeThreadId={activeThread?.id}
+              activeThreadId={selectedThreadId}
               revealTarget={sidebarRevealTarget}
               unreadThreadIds={unreadThreadIds}
               pinnedThreadIds={pinnedThreadIds}
@@ -9752,36 +9860,38 @@ function App() {
                             className="activity-messages"
                             aria-busy={!activityFeedBootReady}
                           >
-                            <ActivityLogView
-                              {...(activeThread && { thread: activeThread })}
-                              {...(displayProjection && { projection: displayProjection })}
-                              {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
-                              {...(activeThread &&
-                                billingByThread[activeThread.id] && {
-                                  billing: billingByThread[activeThread.id],
+                            {activityFeedBootReady ? (
+                              <ActivityLogView
+                                {...(activeThread && { thread: activeThread })}
+                                {...(displayProjection && { projection: displayProjection })}
+                                {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
+                                {...(activeThread &&
+                                  billingByThread[activeThread.id] && {
+                                    billing: billingByThread[activeThread.id],
+                                  })}
+                                onRestorePrompt={restorePrompt}
+                                onLoadUserMessageEdit={loadUserMessageEdit}
+                                onRewriteUserMessage={rewriteUserMessage}
+                                onRetryFailedRequest={retryFailedRequest}
+                                onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                                onLoadProjectionDetail={loadProjectionDetail}
+                                {...(Object.keys(activityModelByRole).length > 0 && {
+                                  modelByRole: activityModelByRole,
                                 })}
-                              onRestorePrompt={restorePrompt}
-                              onLoadUserMessageEdit={loadUserMessageEdit}
-                              onRewriteUserMessage={rewriteUserMessage}
-                              onRetryFailedRequest={retryFailedRequest}
-                              onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                              onLoadProjectionDetail={loadProjectionDetail}
-                              {...(Object.keys(activityModelByRole).length > 0 && {
-                                modelByRole: activityModelByRole,
-                              })}
-                              agentDisplayNames={activeRuntimeAgentDisplayNames}
-                              agentThemes={activeRuntimeAgentThemes}
-                              {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
-                              onOpenSubagent={openSubagentTaskDrawer}
-                              onOpenImageGenerationTool={openImageGenerationTool}
-                              {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                              {...(subagentTimings && { subagentTimings })}
-                              {...(subagentMetrics && { subagentMetrics })}
-                              {...(activeThread &&
-                                contextByThread[activeThread.id] && {
-                                  context: contextByThread[activeThread.id],
-                                })}
-                            />
+                                agentDisplayNames={activeRuntimeAgentDisplayNames}
+                                agentThemes={activeRuntimeAgentThemes}
+                                {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
+                                onOpenSubagent={openSubagentTaskDrawer}
+                                onOpenImageGenerationTool={openImageGenerationTool}
+                                {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                                {...(subagentTimings && { subagentTimings })}
+                                {...(subagentMetrics && { subagentMetrics })}
+                                {...(activeThread &&
+                                  contextByThread[activeThread.id] && {
+                                    context: contextByThread[activeThread.id],
+                                  })}
+                              />
+                            ) : null}
                             <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
                           </div>
                           {activityFeedScrollJump ? (
