@@ -13,7 +13,13 @@ import type {
   MainAgentPromptResource,
   SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
-import type { CandidateModelInput, ProxyBridgeSettingsSnapshot, RouteProfileInput } from "../shared/ipc";
+import type {
+  CandidateModelInput,
+  IntegratedWebSearchSettingsSnapshot,
+  ProxyBridgeSettingsSnapshot,
+  RouteProfileInput,
+} from "../shared/ipc";
+import { normalizeIntegratedWebSearchProvider } from "./integrated-web-search-settings-store";
 import type { SshBookmarkPublic } from "../shared/ssh-bookmarks";
 import { defaultGitSettings, normalizeGitSettingsSnapshot } from "./git-settings-store";
 import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
@@ -24,6 +30,16 @@ export type EcoSecretKind = "provider" | "asr" | "image" | "workflow" | "proxy" 
 
 export const ECO_WORKFLOW_CURSOR_API_KEY_SECRET = "acp_cursor_api_key";
 export const ECO_PROXY_URL_SECRET = "upstream_proxy_url";
+export const ECO_INTEGRATED_WEB_SEARCH_API_KEY_SECRET = "integrated_web_search_api_key";
+
+export type EcoSyncedIntegratedWebSearchSettings = Pick<
+  IntegratedWebSearchSettingsSnapshot,
+  "enabled" | "provider"
+>;
+
+export type EcoSyncedProxyBridgeSettings = Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent"> & {
+  integratedWebSearch?: EcoSyncedIntegratedWebSearchSettings;
+};
 
 export interface EcoSyncedProvider {
   id: string;
@@ -77,8 +93,8 @@ export interface EcoSyncedSettingsPayload {
   agentTemplates?: AgentTemplate[];
   candidateModels?: CandidateModelInput[];
   routeProfiles?: RouteProfileInput[];
-  /** Proxy credentials stay in user_secrets; only the non-secret UA is stored here. */
-  proxyBridge?: Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent">;
+  /** Proxy UA + integrated web search metadata; proxy URL and search API keys stay in user_secrets. */
+  proxyBridge?: EcoSyncedProxyBridgeSettings;
   /** Git commit message preferences and instructions. */
   git?: EcoSyncedGitSettings;
   /** npm/bun/pnpm/yarn script extra args keyed by workspace path, then script name. */
@@ -131,6 +147,63 @@ export interface SettingsSyncHooks {
   applyPlainSecrets: (secrets: EcoPlainSecret[]) => void | Promise<void>;
 }
 
+function isEcoSyncedIntegratedWebSearchSettings(value: unknown): value is EcoSyncedIntegratedWebSearchSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.enabled === "boolean" &&
+    (record.provider === "brave" || record.provider === "tavily" || record.provider === "doubao")
+  );
+}
+
+function isEcoSyncedProxyBridgeSettings(value: unknown): value is EcoSyncedProxyBridgeSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.upstreamUserAgent !== undefined && typeof record.upstreamUserAgent !== "string") {
+    return false;
+  }
+  if (
+    record.integratedWebSearch !== undefined &&
+    !isEcoSyncedIntegratedWebSearchSettings(record.integratedWebSearch)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function normalizeEcoSyncedIntegratedWebSearchSettings(
+  value: unknown,
+): EcoSyncedIntegratedWebSearchSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { enabled: false, provider: "tavily" };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    enabled: record.enabled === true,
+    provider: normalizeIntegratedWebSearchProvider(record.provider),
+  };
+}
+
+export function normalizeEcoSyncedProxyBridgeSettings(value: unknown): EcoSyncedProxyBridgeSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as EcoSyncedProxyBridgeSettings;
+  const result: EcoSyncedProxyBridgeSettings = {};
+  const ua = typeof record.upstreamUserAgent === "string" ? record.upstreamUserAgent.trim() : "";
+  if (ua) {
+    result.upstreamUserAgent = ua;
+  }
+  if (record.integratedWebSearch !== undefined) {
+    result.integratedWebSearch = normalizeEcoSyncedIntegratedWebSearchSettings(record.integratedWebSearch);
+  }
+  return result;
+}
+
 export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSettingsPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -148,10 +221,7 @@ export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSe
     typeof record.imageGeneration.enabled === "boolean" &&
     (record.candidateModels === undefined || Array.isArray(record.candidateModels)) &&
     (record.routeProfiles === undefined || Array.isArray(record.routeProfiles)) &&
-    (record.proxyBridge === undefined ||
-      (Boolean(record.proxyBridge) &&
-        typeof record.proxyBridge === "object" &&
-        !Array.isArray(record.proxyBridge))) &&
+    (record.proxyBridge === undefined || isEcoSyncedProxyBridgeSettings(record.proxyBridge)) &&
     (record.git === undefined || (Boolean(record.git) && typeof record.git === "object")) &&
     (record.packageScriptArgs === undefined ||
       (Boolean(record.packageScriptArgs) &&
@@ -331,7 +401,7 @@ export function normalizeEcoSyncedSettingsPayload(
     agentTemplates: payload.agentTemplates ?? [],
     candidateModels: payload.candidateModels ?? [],
     routeProfiles: payload.routeProfiles ?? [],
-    proxyBridge: payload.proxyBridge ?? {},
+    proxyBridge: normalizeEcoSyncedProxyBridgeSettings(payload.proxyBridge),
     ...(payload.git !== undefined ? { git: payload.git } : {}),
     ...(payload.packageScriptArgs !== undefined ? { packageScriptArgs: payload.packageScriptArgs } : {}),
     sshBookmarks: payload.sshBookmarks ?? [],
@@ -523,7 +593,8 @@ export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): bo
     (payload.agentTemplates?.length ?? 0) === 0 &&
     (payload.candidateModels?.length ?? 0) === 0 &&
     (payload.routeProfiles?.length ?? 0) === 0 &&
-    !payload.proxyBridge?.upstreamUserAgent
+    !payload.proxyBridge?.upstreamUserAgent &&
+    !payload.proxyBridge?.integratedWebSearch?.enabled
   );
 }
 
@@ -931,8 +1002,7 @@ export function canonicalizeDomainPayloadSlice(domain: EcoSettingsSyncDomain, sl
       };
     }
     case "proxyBridge": {
-      const record = slice as Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent">;
-      return record.upstreamUserAgent?.trim() ? { upstreamUserAgent: record.upstreamUserAgent.trim() } : {};
+      return normalizeEcoSyncedProxyBridgeSettings(slice);
     }
     case "asr": {
       const record = slice as EcoSyncedSettingsPayload["asr"];
@@ -1022,8 +1092,10 @@ function isDomainSliceEmpty(domain: EcoSettingsSyncDomain, slice: unknown): bool
         (record.routeProfiles?.length ?? 0) === 0
       );
     }
-    case "proxyBridge":
-      return !(slice as { upstreamUserAgent?: string }).upstreamUserAgent?.trim();
+    case "proxyBridge": {
+      const record = normalizeEcoSyncedProxyBridgeSettings(slice);
+      return !record.upstreamUserAgent?.trim() && record.integratedWebSearch?.enabled !== true;
+    }
     case "asr":
       return ((slice as EcoSyncedSettingsPayload["asr"]).profiles?.length ?? 0) === 0;
     case "imageGeneration":
@@ -1099,8 +1171,17 @@ export function buildDomainSyncSummary(
       const suffix = count > 3 ? ` +${count - 3}` : "";
       return `${count} · ${names.join(", ")}${suffix}`;
     }
-    case "proxyBridge":
-      return normalized.proxyBridge?.upstreamUserAgent ? "1" : "";
+    case "proxyBridge": {
+      const record = normalizeEcoSyncedProxyBridgeSettings(normalized.proxyBridge);
+      const parts: string[] = [];
+      if (record.upstreamUserAgent?.trim()) {
+        parts.push("proxy");
+      }
+      if (record.integratedWebSearch?.enabled) {
+        parts.push("search");
+      }
+      return parts.join(" · ");
+    }
     case "asr":
       return normalized.asr.profiles.length > 0 ? String(normalized.asr.profiles.length) : "";
     case "imageGeneration":

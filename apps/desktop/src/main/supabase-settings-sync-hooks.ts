@@ -14,6 +14,7 @@ import type { AgentOrchestrationStore } from "./agent-orchestration-store";
 import type { AsrSettingsStore } from "./asr-settings-store";
 import { type GitSettingsStore, normalizeGitSettingsSnapshot } from "./git-settings-store";
 import type { ImageGenerationStore } from "./image-generation-store";
+import type { IntegratedWebSearchSettingsStore } from "./integrated-web-search-settings-store";
 import type { PackageScriptArgsStore } from "./package-script-args-store";
 import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
 import type { ProviderStore } from "./provider-store";
@@ -22,10 +23,12 @@ import type { SshBookmarkStore } from "./ssh-bookmark-store";
 import { sshBookmarkSecretKeyKey, sshBookmarkSecretPasswordKey } from "./ssh-bookmark-store";
 import {
   type DomainSettingsSyncHooks,
+  ECO_INTEGRATED_WEB_SEARCH_API_KEY_SECRET,
   ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
   type EcoPlainSecret,
   type EcoSettingsSyncDomain,
+  type EcoSyncedProxyBridgeSettings,
   type EcoSyncedSettingsPayload,
   type EcoSyncedWorkflowSettings,
   emptyEcoSyncedSettingsPayload,
@@ -41,6 +44,7 @@ export function createDesktopSettingsSyncHooks(input: {
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
   gitSettingsStore: GitSettingsStore;
   packageScriptArgsStore: PackageScriptArgsStore;
   projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
@@ -66,6 +70,7 @@ function collectPayload(input: {
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
   gitSettingsStore: GitSettingsStore;
   packageScriptArgsStore: PackageScriptArgsStore;
   sshBookmarkStore: SshBookmarkStore;
@@ -141,6 +146,10 @@ function collectPayload(input: {
       ...(input.proxyBridgeSettingsStore.get().upstreamUserAgent
         ? { upstreamUserAgent: input.proxyBridgeSettingsStore.get().upstreamUserAgent }
         : {}),
+      integratedWebSearch: {
+        enabled: input.integratedWebSearchSettingsStore.get().enabled,
+        provider: input.integratedWebSearchSettingsStore.get().provider,
+      },
     },
     git: input.gitSettingsStore.get(),
     packageScriptArgs: input.packageScriptArgsStore.getAllSync(),
@@ -156,6 +165,7 @@ async function applyPayload(
     workflowSettingsStore: WorkflowSettingsStore;
     agentOrchestrationStore: AgentOrchestrationStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
     gitSettingsStore: GitSettingsStore;
     packageScriptArgsStore: PackageScriptArgsStore;
     projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
@@ -303,11 +313,7 @@ async function applyPayload(
   }
 
   if (payload.proxyBridge) {
-    const current = input.proxyBridgeSettingsStore.get();
-    input.proxyBridgeSettingsStore.save({
-      ...payload.proxyBridge,
-      ...(current.upstreamProxyUrl ? { upstreamProxyUrl: current.upstreamProxyUrl } : {}),
-    });
+    applyProxyBridgeSettingsPayload(input, payload.proxyBridge);
   } else {
     const current = input.proxyBridgeSettingsStore.get();
     if (current.upstreamUserAgent) {
@@ -359,12 +365,33 @@ async function applyPayload(
   }
 }
 
+function applyProxyBridgeSettingsPayload(
+  input: {
+    proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
+  },
+  proxyBridge: EcoSyncedProxyBridgeSettings,
+): void {
+  const current = input.proxyBridgeSettingsStore.get();
+  input.proxyBridgeSettingsStore.save({
+    ...(proxyBridge.upstreamUserAgent ? { upstreamUserAgent: proxyBridge.upstreamUserAgent } : {}),
+    ...(current.upstreamProxyUrl ? { upstreamProxyUrl: current.upstreamProxyUrl } : {}),
+  });
+  if (proxyBridge.integratedWebSearch) {
+    input.integratedWebSearchSettingsStore.save({
+      enabled: proxyBridge.integratedWebSearch.enabled,
+      provider: proxyBridge.integratedWebSearch.provider,
+    });
+  }
+}
+
 function collectSecrets(input: {
   providerStore: ProviderStore;
   asrSettingsStore: AsrSettingsStore;
   imageGenerationStore: ImageGenerationStore;
   workflowSettingsStore: WorkflowSettingsStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
   sshBookmarkStore: SshBookmarkStore;
 }): EcoPlainSecret[] {
   const secrets: EcoPlainSecret[] = [];
@@ -403,6 +430,15 @@ function collectSecrets(input: {
     secrets.push({ kind: "proxy", key: ECO_PROXY_URL_SECRET, value: proxyUrl });
   }
 
+  const integratedWebSearchApiKey = input.integratedWebSearchSettingsStore.getApiKey()?.trim();
+  if (integratedWebSearchApiKey) {
+    secrets.push({
+      kind: "proxy",
+      key: ECO_INTEGRATED_WEB_SEARCH_API_KEY_SECRET,
+      value: integratedWebSearchApiKey,
+    });
+  }
+
   for (const bookmark of input.sshBookmarkStore.getSnapshot().bookmarks) {
     const password = input.sshBookmarkStore.getPassword(bookmark.id);
     if (password?.trim()) {
@@ -432,6 +468,7 @@ function applySecrets(
     imageGenerationStore: ImageGenerationStore;
     workflowSettingsStore: WorkflowSettingsStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
     sshBookmarkStore: SshBookmarkStore;
   },
   secrets: EcoPlainSecret[],
@@ -451,6 +488,7 @@ function applyDomainSecrets(
     imageGenerationStore: ImageGenerationStore;
     workflowSettingsStore: WorkflowSettingsStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
     sshBookmarkStore: SshBookmarkStore;
   },
   secrets: EcoPlainSecret[],
@@ -569,6 +607,9 @@ function applyDomainSecrets(
       const { upstreamProxyUrl: _removed, ...proxy } = input.proxyBridgeSettingsStore.get();
       input.proxyBridgeSettingsStore.save(proxy);
     }
+    if (!secretIds.has(`proxy:${ECO_INTEGRATED_WEB_SEARCH_API_KEY_SECRET}`)) {
+      input.integratedWebSearchSettingsStore.save({ apiKey: "" });
+    }
     for (const secret of domainSecrets) {
       if (!secret.value.trim() || secret.kind !== "proxy") {
         continue;
@@ -578,6 +619,9 @@ function applyDomainSecrets(
           ...input.proxyBridgeSettingsStore.get(),
           upstreamProxyUrl: secret.value,
         });
+      }
+      if (secret.key === ECO_INTEGRATED_WEB_SEARCH_API_KEY_SECRET) {
+        input.integratedWebSearchSettingsStore.save({ apiKey: secret.value });
       }
     }
     return;

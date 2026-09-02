@@ -197,3 +197,15 @@ test("mergeEffectivePricingHint treats price multiplier zero as free", () => {
   );
   expect(merged?.rates).toEqual({ inputPerM: 0, outputPerM: 0, cacheReadPerM: 0 });
 });
+
+test("manualSpecToForm defaults supportsNativeWebSearch to true", () => {
+  expect(manualSpecToForm(undefined).supportsNativeWebSearch).toBe(true);
+  expect(manualSpecToForm({ supportsNativeWebSearch: false }).supportsNativeWebSearch).toBe(false);
+});
+
+test("formToManualSpec only persists supportsNativeWebSearch when false", () => {
+  expect(formToManualSpec({ ...emptyManualSpecForm(), supportsNativeWebSearch: true })).toBeUndefined();
+  expect(
+    formToManualSpec({ ...emptyManualSpecForm(), supportsNativeWebSearch: false })?.supportsNativeWebSearch,
+  ).toBe(false);
+});

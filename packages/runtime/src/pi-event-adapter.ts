@@ -1,4 +1,5 @@
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
+import { mapPiToolNameToSdkToolName } from "./pi-tool-approval.js";
 import { parsePiUsage } from "./pi-usage.js";
 
 /**
@@ -35,6 +36,11 @@ export function createPiEventAdapterState(): PiEventAdapterState {
     openThinkingDisplay: undefined,
     pendingToolUses: new Map(),
   };
+}
+
+/** Map PI lowercase tool names to Eco Feed / SDK PascalCase labels. */
+export function mapPiFeedToolName(toolName: string): string {
+  return mapPiToolNameToSdkToolName(toolName);
 }
 
 /** Last assistant `stopReason: error` text from a live PI session event. */
@@ -450,8 +456,9 @@ export function mapPiSessionEventToAgentEvents(
       // Barrier: finalize open narrative streams before tool noise so they cannot merge across tools.
       const barrier = closeOpenStreams(ctx, seq, "tool_start");
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `tool_${seq}`;
-      const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-      const args = normalizePiToolUseInput(toolName, isRecord(event.args) ? event.args : {});
+      const rawToolName = typeof event.toolName === "string" ? event.toolName : "tool";
+      const toolName = mapPiFeedToolName(rawToolName);
+      const args = normalizePiToolUseInput(rawToolName, isRecord(event.args) ? event.args : {});
       ctx.state.pendingToolUses.set(toolCallId, { toolName, input: args });
       return [
         ...barrier,
@@ -474,7 +481,9 @@ export function mapPiSessionEventToAgentEvents(
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `tool_${seq}`;
       const pending = ctx.state.pendingToolUses.get(toolCallId);
       ctx.state.pendingToolUses.delete(toolCallId);
-      const toolName = typeof event.toolName === "string" ? event.toolName : (pending?.toolName ?? "tool");
+      const rawToolName =
+        typeof event.toolName === "string" ? event.toolName : (pending?.toolName ?? "tool");
+      const toolName = mapPiFeedToolName(rawToolName);
       const input = pending?.input ?? {};
       const isError = event.isError === true;
       const resultText = formatToolResult(event.result);

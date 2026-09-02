@@ -97,6 +97,12 @@ export interface PiSessionOptions {
   toolApprovalAgentType?: string;
   /** Eco session mode for PI Ask / Plan / Agent tool policy. */
   sessionMode?: import("./core-runtime.js").CoreSessionMode;
+  /** Resolved PI web search backend for this run. */
+  webSearchBackend?: import("./pi-web-search-plan.js").PiWebSearchBackend;
+  /** Integrated search provider when webSearchBackend is integrated. */
+  integratedWebSearchProvider?: import("./pi-integrated-web-search.js").IntegratedWebSearchProvider;
+  /** Runtime-only integrated search API key when webSearchBackend is integrated. */
+  integratedWebSearchApiKey?: string;
 }
 
 export interface AgentRuntimeRunInput {
@@ -514,6 +520,11 @@ export * from "./pi-skills.js";
 export * from "./pi-subagent.js";
 export * from "./pi-tool-approval.js";
 export * from "./pi-usage.js";
+export * from "./pi-integrated-web-search.js";
+export * from "./pi-integrated-web-search-factory.js";
+export * from "./pi-web-search-factory.js";
+export * from "./pi-web-search-plan.js";
+export * from "./pi-web-search-session.js";
 export * from "./reviewer-scope";
 export * from "./send-message-tool.js";
 export {

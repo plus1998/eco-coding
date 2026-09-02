@@ -16,6 +16,7 @@ import {
   globalPiSessionRegistry,
   listEnabledPiSubagents,
   mapEcoThinkingEffortToPiThinkingLevel,
+  materializeEcoToolPolicy,
   type PiSubagentSpawnHandler,
   type PiSubagentSpawnResult,
   piChildSessionKey,
@@ -27,11 +28,12 @@ import {
 } from "@eco/runtime";
 import { createAgentEvent } from "@eco/shared";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
+import type { IntegratedWebSearchSettingsSnapshot, RouteManualSpec } from "../shared/ipc";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { StartedGatewayRouteBinding } from "./gateway-route-binding";
 import { buildPiGatewayRequestHeaders } from "./gateway-route-binding";
-import { buildPiSessionToolApprovalFields } from "./pi-runtime-run.js";
+import { buildPiSessionToolApprovalFields, buildPiWebSearchSessionFields } from "./pi-runtime-run.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 
@@ -55,6 +57,11 @@ export interface CreatePiSubagentSpawnHandlerInput {
   metricsRegistry?: SubagentMetricsRegistry;
   /** Required: child sessions must not spawn ungated. */
   toolPermissionHandler: import("@eco/runtime").SdkToolPermissionHandler;
+  getIntegratedWebSearchRuntime: () => {
+    settings: IntegratedWebSearchSettingsSnapshot;
+    apiKey?: string;
+  };
+  resolveRouteManualSpec?: (role: string) => RouteManualSpec | undefined;
 }
 
 export function createPiSubagentSpawnHandler(
@@ -128,7 +135,18 @@ export function createPiSubagentSpawnHandler(
 
     const childMcp = filterMcpServersForPiSubagent(input.parentMcpServers, agent.mcpServers);
     const hasMcp = Boolean(childMcp && Object.keys(childMcp).length > 0);
-    const toolsAllowlist = resolvePiSubagentToolAllowlist(agent.tools, hasMcp);
+    const integratedWebSearch = input.getIntegratedWebSearchRuntime();
+    const webSearchSession = buildPiWebSearchSessionFields({
+      ...(input.resolveRouteManualSpec?.(agent.agentKey)
+        ? { plannerManualSpec: input.resolveRouteManualSpec(agent.agentKey) }
+        : {}),
+      networkWebSearch: materializeEcoToolPolicy(agent.tools).network?.webSearch,
+      integratedSettings: integratedWebSearch.settings,
+      ...(integratedWebSearch.apiKey ? { integratedApiKey: integratedWebSearch.apiKey } : {}),
+    });
+    const toolsAllowlist = resolvePiSubagentToolAllowlist(agent.tools, hasMcp, {
+      webSearchBackend: webSearchSession.webSearchBackend,
+    });
 
     const parentSession = globalPiSessionRegistry.get(piParentSessionKey(input.threadId));
     const cwd = parentSession?.cwd;
@@ -201,6 +219,7 @@ export function createPiSubagentSpawnHandler(
         agentId,
         agentType: agent.agentKey,
       }),
+      ...webSearchSession,
     });
     globalPiSessionRegistry.set(childKey, childSession);
 

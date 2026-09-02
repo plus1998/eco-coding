@@ -609,6 +609,11 @@ import {
   type ProxyBridgeSettingsStore,
   resolveUpstreamUserAgentOverride,
 } from "./proxy-bridge-settings-store";
+import {
+  createIntegratedWebSearchSettingsStore,
+  isIntegratedWebSearchSettingsSaveInput,
+  type IntegratedWebSearchSettingsStore,
+} from "./integrated-web-search-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE } from "./remote-thread-list";
 import { formatUserFacingRequestError, type RequestAttemptResult } from "./request-retry";
@@ -1000,6 +1005,7 @@ async function resolveCodexGlobalMcpServers() {
 let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+let integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
 let centerServerClient: SupabaseCenterDesktopClient;
 let pendingThreadOpenId: string | undefined;
 const desktopNotificationRetainer = new DesktopNotificationRetainer<Notification>();
@@ -1732,6 +1738,20 @@ app.whenReady().then(async () => {
   );
   await packageScriptArgsStore.warmCache();
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
+  const integratedWebSearchSecretCodec = {
+    isAvailable: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (value: string) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+    decrypt: (value: string) => {
+      if (!value.startsWith("safe-v1:")) {
+        throw new Error("Integrated Web Search API key is stored in an unsupported format.");
+      }
+      return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+    },
+  };
+  integratedWebSearchSettingsStore = await createIntegratedWebSearchSettingsStore(
+    dbPath,
+    integratedWebSearchSecretCodec,
+  );
   const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
   centerServerClient = new SupabaseCenterDesktopClient({
     store: await createCenterServerStore(dbPath, {
@@ -1749,6 +1769,7 @@ app.whenReady().then(async () => {
       workflowSettingsStore,
       agentOrchestrationStore,
       proxyBridgeSettingsStore,
+      integratedWebSearchSettingsStore,
       gitSettingsStore,
       packageScriptArgsStore,
       projectOrchestrationSettingsStore,
@@ -5325,6 +5346,17 @@ function registerIpcHandlers(): void {
     return saved;
   });
 
+  registerDesktopCommand(IPC_CHANNELS.integratedWebSearchSettingsGet, async () =>
+    integratedWebSearchSettingsStore.get(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.integratedWebSearchSettingsSave, async (payload: unknown) => {
+    if (!isIntegratedWebSearchSettingsSaveInput(payload)) {
+      throw new Error("Invalid integrated web search settings.");
+    }
+    return integratedWebSearchSettingsStore.save(payload);
+  });
+
   registerDesktopCommand(IPC_CHANNELS.worktreeGetStatus, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
@@ -7280,6 +7312,12 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
         payload: input.payload,
         awaitingPlanMessage: "",
       }),
+    getIntegratedWebSearchRuntime: () => ({
+      settings: integratedWebSearchSettingsStore.get(),
+      ...(integratedWebSearchSettingsStore.getApiKey()
+        ? { apiKey: integratedWebSearchSettingsStore.getApiKey() }
+        : {}),
+    }),
   };
 }
 
@@ -14811,6 +14849,7 @@ async function resolveCandidateModels(
         if (manual?.supportsReasoning !== undefined)
           view.resolvedSupportsReasoning = manual.supportsReasoning;
       }
+      view.resolvedSupportsNativeWebSearch = manual?.supportsNativeWebSearch !== false;
       if (pricingLookup) {
         const rates = resolveRatesForRoute(pricingLookup, manual);
         if (rates) {

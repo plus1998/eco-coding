@@ -19,6 +19,8 @@ export interface ManualSpecFormFields {
   maxOutputTokens: string;
   supportsImageInput: ManualTriState;
   supportsReasoning: ManualTriState;
+  /** Default true; only persisted as false when user disables native web search. */
+  supportsNativeWebSearch: boolean;
   priceMultiplier: string;
   inputPerM: string;
   outputPerM: string;
@@ -31,6 +33,7 @@ export type ManualSpecOverrideField =
   | "maxOutputTokens"
   | "supportsImageInput"
   | "supportsReasoning"
+  | "supportsNativeWebSearch"
   | "priceMultiplier"
   | "inputPerM"
   | "outputPerM"
@@ -43,6 +46,7 @@ export function emptyManualSpecForm(): ManualSpecFormFields {
     maxOutputTokens: "",
     supportsImageInput: "auto",
     supportsReasoning: "auto",
+    supportsNativeWebSearch: true,
     priceMultiplier: "1",
     inputPerM: "",
     outputPerM: "",
@@ -72,6 +76,7 @@ export function manualSpecToForm(spec?: RouteManualSpec): ManualSpecFormFields {
     maxOutputTokens: formatManualTokenValue(spec?.maxOutputTokens),
     supportsImageInput: booleanToTriState(spec?.supportsImageInput),
     supportsReasoning: booleanToTriState(spec?.supportsReasoning),
+    supportsNativeWebSearch: spec?.supportsNativeWebSearch !== false,
     ...pricingFieldsFromManual(spec),
   };
 }
@@ -82,6 +87,7 @@ export interface CandidateResolvedSpecSource {
   resolvedMaxOutputTokens?: number;
   resolvedSupportsImageInput?: boolean;
   resolvedSupportsReasoning?: boolean;
+  resolvedSupportsNativeWebSearch?: boolean;
   resolvedInputPerM?: number;
   resolvedOutputPerM?: number;
   resolvedCacheReadPerM?: number;
@@ -97,6 +103,7 @@ export function prefillManualSpecFormFromCandidate(
     candidate.resolvedMaxOutputTokens !== undefined ||
     candidate.resolvedSupportsImageInput !== undefined ||
     candidate.resolvedSupportsReasoning !== undefined ||
+    candidate.resolvedSupportsNativeWebSearch !== undefined ||
     candidate.resolvedInputPerM !== undefined ||
     candidate.resolvedOutputPerM !== undefined ||
     candidate.resolvedCacheReadPerM !== undefined ||
@@ -111,6 +118,7 @@ export function prefillManualSpecFormFromCandidate(
     maxOutputTokens: formatManualTokenValue(candidate.resolvedMaxOutputTokens),
     supportsImageInput: booleanToTriState(candidate.resolvedSupportsImageInput),
     supportsReasoning: booleanToTriState(candidate.resolvedSupportsReasoning),
+    supportsNativeWebSearch: candidate.resolvedSupportsNativeWebSearch !== false,
     ...pricingFieldsFromManual(candidate.manualSpec),
   };
 }
@@ -181,6 +189,7 @@ export function formToManualSpec(
     ...(maxOutputTokens !== undefined && { maxOutputTokens }),
     ...(supportsImageInput !== undefined && { supportsImageInput }),
     ...(supportsReasoning !== undefined && { supportsReasoning }),
+    ...(form.supportsNativeWebSearch === false && { supportsNativeWebSearch: false }),
     ...(priceMultiplier !== undefined && { priceMultiplier }),
     ...(inputPerM !== undefined && { inputPerM }),
     ...(outputPerM !== undefined && { outputPerM }),
@@ -201,6 +210,7 @@ export function countManualOverrides(form: ManualSpecFormFields): number {
   if (form.maxOutputTokens.trim()) count += 1;
   if (form.supportsImageInput !== "auto") count += 1;
   if (form.supportsReasoning !== "auto") count += 1;
+  if (!form.supportsNativeWebSearch) count += 1;
   if (isPriceMultiplierOverride(form.priceMultiplier)) count += 1;
   if (form.inputPerM.trim()) count += 1;
   if (form.outputPerM.trim()) count += 1;
@@ -215,6 +225,7 @@ export function listManualOverrideFields(form: ManualSpecFormFields): Set<Manual
   if (form.maxOutputTokens.trim()) fields.add("maxOutputTokens");
   if (form.supportsImageInput !== "auto") fields.add("supportsImageInput");
   if (form.supportsReasoning !== "auto") fields.add("supportsReasoning");
+  if (!form.supportsNativeWebSearch) fields.add("supportsNativeWebSearch");
   if (isPriceMultiplierOverride(form.priceMultiplier)) fields.add("priceMultiplier");
   if (form.inputPerM.trim()) fields.add("inputPerM");
   if (form.outputPerM.trim()) fields.add("outputPerM");
@@ -457,6 +468,7 @@ function countManualCapabilityOverrides(spec?: RouteManualSpec): number {
   if (spec.maxOutputTokens !== undefined) count += 1;
   if (spec.supportsImageInput !== undefined) count += 1;
   if (spec.supportsReasoning !== undefined) count += 1;
+  if (spec.supportsNativeWebSearch !== undefined) count += 1;
   return count;
 }
 

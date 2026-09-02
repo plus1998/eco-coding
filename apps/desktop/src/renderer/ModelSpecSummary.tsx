@@ -1,5 +1,5 @@
 import { formatRatePerMillion } from "@eco/runtime/models-dev-pricing";
-import { ArrowDown, ArrowUp, Brain, HardDrive, Image, Layers, Maximize2, Save } from "lucide-react";
+import { ArrowDown, ArrowUp, Brain, Globe, HardDrive, Image, Layers, Maximize2, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { CandidateModelView, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import type { ManualSpecOverrideField } from "./agent-resource-manual-spec-form";
@@ -52,7 +52,8 @@ export function candidateCapabilityHint(
     candidate.resolvedContextTokens !== undefined ||
     candidate.resolvedMaxOutputTokens !== undefined ||
     candidate.resolvedSupportsImageInput !== undefined ||
-    candidate.resolvedSupportsReasoning !== undefined;
+    candidate.resolvedSupportsReasoning !== undefined ||
+    candidate.resolvedSupportsNativeWebSearch !== undefined;
   if (!hasCapability) {
     return undefined;
   }
@@ -62,6 +63,7 @@ export function candidateCapabilityHint(
     modelId: candidate.modelId,
     supportsImageInput: candidate.resolvedSupportsImageInput ?? false,
     supportsReasoning: candidate.resolvedSupportsReasoning ?? false,
+    supportsNativeWebSearch: candidate.resolvedSupportsNativeWebSearch !== false,
     capabilitiesResolved:
       candidate.resolvedSupportsImageInput !== undefined || candidate.resolvedSupportsReasoning !== undefined,
     contextLimitResolved: candidate.resolvedContextTokens !== undefined,
@@ -147,11 +149,14 @@ export function ModelSpecSummary({
   const hasOutput = cap?.maxOutputTokens !== undefined && cap.maxOutputTokens > 0;
   const hasImage = cap?.supportsImageInput;
   const hasReasoning = cap?.supportsReasoning;
+  const nativeWebSearchEnabled = cap?.supportsNativeWebSearch !== false;
+  const showNativeWebSearchChip =
+    nativeWebSearchEnabled || (overrides?.has("supportsNativeWebSearch") ?? false);
   const rates = pricing?.rates;
   const hasPricing = rates && rates.inputPerM > 0 && rates.outputPerM > 0;
   const hasCache = rates && (rates.cacheReadPerM !== undefined || rates.cacheWritePerM !== undefined);
 
-  if (!hasContext && !hasImage && !hasPricing && !hasOutput && !hasReasoning) {
+  if (!hasContext && !hasImage && !hasPricing && !hasOutput && !hasReasoning && !showNativeWebSearchChip) {
     return null;
   }
 
@@ -203,6 +208,26 @@ export function ModelSpecSummary({
           <Brain size={13} strokeWidth={2} />
           {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.reasoning")}</span> : null}
           {overrides.has("supportsReasoning") ? (
+            <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
+          ) : null}
+        </span>
+      ) : null}
+      {showNativeWebSearchChip ? (
+        <span
+          className={chipClass(
+            "model-spec-chip model-spec-chip-capability",
+            "supportsNativeWebSearch",
+            overrides,
+          )}
+          title={t("modelSpec.nativeWebSearch")}
+        >
+          <Globe size={13} strokeWidth={2} />
+          {!compact ? (
+            <span className="model-spec-chip-caption">
+              {nativeWebSearchEnabled ? t("modelSpec.nativeWebSearch") : t("modelSpec.nativeWebSearchOff")}
+            </span>
+          ) : null}
+          {overrides.has("supportsNativeWebSearch") ? (
             <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span>
           ) : null}
         </span>

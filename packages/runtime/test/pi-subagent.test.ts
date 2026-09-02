@@ -135,6 +135,22 @@ test("resolvePiSubagentToolAllowlist never includes Agent and respects policy", 
   ).toEqual(["read", "edit", "write", "bash", "mcp", "mcpScript"]);
 });
 
+test("resolvePiSubagentToolAllowlist includes web_search when backend is armed", () => {
+  expect(
+    resolvePiSubagentToolAllowlist(
+      {
+        allowed: [],
+        disallowed: [],
+        bash: { enabled: true },
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: false },
+      },
+      false,
+      { webSearchBackend: "native" },
+    ),
+  ).toContain("web_search");
+});
+
 test("truncatePiSubagentResult keeps short text and marks long text truncated", () => {
   expect(truncatePiSubagentResult("hello")).toEqual({ text: "hello", truncated: false });
   const long = Array.from({ length: 2500 }, (_, index) => `line-${index}`).join("\n");

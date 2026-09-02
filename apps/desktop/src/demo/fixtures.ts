@@ -10,6 +10,7 @@ import type {
   PersonalizationSettingsSnapshot,
   ProviderConfigView,
   ProxyBridgeSettingsSnapshot,
+  IntegratedWebSearchSettingsSnapshot,
   RouteProfileView,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
@@ -570,6 +571,12 @@ export const demoCenterServerSettings: CenterServerSettingsSnapshot = {
 };
 
 export const demoProxyBridgeSettings: ProxyBridgeSettingsSnapshot = {};
+
+export const demoIntegratedWebSearchSettings: IntegratedWebSearchSettingsSnapshot = {
+  enabled: false,
+  provider: "tavily",
+  hasApiKey: false,
+};
 
 export const demoGitSettings: GitSettingsSnapshot = {
   commitMessageRoleByMainAgentConfigId: {},

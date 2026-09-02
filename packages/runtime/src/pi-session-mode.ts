@@ -7,6 +7,7 @@ import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "./clau
 import type { CoreSessionMode } from "./core-runtime.js";
 import { PI_MCP_PROXY_TOOL_NAMES } from "./pi-mcp.js";
 import { PI_AGENT_TOOL_NAME } from "./pi-subagent.js";
+import { PI_WEB_SEARCH_TOOL_NAME } from "./pi-web-search-plan.js";
 
 export const PI_FINALIZE_PLAN_TOOL_NAME = "finalize_plan" as const;
 
@@ -163,13 +164,18 @@ export function isPiReadOnlyBashCommand(command: string): boolean {
 
 export function piToolsForSessionMode(
   mode: CoreSessionMode,
-  options?: { hasMcpServers?: boolean; includeFinalizePlan?: boolean },
+  options?: {
+    hasMcpServers?: boolean;
+    includeFinalizePlan?: boolean;
+    includeWebSearch?: boolean;
+  },
 ): string[] {
+  const webSearchTools = options?.includeWebSearch ? [PI_WEB_SEARCH_TOOL_NAME] : [];
   if (mode === "agent") {
-    const base = ["read", "bash", "edit", "write"];
+    const base = ["read", "bash", "edit", "write", ...webSearchTools];
     return options?.hasMcpServers ? [...base, ...PI_MCP_PROXY_TOOL_NAMES] : base;
   }
-  const tools: string[] = [...PI_READ_ONLY_BUILTIN_TOOLS];
+  const tools: string[] = [...PI_READ_ONLY_BUILTIN_TOOLS, ...webSearchTools];
   if (mode === "plan" && options?.includeFinalizePlan !== false) {
     tools.push(PI_FINALIZE_PLAN_TOOL_NAME);
   }
@@ -267,6 +273,10 @@ export function createPiModeAwareToolPermissionHandler(
 
     // Align with Agent: Eco filesystem scope decides (workspace allow / external ask).
     if (toolKey === "read") {
+      return baseHandler(request);
+    }
+
+    if (toolKey === PI_WEB_SEARCH_TOOL_NAME || toolKey === "websearch") {
       return baseHandler(request);
     }
 

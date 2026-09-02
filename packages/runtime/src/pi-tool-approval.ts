@@ -42,6 +42,7 @@ const PI_BUILTIN_TOOL_NAME_TO_SDK: Readonly<Record<string, string>> = {
   read: "Read",
   write: "Write",
   edit: "Edit",
+  web_search: "WebSearch",
 };
 
 export function mapPiToolNameToSdkToolName(toolName: string): string {

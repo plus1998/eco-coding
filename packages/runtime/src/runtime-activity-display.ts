@@ -763,7 +763,7 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
     return input.pattern;
   }
 
-  if (toolName === "WebSearch") {
+  if (toolName === "WebSearch" || toolName === "web_search") {
     const query = typeof input.query === "string" ? input.query.trim() : "";
     if (query) {
       return query.length > 80 ? `${query.slice(0, 77)}…` : query;

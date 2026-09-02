@@ -6,20 +6,25 @@ import {
   type EcoApiCompat,
   globalPiSessionRegistry,
   listEnabledPiSubagents,
+  materializeEcoToolPolicy,
   PiCodingAgentDriver,
   probePiCoreAvailability,
   removePiAgentThreadDir,
   resolvePiAgentDir,
   resolvePiPlannerRoute,
   resolvePiRouteByRole,
+  resolvePiWebSearchContext,
+  resolveSupportsNativeWebSearch,
 } from "@eco/runtime";
 import type { WorktreePlan } from "@eco/workspace";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import type {
   PromptImageAttachment,
+  RouteManualSpec,
   RuntimeRoleRouteConfig,
   ThreadSummary,
   WorkspaceInfo,
+  type IntegratedWebSearchSettingsSnapshot,
 } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
@@ -144,6 +149,10 @@ export interface PiRuntimeOrchestrationDeps {
       planFilePath?: string;
     };
   }) => boolean;
+  getIntegratedWebSearchRuntime: () => {
+    settings: IntegratedWebSearchSettingsSnapshot;
+    apiKey?: string;
+  };
 }
 
 export function resolvePiSkipExecutionApprovals(bashReviewMode: string | undefined): boolean {
@@ -166,6 +175,40 @@ export function buildPiSessionToolApprovalFields(input: {
     ...(input.agentId ? { toolApprovalAgentId: input.agentId } : {}),
     ...(input.agentType ? { toolApprovalAgentType: input.agentType } : {}),
   };
+}
+
+export function buildPiWebSearchSessionFields(input: {
+  plannerManualSpec?: RouteManualSpec;
+  networkWebSearch: boolean | undefined;
+  integratedSettings: IntegratedWebSearchSettingsSnapshot;
+  integratedApiKey?: string;
+}): Pick<
+  import("@eco/runtime").PiSessionOptions,
+  "webSearchBackend" | "integratedWebSearchApiKey" | "integratedWebSearchProvider"
+> {
+  const webSearch = resolvePiWebSearchContext({
+    networkWebSearch: input.networkWebSearch,
+    supportsNativeWebSearch: resolveSupportsNativeWebSearch(input.plannerManualSpec),
+    integratedEnabled: input.integratedSettings.enabled,
+    integratedApiKey: input.integratedApiKey,
+  });
+  return {
+    webSearchBackend: webSearch.backend,
+    ...(webSearch.integratedApiKey
+      ? {
+          integratedWebSearchApiKey: webSearch.integratedApiKey,
+          integratedWebSearchProvider: input.integratedSettings.provider,
+        }
+      : {}),
+  };
+}
+
+export function resolvePiMainNetworkWebSearch(agentRegistry?: EcoAgentRuntimeConfig): boolean | undefined {
+  if (!agentRegistry) {
+    return undefined;
+  }
+  const policy = materializeEcoToolPolicy(agentRegistry.orchestration.mainAgent.tools);
+  return policy.network?.webSearch;
 }
 
 /** Shared driver resolveBridge uses the most recently armed Gateway binding per thread. */
@@ -324,6 +367,14 @@ export async function startPiThreadRun(
             resolvePiSkipExecutionApprovals(bashReviewMode),
           );
           const enabledSubagents = listEnabledPiSubagents(input.agentRegistry);
+          const plannerRoute = config.routes.find((route) => route.role === "planner");
+          const integratedWebSearch = deps.getIntegratedWebSearchRuntime();
+          const webSearchSession = buildPiWebSearchSessionFields({
+            ...(plannerRoute?.manualSpec ? { plannerManualSpec: plannerRoute.manualSpec } : {}),
+            networkWebSearch: resolvePiMainNetworkWebSearch(input.agentRegistry),
+            integratedSettings: integratedWebSearch.settings,
+            ...(integratedWebSearch.apiKey ? { integratedApiKey: integratedWebSearch.apiKey } : {}),
+          });
           const onSubagentSpawn =
             mode === "agent" && input.agentRegistry && enabledSubagents.length > 0
               ? createPiSubagentSpawnHandler({
@@ -344,6 +395,9 @@ export async function startPiThreadRun(
                   registry: input.agentRegistry,
                   conversationStore: deps.conversationStore,
                   toolPermissionHandler,
+                  getIntegratedWebSearchRuntime: deps.getIntegratedWebSearchRuntime,
+                  resolveRouteManualSpec: (role) =>
+                    config.routes.find((entry) => entry.role === role)?.manualSpec,
                   ...(input.mcpServers ? { parentMcpServers: input.mcpServers } : {}),
                   ...(input.skillPaths ? { parentSkillPaths: input.skillPaths } : {}),
                   ...(deps.lifecycle ? { lifecycle: deps.lifecycle } : {}),
@@ -376,6 +430,7 @@ export async function startPiThreadRun(
                 : {}),
               ...(onSubagentSpawn ? { onSubagentSpawn } : {}),
               ...buildPiSessionToolApprovalFields({ toolPermissionHandler }),
+              ...webSearchSession,
             },
           };
           const events =

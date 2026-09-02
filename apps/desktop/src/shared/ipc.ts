@@ -162,6 +162,8 @@ export const IPC_CHANNELS = {
   workflowSettingsSave: "workflow-settings:save",
   proxyBridgeSettingsGet: "proxy-bridge-settings:get",
   proxyBridgeSettingsSave: "proxy-bridge-settings:save",
+  integratedWebSearchSettingsGet: "integrated-web-search-settings:get",
+  integratedWebSearchSettingsSave: "integrated-web-search-settings:save",
   centerServerSettingsGet: "center-server-settings:get",
   centerServerSettingsSave: "center-server-settings:save",
   centerServerRegisterDesktop: "center-server:register-desktop",
@@ -1084,6 +1086,21 @@ export interface ProxyBridgeSettingsSnapshot {
   upstreamProxyUrl?: string;
 }
 
+export type IntegratedWebSearchProvider = "brave" | "tavily" | "doubao";
+
+export interface IntegratedWebSearchSettingsSnapshot {
+  enabled: boolean;
+  provider: IntegratedWebSearchProvider;
+  hasApiKey: boolean;
+}
+
+export interface IntegratedWebSearchSettingsSaveInput {
+  enabled?: boolean;
+  provider?: IntegratedWebSearchProvider;
+  /** Empty string clears the stored key. */
+  apiKey?: string;
+}
+
 import type { AgentTemplate } from "./agent-orchestration";
 import type { UpstreamApiCompat } from "./api-compat";
 import type { ProviderTokenCountMode } from "./provider-token-count";
@@ -1188,6 +1205,8 @@ export interface RouteManualSpec {
   supportsImageInput?: boolean;
   /** When set, overrides models.dev reasoning detection. */
   supportsReasoning?: boolean;
+  /** When false, PI uses Integrated web search instead of provider-native pi-web-search. Default true when omitted. */
+  supportsNativeWebSearch?: boolean;
   /** USD per million input tokens. */
   inputPerM?: number;
   /** USD per million output tokens. */
@@ -1221,6 +1240,8 @@ export interface CandidateModelView {
   resolvedMaxOutputTokens?: number;
   resolvedSupportsImageInput?: boolean;
   resolvedSupportsReasoning?: boolean;
+  /** Default true when manualSpec omits supportsNativeWebSearch. */
+  resolvedSupportsNativeWebSearch?: boolean;
   resolvedInputPerM?: number;
   resolvedOutputPerM?: number;
   resolvedCacheReadPerM?: number;
@@ -2099,6 +2120,8 @@ export interface RouteCapabilityHint {
   providerName: string;
   supportsImageInput: boolean;
   supportsReasoning: boolean;
+  /** PI provider-native web search; default true when omitted from manualSpec. */
+  supportsNativeWebSearch?: boolean;
   capabilitiesResolved: boolean;
   contextTokens?: number;
   maxOutputTokens?: number;

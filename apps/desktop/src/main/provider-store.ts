@@ -79,6 +79,7 @@ interface CandidateModelRow {
   manual_max_output_tokens: number | null;
   manual_supports_image_input: number | null;
   manual_supports_reasoning: number | null;
+  manual_supports_native_web_search: number | null;
   manual_input_per_m: number | null;
   manual_output_per_m: number | null;
   manual_cache_read_per_m: number | null;
@@ -628,6 +629,12 @@ export class ProviderStore {
     ) {
       this.db.exec("ALTER TABLE provider_candidate_models ADD COLUMN manual_price_multiplier REAL");
     }
+    if (
+      candidateColumns.length > 0 &&
+      !candidateColumns.some((column) => column.name === "manual_supports_native_web_search")
+    ) {
+      this.db.exec("ALTER TABLE provider_candidate_models ADD COLUMN manual_supports_native_web_search INTEGER");
+    }
   }
 
   // ─── Candidate Models ───────────────────────────────────────────────────────
@@ -669,6 +676,7 @@ export class ProviderStore {
                models_dev_provider_key, models_dev_model_id,
                manual_context_tokens, manual_max_output_tokens,
                manual_supports_image_input, manual_supports_reasoning,
+               manual_supports_native_web_search,
                manual_input_per_m, manual_output_per_m,
                manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier,
                sort_order, created_at, updated_at
@@ -697,10 +705,11 @@ export class ProviderStore {
           models_dev_provider_key, models_dev_model_id,
           manual_context_tokens, manual_max_output_tokens,
           manual_supports_image_input, manual_supports_reasoning,
+          manual_supports_native_web_search,
           manual_input_per_m, manual_output_per_m,
           manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier,
           sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider_id, model_id) DO UPDATE SET
           display_name = excluded.display_name,
           models_dev_provider_key = excluded.models_dev_provider_key,
@@ -709,6 +718,7 @@ export class ProviderStore {
           manual_max_output_tokens = excluded.manual_max_output_tokens,
           manual_supports_image_input = excluded.manual_supports_image_input,
           manual_supports_reasoning = excluded.manual_supports_reasoning,
+          manual_supports_native_web_search = excluded.manual_supports_native_web_search,
           manual_input_per_m = excluded.manual_input_per_m,
           manual_output_per_m = excluded.manual_output_per_m,
           manual_cache_read_per_m = excluded.manual_cache_read_per_m,
@@ -728,6 +738,7 @@ export class ProviderStore {
         manual?.maxOutputTokens ?? null,
         triStateToNullableInt(manual?.supportsImageInput),
         triStateToNullableInt(manual?.supportsReasoning),
+        nativeWebSearchToNullableInt(manual?.supportsNativeWebSearch),
         manual?.inputPerM ?? null,
         manual?.outputPerM ?? null,
         manual?.cacheReadPerM ?? null,
@@ -1067,6 +1078,7 @@ function candidateRowToView(row: CandidateModelRow): CandidateModelView {
     row.manual_supports_reasoning === null || row.manual_supports_reasoning === undefined
       ? undefined
       : row.manual_supports_reasoning === 1;
+  const supportsNativeWebSearch = nullableIntToNativeWebSearch(row.manual_supports_native_web_search);
   const hasManualSpec =
     contextTokens !== undefined ||
     maxOutputTokens !== undefined ||
@@ -1076,13 +1088,15 @@ function candidateRowToView(row: CandidateModelRow): CandidateModelView {
     cacheWritePerM !== undefined ||
     priceMultiplier !== undefined ||
     supportsImageInput !== undefined ||
-    supportsReasoning !== undefined;
+    supportsReasoning !== undefined ||
+    supportsNativeWebSearch !== undefined;
   const manualSpec: RouteManualSpec | undefined = hasManualSpec
     ? {
         ...(contextTokens !== undefined && { contextTokens }),
         ...(maxOutputTokens !== undefined && { maxOutputTokens }),
         ...(supportsImageInput !== undefined && { supportsImageInput }),
         ...(supportsReasoning !== undefined && { supportsReasoning }),
+        ...(supportsNativeWebSearch !== undefined && { supportsNativeWebSearch }),
         ...(inputPerM !== undefined && { inputPerM }),
         ...(outputPerM !== undefined && { outputPerM }),
         ...(cacheReadPerM !== undefined && { cacheReadPerM }),
@@ -1115,6 +1129,20 @@ function createCandidateModelId(providerId: string, modelId: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
   return `cand-${normalizedProvider}-${normalizedModel}-${suffix}`;
+}
+
+function nativeWebSearchToNullableInt(value: boolean | undefined): number | null {
+  if (value === false) {
+    return 0;
+  }
+  return null;
+}
+
+function nullableIntToNativeWebSearch(value: number | null | undefined): boolean | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  return value !== 0;
 }
 
 function triStateToNullableInt(value: boolean | undefined): number | null {

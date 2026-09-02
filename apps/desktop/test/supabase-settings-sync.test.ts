@@ -1330,3 +1330,38 @@ test("computeDomainSyncStatuses marks never_synced when local git changed and cl
   expect(git?.state).toBe("never_synced");
   expect(git?.lastSyncedAt).toBe("2026-01-02T00:00:00.000Z");
 });
+
+test("normalizeEcoSyncedProxyBridgeSettings preserves integrated web search", async () => {
+  const { normalizeEcoSyncedProxyBridgeSettings } = await import("../src/main/supabase-settings-sync");
+
+  expect(
+    normalizeEcoSyncedProxyBridgeSettings({
+      upstreamUserAgent: "EcoAgent/1",
+      integratedWebSearch: { enabled: true, provider: "doubao" },
+    }),
+  ).toEqual({
+    upstreamUserAgent: "EcoAgent/1",
+    integratedWebSearch: { enabled: true, provider: "doubao" },
+  });
+});
+
+test("domainPayloadEqual compares integrated web search under proxyBridge", async () => {
+  const { domainPayloadEqual, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+  const base = emptyEcoSyncedSettingsPayload();
+  const left = {
+    ...base,
+    proxyBridge: {
+      integratedWebSearch: { enabled: true, provider: "doubao" as const },
+    },
+  };
+  const right = {
+    ...base,
+    proxyBridge: {
+      integratedWebSearch: { enabled: true, provider: "doubao" },
+    },
+  };
+
+  expect(domainPayloadEqual(left, right, "proxyBridge")).toBe(true);
+});

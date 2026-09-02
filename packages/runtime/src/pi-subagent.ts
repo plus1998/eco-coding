@@ -6,6 +6,7 @@ import type {
   EcoToolPolicy,
 } from "./agent-orchestration.js";
 import { PI_MCP_PROXY_TOOL_NAMES } from "./pi-mcp.js";
+import { PI_WEB_SEARCH_TOOL_NAME, type PiWebSearchBackend } from "./pi-web-search-plan.js";
 import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 
 export const PI_AGENT_TOOL_NAME = "Agent" as const;
@@ -102,7 +103,11 @@ export function buildPiSubagentDescription(
  * Map Eco tool policy → PI built-in allowlist.
  * Never includes Agent (no nested delegation).
  */
-export function resolvePiSubagentToolAllowlist(policy: EcoToolPolicy, hasMcpServers: boolean): string[] {
+export function resolvePiSubagentToolAllowlist(
+  policy: EcoToolPolicy,
+  hasMcpServers: boolean,
+  options?: { webSearchBackend?: PiWebSearchBackend },
+): string[] {
   const materialized = materializeEcoToolPolicy(policy);
   const disallowed = new Set(
     materialized.disallowed.map((entry) => entry.trim().toLowerCase()).filter(Boolean),
@@ -135,6 +140,14 @@ export function resolvePiSubagentToolAllowlist(policy: EcoToolPolicy, hasMcpServ
 
   if (hasMcpServers) {
     tools.push(...PI_MCP_PROXY_TOOL_NAMES);
+  }
+
+  const webSearchAllowed =
+    materialized.network?.webSearch !== false &&
+    options?.webSearchBackend !== undefined &&
+    options.webSearchBackend !== "none";
+  if (webSearchAllowed) {
+    tools.push(PI_WEB_SEARCH_TOOL_NAME);
   }
 
   return [...new Set(tools)];

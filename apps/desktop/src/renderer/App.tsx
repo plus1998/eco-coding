@@ -118,6 +118,8 @@ import {
   type ProjectMcpSettingsSnapshot,
   type ProjectOrchestrationSettingsSnapshot,
   type ProxyBridgeSettingsSnapshot,
+  type IntegratedWebSearchSettingsSaveInput,
+  type IntegratedWebSearchSettingsSnapshot,
   type ResolvedOrchestrationSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -1298,7 +1300,10 @@ function App() {
     useState<ProjectOrchestrationSettingsSnapshot>();
   const [projectSkillsSettings, setProjectSkillsSettings] = useState<ProjectSkillsSettingsSnapshot>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
+  const [integratedWebSearchSettings, setIntegratedWebSearchSettings] =
+    useState<IntegratedWebSearchSettingsSnapshot | null>(null);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
+  const [isSavingIntegratedWebSearchSettings, setIsSavingIntegratedWebSearchSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [composerRouteAnchor, setComposerRouteAnchor] = useState<"plus" | "model-empty">("plus");
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
@@ -1707,6 +1712,7 @@ function App() {
       eco.getWorkflowSettings(),
       eco.getCenterServerSettings(),
       eco.getProxyBridgeSettings(),
+      eco.getIntegratedWebSearchSettings(),
     ]).then(
       ([
         currentWorkspace,
@@ -1717,6 +1723,7 @@ function App() {
         workflow,
         centerServer,
         proxyBridge,
+        integratedWebSearch,
       ]) => {
         setHomeProjectPath(resolvedHomeProjectPath);
         setWorkspace(currentWorkspace);
@@ -1737,6 +1744,7 @@ function App() {
         setNewThreadCoreKind(workflow.defaultCoreKind ?? "claude");
         setCenterServerSettings(centerServer);
         setProxyBridgeSettings(proxyBridge);
+        setIntegratedWebSearchSettings(integratedWebSearch);
       },
     );
 
@@ -7572,6 +7580,20 @@ function App() {
     }
   }
 
+  async function saveIntegratedWebSearchSettings(next: IntegratedWebSearchSettingsSaveInput) {
+    if (!window.eco) return;
+    setIsSavingIntegratedWebSearchSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveIntegratedWebSearchSettings(next);
+      setIntegratedWebSearchSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingIntegratedWebSearchSettings(false);
+    }
+  }
+
   async function saveDefaultOrchestrationSelection(selection: OrchestrationSelection | undefined) {
     if (!window.eco?.saveWorkflowSettings) {
       return;
@@ -7942,6 +7964,7 @@ function App() {
       eco.getMcpSettings().then(setMcpSettings),
       eco.getWorkflowSettings().then(setWorkflowSettings),
       eco.getProxyBridgeSettings().then(setProxyBridgeSettings),
+      eco.getIntegratedWebSearchSettings?.().then(setIntegratedWebSearchSettings) ?? Promise.resolve(),
       eco.getImageGenerationSettings?.().then(setImageGenerationSettings) ?? Promise.resolve(),
       eco.listAsrProfiles().then(setAsrProfiles),
     ]);
@@ -10365,16 +10388,21 @@ function App() {
               )}
 
               {settingsSection === "providers" &&
-                (proxyBridgeSettings ? (
+                (proxyBridgeSettings && integratedWebSearchSettings ? (
                   <ModelsSettingsPanel
                     settings={settings}
                     proxyBridgeSettings={proxyBridgeSettings}
+                    integratedWebSearchSettings={integratedWebSearchSettings}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
+                    integratedWebSearchSettingsSaving={isSavingIntegratedWebSearchSettings}
                     mode="providerSettings"
                     busy={isSavingSettings}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                    onIntegratedWebSearchSettingsChange={(next) =>
+                      void saveIntegratedWebSearchSettings(next)
+                    }
                     onRequestCreateMainAgentConfig={(seed) => {
                       setPendingCreateMainConfig(seed);
                       setSettingsSection("orchestrationComponents");
@@ -10387,13 +10415,15 @@ function App() {
                 ))}
 
               {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
-                (proxyBridgeSettings ? (
+                (proxyBridgeSettings && integratedWebSearchSettings ? (
                   <ModelsSettingsPanel
                     settings={settings}
                     proxyBridgeSettings={proxyBridgeSettings}
+                    integratedWebSearchSettings={integratedWebSearchSettings}
                     mcpServers={mcpSettings.servers}
                     skillsSnapshot={skillsSnapshot}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
+                    integratedWebSearchSettingsSaving={isSavingIntegratedWebSearchSettings}
                     initialTab={
                       settingsSection === "orchestrationComponents" ? "compositionParts" : "subagents"
                     }
@@ -10424,6 +10454,9 @@ function App() {
                     onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
                     onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                    onIntegratedWebSearchSettingsChange={(next) =>
+                      void saveIntegratedWebSearchSettings(next)
+                    }
                     {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
                       ? {
                           centerServerSyncVisible,

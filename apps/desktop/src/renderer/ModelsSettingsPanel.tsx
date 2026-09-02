@@ -36,6 +36,8 @@ import type {
   ProviderDeleteReference,
   ProviderRequestError,
   ProxyBridgeSettingsSnapshot,
+  IntegratedWebSearchSettingsSaveInput,
+  IntegratedWebSearchSettingsSnapshot,
   SkillsListResult,
   VisionModelSelection,
 } from "../shared/ipc";
@@ -61,6 +63,7 @@ import {
   toModelCascadeSelection,
 } from "./model-cascade-options";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
+import { IntegratedWebSearchSettingsSection } from "./IntegratedWebSearchSettingsSection";
 import {
   applyProviderPreset,
   DEFAULT_NEW_PROVIDER_PRESET_ID,
@@ -83,9 +86,11 @@ type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
   proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
+  integratedWebSearchSettings: IntegratedWebSearchSettingsSnapshot;
   mcpServers?: McpServerConfigView[] | undefined;
   skillsSnapshot?: SkillsListResult | undefined;
   proxyBridgeSettingsSaving?: boolean | undefined;
+  integratedWebSearchSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
@@ -105,6 +110,7 @@ interface ModelsSettingsPanelProps {
     | ((selection: VisionModelSelection | undefined) => void | Promise<void>)
     | undefined;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
+  onIntegratedWebSearchSettingsChange: (settings: IntegratedWebSearchSettingsSaveInput) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
   /** Ask App to open orchestration settings and create a main agent config. */
   onRequestCreateMainAgentConfig?: ((seed: PendingMainAgentConfigCreateSeed) => void) | undefined;
@@ -126,9 +132,11 @@ interface ModelsCacheEntry {
 export function ModelsSettingsPanel({
   settings,
   proxyBridgeSettings,
+  integratedWebSearchSettings,
   mcpServers = [],
   skillsSnapshot,
   proxyBridgeSettingsSaving,
+  integratedWebSearchSettingsSaving,
   busy,
   initialTab = "subagents",
   mode = "agentBuilder",
@@ -142,6 +150,7 @@ export function ModelsSettingsPanel({
   defaultVisionModel,
   onDefaultVisionModelChange,
   onProxyBridgeSettingsChange,
+  onIntegratedWebSearchSettingsChange,
   onSavingChange,
   onRequestCreateMainAgentConfig,
   pendingCreateMainConfig,
@@ -696,11 +705,18 @@ export function ModelsSettingsPanel({
       )}
 
       {activeTab === "proxyBridge" && (
-        <ProxyBridgeSettingsSection
-          settings={proxyBridgeSettings}
-          disabled={busy || proxyBridgeSettingsSaving}
-          onSave={onProxyBridgeSettingsChange}
-        />
+        <>
+          <ProxyBridgeSettingsSection
+            settings={proxyBridgeSettings}
+            disabled={busy || proxyBridgeSettingsSaving}
+            onSave={onProxyBridgeSettingsChange}
+          />
+          <IntegratedWebSearchSettingsSection
+            settings={integratedWebSearchSettings}
+            disabled={busy || integratedWebSearchSettingsSaving}
+            onSave={onIntegratedWebSearchSettingsChange}
+          />
+        </>
       )}
 
       {activeTab === "providers" && (

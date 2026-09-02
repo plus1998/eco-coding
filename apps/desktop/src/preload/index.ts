@@ -128,6 +128,8 @@ import {
   type ProviderConfigView,
   type ProviderDeleteResult,
   type ProxyBridgeSettingsSnapshot,
+  type IntegratedWebSearchSettingsSaveInput,
+  type IntegratedWebSearchSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
   type RouteProfileInput,
@@ -819,6 +821,14 @@ const api = {
   },
   saveProxyBridgeSettings(settings: ProxyBridgeSettingsSnapshot): Promise<ProxyBridgeSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.proxyBridgeSettingsSave, settings);
+  },
+  getIntegratedWebSearchSettings(): Promise<IntegratedWebSearchSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.integratedWebSearchSettingsGet);
+  },
+  saveIntegratedWebSearchSettings(
+    settings: IntegratedWebSearchSettingsSaveInput,
+  ): Promise<IntegratedWebSearchSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.integratedWebSearchSettingsSave, settings);
   },
   getCenterServerSettings(): Promise<CenterServerSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerSettingsGet);

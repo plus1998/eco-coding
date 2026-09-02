@@ -50,6 +50,8 @@ import {
   PI_TOOL_APPROVAL_EXTENSION_NAME,
   PI_TOOL_APPROVAL_HANDLER_MISSING,
 } from "./pi-tool-approval.js";
+import type { PiWebSearchBackend } from "./pi-web-search-plan.js";
+import { appendPiWebSearchSessionParts } from "./pi-web-search-session.js";
 
 export interface PiSideEventBus {
   push(event: AgentEvent): void;
@@ -109,6 +111,8 @@ export interface PiSessionHandle {
   toolApprovalEnabled?: boolean;
   /** Session mode used when this AgentSession was created (Ask/Plan force tool drift). */
   sessionMode?: CoreSessionMode;
+  /** Web search backend armed when the session was created. */
+  webSearchBackend?: PiWebSearchBackend;
   /** Parent-only side bus created with the session (stable across rebinds). */
   sideEventBus?: PiSideEventBus;
 }
@@ -164,6 +168,12 @@ export interface PiSessionFactoryInput {
   toolPermissionHandler?: SdkToolPermissionHandler;
   toolApprovalAgentId?: string;
   toolApprovalAgentType?: string;
+  /** Resolved PI web search backend for this session. */
+  webSearchBackend?: PiWebSearchBackend;
+  /** Integrated search provider when webSearchBackend is integrated. */
+  integratedWebSearchProvider?: import("./pi-integrated-web-search.js").IntegratedWebSearchProvider;
+  /** Integrated search API key (runtime only, never persisted). */
+  integratedWebSearchApiKey?: string;
 }
 
 export type PiSessionFactory = (input: PiSessionFactoryInput) => Promise<PiSessionHandle>;
@@ -356,6 +366,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     const wantsAgentTool = sessionMode === "agent" && listEnabledPiSubagents(input.agentRegistry).length > 0;
     const agentToolDrift = Boolean(session) && wantsAgentTool !== Boolean(session!.armSubagentSpawn);
     const modeDrift = Boolean(session) && (session!.sessionMode ?? "agent") !== sessionMode;
+    const webSearchDrift = Boolean(session) && (session!.webSearchBackend ?? "none") !== webSearchBackend;
 
     const modeAwareHandler = input.piSession?.toolPermissionHandler
       ? createPiModeAwareToolPermissionHandler({
@@ -370,15 +381,18 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     };
     const wantsToolApproval = Boolean(permissionBridge.handler);
     const approvalDrift = Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
-    const forceFresh = identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift;
+    const forceFresh = identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift || webSearchDrift;
     const appendSystemPrompt = [
       piSystemPromptForSessionMode(sessionMode),
       ...(input.piSession?.appendSystemPrompt ?? []),
     ].filter((entry) => entry.trim().length > 0);
     const hasMcpServers = Boolean(mcpServers && Object.keys(mcpServers).length > 0);
+    const webSearchBackend = input.piSession?.webSearchBackend ?? "none";
+    const includeWebSearch = webSearchBackend !== "none";
     const toolsAllowlist = piToolsForSessionMode(sessionMode, {
       hasMcpServers: sessionMode === "agent" && hasMcpServers,
       includeFinalizePlan: sessionMode === "plan",
+      includeWebSearch,
     });
 
     // Fingerprints decide whether to rebuild the in-process AgentSession.
@@ -456,6 +470,18 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
           }) as (pi: unknown) => void,
         });
       }
+      const sessionToolsAllowlist = [...toolsAllowlist];
+      await appendPiWebSearchSessionParts({
+        backend: webSearchBackend,
+        ...(input.piSession?.integratedWebSearchProvider
+          ? { integratedProvider: input.piSession.integratedWebSearchProvider }
+          : {}),
+        ...(input.piSession?.integratedWebSearchApiKey
+          ? { integratedApiKey: input.piSession.integratedWebSearchApiKey }
+          : {}),
+        extensionFactories,
+        toolsAllowlist: sessionToolsAllowlist,
+      });
       this.registry.deleteThread(input.threadId);
       session = await this.createSession({
         threadId: input.threadId,
@@ -468,7 +494,12 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
         skillPaths: selectedSkillPaths,
-        toolsAllowlist: [...new Set([...toolsAllowlist, ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : [])])],
+        toolsAllowlist: [
+          ...new Set([
+            ...sessionToolsAllowlist,
+            ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : []),
+          ]),
+        ],
         ...(mcpServers && Object.keys(mcpServers).length > 0 && sessionMode === "agent"
           ? { mcpServers }
           : {}),
@@ -476,6 +507,13 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         ...(openExistingJsonl ? { sessionFile: resumeFile } : {}),
         sideEventBus,
         ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
+        webSearchBackend,
+        ...(input.piSession?.integratedWebSearchProvider
+          ? { integratedWebSearchProvider: input.piSession.integratedWebSearchProvider }
+          : {}),
+        ...(input.piSession?.integratedWebSearchApiKey
+          ? { integratedWebSearchApiKey: input.piSession.integratedWebSearchApiKey }
+          : {}),
       });
       session.sideEventBus = sideEventBus;
       if (input.agentRegistry && enabledSubagents.length > 0 && wantsAgentTool) {
@@ -490,6 +528,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       }
       session.toolApprovalEnabled = wantsToolApproval;
       session.sessionMode = sessionMode;
+      session.webSearchBackend = webSearchBackend;
       session.armToolPermission = (handler) => {
         permissionBridge.handler = handler
           ? createPiModeAwareToolPermissionHandler({
@@ -668,6 +707,19 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     });
   }
 
+  const toolsAllowlistBase =
+    input.toolsAllowlist && input.toolsAllowlist.length > 0
+      ? [...input.toolsAllowlist]
+      : piMcpToolAllowlist(hasMcpServers);
+  const webSearchBackend = input.webSearchBackend ?? "none";
+  await appendPiWebSearchSessionParts({
+    backend: webSearchBackend,
+    ...(input.integratedWebSearchProvider ? { integratedProvider: input.integratedWebSearchProvider } : {}),
+    ...(input.integratedWebSearchApiKey ? { integratedApiKey: input.integratedWebSearchApiKey } : {}),
+    extensionFactories,
+    toolsAllowlist: toolsAllowlistBase,
+  });
+
   const resourceLoader = new DefaultResourceLoader({
     cwd: input.cwd,
     agentDir: input.agentDir,
@@ -711,10 +763,6 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     });
   }
 
-  const toolsAllowlistBase =
-    input.toolsAllowlist && input.toolsAllowlist.length > 0
-      ? [...input.toolsAllowlist]
-      : piMcpToolAllowlist(hasMcpServers);
   // PI's `tools` option is an allowlist: extension tools not listed here are dropped
   // from the registry (see AgentSession._refreshToolRegistry). Agent must be included
   // whenever eco-pi-agent is loaded, or the model only sees mcp/browser and never Agent.
@@ -774,6 +822,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     get mcpFingerprint() {
       return mcpFingerprint;
     },
+    webSearchBackend,
     ...(sideEventBus ? { sideEventBus } : {}),
     abort: async () => {
       await session.abort();

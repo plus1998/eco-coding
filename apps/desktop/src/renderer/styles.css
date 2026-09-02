@@ -8009,6 +8009,57 @@ button.sidebar-settings-meta {
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
+.integrated-web-search-provider-list {
+  margin-top: 0;
+}
+
+.integrated-web-search-provider-row {
+  cursor: pointer;
+  list-style: none;
+}
+
+.integrated-web-search-provider-row.is-selected {
+  background: var(--accent-soft);
+}
+
+.integrated-web-search-provider-row.is-selected:hover {
+  background: var(--accent-soft);
+}
+
+.integrated-web-search-provider-row[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.integrated-web-search-provider-row[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.integrated-web-search-provider-row:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -2px;
+}
+
+.integrated-web-search-provider-row .mcp-server-meta {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.45;
+}
+
+.integrated-web-search-provider-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--accent);
+}
+
 .mcp-server-name {
   font-size: 14px;
   font-weight: 600;

@@ -205,6 +205,15 @@ export function ModelManualSpecPanel({
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(supportsReasoning) => onChange({ supportsReasoning })}
           />
+          <label className="model-spec-field model-spec-field-checkbox">
+            <input
+              type="checkbox"
+              checked={value.supportsNativeWebSearch}
+              disabled={disabled}
+              onChange={(event) => onChange({ supportsNativeWebSearch: event.target.checked })}
+            />
+            <span className="model-spec-field-label">{t("modelSpec.nativeWebSearch")}</span>
+          </label>
         </div>
       </section>
 
