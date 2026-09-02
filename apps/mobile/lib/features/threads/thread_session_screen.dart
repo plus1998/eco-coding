@@ -32,7 +32,6 @@ import '../approvals/approval_sheets.dart';
 import '../approvals/bash_approval_panel.dart';
 import '../approvals/plan_approval_panel.dart';
 import '../composer/composer_dock_shell.dart';
-import '../composer/composer_stack_card.dart';
 import '../composer/follow_up_queue_bar.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
@@ -199,16 +198,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           contextSnapshot: state.contextSnapshot,
           titleGenerating: state.titleGenerating,
           composerRestore: state.composerRestore,
-          composerRestoreError: state.composerRestoreError,
-          followUpRefreshError: state.followUpRefreshError,
           projectionReady: isProjectionFeedReady(state.runProjection),
           projectionSettled: state.projectionSettled,
           projectionSynchronizing: state.projectionSynchronizing,
         ),
       ),
     );
-    final connectionStatus = ref.watch(connectionStatusProvider).valueOrNull;
-    final isConnected = connectionStatus?.state == EcoConnectionState.connected;
     final runtimeConfig =
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
@@ -315,9 +310,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final hasFloatingComposerContent =
         hasWorkspaceChanges ||
         queuedFollowUps.isNotEmpty ||
-        _editingFollowUpId != null ||
-        session.composerRestoreError != null ||
-        session.followUpRefreshError != null;
+        _editingFollowUpId != null;
 
     final floatingComposer = hasFloatingComposerContent
         ? Column(
@@ -349,20 +342,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   onDelete: (followUp) => _deleteFollowUp(followUp),
                   onReorder: (oldIndex, newIndex) =>
                       _reorderFollowUps(queuedFollowUps, oldIndex, newIndex),
-                ),
-              if (isConnected && session.composerRestoreError != null)
-                _SessionSyncErrorBanner(
-                  message: context.l10n.composerDraftRecoveryLoadFailed,
-                  onRetry: () => ref
-                      .read(threadSessionProvider(widget.threadId).notifier)
-                      .refreshComposerRestore(),
-                ),
-              if (isConnected && session.followUpRefreshError != null)
-                _SessionSyncErrorBanner(
-                  message: context.l10n.threadFollowUpRefreshFailed,
-                  onRetry: () => ref
-                      .read(threadSessionProvider(widget.threadId).notifier)
-                      .refreshFollowUps(),
                 ),
             ],
           )
@@ -2156,40 +2135,3 @@ List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
   return merged;
 }
 
-class _SessionSyncErrorBanner extends StatelessWidget {
-  const _SessionSyncErrorBanner({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return Padding(
-      padding: composerStackOuterPadding,
-      child: ComposerStackCard(
-        padding: composerStackRowPadding,
-        child: Row(
-          children: [
-            Icon(EcoIcons.error, size: 16, color: eco.danger),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: eco.composerPillText),
-              ),
-            ),
-            TextButton(
-              onPressed: onRetry,
-              child: Text(context.l10n.commonRetry),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

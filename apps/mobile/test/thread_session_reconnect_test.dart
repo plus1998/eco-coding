@@ -205,11 +205,7 @@ void main() {
       });
 
       await _waitUntil(
-        () =>
-            container
-                .read(threadSessionProvider('thr_1'))
-                .composerRestoreError !=
-            null,
+        () => container.read(threadSessionProvider('thr_1')).thread?.id == 'thr_1',
       );
       final state = container.read(threadSessionProvider('thr_1'));
       expect(state.error, isNull);

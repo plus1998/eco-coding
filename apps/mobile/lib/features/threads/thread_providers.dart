@@ -1173,8 +1173,6 @@ class ThreadSessionState {
     this.contextSnapshot,
     this.titleGenerating = false,
     this.composerRestore,
-    this.composerRestoreError,
-    this.followUpRefreshError,
     this.projectionSettled = false,
     this.projectionSynchronizing = false,
   });
@@ -1192,8 +1190,6 @@ class ThreadSessionState {
   final ThreadContextSnapshot? contextSnapshot;
   final bool titleGenerating;
   final ComposerRestore? composerRestore;
-  final String? composerRestoreError;
-  final String? followUpRefreshError;
 
   /// Local desktop RPC for Feed projection has completed at least once.
   final bool projectionSettled;
@@ -1222,10 +1218,6 @@ class ThreadSessionState {
     bool? titleGenerating,
     ComposerRestore? composerRestore,
     bool clearComposerRestore = false,
-    String? composerRestoreError,
-    bool clearComposerRestoreError = false,
-    String? followUpRefreshError,
-    bool clearFollowUpRefreshError = false,
     bool? projectionSettled,
     bool? projectionSynchronizing,
   }) {
@@ -1251,12 +1243,6 @@ class ThreadSessionState {
       composerRestore: clearComposerRestore
           ? null
           : (composerRestore ?? this.composerRestore),
-      composerRestoreError: clearComposerRestoreError
-          ? null
-          : (composerRestoreError ?? this.composerRestoreError),
-      followUpRefreshError: clearFollowUpRefreshError
-          ? null
-          : (followUpRefreshError ?? this.followUpRefreshError),
       projectionSettled: projectionSettled ?? this.projectionSettled,
       projectionSynchronizing:
           projectionSynchronizing ?? this.projectionSynchronizing,
@@ -1524,7 +1510,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         billing: state.billing ?? bootstrap.usage.billing,
         contextSnapshot: state.contextSnapshot ?? bootstrap.usage.context,
         composerRestore: state.composerRestore,
-        composerRestoreError: state.composerRestoreError,
         loading: false,
         projectionSettled: true,
         projectionSynchronizing: false,
@@ -1749,11 +1734,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       state = state.copyWith(
         composerRestore: restore,
         clearComposerRestore: restore == null,
-        clearComposerRestoreError: true,
       );
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
-      state = state.copyWith(composerRestoreError: error.toString());
     }
   }
 
@@ -1787,13 +1770,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     try {
       final followUps = await rpc.followUpList(threadId);
       if (!mounted) return;
-      state = state.copyWith(
-        followUps: followUps,
-        clearFollowUpRefreshError: true,
-      );
-    } catch (error) {
+      state = state.copyWith(followUps: followUps);
+    } catch (_) {
       if (!mounted) return;
-      state = state.copyWith(followUpRefreshError: error.toString());
     }
   }
 
