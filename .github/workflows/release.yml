@@ -53,6 +53,9 @@ jobs:
       - name: Install release test dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Bundle pi-mcp-adapter vendor
+        run: bun run --cwd packages/runtime bundle:pi-mcp-adapter
+
       - name: Test desktop release policies
         run: bun run --cwd apps/desktop test:release
 

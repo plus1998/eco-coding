@@ -68,3 +68,11 @@ const stat = fs.statSync(outfile);
 console.log(
   `Bundled pi-mcp-adapter -> ${path.relative(runtimeRoot, outfile)} (${(stat.size / (1024 * 1024)).toFixed(2)} MiB)`,
 );
+
+const declarationFile = path.join(vendorDir, "pi-mcp-adapter.d.ts");
+fs.writeFileSync(
+  declarationFile,
+  "export function createMcpAdapter(config: unknown): (pi: unknown) => void | Promise<void>;\n",
+  "utf8",
+);
+console.log(`Wrote ${path.relative(runtimeRoot, declarationFile)}`);
