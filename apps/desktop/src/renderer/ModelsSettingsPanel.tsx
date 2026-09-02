@@ -462,27 +462,21 @@ export function ModelsSettingsPanel({
       return;
     }
 
-    let candidateModelId = "";
-    let modelId = provider.defaultModel.trim();
+    let candidates: CandidateModelView[] = [];
     try {
-      const candidates = await window.eco.listCandidateModels(provider.id);
-      const first = candidates[0];
-      if (first) {
-        candidateModelId = first.id;
-        modelId = first.modelId;
-      }
+      candidates = await window.eco.listCandidateModels(provider.id);
     } catch {
-      // Candidate list is optional for the prompt; fall back to defaultModel.
+      return;
     }
-
-    if (!modelId) {
+    const first = candidates[0];
+    if (!first) {
       return;
     }
 
     setCreateMainConfigPromptSeed({
       providerId: provider.id,
-      candidateModelId,
-      modelId,
+      candidateModelId: first.id,
+      modelId: first.modelId,
     });
   }
 
