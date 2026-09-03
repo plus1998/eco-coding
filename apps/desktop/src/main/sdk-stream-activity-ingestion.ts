@@ -7,7 +7,7 @@ import {
 } from "@eco/runtime";
 import { repairActivityText } from "../shared/activity-text";
 import type { AgentRole } from "../shared/ipc";
-import { resolveActivityAgentId } from "./activity-agent-id";
+import { resolveActivityAgentId, shouldOmitAcpRootActivityAgentId } from "./activity-agent-id";
 import type { AgentLifecycleService } from "./agent-lifecycle-service";
 import type { ContextLifecycleService } from "./context-lifecycle-service";
 import type { ConversationStore } from "./conversation-store";
@@ -366,12 +366,25 @@ export function createSdkStreamActivityIngestion(
     const plannerSessionId =
       deps.store.getSdkSession(threadId)?.sessionId?.trim() ||
       deps.store.getThreadCoreSession(threadId)?.externalSessionId?.trim();
+    const coreKind = deps.store.getThread(threadId)?.coreKind;
     const streamAttributedAgentId = readStreamAttributedAgentId(event.agentId, plannerSessionId);
-    const activityAgentId =
+    const resolvedActivityAgentId =
       resolveActivityAgentId(threadId, event, {
         ...(plannerSessionId && { plannerSessionId }),
         metricsRegistry: deps.metricsRegistry,
+        ...(coreKind && { coreKind }),
       }) ?? streamAttributedAgentId;
+    // ACP root turns stamp a per-run UUID that never becomes an Eco agent Card —
+    // drop it so thread-run events stay `scope: main` and the Feed skeleton tracks them.
+    // (`resolveActivityAgentId` already omits, but `?? streamAttributedAgentId` would reintroduce it.)
+    const activityAgentId =
+      shouldOmitAcpRootActivityAgentId({
+        coreKind,
+        eventAgentId: event.agentId,
+        parentToolUseId: sdkParentToolUseId,
+      })
+        ? undefined
+        : resolvedActivityAgentId;
 
     const logicalRequestId = readSdkEventLogicalRequestId(event);
     if (logicalRequestId) {

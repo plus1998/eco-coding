@@ -13551,7 +13551,15 @@ function loadThreadFeedProjectionForClient(
 ): ThreadRunProjectionSnapshot | undefined {
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
-  const cached = conversationStore.getThreadFeedSkeleton(threadId);
+  let cached = conversationStore.getThreadFeedSkeleton(threadId);
+  if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
+    // Stale ACP skeletons can stay "fresh" while orphan agent-scoped rows were
+    // never tracked — force a full rebuild so historical content reappears.
+    if (shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot)) {
+      conversationStore.deleteThreadFeedSkeleton(threadId);
+      cached = undefined;
+    }
+  }
   const feedProjection =
     cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)
       ? cached.snapshot
@@ -13565,6 +13573,57 @@ function loadThreadFeedProjectionForClient(
     buildThreadFeedSkeletonHydrationContext(),
   );
   return filterFeedProjectionForClient(hydrated, request);
+}
+
+/**
+ * Cursor ACP root events historically landed as `scope: agent` with a per-run UUID
+ * that has no agent instance. Incremental Feed patches dropped them; detect that
+ * hole so reload rebuilds from the full projection (orphan → main).
+ */
+function shouldRebuildFeedSkeletonForOrphanAgentEvents(
+  threadId: string,
+  snapshot: ThreadRunProjectionSnapshot,
+): boolean {
+  const knownAgentIds = new Set([
+    ...conversationStore.listAgentInstances(threadId).map((agent) => agent.agentId),
+    ...snapshot.agents.map((agent) => agent.agentId),
+  ]);
+  const events = conversationStore.listThreadRunEventsForProjection(threadId);
+  let orphanAssistant = false;
+  for (const event of events) {
+    if (event.scope !== "agent") {
+      continue;
+    }
+    const agentId = event.agentId?.trim();
+    if (!agentId || knownAgentIds.has(agentId)) {
+      continue;
+    }
+    if (
+      event.eventType === "message.final" ||
+      event.eventType === "message.delta" ||
+      event.eventType === "thinking.final" ||
+      event.eventType === "thinking.delta" ||
+      event.eventType === "tool.started" ||
+      event.eventType === "tool.completed"
+    ) {
+      orphanAssistant = true;
+      break;
+    }
+  }
+  if (!orphanAssistant) {
+    return false;
+  }
+  const mainHasAssistant = snapshot.timeline.some(
+    (item) =>
+      item.scope !== "agent" &&
+      (item.eventType === "message.final" ||
+        item.eventType === "message.delta" ||
+        item.eventType === "thinking.final" ||
+        item.eventType === "thinking.delta" ||
+        item.eventType === "tool.started" ||
+        item.eventType === "tool.completed"),
+  );
+  return !mainHasAssistant;
 }
 
 function buildCurrentThreadRunProjection(
@@ -13685,7 +13744,13 @@ function scheduleThreadRunProjectionUpdated(threadId: string, options?: { stream
 function emitThreadRunProjectionUpdated(threadId: string): void {
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
-  const cached = conversationStore.getThreadFeedSkeleton(threadId);
+  let cached = conversationStore.getThreadFeedSkeleton(threadId);
+  if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
+    if (shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot)) {
+      conversationStore.deleteThreadFeedSkeleton(threadId);
+      cached = undefined;
+    }
+  }
   let feedProjection =
     cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)
       ? cached.snapshot

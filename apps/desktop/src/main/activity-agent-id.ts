@@ -5,6 +5,7 @@ import {
   SDK_PLAN_AGENT_KEY,
 } from "@eco/runtime";
 import { inferActivityRole } from "@eco/runtime/sdk";
+import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 
@@ -55,6 +56,28 @@ function readDistinctSubagentSessionId(
   return explicitAgentId;
 }
 
+/**
+ * Cursor ACP root-turn events stamp a per-run UUID as `agentId`, but Eco never
+ * mints a matching agent instance / Card. Those rows must land on the main Feed
+ * (`scope: main`); nested `acp-sub:*` / parent-tool-linked events keep attribution.
+ */
+export function shouldOmitAcpRootActivityAgentId(input: {
+  coreKind?: string | null;
+  eventAgentId?: string | null;
+  parentToolUseId?: string | null;
+}): boolean {
+  if (input.coreKind !== "acp") {
+    return false;
+  }
+  if (isAcpSubagentAgentId(input.eventAgentId)) {
+    return false;
+  }
+  if (typeof input.parentToolUseId === "string" && input.parentToolUseId.trim()) {
+    return false;
+  }
+  return Boolean(typeof input.eventAgentId === "string" && input.eventAgentId.trim());
+}
+
 /** Resolve sub-agent instance id for activity persistence. */
 export function resolveActivityAgentId(
   threadId: string,
@@ -62,12 +85,24 @@ export function resolveActivityAgentId(
   options: {
     plannerSessionId?: string;
     metricsRegistry?: SubagentMetricsRegistry;
+    /** When `acp`, root-turn UUIDs are omitted so narrative lands on the main Feed. */
+    coreKind?: string | null;
   },
 ): string | undefined {
   const displayRole = inferActivityRole(event);
   const billingRole = readBillingRole(displayRole);
   const distinctExplicit = readDistinctSubagentSessionId(event.agentId, options.plannerSessionId?.trim());
   const parentToolUseId = readParentToolUseId(event.payload);
+
+  if (
+    shouldOmitAcpRootActivityAgentId({
+      coreKind: options.coreKind,
+      eventAgentId: event.agentId,
+      parentToolUseId,
+    })
+  ) {
+    return undefined;
+  }
 
   if (parentToolUseId && options.metricsRegistry) {
     const linked = options.metricsRegistry.resolveAgentIdByParentToolUse(threadId, parentToolUseId);

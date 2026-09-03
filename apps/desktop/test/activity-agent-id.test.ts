@@ -1,8 +1,55 @@
 import { expect, test } from "bun:test";
 import { inferActivityRole } from "@eco/runtime/sdk";
-import { activityStreamKey, resolveActivityAgentId } from "../src/main/activity-agent-id";
+import {
+  activityStreamKey,
+  resolveActivityAgentId,
+  shouldOmitAcpRootActivityAgentId,
+} from "../src/main/activity-agent-id";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
+
+test("shouldOmitAcpRootActivityAgentId drops Cursor ACP per-run UUIDs", () => {
+  expect(
+    shouldOmitAcpRootActivityAgentId({
+      coreKind: "acp",
+      eventAgentId: "e5c5801d-e0ad-495c-abc3-fdf0fd4645e5",
+    }),
+  ).toBe(true);
+  expect(
+    shouldOmitAcpRootActivityAgentId({
+      coreKind: "acp",
+      eventAgentId: "acp-sub:call_1",
+    }),
+  ).toBe(false);
+  expect(
+    shouldOmitAcpRootActivityAgentId({
+      coreKind: "acp",
+      eventAgentId: "e5c5801d-e0ad-495c-abc3-fdf0fd4645e5",
+      parentToolUseId: "call_parent",
+    }),
+  ).toBe(false);
+  expect(
+    shouldOmitAcpRootActivityAgentId({
+      coreKind: "claude",
+      eventAgentId: "e5c5801d-e0ad-495c-abc3-fdf0fd4645e5",
+    }),
+  ).toBe(false);
+});
+
+test("resolveActivityAgentId omits ACP root-turn UUIDs when coreKind is acp", () => {
+  expect(
+    resolveActivityAgentId(
+      "thr_acp",
+      {
+        type: "message.delta",
+        role: "planner",
+        agentId: "e5c5801d-e0ad-495c-abc3-fdf0fd4645e5",
+        payload: { type: "eco_stream", text: "hello" },
+      },
+      { coreKind: "acp", plannerSessionId: "fba96a72-b0be-42f2-8ac4-419bdda0465e" },
+    ),
+  ).toBeUndefined();
+});
 
 test("resolveActivityAgentId prefers distinct subagent session id", () => {
   const agentId = resolveActivityAgentId(
