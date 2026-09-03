@@ -12,6 +12,7 @@ import {
   formatLightboxZoomPercent,
 } from "../lightbox-zoom";
 import { repairMarkdown } from "../markdown-repair";
+import { copyMermaidAsImage, copyMermaidAsMarkdown } from "../markdown-mermaid-clipboard";
 import { copyTableAsHtml, copyTableAsImage, copyTableAsMarkdown } from "../markdown-table-clipboard";
 import { getMaterialIconUrl, resolveMaterialIconName } from "../material-file-icon";
 import {
@@ -769,7 +770,11 @@ function openTableLightbox(tableHtml: string): void {
 function createCodeBlockToolbar(
   lang: string,
   getSource: () => string,
-  options?: { wrap?: boolean; mermaidActions?: boolean },
+  options?: {
+    wrap?: boolean;
+    mermaidActions?: boolean;
+    getMermaidSvg?: () => string;
+  },
 ) {
   const toolbar = document.createElement("div");
   toolbar.className = "markdown-code-block__toolbar";
@@ -781,35 +786,141 @@ function createCodeBlockToolbar(
   const actions = document.createElement("div");
   actions.className = "markdown-code-block__actions";
 
-  const copyBtn = createActionButton(i18n.t("common.copy"), COPY_ICON);
-  copyBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-    void copyTextToClipboard(getSource()).then((ok) => {
-      if (!ok) return;
-      copyBtn.innerHTML = CHECK_ICON;
-      window.setTimeout(() => {
-        copyBtn.innerHTML = COPY_ICON;
-      }, 1400);
-    });
-  });
-
   let wrapBtn: HTMLButtonElement | null = null;
   let expandBtn: HTMLButtonElement | null = null;
   let previewBtn: HTMLButtonElement | null = null;
+  let closeCopyMenu: (() => void) | null = null;
 
   if (options?.wrap) {
+    const copyBtn = createActionButton(i18n.t("common.copy"), COPY_ICON);
+    copyBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      void copyTextToClipboard(getSource()).then((ok) => {
+        if (!ok) return;
+        copyBtn.innerHTML = CHECK_ICON;
+        window.setTimeout(() => {
+          copyBtn.innerHTML = COPY_ICON;
+        }, 1400);
+      });
+    });
     wrapBtn = createActionButton(i18n.t("markdown.code.wrap"), WRAP_ICON);
     actions.append(wrapBtn, copyBtn);
   } else if (options?.mermaidActions) {
     expandBtn = createActionButton(i18n.t("markdown.mermaid.expand"), EXPAND_ICON);
     previewBtn = createActionButton(i18n.t("markdown.mermaid.closePreview"), CLOSE_PREVIEW_ICON);
-    actions.append(expandBtn, previewBtn, copyBtn);
+
+    const copyWrap = document.createElement("div");
+    copyWrap.className = "markdown-mermaid-copy-wrap";
+
+    const copyBtn = createActionButton(i18n.t("markdown.mermaid.copy"), COPY_ICON);
+    copyBtn.classList.add("markdown-mermaid-copy-trigger");
+    copyBtn.setAttribute("aria-haspopup", "menu");
+    copyBtn.setAttribute("aria-expanded", "false");
+
+    const menu = document.createElement("div");
+    menu.className = "markdown-mermaid-copy-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+
+    const getSvg = options.getMermaidSvg ?? (() => "");
+    const menuItems: Array<{
+      labelKey: string;
+      run: () => Promise<boolean>;
+    }> = [
+      {
+        labelKey: "markdown.mermaid.copyMarkdown",
+        run: () => copyMermaidAsMarkdown(getSource()),
+      },
+      {
+        labelKey: "markdown.mermaid.copyImage",
+        run: async () => {
+          let svg = getSvg().trim();
+          if (!svg) {
+            try {
+              svg = await renderMermaidSvg(getSource());
+            } catch {
+              return false;
+            }
+          }
+          return copyMermaidAsImage(svg);
+        },
+      },
+    ];
+
+    for (const item of menuItems) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "markdown-mermaid-copy-menu__item";
+      btn.setAttribute("role", "menuitem");
+      btn.textContent = i18n.t(item.labelKey);
+      btn.addEventListener("mousedown", (event) => event.preventDefault());
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void item.run().then((ok) => {
+          closeCopyMenu?.();
+          if (!ok) {
+            copyBtn.title = i18n.t("markdown.mermaid.copyFailed");
+            window.setTimeout(() => {
+              copyBtn.title = i18n.t("markdown.mermaid.copy");
+            }, 1600);
+            return;
+          }
+          copyBtn.innerHTML = CHECK_ICON;
+          window.setTimeout(() => {
+            copyBtn.innerHTML = COPY_ICON;
+          }, 1400);
+        });
+      });
+      menu.append(btn);
+    }
+
+    const onPointerDownOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || copyWrap.contains(target)) return;
+      closeCopyMenu?.();
+    };
+
+    closeCopyMenu = () => {
+      menu.hidden = true;
+      copyWrap.classList.remove("is-open");
+      copyBtn.setAttribute("aria-expanded", "false");
+      window.removeEventListener("pointerdown", onPointerDownOutside, true);
+    };
+
+    const openCopyMenu = () => {
+      menu.hidden = false;
+      copyWrap.classList.add("is-open");
+      copyBtn.setAttribute("aria-expanded", "true");
+      window.addEventListener("pointerdown", onPointerDownOutside, true);
+    };
+
+    copyBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (menu.hidden) openCopyMenu();
+      else closeCopyMenu?.();
+    });
+
+    copyWrap.append(copyBtn, menu);
+    actions.append(expandBtn, previewBtn, copyWrap);
   } else {
+    const copyBtn = createActionButton(i18n.t("common.copy"), COPY_ICON);
+    copyBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      void copyTextToClipboard(getSource()).then((ok) => {
+        if (!ok) return;
+        copyBtn.innerHTML = CHECK_ICON;
+        window.setTimeout(() => {
+          copyBtn.innerHTML = COPY_ICON;
+        }, 1400);
+      });
+    });
     actions.append(copyBtn);
   }
 
   toolbar.append(language, actions);
-  return { toolbar, language, wrapBtn, expandBtn, previewBtn };
+  return { toolbar, language, wrapBtn, expandBtn, previewBtn, closeCopyMenu };
 }
 
 function createTableNodeView(): {
@@ -962,9 +1073,14 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   let previewOpen = true;
   let lastSvg = "";
 
-  const { toolbar, language, expandBtn, previewBtn } = createCodeBlockToolbar("mermaid", () => source, {
-    mermaidActions: true,
-  });
+  const { toolbar, language, expandBtn, previewBtn, closeCopyMenu } = createCodeBlockToolbar(
+    "mermaid",
+    () => source,
+    {
+      mermaidActions: true,
+      getMermaidSvg: () => lastSvg,
+    },
+  );
   language.textContent = "mermaid";
 
   const body = document.createElement("div");
@@ -1093,6 +1209,7 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
     },
     destroy() {
       disposed = true;
+      closeCopyMenu?.();
       stopTheme();
       dismissMarkdownLightbox();
     },
