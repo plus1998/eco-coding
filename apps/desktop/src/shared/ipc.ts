@@ -258,6 +258,8 @@ export const IPC_CHANNELS = {
   browserDevPrepareAgentCdp: "browser:dev-prepare-agent-cdp",
   browserOpenExternal: "browser:open-external",
   browserStateChanged: "browser:state-changed",
+  /** Agent operating the built-in browser (rainbow edge / synthetic cursor). */
+  browserAgentPresence: "browser:agent-presence",
   integrationAvailabilityGet: "integration-availability:get",
   imageGenerationSettingsGet: "image-generation-settings:get",
   imageGenerationSettingsSave: "image-generation-settings:save",
@@ -1090,6 +1092,9 @@ export type {
   BrowserSetVisibleRequest,
   BrowserViewState,
 } from "./browser";
+
+export type { BrowserAgentPresenceEvent } from "./browser-agent-presence";
+export { BROWSER_AGENT_PRESENCE_IDLE_MS } from "./browser-agent-presence";
 
 export interface ProxyBridgeSettingsSnapshot {
   /** 留空：透传 SDK User-Agent；非空：覆盖透传 */

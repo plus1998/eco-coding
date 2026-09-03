@@ -4,6 +4,10 @@ import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import type { Input, WebContents } from "electron";
 import { FORBIDDEN_CDP_PORT } from "../shared/dev-cdp";
+import {
+  isBrowserAgentPresenceCdpMethod,
+  parseBrowserAgentPresenceMouse,
+} from "../shared/browser-agent-presence";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -41,6 +45,8 @@ export interface MultiBrowserCdpProxyOptions {
     method?: string;
     targetId?: string;
     url?: string;
+    /** Present for Input.dispatchMouseEvent when x/y parse. */
+    mouse?: { x: number; y: number; type: string; buttons?: number };
   }) => void;
   /** Blur embedder / move OS keyboard focus before guest synthetic keyboard input. */
   onPrepareGuestKeyboardInput?: (target: BrowserCdpTarget) => void | Promise<void>;
@@ -897,6 +903,11 @@ async function handleClientMessage(
           key,
           options,
         );
+        options.onClientActivity?.({
+          kind: "cdp-method",
+          method,
+          targetId: target.id,
+        });
       } else {
         if (clearsPendingDomFocus(method)) {
           clearPendingDomFocus(clientState, key);
@@ -913,6 +924,15 @@ async function handleClientMessage(
           kind: "cdp-method",
           method,
           targetId: target.id,
+        });
+      } else if (isBrowserAgentPresenceCdpMethod(method)) {
+        const mouse =
+          method === "Input.dispatchMouseEvent" ? parseBrowserAgentPresenceMouse(params) : null;
+        options.onClientActivity?.({
+          kind: "cdp-method",
+          method,
+          targetId: target.id,
+          ...(mouse ? { mouse } : {}),
         });
       }
     }

@@ -8,14 +8,14 @@
   --ui-font-size: 14px;
   --code-font-size: 12px;
   /* Above in-app window chrome (toolbars use the same ceiling). Native Win/macOS
-     caption buttons still paint above the page � that is OS overlay, not CSS. */
+     caption buttons still paint above the page � that is OS overlay, not CSS. */
   --eco-modal-z-index: 2147483647;
   /* Default modal breathing room; Win/Linux WCO only bumps top past the titlebar. */
   --eco-modal-inset-top: 24px;
   --eco-modal-inset-right: 24px;
   --eco-modal-inset-bottom: 24px;
   --eco-modal-inset-left: 24px;
-  /* macOS traffic-light inset �?use only on left sidebars (.codex-sidebar, .settings-nav) */
+  /* macOS traffic-light inset �?use only on left sidebars (.codex-sidebar, .settings-nav) */
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --macos-window-controls-safe-inline-start: 148px;
   /* traffic lights (~72) + pad + 3×32 toolbar buttons + breathing */
@@ -38,7 +38,7 @@
   --activity-feed-composer-mask-height: 10px;
 }
 
-/* Linux: Window Controls Overlay �?content draws into the titlebar area */
+/* Linux: Window Controls Overlay �?content draws into the titlebar area */
 html[data-platform="linux"] {
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --window-controls-overlay-end: max(
@@ -54,7 +54,7 @@ html[data-platform="linux"] {
   --window-sidebar-toolbar-inset-new-thread: 120px;
 }
 
-/* Windows: Window Controls Overlay �?content draws into the titlebar area */
+/* Windows: Window Controls Overlay �?content draws into the titlebar area */
 html[data-platform="win32"] {
   /* Match Codex desktop defaults (sans + code/terminal mono). */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -417,7 +417,7 @@ html[data-platform="linux"] .settings-nav {
 }
 
 /*
- * B group (ChromeStrip) is a *top-only* overlay on MainPane �?never a full-height
+ * B group (ChromeStrip) is a *top-only* overlay on MainPane �?never a full-height
  * grid column. Content (feed, terminal, task body) spans the full pane width.
  * B only needs layout reserve in the topbar plane so A/B icon steps match.
  *
@@ -510,7 +510,7 @@ html[data-platform="linux"] .settings-nav {
 /*
  * Feed topbar: while task is closed (or exiting), A-group reserves the same strip
  * so A/B read as one equal-gap row under the overlay. When task is docked open,
- * B sits over the task topbar instead �?feed only needs its normal inset.
+ * B sits over the task topbar instead �?feed only needs its normal inset.
  */
 .codex-main .codex-main-pane.has-panel-chrome:not(.is-task-panel-open) .codex-main-topbar,
 .codex-main .codex-main-pane.has-panel-chrome.is-task-panel-exiting .codex-main-topbar,
@@ -598,7 +598,7 @@ html[data-platform="linux"] .settings-nav {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  /* Instant hide �?do not fade under a transparent settings-nav. */
+  /* Instant hide �?do not fade under a transparent settings-nav. */
   transition:
     background 0.2s ease,
     backdrop-filter 0.2s ease,
@@ -612,7 +612,7 @@ html[data-platform="linux"] .settings-nav {
   pointer-events: none;
 }
 
-/* —�?Sidebar —�?*/
+/* —�?Sidebar —�?*/
 .codex-sidebar {
   --sidebar-control-hover-bg: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
   --sidebar-control-active-bg: color-mix(in srgb, var(--text-primary) 6%, transparent);
@@ -2156,7 +2156,7 @@ button.sidebar-settings-meta {
   cursor: default;
 }
 
-/* —�?Main —�?*/
+/* —�?Main —�?*/
 .codex-main {
   position: relative;
   z-index: 1;
@@ -2876,7 +2876,7 @@ button.sidebar-settings-meta {
   margin-inline: auto;
 }
 
-/* Shared shell so landing �?conversation keeps one composer mount point. */
+/* Shared shell so landing �?conversation keeps one composer mount point. */
 .codex-chat-shell {
   position: relative;
   display: flex;
@@ -3281,7 +3281,7 @@ button.sidebar-settings-meta {
   height: 100%;
   min-height: 0;
   outline: none;
-  /* ghostty �?canvas 上绘制光标；隝藝 contenteditable / textarea 的原�?caret */
+  /* ghostty �?canvas 上绘制光标；隝藝 contenteditable / textarea 的原�?caret */
   caret-color: transparent;
 }
 
@@ -3881,8 +3881,8 @@ button.sidebar-settings-meta {
 .activity-user-message-nav {
   position: absolute;
   top: 50%;
-  /* Sit in the scroll-body content-box left gutter. Do not use 100vw �?sidebar /
-   * task panes make vw �?column width and the rail paints outside overflow:hidden. */
+  /* Sit in the scroll-body content-box left gutter. Do not use 100vw �?sidebar /
+   * task panes make vw �?column width and the rail paints outside overflow:hidden. */
   left: calc((min(100cqw, var(--feed-max-width, 750px)) - 100cqw) / 2);
   z-index: 5;
   display: flex;
@@ -4063,7 +4063,7 @@ button.sidebar-settings-meta {
 
 /* Message-nav visibility is decided in JS from measured left gutter + message count
  * (see measureFeedColumnLeftGutterPx / shouldShowActivityMessageNav). Do not re-gate
- * with viewport/container media �?that reintroduced mode/stack conflicts with docked feed-panel. */
+ * with viewport/container media �?that reintroduced mode/stack conflicts with docked feed-panel. */
 
 .activity-feed-top-mask {
   position: absolute;
@@ -7968,7 +7968,7 @@ button.sidebar-settings-meta {
   filter: brightness(1.05);
 }
 
-/* —�?MCP settings (Codex-style) —�?*/
+/* —�?MCP settings (Codex-style) —�?*/
 .mcp-page-header {
   margin-bottom: 28px;
 }
@@ -9650,7 +9650,7 @@ button.default-agent-option:focus-visible {
   word-break: break-all;
 }
 
-/* —�?Run log (Claude Code style) —�?*/
+/* —�?Run log (Claude Code style) —�?*/
 .run-log {
   display: flex;
   flex-direction: column;
@@ -11775,7 +11775,7 @@ button.default-agent-option:focus-visible {
   color: var(--markdown-text);
   overflow-wrap: break-word;
   word-break: normal;
-  /* Chat markdown uses soft newlines �?hard_break; do not inherit pre-wrap from parents. */
+  /* Chat markdown uses soft newlines �?hard_break; do not inherit pre-wrap from parents. */
   white-space: normal;
 }
 
@@ -11794,7 +11794,7 @@ button.default-agent-option:focus-visible {
 
 /*
  * ProseMirror inserts <br class="ProseMirror-trailingBreak"> at the end of textblocks
- * so the caret has a place to land. Feed is read-only �?it only adds empty line height.
+ * so the caret has a place to land. Feed is read-only �?it only adds empty line height.
  */
 .markdown-content .ProseMirror-trailingBreak,
 .markdown-content br.ProseMirror-trailingBreak {
@@ -12075,11 +12075,11 @@ button.default-agent-option:focus-visible {
   letter-spacing: 0.01em;
   line-height: 1.35;
   border-bottom-color: var(--markdown-table-border, var(--markdown-border));
-  /* Inline min-width (�?half header measure) prefers �? wraps; else host scrolls. */
+  /* Inline min-width (�?half header measure) prefers �? wraps; else host scrolls. */
   white-space: normal;
 }
 
-/* Clamp on an inner wrapper �?display:-webkit-box must not sit on the th itself. */
+/* Clamp on an inner wrapper �?display:-webkit-box must not sit on the th itself. */
 .markdown-content .markdown-table-th {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -12218,7 +12218,7 @@ button.default-agent-option:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* File refs are chips, not hyperlinks �?beat `.markdown-content a` specificity. */
+/* File refs are chips, not hyperlinks �?beat `.markdown-content a` specificity. */
 .markdown-content a.markdown-file-ref,
 .markdown-content .markdown-file-ref {
   display: inline-flex;
@@ -13271,7 +13271,7 @@ button.default-agent-option:focus-visible {
   color: color-mix(in srgb, var(--accent-text, var(--accent)) 72%, var(--codex-log-faint, var(--text-secondary)));
 }
 
-/* Expanded panel content sits inside the outer feed-surface card �?no nested card chrome. */
+/* Expanded panel content sits inside the outer feed-surface card �?no nested card chrome. */
 .run-log-action--web-search-card .run-log-web-search-detail {
   margin-top: 0;
   padding: 8px 10px 10px;
@@ -13765,7 +13765,7 @@ a.run-log-web-search-detail-result-url:focus-visible {
   background: transparent;
   color: var(--codex-log-faint, #737373);
   opacity: 0;
-  /* Keep hits enabled even while invisible �?toggling pointer-events on :hover
+  /* Keep hits enabled even while invisible �?toggling pointer-events on :hover
      races Chromium hit-testing and makes the first click miss the button. */
   pointer-events: auto;
   cursor: pointer;
@@ -16520,7 +16520,7 @@ a.run-log-web-search-detail-result-url:focus-visible {
   padding: 3px 1px;
 }
 
-/* —�?Composer —�?*/
+/* —�?Composer —�?*/
 .composer-image-notice {
   margin: 0 0 8px;
   padding: 0 4px;
@@ -18716,7 +18716,7 @@ button.composer-session-mode-tag:focus-visible {
   cursor: not-allowed;
 }
 
-/* —�?Settings page —�?*/
+/* —�?Settings page —�?*/
 .settings-page {
   position: fixed;
   inset: 0;
@@ -20280,7 +20280,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   cursor: not-allowed;
 }
 
-/* —�?Storage (System Settings–style grouped storage) —�?*/
+/* —�?Storage (System Settings–style grouped storage) —�?*/
 
 .storage-panel {
   --storage-spring: cubic-bezier(0.32, 0.72, 0, 1);
@@ -20888,7 +20888,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   line-height: 1.5;
 }
 
-/* —�?Models settings (Codex-style) —�?*/
+/* —�?Models settings (Codex-style) —�?*/
 .models-provider-row-main {
   display: grid;
   gap: 4px;
@@ -23675,7 +23675,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   color: #737373;
 }
 
-/* ─── Provider Editor Modal �?Apple-style Sheet ──────────────────────── */
+/* ─── Provider Editor Modal �?Apple-style Sheet ──────────────────────── */
 
 .settings-modal-provider-editor {
   width: min(560px, calc(100vw - 48px));
@@ -24792,7 +24792,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   font-weight: 600;
 }
 
-/* —�?Codex app inspired activity surface —�?*/
+/* —�?Codex app inspired activity surface —�?*/
 .codex-main:not(.codex-main-landing) {
   position: relative;
   --codex-feed-font-size: var(--ui-font-size);
@@ -24846,7 +24846,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
  * Fullscreen task covers the feed topbar (`inset: 0`). With the project sidebar
  * collapsed, tabs would sit under macOS traffic lights / the window-chrome
  * toggle cluster unless they reuse that same inline-start inset.
- * Narrow sheet mode (�?20) already sits below the titlebar row �?do not inset.
+ * Narrow sheet mode (�?20) already sits below the titlebar row �?do not inset.
  */
 @media (min-width: 721px) {
   html[data-platform="darwin"]
@@ -25263,8 +25263,8 @@ html:not([data-platform="darwin"])
 }
 
 /*
- * Empty "正在思�? is deferred to the active-tail after the turn.
- * Under an empty process (only the 处睆�?divider shows), match process-inner's
+ * Empty "正在思�? is deferred to the active-tail after the turn.
+ * Under an empty process (only the 处睆�?divider shows), match process-inner's
  * padding-top so thinking starts at the same y as other process content.
  * After a process that already has tools/content, keep feed-step spacing.
  */
@@ -25288,7 +25288,7 @@ html:not([data-platform="darwin"])
   margin-top: 12px;
 }
 
-/* First process row under the divider is already padded by process-inner �?do not stack. */
+/* First process row under the divider is already padded by process-inner �?do not stack. */
 .codex-main:not(.codex-main-landing) .run-log-turn-process-inner
   > .run-log-feed-entry:first-child:has(.run-log-thinking) {
   margin-top: 0;
@@ -25342,7 +25342,7 @@ html:not([data-platform="darwin"])
 }
 
 /*
- * Block gaps in the feed used to be 0.72em �?far looser than the pre-wrap streaming
+ * Block gaps in the feed used to be 0.72em �?far looser than the pre-wrap streaming
  * plain tail, so the prose→markdown handoff jumped. Keep a modest vertical rhythm
  * closer to single-line spacing while still separating siblings.
  */
@@ -25362,7 +25362,7 @@ html:not([data-platform="darwin"])
 
 /*
  * Edge margins used to target `.markdown-content > :first/last-child`.
- * PM nests real blocks under `.ProseMirror`, so reset there too �?otherwise
+ * PM nests real blocks under `.ProseMirror`, so reset there too �?otherwise
  * last-block margin stacks with the feed's 20px narrative↔tool gap.
  */
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :first-child,
@@ -26644,7 +26644,7 @@ html:not([data-platform="darwin"])
     }
   }
 
-  /* Overlay sidebar: toolbar sits on main content �?always clear the title */
+  /* Overlay sidebar: toolbar sits on main content �?always clear the title */
   html:not([data-platform="darwin"]) .shell .codex-main .codex-main-topbar {
     padding-left: max(22px, var(--window-sidebar-toolbar-inset));
   }
@@ -28290,7 +28290,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   -webkit-backdrop-filter: blur(28px) saturate(180%);
 }
 
-/* —�?Center server (cs) —�?*/
+/* —�?Center server (cs) —�?*/
 .cs {
   max-width: none;
   color: var(--text-primary);
@@ -29607,7 +29607,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   }
 }
 
-/* —�?Remote connect flow (legacy) —�?*/
+/* —�?Remote connect flow (legacy) —�?*/
 .connect-flow {
   max-width: 560px;
 }
@@ -31531,7 +31531,7 @@ body,
   color: var(--danger, #dc2626);
 }
 
-/* ---- Provider �?model cascade field (auxiliary/vision model picker) ---- */
+/* ---- Provider �?model cascade field (auxiliary/vision model picker) ---- */
 
 .composer-field-select {
   position: relative;
@@ -32055,7 +32055,7 @@ body,
   }
 }
 
-/* —�?Built-in browser (right task panel pane) —�?*/
+/* —�?Built-in browser (right task panel pane) —�?*/
 .subagent-task-panel-tab-pane--browser {
   display: flex;
   flex-direction: column;
@@ -32183,6 +32183,7 @@ body,
 .browser-webview-host-slot {
   display: flex;
   flex-direction: column;
+  position: relative;
   background: #111;
 }
 
@@ -32209,6 +32210,676 @@ body,
   inset: 0;
   pointer-events: none;
   z-index: 1;
+  overflow: hidden;
+}
+
+/* Agent presence: block human input on the page while Agent is operating. */
+.browser-panel-overlay-host.is-agent-active {
+  pointer-events: auto;
+  cursor: not-allowed;
+}
+
+/* Soft edge veil � keeps center readable, deepens mist at the rim. */
+.browser-panel-overlay-host.is-agent-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(110% 42% at 50% -6%, color-mix(in srgb, #7c5cff 28%, transparent), transparent 70%),
+    radial-gradient(110% 42% at 50% 106%, color-mix(in srgb, #5ce1ff 24%, transparent), transparent 70%),
+    radial-gradient(42% 110% at -6% 50%, color-mix(in srgb, #ff5cc8 22%, transparent), transparent 70%),
+    radial-gradient(42% 110% at 106% 50%, color-mix(in srgb, #5cff9a 20%, transparent), transparent 70%);
+  opacity: 0.28;
+  animation: browser-agent-veil-breathe 2.8s ease-in-out infinite;
+}
+
+/* Soft organic holographic frame — dissolve geometry; no visible right angles. */
+@property --browser-agent-holo-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.browser-agent-light-strip {
+  position: absolute;
+  inset: 4px;
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+  /* Modest radius — avoid oversized corner cutouts. */
+  border-radius: clamp(10px, 1.6vw, 16px);
+  animation: browser-agent-holo-frame-morph 8s ease-in-out infinite alternate;
+}
+
+.browser-agent-holo-aura,
+.browser-agent-holo-band,
+.browser-agent-holo-spinner {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+/*
+ * Soft annular veil: fade center → glow band → outer transparent.
+ * Replaces hard content-box XOR cuts that left a ruler-straight rim.
+ */
+.browser-agent-holo-aura,
+.browser-agent-holo-band,
+.browser-agent-holo-spinner {
+  -webkit-mask-image: radial-gradient(
+    ellipse 86% 82% at 50% 50%,
+    transparent 0%,
+    transparent 48%,
+    rgba(0, 0, 0, 0.12) 58%,
+    rgba(0, 0, 0, 0.45) 68%,
+    rgba(0, 0, 0, 0.85) 78%,
+    rgba(0, 0, 0, 0.55) 88%,
+    rgba(0, 0, 0, 0.18) 94%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 86% 82% at 50% 50%,
+    transparent 0%,
+    transparent 48%,
+    rgba(0, 0, 0, 0.12) 58%,
+    rgba(0, 0, 0, 0.45) 68%,
+    rgba(0, 0, 0, 0.85) 78%,
+    rgba(0, 0, 0, 0.55) 88%,
+    rgba(0, 0, 0, 0.18) 94%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+.browser-agent-holo-aura,
+.browser-agent-holo-band {
+  background: conic-gradient(
+    from var(--browser-agent-holo-angle, 0deg),
+    transparent 0deg,
+    color-mix(in srgb, #ff9ad5 48%, transparent) 40deg,
+    color-mix(in srgb, #c4b5fd 62%, transparent) 85deg,
+    color-mix(in srgb, #93c5fd 58%, transparent) 130deg,
+    transparent 175deg,
+    color-mix(in srgb, #e9d5ff 54%, transparent) 220deg,
+    color-mix(in srgb, #f0abfc 50%, transparent) 275deg,
+    color-mix(in srgb, #a5b4fc 56%, transparent) 325deg,
+    transparent 360deg
+  );
+  animation: browser-agent-holo-spin 5.2s linear infinite;
+}
+
+/* Dominant fog bloom — hides any residual geometric corners. */
+.browser-agent-holo-aura {
+  inset: -14px;
+  filter: blur(40px) saturate(1.08);
+  opacity: 0.55;
+  -webkit-mask-image: radial-gradient(
+    ellipse 90% 86% at 50% 50%,
+    transparent 0%,
+    transparent 42%,
+    rgba(0, 0, 0, 0.08) 52%,
+    rgba(0, 0, 0, 0.35) 64%,
+    rgba(0, 0, 0, 0.75) 76%,
+    rgba(0, 0, 0, 0.4) 88%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 90% 86% at 50% 50%,
+    transparent 0%,
+    transparent 42%,
+    rgba(0, 0, 0, 0.08) 52%,
+    rgba(0, 0, 0, 0.35) 64%,
+    rgba(0, 0, 0, 0.75) 76%,
+    rgba(0, 0, 0, 0.4) 88%,
+    transparent 100%
+  );
+  animation:
+    browser-agent-holo-spin 5.2s linear infinite,
+    browser-agent-holo-aura-breathe 3.8s ease-in-out infinite;
+}
+
+/* Soft ribbon — still feathered, slightly tighter than aura. */
+.browser-agent-holo-band {
+  opacity: 0.4;
+  filter: blur(14px) saturate(1.05)
+    drop-shadow(0 0 18px color-mix(in srgb, #c4b5fd 20%, transparent));
+  -webkit-mask-image: radial-gradient(
+    ellipse 84% 80% at 50% 50%,
+    transparent 0%,
+    transparent 52%,
+    rgba(0, 0, 0, 0.15) 62%,
+    rgba(0, 0, 0, 0.7) 74%,
+    rgba(0, 0, 0, 0.45) 86%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 84% 80% at 50% 50%,
+    transparent 0%,
+    transparent 52%,
+    rgba(0, 0, 0, 0.15) 62%,
+    rgba(0, 0, 0, 0.7) 74%,
+    rgba(0, 0, 0, 0.45) 86%,
+    transparent 100%
+  );
+  animation:
+    browser-agent-holo-spin 5.2s linear infinite,
+    browser-agent-holo-band-breathe 3.8s ease-in-out infinite;
+}
+
+.browser-agent-holo-spinner {
+  inset: -8px;
+  overflow: visible;
+  opacity: 0.42;
+  mix-blend-mode: screen;
+  filter: blur(18px) saturate(1.1);
+  -webkit-mask-image: radial-gradient(
+    ellipse 88% 84% at 50% 50%,
+    transparent 0%,
+    transparent 46%,
+    rgba(0, 0, 0, 0.1) 56%,
+    rgba(0, 0, 0, 0.55) 70%,
+    rgba(0, 0, 0, 0.35) 84%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 88% 84% at 50% 50%,
+    transparent 0%,
+    transparent 46%,
+    rgba(0, 0, 0, 0.1) 56%,
+    rgba(0, 0, 0, 0.55) 70%,
+    rgba(0, 0, 0, 0.35) 84%,
+    transparent 100%
+  );
+  animation:
+    browser-agent-holo-spin 7s linear infinite reverse,
+    browser-agent-holo-aura-breathe 4.6s ease-in-out infinite;
+  animation-delay: 0s, -1.4s;
+  background: conic-gradient(
+    from calc(var(--browser-agent-holo-angle, 0deg) + 90deg),
+    transparent 0deg,
+    color-mix(in srgb, #f0abfc 42%, transparent) 50deg,
+    color-mix(in srgb, #7dd3fc 46%, transparent) 110deg,
+    transparent 170deg,
+    color-mix(in srgb, #c4b5fd 44%, transparent) 250deg,
+    transparent 320deg,
+    transparent 360deg
+  );
+}
+
+.browser-agent-holo-spinner::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 230%;
+  height: 230%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 300deg,
+    color-mix(in srgb, #ffffff 22%, #c4b5fd) 325deg,
+    color-mix(in srgb, #93c5fd 36%, transparent) 345deg,
+    transparent 360deg
+  );
+  filter: blur(12px);
+  animation: browser-agent-holo-spinner-rotate 4.4s linear infinite;
+}
+
+@keyframes browser-agent-holo-frame-morph {
+  0% {
+    border-radius: clamp(10px, 1.6vw, 16px) clamp(14px, 2vw, 20px)
+      clamp(10px, 1.5vw, 15px) clamp(12px, 1.8vw, 18px) /
+      clamp(12px, 1.8vw, 18px) clamp(10px, 1.5vw, 15px) clamp(14px, 2vw, 20px)
+      clamp(10px, 1.6vw, 16px);
+  }
+  50% {
+    border-radius: clamp(14px, 2vw, 20px) clamp(10px, 1.5vw, 15px)
+      clamp(12px, 1.8vw, 18px) clamp(11px, 1.7vw, 17px) /
+      clamp(10px, 1.5vw, 15px) clamp(14px, 2vw, 20px) clamp(10px, 1.6vw, 16px)
+      clamp(12px, 1.8vw, 18px);
+  }
+  100% {
+    border-radius: clamp(11px, 1.7vw, 17px) clamp(12px, 1.8vw, 18px)
+      clamp(14px, 2vw, 20px) clamp(10px, 1.5vw, 15px) /
+      clamp(14px, 2vw, 20px) clamp(11px, 1.7vw, 17px) clamp(10px, 1.5vw, 15px)
+      clamp(12px, 1.8vw, 18px);
+  }
+}
+
+@keyframes browser-agent-holo-spin {
+  to {
+    --browser-agent-holo-angle: 360deg;
+  }
+}
+
+@keyframes browser-agent-holo-spinner-rotate {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes browser-agent-holo-band-breathe {
+  0%,
+  100% {
+    opacity: 0.28;
+    filter: blur(14px) saturate(1.02)
+      drop-shadow(0 0 12px color-mix(in srgb, #c4b5fd 14%, transparent)) brightness(0.96);
+  }
+  50% {
+    opacity: 0.58;
+    filter: blur(10px) saturate(1.1)
+      drop-shadow(0 0 22px color-mix(in srgb, #f0abfc 24%, transparent))
+      drop-shadow(0 0 26px color-mix(in srgb, #7dd3fc 16%, transparent)) brightness(1.06);
+  }
+}
+
+@keyframes browser-agent-holo-aura-breathe {
+  0%,
+  100% {
+    opacity: 0.3;
+    filter: blur(32px) saturate(1.04) brightness(0.95);
+  }
+  50% {
+    opacity: 0.62;
+    filter: blur(42px) saturate(1.14) brightness(1.08);
+  }
+}
+
+@keyframes browser-agent-holo-pulse {
+  0% {
+    opacity: 0.36;
+    filter: blur(14px) drop-shadow(0 0 12px color-mix(in srgb, #c4b5fd 18%, transparent))
+      brightness(1);
+  }
+  40% {
+    opacity: 0.78;
+    filter: blur(10px) drop-shadow(0 0 24px color-mix(in srgb, #f0abfc 30%, transparent))
+      drop-shadow(0 0 32px color-mix(in srgb, #7dd3fc 18%, transparent)) brightness(1.12);
+  }
+  100% {
+    opacity: 0.46;
+    filter: blur(12px) drop-shadow(0 0 16px color-mix(in srgb, #c4b5fd 20%, transparent))
+      brightness(1.03);
+  }
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-holo-band {
+  animation:
+    browser-agent-holo-spin 5.2s linear infinite,
+    browser-agent-holo-pulse 1.1s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-holo-aura {
+  animation:
+    browser-agent-holo-spin 5.2s linear infinite,
+    browser-agent-holo-pulse 1.1s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-holo-spinner {
+  animation:
+    browser-agent-holo-spin 7s linear infinite reverse,
+    browser-agent-holo-pulse 1.1s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+/* One-shot breath flash on each Agent action (restarts via class toggle). */
+.browser-panel-overlay-host.is-breath-pulse::before {
+  animation: browser-agent-veil-pulse 0.9s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-mist {
+  animation:
+    browser-agent-mist-hue 12s linear infinite,
+    browser-agent-mist-frame-pulse 0.9s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-mist-blob {
+  animation-name:
+    browser-agent-mist-drift-a,
+    browser-agent-mist-morph,
+    browser-agent-mist-pulse-once;
+  animation-duration: 5.6s, 7.2s, 0.9s;
+  animation-timing-function: ease-in-out, ease-in-out, cubic-bezier(0.22, 1, 0.36, 1);
+  animation-iteration-count: infinite, infinite, 1;
+  animation-direction: alternate, alternate, normal;
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-mist-blob.is-drift-b {
+  animation-name: browser-agent-mist-drift-b, browser-agent-mist-morph, browser-agent-mist-pulse-once;
+}
+
+.browser-panel-overlay-host.is-breath-pulse .browser-agent-mist-blob.is-drift-c {
+  animation-name: browser-agent-mist-drift-c, browser-agent-mist-morph, browser-agent-mist-pulse-once;
+}
+
+/* Irregular drifting rainbow mist clouds along the edges. */
+.browser-agent-mist {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  /* Mist hugs the frame; leave most of the page clear. */
+  -webkit-mask-image: radial-gradient(ellipse 80% 76% at 50% 50%, transparent 58%, #000 90%);
+  mask-image: radial-gradient(ellipse 80% 76% at 50% 50%, transparent 58%, #000 90%);
+  animation: browser-agent-mist-hue 12s linear infinite;
+}
+
+.browser-agent-mist-blob {
+  position: absolute;
+  display: block;
+  border-radius: 58% 42% 63% 37% / 44% 55% 45% 56%;
+  background: radial-gradient(
+    ellipse at 40% 40%,
+    color-mix(in srgb, var(--browser-agent-mist-color, #5ce1ff) 82%, white),
+    color-mix(in srgb, var(--browser-agent-mist-color, #5ce1ff) 48%, transparent) 48%,
+    transparent 74%
+  );
+  filter: blur(18px) saturate(1.3);
+  opacity: 0.58;
+  mix-blend-mode: screen;
+  will-change: transform, border-radius, opacity;
+  animation:
+    browser-agent-mist-drift-a 5.6s ease-in-out infinite alternate,
+    browser-agent-mist-morph 7.2s ease-in-out infinite alternate,
+    browser-agent-mist-breathe 2.8s ease-in-out infinite;
+}
+
+.browser-agent-mist-blob.is-drift-b {
+  animation-name: browser-agent-mist-drift-b, browser-agent-mist-morph, browser-agent-mist-breathe;
+}
+
+.browser-agent-mist-blob.is-drift-c {
+  animation-name: browser-agent-mist-drift-c, browser-agent-mist-morph, browser-agent-mist-breathe;
+}
+
+.browser-agent-mist-blob.is-cyan {
+  --browser-agent-mist-color: #5ce1ff;
+}
+.browser-agent-mist-blob.is-violet {
+  --browser-agent-mist-color: #8b6cff;
+}
+.browser-agent-mist-blob.is-magenta {
+  --browser-agent-mist-color: #ff5cc8;
+}
+.browser-agent-mist-blob.is-amber {
+  --browser-agent-mist-color: #ffd15c;
+}
+.browser-agent-mist-blob.is-mint {
+  --browser-agent-mist-color: #5cff9a;
+}
+
+.browser-agent-mist-blob.is-n2 {
+  filter: blur(20px) saturate(1.3);
+}
+.browser-agent-mist-blob.is-n3 {
+  filter: blur(22px) saturate(1.15);
+}
+.browser-agent-mist-blob.is-n4 {
+  filter: blur(16px) saturate(1.35);
+}
+.browser-agent-mist-blob.is-n5 {
+  filter: blur(19px) saturate(1.2);
+}
+
+@keyframes browser-agent-veil-breathe {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Stronger one-shot pulse when Agent acts. */
+@keyframes browser-agent-veil-pulse {
+  0% {
+    opacity: 0.2;
+  }
+  28% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0.28;
+  }
+}
+
+@keyframes browser-agent-mist-frame-pulse {
+  0% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  32% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+@keyframes browser-agent-mist-breathe {
+  0%,
+  100% {
+    opacity: 0.38;
+    filter: blur(16px) saturate(1.2) brightness(0.98);
+  }
+  50% {
+    opacity: 0.78;
+    filter: blur(20px) saturate(1.45) brightness(1.18);
+  }
+}
+
+@keyframes browser-agent-mist-pulse-once {
+  0% {
+    opacity: 0.45;
+    filter: blur(16px) saturate(1.2) brightness(1);
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0.95;
+    filter: blur(22px) saturate(1.6) brightness(1.4);
+    transform: scale(1.28);
+  }
+  100% {
+    opacity: 0.58;
+    filter: blur(18px) saturate(1.3) brightness(1);
+    transform: scale(1);
+  }
+}
+
+@keyframes browser-agent-mist-hue {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes browser-agent-mist-drift-a {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(5%, 4%, 0) scale(1.1) rotate(5deg);
+  }
+  100% {
+    transform: translate3d(-4%, 6%, 0) scale(0.94) rotate(-3deg);
+  }
+}
+
+@keyframes browser-agent-mist-drift-b {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.04) rotate(-3deg);
+  }
+  50% {
+    transform: translate3d(-6%, 4%, 0) scale(0.92) rotate(4deg);
+  }
+  100% {
+    transform: translate3d(5%, -5%, 0) scale(1.12) rotate(-5deg);
+  }
+}
+
+@keyframes browser-agent-mist-drift-c {
+  0% {
+    transform: translate3d(2%, -2%, 0) scale(0.96) rotate(3deg);
+  }
+  50% {
+    transform: translate3d(-4%, -4%, 0) scale(1.12) rotate(-4deg);
+  }
+  100% {
+    transform: translate3d(6%, 3%, 0) scale(1.02) rotate(6deg);
+  }
+}
+
+@keyframes browser-agent-mist-morph {
+  0% {
+    border-radius: 58% 42% 63% 37% / 44% 55% 45% 56%;
+  }
+  33% {
+    border-radius: 40% 60% 48% 52% / 62% 38% 58% 42%;
+  }
+  66% {
+    border-radius: 66% 34% 42% 58% / 36% 64% 40% 60%;
+  }
+  100% {
+    border-radius: 48% 52% 70% 30% / 55% 42% 58% 45%;
+  }
+}
+
+.browser-agent-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 36px;
+  height: 36px;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(-40px, -40px, 0);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, #8b6cff 55%, transparent))
+    drop-shadow(0 0 10px color-mix(in srgb, #5ce1ff 35%, transparent));
+  will-change: transform, filter;
+  animation: browser-agent-cursor-hue 4.5s linear infinite;
+}
+
+.browser-agent-cursor.is-visible {
+  opacity: 1;
+}
+
+.browser-agent-cursor.is-pressed svg {
+  transform: scale(0.86);
+  transition: transform 120ms ease-out;
+}
+
+.browser-agent-cursor.is-click-pop svg {
+  transition: none;
+  animation: browser-agent-cursor-pop 0.42s cubic-bezier(0.22, 1.4, 0.36, 1) forwards;
+}
+
+.browser-agent-cursor svg {
+  display: block;
+  width: 36px;
+  height: 36px;
+  transform-origin: 3px 3px;
+  transition: transform 120ms ease-out;
+}
+
+@keyframes browser-agent-cursor-pop {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(1.55);
+  }
+  72% {
+    transform: scale(0.82);
+  }
+  100% {
+    transform: scale(0.9);
+  }
+}
+
+@keyframes browser-agent-cursor-hue {
+  to {
+    filter: hue-rotate(360deg)
+      drop-shadow(0 0 4px color-mix(in srgb, #8b6cff 55%, transparent))
+      drop-shadow(0 0 10px color-mix(in srgb, #5ce1ff 35%, transparent));
+  }
+}
+
+.browser-agent-click-ripple {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, #5ce1ff 80%, white);
+  box-shadow: 0 0 10px color-mix(in srgb, #7c5cff 45%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+  transform: scale(0.35);
+}
+
+.browser-agent-click-ripple.is-active {
+  animation: browser-agent-click-ripple 420ms ease-out forwards;
+}
+
+@keyframes browser-agent-click-ripple {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-panel-overlay-host.is-agent-active::before {
+    animation: none;
+    opacity: 0.28;
+  }
+
+  .browser-panel-overlay-host.is-breath-pulse::before,
+  .browser-panel-overlay-host.is-breath-pulse .browser-agent-mist,
+  .browser-panel-overlay-host.is-breath-pulse .browser-agent-mist-blob,
+  .browser-panel-overlay-host.is-breath-pulse .browser-agent-light-strip {
+    animation: none !important;
+  }
+
+  .browser-agent-mist,
+  .browser-agent-mist-blob,
+  .browser-agent-cursor,
+  .browser-agent-light-strip,
+  .browser-agent-holo-aura,
+  .browser-agent-holo-band,
+  .browser-agent-holo-spinner,
+  .browser-agent-holo-spinner::before {
+    animation: none !important;
+  }
+
+  .browser-agent-cursor {
+    transition: none !important;
+  }
+
+  .browser-agent-click-ripple.is-active {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 [data-theme="light"] .browser-panel-host {
@@ -32739,7 +33410,7 @@ body,
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
-/* Web AI chat list (topbar popover) �?self-contained styles (not composer-codex-popover)
+/* Web AI chat list (topbar popover) �?self-contained styles (not composer-codex-popover)
  * so top-bar menus keep a solid surface and high z-index in transparent Electron windows. */
 .web-chat-list-popover {
   display: flex;
@@ -32750,7 +33421,7 @@ body,
   padding: 8px;
   border: 1px solid var(--popover-border, rgba(255, 255, 255, 0.1));
   border-radius: 14px;
-  /* Prefer opaque menu surface �?translucent + backdrop can render as “shadow only�?
+  /* Prefer opaque menu surface �?translucent + backdrop can render as “shadow only�?
    * over transparent Electron backgrounds. */
   background: var(--bg-menu, var(--bg-elevated, #242424));
   color: var(--popover-text, var(--text-primary, #f5f5f5));
@@ -33324,7 +33995,7 @@ body,
   cursor: default;
 }
 
-/* Unified provider �?model cascade select */
+/* Unified provider �?model cascade select */
 .model-cascade {
   display: inline-flex;
   flex-direction: column;

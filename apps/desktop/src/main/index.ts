@@ -1704,6 +1704,13 @@ app.whenReady().then(async () => {
         }
       });
     },
+    broadcastAgentPresence: (event) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.browserAgentPresence, event);
+        }
+      });
+    },
     resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
   });
   const imageSecretCodec: ImageGenerationSecretCodec = {

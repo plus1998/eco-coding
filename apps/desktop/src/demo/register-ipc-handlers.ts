@@ -260,6 +260,7 @@ const EVENT_CHANNELS = new Set<string>([
   IPC_CHANNELS.terminalEvent,
   IPC_CHANNELS.workspacePackageJsonChanged,
   IPC_CHANNELS.browserStateChanged,
+  IPC_CHANNELS.browserAgentPresence,
   IPC_CHANNELS.gitGenerateCommitMessageDelta,
   IPC_CHANNELS.gitRemoteFetched,
 ]);

@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { BrowserWebviewPersistentHost } from "./BrowserWebviewPersistentHost";
+import { installBrowserAgentPresenceOverlay } from "./browser-agent-presence-overlay";
 import { useBrowserWebviewInstances } from "./browser-state-store";
 import { browserWebviewPool } from "./browser-webview-pool";
 
@@ -12,6 +14,8 @@ export function BrowserWebviewLayer() {
   // Sync during render so release runs before React commits PersistentHost unmounts
   // (otherwise the slot div is deleted with the <webview> still inside).
   browserWebviewPool.sync(instances);
+
+  useEffect(() => installBrowserAgentPresenceOverlay(), []);
 
   return (
     <>

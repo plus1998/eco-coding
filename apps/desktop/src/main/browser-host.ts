@@ -26,6 +26,12 @@ import {
   shouldAutoApproveEcoAgentBrowserTools,
   shouldSurfaceBrowserInstance,
 } from "../shared/browser";
+import {
+  BROWSER_AGENT_PRESENCE_IDLE_MS,
+  BROWSER_AGENT_PRESENCE_MOVE_THROTTLE_MS,
+  type BrowserAgentPresenceEvent,
+  isBrowserAgentPresencePointerType,
+} from "../shared/browser-agent-presence";
 import type { McpSdkConfig } from "../shared/mcp";
 import type { AgentBrowserMcpToolResult } from "./agent-browser-cli-bridge";
 import { resolveAgentBrowserTabIndex } from "./agent-browser-cli-bridge";
@@ -113,6 +119,8 @@ export interface BrowserHostDeps {
   getMainWindow: () => import("electron").BrowserWindow | undefined;
   getSettings: () => BrowserSettingsStore;
   broadcast: (state: BrowserViewState) => void;
+  /** Lightweight Agent presence overlays (rainbow edge / synthetic cursor). */
+  broadcastAgentPresence?: (event: BrowserAgentPresenceEvent) => void;
   resolveWorkspacePath: (threadId: string) => string | undefined;
 }
 
@@ -163,6 +171,12 @@ export class BrowserHost {
   /** will-attach-webview browser id → guest webContents id after did-attach. */
   private readonly pendingGuestByBrowserId = new Map<string, number>();
   private readonly pendingGuestByWebContentsId = new Map<number, string>();
+  /** Per-browser idle timers for Agent presence overlay. */
+  private readonly agentPresenceIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Browsers currently holding a mouse button (CDP drag). */
+  private readonly agentPointerDragging = new Set<string>();
+  /** Last mouseMoved IPC emit time per browser (throttle). */
+  private readonly agentPointerMoveAt = new Map<string, number>();
 
   constructor(private readonly deps: BrowserHostDeps) {}
 
@@ -173,6 +187,7 @@ export class BrowserHost {
         agentBrowserEnv: (cdpPort, threadId) => ensureAgentBrowserRuntimeEnv(cdpPort, threadId),
         ensureScopeGuestsReady: (threadId) => this.ensureScopeGuestsReady(threadId),
         afterAgentBrowserClose: (threadId) => this.disposeAllBrowsersInThread(threadId),
+        onToolCall: (threadId) => this.noteAgentPresenceForThread(threadId),
         invokeNativeTool: (threadId, toolName, args) =>
           this.invokeNativeAgentBrowserTool(threadId, toolName, args),
       });
@@ -182,6 +197,114 @@ export class BrowserHost {
 
   noteBrowserToolStarted(threadId: string, toolName?: string): void {
     this.gateway().noteUpcomingTool(threadId, toolName);
+    this.noteAgentPresenceForThread(threadId);
+  }
+
+  /** Mark Agent operating a browser tab (rainbow edge); resets 15s idle release. */
+  noteAgentPresence(
+    browserId: string,
+    detail?: {
+      click?: { x: number; y: number };
+      move?: { x: number; y: number; dragging: boolean };
+      release?: { x: number; y: number };
+    },
+  ): void {
+    const id = browserId.trim();
+    if (!id || this.disposed) {
+      return;
+    }
+    const at = Date.now();
+    const moveOnly = Boolean(detail?.move) && !detail?.click && !detail?.release;
+    if (!moveOnly) {
+      this.emitAgentPresence({ type: "active", browserId: id, at });
+    }
+    if (detail?.click) {
+      this.emitAgentPresence({
+        type: "click",
+        browserId: id,
+        x: detail.click.x,
+        y: detail.click.y,
+        at,
+      });
+    }
+    if (detail?.move) {
+      this.emitAgentPresence({
+        type: "move",
+        browserId: id,
+        x: detail.move.x,
+        y: detail.move.y,
+        dragging: detail.move.dragging,
+        at,
+      });
+    }
+    if (detail?.release) {
+      this.emitAgentPresence({
+        type: "release",
+        browserId: id,
+        x: detail.release.x,
+        y: detail.release.y,
+        at,
+      });
+    }
+    this.scheduleAgentPresenceIdle(id);
+  }
+
+  private shouldEmitPointerMove(browserId: string, force: boolean): boolean {
+    if (force) {
+      this.agentPointerMoveAt.set(browserId, Date.now());
+      return true;
+    }
+    const now = Date.now();
+    const prev = this.agentPointerMoveAt.get(browserId) ?? 0;
+    if (now - prev < BROWSER_AGENT_PRESENCE_MOVE_THROTTLE_MS) {
+      return false;
+    }
+    this.agentPointerMoveAt.set(browserId, now);
+    return true;
+  }
+
+  noteAgentPresenceForThread(threadId: string): void {
+    const scopeId = threadId.trim();
+    if (!scopeId) {
+      return;
+    }
+    const scope = this.scopes.get(scopeId);
+    if (!scope || scope.browsers.size === 0) {
+      return;
+    }
+    const browserId =
+      scope.focusedBrowserId ?? this.orderedBrowsersInScope(scope)[0]?.id ?? undefined;
+    if (!browserId) {
+      return;
+    }
+    this.noteAgentPresence(browserId);
+  }
+
+  private emitAgentPresence(event: BrowserAgentPresenceEvent): void {
+    this.deps.broadcastAgentPresence?.(event);
+  }
+
+  private scheduleAgentPresenceIdle(browserId: string): void {
+    const existing = this.agentPresenceIdleTimers.get(browserId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      this.agentPresenceIdleTimers.delete(browserId);
+      if (this.disposed) {
+        return;
+      }
+      this.emitAgentPresence({ type: "idle", browserId, at: Date.now() });
+    }, BROWSER_AGENT_PRESENCE_IDLE_MS);
+    this.agentPresenceIdleTimers.set(browserId, timer);
+  }
+
+  private clearAgentPresenceIdle(browserId: string): void {
+    const timer = this.agentPresenceIdleTimers.get(browserId);
+    if (timer) {
+      clearTimeout(timer);
+      this.agentPresenceIdleTimers.delete(browserId);
+    }
   }
 
   notePendingGuestAttach(browserId: string): void {
@@ -753,6 +876,10 @@ export class BrowserHost {
       browser.guestLoadTimer = undefined;
     }
     browser.pendingGuestLoadUrl = undefined;
+    this.clearAgentPresenceIdle(browser.id);
+    this.agentPointerDragging.delete(browser.id);
+    this.agentPointerMoveAt.delete(browser.id);
+    this.emitAgentPresence({ type: "idle", browserId: browser.id, at: Date.now() });
     const wc = browser.webContents;
     try {
       if (wc && !wc.isDestroyed()) {
@@ -994,8 +1121,46 @@ export class BrowserHost {
           }
           this.emit();
         },
-        onClientActivity: (_detail) => {
+        onClientActivity: (detail) => {
           // CDP navigate/activate must not move UI focus — only tab_switch / human clicks do.
+          const targetId = detail.targetId?.trim();
+          if (!targetId) {
+            return;
+          }
+          const mouse = detail.mouse;
+          if (
+            mouse &&
+            detail.method === "Input.dispatchMouseEvent" &&
+            isBrowserAgentPresencePointerType(mouse.type)
+          ) {
+            if (mouse.type === "mousePressed") {
+              this.agentPointerDragging.add(targetId);
+              this.noteAgentPresence(targetId, { click: { x: mouse.x, y: mouse.y } });
+              return;
+            }
+            if (mouse.type === "mouseMoved") {
+              const dragging =
+                this.agentPointerDragging.has(targetId) || (mouse.buttons & 1) === 1;
+              if (dragging) {
+                this.agentPointerDragging.add(targetId);
+              }
+              if (this.shouldEmitPointerMove(targetId, false)) {
+                this.noteAgentPresence(targetId, {
+                  move: { x: mouse.x, y: mouse.y, dragging },
+                });
+              } else {
+                this.scheduleAgentPresenceIdle(targetId);
+              }
+              return;
+            }
+            if (mouse.type === "mouseReleased") {
+              this.agentPointerDragging.delete(targetId);
+              this.shouldEmitPointerMove(targetId, true);
+              this.noteAgentPresence(targetId, { release: { x: mouse.x, y: mouse.y } });
+              return;
+            }
+          }
+          this.noteAgentPresence(targetId);
         },
         onPrepareGuestKeyboardInput: async () => {
           await this.blurMainRendererForGuestKeyboardInput();
@@ -1051,6 +1216,7 @@ export class BrowserHost {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<AgentBrowserMcpToolResult | null> {
+    this.noteAgentPresenceForThread(threadId);
     switch (toolName) {
       case "agent_browser_tab_list":
         return this.invokeNativeAgentBrowserTabList(threadId);
@@ -1208,6 +1374,7 @@ export class BrowserHost {
       // Navigate the UI-focused tab (user context); do not change which tab is shown.
     });
     await this.ensureScopeGuestsReady(threadId);
+    this.noteAgentPresenceForThread(threadId);
     return agentBrowserTextResult(`Navigated to ${url}`);
   }
 

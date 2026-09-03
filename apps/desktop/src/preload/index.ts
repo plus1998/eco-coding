@@ -33,6 +33,7 @@ import {
   type BrowserSetUiScopeRequest,
   type BrowserSetVisibleRequest,
   type BrowserViewState,
+  type BrowserAgentPresenceEvent,
   type CandidateModelInput,
   type CandidateModelView,
   type CenterServerAccountAuthResult,
@@ -748,6 +749,15 @@ const api = {
     };
     ipcRenderer.on(IPC_CHANNELS.browserStateChanged, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.browserStateChanged, listener);
+  },
+  onBrowserAgentPresence(callback: (event: BrowserAgentPresenceEvent) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === "object" && "type" in payload) {
+        callback(payload as BrowserAgentPresenceEvent);
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.browserAgentPresence, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.browserAgentPresence, listener);
   },
   getAsrSettings(): Promise<AsrSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.asrSettingsGet);

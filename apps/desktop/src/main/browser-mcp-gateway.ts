@@ -59,6 +59,8 @@ export type BrowserMcpGatewayDeps = {
   agentBrowserEnv: (cdpPort: number, threadId: string) => Record<string, string>;
   ensureScopeGuestsReady?: (threadId: string) => Promise<void>;
   afterAgentBrowserClose?: (threadId: string) => Promise<void>;
+  /** Fired when a tools/call is bound to a thread (presence overlay). */
+  onToolCall?: (threadId: string, toolName: string) => void;
   /** Eco-native fast paths (screenshot/open) that bypass agent-browser CLI. */
   invokeNativeTool?: (
     threadId: string,
@@ -252,6 +254,7 @@ export class BrowserMcpGateway {
           ...(authToken !== undefined ? { authToken } : {}),
           toolName: name,
         });
+        this.deps.onToolCall?.(threadId, name);
         const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args);
         const result =
           nativeResult ??
