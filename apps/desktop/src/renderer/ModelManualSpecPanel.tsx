@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelsDevMapping, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import { multiplyUnitRate } from "../shared/manual-spec-pricing";
@@ -113,6 +113,7 @@ export function ModelManualSpecPanel({
   onChange,
 }: ModelManualSpecPanelProps) {
   const { t } = useTranslation();
+  const nativeWebSearchLabelId = useId();
   const isSidebar = variant === "sidebar";
   const overrideCount = countManualOverrides(value);
   const [expanded, setExpanded] = useState(() => isSidebar || overrideCount > 0);
@@ -206,13 +207,26 @@ export function ModelManualSpecPanel({
             onChange={(supportsReasoning) => onChange({ supportsReasoning })}
           />
           <label className="model-spec-field model-spec-field-checkbox">
-            <input
-              type="checkbox"
-              checked={value.supportsNativeWebSearch}
-              disabled={disabled}
-              onChange={(event) => onChange({ supportsNativeWebSearch: event.target.checked })}
-            />
-            <span className="model-spec-field-label">{t("modelSpec.nativeWebSearch")}</span>
+            <span className="model-spec-field-label" id={nativeWebSearchLabelId}>
+              {t("modelSpec.nativeWebSearch")}
+            </span>
+            <span
+              className="mcp-toggle mcp-toggle-sm"
+              title={
+                value.supportsNativeWebSearch
+                  ? t("modelSpec.nativeWebSearch")
+                  : t("modelSpec.nativeWebSearchOff")
+              }
+            >
+              <input
+                type="checkbox"
+                checked={value.supportsNativeWebSearch}
+                disabled={disabled}
+                aria-labelledby={nativeWebSearchLabelId}
+                onChange={(event) => onChange({ supportsNativeWebSearch: event.target.checked })}
+              />
+              <span className="mcp-toggle-track" aria-hidden />
+            </span>
           </label>
         </div>
       </section>

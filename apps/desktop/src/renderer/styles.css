@@ -23274,6 +23274,49 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   min-width: 0;
 }
 
+.model-spec-field-checkbox {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elevated-hover) 55%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.model-spec-field-checkbox:hover:not(:has(input:disabled)) {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-subtle) 72%);
+  background: color-mix(in srgb, var(--bg-elevated-hover) 75%, transparent);
+}
+
+.model-spec-field-checkbox .model-spec-field-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.model-spec-field-checkbox .mcp-toggle {
+  flex-shrink: 0;
+}
+
+.model-spec-field-checkbox:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle) 60%);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-main) 92%);
+}
+
+.model-spec-field-checkbox:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .model-spec-field-label {
   font-size: 11px;
   font-weight: 500;
