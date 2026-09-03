@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderPresetDefinition } from "./provider-presets";
 
-function ProviderPresetIcon({ src }: { src: string }) {
+export function ProviderPresetIcon({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
     return null;

@@ -463,6 +463,8 @@ export const i18nCatalogs = {
       "settings.models.proxyBridge": "代理桥",
       "settings.integratedWebSearch.title": "网络搜索",
       "settings.integratedWebSearch.loading": "正在加载网络搜索配置…",
+      "settings.integratedWebSearch.pageDesc":
+        "关闭模型「Provider 原生 Web Search」后，Claude / Codex / PI 使用此处后端。",
       "settings.integratedWebSearch.enabled": "启用网络搜索",
       "settings.integratedWebSearch.hint":
         "关闭模型「Provider 原生 Web Search」后，Claude / Codex / PI 使用此处后端。",
@@ -2494,6 +2496,8 @@ export const i18nCatalogs = {
       "settings.models.proxyBridge": "Proxy bridge",
       "settings.integratedWebSearch.title": "Web Search",
       "settings.integratedWebSearch.loading": "Loading Web Search settings…",
+      "settings.integratedWebSearch.pageDesc":
+        "When provider-native Web Search is off for a model, Claude / Codex / PI use this backend.",
       "settings.integratedWebSearch.enabled": "Enable Web Search",
       "settings.integratedWebSearch.hint":
         "When provider-native Web Search is off for a model, Claude / Codex / PI use this backend.",

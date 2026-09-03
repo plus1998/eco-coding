@@ -8014,19 +8014,20 @@ button.sidebar-settings-meta {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .integrated-web-search-enable-copy .mcp-field-label {
   color: var(--text-heading);
-  font-size: 13px;
-  letter-spacing: -0.01em;
+  font-size: 14px;
+  font-weight: 560;
+  letter-spacing: -0.014em;
 }
 
 .integrated-web-search-enable-copy .mcp-field-hint {
   margin: 0;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--text-muted);
 }
 
@@ -23294,6 +23295,33 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+}
+
+.provider-form-section.models-integrated-web-search-section {
+  max-width: 42em;
+  gap: 36px;
+}
+
+.provider-form-section.models-integrated-web-search-section .mcp-field {
+  gap: 12px;
+}
+
+.provider-form-section.models-integrated-web-search-section .provider-enable-row {
+  margin-top: 0;
+  padding: 18px 20px;
+}
+
+.provider-form-section.models-integrated-web-search-section .models-provider-preset-field .provider-preset-tabs {
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.provider-form-section.models-integrated-web-search-section .mcp-field-input {
+  padding: 12px 14px;
+}
+
+.integrated-web-search-settings-header {
+  margin-bottom: 36px;
 }
 
 .provider-form-section-title {

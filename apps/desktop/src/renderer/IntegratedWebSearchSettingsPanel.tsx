@@ -29,9 +29,10 @@ export function IntegratedWebSearchSettingsPanel({
 
   return (
     <>
-      <header className="settings-page-header settings-page-header-with-action">
+      <header className="settings-page-header settings-page-header-with-action integrated-web-search-settings-header">
         <div>
           <h1>{t("settings.integratedWebSearch.title")}</h1>
+          <p className="settings-page-desc">{t("settings.integratedWebSearch.pageDesc")}</p>
         </div>
         {onSyncDomain ? (
           <SettingsSyncControl

@@ -6,6 +6,7 @@ import type {
   IntegratedWebSearchSettingsSaveInput,
   IntegratedWebSearchSettingsSnapshot,
 } from "../shared/ipc";
+import { ProviderPresetIcon } from "./ProviderPresetTabs";
 
 interface IntegratedWebSearchSettingsSectionProps {
   settings: IntegratedWebSearchSettingsSnapshot;
@@ -16,11 +17,24 @@ interface IntegratedWebSearchSettingsSectionProps {
 const PROVIDERS: readonly {
   id: IntegratedWebSearchProvider;
   apiKeyUrl: string;
+  iconSrc: string;
 }[] = [
-  { id: "tavily", apiKeyUrl: "https://app.tavily.com/home" },
-  { id: "doubao", apiKeyUrl: "https://console.volcengine.com/search-infinity" },
-  { id: "brave", apiKeyUrl: "https://api-dashboard.search.brave.com/" },
-];
+  {
+    id: "tavily",
+    apiKeyUrl: "https://app.tavily.com/home",
+    iconSrc: "./provider-icons/tavily.ico",
+  },
+  {
+    id: "doubao",
+    apiKeyUrl: "https://console.volcengine.com/search-infinity",
+    iconSrc: "./provider-icons/doubao.png",
+  },
+  {
+    id: "brave",
+    apiKeyUrl: "https://api-dashboard.search.brave.com/",
+    iconSrc: "./provider-icons/brave.svg",
+  },
+]
 
 export function IntegratedWebSearchSettingsSection({
   settings,
@@ -79,7 +93,6 @@ export function IntegratedWebSearchSettingsSection({
       <div className="mcp-field models-toggle-field provider-enable-row">
         <span className="integrated-web-search-enable-copy" id={enableId}>
           <span className="mcp-field-label">{t("settings.integratedWebSearch.enabled")}</span>
-          <span className="mcp-field-hint">{t("settings.integratedWebSearch.hint")}</span>
         </span>
         <label
           className="mcp-toggle mcp-toggle-sm"
@@ -115,6 +128,7 @@ export function IntegratedWebSearchSettingsSection({
                 disabled={fieldsDisabled}
                 onClick={() => commitProvider(entry.id)}
               >
+                <ProviderPresetIcon src={entry.iconSrc} />
                 <span className="provider-preset-tab-label">
                   {t(`settings.integratedWebSearch.providers.${entry.id}`)}
                 </span>
