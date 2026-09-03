@@ -283,6 +283,103 @@ export function isMermaidErrorSvg(svg: string): boolean {
   return svg.includes("Syntax error in text") || svg.includes('class="error-text"');
 }
 
+/** Feed preview box: never taller than this (width still capped by column). */
+export const MERMAID_FEED_MAX_HEIGHT_PX = 420;
+
+/** @deprecated Kept for tests; feed no longer uses a separate paint scale layer. */
+export function mermaidPaintScaleFactor(devicePixelRatio = 1): number {
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return Math.max(2, Math.ceil(dpr));
+}
+
+function readSvgViewSize(svg: SVGSVGElement): { width: number; height: number } | null {
+  try {
+    const vb = svg.viewBox?.baseVal;
+    if (vb && vb.width > 0 && vb.height > 0) {
+      return { width: vb.width, height: vb.height };
+    }
+  } catch {
+    // ignore invalid viewBox
+  }
+  const attrW = Number.parseFloat(svg.getAttribute("width") || "");
+  const attrH = Number.parseFloat(svg.getAttribute("height") || "");
+  if (Number.isFinite(attrW) && Number.isFinite(attrH) && attrW > 0 && attrH > 0) {
+    return { width: attrW, height: attrH };
+  }
+  return null;
+}
+
+/** Fit diagram inside maxWidth × maxHeight, preserving aspect ratio. */
+export function computeMermaidFeedSize(
+  content: { width: number; height: number },
+  maxWidth: number,
+  maxHeight: number = MERMAID_FEED_MAX_HEIGHT_PX,
+): { width: number; height: number } {
+  if (content.width <= 0 || content.height <= 0 || maxWidth <= 0 || maxHeight <= 0) {
+    return { width: Math.max(1, maxWidth), height: Math.max(1, Math.min(maxHeight, maxWidth)) };
+  }
+  const scale = Math.min(maxWidth / content.width, maxHeight / content.height);
+  return {
+    width: Math.max(1, content.width * scale),
+    height: Math.max(1, content.height * scale),
+  };
+}
+
+function fitMermaidSvgToFeedBox(svg: SVGSVGElement, maxWidth: number, maxHeight: number): void {
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.style.display = "block";
+  svg.style.margin = "0 auto";
+
+  const content = readSvgViewSize(svg);
+  if (!content || maxWidth < 2) {
+    svg.style.maxWidth = "100%";
+    svg.style.maxHeight = `${maxHeight}px`;
+    svg.style.width = "auto";
+    svg.style.height = "auto";
+    return;
+  }
+
+  const sized = computeMermaidFeedSize(content, maxWidth, maxHeight);
+  svg.style.maxWidth = "none";
+  svg.style.maxHeight = "none";
+  svg.style.width = `${sized.width}px`;
+  svg.style.height = `${sized.height}px`;
+}
+
+/**
+ * Mount Mermaid SVG into the feed host, fitted to column width and a max height.
+ */
+export function mountMermaidSvgForFeed(host: HTMLElement, svgHtml: string): void {
+  const prevPaint = host.querySelector(".markdown-mermaid__paint") as
+    | (HTMLElement & { __ecoMermaidRo?: ResizeObserver })
+    | null;
+  prevPaint?.__ecoMermaidRo?.disconnect();
+
+  const paint = document.createElement("div") as HTMLElement & { __ecoMermaidRo?: ResizeObserver };
+  paint.className = "markdown-mermaid__paint";
+  paint.innerHTML = svgHtml;
+
+  const svg = paint.querySelector("svg");
+  host.replaceChildren(paint);
+
+  if (!(svg instanceof SVGSVGElement)) return;
+
+  const applyFit = () => {
+    const maxWidth = Math.max(1, host.clientWidth);
+    fitMermaidSvgToFeedBox(svg, maxWidth, MERMAID_FEED_MAX_HEIGHT_PX);
+  };
+
+  applyFit();
+  requestAnimationFrame(applyFit);
+
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => applyFit());
+    ro.observe(host);
+    paint.__ecoMermaidRo = ro;
+  }
+}
+
 export async function renderMermaidSvg(
   source: string,
   theme: MermaidAppTheme = readAppTheme(),

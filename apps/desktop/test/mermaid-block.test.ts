@@ -3,8 +3,11 @@ import {
   buildEcoMermaidConfig,
   buildEcoMermaidThemeVariables,
   cleanupMermaidRenderArtifacts,
+  computeMermaidFeedSize,
   isMermaidErrorSvg,
   isMermaidLang,
+  MERMAID_FEED_MAX_HEIGHT_PX,
+  mermaidPaintScaleFactor,
   readAppTheme,
 } from "../src/renderer/prosemirror/mermaid-block";
 
@@ -22,6 +25,28 @@ test("readAppTheme defaults without document theme", () => {
 test("isMermaidErrorSvg detects mermaid native error output", () => {
   expect(isMermaidErrorSvg('<svg><text class="error-text">Syntax error in text</text></svg>')).toBe(true);
   expect(isMermaidErrorSvg('<svg><circle r="4"/></svg>')).toBe(false);
+});
+
+test("mermaidPaintScaleFactor is at least 2x and follows DPR", () => {
+  expect(mermaidPaintScaleFactor(1)).toBe(2);
+  expect(mermaidPaintScaleFactor(1.25)).toBe(2);
+  expect(mermaidPaintScaleFactor(2)).toBe(2);
+  expect(mermaidPaintScaleFactor(2.5)).toBe(3);
+  expect(mermaidPaintScaleFactor(0)).toBe(2);
+});
+
+test("computeMermaidFeedSize respects width and max height", () => {
+  expect(MERMAID_FEED_MAX_HEIGHT_PX).toBe(420);
+  // Tall diagram: height caps first
+  expect(computeMermaidFeedSize({ width: 200, height: 800 }, 600, 420)).toEqual({
+    width: 105,
+    height: 420,
+  });
+  // Wide diagram: width caps first
+  expect(computeMermaidFeedSize({ width: 800, height: 200 }, 400, 420)).toEqual({
+    width: 400,
+    height: 100,
+  });
 });
 
 test("cleanupMermaidRenderArtifacts removes mermaid temp nodes", () => {

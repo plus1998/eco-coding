@@ -7,6 +7,10 @@ import { buildHtmlDataNavigateUrl } from "../../shared/browser";
 import { dispatchBrowserHtmlOpen, dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 import { copyTextToClipboard } from "../clipboard";
 import { i18n } from "../i18n";
+import {
+  attachLightboxZoom,
+  formatLightboxZoomPercent,
+} from "../lightbox-zoom";
 import { repairMarkdown } from "../markdown-repair";
 import { copyTableAsHtml, copyTableAsImage, copyTableAsMarkdown } from "../markdown-table-clipboard";
 import { getMaterialIconUrl, resolveMaterialIconName } from "../material-file-icon";
@@ -21,6 +25,7 @@ import { countHtmlLines, extractHtmlDocumentTitle, isHtmlLang } from "./html-blo
 import {
   isMermaidLang,
   type MermaidAppTheme,
+  mountMermaidSvgForFeed,
   observeAppTheme,
   readAppTheme,
   renderMermaidSvg,
@@ -573,6 +578,12 @@ const HTML_OPEN_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
 const LIGHTBOX_CLOSE_ICON =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+const ZOOM_IN_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+const ZOOM_OUT_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg>';
+const ZOOM_RESET_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>';
 
 function createActionButton(label: string, iconHtml: string): HTMLButtonElement {
   const btn = document.createElement("button");
@@ -585,14 +596,25 @@ function createActionButton(label: string, iconHtml: string): HTMLButtonElement 
   return btn;
 }
 
+function dismissMarkdownLightbox(root?: Element | null): void {
+  const el = root ?? document.querySelector(".markdown-lightbox");
+  if (!el) return;
+  const cleanup = (el as HTMLElement & { __ecoLightboxCleanup?: () => void }).__ecoLightboxCleanup;
+  if (cleanup) {
+    cleanup();
+    return;
+  }
+  el.remove();
+}
+
 function openMarkdownLightbox(options: {
   title: string;
   ariaLabel: string;
   bodyHtml: string;
   bodyClassName?: string;
+  zoomable?: boolean;
 }): void {
-  const existing = document.querySelector(".markdown-lightbox");
-  existing?.remove();
+  dismissMarkdownLightbox();
 
   const backdrop = document.createElement("div");
   backdrop.className = "markdown-lightbox";
@@ -607,26 +629,114 @@ function openMarkdownLightbox(options: {
   bar.className = "markdown-lightbox__bar";
   const title = document.createElement("span");
   title.textContent = options.title;
+
   const closeBtn = createActionButton(i18n.t("common.close"), LIGHTBOX_CLOSE_ICON);
   closeBtn.classList.add("markdown-lightbox__close");
-  bar.append(title, closeBtn);
 
   const stage = document.createElement("div");
-  stage.className = ["markdown-lightbox__stage", options.bodyClassName ? options.bodyClassName : ""]
+  stage.className = [
+    "markdown-lightbox__stage",
+    options.bodyClassName ? options.bodyClassName : "",
+    options.zoomable ? "lightbox-zoom-stage" : "",
+  ]
     .filter(Boolean)
     .join(" ");
-  stage.innerHTML = options.bodyHtml;
+
+  let zoom: ReturnType<typeof attachLightboxZoom> | null = null;
+  let zoomPercentBtn: HTMLButtonElement | null = null;
+  let zoomCanvas: HTMLDivElement | null = null;
+  let zoomOutBtn: HTMLButtonElement | null = null;
+  let zoomInBtn: HTMLButtonElement | null = null;
+  let resetBtn: HTMLButtonElement | null = null;
+
+  if (options.zoomable) {
+    const controls = document.createElement("div");
+    controls.className = "lightbox-zoom-controls";
+
+    zoomOutBtn = createActionButton(i18n.t("lightbox.zoomOut"), ZOOM_OUT_ICON);
+    zoomOutBtn.classList.add("markdown-lightbox__close");
+    zoomInBtn = createActionButton(i18n.t("lightbox.zoomIn"), ZOOM_IN_ICON);
+    zoomInBtn.classList.add("markdown-lightbox__close");
+    zoomPercentBtn = createActionButton(i18n.t("lightbox.zoomReset"), "");
+    zoomPercentBtn.classList.add("lightbox-zoom-percent");
+    zoomPercentBtn.textContent = "100%";
+    resetBtn = createActionButton(i18n.t("lightbox.zoomReset"), ZOOM_RESET_ICON);
+    resetBtn.classList.add("markdown-lightbox__close");
+
+    controls.append(zoomOutBtn, zoomPercentBtn, zoomInBtn, resetBtn, closeBtn);
+    bar.append(title, controls);
+
+    zoomCanvas = document.createElement("div");
+    zoomCanvas.className = "lightbox-zoom-canvas";
+    zoomCanvas.innerHTML = options.bodyHtml;
+    stage.append(zoomCanvas);
+  } else {
+    bar.append(title, closeBtn);
+    stage.innerHTML = options.bodyHtml;
+  }
 
   content.append(bar, stage);
   backdrop.append(content);
   document.body.append(backdrop);
 
+  // Attach after mount so stage has real layout size (Mermaid fit needs clientWidth).
+  if (options.zoomable && zoomCanvas) {
+    zoom = attachLightboxZoom({
+      stage,
+      canvas: zoomCanvas,
+      onChange: (transform) => {
+        if (zoomPercentBtn) {
+          zoomPercentBtn.textContent = formatLightboxZoomPercent(transform.scale);
+        }
+      },
+    });
+
+    zoomOutBtn?.addEventListener("click", (event) => {
+      event.preventDefault();
+      zoom?.zoomOut();
+    });
+    zoomInBtn?.addEventListener("click", (event) => {
+      event.preventDefault();
+      zoom?.zoomIn();
+    });
+    zoomPercentBtn?.addEventListener("click", (event) => {
+      event.preventDefault();
+      zoom?.reset();
+    });
+    resetBtn?.addEventListener("click", (event) => {
+      event.preventDefault();
+      zoom?.reset();
+    });
+  }
+
+  let closed = false;
   const close = () => {
+    if (closed) return;
+    closed = true;
+    zoom?.destroy();
+    zoom = null;
+    delete (backdrop as HTMLElement & { __ecoLightboxCleanup?: () => void }).__ecoLightboxCleanup;
     backdrop.remove();
     window.removeEventListener("keydown", onKeyDown);
   };
+  (backdrop as HTMLElement & { __ecoLightboxCleanup?: () => void }).__ecoLightboxCleanup = close;
+
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") close();
+    if (event.key === "Escape") {
+      close();
+      return;
+    }
+    if (!zoom) return;
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoom.zoomIn();
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoom.zoomOut();
+    } else if (event.key === "0") {
+      event.preventDefault();
+      zoom.reset();
+    }
   };
   closeBtn.addEventListener("click", (event) => {
     event.preventDefault();
@@ -643,6 +753,7 @@ function openMermaidLightbox(svgHtml: string): void {
     title: "mermaid",
     ariaLabel: i18n.t("markdown.mermaid.expand"),
     bodyHtml: svgHtml,
+    zoomable: true,
   });
 }
 
@@ -833,7 +944,7 @@ function createTableNodeView(): {
     },
     destroy() {
       closeCopyMenu();
-      document.querySelector(".markdown-lightbox")?.remove();
+      dismissMarkdownLightbox();
     },
   };
 }
@@ -903,7 +1014,7 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   const showSvg = (svg: string) => {
     body.classList.remove("is-error");
     body.removeAttribute("aria-busy");
-    body.innerHTML = svg;
+    mountMermaidSvgForFeed(body, svg);
   };
 
   const applyView = () => {
@@ -983,7 +1094,7 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
     destroy() {
       disposed = true;
       stopTheme();
-      document.querySelector(".markdown-lightbox")?.remove();
+      dismissMarkdownLightbox();
     },
   };
 }

@@ -12376,6 +12376,7 @@ button.default-agent-option:focus-visible {
   border: 1px solid color-mix(in srgb, var(--markdown-text) 8%, transparent);
   border-radius: 14px;
   box-shadow: none;
+  min-width: 0;
 }
 
 .markdown-code-block--mermaid .markdown-code-block__toolbar {
@@ -12394,14 +12395,28 @@ button.default-agent-option:focus-visible {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   padding: 4px 12px 14px;
-  overflow: auto;
+  overflow: hidden;
   color: inherit;
 }
 
-.markdown-code-block--mermaid .markdown-mermaid svg {
+.markdown-code-block--mermaid .markdown-mermaid__paint {
   display: block;
+  box-sizing: border-box;
+  width: 100%;
   max-width: 100%;
+  max-height: 420px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.markdown-code-block--mermaid .markdown-mermaid__paint svg {
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 420px;
+  width: auto;
   height: auto;
   margin: 0 auto;
 }
@@ -12542,8 +12557,13 @@ button.default-agent-option:focus-visible {
   box-sizing: border-box;
   width: min(1100px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
-  grid-template-rows: 40px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0 0 12px;
   color: var(--lightbox-panel-text);
+  background: var(--lightbox-panel-bg);
+  border: 1px solid var(--lightbox-panel-border);
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 .markdown-lightbox__bar {
@@ -12552,8 +12572,12 @@ button.default-agent-option:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-left: 4px;
+  padding: 10px 10px 10px 16px;
   font-size: 12px;
+  font-weight: 500;
+  color: var(--lightbox-panel-text);
+  background: var(--lightbox-stage-heading-bg);
+  border-bottom: 1px solid var(--lightbox-panel-border);
 }
 
 .markdown-lightbox__bar > span {
@@ -12563,18 +12587,58 @@ button.default-agent-option:focus-visible {
   color: var(--lightbox-panel-muted);
 }
 
-.markdown-lightbox__close {
+.markdown-lightbox__close,
+.markdown-lightbox__bar .markdown-code-block__action,
+.markdown-lightbox__bar .lightbox-zoom-percent {
   color: var(--lightbox-panel-text);
+  opacity: 1;
+  background: color-mix(in srgb, var(--lightbox-panel-text) 8%, var(--lightbox-stage-heading-bg));
+}
+
+.markdown-lightbox__close:hover,
+.markdown-lightbox__bar .markdown-code-block__action:hover,
+.markdown-lightbox__bar .lightbox-zoom-percent:hover {
+  color: var(--lightbox-panel-text);
+  opacity: 1;
+  background: color-mix(in srgb, var(--lightbox-panel-text) 14%, var(--lightbox-stage-heading-bg));
 }
 
 .markdown-lightbox__stage {
   box-sizing: border-box;
   min-height: 0;
+  margin: 0 12px;
   padding: 16px;
   overflow: auto;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--lightbox-stage-bg);
   border: 1px solid var(--lightbox-panel-border);
+}
+
+.markdown-lightbox__stage.lightbox-zoom-stage {
+  overflow: hidden;
+  padding: 16px;
+  touch-action: none;
+  cursor: zoom-in;
+}
+
+.markdown-lightbox__content:has(.lightbox-zoom-stage) {
+  width: min(1600px, calc(100vw - 32px));
+  height: min(960px, calc(100vh - 32px));
+}
+
+.markdown-lightbox__stage.lightbox-zoom-stage .lightbox-zoom-canvas {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.markdown-lightbox__stage.lightbox-zoom-stage.is-zoomed {
+  cursor: grab;
+}
+
+.markdown-lightbox__stage.lightbox-zoom-stage.is-panning {
+  cursor: grabbing;
 }
 
 .markdown-lightbox__stage svg {
@@ -12582,6 +12646,60 @@ button.default-agent-option:focus-visible {
   max-width: 100%;
   height: auto;
   margin: 0 auto;
+}
+
+.lightbox-zoom-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.lightbox-zoom-percent {
+  min-width: 52px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--lightbox-panel-text) 8%, var(--lightbox-stage-heading-bg));
+  color: var(--lightbox-panel-text);
+  font-size: 12px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.lightbox-zoom-percent:hover {
+  background: color-mix(in srgb, var(--lightbox-panel-text) 14%, var(--lightbox-stage-heading-bg));
+  color: var(--lightbox-panel-text);
+}
+
+.lightbox-zoom-stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.lightbox-zoom-canvas {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 0 0;
+}
+
+.lightbox-zoom-canvas img,
+.lightbox-zoom-canvas svg {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .markdown-lightbox__stage--table {
@@ -13358,9 +13476,11 @@ a.run-log-web-search-detail-result-url:focus-visible {
 
 .run-log-image-view-lightbox-content {
   display: grid;
-  max-width: calc(100vw - 48px);
-  max-height: calc(100vh - 48px);
-  grid-template-rows: 40px minmax(0, 1fr);
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  width: min(1600px, calc(100vw - 32px));
+  height: min(960px, calc(100vh - 32px));
+  grid-template-rows: auto minmax(0, 1fr);
   padding: 0 0 12px;
   color: var(--lightbox-panel-text);
   background: var(--lightbox-panel-bg);
@@ -13375,29 +13495,57 @@ a.run-log-web-search-detail-result-url:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 8px 8px 16px;
+  padding: 10px 10px 10px 16px;
   font-size: 12px;
-  color: var(--lightbox-panel-muted);
-  background: var(--lightbox-panel-bg);
+  font-weight: 500;
+  color: var(--lightbox-panel-text);
+  background: var(--lightbox-stage-heading-bg);
+  border-bottom: 1px solid var(--lightbox-panel-border);
 }
 
 .run-log-image-view-lightbox-bar > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--lightbox-panel-muted);
 }
 
-.run-log-image-view-lightbox-content > img {
+.run-log-image-view-lightbox-close,
+.run-log-image-view-lightbox-bar .lightbox-zoom-percent {
+  color: var(--lightbox-panel-text);
+  background: color-mix(in srgb, var(--lightbox-panel-text) 8%, var(--lightbox-stage-heading-bg));
+}
+
+.run-log-image-view-lightbox-close:hover,
+.run-log-image-view-lightbox-bar .lightbox-zoom-percent:hover {
+  background: color-mix(in srgb, var(--lightbox-panel-text) 14%, var(--lightbox-stage-heading-bg));
+}
+
+.run-log-image-view-lightbox-stage {
+  box-sizing: border-box;
+  min-height: 120px;
+  max-height: calc(100vh - 100px);
+  margin: 0 12px;
+  border-radius: 10px;
+  background: var(--lightbox-stage-bg);
+  cursor: zoom-in;
+}
+
+.run-log-image-view-lightbox-stage.is-zoomed {
+  cursor: grab;
+}
+
+.run-log-image-view-lightbox-stage.is-panning {
+  cursor: grabbing;
+}
+
+.run-log-image-view-lightbox-stage .lightbox-zoom-canvas img {
   display: block;
   max-width: 100%;
-  max-height: calc(100vh - 100px);
+  max-height: calc(100vh - 124px);
   margin: 0 auto;
   object-fit: contain;
   background: var(--lightbox-stage-bg);
-}
-
-.run-log-image-view-lightbox-close {
-  color: var(--lightbox-panel-text);
 }
 
 @media (max-width: 600px) {
