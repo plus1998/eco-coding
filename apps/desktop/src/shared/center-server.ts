@@ -493,6 +493,12 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
   ) {
     return "device_inactive";
   }
+  // supabase-js "Auth session missing!" means the in-memory session was dropped
+  // (persistSession: false). A stored refresh token can still recover — do not
+  // force relogin or wipe credentials.
+  if (lower.includes("auth session missing")) {
+    return "network";
+  }
   // Do not treat bare "unauthorized" as relogin — Realtime/Edge blips often
   // use that wording and must not wipe a still-valid refresh token.
   if (
@@ -504,8 +510,7 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
     lower.includes("credentials are invalid") ||
     lower.includes("device credentials are invalid") ||
     lower.includes("device credentials are missing") ||
-    lower.includes("user session expired") ||
-    lower.includes("session missing")
+    lower.includes("user session expired")
   ) {
     return "relogin";
   }

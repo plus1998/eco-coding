@@ -73,6 +73,7 @@ import {
   nativeImage,
   nativeTheme,
   net,
+  powerMonitor,
   safeStorage,
   session,
   shell,
@@ -2410,9 +2411,17 @@ app.whenReady().then(async () => {
 
   app.on("browser-window-focus", () => {
     gitAutoFetcher?.setWindowFocused(true);
+    void centerServerClient?.recoverAfterIdle("focus");
   });
   app.on("browser-window-blur", () => {
     gitAutoFetcher?.setWindowFocused(false);
+  });
+
+  powerMonitor.on("resume", () => {
+    void centerServerClient?.recoverAfterIdle("resume");
+  });
+  powerMonitor.on("unlock-screen", () => {
+    void centerServerClient?.recoverAfterIdle("unlock-screen");
   });
 
   app.on("activate", async () => {

@@ -51,6 +51,7 @@ import {
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
   normalizeSupabaseProjectUrl,
+  recoveryForSessionRefreshFailure,
   resolveSupabaseProjectUrl,
 } from "../shared/center-server";
 import type { EventCenterEnvelope, EventCenterJsonRpcNotification } from "../shared/event-center";
@@ -173,6 +174,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private vaultClaimsRefreshTimer: ReturnType<typeof setInterval> | undefined;
   private intentionallyStopped = true;
   private connectInFlight: Promise<void> | undefined;
+  private accessTokenRefreshInFlight: Promise<string> | undefined;
   private reconnectTimer: { cancel(): void } | undefined;
   private accessTokenRefreshTimer: { cancel(): void } | undefined;
   private reconnectAttempts = 0;
@@ -244,9 +246,60 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     await this.connect();
   }
 
+  /**
+   * OS sleep/wake or window focus after long idle: timers may have missed JWT
+   * refresh and in-memory Auth session can be gone while refresh_token remains.
+   * - resume/unlock: always renew when connected (Realtime often dies across sleep)
+   * - focus: renew only when token is near expiry; always reconnect from error
+   */
+  async recoverAfterIdle(reason = "idle"): Promise<void> {
+    if (this.intentionallyStopped) {
+      return;
+    }
+    const settings = this.store.getSettingsWithSecrets();
+    if (!settings.enabled) {
+      return;
+    }
+    if (!settings.refreshToken || !settings.deviceId || !settings.deviceSecret) {
+      return;
+    }
+
+    this.log(`[eco] supabase center recoverAfterIdle (${reason})\n`);
+    this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
+
+    const client = this.supabase;
+    if (client && this.status.state === "connected") {
+      const expiresAtMs = Date.parse(settings.accessTokenExpiresAt ?? "");
+      const remainingMs = expiresAtMs - this.now().getTime();
+      const tokenStale =
+        !Number.isFinite(remainingMs) || remainingMs <= ACCESS_TOKEN_REFRESH_LEEWAY_MS;
+      const forceNetworkRefresh = reason === "resume" || reason === "unlock-screen";
+      if (!forceNetworkRefresh && !tokenStale) {
+        return;
+      }
+      try {
+        await this.refreshAccessToken(client);
+        return;
+      } catch (error) {
+        this.log(`[eco] supabase center idle refresh failed: ${errorMessage(error)}\n`);
+        if (this.intentionallyStopped || this.status.state === "connected") {
+          return;
+        }
+      }
+    }
+
+    try {
+      await this.connect();
+    } catch (error) {
+      this.log(`[eco] supabase center idle reconnect failed: ${errorMessage(error)}\n`);
+    }
+  }
+
   stop(): void {
     this.intentionallyStopped = true;
     this.clearReconnectTimer();
+    this.accessTokenRefreshInFlight = undefined;
     this.reconnectAttempts = 0;
     void this.clearVaultClaimSessions();
     this.teardownClient();
@@ -1172,11 +1225,24 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       if (error) {
         throw new Error(error.message);
       }
-      if (!data.session?.user?.id) {
+      let sessionUserId = data.session?.user?.id;
+      if (!sessionUserId) {
+        // persistSession:false — in-memory session can vanish after sleep while
+        // refresh_token is still in the store. Force one renew before hard reauth.
+        await this.ensureAccessToken(this.store.getSettingsWithSecrets(), client, {
+          forceRefresh: true,
+        });
+        const recovered = await client.auth.getSession();
+        if (recovered.error) {
+          throw new Error(recovered.error.message);
+        }
+        sessionUserId = recovered.data.session?.user?.id;
+      }
+      if (!sessionUserId) {
         throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
       }
 
-      const userId = data.session.user.id;
+      const userId = sessionUserId;
       const deviceId = settings.deviceId;
       const bindings = await this.fetchBindingsForDesktop(client, deviceId, { activeOnly: true });
 
@@ -1470,41 +1536,94 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     client?: SupabaseClient,
     options: { forceRefresh?: boolean } = {},
   ): Promise<string> {
-    if (
-      !options.forceRefresh &&
-      settings.accessToken &&
-      tokenStillValid(settings.accessTokenExpiresAt, this.now())
-    ) {
+    let forceRefresh = options.forceRefresh === true;
+    const tokenLooksValid =
+      Boolean(settings.accessToken) && tokenStillValid(settings.accessTokenExpiresAt, this.now());
+
+    if (!forceRefresh && tokenLooksValid && settings.accessToken) {
       if (client && settings.refreshToken) {
         const { error } = await client.auth.setSession({
           access_token: settings.accessToken,
           refresh_token: settings.refreshToken,
         });
-        if (error) {
-          this.log(`[eco] supabase setSession failed: ${error.message}\n`);
+        if (!error) {
+          return settings.accessToken;
         }
+        this.log(`[eco] supabase setSession failed, forcing refresh: ${error.message}\n`);
+        forceRefresh = true;
+      } else {
+        return settings.accessToken;
       }
-      return settings.accessToken;
     }
 
-    if (!settings.refreshToken) {
+    if (this.accessTokenRefreshInFlight) {
+      return this.accessTokenRefreshInFlight;
+    }
+
+    const refreshPromise = this.refreshStoredSession(settings, client, { forceRefresh });
+    this.accessTokenRefreshInFlight = refreshPromise;
+    void refreshPromise
+      .finally(() => {
+        if (this.accessTokenRefreshInFlight === refreshPromise) {
+          this.accessTokenRefreshInFlight = undefined;
+        }
+      })
+      .catch(() => {
+        // Rejection is observed by ensureAccessToken callers; avoid unhandled rejection from this probe.
+      });
+    return refreshPromise;
+  }
+
+  private async refreshStoredSession(
+    settings: CenterServerSettingsSecret,
+    client: SupabaseClient | undefined,
+    options: { forceRefresh: boolean },
+  ): Promise<string> {
+    // Re-read in case a concurrent path already rotated tokens before we acquired the lock.
+    const latest = this.store.getSettingsWithSecrets();
+    const refreshToken = latest.refreshToken || settings.refreshToken;
+    if (
+      !options.forceRefresh &&
+      latest.accessToken &&
+      tokenStillValid(latest.accessTokenExpiresAt, this.now()) &&
+      latest.refreshToken
+    ) {
+      if (client) {
+        const { error } = await client.auth.setSession({
+          access_token: latest.accessToken,
+          refresh_token: latest.refreshToken,
+        });
+        if (!error) {
+          return latest.accessToken;
+        }
+        this.log(`[eco] supabase setSession after wait failed: ${error.message}\n`);
+      } else {
+        return latest.accessToken;
+      }
+    }
+
+    if (!refreshToken) {
       // 有 deviceId/deviceSecret 但无 refreshToken：之前注册过但会话过期，需要重新登录
       throw new Error(
-        settings.deviceId && settings.deviceSecret
+        latest.deviceId && latest.deviceSecret
           ? CENTER_SERVER_REAUTH_MESSAGE
           : CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE,
       );
     }
 
-    const supabase = client ?? this.createEphemeralClient(settings.supabaseUrl, settings.anonKey);
+    const supabase = client ?? this.createEphemeralClient(latest.supabaseUrl, latest.anonKey);
     const { data, error } = await supabase.auth.refreshSession({
-      refresh_token: settings.refreshToken,
+      refresh_token: refreshToken,
     });
     if (error || !data.session) {
-      // refreshSession failure is a genuine auth expiry: the server rejected the
-      // refresh token. Prefer the server's message, fall back to REAUTH.
+      // Prefer server message; only wipe refresh token on genuine Auth rejection.
       const message = error?.message ?? CENTER_SERVER_REAUTH_MESSAGE;
-      if (isCenterServerAuthCredentialError(message)) {
+      const recovery = recoveryForSessionRefreshFailure(message);
+      if (
+        recovery === "relogin" ||
+        recovery === "device_inactive" ||
+        recovery === "account_unusable"
+      ) {
         this.store.clearRefreshToken();
       }
       throw new Error(message);

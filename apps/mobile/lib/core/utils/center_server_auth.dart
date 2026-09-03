@@ -33,6 +33,10 @@ CenterServerAuthRecovery classifyCenterServerAuthError(String? message) {
       lower.contains('refresh token device is not active')) {
     return CenterServerAuthRecovery.deviceInactive;
   }
+  // In-memory Auth session loss is recoverable when a refresh token remains.
+  if (lower.contains('auth session missing')) {
+    return CenterServerAuthRecovery.network;
+  }
   if (lower.contains('refresh token is invalid or expired') ||
       lower.contains('invalid refresh token') ||
       lower.contains('refresh_token_not_found') ||
@@ -41,8 +45,7 @@ CenterServerAuthRecovery classifyCenterServerAuthError(String? message) {
       lower.contains('credentials are invalid') ||
       lower.contains('device credentials are invalid') ||
       lower.contains('device credentials are missing') ||
-      lower.contains('user session expired') ||
-      lower.contains('session missing')) {
+      lower.contains('user session expired')) {
     return CenterServerAuthRecovery.relogin;
   }
   return CenterServerAuthRecovery.unknown;

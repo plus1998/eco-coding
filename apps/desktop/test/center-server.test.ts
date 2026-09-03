@@ -52,6 +52,8 @@ const authRecoveryCases: Array<[string, ReturnType<typeof classifyCenterServerAu
   ["Something else", "unknown"],
   ["Unauthorized", "unknown"],
   ["not authorized", "unknown"],
+  ["Auth session missing!", "network"],
+  ["user session expired", "relogin"],
 ];
 
 test.each(authRecoveryCases)("classifyCenterServerAuthError(%s)", (message, expected) => {

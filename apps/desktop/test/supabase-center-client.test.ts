@@ -9,6 +9,7 @@ import type {
   CenterServerDeviceBindingView,
   CenterServerSettingsView,
 } from "../src/shared/center-server";
+import { isCenterServerAuthCredentialError } from "../src/shared/center-server";
 
 const fixedNow = () => new Date("2030-01-01T00:00:00.000Z");
 const USER_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
@@ -670,6 +671,179 @@ test("supabase center client stops on rejected refresh credentials", async () =>
   expect(client.getSnapshot().status.lastError?.toLowerCase()).toContain("refresh token");
   expect(store.getSettingsWithSecrets().refreshToken).toBe("");
   expect(transportStopped).toBe(true);
+  client.dispose();
+});
+
+test("supabase center client single-flights concurrent access token refreshes", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+  let refreshRequests = 0;
+  let releaseRefresh: (() => void) | undefined;
+  const refreshGate = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const refreshes: Array<{ callback: () => void; delayMs: number }> = [];
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+      if (url.includes("/functions/v1/device-session-register")) {
+        return jsonResponse({
+          sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          deviceId: DEVICE_ID,
+          verifiedAt: fixedNow().toISOString(),
+        });
+      }
+      if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+      if (url.includes("/auth/v1/token?grant_type=refresh_token")) {
+        refreshRequests += 1;
+        await refreshGate;
+        return jsonResponse({
+          access_token: REFRESHED_ACCESS_JWT,
+          refresh_token: "refresh_jwt_rotated",
+          expires_in: 7200,
+          expires_at: Math.floor(fixedNow().getTime() / 1000) + 7200,
+          token_type: "bearer",
+          user: authUser(),
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+    accessTokenRefreshScheduler: (callback, delayMs) => {
+      refreshes.push({ callback, delayMs });
+      return { cancel() {} };
+    },
+  });
+
+  await client.start();
+  expect(refreshes).toHaveLength(1);
+  const first = refreshes[0];
+  expect(first).toBeDefined();
+  first?.callback();
+  first?.callback();
+  await waitFor(() => refreshRequests === 1, 5000);
+  releaseRefresh?.();
+  await waitFor(() => store.getSettingsWithSecrets().refreshToken === "refresh_jwt_rotated", 5000);
+  expect(refreshRequests).toBe(1);
+  client.dispose();
+});
+
+test("supabase center client recoverAfterIdle reconnects after false session expiry", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    // Expired so connect must refresh; first attempt simulates in-memory session loss.
+    accessTokenExpiresAt: "2029-12-31T23:59:00.000Z",
+  });
+  let refreshRequests = 0;
+  let refreshPhase: "fail" | "ok" = "fail";
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+      if (url.includes("/functions/v1/device-session-register")) {
+        return jsonResponse({
+          sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          deviceId: DEVICE_ID,
+          verifiedAt: fixedNow().toISOString(),
+        });
+      }
+      if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+      if (url.includes("/auth/v1/token?grant_type=refresh_token")) {
+        refreshRequests += 1;
+        if (refreshPhase === "fail") {
+          return jsonResponse({ msg: "Auth session missing!", status: 400 }, 400);
+        }
+        return jsonResponse({
+          access_token: REFRESHED_ACCESS_JWT,
+          refresh_token: "refresh_jwt_kept",
+          expires_in: 7200,
+          expires_at: Math.floor(fixedNow().getTime() / 1000) + 7200,
+          token_type: "bearer",
+          user: authUser(),
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+    reconnectScheduler: () => ({ cancel() {} }),
+  });
+
+  await client.start();
+  await waitFor(() => client.getSnapshot().status.state === "error", 5000);
+  expect(store.getSettingsWithSecrets().refreshToken).toBe("refresh_jwt");
+  expect(client.getSnapshot().status.lastError?.toLowerCase()).toContain("session missing");
+
+  refreshPhase = "ok";
+  await client.recoverAfterIdle("resume");
+  await waitFor(() => client.getSnapshot().status.state === "connected", 5000);
+  expect(store.getSettingsWithSecrets().refreshToken).toBe("refresh_jwt_kept");
+  expect(refreshRequests).toBeGreaterThanOrEqual(2);
+  client.dispose();
+});
+
+test("supabase center client keeps refresh token on Auth session missing refresh failure", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2029-12-31T23:59:00.000Z",
+  });
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+      if (url.includes("/functions/v1/device-session-register")) {
+        return jsonResponse({
+          sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          deviceId: DEVICE_ID,
+          verifiedAt: fixedNow().toISOString(),
+        });
+      }
+      if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+      if (url.includes("/auth/v1/token?grant_type=refresh_token")) {
+        return jsonResponse({ msg: "Auth session missing!", status: 400 }, 400);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+    reconnectScheduler: () => ({ cancel() {} }),
+  });
+
+  await client.start();
+  await waitFor(() => client.getSnapshot().status.state === "error", 5000);
+
+  expect(store.getSettingsWithSecrets().refreshToken).toBe("refresh_jwt");
+  expect(client.getSnapshot().status.lastError?.toLowerCase()).toContain("session missing");
+  // Recoverable network-class error must still allow reconnect (not hard relogin stop).
+  expect(isCenterServerAuthCredentialError(client.getSnapshot().status.lastError)).toBe(false);
   client.dispose();
 });
 

@@ -24,6 +24,8 @@ void main() {
     // Bare Realtime/Edge wording must not force relogin.
     'Unauthorized': CenterServerAuthRecovery.unknown,
     'not authorized': CenterServerAuthRecovery.unknown,
+    'Auth session missing!': CenterServerAuthRecovery.network,
+    'user session expired': CenterServerAuthRecovery.relogin,
   };
 
   for (final entry in cases.entries) {
