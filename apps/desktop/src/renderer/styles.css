@@ -11663,7 +11663,9 @@ button.default-agent-option:focus-visible {
   min-width: 0;
 }
 
-.run-log-thinking.streaming .run-log-thinking-body-inner {
+/* Same cap while streaming and when user/preference expands completed thinking. */
+.run-log-thinking.is-expanded .run-log-thinking-body-inner,
+.run-log-thinking.is-collapsing .run-log-thinking-body-inner {
   max-height: 12rem;
   overflow: auto;
   overflow-anchor: none;
@@ -25487,7 +25489,8 @@ html:not([data-platform="darwin"])
   border-left-color: color-mix(in srgb, var(--codex-log-text) 12%, transparent);
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-body-inner {
+.codex-main:not(.codex-main-landing) .run-log-thinking.is-expanded .run-log-thinking-body-inner,
+.codex-main:not(.codex-main-landing) .run-log-thinking.is-collapsing .run-log-thinking-body-inner {
   max-height: 12rem;
   overflow: auto;
   overflow-anchor: none;
