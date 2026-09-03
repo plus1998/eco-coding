@@ -21,6 +21,10 @@
 
 <p align="center"><sub>每个会话独立配置子代理、集成工具、Skills 和 MCP。</sub></p>
 
+![Eco Coding 移动端：会话列表与远程 Agent 对话](docs/assets/eco-mobile-demo.png)
+
+<p align="center"><sub>手机端浏览 Sessions、跟进任务，并在外出时继续与 Agent 对话。</sub></p>
+
 ## 为什么是 Eco Coding
 
 如果你已经在用 Codex 或 Claude Code，Eco Coding 把它们放进同一个工作台，并补上官方客户端通常缺少的能力：

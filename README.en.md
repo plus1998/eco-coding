@@ -21,6 +21,10 @@ A multi-agent coding workspace for Codex, Claude Code, and PI—with model routi
 
 <p align="center"><sub>Each session independently configures subagents, integrations, Skills, and MCP.</sub></p>
 
+![Eco Coding mobile: session list and remote Agent chat](docs/assets/eco-mobile-demo.png)
+
+<p align="center"><sub>Browse Sessions on your phone, follow tasks, and keep talking with the Agent while away from the desk.</sub></p>
+
 ## Why Eco Coding
 
 If you already use Codex or Claude Code, Eco Coding puts them in one workspace and adds what most official clients leave out:
