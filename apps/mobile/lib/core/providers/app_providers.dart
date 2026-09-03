@@ -155,40 +155,9 @@ class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
       unawaited(refresh());
     });
 
-    // Presence online flags come from the Realtime channel. Fetching before
-    // subscribe yields an all-offline list and makes the PC picker look dead.
-    await _waitForPresenceChannel(client);
+    // The PC picker only needs a REST snapshot. Starting Realtime here would
+    // make every later desktop switch tear down and recreate the bind channel.
     return _fetchPresenceWithRetry(client);
-  }
-
-  Future<void> _waitForPresenceChannel(
-    EcoCenterClient client, {
-    Duration timeout = const Duration(seconds: 12),
-  }) async {
-    if (!client.credentials.hasProjectConfig) return;
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      if (client.hasUserPresenceChannel) return;
-      final state =
-          ref.read(connectionStatusProvider).valueOrNull?.state ??
-          EcoConnectionState.disconnected;
-      if (state == EcoConnectionState.error) {
-        final recovery =
-            ref.read(connectionStatusProvider).valueOrNull?.authRecovery;
-        if (recovery == CenterServerAuthRecovery.relogin ||
-            recovery == CenterServerAuthRecovery.deviceInactive ||
-            recovery == CenterServerAuthRecovery.accountUnusable) {
-          return;
-        }
-      }
-      if (state != EcoConnectionState.connecting) {
-        try {
-          await client.connect();
-        } catch (_) {}
-        if (client.hasUserPresenceChannel) return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
   }
 
   Future<void> refresh({bool force = false}) async {

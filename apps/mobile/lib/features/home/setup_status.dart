@@ -158,7 +158,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       case EcoConnectionState.error:
         return SetupStepState.error;
       case EcoConnectionState.disconnected:
-        return SetupStepState.inProgress;
+        return SetupStepState.pending;
     }
   }
 
@@ -196,8 +196,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       state: wsStepState(),
       subtitle: wsState == EcoConnectionState.connected
           ? l10n.setupStatusCenterConnected
-          : wsState == EcoConnectionState.connecting ||
-                wsState == EcoConnectionState.disconnected
+          : wsState == EcoConnectionState.connecting
           ? l10n.setupStatusConnecting
           : null,
       hint: wsStepState() == SetupStepState.error

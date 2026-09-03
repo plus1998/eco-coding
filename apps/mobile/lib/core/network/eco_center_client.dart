@@ -166,19 +166,7 @@ class EcoCenterClient {
       try {
         await ensureBinding(desktopDeviceId);
       } catch (_) {
-        // connect() below will surface binding errors via status.
-      }
-    }
-
-    if (desktopDeviceId != null &&
-        desktopDeviceId.isNotEmpty &&
-        _credentials.hasDeviceCredentials &&
-        !_intentionallyStopped &&
-        (changed || !hasActiveBindingChannel)) {
-      try {
-        await connect();
-      } catch (_) {
-        // connect() schedules reconnect when appropriate.
+        // Binding errors are surfaced when the session connects on entry.
       }
     }
   }
@@ -475,7 +463,9 @@ class EcoCenterClient {
     return (rows as List<dynamic>).map((row) {
       final device = _deviceFromRow(_asJsonMap(row));
       return device.copyWith(
-        online: _onlineDesktopDeviceIds.contains(device.id),
+        online: _presenceChannel == null
+            ? null
+            : _onlineDesktopDeviceIds.contains(device.id),
       );
     }).toList();
   }

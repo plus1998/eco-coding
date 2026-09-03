@@ -57,6 +57,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _bootstrap() async {
     await ref.read(appSessionProvider.future);
     final client = ref.read(ecoCenterClientProvider);
+    // The connect screen is a selection surface. Stop any session transport
+    // left by a previous visit; Realtime starts again when entering /threads.
+    client.disconnect();
+    ref.invalidate(desktopPresenceProvider);
     final creds = client.credentials;
     _serverUrlController.text = creds.supabaseUrl;
     _anonKeyController.text = '';
@@ -160,6 +164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     unawaited(() async {
       try {
         await client.setSelectedDesktop(selected);
+        await client.connect();
         ref.invalidate(credentialsProvider);
         ref.invalidate(bindingsProvider);
         ref.invalidate(desktopPresenceProvider);
@@ -297,15 +302,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       warmShellCaches: false,
     );
     setState(() => _showManualSetup = false);
-    if (selected.online) {
+    if (selected.online == false) {
+      _showSnack(context.l10n.setupSelectedDeviceOffline(selected.name));
+    } else {
       _showSnack(
         result.alreadyBound
             ? context.l10n.setupOpenedDevice(selected.name)
             : context.l10n.setupBoundDevice(selected.name),
       );
       if (mounted) context.go('/threads');
-    } else {
-      _showSnack(context.l10n.setupSelectedDeviceOffline(selected.name));
     }
   }
 
@@ -317,10 +322,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final previousDesktop =
         ref.read(selectedDesktopIdProvider) ??
         client.credentials.selectedDesktopId;
-    // Persist + bind/connect first; only then publish UI selection. Setting the
-    // StateProvider first used to notify GoRouter/listeners mid-flight and
-    // surface StateNotifierListenerError ("At least listener of the
-    // StateNotifier StateController#…").
+    // Persist the selection and binding only. The Realtime transport is
+    // established by _enterApp after the session route is mounted.
     await client.setSelectedDesktop(desktopId);
     ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
     ref.invalidate(credentialsProvider);
@@ -348,7 +351,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final stableOnline = ref.read(stableDesktopOnlineProvider(desktopId));
     return _SelectedDesktopResult(
       name: formatDesktopLabel(device, desktopId),
-      online: device?.online ?? stableOnline ?? false,
+      online: device?.online ?? stableOnline,
     );
   }
 
@@ -516,12 +519,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 try {
                   await _selectDesktop(desktopId, warmShellCaches: false);
                   if (!mounted) return;
-                  if (online) {
+                  if (online == true) {
                     _showSnack(context.l10n.setupSelectedDevice(name));
+                  } else if (online == false) {
+                    _showSnack(context.l10n.setupDeviceOfflineServerHelp(name));
                   } else {
-                    _showSnack(
-                      context.l10n.setupDeviceOfflineServerHelp(name),
-                    );
+                    _showSnack(context.l10n.setupSelectedDevice(name));
                   }
                 } catch (error) {
                   if (mounted) {
@@ -631,7 +634,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               );
             }
             await client.ensureMobileDevice();
-            await client.connect();
+            // Realtime is intentionally lazy: the picker only persists the
+            // selection; session entry establishes Presence + bind channels.
             ref.read(pendingAuthRecoveryProvider.notifier).state = null;
             ref.invalidate(credentialsProvider);
             ref.invalidate(bindingsProvider);
@@ -663,7 +667,7 @@ class _SelectedDesktopResult {
   const _SelectedDesktopResult({required this.name, required this.online});
 
   final String name;
-  final bool online;
+  final bool? online;
 }
 
 class _ConnectStepHeader extends StatelessWidget {
@@ -962,7 +966,7 @@ class _SelectPcStep extends ConsumerWidget {
   final SetupOverview overview;
   final bool busy;
   final String? selectingDesktopId;
-  final Future<void> Function(String desktopId, String name, bool online)
+  final Future<void> Function(String desktopId, String name, bool? online)
   onSelect;
   final bool compact;
 
@@ -1061,8 +1065,6 @@ class _SelectPcStep extends ConsumerWidget {
       return _StepBlockedHint(text: context.l10n.setupNoRegisteredPcs);
     }
 
-    final onlineIds = desktops.where((d) => d.online).map((d) => d.id).toSet();
-
     final list = Column(
       children: [
         for (var i = 0; i < desktops.length; i++) ...[
@@ -1076,7 +1078,7 @@ class _SelectPcStep extends ConsumerWidget {
               );
               final online = presenceLoading
                   ? stableOnline
-                  : stableOnline ?? onlineIds.contains(desktopId);
+                  : stableOnline ?? device.online;
               final name = formatDesktopLabel(device, desktopId);
               final detail = formatDeviceDetail(device, omitLabel: name);
               final selected = selectedDesktop == desktopId;
@@ -1089,9 +1091,7 @@ class _SelectPcStep extends ConsumerWidget {
                 loading: selectingDesktopId == desktopId,
                 dense: compact,
                 menuEnabled: !busy,
-                onTap: busy
-                    ? null
-                    : () => onSelect(desktopId, name, online ?? false),
+                onTap: busy ? null : () => onSelect(desktopId, name, online),
                 onUnpair: binding == null
                     ? null
                     : () => _confirmUnpair(
@@ -1450,7 +1450,7 @@ class _ReadyConnectionView extends ConsumerWidget {
   final String? selectingDesktopId;
   final VoidCallback onScan;
   final VoidCallback onEnterApp;
-  final Future<void> Function(String desktopId, String name, bool online)
+  final Future<void> Function(String desktopId, String name, bool? online)
   onSelectPc;
 
   @override

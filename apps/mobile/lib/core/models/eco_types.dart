@@ -92,7 +92,7 @@ class PublicDevice {
     this.metadata = const PublicDeviceMetadata(),
     this.lastSeenAt,
     this.disabledAt,
-    this.online = false,
+    this.online,
   });
 
   factory PublicDevice.fromJson(Map<String, dynamic> json) => PublicDevice(
@@ -106,7 +106,7 @@ class PublicDevice {
     ),
     lastSeenAt: json['lastSeenAt'] as String?,
     disabledAt: json['disabledAt'] as String?,
-    online: json['online'] as bool? ?? false,
+    online: json['online'] as bool?,
   );
 
   final String id;
@@ -117,7 +117,7 @@ class PublicDevice {
   final String createdAt;
   final String? lastSeenAt;
   final String? disabledAt;
-  final bool online;
+  final bool? online;
 
   PublicDevice copyWith({
     String? id,

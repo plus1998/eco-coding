@@ -1,11 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/eco_types.dart';
 import 'app_providers.dart';
 
-/// Runs once at app start: restore saved desktop selection, connect WS, refresh presence.
+/// Runs once at app start: restore saved desktop selection and refresh the PC list.
+/// Realtime is intentionally started when entering the session screen.
 final appSessionProvider = FutureProvider<void>((ref) async {
   final client = ref.read(ecoCenterClientProvider);
   await client.initialize();
@@ -28,13 +26,6 @@ final appSessionProvider = FutureProvider<void>((ref) async {
   }
 
   if (creds.hasDeviceCredentials && creds.hasProjectConfig) {
-    if (client.status.state != EcoConnectionState.connected) {
-      try {
-        await client.connect();
-      } catch (_) {
-        // Center client keeps auto-reconnecting in the background.
-      }
-    }
     await ref.read(desktopPresenceProvider.notifier).refresh(force: true);
   }
 });
