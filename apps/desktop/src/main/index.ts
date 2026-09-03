@@ -352,6 +352,7 @@ import {
   supportsOneClickRequestRetry,
   usesRewindOnRequestRetry,
 } from "../shared/thread-request-retry";
+import { excludeAgentScopedFeedTimelineItems } from "../shared/thread-run-projection-skeleton";
 import {
   projectThreadRunToolMetadata,
   projectThreadRunToolMetadataForFeed,
@@ -13403,16 +13404,18 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
     return;
   }
 
+  const existing = conversationStore.getThreadFeedSkeleton(threadId);
+  const leakedAgentItemsOnMain = existing?.snapshot.timeline.some((item) => item.scope === "agent") === true;
   const structureChanging =
     shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
-    RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType);
+    RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType) ||
+    leakedAgentItemsOnMain;
 
   if (!structureChanging) {
     conversationStore.touchThreadFeedSkeletonSequence(threadId, context.maxEventSequence);
     return;
   }
 
-  const existing = conversationStore.getThreadFeedSkeleton(threadId);
   if (!existing?.patchState) {
     rebuildThreadFeedSkeletonRecord(threadId);
     return;
@@ -13581,7 +13584,11 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   if (!feedProjection) {
     return;
   }
-  feedProjection = hydrateFeedProjectionRequestSpans(threadId, feedProjection);
+  const withSpans = hydrateFeedProjectionRequestSpans(threadId, feedProjection);
+  feedProjection = {
+    ...withSpans,
+    timeline: excludeAgentScopedFeedTimelineItems(withSpans.timeline),
+  };
   const signature = buildFeedProjectionSignature(feedProjection);
   if (lastFeedProjectionSignatures.get(threadId) === signature) {
     return;

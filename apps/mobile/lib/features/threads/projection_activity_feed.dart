@@ -692,7 +692,11 @@ List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(
   );
   return _filterCompactionTimelineForFeed(
     displayTimeline
-        .where((item) => !_isMainTimelineNoiseItem(item, displayTimeline))
+        .where(
+          (item) =>
+              item.scope != 'agent' &&
+              !_isMainTimelineNoiseItem(item, displayTimeline),
+        )
         .toList(),
   );
 }

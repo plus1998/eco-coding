@@ -8,6 +8,7 @@ import type {
   ThreadSubagentSessionTiming,
   ThreadSummary,
 } from "../shared/ipc";
+import { excludeAgentScopedFeedTimelineItems } from "../shared/thread-run-projection-skeleton";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
 export interface FeedSkeletonPatchState {
@@ -99,6 +100,7 @@ export function hydrateThreadFeedSkeletonSnapshot(
       ...(currentAttemptId && { currentAttemptId }),
     },
     attempts,
+    timeline: excludeAgentScopedFeedTimelineItems(snapshot.timeline),
     ...(billing && { billing }),
     ...(threadContext && { context: threadContext }),
     ...(subagentTimings.length > 0 && { subagentTimings: [...subagentTimings] }),

@@ -940,6 +940,80 @@ test("buildThreadRunProjectionViewModel keeps agent narrative in subagent card d
   expect(view.subagentCards[0]?.timelineIds).toEqual(["coder-says"]);
 });
 
+test("buildThreadRunProjectionViewModel keeps leaked subagent prompt and thinking off the main feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "user-prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "加产品排行",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({
+          id: "planner-says",
+          sequence: 2,
+          eventType: "message.final",
+          role: "assistant",
+          text: "我先用 explore 勘察",
+          at: "2026-01-01T00:00:02.000Z",
+        }),
+        item({
+          id: "explore-prompt",
+          sequence: 3,
+          eventType: "message.final",
+          scope: "agent",
+          role: "explore",
+          agentId: "explore_a",
+          text: "请只读探索当前仓库，禁止编辑、生成或删除任何文件。",
+          at: "2026-01-01T00:00:03.000Z",
+          metadata: { liveType: "message.user", itemType: "userMessage" },
+        }),
+        item({
+          id: "explore-think",
+          sequence: 4,
+          eventType: "thinking.final",
+          scope: "agent",
+          role: "explore",
+          agentId: "explore_a",
+          text: "The user wants me to explore the codebase",
+          at: "2026-01-01T00:00:04.000Z",
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "explore_a",
+          role: "explore",
+          timeline: [
+            item({
+              id: "explore-prompt",
+              sequence: 3,
+              eventType: "message.final",
+              scope: "agent",
+              role: "explore",
+              agentId: "explore_a",
+              text: "请只读探索当前仓库，禁止编辑、生成或删除任何文件。",
+              at: "2026-01-01T00:00:03.000Z",
+              metadata: { liveType: "message.user", itemType: "userMessage" },
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  const timelineIds = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      return [entry.item.id];
+    }
+    return [];
+  });
+  expect(timelineIds).toEqual(["user-prompt", "planner-says"]);
+  expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-card")).toBe(true);
+  expect(view.subagentCards[0]?.timelineIds).toContain("explore-prompt");
+});
+
 test("buildThreadRunProjectionViewModel keeps concurrent same-role agent details distinct", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

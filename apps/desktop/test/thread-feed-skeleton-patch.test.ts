@@ -466,4 +466,113 @@ describe("thread feed skeleton patch", () => {
     const delta = record.snapshot.timeline.find((item) => item.id === "delta_1");
     expect(delta?.text).toBe("正在写代码");
   });
+
+  test("does not put running-attempt subagent prompt or thinking on the main skeleton", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "加产品排行",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "planner_final",
+        sequence: 2,
+        eventType: "message.final",
+        message: "我先用 explore 勘察",
+        role: "assistant",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "explore_prompt",
+        sequence: 3,
+        eventType: "message.final",
+        scope: "agent",
+        message: "请只读探索当前仓库，禁止编辑、生成或删除任何文件。",
+        role: "explore",
+        agentId: "explore_a",
+        runAttemptId: "att_run",
+        metadata: { liveType: "message.user", itemType: "userMessage" },
+      }),
+      runEvent({
+        id: "explore_think",
+        sequence: 4,
+        eventType: "thinking.delta",
+        scope: "agent",
+        message: "The user wants me to explore the codebase",
+        role: "explore",
+        agentId: "explore_a",
+        runAttemptId: "att_run",
+      }),
+    ];
+
+    expect(shouldTrackEventForFeedSkeletonPatch(events[2]!, mapAttempts(attempts))).toBe(false);
+    expect(shouldTrackEventForFeedSkeletonPatch(events[3]!, mapAttempts(attempts))).toBe(false);
+    expect(replayPatchTimelineIds(events, attempts)).toEqual(["user_1", "planner_final"]);
+  });
+
+  test("strips already leaked agent-scoped items from a dirty skeleton on the next patch", () => {
+    const attempts = [projectionAttempt("att_run", "running")];
+    const leaked = {
+      id: "explore_prompt",
+      sequence: 3,
+      eventType: "message.final" as const,
+      scope: "agent" as const,
+      role: "explore",
+      text: "请只读探索当前仓库",
+      at: "2026-01-01T00:00:03.000Z",
+      metadata: { liveType: "message.user" },
+    };
+    let record = createThreadFeedSkeletonRecord(
+      {
+        ...emptySnapshot(),
+        attempts,
+        timeline: [
+          {
+            id: "user_1",
+            sequence: 1,
+            eventType: "thread.status",
+            scope: "main",
+            role: "user",
+            text: "加产品排行",
+            at: "2026-01-01T00:00:01.000Z",
+            metadata: { liveType: "thread.user_prompt" },
+          },
+          leaked,
+        ],
+      },
+      {
+        attempts,
+        agents: [],
+        historyRevision: 0,
+        maxEventSequence: 3,
+      },
+    );
+    record.patchState = {
+      trackedItems: [
+        ...(record.patchState?.trackedItems ?? []),
+        leaked,
+      ],
+    };
+
+    const patched = patchThreadFeedSkeletonFromEvent(
+      record,
+      runEvent({
+        id: "planner_think",
+        sequence: 5,
+        eventType: "thinking.delta",
+        message: "**Preparing subagent**",
+        role: "thinking",
+        runAttemptId: "att_run",
+      }),
+      patchContext(attempts, 5),
+    );
+
+    expect(patched).not.toBeNull();
+    expect(feedSkeletonTimelineIds(patched!.snapshot)).toEqual(["user_1", "planner_think"]);
+    expect(patched!.snapshot.timeline.some((item) => item.scope === "agent")).toBe(false);
+  });
 });

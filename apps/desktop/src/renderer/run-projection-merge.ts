@@ -10,6 +10,7 @@ import {
   isThreadFollowUpActivityMessage,
 } from "../shared/thread-follow-up-events";
 import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
+import { excludeAgentScopedFeedTimelineItems } from "../shared/thread-run-projection-skeleton";
 import { isThinkingTextContinuation } from "./thread-run-projection-view";
 
 export interface MergeThreadRunProjectionOptions {
@@ -287,7 +288,10 @@ function mergeTrimmedIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
-  const timeline = mergeProjectionTimelines(current.timeline, incoming.timeline);
+  const timeline = mergeProjectionTimelines(
+    excludeAgentScopedFeedTimelineItems(current.timeline),
+    excludeAgentScopedFeedTimelineItems(incoming.timeline),
+  );
   const agents = mergeProjectionAgents(current.agents, incoming.agents);
   if (
     timeline === current.timeline &&
@@ -312,7 +316,10 @@ function mergeIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
-  const timeline = mergeProjectionTimelines(current.timeline, incoming.timeline);
+  const timeline = mergeProjectionTimelines(
+    excludeAgentScopedFeedTimelineItems(current.timeline),
+    excludeAgentScopedFeedTimelineItems(incoming.timeline),
+  );
   const agents = mergeProjectionAgents(current.agents, incoming.agents);
   if (
     timeline === current.timeline &&
@@ -347,52 +354,55 @@ export function mergeThreadRunProjectionUpdate(
   incoming: ThreadRunProjectionSnapshot,
   options?: MergeThreadRunProjectionOptions,
 ): ThreadRunProjectionSnapshot {
+  const sanitizedTimeline = excludeAgentScopedFeedTimelineItems(incoming.timeline);
+  const sanitizedIncoming =
+    sanitizedTimeline === incoming.timeline ? incoming : { ...incoming, timeline: sanitizedTimeline };
   if (!current) {
-    return incoming;
+    return sanitizedIncoming;
   }
 
   const currentHistoryRevision = projectionHistoryRevision(current);
-  const incomingHistoryRevision = projectionHistoryRevision(incoming);
+  const incomingHistoryRevision = projectionHistoryRevision(sanitizedIncoming);
   if (incomingHistoryRevision < currentHistoryRevision) {
     return current;
   }
   if (incomingHistoryRevision > currentHistoryRevision) {
-    return incoming;
+    return sanitizedIncoming;
   }
 
   const preserveHistory = options?.preserveHistory === true;
 
-  if (incoming.sourceEventCount > current.sourceEventCount) {
-    if (incoming.timeline.length < current.timeline.length) {
-      return mergeTrimmedIncomingProjection(current, incoming);
+  if (sanitizedIncoming.sourceEventCount > current.sourceEventCount) {
+    if (sanitizedIncoming.timeline.length < current.timeline.length) {
+      return mergeTrimmedIncomingProjection(current, sanitizedIncoming);
     }
-    return mergeIncomingProjection(current, incoming);
+    return mergeIncomingProjection(current, sanitizedIncoming);
   }
 
-  if (incoming.sourceEventCount === current.sourceEventCount) {
-    if (incoming.timeline.length > current.timeline.length) {
-      return mergeIncomingProjection(current, incoming);
+  if (sanitizedIncoming.sourceEventCount === current.sourceEventCount) {
+    if (sanitizedIncoming.timeline.length > current.timeline.length) {
+      return mergeIncomingProjection(current, sanitizedIncoming);
     }
-    if (incoming.timeline.length < current.timeline.length) {
-      return incoming.thread.generatedAt >= current.thread.generatedAt
-        ? mergeTrimmedIncomingProjection(current, incoming)
+    if (sanitizedIncoming.timeline.length < current.timeline.length) {
+      return sanitizedIncoming.thread.generatedAt >= current.thread.generatedAt
+        ? mergeTrimmedIncomingProjection(current, sanitizedIncoming)
         : current;
     }
-    if (incoming.thread.generatedAt >= current.thread.generatedAt) {
-      return mergeIncomingProjection(current, incoming);
+    if (sanitizedIncoming.thread.generatedAt >= current.thread.generatedAt) {
+      return mergeIncomingProjection(current, sanitizedIncoming);
     }
     return current;
   }
 
   // sourceEventCount decreased — likely due to context compaction.
   // Always merge so that post-compaction timeline items are not lost.
-  if (incoming.timeline.length > current.timeline.length) {
-    return mergeTrimmedIncomingProjection(current, incoming);
+  if (sanitizedIncoming.timeline.length > current.timeline.length) {
+    return mergeTrimmedIncomingProjection(current, sanitizedIncoming);
   }
   if (preserveHistory) {
-    return mergeTrimmedIncomingProjection(current, incoming);
+    return mergeTrimmedIncomingProjection(current, sanitizedIncoming);
   }
-  return mergeTrimmedIncomingProjection(current, incoming);
+  return mergeTrimmedIncomingProjection(current, sanitizedIncoming);
 }
 
 /** Merge an explicitly requested detail page without applying Feed page limits. */
@@ -400,7 +410,7 @@ export function mergeThreadRunProjectionDetail(
   current: ThreadRunProjectionSnapshot,
   detail: ThreadRunProjectionDetailResult,
 ): ThreadRunProjectionSnapshot {
-  const mainItems = detail.timeline.filter((item) => item.scope !== "agent" || !item.agentId?.trim());
+  const mainItems = detail.timeline.filter((item) => item.scope !== "agent");
   const agentItems = new Map<string, ThreadRunProjectionTimelineItem[]>();
   for (const item of detail.timeline) {
     const agentId = item.agentId?.trim();
@@ -430,7 +440,7 @@ export function mergeThreadRunProjectionDetail(
   }
   return {
     ...current,
-    timeline: mergeTimeline(current.timeline, mainItems),
+    timeline: mergeTimeline(excludeAgentScopedFeedTimelineItems(current.timeline), mainItems),
     agents,
   };
 }

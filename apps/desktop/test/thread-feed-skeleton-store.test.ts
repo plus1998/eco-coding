@@ -86,6 +86,33 @@ describe("thread feed skeleton store", () => {
     expect(hydrated.timeline).toHaveLength(1);
   });
 
+  test("hydrateThreadFeedSkeletonSnapshot drops agent-scoped items from the main timeline", () => {
+    const snapshot = baseSnapshot();
+    snapshot.timeline = [
+      ...snapshot.timeline,
+      {
+        id: "explore_prompt",
+        sequence: 2,
+        eventType: "message.final",
+        scope: "agent",
+        role: "explore",
+        text: "请只读探索当前仓库",
+        at: "2026-01-01T00:00:01.000Z",
+        metadata: { liveType: "message.user" },
+      },
+    ];
+    const hydrated = hydrateThreadFeedSkeletonSnapshot(snapshot, "thr_1", {
+      getThread: () => undefined,
+      listRunAttempts: () => [],
+      getBilling: () => undefined,
+      getContext: () => undefined,
+      getHistoryRevision: () => 0,
+      getSubagentTimings: () => [],
+    });
+
+    expect(hydrated.timeline.map((item) => item.id)).toEqual(["user_1"]);
+  });
+
   test("resolveFeedSkeletonPatchAgents heals empty cached agents from store instances", () => {
     const healed = resolveFeedSkeletonPatchAgents([], [
       {

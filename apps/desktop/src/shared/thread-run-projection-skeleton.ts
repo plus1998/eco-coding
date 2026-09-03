@@ -25,6 +25,21 @@ function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | und
   return typeof liveType === "string" ? liveType : undefined;
 }
 
+export function isAgentScopedFeedTimelineItem(
+  item: Pick<ThreadRunProjectionTimelineItem, "scope">,
+): boolean {
+  return item.scope === "agent";
+}
+
+export function excludeAgentScopedFeedTimelineItems(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  if (!timeline.some((item) => isAgentScopedFeedTimelineItem(item))) {
+    return timeline as ThreadRunProjectionTimelineItem[];
+  }
+  return timeline.filter((item) => !isAgentScopedFeedTimelineItem(item));
+}
+
 export function isSkeletonUserPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
   const liveType = projectionLiveType(item);
   const textOk = item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
@@ -136,11 +151,12 @@ export function selectSkeletonTimelineItems(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   attempts: readonly ThreadRunProjectionAttempt[],
 ): ThreadRunProjectionTimelineItem[] {
+  const mainTimeline = excludeAgentScopedFeedTimelineItems(timeline);
   const sortedAttempts = [...attempts].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   const runningAttemptIds = new Set(
     sortedAttempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
   );
-  const userItems = timeline.filter(isSkeletonUserPromptItem);
+  const userItems = mainTimeline.filter(isSkeletonUserPromptItem);
   const boundaries: UserPromptBoundary[] = userItems
     .map((item) => ({ sequence: item.sequence, at: item.at }))
     .sort((left, right) => left.sequence - right.sequence);
@@ -150,7 +166,7 @@ export function selectSkeletonTimelineItems(
   }
 
   const segments = new Map<string, ThreadRunProjectionTimelineItem[]>();
-  for (const item of timeline) {
+  for (const item of mainTimeline) {
     if (isSkeletonUserPromptItem(item)) {
       continue;
     }

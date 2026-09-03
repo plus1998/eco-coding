@@ -610,3 +610,53 @@ test("mergeThreadRunProjectionDetail keeps planner attempt echoes as planner age
     kind: "planner",
   });
 });
+
+test("mergeThreadRunProjectionUpdate strips leaked agent-scoped items from the main timeline", () => {
+  const leaked = {
+    id: "explore_prompt",
+    sequence: 2,
+    eventType: "message.final" as const,
+    scope: "agent" as const,
+    role: "explore",
+    agentId: "explore_a",
+    text: "请只读探索当前仓库",
+    at: "2026-01-01T00:00:02.000Z",
+    metadata: { liveType: "message.user" },
+  };
+  const current = makeProjection({
+    sourceEventCount: 2,
+    timeline: [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        scope: "main",
+        text: "加产品排行",
+        at: "2026-01-01T00:00:01.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      leaked,
+    ],
+  });
+  const merged = mergeThreadRunProjectionUpdate(
+    current,
+    makeProjection({
+      sourceEventCount: 3,
+      generatedAt: "2026-01-01T00:00:03.000Z",
+      timeline: [
+        {
+          id: "planner_says",
+          sequence: 3,
+          eventType: "message.final",
+          scope: "main",
+          text: "我先勘察",
+          at: "2026-01-01T00:00:03.000Z",
+        },
+        leaked,
+      ],
+    }),
+  );
+
+  expect(merged.timeline.map((row) => row.id)).toEqual(["user_1", "planner_says"]);
+  expect(merged.timeline.some((row) => row.scope === "agent")).toBe(false);
+});

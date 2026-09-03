@@ -537,7 +537,9 @@ function filterMainTimelineForFeed(
     requestSpansById,
     includePromptCacheTips,
   );
-  const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item, displayTimeline));
+  const requestFiltered = displayTimeline.filter(
+    (item) => item.scope !== "agent" && !isMainTimelineNoiseItem(item, displayTimeline),
+  );
   return filterCompactionTimelineForFeed(normalizePlanDismissalTimeline(requestFiltered));
 }
 

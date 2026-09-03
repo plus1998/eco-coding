@@ -7,6 +7,7 @@ import type {
 import {
   buildFeedSkeletonSegmentKey,
   compareFeedSkeletonTimelineItems,
+  excludeAgentScopedFeedTimelineItems,
   isSkeletonTurnFinalItem,
   isSkeletonUserPromptItem,
   listFeedSkeletonUserBoundaries,
@@ -64,6 +65,9 @@ export function shouldTrackEventForFeedSkeletonPatch(
   if (event.eventType.startsWith("run.attempt.")) {
     return false;
   }
+  if (event.scope === "agent") {
+    return false;
+  }
 
   const item = eventToTimelineItem(event);
   if (isSkeletonUserPromptItem(item)) {
@@ -103,8 +107,10 @@ export function patchThreadFeedSkeletonFromEvent(
 
   const attempts = [...context.attempts];
   const agents = context.agents.map((agent) => ({ ...agent, timeline: [] }));
-  let trackedItems = record.patchState.trackedItems.map((item) => ({ ...item }));
-  let structureChanged = false;
+  let trackedItems = excludeAgentScopedFeedTimelineItems(
+    record.patchState.trackedItems.map((item) => ({ ...item })),
+  );
+  let structureChanged = trackedItems.length !== record.patchState.trackedItems.length;
 
   if (shouldTrackEventForFeedSkeletonPatch(event, attempts)) {
     const item = trimTimelineItemForFeed(eventToTimelineItem(event));
@@ -116,7 +122,7 @@ export function patchThreadFeedSkeletonFromEvent(
   } else if (RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType)) {
     trackedItems = reconcileTrackedItemsAfterAttemptChange(trackedItems, attempts);
     structureChanged = true;
-  } else if (!isMetricsOnlyThreadRunEvent(event)) {
+  } else if (!structureChanged && !isMetricsOnlyThreadRunEvent(event)) {
     return record.maxEventSequence === context.maxEventSequence
       ? record
       : {

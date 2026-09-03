@@ -245,3 +245,41 @@ test("buildSkeletonFeedProjection clears agent timelines and omits hasEarlier", 
   expect(skeleton.agents[0]?.latestActivity).toBe("正在搜索");
   expect(skeleton.timeline.map((row) => row.id)).toEqual(["user_1", "final_1"]);
 });
+
+test("selectSkeletonTimelineItems drops agent-scoped subagent prompt and thinking from a running attempt", () => {
+  const timeline = [
+    userPrompt("user_1", 1, "加产品排行"),
+    item({
+      id: "planner_final",
+      sequence: 2,
+      eventType: "message.final",
+      text: "我先用 explore 勘察",
+      role: "assistant",
+      runAttemptId: "att_run",
+    }),
+    item({
+      id: "explore_prompt",
+      sequence: 3,
+      eventType: "message.final",
+      scope: "agent",
+      role: "explore",
+      text: "请只读探索当前仓库",
+      runAttemptId: "att_run",
+      metadata: { liveType: "message.user", itemType: "userMessage" },
+    }),
+    item({
+      id: "explore_think",
+      sequence: 4,
+      eventType: "thinking.delta",
+      scope: "agent",
+      role: "explore",
+      text: "The user wants me to explore the codebase",
+      runAttemptId: "att_run",
+    }),
+  ];
+  const selected = selectSkeletonTimelineItems(timeline, [
+    attempt("att_run", "running", "2026-01-01T00:00:00.000Z"),
+  ]);
+
+  expect(selected.map((row) => row.id)).toEqual(["user_1", "planner_final"]);
+});
