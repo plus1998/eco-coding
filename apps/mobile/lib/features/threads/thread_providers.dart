@@ -1736,6 +1736,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   void applyThreadSummary(ThreadSummary thread) {
     state = state.copyWith(thread: thread);
+    ref.read(threadListProvider.notifier).upsertThread(thread, countAsNew: false);
   }
 
   Future<void> _refreshComposerDraftFromRpc() async {
@@ -2022,5 +2023,10 @@ bool _isThreadListLiveEvent(ThreadLiveEvent live) {
   if (live.type == 'thread.deleted') return true;
   if (live.title?.trim().isNotEmpty == true) return true;
   if (live.runtimeConfig != null) return true;
+  if (live.followUpQueuePaused != null) return true;
+  if (live.type == 'thread.follow_up_queue_paused' ||
+      live.type == 'thread.follow_up_queue_resumed') {
+    return true;
+  }
   return shouldUpdateThreadSummaryFromLiveEvent(live.type);
 }
