@@ -24,7 +24,27 @@ void main() {
       );
     });
 
-    test('uses desktop hostname before device id', () {
+    test('uses registered desktop name before hostname', () {
+      expect(
+        formatDesktopLabel(
+          const PublicDevice(
+            id: 'dev_desktop',
+            userId: 'usr_1',
+            kind: 'desktop',
+            name: '工作室的电脑',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            metadata: PublicDeviceMetadata(
+              hostname: 'HappyPlusMac',
+              platform: 'darwin 25.5.0',
+            ),
+          ),
+          'dev_desktop',
+        ),
+        '工作室的电脑',
+      );
+    });
+
+    test('uses desktop hostname when name is generic', () {
       expect(
         formatDesktopLabel(
           const PublicDevice(
@@ -47,22 +67,43 @@ void main() {
   });
 
   group('formatDeviceDetail', () {
-    test('includes ip and platform without device id', () {
+    test('includes hostname ip and platform without device id', () {
       expect(
         formatDeviceDetail(
           const PublicDevice(
             id: 'dev_desktop_2',
             userId: 'usr_1',
             kind: 'desktop',
-            name: 'Eco Desktop',
+            name: '工作室的电脑',
             createdAt: '2026-01-01T00:00:00.000Z',
             metadata: PublicDeviceMetadata(
+              hostname: 'HappyPlusMac',
               ipAddress: '192.168.1.10',
               platform: 'darwin 25.5.0',
             ),
           ),
         ),
-        '192.168.1.10 · darwin 25.5.0',
+        'HappyPlusMac · 192.168.1.10 · darwin 25.5.0',
+      );
+    });
+
+    test('omits hostname when it matches primary label', () {
+      expect(
+        formatDeviceDetail(
+          const PublicDevice(
+            id: 'dev_desktop_3',
+            userId: 'usr_1',
+            kind: 'desktop',
+            name: 'Eco Desktop',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            metadata: PublicDeviceMetadata(
+              hostname: 'HappyPlusMac',
+              platform: 'darwin 25.5.0',
+            ),
+          ),
+          omitLabel: 'HappyPlusMac',
+        ),
+        'darwin 25.5.0',
       );
     });
   });

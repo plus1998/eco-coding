@@ -31,7 +31,15 @@ String formatDeviceLabel(
   required String kind,
 }) {
   final metadata = device?.metadata;
+
   if (kind == 'desktop') {
+    final name = device?.name.trim();
+    if (name != null &&
+        name.isNotEmpty &&
+        !_isGenericDeviceName(name, kind: kind)) {
+      return name;
+    }
+
     final hostname = metadata?.hostname?.trim();
     if (hostname != null && hostname.isNotEmpty) {
       return hostname;
@@ -53,10 +61,17 @@ String formatDeviceLabel(
   return shortenDeviceId(deviceId);
 }
 
-String? formatDeviceDetail(PublicDevice? device) {
+String? formatDeviceDetail(PublicDevice? device, {String? omitLabel}) {
   final parts = <String>[];
+  final omit = omitLabel?.trim();
+  final hostname = device?.metadata.hostname?.trim();
   final ipAddress = device?.metadata.ipAddress?.trim();
   final platform = device?.metadata.platform?.trim();
+  if (hostname != null &&
+      hostname.isNotEmpty &&
+      (omit == null || omit.isEmpty || hostname != omit)) {
+    parts.add(hostname);
+  }
   if (ipAddress != null && ipAddress.isNotEmpty) {
     parts.add(ipAddress);
   }

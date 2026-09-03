@@ -325,9 +325,50 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   async saveSettings(
     input: Parameters<CenterServerStore["saveSettings"]>[0],
   ): Promise<CenterServerSettingsSnapshot> {
+    const existing = this.store.getSettingsWithSecrets();
+    const incomingName = input.deviceName?.trim();
+    const shouldSyncCloudName =
+      Boolean(
+        existing.deviceId &&
+          existing.deviceSecret &&
+          existing.refreshToken &&
+          (existing.supabaseUrl || existing.serverUrl) &&
+          existing.anonKey,
+      ) &&
+      Boolean(incomingName) &&
+      incomingName !== existing.deviceName.trim();
+
+    if (shouldSyncCloudName && incomingName) {
+      await this.syncDeviceProfile(incomingName);
+    }
+
     this.store.saveSettings(input);
     await this.reload();
     return this.getSnapshot();
+  }
+
+  /** Push local device name + OS metadata to `devices` via RPC. */
+  private async syncDeviceProfile(deviceName: string): Promise<void> {
+    const settings = this.store.getSettingsWithSecrets();
+    if (!settings.deviceId) {
+      throw new Error(CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE);
+    }
+    const { supabaseUrl, anonKey } = this.requireProjectCredentialsOrStored(settings);
+    const client = this.createEphemeralClient(supabaseUrl, anonKey);
+    await this.ensureAccessToken(settings, client);
+    const profile = collectDesktopDeviceProfile();
+    const { data, error } = await client.rpc("eco_update_device_profile", {
+      p_device_id: settings.deviceId,
+      p_name: deviceName,
+      p_metadata: desktopDeviceMetadata(profile),
+    });
+    if (error) {
+      throw new Error(error.message);
+    }
+    const rows = Array.isArray(data) ? data : data != null ? [data] : [];
+    if (rows.length !== 1) {
+      throw new Error(`eco_update_device_profile returned ${rows.length} rows.`);
+    }
   }
 
   async registerDesktop(

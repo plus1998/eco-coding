@@ -1078,7 +1078,7 @@ class _SelectPcStep extends ConsumerWidget {
                   ? stableOnline
                   : stableOnline ?? onlineIds.contains(desktopId);
               final name = formatDesktopLabel(device, desktopId);
-              final detail = formatDeviceDetail(device);
+              final detail = formatDeviceDetail(device, omitLabel: name);
               final selected = selectedDesktop == desktopId;
               final binding = bindingByDesktop[desktopId];
               return _PcDeviceTile(

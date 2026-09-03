@@ -939,6 +939,151 @@ test("supabase center client retains vault key when a cloud secret is corrupt", 
   client.dispose();
 });
 
+test("supabase center client syncs renamed device to eco_update_device_profile before local save", async () => {
+  const store = createFakeStore({
+    enabled: false,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    deviceName: "Old Desktop",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+
+  let rpcBody: Record<string, unknown> | undefined;
+  const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) {
+      return jsonResponse(authUser());
+    }
+    if (url.includes("/rest/v1/rpc/eco_update_device_profile")) {
+      rpcBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+      expect(rpcBody?.p_device_id).toBe(DEVICE_ID);
+      expect(rpcBody?.p_name).toBe("Studio PC");
+      expect(rpcBody?.p_metadata).toMatchObject({
+        hostname: expect.any(String),
+        platform: expect.any(String),
+      });
+      return jsonResponse([
+        {
+          id: DEVICE_ID,
+          user_id: USER_ID,
+          kind: "desktop",
+          name: "Studio PC",
+          metadata: rpcBody?.p_metadata,
+          created_at: "2030-01-01T00:00:00.000Z",
+          last_seen_at: "2030-01-01T00:00:00.000Z",
+          disabled_at: null,
+        },
+      ]);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+  });
+
+  const snapshot = await client.saveSettings({
+    enabled: false,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceName: "Studio PC",
+  });
+
+  expect(rpcBody?.p_name).toBe("Studio PC");
+  expect(snapshot.settings.deviceName).toBe("Studio PC");
+  expect(store.getSettingsWithSecrets().deviceName).toBe("Studio PC");
+  client.dispose();
+});
+
+test("supabase center client skips cloud rename sync when device name is unchanged", async () => {
+  const store = createFakeStore({
+    enabled: false,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    deviceName: "Studio PC",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    throw new Error(`Unexpected fetch: ${String(input)}`);
+  };
+
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+  });
+
+  const snapshot = await client.saveSettings({
+    enabled: false,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceName: "Studio PC",
+  });
+
+  expect(snapshot.settings.deviceName).toBe("Studio PC");
+  client.dispose();
+});
+
+test("supabase center client leaves local name unchanged when cloud rename sync fails", async () => {
+  const store = createFakeStore({
+    enabled: false,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    deviceName: "Old Desktop",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) {
+      return jsonResponse(authUser());
+    }
+    if (url.includes("/rest/v1/rpc/eco_update_device_profile")) {
+      return jsonResponse({ message: "Active device not found for current user.", code: "42501" }, 403);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+  });
+
+  await expect(
+    client.saveSettings({
+      enabled: false,
+      supabaseUrl: "https://example.supabase.co",
+      anonKey: "anon_key",
+      deviceName: "Studio PC",
+    }),
+  ).rejects.toThrow();
+
+  expect(store.getSettingsWithSecrets().deviceName).toBe("Old Desktop");
+  client.dispose();
+});
+
 async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
