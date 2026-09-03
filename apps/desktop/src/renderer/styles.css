@@ -7,6 +7,14 @@
   font-optical-sizing: auto;
   --ui-font-size: 14px;
   --code-font-size: 12px;
+  /* Above in-app window chrome (toolbars use the same ceiling). Native Win/macOS
+     caption buttons still paint above the page — that is OS overlay, not CSS. */
+  --eco-modal-z-index: 2147483647;
+  /* Default modal breathing room; Win/Linux WCO only bumps top past the titlebar. */
+  --eco-modal-inset-top: 24px;
+  --eco-modal-inset-right: 24px;
+  --eco-modal-inset-bottom: 24px;
+  --eco-modal-inset-left: 24px;
   /* macOS traffic-light inset â€?use only on left sidebars (.codex-sidebar, .settings-nav) */
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --macos-window-controls-safe-inline-start: 148px;
@@ -38,6 +46,8 @@ html[data-platform="linux"] {
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
   );
   --toolbar-edge-inset: calc(15px + var(--window-controls-overlay-end));
+  /* Clear titlebar height only; no extra right inset for caption buttons. */
+  --eco-modal-inset-top: max(24px, calc(var(--window-chrome-top) + 8px));
   --workspace-cards-panel-right: 10px;
   --window-sidebar-toolbar-inset: 56px;
   --window-sidebar-toolbar-inset-expanded: 88px;
@@ -55,6 +65,8 @@ html[data-platform="win32"] {
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
   );
   --toolbar-edge-inset: calc(15px + var(--window-controls-overlay-end));
+  /* Clear titlebar height only; no extra right inset for caption buttons. */
+  --eco-modal-inset-top: max(24px, calc(var(--window-chrome-top) + 8px));
   /* Panel is not under the caption buttons; keep docked reserve Mac-like (not WCO-sized). */
   --workspace-cards-panel-right: 10px;
   --window-sidebar-toolbar-inset: 56px;
@@ -12543,27 +12555,33 @@ button.default-agent-option:focus-visible {
 
 .markdown-lightbox {
   position: fixed;
-  z-index: 10000;
+  z-index: var(--eco-modal-z-index);
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  box-sizing: border-box;
+  padding: var(--eco-modal-inset-top) var(--eco-modal-inset-right) var(--eco-modal-inset-bottom)
+    var(--eco-modal-inset-left);
   background: var(--lightbox-backdrop);
 }
 
 .markdown-lightbox__content {
   display: grid;
   box-sizing: border-box;
-  width: min(1100px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  width: min(
+    1100px,
+    calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right))
+  );
+  max-height: calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom));
   grid-template-rows: auto minmax(0, 1fr);
   padding: 0 0 12px;
   color: var(--lightbox-panel-text);
   background: var(--lightbox-panel-bg);
-  border: 1px solid var(--lightbox-panel-border);
+  border: 0;
   border-radius: 14px;
   overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
 }
 
 .markdown-lightbox__bar {
@@ -12572,12 +12590,12 @@ button.default-agent-option:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 10px 10px 16px;
+  padding: 10px 8px 6px 16px;
   font-size: 12px;
   font-weight: 500;
   color: var(--lightbox-panel-text);
-  background: var(--lightbox-stage-heading-bg);
-  border-bottom: 1px solid var(--lightbox-panel-border);
+  background: transparent;
+  border-bottom: 0;
 }
 
 .markdown-lightbox__bar > span {
@@ -12585,14 +12603,15 @@ button.default-agent-option:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--lightbox-panel-muted);
+  opacity: 0.85;
 }
 
 .markdown-lightbox__close,
 .markdown-lightbox__bar .markdown-code-block__action,
 .markdown-lightbox__bar .lightbox-zoom-percent {
-  color: var(--lightbox-panel-text);
+  color: var(--lightbox-panel-muted);
   opacity: 1;
-  background: color-mix(in srgb, var(--lightbox-panel-text) 8%, var(--lightbox-stage-heading-bg));
+  background: transparent;
 }
 
 .markdown-lightbox__close:hover,
@@ -12600,18 +12619,18 @@ button.default-agent-option:focus-visible {
 .markdown-lightbox__bar .lightbox-zoom-percent:hover {
   color: var(--lightbox-panel-text);
   opacity: 1;
-  background: color-mix(in srgb, var(--lightbox-panel-text) 14%, var(--lightbox-stage-heading-bg));
+  background: color-mix(in srgb, var(--lightbox-panel-text) 10%, transparent);
 }
 
 .markdown-lightbox__stage {
   box-sizing: border-box;
   min-height: 0;
-  margin: 0 12px;
-  padding: 16px;
+  margin: 0;
+  padding: 8px 16px 8px;
   overflow: auto;
-  border-radius: 10px;
-  background: var(--lightbox-stage-bg);
-  border: 1px solid var(--lightbox-panel-border);
+  border-radius: 0;
+  background: transparent;
+  border: 0;
 }
 
 .markdown-lightbox__stage.lightbox-zoom-stage {
@@ -12622,8 +12641,14 @@ button.default-agent-option:focus-visible {
 }
 
 .markdown-lightbox__content:has(.lightbox-zoom-stage) {
-  width: min(1600px, calc(100vw - 32px));
-  height: min(960px, calc(100vh - 32px));
+  width: min(
+    1600px,
+    calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right))
+  );
+  height: min(
+    960px,
+    calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom))
+  );
 }
 
 .markdown-lightbox__stage.lightbox-zoom-stage .lightbox-zoom-canvas {
@@ -12661,8 +12686,8 @@ button.default-agent-option:focus-visible {
   padding: 0 8px;
   border: 0;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--lightbox-panel-text) 8%, var(--lightbox-stage-heading-bg));
-  color: var(--lightbox-panel-text);
+  background: transparent;
+  color: var(--lightbox-panel-muted);
   font-size: 12px;
   font-weight: 550;
   font-variant-numeric: tabular-nums;
@@ -12670,7 +12695,7 @@ button.default-agent-option:focus-visible {
 }
 
 .lightbox-zoom-percent:hover {
-  background: color-mix(in srgb, var(--lightbox-panel-text) 14%, var(--lightbox-stage-heading-bg));
+  background: color-mix(in srgb, var(--lightbox-panel-text) 10%, transparent);
   color: var(--lightbox-panel-text);
 }
 
@@ -12757,12 +12782,15 @@ button.default-agent-option:focus-visible {
 
 @media (max-width: 600px) {
   .markdown-lightbox {
-    padding: 12px;
+    --eco-modal-inset-top: max(12px, calc(var(--window-chrome-top, 0px) + 4px));
+    --eco-modal-inset-right: 12px;
+    --eco-modal-inset-bottom: 12px;
+    --eco-modal-inset-left: 12px;
   }
 
   .markdown-lightbox__content {
-    width: calc(100vw - 24px);
-    max-height: calc(100vh - 24px);
+    width: calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right));
+    max-height: calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom));
   }
 }
 
@@ -13465,28 +13493,37 @@ a.run-log-web-search-detail-result-url:focus-visible {
 
 .run-log-image-view-lightbox {
   position: fixed;
-  z-index: 10000;
+  z-index: var(--eco-modal-z-index);
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  box-sizing: border-box;
+  padding: var(--eco-modal-inset-top) var(--eco-modal-inset-right) var(--eco-modal-inset-bottom)
+    var(--eco-modal-inset-left);
   background: var(--lightbox-backdrop);
 }
 
 .run-log-image-view-lightbox-content {
   display: grid;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 32px);
-  width: min(1600px, calc(100vw - 32px));
-  height: min(960px, calc(100vh - 32px));
+  max-width: calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right));
+  max-height: calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom));
+  width: min(
+    1600px,
+    calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right))
+  );
+  height: min(
+    960px,
+    calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom))
+  );
   grid-template-rows: auto minmax(0, 1fr);
   padding: 0 0 12px;
   color: var(--lightbox-panel-text);
   background: var(--lightbox-panel-bg);
-  border: 1px solid var(--lightbox-panel-border);
+  border: 0;
   border-radius: 14px;
   overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
 }
 
 .run-log-image-view-lightbox-bar {
@@ -13495,12 +13532,12 @@ a.run-log-web-search-detail-result-url:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 10px 10px 16px;
+  padding: 10px 8px 6px 16px;
   font-size: 12px;
   font-weight: 500;
   color: var(--lightbox-panel-text);
-  background: var(--lightbox-stage-heading-bg);
-  border-bottom: 1px solid var(--lightbox-panel-border);
+  background: transparent;
+  border-bottom: 0;
 }
 
 .run-log-image-view-lightbox-bar > span {
@@ -13508,26 +13545,29 @@ a.run-log-web-search-detail-result-url:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--lightbox-panel-muted);
+  opacity: 0.85;
 }
 
 .run-log-image-view-lightbox-close,
 .run-log-image-view-lightbox-bar .lightbox-zoom-percent {
-  color: var(--lightbox-panel-text);
-  background: color-mix(in srgb, var(--lightbox-panel-text) 8%, var(--lightbox-stage-heading-bg));
+  color: var(--lightbox-panel-muted);
+  background: transparent;
 }
 
 .run-log-image-view-lightbox-close:hover,
 .run-log-image-view-lightbox-bar .lightbox-zoom-percent:hover {
-  background: color-mix(in srgb, var(--lightbox-panel-text) 14%, var(--lightbox-stage-heading-bg));
+  color: var(--lightbox-panel-text);
+  background: color-mix(in srgb, var(--lightbox-panel-text) 10%, transparent);
 }
 
 .run-log-image-view-lightbox-stage {
   box-sizing: border-box;
   min-height: 120px;
   max-height: calc(100vh - 100px);
-  margin: 0 12px;
-  border-radius: 10px;
-  background: var(--lightbox-stage-bg);
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
   cursor: zoom-in;
 }
 
@@ -13550,12 +13590,15 @@ a.run-log-web-search-detail-result-url:focus-visible {
 
 @media (max-width: 600px) {
   .run-log-image-view-lightbox {
-    padding: 12px;
+    --eco-modal-inset-top: max(12px, calc(var(--window-chrome-top, 0px) + 4px));
+    --eco-modal-inset-right: 12px;
+    --eco-modal-inset-bottom: 12px;
+    --eco-modal-inset-left: 12px;
   }
 
   .run-log-image-view-lightbox-content {
-    max-width: calc(100vw - 24px);
-    max-height: calc(100vh - 24px);
+    max-width: calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right));
+    max-height: calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom));
   }
 }
 

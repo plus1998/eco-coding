@@ -160,7 +160,8 @@ const x = 1
     expect(find.byType(EcoMarkdownTable), findsOneWidget);
     await tester.tap(find.byType(EcoMarkdownTable));
     await tester.pumpAndSettle();
-    expect(find.byIcon(EcoIcons.galleryHorizontal), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.byIcon(EcoIcons.galleryHorizontal), findsNothing);
     expect(find.text('alpha'), findsWidgets);
   });
 
@@ -198,15 +199,14 @@ const x = 1
     await tester.pumpAndSettle();
 
     expect(find.textContaining('VeryLongHeaderAlpha'), findsWidgets);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
 
-    final horizontalScrolls = find.byWidgetPredicate(
-      (widget) =>
-          widget is SingleChildScrollView &&
-          widget.scrollDirection == Axis.horizontal,
-    );
-    expect(horizontalScrolls, findsWidgets);
+    // Pinch-zoom / pan replaces landscape rotate for wide tables.
+    final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    expect(viewer.constrained, isFalse);
+    expect(viewer.maxScale, greaterThan(1));
 
-    await tester.drag(horizontalScrolls.last, const Offset(-240, 0));
+    await tester.drag(find.byType(InteractiveViewer), const Offset(-240, 0));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('VeryLongHeaderGamma'), findsWidgets);

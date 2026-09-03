@@ -7,7 +7,7 @@ import '../utils/markdown_repair.dart';
 import 'eco_action_sheet.dart';
 import 'eco_modal_sheet.dart';
 
-const _previewChromeHeight = 112.0;
+const _previewChromeHeight = 96.0;
 const _previewTablePadding = 32.0;
 
 /// Estimates rendered table body height for preview sheet sizing.
@@ -39,14 +39,15 @@ double estimateTablePreviewSheetFraction({
     context: context,
     table: table,
     fontSizeScale: fontSizeScale,
+    includeScrollBar: false,
   );
   final safeBottom = MediaQuery.paddingOf(context).bottom;
   final desiredHeight =
       _previewChromeHeight + _previewTablePadding + tableHeight + safeBottom;
-  return (desiredHeight / screenHeight).clamp(0.24, 0.96);
+  return (desiredHeight / screenHeight).clamp(0.32, 0.96);
 }
 
-/// Feed markdown table. Tap opens a bottom-sheet preview; wide tables scroll horizontally.
+/// Feed markdown table. Tap opens a bottom-sheet preview; pinch to zoom / pan.
 class EcoMarkdownTable extends StatelessWidget {
   const EcoMarkdownTable({
     super.key,
@@ -71,39 +72,25 @@ class EcoMarkdownTable extends StatelessWidget {
       ),
       builder: (sheetContext) {
         final screenHeight = MediaQuery.sizeOf(sheetContext).height;
-        var wideLayout = false;
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final sheetFraction = wideLayout
-                ? 0.96
-                : estimateTablePreviewSheetFraction(
-                    context: sheetContext,
-                    table: table,
-                    fontSizeScale: fontSizeScale,
-                  );
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
-              ),
-              child: SizedBox(
-                height: screenHeight * sheetFraction,
-                child: _TablePreviewSheet(
-                  table: table,
-                  title: sheetContext.l10n.markdownTableExpand,
-                  closeLabel: sheetContext.l10n.commonClose,
-                  wideLayoutLabel: sheetContext.l10n.markdownTableRotateLandscape,
-                  portraitLayoutLabel:
-                      sheetContext.l10n.markdownTableRotatePortrait,
-                  muted: muted,
-                  fontSizeScale: fontSizeScale,
-                  wideLayout: wideLayout,
-                  onWideLayoutChanged: (wide) {
-                    setSheetState(() => wideLayout = wide);
-                  },
-                ),
-              ),
-            );
-          },
+        final sheetFraction = estimateTablePreviewSheetFraction(
+          context: sheetContext,
+          table: table,
+          fontSizeScale: fontSizeScale,
+        );
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: SizedBox(
+            height: screenHeight * sheetFraction,
+            child: _TablePreviewSheet(
+              table: table,
+              title: sheetContext.l10n.markdownTableExpand,
+              closeLabel: sheetContext.l10n.commonClose,
+              muted: muted,
+              fontSizeScale: fontSizeScale,
+            ),
+          ),
         );
       },
     );
@@ -150,87 +137,43 @@ class EcoMarkdownTable extends StatelessWidget {
   }
 }
 
-class _TablePreviewSheet extends StatefulWidget {
+class _TablePreviewSheet extends StatelessWidget {
   const _TablePreviewSheet({
     required this.table,
     required this.title,
     required this.closeLabel,
-    required this.wideLayoutLabel,
-    required this.portraitLayoutLabel,
     required this.muted,
     required this.fontSizeScale,
-    required this.wideLayout,
-    required this.onWideLayoutChanged,
   });
 
   final MarkdownTable table;
   final String title;
   final String closeLabel;
-  final String wideLayoutLabel;
-  final String portraitLayoutLabel;
   final bool muted;
   final double fontSizeScale;
-  final bool wideLayout;
-  final ValueChanged<bool> onWideLayoutChanged;
 
-  @override
-  State<_TablePreviewSheet> createState() => _TablePreviewSheetState();
-}
-
-class _TablePreviewSheetState extends State<_TablePreviewSheet> {
-  Widget _buildTableCard({
-    required double viewportWidth,
-    bool shrinkWrap = false,
-  }) {
+  Widget _buildTableCard(BuildContext context, {required double maxWidth}) {
     final eco = ecoColors(context);
     final tableView = _MarkdownTableView(
-      table: widget.table,
-      muted: widget.muted,
-      fontSizeScale: widget.fontSizeScale,
+      table: table,
+      muted: muted,
+      fontSizeScale: fontSizeScale,
       headerMaxLines: null,
-      scrollable: true,
-      showScrollBar: true,
+      scrollable: false,
+      showScrollBar: false,
       includeOuterBorder: false,
-      viewportWidth: shrinkWrap ? null : viewportWidth,
     );
-    final card = DecoratedBox(
-      decoration: BoxDecoration(
-        color: eco.cardSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: eco.cardSurfaceBorder),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: tableView,
-      ),
-    );
-    if (!shrinkWrap) return card;
     return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: viewportWidth),
-      child: IntrinsicWidth(child: card),
-    );
-  }
-
-  /// Landscape preview: rotate content so sheet height becomes table layout width.
-  Widget _buildLandscapeTable({
-    required BoxConstraints constraints,
-  }) {
-    final layoutWidth = constraints.maxHeight;
-    final layoutHeight = constraints.maxWidth;
-    return Center(
-      child: RotatedBox(
-        quarterTurns: 1,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: layoutWidth,
-            maxHeight: layoutHeight,
-          ),
-          child: SingleChildScrollView(
-            child: _buildTableCard(
-              viewportWidth: layoutWidth,
-              shrinkWrap: true,
-            ),
-          ),
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: eco.cardSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: eco.cardSurfaceBorder),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: IntrinsicWidth(child: tableView),
         ),
       ),
     );
@@ -239,7 +182,6 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final horizontalPadding = widget.wideLayout ? 8.0 : 16.0;
     return SafeArea(
       top: false,
       child: Column(
@@ -255,7 +197,7 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
                   child: Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: Text(
-                      widget.title,
+                      title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: eco.textHeading,
                             fontWeight: FontWeight.w600,
@@ -264,20 +206,7 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
                   ),
                 ),
                 IconButton(
-                  tooltip: widget.wideLayout
-                      ? widget.portraitLayoutLabel
-                      : widget.wideLayoutLabel,
-                  onPressed: () =>
-                      widget.onWideLayoutChanged(!widget.wideLayout),
-                  icon: Icon(
-                    widget.wideLayout
-                        ? EcoIcons.galleryVertical
-                        : EcoIcons.galleryHorizontal,
-                    color: widget.wideLayout ? eco.accentText : eco.textHeading,
-                  ),
-                ),
-                IconButton(
-                  tooltip: widget.closeLabel,
+                  tooltip: closeLabel,
                   onPressed: () => Navigator.of(context).pop(),
                   icon: Icon(EcoIcons.close, color: eco.textHeading),
                 ),
@@ -287,26 +216,33 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
           const SizedBox(height: 8),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                0,
-                horizontalPadding,
-                16,
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  if (widget.wideLayout) {
-                    return _buildLandscapeTable(constraints: constraints);
-                  }
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: SingleChildScrollView(
-                      child: _buildTableCard(
-                        viewportWidth: constraints.maxWidth,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Allow oversized tables; pinch-zoom / pan replaces landscape rotate.
+                    return InteractiveViewer(
+                      constrained: false,
+                      minScale: 0.4,
+                      maxScale: 5,
+                      boundaryMargin: const EdgeInsets.all(64),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: constraints.maxWidth,
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: _buildTableCard(
+                            context,
+                            maxWidth: constraints.maxWidth * 4,
+                          ),
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -335,7 +271,7 @@ class _MarkdownTableView extends StatefulWidget {
   final bool scrollable;
   final bool showScrollBar;
   final bool includeOuterBorder;
-  /// When set, horizontal scroll viewport uses this width for layout (landscape preview).
+  /// When set, horizontal scroll viewport uses this width for layout.
   final double? viewportWidth;
 
   @override
@@ -428,7 +364,6 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
 
     if (widget.viewportWidth == null) return tableColumn;
 
-    // Fixed viewport width — IntrinsicWidth breaks horizontal scroll extents.
     return SizedBox(
       width: widget.viewportWidth,
       child: tableColumn,
