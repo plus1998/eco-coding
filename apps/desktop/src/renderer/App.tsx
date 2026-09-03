@@ -10310,9 +10310,11 @@ function App() {
                   showTokenSpeed={tokenSpeedPreferences.showTokenSpeed}
                   onShowTokenSpeedChange={(showTokenSpeed) => setTokenSpeedPreferences({ showTokenSpeed })}
                   thinkingContentDefaultExpanded={thinkingDisplayPreferences.thinkingContentDefaultExpanded}
-                  onThinkingContentDefaultExpandedChange={(thinkingContentDefaultExpanded) =>
-                    setThinkingDisplayPreferences({ thinkingContentDefaultExpanded })
-                  }
+                  onThinkingContentDefaultExpandedChange={(thinkingContentDefaultExpanded) => {
+                    startTransition(() => {
+                      setThinkingDisplayPreferences({ thinkingContentDefaultExpanded });
+                    });
+                  }}
                 />
               )}
 

@@ -41,6 +41,7 @@ import {
   type KeyboardEvent,
   memo,
   type ReactNode,
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -113,8 +114,12 @@ import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import { RequestSpansContext, TokenSpeedBadge } from "./TokenSpeedBadge";
 import {
+  findThinkingFeedScrollRoot,
+  isThinkingPreferenceDrivenExpand,
   resolveThinkingCollapseHoldMs,
   resolveThinkingExpanded,
+  resolveThinkingLayoutNotifyOptions,
+  shouldEagerMountThinkingBody,
   THINKING_COLLAPSE_ANIM_MS,
 } from "./thinking-block-expand";
 import {
@@ -3306,6 +3311,7 @@ function ThinkingBlock({
   endedAt?: string;
   durationMs?: number;
 }) {
+  const thinkingRootRef = useRef<HTMLDivElement>(null);
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const notifyLayoutChange = useActivityFeedLayoutChange();
   const hasBody = text.trim().length > 0;
@@ -3324,8 +3330,19 @@ function ThinkingBlock({
     userExpanded,
     defaultExpanded,
   });
+  const preferenceDriven = isThinkingPreferenceDrivenExpand({
+    activelyStreaming,
+    settling,
+    userExpanded,
+  });
+  const eagerMountBody = shouldEagerMountThinkingBody({
+    activelyStreaming,
+    settling,
+    userExpanded,
+  });
   const [displayOpen, setDisplayOpen] = useState(wantOpen);
   const [collapsing, setCollapsing] = useState(false);
+  const [bodyMounted, setBodyMounted] = useState(eagerMountBody);
   const displayOpenRef = useRef(displayOpen);
   displayOpenRef.current = displayOpen;
   const measuredDurationMs = useTurnDurationMs(
@@ -3347,7 +3364,9 @@ function ThinkingBlock({
   useEffect(() => {
     const update = (event: Event) => {
       const detail = (event as CustomEvent<ThinkingDisplayPreferences>).detail;
-      setDefaultExpanded(Boolean(detail?.thinkingContentDefaultExpanded));
+      startTransition(() => {
+        setDefaultExpanded(Boolean(detail?.thinkingContentDefaultExpanded));
+      });
     };
     window.addEventListener(THINKING_DISPLAY_CHANGE_EVENT, update);
     return () => window.removeEventListener(THINKING_DISPLAY_CHANGE_EVENT, update);
@@ -3408,9 +3427,58 @@ function ThinkingBlock({
     };
   }, [wantOpen]);
 
+  const showDetails = hasBody && (displayOpen || collapsing);
+
   useLayoutEffect(() => {
-    notifyLayoutChange?.({ immediate: true });
-  }, [displayOpen, notifyLayoutChange]);
+    if (eagerMountBody) {
+      setBodyMounted(true);
+    }
+  }, [eagerMountBody]);
+
+  useEffect(() => {
+    if (eagerMountBody || bodyMounted || !showDetails) {
+      if (!showDetails && !eagerMountBody) {
+        setBodyMounted(false);
+      }
+      return;
+    }
+    const rootEl = thinkingRootRef.current;
+    if (!rootEl || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const scrollRoot = findThinkingFeedScrollRoot(rootEl);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setBodyMounted(true);
+        }
+      },
+      {
+        root: scrollRoot,
+        // Prefetch slightly before fully visible so expand feels instant while scrolling.
+        rootMargin: "120px 0px",
+        threshold: 0,
+      },
+    );
+    observer.observe(rootEl);
+    return () => observer.disconnect();
+  }, [bodyMounted, eagerMountBody, showDetails]);
+
+  useLayoutEffect(() => {
+    const options = resolveThinkingLayoutNotifyOptions({
+      displayOpen,
+      preferenceDriven,
+    });
+    notifyLayoutChange?.(options);
+  }, [displayOpen, notifyLayoutChange, preferenceDriven]);
+
+  useLayoutEffect(() => {
+    if (!bodyMounted || !preferenceDriven) {
+      return;
+    }
+    // Body arrived after preference expand — coalesce via scheduled scroll, not N× flush.
+    notifyLayoutChange?.();
+  }, [bodyMounted, notifyLayoutChange, preferenceDriven]);
 
   const stickThinkingBodyToBottom = useCallback(() => {
     const bodyInner = thinkingBodyInnerRef.current;
@@ -3455,13 +3523,13 @@ function ThinkingBlock({
   }
 
   const isExpanded = displayOpen;
-  const showDetails = hasBody && (displayOpen || collapsing);
   const baseLabel = activelyStreaming ? i18n.t("activity.thinking") : i18n.t("activity.deepThinkingDone");
   const durationLabel = formatDuration(durationMs);
   const label = durationLabel ? `${baseLabel} ${durationLabel}` : baseLabel;
 
   return (
     <div
+      ref={thinkingRootRef}
       className={[
         "run-log-thinking",
         activelyStreaming ? "streaming" : "",
@@ -3515,14 +3583,16 @@ function ThinkingBlock({
               role="region"
               aria-label={i18n.t("activity.thinkingContent")}
             >
-              <div className="run-log-thinking-body">
-                <StreamingMarkdownContent
-                  text={text}
-                  streaming={Boolean(streaming)}
-                  onRevealStateChange={setRevealing}
-                  className="markdown-content"
-                />
-              </div>
+              {bodyMounted ? (
+                <div className="run-log-thinking-body">
+                  <StreamingMarkdownContent
+                    text={text}
+                    streaming={Boolean(streaming)}
+                    onRevealStateChange={setRevealing}
+                    className="markdown-content"
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

@@ -24,3 +24,45 @@ export function resolveThinkingExpanded(input: {
   }
   return input.defaultExpanded;
 }
+
+/**
+ * Heavy markdown/ProseMirror body must mount immediately for live or
+ * user-initiated open. Preference-default expand is deferred until visible.
+ */
+export function shouldEagerMountThinkingBody(input: {
+  activelyStreaming: boolean;
+  settling: boolean;
+  userExpanded: boolean | null;
+}): boolean {
+  if (input.activelyStreaming || input.settling) {
+    return true;
+  }
+  return input.userExpanded === true;
+}
+
+/** True when open state comes only from the settings default (not live/user). */
+export function isThinkingPreferenceDrivenExpand(input: {
+  activelyStreaming: boolean;
+  settling: boolean;
+  userExpanded: boolean | null;
+}): boolean {
+  return !input.activelyStreaming && !input.settling && input.userExpanded === null;
+}
+
+/**
+ * Preference-driven mass expand must not flush feed scroll N times.
+ * Collapse / live / user toggle keep immediate clamp.
+ */
+export function resolveThinkingLayoutNotifyOptions(input: {
+  displayOpen: boolean;
+  preferenceDriven: boolean;
+}): { immediate: true } | undefined {
+  if (input.displayOpen && input.preferenceDriven) {
+    return undefined;
+  }
+  return { immediate: true };
+}
+
+export function findThinkingFeedScrollRoot(from: Element | null): Element | null {
+  return from?.closest(".activity-messages") ?? null;
+}
