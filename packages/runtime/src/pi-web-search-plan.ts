@@ -28,11 +28,14 @@ export function resolveWebSearchPlan(input: {
   if (input.networkWebSearch === false) {
     return "none";
   }
-  if (resolveSupportsNativeWebSearch({ supportsNativeWebSearch: input.supportsNativeWebSearch })) {
-    return "native";
-  }
+  // Prefer Eco Integrated when the user configured it. Native defaults to "supported"
+  // for models that cannot actually run provider-native search (e.g. LongCat), which
+  // previously shadowed Integrated and left PI with a failing built-in tool.
   if (input.integratedSearchConfigured) {
     return "integrated";
+  }
+  if (resolveSupportsNativeWebSearch({ supportsNativeWebSearch: input.supportsNativeWebSearch })) {
+    return "native";
   }
   return "none";
 }

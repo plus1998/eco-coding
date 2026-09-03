@@ -12973,7 +12973,7 @@ button.default-agent-option:focus-visible {
 }
 
 .run-log-action-trigger.is-web-search .run-log-action-icon {
-  color: color-mix(in srgb, #60a5fa 78%, #a3a3a3);
+  color: color-mix(in srgb, var(--accent-text, var(--accent)) 78%, var(--codex-log-faint, var(--text-secondary)));
 }
 
 .run-log-web-search-status-pill {
@@ -12981,7 +12981,7 @@ button.default-agent-option:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in srgb, #93c5fd 72%, #a3a3a3);
+  color: color-mix(in srgb, var(--accent-text, var(--accent)) 72%, var(--codex-log-faint, var(--text-secondary)));
 }
 
 /* Expanded panel content sits inside the outer feed-surface card — no nested card chrome. */
@@ -13006,7 +13006,7 @@ button.default-agent-option:focus-visible {
 }
 
 .run-log-web-search-detail-label {
-  color: var(--codex-log-faint, #737373);
+  color: var(--codex-log-faint, var(--text-tertiary, var(--text-secondary)));
   font-size: 11px;
   font-weight: 500;
   line-height: 1.45;
@@ -13015,7 +13015,7 @@ button.default-agent-option:focus-visible {
 
 .run-log-web-search-detail-value {
   min-width: 0;
-  color: var(--codex-log-text, #e5e5e5);
+  color: var(--codex-log-text, var(--text-primary));
   font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
@@ -13024,29 +13024,94 @@ button.default-agent-option:focus-visible {
 
 .run-log-web-search-detail-value.is-muted {
   font-weight: 400;
-  color: #9ca3af;
+  color: var(--codex-log-faint, var(--text-secondary));
 }
 
 .run-log-web-search-detail-value.is-url {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 400;
-  color: #7dd3fc;
+  color: var(--accent-text, var(--accent));
 }
 
 .run-log-web-search-detail-queries {
   margin: 0;
   padding: 0 0 0 1rem;
-  color: #a3a3a3;
+  color: var(--codex-log-faint, var(--text-secondary));
   font-size: 12px;
   line-height: 1.5;
+}
+
+.run-log-web-search-detail-results-row {
+  align-items: flex-start;
+}
+
+.run-log-web-search-detail-results {
+  margin: 0;
+  padding: 0 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  list-style: decimal;
+  color: var(--codex-log-faint, var(--text-secondary));
+}
+
+.run-log-web-search-detail-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--codex-log-faint, var(--text-secondary));
+}
+
+.run-log-web-search-detail-result-title {
+  color: var(--codex-log-text, var(--text-primary));
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.run-log-web-search-detail-result-url,
+a.run-log-web-search-detail-result-url {
+  color: var(--accent-text, var(--accent));
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.run-log-web-search-detail-result-url:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a.run-log-web-search-detail-result-url:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-text, var(--accent)) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.run-log-web-search-detail-result-desc {
+  color: var(--codex-log-faint, var(--text-tertiary, var(--text-secondary)));
+  font-size: 11px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .run-log-web-search-detail-note {
   margin: 2px 0 0;
   padding-top: 8px;
-  border-top: 1px solid var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
-  color: var(--codex-log-faint, #737373);
+  border-top: 1px solid var(--codex-log-line-subtle, color-mix(in srgb, var(--text-primary) 10%, transparent));
+  color: var(--codex-log-faint, var(--text-tertiary, var(--text-secondary)));
   font-size: 11px;
   line-height: 1.45;
 }

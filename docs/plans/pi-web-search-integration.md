@@ -27,14 +27,15 @@
 | `network.webSearch` | `supportsNativeWebSearch` | Integrated 已配置 | 暴露 `web_search` | 后端 |
 |---------------------|---------------------------|-----------------|-------------------|------|
 | false | * | * | ❌ | — |
-| true | **true（默认）** | * | ✅ | pi-web-search（当前主模型 side call） |
-| true | false | ✅ | ✅ | Eco integrated tool → Tavily / 豆包 / Brave |
+| true | * | ✅ | ✅ | Eco integrated（优先；覆盖模型 native 默认） |
+| true | **true（默认）** | ❌ | ✅ | pi-web-search / provider-native |
 | true | false | ❌ | ❌ | — |
 
 约定：
 
-- **`supportsNativeWebSearch` 未写入 manualSpec 时视为 `true`**（默认全开；用户关掉才知道是否支持）。
-- Native 与 Integrated **互斥**：同一 session 只注入一种 backend，工具名统一为 `web_search`。
+- **`supportsNativeWebSearch` 未写入 manualSpec 时视为 `true`**（仅在未配置 Integrated 时生效）。
+- **Integrated 已启用且有 API Key 时优先于 native**，避免「模型默认支持 native」却实际不可用时，把 Eco 搜索挡住（如 LongCat + Doubao）。
+- Native 与 Integrated **互斥**：同一 session 只注入一种 backend；PI 工具名统一为 `web_search`，Claude/Codex 为 MCP `eco_web_search`。
 - Native 调用失败 **Phase 1 不自动降级**到 Integrated（tool 返回错误）；自动降级留 Phase 2。
 
 ### 与 Claude/Codex 的关系

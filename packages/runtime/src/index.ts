@@ -443,6 +443,7 @@ export {
 } from "./cursor-agent-models";
 export * from "./eco-image-view-tool.js";
 export * from "./eco-image-display-tool.js";
+export * from "./eco-web-search-tool.js";
 export * from "./eco-sdk-hooks";
 export * from "./filesystem-scope-policy.js";
 export {

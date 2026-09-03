@@ -6245,7 +6245,9 @@ function readThreadRunToolMetadata(
   const grepTarget = parseThreadRunGrepToolTarget(raw.grepTarget);
   const sendMessage = parseThreadRunSendMessageMetadata(raw.sendMessage);
   const imageView = parseThreadRunImageViewMetadata(raw.imageView);
+  const imageDisplay = parseThreadRunImageDisplayMetadata(raw.imageDisplay);
   const mcpDiscovery = parseThreadRunMcpDiscoveryMetadata(raw.mcpDiscovery);
+  const webSearch = parseThreadRunWebSearchMetadata(raw.webSearch);
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
@@ -6268,8 +6270,93 @@ function readThreadRunToolMetadata(
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
     ...(imageView && { imageView }),
+    ...(imageDisplay && { imageDisplay }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(sendMessage && { sendMessage }),
+    ...(webSearch && { webSearch }),
+  };
+}
+
+function parseThreadRunImageDisplayMetadata(
+  value: unknown,
+): ThreadRunToolMetadata["imageDisplay"] | undefined {
+  if (!isJsonRecord(value)) {
+    return undefined;
+  }
+  const artifactId = typeof value.artifactId === "string" ? value.artifactId.trim() : "";
+  if (!artifactId) {
+    return undefined;
+  }
+  const title = typeof value.title === "string" ? value.title.trim() : "";
+  return {
+    artifactId,
+    ...(title ? { title } : {}),
+  };
+}
+
+function parseThreadRunWebSearchMetadata(
+  value: unknown,
+): ThreadRunToolMetadata["webSearch"] | undefined {
+  if (!isJsonRecord(value)) {
+    return undefined;
+  }
+  const query = typeof value.query === "string" ? value.query.trim() : "";
+  const url = typeof value.url === "string" ? value.url.trim() : "";
+  const pattern = typeof value.pattern === "string" ? value.pattern.trim() : "";
+  const provider = typeof value.provider === "string" ? value.provider.trim() : "";
+  const queries = Array.isArray(value.queries)
+    ? value.queries
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim())
+        .slice(0, 12)
+    : undefined;
+  const results = Array.isArray(value.results)
+    ? value.results
+        .map((entry) => {
+          if (!isJsonRecord(entry)) return undefined;
+          const title = typeof entry.title === "string" ? entry.title.trim() : "";
+          const hitUrl = typeof entry.url === "string" ? entry.url.trim() : "";
+          const description =
+            typeof entry.description === "string" ? entry.description.trim() : undefined;
+          if (!title && !hitUrl && !description) return undefined;
+          return {
+            title,
+            url: hitUrl,
+            ...(description ? { description } : {}),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+        .slice(0, 12)
+    : undefined;
+  const actionType =
+    value.actionType === "search" ||
+    value.actionType === "openPage" ||
+    value.actionType === "findInPage" ||
+    value.actionType === "other"
+      ? value.actionType
+      : undefined;
+  const mode = value.mode === "fetch" || value.mode === "search" ? value.mode : undefined;
+  if (
+    !query &&
+    !url &&
+    !pattern &&
+    !provider &&
+    !(queries && queries.length > 0) &&
+    !(results && results.length > 0) &&
+    !actionType &&
+    !mode
+  ) {
+    return undefined;
+  }
+  return {
+    ...(query && { query }),
+    ...(url && { url }),
+    ...(pattern && { pattern }),
+    ...(provider && { provider }),
+    ...(queries && queries.length > 0 && { queries }),
+    ...(results && results.length > 0 && { results }),
+    ...(actionType && { actionType }),
+    ...(mode && { mode }),
   };
 }
 

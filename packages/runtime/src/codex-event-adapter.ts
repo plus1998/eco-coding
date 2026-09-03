@@ -30,6 +30,11 @@ import {
   readAbsolutePathFromMcpToolOutput,
   readImageDisplayArtifactFromToolOutput,
 } from "./eco-image-display-tool.js";
+import {
+  isEcoWebSearchToolName,
+  parseEcoWebSearchToolOutput,
+  readEcoWebSearchQuery,
+} from "./eco-web-search-tool.js";
 import { CODEX_GENERAL_SPAWN_ROLE } from "./subagent-availability.js";
 import {
   appendToolOutputPreviewCapture,
@@ -1313,12 +1318,39 @@ function emitMcpToolEvent(
     ctx.emittedImageDisplayArtifacts.add(imageDisplayArtifactId);
   }
   const urlHint = readMcpToolUrlHint(item, mcpInput);
+  const ecoWebSearchQuery = isEcoWebSearchToolName(toolName) ? readEcoWebSearchQuery(mcpInput) : undefined;
+  const ecoWebSearchParsed =
+    isEcoWebSearchToolName(toolName) && eventType !== "tool.started"
+      ? parseEcoWebSearchToolOutput(item)
+      : undefined;
+  const ecoWebSearch =
+    isEcoWebSearchToolName(toolName)
+      ? {
+          mode: "search" as const,
+          actionType: "search" as const,
+          ...(ecoWebSearchQuery || ecoWebSearchParsed?.query
+            ? { query: ecoWebSearchQuery ?? ecoWebSearchParsed?.query }
+            : {}),
+          ...(ecoWebSearchParsed?.provider ? { provider: ecoWebSearchParsed.provider } : {}),
+          ...(ecoWebSearchParsed?.results?.length
+            ? {
+                results: ecoWebSearchParsed.results.map((entry) => ({
+                  title: entry.title,
+                  url: entry.url,
+                  ...(entry.description ? { description: entry.description } : {}),
+                })),
+              }
+            : {}),
+        }
+      : undefined;
   const detailParts = imageViewPath
     ? [imageViewPath]
     : imageDisplayArtifactId
       ? [imageDisplayArtifactId]
-      : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
-  const messageHint = imageViewPath ?? imageDisplayArtifactId ?? urlHint;
+      : ecoWebSearchQuery
+        ? [ecoWebSearchQuery]
+        : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+  const messageHint = imageViewPath ?? imageDisplayArtifactId ?? ecoWebSearchQuery ?? urlHint;
 
   emit(ctx, {
     eventType,
@@ -1345,6 +1377,7 @@ function emitMcpToolEvent(
         ...(durationMs !== undefined ? { durationMs } : {}),
         ...(imageViewPath ? { imageView: { path: imageViewPath } } : {}),
         ...(imageDisplayArtifactId ? { imageDisplay: { artifactId: imageDisplayArtifactId } } : {}),
+        ...(ecoWebSearch ? { webSearch: ecoWebSearch } : {}),
       },
     },
   });

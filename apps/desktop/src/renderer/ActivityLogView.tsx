@@ -102,6 +102,7 @@ import {
 } from "./activity-log";
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
+import { dispatchBrowserLinkOpen, isHttpishHref } from "./browser-link";
 import { i18n } from "./i18n";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { ImageLightbox } from "./image-lightbox";
@@ -4926,9 +4927,24 @@ function RunLogWebSearchDetail({
       {display.url ? (
         <div className="run-log-web-search-detail-row">
           <span className="run-log-web-search-detail-label">URL</span>
-          <span className="run-log-web-search-detail-value is-url" title={display.url}>
-            {display.url}
-          </span>
+          {isHttpishHref(display.url) ? (
+            <a
+              className="run-log-web-search-detail-value is-url"
+              href={display.url}
+              title={display.url}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dispatchBrowserLinkOpen(display.url!);
+              }}
+            >
+              {display.url}
+            </a>
+          ) : (
+            <span className="run-log-web-search-detail-value is-url" title={display.url}>
+              {display.url}
+            </span>
+          )}
         </div>
       ) : null}
       {display.queries && display.queries.length > 1 ? (
@@ -4939,6 +4955,49 @@ function RunLogWebSearchDetail({
               <li key={entry}>{entry}</li>
             ))}
           </ul>
+        </div>
+      ) : null}
+      {display.provider ? (
+        <div className="run-log-web-search-detail-row">
+          <span className="run-log-web-search-detail-label">{i18n.t("activity.webSearch.providerLabel")}</span>
+          <span className="run-log-web-search-detail-value is-muted">{display.provider}</span>
+        </div>
+      ) : null}
+      {display.results && display.results.length > 0 ? (
+        <div className="run-log-web-search-detail-row run-log-web-search-detail-results-row">
+          <span className="run-log-web-search-detail-label">{i18n.t("activity.webSearch.resultsLabel")}</span>
+          <ol className="run-log-web-search-detail-results">
+            {display.results.map((entry, index) => (
+              <li key={`${entry.url || entry.title}-${index}`} className="run-log-web-search-detail-result">
+                <span className="run-log-web-search-detail-result-title">
+                  {entry.title || entry.url || i18n.t("activity.webSearch.untitledResult")}
+                </span>
+                {entry.url ? (
+                  isHttpishHref(entry.url) ? (
+                    <a
+                      className="run-log-web-search-detail-result-url"
+                      href={entry.url}
+                      title={`${i18n.t("markdown.html.openInBrowser")}: ${entry.url}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dispatchBrowserLinkOpen(entry.url);
+                      }}
+                    >
+                      {entry.url}
+                    </a>
+                  ) : (
+                    <span className="run-log-web-search-detail-result-url" title={entry.url}>
+                      {entry.url}
+                    </span>
+                  )
+                ) : null}
+                {entry.description ? (
+                  <span className="run-log-web-search-detail-result-desc">{entry.description}</span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
         </div>
       ) : null}
       {display.note ? <p className="run-log-web-search-detail-note">{display.note}</p> : null}

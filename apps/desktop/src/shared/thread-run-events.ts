@@ -104,6 +104,16 @@ export interface ThreadRunWebSearchMetadata {
   queries?: string[];
   /** Distinguishes search vs page fetch when name alone is ambiguous. */
   mode?: "search" | "fetch";
+  /** Integrated search provider label when known (doubao / tavily / brave). */
+  provider?: string;
+  /** Public SERP hits for Feed cards (Eco Integrated / MCP search). */
+  results?: ThreadRunWebSearchResultHit[];
+}
+
+export interface ThreadRunWebSearchResultHit {
+  title: string;
+  url: string;
+  description?: string;
 }
 
 export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";

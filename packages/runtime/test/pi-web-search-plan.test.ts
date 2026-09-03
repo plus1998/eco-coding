@@ -30,6 +30,15 @@ test("resolvePiWebSearchPlan decision table", () => {
     }),
   ).toBe("native");
 
+  // Integrated wins when configured, even if the model still defaults to native support.
+  expect(
+    resolvePiWebSearchPlan({
+      networkWebSearch: true,
+      supportsNativeWebSearch: true,
+      integratedSearchConfigured: true,
+    }),
+  ).toBe("integrated");
+
   expect(
     resolvePiWebSearchPlan({
       networkWebSearch: true,
@@ -73,6 +82,15 @@ test("resolvePiWebSearchContext passes integrated api key only for integrated ba
       networkWebSearch: true,
       supportsNativeWebSearch: true,
       integratedEnabled: true,
+      integratedApiKey: "brave-key",
+    }),
+  ).toEqual({ backend: "integrated", integratedApiKey: "brave-key" });
+
+  expect(
+    resolvePiWebSearchContext({
+      networkWebSearch: true,
+      supportsNativeWebSearch: true,
+      integratedEnabled: false,
       integratedApiKey: "brave-key",
     }),
   ).toEqual({ backend: "native" });

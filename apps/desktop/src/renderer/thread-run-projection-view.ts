@@ -3399,6 +3399,7 @@ function readProjectionToolMetadata(
     (rawMcpDiscovery as Record<string, unknown>).kind === "search"
       ? { kind: "search" as const }
       : undefined;
+  const webSearch = parseProjectionWebSearchMetadata(record.webSearch);
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
@@ -3417,9 +3418,78 @@ function readProjectionToolMetadata(
     ...(fileChange && { fileChange }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
+    ...(webSearch && { webSearch }),
     ...(imageView && { imageView }),
     ...(imageDisplay && { imageDisplay }),
     ...(mcpDiscovery && { mcpDiscovery }),
+  };
+}
+
+function parseProjectionWebSearchMetadata(
+  value: unknown,
+): ThreadRunToolMetadata["webSearch"] | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const query = typeof record.query === "string" ? record.query.trim() : "";
+  const url = typeof record.url === "string" ? record.url.trim() : "";
+  const pattern = typeof record.pattern === "string" ? record.pattern.trim() : "";
+  const provider = typeof record.provider === "string" ? record.provider.trim() : "";
+  const queries = Array.isArray(record.queries)
+    ? record.queries
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim())
+        .slice(0, 12)
+    : undefined;
+  const results = Array.isArray(record.results)
+    ? record.results
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return undefined;
+          const hit = entry as Record<string, unknown>;
+          const title = typeof hit.title === "string" ? hit.title.trim() : "";
+          const hitUrl = typeof hit.url === "string" ? hit.url.trim() : "";
+          const description =
+            typeof hit.description === "string" ? hit.description.trim() : undefined;
+          if (!title && !hitUrl && !description) return undefined;
+          return {
+            title,
+            url: hitUrl,
+            ...(description ? { description } : {}),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+        .slice(0, 12)
+    : undefined;
+  const actionType =
+    record.actionType === "search" ||
+    record.actionType === "openPage" ||
+    record.actionType === "findInPage" ||
+    record.actionType === "other"
+      ? record.actionType
+      : undefined;
+  const mode = record.mode === "fetch" || record.mode === "search" ? record.mode : undefined;
+  if (
+    !query &&
+    !url &&
+    !pattern &&
+    !provider &&
+    !(queries && queries.length > 0) &&
+    !(results && results.length > 0) &&
+    !actionType &&
+    !mode
+  ) {
+    return undefined;
+  }
+  return {
+    ...(query && { query }),
+    ...(url && { url }),
+    ...(pattern && { pattern }),
+    ...(provider && { provider }),
+    ...(queries && queries.length > 0 && { queries }),
+    ...(results && results.length > 0 && { results }),
+    ...(actionType && { actionType }),
+    ...(mode && { mode }),
   };
 }
 

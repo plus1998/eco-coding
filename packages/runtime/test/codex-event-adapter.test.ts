@@ -372,6 +372,61 @@ test("eco_image_display MCP completed calls attach imageDisplay artifactId", () 
   );
 });
 
+test("eco_web_search MCP completed calls attach webSearch results", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_web_search",
+      item: {
+        id: "item_web_search_1",
+        type: "mcpToolCall",
+        server: "eco_web_search",
+        tool: "search",
+        status: "completed",
+        arguments: { query: "shanghai weather" },
+        aggregatedOutput: [
+          'Doubao Search results for "shanghai weather":',
+          "",
+          "1. AccuWeather",
+          "   https://accuweather.example/shanghai",
+          "   30°C cloudy",
+        ].join("\n"),
+        structuredContent: {
+          provider: "doubao",
+          query: "shanghai weather",
+          results: [
+            {
+              title: "AccuWeather",
+              url: "https://accuweather.example/shanghai",
+              description: "30°C cloudy",
+            },
+          ],
+        },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_web_search__search",
+      detail: "shanghai weather",
+      webSearch: expect.objectContaining({
+        mode: "search",
+        actionType: "search",
+        query: "shanghai weather",
+        provider: "doubao",
+        results: [
+          {
+            title: "AccuWeather",
+            url: "https://accuweather.example/shanghai",
+            description: "30°C cloudy",
+          },
+        ],
+      }),
+    }),
+  );
+});
+
 test("agent_browser_screenshot completed attaches imageView path from output", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });

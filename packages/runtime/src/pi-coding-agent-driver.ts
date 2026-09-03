@@ -366,6 +366,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     const wantsAgentTool = sessionMode === "agent" && listEnabledPiSubagents(input.agentRegistry).length > 0;
     const agentToolDrift = Boolean(session) && wantsAgentTool !== Boolean(session!.armSubagentSpawn);
     const modeDrift = Boolean(session) && (session!.sessionMode ?? "agent") !== sessionMode;
+    const webSearchBackend = input.piSession?.webSearchBackend ?? "none";
     const webSearchDrift = Boolean(session) && (session!.webSearchBackend ?? "none") !== webSearchBackend;
 
     const modeAwareHandler = input.piSession?.toolPermissionHandler
@@ -387,7 +388,6 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       ...(input.piSession?.appendSystemPrompt ?? []),
     ].filter((entry) => entry.trim().length > 0);
     const hasMcpServers = Boolean(mcpServers && Object.keys(mcpServers).length > 0);
-    const webSearchBackend = input.piSession?.webSearchBackend ?? "none";
     const includeWebSearch = webSearchBackend !== "none";
     const toolsAllowlist = piToolsForSessionMode(sessionMode, {
       hasMcpServers: sessionMode === "agent" && hasMcpServers,

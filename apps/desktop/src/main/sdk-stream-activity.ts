@@ -3,8 +3,11 @@ import {
   createToolOutputPreview,
   formatSendMessageToolInputSummary,
   formatSendMessageToolResultSummary,
+  isEcoWebSearchToolName,
   mergeStreamText,
+  parseEcoWebSearchToolOutput,
   parseSendMessageToolResult,
+  readEcoWebSearchQuery,
   readSendMessageToolInput,
   resolveEcoImageViewToolCall,
   resolvePiMcpProxyDiscoveryCall,
@@ -667,10 +670,10 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ??
     resolveSdkToolDisplayDetail(name, record.input);
   const output =
-    readString(record.output) ??
-    readString(record.stdout) ??
-    readString(record.result) ??
-    readString(record.content);
+    readToolResultText(record.output) ??
+    readToolResultText(record.stdout) ??
+    readToolResultText(record.result) ??
+    readToolResultText(record.content);
   const outputPreview = output ? createToolOutputPreview(output) : undefined;
   const toolUseId = readString(record.tool_use_id);
   const description =
@@ -703,10 +706,12 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
           ...(sendMessageResult ?? {}),
         }
       : undefined;
+  const webSearch = resolveEcoWebSearchToolMetadata(displayName, record.input, output);
   return {
     name: displayName,
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
+    ...(webSearch?.query && !command && { detail: webSearch.query }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
     ...(sendMessageOutputPreview?.text && { outputPreview: sendMessageOutputPreview.text }),
     ...(outputPreview?.truncated && { outputPreviewTruncated: true }),
@@ -719,6 +724,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
     ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
     ...(mcpDiscovery && { mcpDiscovery }),
+    ...(webSearch && { webSearch }),
     status: "completed",
   };
 }
@@ -887,6 +893,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
   const sendMessage = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const webSearch = resolveEcoWebSearchToolMetadata(displayName, record.input);
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -898,6 +905,8 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(sendMessage && { sendMessage }),
     ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
     ...(mcpDiscovery && { mcpDiscovery }),
+    ...(webSearch && { webSearch }),
+    status: "started",
   };
 }
 
@@ -1086,6 +1095,67 @@ function pathBasename(filePath: string): string {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readToolResultText(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+          const text = (entry as Record<string, unknown>).text;
+          if (typeof text === "string") return text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    return joined || undefined;
+  }
+  return undefined;
+}
+
+function resolveEcoWebSearchToolMetadata(
+  toolName: string,
+  input: unknown,
+  output?: string,
+): ThreadRunToolMetadata["webSearch"] | undefined {
+  const normalized = toolName.trim();
+  const isPiOrNativeSearch =
+    normalized === "WebSearch" || normalized.toLowerCase() === "web_search";
+  if (!isEcoWebSearchToolName(normalized) && !isPiOrNativeSearch) {
+    return undefined;
+  }
+  const queryFromInput = readEcoWebSearchQuery(input);
+  const parsed = output ? parseEcoWebSearchToolOutput(output) : undefined;
+  const query = queryFromInput ?? parsed?.query;
+  const results = parsed?.results?.length
+    ? parsed.results.map((entry) => ({
+        title: entry.title,
+        url: entry.url,
+        ...(entry.description ? { description: entry.description } : {}),
+      }))
+    : undefined;
+  // Native WebSearch with no SERP payload still gets a query card (note-only).
+  if (!query && !results && !parsed?.provider) {
+    return isPiOrNativeSearch
+      ? {
+          mode: "search",
+          actionType: "search",
+        }
+      : undefined;
+  }
+  return {
+    mode: "search",
+    actionType: "search",
+    ...(query ? { query } : {}),
+    ...(parsed?.provider ? { provider: parsed.provider } : {}),
+    ...(results ? { results } : {}),
+  };
 }
 
 /** Zed `can_merge_message_chunks`: equal ids merge; a missing id on either side still appends. */

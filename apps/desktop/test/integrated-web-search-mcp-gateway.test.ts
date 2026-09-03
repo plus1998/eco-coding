@@ -18,11 +18,21 @@ test("resolveThreadWebSearchPlan mirrors cross-core decision table", () => {
     }).backend,
   ).toBe("integrated");
 
+  // Integrated settings take priority over the per-model native default.
   expect(
     resolveThreadWebSearchPlan({
       networkWebSearch: true,
       plannerManualSpec: { supportsNativeWebSearch: true },
       integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true },
+      integratedApiKey: "tvly-test",
+    }).backend,
+  ).toBe("integrated");
+
+  expect(
+    resolveThreadWebSearchPlan({
+      networkWebSearch: true,
+      plannerManualSpec: { supportsNativeWebSearch: true },
+      integratedSettings: { enabled: false, provider: "tavily", hasApiKey: true },
       integratedApiKey: "tvly-test",
     }).backend,
   ).toBe("native");

@@ -728,6 +728,22 @@ function formatToolResult(result: unknown): string {
   if (typeof result === "string") {
     return result;
   }
+  // Eco Integrated web_search returns `{ content, details: { provider, query, results } }`.
+  // Prefer structured JSON for Feed SERP cards (Claude/Codex MCP path already stores this shape).
+  if (isRecord(result) && isRecord(result.details) && Array.isArray(result.details.results)) {
+    try {
+      return JSON.stringify({
+        ...(typeof result.details.provider === "string"
+          ? { provider: result.details.provider }
+          : {}),
+        ...(typeof result.details.query === "string" ? { query: result.details.query } : {}),
+        resultCount: result.details.results.length,
+        results: result.details.results,
+      });
+    } catch {
+      // fall through to text content
+    }
+  }
   if (isRecord(result) && Array.isArray(result.content)) {
     const texts = result.content
       .filter((part): part is { type: string; text?: string } => isRecord(part))

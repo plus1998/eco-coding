@@ -48,10 +48,33 @@ function projectWebSearchMetadata(
   const query = value.query?.trim();
   const url = value.url?.trim();
   const pattern = value.pattern?.trim();
+  const provider = value.provider?.trim();
   const queries = Array.isArray(value.queries)
     ? value.queries
         .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
         .map((entry) => entry.trim())
+        .slice(0, 12)
+    : undefined;
+  const results = Array.isArray(value.results)
+    ? value.results
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return undefined;
+          }
+          const title = typeof entry.title === "string" ? entry.title.trim() : "";
+          const hitUrl = typeof entry.url === "string" ? entry.url.trim() : "";
+          const description =
+            typeof entry.description === "string" ? entry.description.trim() : undefined;
+          if (!title && !hitUrl && !description) {
+            return undefined;
+          }
+          return {
+            title,
+            url: hitUrl,
+            ...(description ? { description } : {}),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
         .slice(0, 12)
     : undefined;
   const actionType = value.actionType;
@@ -60,7 +83,9 @@ function projectWebSearchMetadata(
     ...(query && { query }),
     ...(url && { url }),
     ...(pattern && { pattern }),
+    ...(provider && { provider }),
     ...(queries && queries.length > 0 && { queries }),
+    ...(results && results.length > 0 && { results }),
     ...(actionType === "search" ||
     actionType === "openPage" ||
     actionType === "findInPage" ||

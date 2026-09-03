@@ -103,6 +103,42 @@ test("resolveWebSearchCardDisplay builds network search panel model", () => {
   expect(
     resolveWebSearchCardDisplay(
       {
+        toolName: "mcp__eco_web_search__search",
+        detail: "shanghai weather",
+        status: "completed",
+        webSearch: {
+          query: "shanghai weather",
+          provider: "doubao",
+          mode: "search",
+          actionType: "search",
+          results: [
+            {
+              title: "AccuWeather",
+              url: "https://accuweather.example/shanghai",
+              description: "30°C",
+            },
+          ],
+        },
+      },
+      tZh,
+    ),
+  ).toMatchObject({
+    kind: "search",
+    title: "联网搜索 · shanghai weather",
+    query: "shanghai weather",
+    provider: "doubao",
+    results: [
+      {
+        title: "AccuWeather",
+        url: "https://accuweather.example/shanghai",
+        description: "30°C",
+      },
+    ],
+  });
+
+  expect(
+    resolveWebSearchCardDisplay(
+      {
         toolName: "WebFetch",
         detail: "https://example.com/docs",
         status: "started",

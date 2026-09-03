@@ -8,6 +8,7 @@ import { type ActionKindTranslate, formatActionLine, resolveActionKind } from ".
 import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
+import { isEcoWebSearchToolName } from "./integrated-web-search";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
@@ -337,12 +338,18 @@ export interface WebSearchCardDisplay {
   url?: string;
   pattern?: string;
   queries?: string[];
+  provider?: string;
+  results?: Array<{ title: string; url: string; description?: string }>;
   /** Footer note when SERP is not available in protocol payload. */
   note?: string;
 }
 
 export function isNetworkToolName(toolName: string | undefined): boolean {
-  return toolName === "WebSearch" || toolName === "WebFetch";
+  return (
+    toolName === "WebSearch" ||
+    toolName === "WebFetch" ||
+    isEcoWebSearchToolName(toolName)
+  );
 }
 
 export function resolveWebSearchCardDisplay(
@@ -358,14 +365,17 @@ export function resolveWebSearchCardDisplay(
       pattern?: string;
       queries?: string[];
       mode?: "search" | "fetch";
+      provider?: string;
+      results?: Array<{ title: string; url: string; description?: string }>;
     };
   },
   t: ActionKindTranslate,
 ): WebSearchCardDisplay | undefined {
-  if (!isNetworkToolName(input.toolName)) {
+  if (!isNetworkToolName(input.toolName) && !input.webSearch) {
     return undefined;
   }
-  const kind = input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
+  const kind =
+    input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
   const structured = input.webSearch;
   const query =
     structured?.query?.trim() ||
@@ -387,8 +397,21 @@ export function resolveWebSearchCardDisplay(
   const url = structured?.url?.trim() || (kind === "fetch" ? query : undefined);
   const pattern = structured?.pattern?.trim();
   const queries = structured?.queries?.filter((entry) => entry.trim()).map((entry) => entry.trim());
+  const provider = structured?.provider?.trim();
+  const results = structured?.results
+    ?.map((entry) => ({
+      title: entry.title?.trim() ?? "",
+      url: entry.url?.trim() ?? "",
+      ...(entry.description?.trim() ? { description: entry.description.trim() } : {}),
+    }))
+    .filter((entry) => entry.title || entry.url || entry.description)
+    .slice(0, 12);
   const displayQuery = query || (queries && queries.length > 0 ? queries[0]! : "") || url || "";
-  const title = formatToolDisplayLabel(input.toolName ?? "WebSearch", displayQuery || undefined, t);
+  const title = formatToolDisplayLabel(
+    kind === "fetch" ? "WebFetch" : "WebSearch",
+    displayQuery || undefined,
+    t,
+  );
   const meta =
     input.durationMs !== undefined && Number.isFinite(input.durationMs)
       ? `${(input.durationMs / 1000).toFixed(1)}s`
@@ -416,7 +439,9 @@ export function resolveWebSearchCardDisplay(
     input.status === "completed"
       ? kind === "fetch"
         ? t("activity.webSearch.fetchCompletedNote")
-        : t("activity.webSearch.searchCompletedNote")
+        : results && results.length > 0
+          ? undefined
+          : t("activity.webSearch.searchCompletedNote")
       : input.status === "started"
         ? kind === "fetch"
           ? t("activity.running.webFetch", { suffix: "…" })
@@ -436,6 +461,8 @@ export function resolveWebSearchCardDisplay(
     ...(url && { url }),
     ...(pattern && { pattern }),
     ...(queries && queries.length > 0 && { queries }),
+    ...(provider && { provider }),
+    ...(results && results.length > 0 && { results }),
     ...(note && { note }),
   };
 }
