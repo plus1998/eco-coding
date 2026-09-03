@@ -102,6 +102,8 @@ abstract final class EcoIcons {
   static const IconData previewOff = LucideIcons.eyeOff;
 
   static const IconData followUp = LucideIcons.notebook;
+  static const IconData pause = LucideIcons.pause;
+  static const IconData play = LucideIcons.play;
   static const IconData subthread = LucideIcons.messagesSquare;
   static const IconData indent = LucideIcons.cornerDownRight;
   static const IconData rename = LucideIcons.type;

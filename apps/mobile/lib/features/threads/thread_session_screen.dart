@@ -75,6 +75,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
   String? _followUpEscalateBusyId;
+  bool _followUpQueuePauseBusy = false;
   double _lastKeyboardInset = 0;
   String? _deferredComposerRestoreRevision;
 
@@ -335,6 +336,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 FollowUpQueueBar(
                   followUps: queuedFollowUps,
                   editingFollowUpId: _editingFollowUpId,
+                  queuePaused: thread?.followUpQueuePaused ?? false,
+                  pauseBusy: _followUpQueuePauseBusy,
                   cancelBusyId: _followUpCancelBusyId,
                   escalateBusyId: _followUpEscalateBusyId,
                   onEscalate: (followUp) => _escalateFollowUp(followUp),
@@ -342,6 +345,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   onDelete: (followUp) => _deleteFollowUp(followUp),
                   onReorder: (oldIndex, newIndex) =>
                       _reorderFollowUps(queuedFollowUps, oldIndex, newIndex),
+                  onTogglePause: _toggleFollowUpQueuePaused,
                 ),
             ],
           )
@@ -1096,6 +1100,32 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     } finally {
       if (mounted) {
         setState(() => _followUpEscalateBusyId = null);
+      }
+    }
+  }
+
+  Future<void> _toggleFollowUpQueuePaused(bool paused) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    setState(() => _followUpQueuePauseBusy = true);
+    try {
+      final thread = await rpc.followUpSetQueuePaused(
+        threadId: widget.threadId,
+        paused: paused,
+      );
+      if (!mounted) return;
+      ref
+          .read(threadSessionProvider(widget.threadId).notifier)
+          .applyThreadSummary(thread);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _followUpQueuePauseBusy = false);
       }
     }
   }

@@ -88,6 +88,7 @@ interface ThreadRow {
   routes_fingerprint: string | null;
   runtime_config_json: string | null;
   external_session_id: string | null;
+  follow_up_queue_paused: number | null;
 }
 
 export interface ThreadListCursor {
@@ -1270,6 +1271,9 @@ export class ConversationStore {
 
     if (!names.has("claude_plan_file_path")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN claude_plan_file_path TEXT`);
+    }
+    if (!names.has("follow_up_queue_paused")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN follow_up_queue_paused INTEGER NOT NULL DEFAULT 0`);
     }
 
     const pendingPlanColumns = this.db.prepare(`PRAGMA table_info(thread_pending_plans)`).all() as Array<{
@@ -2483,6 +2487,20 @@ export class ConversationStore {
          WHERE id = ?`,
       )
       .run(patch.status, patch.message, new Date().toISOString(), threadId);
+  }
+
+  setThreadFollowUpQueuePaused(threadId: string, paused: boolean): ThreadSummary | undefined {
+    if (!this.getThread(threadId)) {
+      return undefined;
+    }
+    this.db
+      .prepare(
+        `UPDATE threads
+         SET follow_up_queue_paused = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(paused ? 1 : 0, new Date().toISOString(), threadId);
+    return this.getThread(threadId);
   }
 
   private assertThreadCore(threadId: string, coreKind: CoreKind): void {
@@ -6606,6 +6624,7 @@ const THREAD_SUMMARY_SELECT = `SELECT threads.id AS id,
                 threads.sdk_session_id AS sdk_session_id,
                 threads.sdk_cwd AS sdk_cwd,
                 threads.runtime_config_json AS runtime_config_json,
+                threads.follow_up_queue_paused AS follow_up_queue_paused,
                 sessions.external_session_id AS external_session_id
          FROM threads
          LEFT JOIN thread_core_sessions AS sessions ON sessions.thread_id = threads.id`;
@@ -6644,6 +6663,7 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     ...(row.sdk_session_id && row.sdk_cwd ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd } : {}),
     ...(row.external_session_id?.trim() ? { externalSessionId: row.external_session_id.trim() } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),
+    ...(row.follow_up_queue_paused ? { followUpQueuePaused: true } : {}),
   };
 }
 

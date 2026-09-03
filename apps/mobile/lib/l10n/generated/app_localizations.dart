@@ -4037,8 +4037,32 @@ abstract class AppLocalizations {
   /// No description provided for @followUpQueuePaused.
   ///
   /// In en, this message translates to:
-  /// **'Queue paused until you finish editing'**
+  /// **'Queue paused'**
   String get followUpQueuePaused;
+
+  /// No description provided for @followUpQueuePausedEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue paused until you finish editing'**
+  String get followUpQueuePausedEditing;
+
+  /// No description provided for @followUpQueueActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages are queued'**
+  String get followUpQueueActive;
+
+  /// No description provided for @followUpQueuePause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get followUpQueuePause;
+
+  /// No description provided for @followUpQueueResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get followUpQueueResume;
 
   /// No description provided for @followUpDeleting.
   ///

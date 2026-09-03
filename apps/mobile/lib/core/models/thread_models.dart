@@ -685,6 +685,7 @@ class ThreadSummary {
     this.runtimeConfig,
     this.hostUiFeatures = AcpHostUiFeatures.showAll,
     this.cancelling = false,
+    this.followUpQueuePaused = false,
   });
 
   factory ThreadSummary.fromJson(Map<String, dynamic> json) => ThreadSummary(
@@ -704,6 +705,7 @@ class ThreadSummary {
         : null,
     hostUiFeatures: AcpHostUiFeatures.fromJson(json['hostUiFeatures']),
     cancelling: json['cancelling'] == true,
+    followUpQueuePaused: json['followUpQueuePaused'] == true,
   );
 
   ThreadSummary copyWith({
@@ -718,6 +720,7 @@ class ThreadSummary {
     ThreadRuntimeConfig? runtimeConfig,
     AcpHostUiFeatures? hostUiFeatures,
     bool? cancelling,
+    bool? followUpQueuePaused,
   }) {
     return ThreadSummary(
       id: id,
@@ -732,6 +735,7 @@ class ThreadSummary {
       runtimeConfig: runtimeConfig ?? this.runtimeConfig,
       hostUiFeatures: hostUiFeatures ?? this.hostUiFeatures,
       cancelling: cancelling ?? this.cancelling,
+      followUpQueuePaused: followUpQueuePaused ?? this.followUpQueuePaused,
     );
   }
 
@@ -747,6 +751,7 @@ class ThreadSummary {
   final ThreadRuntimeConfig? runtimeConfig;
   final AcpHostUiFeatures hostUiFeatures;
   final bool cancelling;
+  final bool followUpQueuePaused;
 }
 
 class ThreadListCursor {
@@ -881,6 +886,7 @@ ThreadSummary mergeThreadSummaryFromRemoteList({
     runtimeConfig: listed.runtimeConfig ?? current.runtimeConfig,
     hostUiFeatures: listed.hostUiFeatures,
     cancelling: listed.cancelling,
+    followUpQueuePaused: listed.followUpQueuePaused,
   );
 }
 
@@ -1339,6 +1345,7 @@ class ThreadLiveEvent {
     this.cancelling,
     this.settingsDigest,
     this.composerRestore,
+    this.followUpQueuePaused,
   });
 
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
@@ -1435,6 +1442,7 @@ class ThreadLiveEvent {
               'reason': json['message'],
             })
           : null,
+      followUpQueuePaused: json['followUpQueuePaused'] as bool?,
     );
   }
 
@@ -1460,6 +1468,7 @@ class ThreadLiveEvent {
   final bool? cancelling;
   final String? settingsDigest;
   final ComposerRestore? composerRestore;
+  final bool? followUpQueuePaused;
 }
 
 class WorkspaceInfo {

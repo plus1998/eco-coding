@@ -701,6 +701,20 @@ class DesktopRpc {
     return result['editing'] as bool? ?? false;
   }
 
+  Future<ThreadSummary> followUpSetQueuePaused({
+    required String threadId,
+    required bool paused,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'thread:follow-up-queue-paused',
+      [
+        {'threadId': threadId, 'paused': paused},
+      ],
+    );
+    return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
+  }
+
   Future<ThreadSummary> updateRuntimeConfig({
     required String threadId,
     required ThreadRuntimeConfigInput runtimeConfig,

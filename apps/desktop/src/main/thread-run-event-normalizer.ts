@@ -32,7 +32,12 @@ const METRICS_ONLY_THREAD_LIVE_TYPES = new Set([
 ]);
 
 /** Thread summary transitions. Keep the live event for UI state; never put them in the feed. */
-const THREAD_STATUS_LIVE_TYPES_OMITTED_FROM_FEED = new Set(["thread.started", "thread.completed"]);
+const THREAD_STATUS_LIVE_TYPES_OMITTED_FROM_FEED = new Set([
+  "thread.started",
+  "thread.completed",
+  "thread.follow_up_queue_paused",
+  "thread.follow_up_queue_resumed",
+]);
 
 export function isMetricsOnlyThreadLiveEvent(liveType: string): boolean {
   return METRICS_ONLY_THREAD_LIVE_TYPES.has(liveType);

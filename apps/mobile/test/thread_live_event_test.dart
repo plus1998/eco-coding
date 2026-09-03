@@ -104,6 +104,14 @@ void main() {
       isFalse,
     );
     expect(
+      shouldUpdateThreadSummaryFromLiveEvent('thread.follow_up_queue_paused'),
+      isFalse,
+    );
+    expect(
+      shouldUpdateThreadSummaryFromLiveEvent('thread.follow_up_queue_resumed'),
+      isFalse,
+    );
+    expect(
       shouldUpdateThreadSummaryFromLiveEvent('thread.awaiting_plan'),
       isTrue,
     );

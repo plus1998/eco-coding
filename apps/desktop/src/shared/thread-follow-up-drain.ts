@@ -6,15 +6,22 @@ export function shouldDrainThreadFollowUps(status: ThreadStatus): boolean {
   return (DRAINABLE_FOLLOW_UP_STATUSES as readonly string[]).includes(status);
 }
 
-/** Block auto-drain while plan approval or clarification is still waiting on the user. */
+/** Block auto-drain while plan approval, clarification, editing, or user/error pause is active. */
 export function shouldBlockThreadFollowUpDrain(input: {
   hasPendingBridgeApproval: boolean;
   hasPendingClarification: boolean;
   hasEditingFollowUp?: boolean;
+  /** User or session-error pause; escalate force-drain may bypass via caller. */
+  hasFollowUpQueuePaused?: boolean;
   threadStatus?: ThreadStatus;
   hasStoredPendingPlan: boolean;
 }): boolean {
-  if (input.hasPendingBridgeApproval || input.hasPendingClarification || input.hasEditingFollowUp) {
+  if (
+    input.hasPendingBridgeApproval ||
+    input.hasPendingClarification ||
+    input.hasEditingFollowUp ||
+    input.hasFollowUpQueuePaused
+  ) {
     return true;
   }
   return input.threadStatus === "awaiting_plan" && input.hasStoredPendingPlan;

@@ -18,27 +18,39 @@ class FollowUpQueueBar extends StatelessWidget {
     required this.cancelBusyId,
     required this.escalateBusyId,
     this.editingFollowUpId,
+    required this.queuePaused,
+    required this.pauseBusy,
     required this.onEscalate,
     required this.onEdit,
     required this.onDelete,
     required this.onReorder,
+    required this.onTogglePause,
   });
 
   final List<ThreadPendingFollowUp> followUps;
   final String? cancelBusyId;
   final String? escalateBusyId;
   final String? editingFollowUpId;
+  final bool queuePaused;
+  final bool pauseBusy;
   final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
   final void Function(ThreadPendingFollowUp followUp) onEdit;
   final Future<void> Function(ThreadPendingFollowUp followUp) onDelete;
   final Future<void> Function(int oldIndex, int newIndex) onReorder;
+  final Future<void> Function(bool paused) onTogglePause;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final queuePaused = editingFollowUpId != null;
-    final pauseHintHeight = queuePaused ? 22.0 : 0.0;
+    final editingPaused = editingFollowUpId != null;
+    final showPauseHint = queuePaused || editingPaused;
+    final pauseHint = editingPaused
+        ? context.l10n.followUpQueuePausedEditing
+        : queuePaused
+        ? context.l10n.followUpQueuePaused
+        : context.l10n.followUpQueueActive;
+    final pauseHintHeight = 28.0;
 
     return Transform.translate(
       offset: const Offset(0, 18),
@@ -75,7 +87,7 @@ class FollowUpQueueBar extends StatelessWidget {
               ),
               child: SizedBox(
                 height: math.min(
-                  180,
+                  196,
                   pauseHintHeight +
                       10 +
                       (followUps.length * 34) +
@@ -84,20 +96,60 @@ class FollowUpQueueBar extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (queuePaused)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                        child: Text(
-                          context.l10n.followUpQueuePaused,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.composerPillText.withValues(alpha: 0.72),
-                            fontSize: 11,
-                            height: 1.3,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 10, 0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              pauseHint,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: eco.composerPillText.withValues(
+                                      alpha: showPauseHint ? 0.72 : 0.52,
+                                    ),
+                                    fontSize: 11,
+                                    height: 1.3,
+                                  ),
+                            ),
                           ),
-                        ),
+                          TextButton(
+                            onPressed: pauseBusy
+                                ? null
+                                : () => onTogglePause(!queuePaused),
+                            style: TextButton.styleFrom(
+                              minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: eco.composerPillText.withValues(
+                                alpha: 0.88,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  queuePaused ? EcoIcons.play : EcoIcons.pause,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  queuePaused
+                                      ? context.l10n.followUpQueueResume
+                                      : context.l10n.followUpQueuePause,
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
                     Expanded(
                       child: ReorderableListView.builder(
                         shrinkWrap: true,

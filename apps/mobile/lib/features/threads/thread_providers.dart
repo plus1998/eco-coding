@@ -686,6 +686,7 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
               eventCancelling: live.cancelling,
             )
           : thread.cancelling,
+      followUpQueuePaused: live.followUpQueuePaused ?? thread.followUpQueuePaused,
     );
     final nextList = List<ThreadSummary>.of(current)..[index] = next;
     return nextList;
@@ -1652,6 +1653,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
             currentCancelling: thread.cancelling,
             eventCancelling: live.cancelling,
           ),
+          followUpQueuePaused:
+              live.followUpQueuePaused ?? thread.followUpQueuePaused,
+        ),
+      );
+    } else if (live.followUpQueuePaused != null && state.thread != null) {
+      state = state.copyWith(
+        thread: state.thread!.copyWith(
+          followUpQueuePaused: live.followUpQueuePaused,
+          updatedAt: DateTime.now().toUtc().toIso8601String(),
         ),
       );
     }
@@ -1723,6 +1733,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   Future<void> refreshComposerRestore() => _refreshComposerDraftFromRpc();
 
   Future<void> refreshFollowUps() => _refreshFollowUpsFromRpc();
+
+  void applyThreadSummary(ThreadSummary thread) {
+    state = state.copyWith(thread: thread);
+  }
 
   Future<void> _refreshComposerDraftFromRpc() async {
     final rpc = ref.read(desktopRpcProvider);

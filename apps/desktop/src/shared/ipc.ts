@@ -112,6 +112,7 @@ export const IPC_CHANNELS = {
   threadFollowUpEnqueue: "thread:follow-up-enqueue",
   threadFollowUpEscalate: "thread:follow-up-escalate",
   threadFollowUpEditing: "thread:follow-up-editing",
+  threadFollowUpQueuePaused: "thread:follow-up-queue-paused",
   threadFollowUpUpdate: "thread:follow-up-update",
   threadFollowUpReorder: "thread:follow-up-reorder",
   threadFollowUpList: "thread:follow-up-list",
@@ -1444,6 +1445,11 @@ export interface ThreadSummary {
   externalSessionId?: string;
   /** Per-thread orchestration, subagent switches, and session mode (snapshotted at start). */
   runtimeConfig?: ThreadRuntimeConfig;
+  /**
+   * When true, queued follow-ups are not auto-drained / mid-turn steered until the user resumes.
+   * Set by the user or automatically when the thread enters failed/blocked.
+   */
+  followUpQueuePaused?: boolean;
 }
 
 export interface ThreadCompletionNotificationRequest {
@@ -1654,6 +1660,16 @@ export interface ThreadFollowUpEditingRequest {
 
 export interface ThreadFollowUpEditingResult {
   editing: boolean;
+}
+
+export interface ThreadFollowUpQueuePausedRequest {
+  threadId: string;
+  paused: boolean;
+}
+
+export interface ThreadFollowUpQueuePausedResult {
+  paused: boolean;
+  thread: ThreadSummary;
 }
 
 export interface ThreadFollowUpUpdateRequest {
@@ -2228,6 +2244,8 @@ export interface ThreadLiveEvent {
     /** Opaque revision used for compare-and-delete acknowledgement. */
     revision?: string;
   };
+  /** Present when follow-up auto-drain pause state changes (or on failed/blocked). */
+  followUpQueuePaused?: boolean;
 }
 
 export interface ThreadLocalStreamUpdate {

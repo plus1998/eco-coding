@@ -244,6 +244,8 @@ import {
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
   type ThreadFollowUpMutationResult,
+  type ThreadFollowUpQueuePausedRequest,
+  type ThreadFollowUpQueuePausedResult,
   type ThreadFollowUpReorderRequest,
   type ThreadFollowUpRunPhase,
   type ThreadFollowUpUpdateRequest,
@@ -6208,6 +6210,18 @@ function registerIpcHandlers(): void {
     });
   });
 
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpQueuePaused, async (payload: unknown) => {
+    const request = parseThreadFollowUpQueuePausedRequest(payload);
+    const thread = setThreadFollowUpQueuePausedState(request.threadId, request.paused);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (!request.paused) {
+      void drainQueuedThreadFollowUpsAfterRun(request.threadId);
+    }
+    return { paused: Boolean(thread.followUpQueuePaused), thread } satisfies ThreadFollowUpQueuePausedResult;
+  });
+
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpCancel, async (payload: unknown) => {
     const request = parseThreadFollowUpCancelRequest(payload);
     const followUp = conversationStore.cancelThreadFollowUp(request.threadId, request.followUpId);
@@ -6505,8 +6519,10 @@ function markThreadInterrupted(threadId: string, reason: string): void {
     status: "blocked",
     message: truncated,
   });
+  const followUpQueuePaused = autoPauseFollowUpQueueForErrorStatus(threadId, "blocked");
   emitThreadEvent(threadId, "thread.blocked", truncated, "system", false, {
     metadata: { activityOrigin: "eco.thread_blocked" },
+    followUpQueuePaused,
   });
 }
 
@@ -6700,18 +6716,23 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
   }
   const drainClaim = await withThreadFollowUpLock(threadId, async () => {
     const thread = conversationStore.getThread(threadId);
+    const forceEscalatedDrain = pendingEscalatedFollowUpDrain.delete(threadId);
+    // Escalated interrupt may force one drain while the queue remains user-paused.
     if (
       shouldBlockThreadFollowUpDrain({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
         hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
         hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
+        hasFollowUpQueuePaused: Boolean(thread?.followUpQueuePaused) && !forceEscalatedDrain,
         ...(thread?.status && { threadStatus: thread.status }),
         hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
       })
     ) {
+      if (forceEscalatedDrain) {
+        pendingEscalatedFollowUpDrain.add(threadId);
+      }
       return { claimed: [] as ThreadPendingFollowUp[], forceEscalatedDrain: false };
     }
-    const forceEscalatedDrain = pendingEscalatedFollowUpDrain.delete(threadId);
     if (!thread || (!forceEscalatedDrain && !shouldDrainThreadFollowUps(thread.status))) {
       return { claimed: [] as ThreadPendingFollowUp[], forceEscalatedDrain: false };
     }
@@ -9049,6 +9070,19 @@ function parseThreadFollowUpEditingRequest(payload: unknown): ThreadFollowUpEdit
   };
 }
 
+function parseThreadFollowUpQueuePausedRequest(payload: unknown): ThreadFollowUpQueuePausedRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up queue pause payload.");
+  }
+  if (typeof payload.paused !== "boolean") {
+    throw new Error("Follow-up queue paused flag is required.");
+  }
+  return {
+    threadId: readRequiredString(payload.threadId, "Thread id is required."),
+    paused: payload.paused,
+  };
+}
+
 function parseThreadFollowUpReorderRequest(payload: unknown): ThreadFollowUpReorderRequest {
   if (!isRecord(payload)) {
     throw new Error("Invalid follow-up reorder payload.");
@@ -9205,6 +9239,7 @@ async function tryDeliverFollowUpViaMidTurn(
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(thread.id)),
         hasPendingClarification: Boolean(getPendingClarificationForThread(thread.id)),
         hasEditingFollowUp: editingThreadFollowUpByThread.has(thread.id),
+        hasFollowUpQueuePaused: Boolean(thread.followUpQueuePaused),
         ...(thread.status && { threadStatus: thread.status }),
         hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
       })
@@ -12550,6 +12585,7 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
+  const followUpQueuePaused = autoPauseFollowUpQueueForErrorStatus(threadId, patch.status);
   const pendingPlan =
     patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
   emitThreadEvent(
@@ -12558,7 +12594,10 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
     message,
     "system",
     false,
-    pendingPlan ? { plan: buildThreadPlanLivePayload(pendingPlan) } : undefined,
+    {
+      ...(pendingPlan ? { plan: buildThreadPlanLivePayload(pendingPlan) } : {}),
+      ...(typeof followUpQueuePaused === "boolean" ? { followUpQueuePaused } : {}),
+    },
   );
 }
 
@@ -12592,6 +12631,52 @@ function patchThreadSummary(threadId: string, patch: Pick<ThreadSummary, "messag
 
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
+  autoPauseFollowUpQueueForErrorStatus(threadId, patch.status);
+}
+
+/** Auto-pause queued follow-ups when the session errors; returns current paused flag when known. */
+function autoPauseFollowUpQueueForErrorStatus(
+  threadId: string,
+  status: ThreadSummary["status"],
+): boolean | undefined {
+  if (status !== "failed" && status !== "blocked") {
+    return conversationStore.getThread(threadId)?.followUpQueuePaused ? true : undefined;
+  }
+  const current = conversationStore.getThread(threadId);
+  if (!current) {
+    return undefined;
+  }
+  if (current.followUpQueuePaused) {
+    return true;
+  }
+  conversationStore.setThreadFollowUpQueuePaused(threadId, true);
+  return true;
+}
+
+function setThreadFollowUpQueuePausedState(
+  threadId: string,
+  paused: boolean,
+): ThreadSummary | undefined {
+  const existing = conversationStore.getThread(threadId);
+  if (!existing) {
+    return undefined;
+  }
+  if (Boolean(existing.followUpQueuePaused) === paused) {
+    return existing;
+  }
+  const thread = conversationStore.setThreadFollowUpQueuePaused(threadId, paused);
+  if (!thread) {
+    return undefined;
+  }
+  emitThreadEvent(
+    threadId,
+    paused ? "thread.follow_up_queue_paused" : "thread.follow_up_queue_resumed",
+    paused ? "排队发送已暂停。" : "排队发送已恢复。",
+    "system",
+    false,
+    { followUpQueuePaused: Boolean(thread.followUpQueuePaused) },
+  );
+  return thread;
 }
 
 function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
@@ -12631,6 +12716,7 @@ interface EmitThreadEventExtras {
   metadata?: Record<string, unknown>;
   requestId?: string;
   composerRestore?: ThreadLiveEvent["composerRestore"];
+  followUpQueuePaused?: boolean;
 }
 
 function extractUrlFromLooseTextMessageForNavigate(message: string): string | undefined {
@@ -12932,6 +13018,9 @@ function emitThreadEvent(
   }
   if (extras?.composerRestore) {
     payload.composerRestore = extras.composerRestore;
+  }
+  if (typeof extras?.followUpQueuePaused === "boolean") {
+    payload.followUpQueuePaused = extras.followUpQueuePaused;
   }
 
   if (type === "workspace.changes" || type === "thread.completed" || type === "thread.idle") {

@@ -21,6 +21,8 @@ bool shouldUpdateThreadSummaryFromLiveEvent(String eventType) {
     'thread.session_captured',
     'thread.run_projection_updated',
     'thread.subagent_timing_updated',
+    'thread.follow_up_queue_paused',
+    'thread.follow_up_queue_resumed',
   };
   if (excluded.contains(eventType)) {
     return false;

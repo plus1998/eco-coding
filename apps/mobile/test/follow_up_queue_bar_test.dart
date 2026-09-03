@@ -42,16 +42,20 @@ void main() {
               followUps: followUps,
               cancelBusyId: null,
               escalateBusyId: null,
+              queuePaused: false,
+              pauseBusy: false,
               onEscalate: (_) async {},
               onEdit: (_) {},
               onDelete: (_) async {},
               onReorder: (_, _) async {},
+              onTogglePause: (_) async {},
             ),
           ),
         ),
       ),
     );
 
-    expect(tester.getSize(find.byType(FollowUpQueueBar)).height, lessThan(90));
+    expect(tester.getSize(find.byType(FollowUpQueueBar)).height, lessThan(120));
+    expect(find.text('暂停'), findsOneWidget);
   });
 }

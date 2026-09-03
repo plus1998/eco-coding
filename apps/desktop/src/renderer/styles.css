@@ -4419,12 +4419,51 @@ button.sidebar-settings-meta {
   cursor: grabbing;
 }
 
-.follow-up-queue-pause-hint {
+.follow-up-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px 2px;
+}
+
+.follow-up-queue-pause-hint {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
   color: var(--follow-up-card-label);
   font-size: 11px;
   line-height: 1.35;
   opacity: 0.88;
+}
+
+.follow-up-queue-pause-hint-idle {
+  opacity: 0.62;
+}
+
+.follow-up-queue-pause-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--follow-up-card-bg) 70%, transparent);
+  color: var(--follow-up-card-action-hover-text, var(--follow-up-card-text));
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.follow-up-queue-pause-toggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+}
+
+.follow-up-queue-pause-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .follow-up-row.is-editing {

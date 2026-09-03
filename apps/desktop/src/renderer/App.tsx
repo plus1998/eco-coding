@@ -31,6 +31,8 @@ import {
   PanelBottom,
   PanelLeft,
   PanelRight,
+  Pause,
+  Play,
   RefreshCw,
   Search,
   Settings,
@@ -1364,6 +1366,7 @@ function App() {
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpCancelBusyId, setFollowUpCancelBusyId] = useState<string>();
   const [followUpEscalateBusyId, setFollowUpEscalateBusyId] = useState<string>();
+  const [followUpQueuePauseBusy, setFollowUpQueuePauseBusy] = useState(false);
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const editingFollowUpIdRef = useRef<string | undefined>(undefined);
   const editingFollowUpThreadIdRef = useRef<string | undefined>(undefined);
@@ -2090,8 +2093,23 @@ function App() {
               status: statusFromLiveEvent(event.type, thread.status),
               updatedAt: new Date().toISOString(),
               ...(cancelling ? { cancelling: true } : {}),
+              ...(typeof event.followUpQueuePaused === "boolean"
+                ? { followUpQueuePaused: event.followUpQueuePaused || undefined }
+                : {}),
             };
           }),
+        );
+      } else if (typeof event.followUpQueuePaused === "boolean") {
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId
+              ? {
+                  ...thread,
+                  followUpQueuePaused: event.followUpQueuePaused || undefined,
+                  updatedAt: new Date().toISOString(),
+                }
+              : thread,
+          ),
         );
       }
 
@@ -6602,6 +6620,36 @@ function App() {
     }
   }
 
+  async function toggleFollowUpQueuePaused(paused: boolean) {
+    if (!activeThread || typeof window.eco?.setThreadFollowUpQueuePaused !== "function") {
+      setError(t("app.preload.followUpQueuePause"));
+      return;
+    }
+    setError(undefined);
+    setFollowUpQueuePauseBusy(true);
+    try {
+      const result = await window.eco.setThreadFollowUpQueuePaused({
+        threadId: activeThread.id,
+        paused,
+      });
+      setThreads((current) =>
+        current.map((thread) =>
+          thread.id === result.thread.id
+            ? {
+                ...thread,
+                ...result.thread,
+                followUpQueuePaused: result.paused || undefined,
+              }
+            : thread,
+        ),
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setFollowUpQueuePauseBusy(false);
+    }
+  }
+
   async function escalateQueuedFollowUp(followUp: ThreadPendingFollowUp) {
     if (!window.eco || typeof window.eco.escalateThreadFollowUp !== "function") {
       setError(t("app.preload.followUpEscalate"));
@@ -9217,6 +9265,8 @@ function App() {
               <FollowUpQueuePanel
                 followUps={queuedFollowUps}
                 editingFollowUpId={editingFollowUpId}
+                queuePaused={Boolean(activeThread?.followUpQueuePaused)}
+                pauseBusy={followUpQueuePauseBusy}
                 cancelBusyId={followUpCancelBusyId}
                 escalateBusyId={followUpEscalateBusyId}
                 allowEscalate={activeThread ? coreSupportsFollowUpEscalate(activeThread.coreKind) : false}
@@ -9224,6 +9274,7 @@ function App() {
                 onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
                 onEdit={startEditingFollowUp}
                 onReorder={(followUpIds) => void reorderQueuedFollowUps(followUpIds)}
+                onTogglePause={(paused) => void toggleFollowUpQueuePaused(paused)}
               />
             ) : null}
             {showComposerContextOverlays ? (
@@ -10531,6 +10582,8 @@ function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
 function FollowUpQueuePanel({
   followUps,
   editingFollowUpId,
+  queuePaused,
+  pauseBusy,
   cancelBusyId,
   escalateBusyId,
   allowEscalate = true,
@@ -10538,9 +10591,12 @@ function FollowUpQueuePanel({
   onEscalate,
   onEdit,
   onReorder,
+  onTogglePause,
 }: {
   followUps: ThreadPendingFollowUp[];
   editingFollowUpId: string | undefined;
+  queuePaused: boolean;
+  pauseBusy: boolean;
   cancelBusyId: string | undefined;
   escalateBusyId: string | undefined;
   allowEscalate?: boolean;
@@ -10548,10 +10604,17 @@ function FollowUpQueuePanel({
   onEscalate: (followUp: ThreadPendingFollowUp) => void;
   onEdit: (followUp: ThreadPendingFollowUp) => void;
   onReorder: (followUpIds: string[]) => void;
+  onTogglePause: (paused: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [draggedId, setDraggedId] = useState<string>();
-  const queuePaused = Boolean(editingFollowUpId);
+  const editingPaused = Boolean(editingFollowUpId);
+  const showPauseHint = queuePaused || editingPaused;
+  const pauseHint = editingPaused
+    ? t("thread.followUpQueuePausedEditing")
+    : queuePaused
+      ? t("thread.followUpQueuePaused")
+      : null;
 
   const moveDraggedBefore = (targetId: string) => {
     if (!draggedId || draggedId === targetId || draggedId === editingFollowUpId) return;
@@ -10564,11 +10627,36 @@ function FollowUpQueuePanel({
   };
   return (
     <div className="follow-up-queue" aria-label={t("app.queuedGuidance")}>
-      {queuePaused ? (
-        <div className="follow-up-queue-pause-hint" role="status">
-          {t("thread.followUpQueuePaused")}
-        </div>
-      ) : null}
+      <div className="follow-up-queue-header">
+        {showPauseHint && pauseHint ? (
+          <div className="follow-up-queue-pause-hint" role="status">
+            {pauseHint}
+          </div>
+        ) : (
+          <div className="follow-up-queue-pause-hint follow-up-queue-pause-hint-idle" aria-hidden>
+            {t("thread.followUpQueueActive")}
+          </div>
+        )}
+        <button
+          type="button"
+          className="follow-up-queue-pause-toggle"
+          disabled={pauseBusy}
+          onClick={() => onTogglePause(!queuePaused)}
+          title={queuePaused ? t("thread.followUpQueueResume") : t("thread.followUpQueuePause")}
+          aria-label={
+            queuePaused ? t("thread.followUpQueueResumeAria") : t("thread.followUpQueuePauseAria")
+          }
+        >
+          {pauseBusy ? (
+            <Activity size={12} aria-hidden />
+          ) : queuePaused ? (
+            <Play size={12} aria-hidden />
+          ) : (
+            <Pause size={12} aria-hidden />
+          )}
+          <span>{queuePaused ? t("thread.followUpQueueResume") : t("thread.followUpQueuePause")}</span>
+        </button>
+      </div>
       <div className="follow-up-queue-rows">
         {followUps.map((followUp) => {
           const isEditing = editingFollowUpId === followUp.id;
