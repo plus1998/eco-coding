@@ -1497,8 +1497,10 @@ function App() {
   );
 
   const commitSidebarThreadSelection = useCallback(
-    (nextThreadId: string | undefined) => {
-      const needsBoot = Boolean(nextThreadId && nextThreadId !== feedThreadIdRef.current);
+    (nextThreadId: string | undefined, options?: { immediate?: boolean }) => {
+      const needsBoot = Boolean(
+        nextThreadId && nextThreadId !== feedThreadIdRef.current && !options?.immediate,
+      );
       if (needsBoot && nextThreadId) {
         const bootThreadId = nextThreadId;
         flushSync(() => {
@@ -1512,6 +1514,16 @@ function App() {
       setSelectedThreadId(nextThreadId);
     },
     [beginActivityFeedBoot],
+  );
+
+  /** Landing → new thread: keep the same window (no boot splash / feed gate). */
+  const adoptLandingThreadSelection = useCallback(
+    (threadId: string) => {
+      activityFeedRevealedThreadIdsRef.current.add(threadId);
+      commitSidebarThreadSelection(threadId, { immediate: true });
+      applyFeedThreadSelection(threadId, { immediate: true });
+    },
+    [applyFeedThreadSelection, commitSidebarThreadSelection],
   );
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
@@ -5525,7 +5537,7 @@ function App() {
 
     const observer = new ResizeObserver(update);
     observer.observe(feedColumn);
-    const feedStack = feedColumn.querySelector(":scope > .codex-feed-stack");
+    const feedStack = feedColumn.querySelector(".codex-feed-stack");
     if (feedStack) {
       observer.observe(feedStack);
     }
@@ -6461,16 +6473,26 @@ function App() {
       setIsStarting(false);
       return;
     }
+    const continuable = Boolean(activeThread && isContinuableThreadStatus(activeThread.status));
+    const rewindTarget =
+      continuable && activeComposerRewindTarget
+        ? {
+            activityLineId: activeComposerRewindTarget.activityLineId,
+            ...(activeComposerRewindTarget.userMessageId
+              ? { userMessageId: activeComposerRewindTarget.userMessageId }
+              : {}),
+          }
+        : undefined;
+    const restorePrompt = messagePrompt;
+    const restoreAttachments = [...composerAttachments];
+    removeComposerDraft(composerContextKey);
+    setPrompt("");
+    setComposerRewindTarget(undefined);
+    setComposerAttachments([]);
+    setComposerImageNotice(undefined);
+    requestActivityFeedForceScroll();
     try {
-      if (activeThread && isContinuableThreadStatus(activeThread.status)) {
-        const rewindTarget = activeComposerRewindTarget
-          ? {
-              activityLineId: activeComposerRewindTarget.activityLineId,
-              ...(activeComposerRewindTarget.userMessageId
-                ? { userMessageId: activeComposerRewindTarget.userMessageId }
-                : {}),
-            }
-          : undefined;
+      if (continuable && activeThread) {
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt: messagePrompt,
@@ -6482,11 +6504,6 @@ function App() {
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
         clearPendingPlanForThread(result.thread.id);
-        removeComposerDraft(composerContextKey);
-        setPrompt("");
-        setComposerRewindTarget(undefined);
-        setComposerAttachments([]);
-        setComposerImageNotice(undefined);
         requestActivityFeedForceScroll();
         try {
           await refreshThreadState(result.thread.id);
@@ -6510,8 +6527,7 @@ function App() {
           result.thread,
           ...current.filter((thread) => thread.id !== result.thread.id),
         ]);
-        commitSidebarThreadSelection(result.thread.id);
-        applyFeedThreadSelection(result.thread.id);
+        adoptLandingThreadSelection(result.thread.id);
         clearPendingPlanForThread(result.thread.id);
         setTodosByThread((current) => ({
           ...current,
@@ -6524,14 +6540,11 @@ function App() {
         promptCacheBaselineByThreadRef.current[result.thread.id] =
           result.thread.runtimeConfig ?? runtimeConfigForSend;
         setPromptCacheBaselineVersion((v) => v + 1);
+        requestActivityFeedForceScroll();
       }
-      removeComposerDraft(composerContextKey);
-      setPrompt("");
-      setComposerRewindTarget(undefined);
-      setComposerAttachments([]);
-      setComposerImageNotice(undefined);
-      requestActivityFeedForceScroll();
     } catch (caught) {
+      setPrompt(restorePrompt);
+      setComposerAttachments(restoreAttachments);
       setError(errorMessage(caught));
     } finally {
       setIsStarting(false);
@@ -7233,8 +7246,7 @@ function App() {
       });
       adoptLandingTaskPanelUiRef.current = true;
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
-      commitSidebarThreadSelection(result.thread.id);
-      applyFeedThreadSelection(result.thread.id);
+      adoptLandingThreadSelection(result.thread.id);
       clearPendingPlanForThread(result.thread.id);
       await refreshThreadState(result.thread.id);
     } catch (caught) {
@@ -9839,123 +9851,129 @@ function App() {
               ) : null}
               <div className="codex-main-left-column">
                 <div ref={scrollBodyRef} className="codex-main-scroll-body">
-                  {showLanding ? (
-                    <div className="codex-landing">
-                      <div className="codex-landing-brand">
-                        <img
-                          className="codex-landing-logo"
-                          src="./splash-icon.png"
-                          alt=""
-                          width={72}
-                          height={72}
-                        />
-                        <h1 className="codex-hero">
-                          {currentProjectPath
-                            ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
-                              ? t("app.landing.home")
-                              : t("app.landing.project", { project: currentProjectName })
-                            : t("app.landing.openProject")}
-                        </h1>
-                        {showProjectSkillsPanel && composerSupportsSkills ? (
-                          <ComposerSkillsBar
-                            availableSkills={projectCoreSkills}
-                            skillsNeedingLink={projectAgentsOnly}
-                            referencedSkillNames={referencedSkillNames}
-                            linking={skillsLinking}
-                            {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
-                            {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
+                  <div
+                    className={[
+                      "codex-chat-shell",
+                      showLanding ? "is-landing" : "is-conversation",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={
+                      {
+                        "--composer-input-overlays-height": `${composerInputOverlaysHeight}px`,
+                      } as CSSProperties
+                    }
+                  >
+                    {showLanding ? (
+                      <div className="codex-landing">
+                        <div className="codex-landing-brand">
+                          <img
+                            className="codex-landing-logo"
+                            src="./splash-icon.png"
+                            alt=""
+                            width={72}
+                            height={72}
                           />
-                        ) : null}
-                      </div>
-                      {composer}
-                    </div>
-                  ) : (
-                    <div
-                      className="codex-feed-stack"
-                      style={
-                        {
-                          "--composer-input-overlays-height": `${composerInputOverlaysHeight}px`,
-                        } as CSSProperties
-                      }
-                    >
-                      <div
-                        className={["activity-feed", !activityFeedBootReady ? "is-booting" : ""]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        <div className="activity-messages-shell">
-                          <div className="activity-feed-top-mask" aria-hidden />
-                          <ActivityUserMessageNavigator
-                            items={activityUserMessageNavItems}
-                            hidden={activityUserMessageNavHidden}
-                            {...(activeActivityUserMessageNavId && {
-                              activeId: activeActivityUserMessageNavId,
-                            })}
-                            onJump={jumpToActivityUserMessage}
-                          />
-                          <div
-                            ref={activityMessagesRef}
-                            className="activity-messages"
-                            aria-busy={!activityFeedBootReady}
-                          >
-                            {activityFeedBootReady ? (
-                              <ActivityLogView
-                                {...(activeThread && { thread: activeThread })}
-                                {...(displayProjection && { projection: displayProjection })}
-                                {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
-                                {...(activeThread &&
-                                  billingByThread[activeThread.id] && {
-                                    billing: billingByThread[activeThread.id],
-                                  })}
-                                onRestorePrompt={restorePrompt}
-                                onLoadUserMessageEdit={loadUserMessageEdit}
-                                onRewriteUserMessage={rewriteUserMessage}
-                                onRetryFailedRequest={retryFailedRequest}
-                                onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                                onLoadProjectionDetail={loadProjectionDetail}
-                                {...(Object.keys(activityModelByRole).length > 0 && {
-                                  modelByRole: activityModelByRole,
-                                })}
-                                agentDisplayNames={activeRuntimeAgentDisplayNames}
-                                agentThemes={activeRuntimeAgentThemes}
-                                {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
-                                onOpenSubagent={openSubagentTaskDrawer}
-                                onOpenImageGenerationTool={openImageGenerationTool}
-                                {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                                {...(subagentTimings && { subagentTimings })}
-                                {...(subagentMetrics && { subagentMetrics })}
-                                {...(activeThread &&
-                                  contextByThread[activeThread.id] && {
-                                    context: contextByThread[activeThread.id],
-                                  })}
-                              />
-                            ) : null}
-                            <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
-                          </div>
-                          {activityFeedScrollJump ? (
-                            <button
-                              type="button"
-                              className="activity-feed-scroll-jump is-visible"
-                              onClick={handleActivityFeedScrollJump}
-                              aria-label={
-                                activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
-                              }
-                              title={
-                                activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
-                              }
-                            >
-                              {activityFeedScrollJump === "top" ? (
-                                <ChevronUp size={18} />
-                              ) : (
-                                <ChevronDown size={18} />
-                              )}
-                            </button>
+                          <h1 className="codex-hero">
+                            {currentProjectPath
+                              ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
+                                ? t("app.landing.home")
+                                : t("app.landing.project", { project: currentProjectName })
+                              : t("app.landing.openProject")}
+                          </h1>
+                          {showProjectSkillsPanel && composerSupportsSkills ? (
+                            <ComposerSkillsBar
+                              availableSkills={projectCoreSkills}
+                              skillsNeedingLink={projectAgentsOnly}
+                              referencedSkillNames={referencedSkillNames}
+                              linking={skillsLinking}
+                              {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
+                              {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
+                            />
                           ) : null}
                         </div>
                       </div>
-                      {composer}
-                    </div>
-                  )}
+                    ) : (
+                      <div className="codex-feed-stack">
+                        <div
+                          className={["activity-feed", !activityFeedBootReady ? "is-booting" : ""]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          <div className="activity-messages-shell">
+                            <div className="activity-feed-top-mask" aria-hidden />
+                            <ActivityUserMessageNavigator
+                              items={activityUserMessageNavItems}
+                              hidden={activityUserMessageNavHidden}
+                              {...(activeActivityUserMessageNavId && {
+                                activeId: activeActivityUserMessageNavId,
+                              })}
+                              onJump={jumpToActivityUserMessage}
+                            />
+                            <div
+                              ref={activityMessagesRef}
+                              className="activity-messages"
+                              aria-busy={!activityFeedBootReady}
+                            >
+                              {activityFeedBootReady ? (
+                                <ActivityLogView
+                                  {...(activeThread && { thread: activeThread })}
+                                  {...(displayProjection && { projection: displayProjection })}
+                                  {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
+                                  {...(activeThread &&
+                                    billingByThread[activeThread.id] && {
+                                      billing: billingByThread[activeThread.id],
+                                    })}
+                                  onRestorePrompt={restorePrompt}
+                                  onLoadUserMessageEdit={loadUserMessageEdit}
+                                  onRewriteUserMessage={rewriteUserMessage}
+                                  onRetryFailedRequest={retryFailedRequest}
+                                  onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                                  onLoadProjectionDetail={loadProjectionDetail}
+                                  {...(Object.keys(activityModelByRole).length > 0 && {
+                                    modelByRole: activityModelByRole,
+                                  })}
+                                  agentDisplayNames={activeRuntimeAgentDisplayNames}
+                                  agentThemes={activeRuntimeAgentThemes}
+                                  {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
+                                  onOpenSubagent={openSubagentTaskDrawer}
+                                  onOpenImageGenerationTool={openImageGenerationTool}
+                                  {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                                  {...(subagentTimings && { subagentTimings })}
+                                  {...(subagentMetrics && { subagentMetrics })}
+                                  {...(activeThread &&
+                                    contextByThread[activeThread.id] && {
+                                      context: contextByThread[activeThread.id],
+                                    })}
+                                />
+                              ) : null}
+                              <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                            </div>
+                            {activityFeedScrollJump ? (
+                              <button
+                                type="button"
+                                className="activity-feed-scroll-jump is-visible"
+                                onClick={handleActivityFeedScrollJump}
+                                aria-label={
+                                  activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
+                                }
+                                title={
+                                  activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
+                                }
+                              >
+                                {activityFeedScrollJump === "top" ? (
+                                  <ChevronUp size={18} />
+                                ) : (
+                                  <ChevronDown size={18} />
+                                )}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {composer}
+                  </div>
                 </div>
                 {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {
                   if (terminalState.tabs.length === 0) {

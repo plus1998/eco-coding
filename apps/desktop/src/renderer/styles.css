@@ -7,7 +7,7 @@
   font-optical-sizing: auto;
   --ui-font-size: 14px;
   --code-font-size: 12px;
-  /* macOS traffic-light inset — use only on left sidebars (.codex-sidebar, .settings-nav) */
+  /* macOS traffic-light inset �?use only on left sidebars (.codex-sidebar, .settings-nav) */
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --macos-window-controls-safe-inline-start: 148px;
   /* traffic lights (~72) + pad + 3×32 toolbar buttons + breathing */
@@ -30,7 +30,7 @@
   --activity-feed-composer-mask-height: 10px;
 }
 
-/* Linux: Window Controls Overlay — content draws into the titlebar area */
+/* Linux: Window Controls Overlay �?content draws into the titlebar area */
 html[data-platform="linux"] {
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --window-controls-overlay-end: max(
@@ -44,7 +44,7 @@ html[data-platform="linux"] {
   --window-sidebar-toolbar-inset-new-thread: 120px;
 }
 
-/* Windows: Window Controls Overlay — content draws into the titlebar area */
+/* Windows: Window Controls Overlay �?content draws into the titlebar area */
 html[data-platform="win32"] {
   /* Match Codex desktop defaults (sans + code/terminal mono). */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -405,7 +405,7 @@ html[data-platform="linux"] .settings-nav {
 }
 
 /*
- * B group (ChromeStrip) is a *top-only* overlay on MainPane — never a full-height
+ * B group (ChromeStrip) is a *top-only* overlay on MainPane �?never a full-height
  * grid column. Content (feed, terminal, task body) spans the full pane width.
  * B only needs layout reserve in the topbar plane so A/B icon steps match.
  *
@@ -498,7 +498,7 @@ html[data-platform="linux"] .settings-nav {
 /*
  * Feed topbar: while task is closed (or exiting), A-group reserves the same strip
  * so A/B read as one equal-gap row under the overlay. When task is docked open,
- * B sits over the task topbar instead — feed only needs its normal inset.
+ * B sits over the task topbar instead �?feed only needs its normal inset.
  */
 .codex-main .codex-main-pane.has-panel-chrome:not(.is-task-panel-open) .codex-main-topbar,
 .codex-main .codex-main-pane.has-panel-chrome.is-task-panel-exiting .codex-main-topbar,
@@ -561,12 +561,12 @@ html[data-platform="linux"] .settings-nav {
  * pointer events to composer / skill controls. The titlebar row itself
  * is the drag strip; only the icon buttons punch out of it.
  */
-.codex-main-scroll:has(.codex-landing) .codex-composer-wrap,
-.codex-main-scroll:has(.codex-landing) .codex-composer-wrap *,
-.codex-main-scroll:has(.codex-landing) .composer-skills-bar,
-.codex-main-scroll:has(.codex-landing) .composer-skills-bar *,
-.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions .codex-main-toolbar-button,
-.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions .codex-main-toolbar-button * {
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .codex-composer-wrap,
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .codex-composer-wrap *,
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .composer-skills-bar,
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .composer-skills-bar *,
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .codex-main-topbar-actions .codex-main-toolbar-button,
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .codex-main-topbar-actions .codex-main-toolbar-button * {
   -webkit-app-region: no-drag;
 }
 
@@ -586,7 +586,7 @@ html[data-platform="linux"] .settings-nav {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  /* Instant hide — do not fade under a transparent settings-nav. */
+  /* Instant hide �?do not fade under a transparent settings-nav. */
   transition:
     background 0.2s ease,
     backdrop-filter 0.2s ease,
@@ -600,7 +600,7 @@ html[data-platform="linux"] .settings-nav {
   pointer-events: none;
 }
 
-/* —— Sidebar —— */
+/* —�?Sidebar —�?*/
 .codex-sidebar {
   --sidebar-control-hover-bg: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
   --sidebar-control-active-bg: color-mix(in srgb, var(--text-primary) 6%, transparent);
@@ -2144,7 +2144,7 @@ button.sidebar-settings-meta {
   cursor: default;
 }
 
-/* —— Main —— */
+/* —�?Main —�?*/
 .codex-main {
   position: relative;
   z-index: 1;
@@ -2225,6 +2225,7 @@ button.sidebar-settings-meta {
   height: 100%;
 }
 
+.activity-workspace-shell.is-feed-panel .codex-chat-shell,
 .activity-workspace-shell.is-feed-panel .codex-feed-stack {
   margin-left: 0;
   margin-right: auto;
@@ -2546,6 +2547,7 @@ button.sidebar-settings-meta {
 }
 
 .codex-main-scroll:has(.codex-feed-stack) .codex-main-scroll-body,
+.codex-main-scroll:has(.codex-feed-stack) .codex-chat-shell,
 .codex-main-scroll:has(.codex-feed-stack) .codex-feed-stack,
 .codex-main-scroll:has(.codex-feed-stack) .activity-feed,
 .codex-main-scroll:has(.codex-feed-stack) .activity-messages-shell,
@@ -2857,8 +2859,55 @@ button.sidebar-settings-meta {
   margin-inline: auto;
 }
 
+.codex-main-scroll.is-feed-panel-layout .codex-chat-shell,
 .codex-main-scroll.is-feed-panel-layout .codex-feed-stack {
   margin-inline: auto;
+}
+
+/* Shared shell so landing �?conversation keeps one composer mount point. */
+.codex-chat-shell {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: var(--feed-max-width, 750px);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  -webkit-app-region: no-drag;
+}
+
+.codex-chat-shell.is-landing {
+  padding-bottom: 16px;
+  gap: 28px;
+}
+
+.codex-chat-shell > .codex-landing,
+.codex-chat-shell > .codex-feed-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+.codex-chat-shell > .codex-composer-wrap {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+.codex-chat-shell.is-landing > .codex-composer-wrap {
+  padding: 0;
 }
 
 .codex-feed-stack .codex-composer-wrap {
@@ -2912,13 +2961,13 @@ button.sidebar-settings-meta {
   min-width: 0;
 }
 
-.codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-landing) {
+.codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-chat-shell.is-landing) {
   display: grid;
   grid-template-areas: "stack";
   grid-template-rows: minmax(0, 1fr);
 }
 
-.codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-landing)
+.codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-chat-shell.is-landing)
   .codex-main-left-column {
   grid-area: stack;
   align-self: stretch;
@@ -2926,13 +2975,13 @@ button.sidebar-settings-meta {
   height: 100%;
 }
 
-.codex-main-scroll:has(.codex-landing) .codex-main-left-column {
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .codex-main-left-column {
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
 }
 
-.codex-main-scroll:has(.codex-landing) .codex-main-scroll-body {
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .codex-main-scroll-body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -2941,13 +2990,13 @@ button.sidebar-settings-meta {
   justify-content: flex-start;
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) {
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open) {
   position: relative;
   grid-template-areas: unset;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) .codex-main-topbar {
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open) .codex-main-topbar {
   position: relative;
   grid-column: 1;
   grid-row: 1;
@@ -2960,11 +3009,11 @@ button.sidebar-settings-meta {
   -webkit-app-region: drag;
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
   .codex-main-topbar-actions
   .codex-main-toolbar-button,
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
   .codex-main-topbar-actions
   .codex-main-toolbar-button
@@ -2973,14 +3022,14 @@ button.sidebar-settings-meta {
   -webkit-app-region: no-drag;
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
   .codex-main-topbar-drag-fill {
   pointer-events: auto;
   -webkit-app-region: drag;
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open)
   .codex-main-left-column {
   grid-area: auto;
   grid-column: 1;
@@ -2990,33 +3039,33 @@ button.sidebar-settings-meta {
   height: 100%;
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) .workspace-panel {
+.codex-main-scroll.has-workspace-panel:has(.codex-chat-shell.is-landing):not(.is-workspace-panel-open) .workspace-panel {
   grid-area: auto;
   grid-column: 2;
   grid-row: 1 / span 2;
 }
 
-.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-landing) .codex-main-left-column {
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-chat-shell.is-landing) .codex-main-left-column {
   min-height: 0;
   height: 100%;
 }
 
-.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-landing) .codex-main-scroll-body {
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-chat-shell.is-landing) .codex-main-scroll-body {
   flex: 1 1 auto;
   min-height: 0;
   justify-content: flex-start;
   align-items: center;
 }
 
-.codex-main-scroll:has(.codex-landing) .terminal-panel {
+.codex-main-scroll:has(.codex-chat-shell.is-landing) .terminal-panel {
   flex: 0 0 auto;
 }
 
-.codex-main-scroll.is-workspace-panel-open:has(.codex-landing):not(:has(.codex-main-topbar)) {
+.codex-main-scroll.is-workspace-panel-open:has(.codex-chat-shell.is-landing):not(:has(.codex-main-topbar)) {
   grid-template-rows: minmax(0, 1fr);
 }
 
-.codex-main-scroll.is-workspace-panel-open:has(.codex-landing):not(:has(.codex-main-topbar))
+.codex-main-scroll.is-workspace-panel-open:has(.codex-chat-shell.is-landing):not(:has(.codex-main-topbar))
   .codex-main-left-column {
   grid-column: 1;
   grid-row: 1;
@@ -3025,7 +3074,7 @@ button.sidebar-settings-meta {
   height: 100%;
 }
 
-.codex-main-scroll.is-workspace-panel-open:has(.codex-landing):not(:has(.codex-main-topbar))
+.codex-main-scroll.is-workspace-panel-open:has(.codex-chat-shell.is-landing):not(:has(.codex-main-topbar))
   .workspace-panel {
   grid-column: 2;
   grid-row: 1;
@@ -3220,7 +3269,7 @@ button.sidebar-settings-meta {
   height: 100%;
   min-height: 0;
   outline: none;
-  /* ghostty 在 canvas 上绘制光标；隐藏 contenteditable / textarea 的原生 caret */
+  /* ghostty �?canvas 上绘制光标；隝藝 contenteditable / textarea 的原�?caret */
   caret-color: transparent;
 }
 
@@ -3398,19 +3447,19 @@ button.sidebar-settings-meta {
   flex-direction: column;
   align-items: stretch;
   width: 100%;
-  /* Share the feed column width so landing and thread composers render identically. */
-  max-width: var(--feed-max-width, 750px);
+  /* Width comes from .codex-chat-shell so composer stays co-aligned. */
+  max-width: none;
   min-height: 0;
-  height: 100%;
-  margin: 0 auto;
-  padding-bottom: 16px;
+  height: auto;
+  margin: 0;
+  padding-bottom: 0;
   box-sizing: border-box;
-  gap: 28px;
+  gap: 0;
   /* Window drag stays on top chrome only; full-page drag blocks portal popovers. */
   -webkit-app-region: no-drag;
 }
 
-.codex-landing .codex-composer-wrap {
+.codex-chat-shell.is-landing .codex-composer-wrap {
   flex: 0 0 auto;
   padding: 0;
 }
@@ -3439,18 +3488,18 @@ button.sidebar-settings-meta {
   text-align: center;
 }
 
-.codex-landing .composer-input-stack {
+.codex-chat-shell.is-landing .composer-input-stack {
   /* overlays sit at bottom: calc(100% - 16px); reserve only the protruding height above the stack */
   margin-top: max(0px, calc(var(--composer-input-overlays-height, 0px) - 16px));
 }
 
-.codex-landing .codex-composer {
+.codex-chat-shell.is-landing .codex-composer {
   background: transparent;
   box-shadow: none;
   padding: 0;
 }
 
-.codex-landing .composer-primary {
+.codex-chat-shell.is-landing .composer-primary {
   margin: 0;
   padding: 12px 10px 8px;
   border: 1px solid var(--composer-primary-border);
@@ -3459,7 +3508,7 @@ button.sidebar-settings-meta {
   box-shadow: var(--composer-primary-shadow);
 }
 
-.codex-landing .composer-footer {
+.codex-chat-shell.is-landing .composer-footer {
   margin-top: 8px;
   min-height: 32px;
   gap: 6px;
@@ -3820,8 +3869,8 @@ button.sidebar-settings-meta {
 .activity-user-message-nav {
   position: absolute;
   top: 50%;
-  /* Sit in the scroll-body content-box left gutter. Do not use 100vw — sidebar /
-   * task panes make vw ≫ column width and the rail paints outside overflow:hidden. */
+  /* Sit in the scroll-body content-box left gutter. Do not use 100vw �?sidebar /
+   * task panes make vw �?column width and the rail paints outside overflow:hidden. */
   left: calc((min(100cqw, var(--feed-max-width, 750px)) - 100cqw) / 2);
   z-index: 5;
   display: flex;
@@ -4002,7 +4051,7 @@ button.sidebar-settings-meta {
 
 /* Message-nav visibility is decided in JS from measured left gutter + message count
  * (see measureFeedColumnLeftGutterPx / shouldShowActivityMessageNav). Do not re-gate
- * with viewport/container media — that reintroduced mode/stack conflicts with docked feed-panel. */
+ * with viewport/container media �?that reintroduced mode/stack conflicts with docked feed-panel. */
 
 .activity-feed-top-mask {
   position: absolute;
@@ -7868,7 +7917,7 @@ button.sidebar-settings-meta {
   filter: brightness(1.05);
 }
 
-/* —— MCP settings (Codex-style) —— */
+/* —�?MCP settings (Codex-style) —�?*/
 .mcp-page-header {
   margin-bottom: 28px;
 }
@@ -9550,7 +9599,7 @@ button.default-agent-option:focus-visible {
   word-break: break-all;
 }
 
-/* —— Run log (Claude Code style) —— */
+/* —�?Run log (Claude Code style) —�?*/
 .run-log {
   display: flex;
   flex-direction: column;
@@ -11673,7 +11722,7 @@ button.default-agent-option:focus-visible {
   color: var(--markdown-text);
   overflow-wrap: break-word;
   word-break: normal;
-  /* Chat markdown uses soft newlines → hard_break; do not inherit pre-wrap from parents. */
+  /* Chat markdown uses soft newlines �?hard_break; do not inherit pre-wrap from parents. */
   white-space: normal;
 }
 
@@ -11692,7 +11741,7 @@ button.default-agent-option:focus-visible {
 
 /*
  * ProseMirror inserts <br class="ProseMirror-trailingBreak"> at the end of textblocks
- * so the caret has a place to land. Feed is read-only — it only adds empty line height.
+ * so the caret has a place to land. Feed is read-only �?it only adds empty line height.
  */
 .markdown-content .ProseMirror-trailingBreak,
 .markdown-content br.ProseMirror-trailingBreak {
@@ -11973,11 +12022,11 @@ button.default-agent-option:focus-visible {
   letter-spacing: 0.01em;
   line-height: 1.35;
   border-bottom-color: var(--markdown-table-border, var(--markdown-border));
-  /* Inline min-width (≈ half header measure) prefers ≤2 wraps; else host scrolls. */
+  /* Inline min-width (�?half header measure) prefers �? wraps; else host scrolls. */
   white-space: normal;
 }
 
-/* Clamp on an inner wrapper — display:-webkit-box must not sit on the th itself. */
+/* Clamp on an inner wrapper �?display:-webkit-box must not sit on the th itself. */
 .markdown-content .markdown-table-th {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -12116,7 +12165,7 @@ button.default-agent-option:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* File refs are chips, not hyperlinks — beat `.markdown-content a` specificity. */
+/* File refs are chips, not hyperlinks �?beat `.markdown-content a` specificity. */
 .markdown-content a.markdown-file-ref,
 .markdown-content .markdown-file-ref {
   display: inline-flex;
@@ -12984,7 +13033,7 @@ button.default-agent-option:focus-visible {
   color: color-mix(in srgb, var(--accent-text, var(--accent)) 72%, var(--codex-log-faint, var(--text-secondary)));
 }
 
-/* Expanded panel content sits inside the outer feed-surface card — no nested card chrome. */
+/* Expanded panel content sits inside the outer feed-surface card �?no nested card chrome. */
 .run-log-action--web-search-card .run-log-web-search-detail {
   margin-top: 0;
   padding: 8px 10px 10px;
@@ -13433,7 +13482,7 @@ a.run-log-web-search-detail-result-url:focus-visible {
   background: transparent;
   color: var(--codex-log-faint, #737373);
   opacity: 0;
-  /* Keep hits enabled even while invisible — toggling pointer-events on :hover
+  /* Keep hits enabled even while invisible �?toggling pointer-events on :hover
      races Chromium hit-testing and makes the first click miss the button. */
   pointer-events: auto;
   cursor: pointer;
@@ -16188,7 +16237,7 @@ a.run-log-web-search-detail-result-url:focus-visible {
   padding: 3px 1px;
 }
 
-/* —— Composer —— */
+/* —�?Composer —�?*/
 .composer-image-notice {
   margin: 0 0 8px;
   padding: 0 4px;
@@ -18384,7 +18433,7 @@ button.composer-session-mode-tag:focus-visible {
   cursor: not-allowed;
 }
 
-/* —— Settings page —— */
+/* —�?Settings page —�?*/
 .settings-page {
   position: fixed;
   inset: 0;
@@ -19864,7 +19913,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   box-shadow: none;
 }
 
-.codex-landing .codex-composer.is-voice-recording {
+.codex-chat-shell.is-landing .codex-composer.is-voice-recording {
   background: transparent;
   box-shadow: none;
 }
@@ -19948,7 +19997,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   cursor: not-allowed;
 }
 
-/* —— Storage (System Settings–style grouped storage) —— */
+/* —�?Storage (System Settings–style grouped storage) —�?*/
 
 .storage-panel {
   --storage-spring: cubic-bezier(0.32, 0.72, 0, 1);
@@ -20556,7 +20605,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   line-height: 1.5;
 }
 
-/* —— Models settings (Codex-style) —— */
+/* —�?Models settings (Codex-style) —�?*/
 .models-provider-row-main {
   display: grid;
   gap: 4px;
@@ -23300,7 +23349,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   color: #737373;
 }
 
-/* ─── Provider Editor Modal — Apple-style Sheet ──────────────────────── */
+/* ─── Provider Editor Modal �?Apple-style Sheet ──────────────────────── */
 
 .settings-modal-provider-editor {
   width: min(560px, calc(100vw - 48px));
@@ -24417,7 +24466,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   font-weight: 600;
 }
 
-/* —— Codex app inspired activity surface —— */
+/* —�?Codex app inspired activity surface —�?*/
 .codex-main:not(.codex-main-landing) {
   position: relative;
   --codex-feed-font-size: var(--ui-font-size);
@@ -24471,7 +24520,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
  * Fullscreen task covers the feed topbar (`inset: 0`). With the project sidebar
  * collapsed, tabs would sit under macOS traffic lights / the window-chrome
  * toggle cluster unless they reuse that same inline-start inset.
- * Narrow sheet mode (≤720) already sits below the titlebar row — do not inset.
+ * Narrow sheet mode (�?20) already sits below the titlebar row �?do not inset.
  */
 @media (min-width: 721px) {
   html[data-platform="darwin"]
@@ -24888,8 +24937,8 @@ html:not([data-platform="darwin"])
 }
 
 /*
- * Empty "正在思考" is deferred to the active-tail after the turn.
- * Under an empty process (only the 处理中 divider shows), match process-inner's
+ * Empty "正在思�? is deferred to the active-tail after the turn.
+ * Under an empty process (only the 处睆�?divider shows), match process-inner's
  * padding-top so thinking starts at the same y as other process content.
  * After a process that already has tools/content, keep feed-step spacing.
  */
@@ -24913,7 +24962,7 @@ html:not([data-platform="darwin"])
   margin-top: 12px;
 }
 
-/* First process row under the divider is already padded by process-inner — do not stack. */
+/* First process row under the divider is already padded by process-inner �?do not stack. */
 .codex-main:not(.codex-main-landing) .run-log-turn-process-inner
   > .run-log-feed-entry:first-child:has(.run-log-thinking) {
   margin-top: 0;
@@ -24967,7 +25016,7 @@ html:not([data-platform="darwin"])
 }
 
 /*
- * Block gaps in the feed used to be 0.72em — far looser than the pre-wrap streaming
+ * Block gaps in the feed used to be 0.72em �?far looser than the pre-wrap streaming
  * plain tail, so the prose→markdown handoff jumped. Keep a modest vertical rhythm
  * closer to single-line spacing while still separating siblings.
  */
@@ -24987,7 +25036,7 @@ html:not([data-platform="darwin"])
 
 /*
  * Edge margins used to target `.markdown-content > :first/last-child`.
- * PM nests real blocks under `.ProseMirror`, so reset there too — otherwise
+ * PM nests real blocks under `.ProseMirror`, so reset there too �?otherwise
  * last-block margin stacks with the feed's 20px narrative↔tool gap.
  */
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :first-child,
@@ -25888,7 +25937,7 @@ html:not([data-platform="darwin"])
   background: var(--codex-panel-hover);
 }
 
-.codex-main:not(.codex-main-landing) .codex-feed-stack .codex-composer-wrap {
+.codex-main:not(.codex-main-landing) .codex-chat-shell > .codex-composer-wrap {
   width: 100%;
   max-width: 100%;
   z-index: 4;
@@ -25897,7 +25946,7 @@ html:not([data-platform="darwin"])
   background: transparent;
 }
 
-.codex-main:not(.codex-main-landing) .codex-feed-stack .composer-dock-morph {
+.codex-main:not(.codex-main-landing) .codex-chat-shell .composer-dock-morph {
   width: 100%;
   max-width: 100%;
   z-index: 1;
@@ -26180,7 +26229,7 @@ html:not([data-platform="darwin"])
     margin-right: -22px;
   }
 
-  .codex-main:not(.codex-main-landing) .codex-feed-stack .codex-composer-wrap {
+  .codex-main:not(.codex-main-landing) .codex-chat-shell > .codex-composer-wrap {
     padding-inline: 0;
   }
 
@@ -26268,7 +26317,7 @@ html:not([data-platform="darwin"])
     }
   }
 
-  /* Overlay sidebar: toolbar sits on main content — always clear the title */
+  /* Overlay sidebar: toolbar sits on main content �?always clear the title */
   html:not([data-platform="darwin"]) .shell .codex-main .codex-main-topbar {
     padding-left: max(22px, var(--window-sidebar-toolbar-inset));
   }
@@ -27914,7 +27963,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   -webkit-backdrop-filter: blur(28px) saturate(180%);
 }
 
-/* —— Center server (cs) —— */
+/* —�?Center server (cs) —�?*/
 .cs {
   max-width: none;
   color: var(--text-primary);
@@ -29231,7 +29280,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   }
 }
 
-/* —— Remote connect flow (legacy) —— */
+/* —�?Remote connect flow (legacy) —�?*/
 .connect-flow {
   max-width: 560px;
 }
@@ -31155,7 +31204,7 @@ body,
   color: var(--danger, #dc2626);
 }
 
-/* ---- Provider → model cascade field (auxiliary/vision model picker) ---- */
+/* ---- Provider �?model cascade field (auxiliary/vision model picker) ---- */
 
 .composer-field-select {
   position: relative;
@@ -31330,9 +31379,14 @@ body,
 
 /* Viewport narrow (landing / whole-window). Keep in lockstep with composerIconOnly. */
 @media (max-width: 640px) {
-  .codex-landing {
+  .codex-chat-shell.is-landing {
     gap: 18px;
     padding-bottom: 10px;
+  }
+
+  .codex-landing {
+    gap: 0;
+    padding-bottom: 0;
   }
 
   .codex-composer .composer-footer {
@@ -31674,7 +31728,7 @@ body,
   }
 }
 
-/* —— Built-in browser (right task panel pane) —— */
+/* —�?Built-in browser (right task panel pane) —�?*/
 .subagent-task-panel-tab-pane--browser {
   display: flex;
   flex-direction: column;
@@ -32358,7 +32412,7 @@ body,
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
-/* Web AI chat list (topbar popover) — self-contained styles (not composer-codex-popover)
+/* Web AI chat list (topbar popover) �?self-contained styles (not composer-codex-popover)
  * so top-bar menus keep a solid surface and high z-index in transparent Electron windows. */
 .web-chat-list-popover {
   display: flex;
@@ -32369,7 +32423,7 @@ body,
   padding: 8px;
   border: 1px solid var(--popover-border, rgba(255, 255, 255, 0.1));
   border-radius: 14px;
-  /* Prefer opaque menu surface — translucent + backdrop can render as “shadow only”
+  /* Prefer opaque menu surface �?translucent + backdrop can render as “shadow only�?
    * over transparent Electron backgrounds. */
   background: var(--bg-menu, var(--bg-elevated, #242424));
   color: var(--popover-text, var(--text-primary, #f5f5f5));
@@ -32943,7 +32997,7 @@ body,
   cursor: default;
 }
 
-/* Unified provider → model cascade select */
+/* Unified provider �?model cascade select */
 .model-cascade {
   display: inline-flex;
   flex-direction: column;
