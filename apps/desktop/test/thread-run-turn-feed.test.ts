@@ -418,7 +418,7 @@ test("skeleton subagent cards stay in the same turn as the attempt final (no dup
     sequence: 4,
     at: "2026-01-01T00:00:45.000Z",
   });
-  // Skeleton Feed clears agent timelines, so cards fall back to sequence 0.
+  // Stopped skeleton cards have empty agent timelines, so sequence falls back to 0.
   const agentCard: ThreadRunProjectionMainFeedEntry = {
     kind: "agent-card",
     key: "agent-card:agent_coder_1",

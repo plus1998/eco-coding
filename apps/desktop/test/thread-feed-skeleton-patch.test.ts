@@ -5,6 +5,7 @@ import {
   createThreadFeedSkeletonRecord,
   feedSkeletonTimelineIds,
   patchThreadFeedSkeletonFromEvent,
+  shouldPatchAgentTimelineForFeedSkeleton,
   shouldTrackEventForFeedSkeletonPatch,
 } from "../src/main/thread-feed-skeleton-patch";
 import { buildThreadRunProjection, eventToTimelineItem } from "../src/main/thread-run-projection";
@@ -12,6 +13,7 @@ import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
 import type { RunAttemptRecord } from "../src/main/usage-ledger";
 import type { ThreadRunEvent } from "../src/shared/ipc";
 import type {
+  ThreadRunProjectionAgent,
   ThreadRunProjectionAttempt,
   ThreadRunProjectionTimelineItem,
 } from "../src/shared/thread-run-projection";
@@ -87,12 +89,27 @@ function emptySnapshot() {
 function patchContext(
   attempts: readonly ThreadRunProjectionAttempt[],
   maxEventSequence: number,
+  agents: readonly ThreadRunProjectionAgent[] = [],
 ): FeedSkeletonPatchContext {
   return {
     attempts,
-    agents: [],
+    agents: [...agents],
     historyRevision: 0,
     maxEventSequence,
+  };
+}
+
+function exploreAgent(
+  status: ThreadRunProjectionAgent["status"] = "active",
+): ThreadRunProjectionAgent {
+  return {
+    agentId: "explore_a",
+    role: "explore",
+    kind: "subagent",
+    status,
+    startedAt: STARTED_AT,
+    durationMs: 0,
+    timeline: [],
   };
 }
 
@@ -511,7 +528,95 @@ describe("thread feed skeleton patch", () => {
 
     expect(shouldTrackEventForFeedSkeletonPatch(events[2]!, mapAttempts(attempts))).toBe(false);
     expect(shouldTrackEventForFeedSkeletonPatch(events[3]!, mapAttempts(attempts))).toBe(false);
+    expect(shouldPatchAgentTimelineForFeedSkeleton(events[2]!)).toBe(true);
+    expect(shouldPatchAgentTimelineForFeedSkeleton(events[3]!)).toBe(true);
     expect(replayPatchTimelineIds(events, attempts)).toEqual(["user_1", "planner_final"]);
+  });
+
+  test("routes running-attempt subagent prompt and thinking onto the live agent timeline", () => {
+    const attempts = [projectionAttempt("att_run", "running")];
+    const agent = exploreAgent();
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "加产品排行",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "planner_final",
+        sequence: 2,
+        eventType: "message.final",
+        message: "我先用 explore 勘察",
+        role: "assistant",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "explore_prompt",
+        sequence: 3,
+        eventType: "message.final",
+        scope: "agent",
+        message: "请只读探索当前仓库，禁止编辑、生成或删除任何文件。",
+        role: "explore",
+        agentId: "explore_a",
+        runAttemptId: "att_run",
+        metadata: { liveType: "message.user", itemType: "userMessage" },
+      }),
+      runEvent({
+        id: "explore_think",
+        sequence: 4,
+        eventType: "thinking.delta",
+        scope: "agent",
+        message: "The user wants me to explore the codebase",
+        role: "explore",
+        agentId: "explore_a",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "planner_think",
+        sequence: 5,
+        eventType: "thinking.delta",
+        message: "**Preparing subagent**",
+        role: "thinking",
+        runAttemptId: "att_run",
+      }),
+    ];
+
+    let record = createThreadFeedSkeletonRecord(
+      {
+        ...emptySnapshot(),
+        attempts,
+        agents: [agent],
+      },
+      {
+        attempts,
+        agents: [agent],
+        historyRevision: 0,
+        maxEventSequence: 0,
+      },
+    );
+    record.patchState = createFeedSkeletonPatchState(record.snapshot);
+    for (const event of events) {
+      record = patchThreadFeedSkeletonFromEvent(
+        record,
+        event,
+        patchContext(attempts, event.sequence, [agent]),
+      )!;
+    }
+
+    expect(feedSkeletonTimelineIds(record.snapshot)).toEqual([
+      "user_1",
+      "planner_final",
+      "planner_think",
+    ]);
+    expect(record.snapshot.timeline.some((item) => item.scope === "agent")).toBe(false);
+    expect(record.snapshot.agents[0]?.timeline.map((item) => item.id)).toEqual([
+      "explore_prompt",
+      "explore_think",
+    ]);
+    expect(record.snapshot.agents[0]?.latestActivity).toBe("The user wants me to explore the codebase");
   });
 
   test("strips already leaked agent-scoped items from a dirty skeleton on the next patch", () => {

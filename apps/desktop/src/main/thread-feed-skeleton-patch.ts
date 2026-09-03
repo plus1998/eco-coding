@@ -4,10 +4,12 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/thread-run-projection";
+import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
 import {
   buildFeedSkeletonSegmentKey,
   compareFeedSkeletonTimelineItems,
   excludeAgentScopedFeedTimelineItems,
+  isLiveFeedSkeletonAgent,
   isSkeletonTurnFinalItem,
   isSkeletonUserPromptItem,
   listFeedSkeletonUserBoundaries,
@@ -93,6 +95,16 @@ export function shouldTrackEventForFeedSkeletonPatch(
   return false;
 }
 
+export function shouldPatchAgentTimelineForFeedSkeleton(event: ThreadRunEvent): boolean {
+  if (isMetricsOnlyThreadRunEvent(event)) {
+    return false;
+  }
+  if (event.eventType.startsWith("agent.")) {
+    return false;
+  }
+  return event.scope === "agent" && Boolean(event.agentId?.trim());
+}
+
 export function patchThreadFeedSkeletonFromEvent(
   record: ThreadFeedSkeletonRecord,
   event: ThreadRunEvent,
@@ -106,7 +118,7 @@ export function patchThreadFeedSkeletonFromEvent(
   }
 
   const attempts = [...context.attempts];
-  const agents = context.agents.map((agent) => ({ ...agent, timeline: [] }));
+  let agents = mergeSkeletonAgentsForPatch(record.snapshot.agents, context.agents);
   let trackedItems = excludeAgentScopedFeedTimelineItems(
     record.patchState.trackedItems.map((item) => ({ ...item })),
   );
@@ -122,13 +134,22 @@ export function patchThreadFeedSkeletonFromEvent(
   } else if (RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType)) {
     trackedItems = reconcileTrackedItemsAfterAttemptChange(trackedItems, attempts);
     structureChanged = true;
-  } else if (!structureChanged && !isMetricsOnlyThreadRunEvent(event)) {
-    return record.maxEventSequence === context.maxEventSequence
-      ? record
-      : {
-          ...record,
-          maxEventSequence: context.maxEventSequence,
-        };
+  } else {
+    if (shouldPatchAgentTimelineForFeedSkeleton(event)) {
+      const nextAgents = upsertAgentScopedItemOntoSkeletonAgents(agents, event);
+      if (nextAgents !== agents) {
+        agents = nextAgents;
+        structureChanged = true;
+      }
+    }
+    if (!structureChanged && !isMetricsOnlyThreadRunEvent(event)) {
+      return record.maxEventSequence === context.maxEventSequence
+        ? record
+        : {
+            ...record,
+            maxEventSequence: context.maxEventSequence,
+          };
+    }
   }
 
   if (!structureChanged) {
@@ -174,6 +195,85 @@ export function patchThreadFeedSkeletonFromEvent(
 
 export function feedSkeletonTimelineIds(snapshot: ThreadRunProjectionSnapshot): string[] {
   return snapshot.timeline.map((item) => item.id);
+}
+
+function mergeSkeletonAgentsForPatch(
+  snapshotAgents: readonly ThreadRunProjectionAgent[],
+  contextAgents: readonly ThreadRunProjectionAgent[],
+): ThreadRunProjectionAgent[] {
+  const snapshotById = new Map(snapshotAgents.map((agent) => [agent.agentId, agent]));
+  const seen = new Set<string>();
+  const merged: ThreadRunProjectionAgent[] = [];
+  for (const agent of contextAgents) {
+    seen.add(agent.agentId);
+    const existing = snapshotById.get(agent.agentId);
+    if (!isLiveFeedSkeletonAgent(agent)) {
+      merged.push({
+        ...agent,
+        timeline: [],
+      });
+      continue;
+    }
+    merged.push({
+      ...agent,
+      timeline: existing?.timeline ?? agent.timeline,
+      ...(existing?.latestActivity
+        ? { latestActivity: existing.latestActivity }
+        : agent.latestActivity
+          ? { latestActivity: agent.latestActivity }
+          : {}),
+    });
+  }
+  for (const agent of snapshotAgents) {
+    if (seen.has(agent.agentId)) {
+      continue;
+    }
+    merged.push(isLiveFeedSkeletonAgent(agent) ? agent : { ...agent, timeline: [] });
+  }
+  return merged;
+}
+
+function latestSkeletonAgentActivity(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): string | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const text = timeline[index]?.text.trim();
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function upsertAgentScopedItemOntoSkeletonAgents(
+  agents: readonly ThreadRunProjectionAgent[],
+  event: ThreadRunEvent,
+): ThreadRunProjectionAgent[] {
+  const agentId = event.agentId?.trim();
+  if (!agentId) {
+    return agents as ThreadRunProjectionAgent[];
+  }
+  const index = agents.findIndex((agent) => agent.agentId === agentId);
+  if (index < 0) {
+    return agents as ThreadRunProjectionAgent[];
+  }
+  const agent = agents[index];
+  if (!agent || !isLiveFeedSkeletonAgent(agent)) {
+    return agents as ThreadRunProjectionAgent[];
+  }
+  const item = trimTimelineItemForFeed(eventToTimelineItem(event));
+  const timeline = upsertTrackedItem(agent.timeline, item);
+  const capped =
+    timeline.length > FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS
+      ? timeline.slice(-FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS)
+      : timeline;
+  const activity = latestSkeletonAgentActivity(capped) ?? agent.latestActivity;
+  const nextAgent: ThreadRunProjectionAgent = {
+    ...agent,
+    timeline: capped,
+    ...(activity ? { latestActivity: activity } : {}),
+  };
+  return agents.map((candidate, candidateIndex) => (candidateIndex === index ? nextAgent : candidate));
 }
 
 function upsertTrackedItem(

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildFeedProjectionSignature,
+  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_TEXT_CHARS,
   FEED_STREAMING_PREVIEW_MAX_CHARS,
@@ -344,6 +345,38 @@ test("trimProjectionForFeed clears agent process timelines on the Feed skeleton"
   expect(trimmed.agents[0]?.timeline).toEqual([]);
   expect(trimmed.agents[0]?.latestActivity).toBe("agent done");
   expect(trimmed.timeline[0]?.text).toBe("short message");
+});
+
+test("trimProjectionForFeed keeps a live agent timeline tail on the Feed skeleton", () => {
+  const items = Array.from({ length: 150 }, (_, index) => ({
+    id: `agent_evt_${index}`,
+    sequence: index + 1,
+    eventType: "thinking.delta" as const,
+    scope: "agent" as const,
+    text: `line ${index}`,
+    at: "2026-01-01T00:00:00.000Z",
+  }));
+  const projection = createProjection("short message", { longDelegation: false });
+  const trimmed = trimProjectionForFeed({
+    ...projection,
+    thread: {
+      ...projection.thread,
+      status: "running",
+    },
+    agents: [
+      {
+        ...requireValue(projection.agents[0], "projection agent"),
+        status: "active",
+        latestActivity: "line 149",
+        timeline: items,
+      },
+    ],
+  });
+
+  expect(trimmed.agents[0]?.timeline).toHaveLength(FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS);
+  expect(trimmed.agents[0]?.timeline[0]?.id).toBe("agent_evt_70");
+  expect(trimmed.agents[0]?.timeline.at(-1)?.id).toBe("agent_evt_149");
+  expect(trimmed.agents[0]?.latestActivity).toBe("line 149");
 });
 
 test("trimProjectionForFeed strips tool detail metadata from a live running turn", () => {

@@ -163,6 +163,8 @@ function subagentCardSignature(card: ThreadRunProjectionSubagentCard): string {
     card.agent.mission ?? "",
     card.agent.delegationPrompt ?? "",
     card.agent.delegationSummary ?? "",
+    card.statusText ?? "",
+    card.agent.latestActivity ?? "",
     timeline.map(subagentTimelineItemSignature).join("|"),
     usage
       ? [
@@ -283,6 +285,20 @@ function mergeDetailTimeline(
   );
 }
 
+function detailTimelineNeedsMerge(
+  current: readonly ThreadRunProjectionTimelineItem[],
+  incoming: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  if (incoming.length === 0) {
+    return false;
+  }
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  return incoming.some((item) => {
+    const existing = currentById.get(item.id);
+    return !existing || existing.sequence !== item.sequence || existing.text !== item.text;
+  });
+}
+
 function SubagentProjectionDetail({
   card,
   projection,
@@ -344,7 +360,7 @@ function SubagentProjectionDetail({
           threadId,
           agentId: card.agent.agentId,
           agent: result.agent,
-          timeline: result.timeline,
+          timeline: mergeDetailTimeline(card.agent.timeline, result.timeline),
           hasEarlier: result.hasEarlier === true,
           ...(result.previousBeforeSequence !== undefined
             ? { beforeSequence: result.previousBeforeSequence }
@@ -379,8 +395,22 @@ function SubagentProjectionDetail({
     ) {
       return;
     }
+    if (detailTimelineNeedsMerge(current.timeline, card.agent.timeline)) {
+      const timeline = mergeDetailTimeline(current.timeline, card.agent.timeline);
+      setDetail((previous) =>
+        previous && previous.threadId === threadId && previous.agentId === card.agent.agentId
+          ? {
+              ...previous,
+              agent: { ...previous.agent, ...card.agent, timeline },
+              timeline,
+            }
+          : previous,
+      );
+    }
     const afterSequence = current.timeline.at(-1)?.sequence;
-    if (afterSequence === undefined) return;
+    if (afterSequence === undefined) {
+      return;
+    }
     refreshInFlightRef.current = true;
     void window.eco
       .getThreadRunProjectionDetail({
@@ -409,7 +439,7 @@ function SubagentProjectionDetail({
       .finally(() => {
         refreshInFlightRef.current = false;
       });
-  }, [card.agent.agentId, detailSequence, feedSequence, threadId]);
+  }, [card.agent.agentId, card.agent.timeline, detailSequence, feedSequence, threadId]);
 
   const loadEarlier = useCallback(() => {
     const current = detailRef.current;

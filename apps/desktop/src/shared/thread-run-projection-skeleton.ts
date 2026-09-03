@@ -1,5 +1,6 @@
 import { isRecordedUserPromptLiveEvent, isThreadFollowUpActivityMessage } from "./thread-follow-up-events";
 import type {
+  ThreadRunProjectionAgent,
   ThreadRunProjectionAttempt,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
@@ -23,6 +24,12 @@ export function compareFeedSkeletonTimelineItems(
 function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | undefined {
   const liveType = item.metadata?.liveType;
   return typeof liveType === "string" ? liveType : undefined;
+}
+
+export function isLiveFeedSkeletonAgent(
+  agent: Pick<ThreadRunProjectionAgent, "status">,
+): boolean {
+  return agent.status === "active" || agent.status === "launching";
 }
 
 export function isAgentScopedFeedTimelineItem(
@@ -226,7 +233,7 @@ export function buildSkeletonFeedProjection(
     timeline,
     agents: snapshot.agents.map((agent) => ({
       ...agent,
-      timeline: [],
+      timeline: isLiveFeedSkeletonAgent(agent) ? agent.timeline : [],
     })),
   };
 }

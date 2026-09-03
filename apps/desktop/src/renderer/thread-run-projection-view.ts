@@ -2525,7 +2525,7 @@ function resolveSubagentCardSortAnchor(
 
   const userBoundary = resolveSubagentCardUserBoundary(card, mainTimeline);
   if (userBoundary) {
-    // Skeleton Feed intentionally strips agent timelines, which otherwise leaves
+    // Stopped skeleton cards have empty agent timelines, which otherwise leaves
     // card sequence at 0. Keep unanchored cards below the prompt that opened the
     // turn even when lifecycle tool rows were compacted out of the skeleton.
     return {

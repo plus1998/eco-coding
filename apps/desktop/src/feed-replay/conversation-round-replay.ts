@@ -22,6 +22,7 @@ import {
   createThreadFeedSkeletonRecord,
   feedSkeletonTimelineIds,
   patchThreadFeedSkeletonFromEvent,
+  shouldPatchAgentTimelineForFeedSkeleton,
   shouldTrackEventForFeedSkeletonPatch,
 } from "../main/thread-feed-skeleton-patch";
 import {
@@ -338,6 +339,7 @@ function maintainSkeletonRecord(
 
   const structureChanging =
     shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
+    shouldPatchAgentTimelineForFeedSkeleton(event) ||
     RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType);
 
   if (!structureChanging) {

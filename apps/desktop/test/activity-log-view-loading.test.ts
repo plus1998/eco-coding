@@ -748,7 +748,7 @@ test("ActivityLogView does not duplicate turn headings for skeleton subagent car
             runAttemptId: "attempt-1",
             parentToolUseId: "toolu_agent",
             delegationPrompt: "改路由",
-            // Skeleton Feed clears agent process timelines.
+            // Stopped skeleton cards keep empty agent process timelines.
             timeline: [],
           }),
         ],

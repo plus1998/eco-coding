@@ -700,6 +700,7 @@ import {
   createThreadFeedSkeletonRecord,
   type FeedSkeletonPatchContext,
   patchThreadFeedSkeletonFromEvent,
+  shouldPatchAgentTimelineForFeedSkeleton,
   shouldTrackEventForFeedSkeletonPatch,
 } from "./thread-feed-skeleton-patch";
 import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
@@ -13408,6 +13409,7 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
   const leakedAgentItemsOnMain = existing?.snapshot.timeline.some((item) => item.scope === "agent") === true;
   const structureChanging =
     shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
+    shouldPatchAgentTimelineForFeedSkeleton(event) ||
     RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType) ||
     leakedAgentItemsOnMain;
 
@@ -13421,10 +13423,7 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
     return;
   }
 
-  const patched = patchThreadFeedSkeletonFromEvent(existing, event, {
-    ...context,
-    agents: existing.snapshot.agents,
-  });
+  const patched = patchThreadFeedSkeletonFromEvent(existing, event, context);
   if (!patched) {
     conversationStore.deleteThreadFeedSkeleton(threadId);
     return;

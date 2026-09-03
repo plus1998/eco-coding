@@ -246,6 +246,46 @@ test("buildSkeletonFeedProjection clears agent timelines and omits hasEarlier", 
   expect(skeleton.timeline.map((row) => row.id)).toEqual(["user_1", "final_1"]);
 });
 
+test("buildSkeletonFeedProjection keeps active agent process timelines", () => {
+  const agentItem = item({
+    id: "agent_evt",
+    sequence: 9,
+    eventType: "thinking.delta",
+    text: "正在搜索仓库",
+    scope: "agent",
+    role: "explore",
+  });
+  const snapshot: ThreadRunProjectionSnapshot = {
+    thread: {
+      threadId: "thr_1",
+      status: "running",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    attempts: [attempt("att_run", "running", "2026-01-01T00:00:00.000Z")],
+    agents: [
+      {
+        agentId: "agent_1",
+        role: "explore",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        durationMs: 1,
+        latestActivity: "正在搜索仓库",
+        timeline: [agentItem],
+      },
+    ],
+    requestSpans: [],
+    timeline: [userPrompt("user_1", 1, "搜一下")],
+    diagnostics: [],
+    sourceEventCount: 2,
+    historyRevision: 0,
+  };
+
+  const skeleton = buildSkeletonFeedProjection(snapshot);
+  expect(skeleton.agents[0]?.timeline).toEqual([agentItem]);
+  expect(skeleton.agents[0]?.latestActivity).toBe("正在搜索仓库");
+});
+
 test("selectSkeletonTimelineItems drops agent-scoped subagent prompt and thinking from a running attempt", () => {
   const timeline = [
     userPrompt("user_1", 1, "加产品排行"),

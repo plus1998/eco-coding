@@ -133,7 +133,7 @@ export function buildThreadRunTurnFeedSections(
       // Mid-turn segments sort from the preceding user bubble so steered output
       // cannot jump above the mid-turn prompt via attempt.startedAt.
       at: turn.boundaryAt ?? turn.attempt.startedAt,
-      // Skeleton Feed clears agent timelines, so agent-card sequence may be 0.
+      // Stopped skeleton cards have empty agent timelines, so sequence may be 0.
       // Bump past the preceding user prompt (same rule as mobile) so the turn
       // cannot sort above the bubble that opened the segment.
       sequence:
