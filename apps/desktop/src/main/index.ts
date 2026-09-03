@@ -26,6 +26,7 @@ import {
   isCoreKind,
   isReadFilesystemTool,
   isWriteFilesystemTool,
+  materializeEcoToolPolicy,
   normalizeSdkSubagentType,
   type PlanReadyPayload,
   parsePiUsage,
@@ -145,6 +146,11 @@ import {
   type ImageGenerationProfileSaveInput,
   isEcoImageGenerationToolName,
 } from "../shared/image-generation";
+import {
+  buildIntegratedWebSearchPromptAppend,
+  ECO_WEB_SEARCH_MCP_SERVER,
+  isEcoWebSearchToolName,
+} from "../shared/integrated-web-search";
 import {
   buildImageViewPromptAppend,
   ECO_IMAGE_VIEW_MCP_SERVER,
@@ -542,7 +548,9 @@ import {
   type ImageGenerationStore,
 } from "./image-generation-store";
 import { ImageViewMcpGateway } from "./image-view-mcp-gateway";
+import { IntegratedWebSearchMcpGateway } from "./integrated-web-search-mcp-gateway";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
+import { resolveThreadWebSearchPlan } from "./resolve-thread-web-search";
 import { createLocalSecretCodec } from "./local-secret-codec";
 import { checkMcpServerConnection } from "./mcp-checker";
 import { prepareCodexGlobalMcpServerPool, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
@@ -991,6 +999,7 @@ let imageGenerationGateway: ImageGenerationMcpGateway;
 let imageViewGateway: ImageViewMcpGateway;
 let imageDisplayStore: ImageDisplayStore;
 let imageDisplayGateway: ImageDisplayMcpGateway;
+let integratedWebSearchGateway: IntegratedWebSearchMcpGateway;
 let promptImageFileStore: PromptImageFileStore;
 
 function requireBrowserHost(): BrowserHost {
@@ -1010,6 +1019,7 @@ async function resolveCodexGlobalMcpServers() {
       () => imageGenerationGateway.resolveGlobalCodexServer(),
       () => imageViewGateway.resolveGlobalCodexServer(),
       () => imageDisplayGateway.resolveGlobalCodexServer(),
+      () => integratedWebSearchGateway.resolveGlobalCodexServer(),
     ],
   });
 }
@@ -1777,6 +1787,10 @@ app.whenReady().then(async () => {
     dbPath,
     integratedWebSearchSecretCodec,
   );
+  integratedWebSearchGateway = new IntegratedWebSearchMcpGateway({
+    store: integratedWebSearchSettingsStore,
+    getApiKey: () => integratedWebSearchSettingsStore.getApiKey() ?? undefined,
+  });
   const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
   centerServerClient = new SupabaseCenterDesktopClient({
     store: await createCenterServerStore(dbPath, {
@@ -2464,6 +2478,9 @@ installApplicationShutdownHook({
   },
   closeImageDisplayGateway: async () => {
     await imageDisplayGateway?.close();
+  },
+  closeIntegratedWebSearchGateway: async () => {
+    await integratedWebSearchGateway?.close();
   },
   stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
   stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
@@ -7632,6 +7649,21 @@ async function startCodexThreadRun(
     const sessionImageGenerationEnabled =
       imageGenerationStore.getSettings().enabled &&
       integrationEnabled(threadRuntimeForIntegrations?.integrationsEnabled, "imageGeneration");
+    const codexAgentRegistry = resolveAgentRuntimeConfigForThreadId(input.thread.id);
+    const codexPlannerRoute = resolveRoleRoutesForThread(input.thread.id).find(
+      (route) => route.role === "planner",
+    );
+    const codexWebSearchPlan = resolveThreadWebSearchPlan({
+      networkWebSearch: codexAgentRegistry
+        ? materializeEcoToolPolicy(codexAgentRegistry.orchestration.mainAgent.tools).network?.webSearch
+        : undefined,
+      ...(codexPlannerRoute?.manualSpec ? { plannerManualSpec: codexPlannerRoute.manualSpec } : {}),
+      integratedSettings: integratedWebSearchSettingsStore.get(),
+      ...(integratedWebSearchSettingsStore.getApiKey()
+        ? { integratedApiKey: integratedWebSearchSettingsStore.getApiKey()! }
+        : {}),
+    });
+    const sessionIntegratedWebSearchEnabled = codexWebSearchPlan.backend === "integrated";
     const ecoBrowserSkillFile = sessionEcoBrowserEnabled
       ? resolveEcoAgentBrowserSkillFileForCodex()
       : undefined;
@@ -7665,8 +7697,22 @@ async function startCodexThreadRun(
             }
             append = appendBrowserPrompt(append, buildImageViewPromptAppend());
             append = appendBrowserPrompt(append, buildImageDisplayPromptAppend());
+            if (sessionIntegratedWebSearchEnabled) {
+              append = appendBrowserPrompt(
+                append,
+                buildIntegratedWebSearchPromptAppend(
+                  integratedWebSearchSettingsStore.get().provider === "tavily"
+                    ? "Tavily"
+                    : integratedWebSearchSettingsStore.get().provider === "doubao"
+                      ? "Doubao Search"
+                      : "Brave Search",
+                ),
+              );
+            }
             return append;
           },
+          resolveWebSearchOverride: () =>
+            sessionIntegratedWebSearchEnabled ? ("disabled" as const) : undefined,
           resolveExecutionConfirmationMode: () =>
             ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
               .runtimeConfig?.bashReviewMode ?? "always",
@@ -7697,6 +7743,17 @@ async function startCodexThreadRun(
                 );
               }
             }
+            if (sessionIntegratedWebSearchEnabled) {
+              const webSearchInject = await integratedWebSearchGateway.resolveInjection({
+                threadId: input.thread.id,
+                sessionEnabled: true,
+              });
+              if (!webSearchInject.enabled || !webSearchInject.codexServer) {
+                throw new Error(
+                  `本会话需要 Integrated Web Search，但不可用：${webSearchInject.unavailableReason ?? "未知原因"}`,
+                );
+              }
+            }
             await imageViewGateway.resolveInjection(input.thread.id);
             await imageDisplayGateway.resolveInjection(input.thread.id);
             return globalPool;
@@ -7711,6 +7768,9 @@ async function startCodexThreadRun(
             if (sessionImageGenerationEnabled && !keys.includes(ECO_IMAGE_GENERATION_MCP_SERVER)) {
               keys.push(ECO_IMAGE_GENERATION_MCP_SERVER);
             }
+            if (sessionIntegratedWebSearchEnabled && !keys.includes(ECO_WEB_SEARCH_MCP_SERVER)) {
+              keys.push(ECO_WEB_SEARCH_MCP_SERVER);
+            }
             if (!keys.includes(ECO_IMAGE_VIEW_MCP_SERVER)) {
               keys.push(ECO_IMAGE_VIEW_MCP_SERVER);
             }
@@ -7720,7 +7780,8 @@ async function startCodexThreadRun(
             return keys.filter(
               (key) =>
                 (key !== ECO_AGENT_BROWSER_MCP_SERVER || sessionEcoBrowserEnabled) &&
-                (key !== ECO_IMAGE_GENERATION_MCP_SERVER || sessionImageGenerationEnabled),
+                (key !== ECO_IMAGE_GENERATION_MCP_SERVER || sessionImageGenerationEnabled) &&
+                (key !== ECO_WEB_SEARCH_MCP_SERVER || sessionIntegratedWebSearchEnabled),
             );
           },
           resolveSkillConfig: () => {
@@ -10209,6 +10270,29 @@ function buildDesktopSdkRunInput(
   }
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageViewPromptAppend());
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageDisplayPromptAppend());
+  if (threadId) {
+    const agentRegistry = resolveAgentRuntimeConfigForThreadId(threadId);
+    const plannerRoute = resolveRoleRoutesForThread(threadId).find((route) => route.role === "planner");
+    const webSearchPlan = resolveThreadWebSearchPlan({
+      networkWebSearch: agentRegistry
+        ? materializeEcoToolPolicy(agentRegistry.orchestration.mainAgent.tools).network?.webSearch
+        : undefined,
+      ...(plannerRoute?.manualSpec ? { plannerManualSpec: plannerRoute.manualSpec } : {}),
+      integratedSettings: integratedWebSearchSettingsStore.get(),
+      ...(integratedWebSearchSettingsStore.getApiKey()
+        ? { integratedApiKey: integratedWebSearchSettingsStore.getApiKey()! }
+        : {}),
+    });
+    if (webSearchPlan.backend === "integrated") {
+      const provider = integratedWebSearchSettingsStore.get().provider;
+      globalUserRules = appendBrowserPrompt(
+        globalUserRules,
+        buildIntegratedWebSearchPromptAppend(
+          provider === "tavily" ? "Tavily" : provider === "doubao" ? "Doubao Search" : "Brave Search",
+        ),
+      );
+    }
+  }
   return buildSdkRunInput({
     ...input,
     ...(globalUserRules ? { globalUserRules } : {}),
@@ -10396,6 +10480,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   imageGenerationGateway.disposeThread(threadId);
   imageViewGateway.disposeThread(threadId);
   imageDisplayGateway.disposeThread(threadId);
+  integratedWebSearchGateway.disposeThread(threadId);
   const acpSessionId = acpSessionIdToDelete(conversationStore.getThreadCoreSession(threadId));
   if (acpSessionId) {
     const env = acpCursorSpawnEnv();
@@ -12185,6 +12270,27 @@ async function buildSdkSessionOptions(
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
   const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
+  const agentRegistry = resolveAgentRuntimeConfigForThreadId(threadId);
+  const plannerRoute = resolveRoleRoutesForThread(threadId).find((route) => route.role === "planner");
+  const webSearchPlan = resolveThreadWebSearchPlan({
+    networkWebSearch: agentRegistry
+      ? materializeEcoToolPolicy(agentRegistry.orchestration.mainAgent.tools).network?.webSearch
+      : undefined,
+    ...(plannerRoute?.manualSpec ? { plannerManualSpec: plannerRoute.manualSpec } : {}),
+    integratedSettings: integratedWebSearchSettingsStore.get(),
+    ...(integratedWebSearchSettingsStore.getApiKey()
+      ? { integratedApiKey: integratedWebSearchSettingsStore.getApiKey()! }
+      : {}),
+  });
+  const webSearchInject = await integratedWebSearchGateway.resolveInjection({
+    threadId,
+    sessionEnabled: webSearchPlan.backend === "integrated",
+  });
+  if (webSearchPlan.backend === "integrated" && !webSearchInject.enabled) {
+    throw new Error(
+      `本会话需要 Integrated Web Search，但不可用：${webSearchInject.unavailableReason ?? "未知原因"}`,
+    );
+  }
   let ecoBrowserSkillFilePath: string | undefined;
   if (browserInject.enabled) {
     const ensured = await ensureClaudeUserEcoAgentBrowserSkill();
@@ -12200,24 +12306,31 @@ async function buildSdkSessionOptions(
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
-        key !== ECO_IMAGE_DISPLAY_MCP_SERVER,
+        key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
+        key !== ECO_WEB_SEARCH_MCP_SERVER,
     ),
   );
   const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
   const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withBrowserMcp, imageInject);
   const withImageViewMcp = imageViewGateway.mergeIntoSdkConfig(withImageMcp, imageViewInject);
   const withImageDisplayMcp = imageDisplayGateway.mergeIntoSdkConfig(withImageViewMcp, imageDisplayInject);
-  const runtimeMcp = prepareMcpSdkConfigForRuntime(withImageDisplayMcp);
+  const withWebSearchMcp = integratedWebSearchGateway.mergeIntoSdkConfig(
+    withImageDisplayMcp,
+    webSearchInject,
+  );
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(withWebSearchMcp);
   const runtimeMcpServers = [
     ...enabledMcpServers.filter(
       (key) =>
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
-        key !== ECO_IMAGE_DISPLAY_MCP_SERVER,
+        key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
+        key !== ECO_WEB_SEARCH_MCP_SERVER,
     ),
     ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
     ...(imageInject.enabled ? [ECO_IMAGE_GENERATION_MCP_SERVER] : []),
+    ...(webSearchInject.enabled ? [ECO_WEB_SEARCH_MCP_SERVER] : []),
     ECO_IMAGE_VIEW_MCP_SERVER,
     ECO_IMAGE_DISPLAY_MCP_SERVER,
   ];
@@ -12297,6 +12410,7 @@ async function buildSdkSessionOptions(
     ...(runtimeMcpServers.length > 0 ? { runtimeMcpServers } : {}),
     ...(Object.keys(runtimeMcp.mcpServers).length > 0 ? { mcpServers: runtimeMcp.mcpServers } : {}),
     ...(runtimeMcp.allowedTools.length > 0 ? { mcpAllowedTools: runtimeMcp.allowedTools } : {}),
+    ...(webSearchPlan.backend === "integrated" ? { disallowedTools: ["WebSearch"] } : {}),
   };
 }
 
@@ -12565,6 +12679,11 @@ function maybeRevealBrowserFromAgentTool(input: {
     const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
     if (threadId) imageDisplayGateway.noteUpcomingTool(threadId, toolName, toolUseId);
   }
+  if (toolName && isEcoWebSearchToolName(toolName)) {
+    const threadId = input.threadId?.trim();
+    const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
+    if (threadId) integratedWebSearchGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+  }
   const threadId = input.threadId?.trim();
   if (!threadId || !toolName) {
     return;
@@ -12610,6 +12729,10 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
   if (name && (isEcoImageDisplayToolName(name) || name === ECO_IMAGE_DISPLAY_TOOL)) {
     const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
     imageDisplayGateway.noteUpcomingTool(event.threadId, name, toolUseId);
+  }
+  if (name && isEcoWebSearchToolName(name)) {
+    const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
+    integratedWebSearchGateway.noteUpcomingTool(event.threadId, name, toolUseId);
   }
   if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
     if (

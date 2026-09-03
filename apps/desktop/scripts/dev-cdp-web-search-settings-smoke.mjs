@@ -65,17 +65,25 @@ try {
     assert(true, "opened settings via sidebar");
   }
 
-  const proxyBridgeTab = page.getByRole("tab", { name: /代理桥|Proxy bridge/i });
-  await proxyBridgeTab.waitFor({ state: "visible", timeout: 10_000 });
-  await proxyBridgeTab.click();
+  const webSearchNav = page.getByRole("button", { name: /网络搜索|Web Search/i });
+  await webSearchNav.waitFor({ state: "visible", timeout: 10_000 });
+  await webSearchNav.click();
 
   const integratedSection = page.locator(".models-integrated-web-search-section");
   await integratedSection.waitFor({ state: "visible", timeout: 10_000 });
-  assert(await integratedSection.isVisible(), "Integrated Web Search section visible on proxy bridge tab");
+  assert(await integratedSection.isVisible(), "Integrated Web Search section visible on Web Search settings page");
 
-  const integratedLabel = page.getByText(/Integrated Web Search|启用 Integrated Web Search/i);
-  assert(await integratedLabel.first().isVisible(), "Integrated Web Search label visible");
+  const pageTitle = page.getByRole("heading", { name: /网络搜索|Web Search/i });
+  assert(await pageTitle.first().isVisible(), "Web Search page title visible");
 
+  const integratedLabel = page.getByText(/Enable Web Search|启用网络搜索/i);
+  assert(await integratedLabel.first().isVisible(), "Web Search enable label visible");
+
+  // Native Web Search checkbox lives on provider/model spec, not this page.
+  const providersNav = page.getByRole("button", { name: /提供商|Provider/i });
+  if (await providersNav.first().isVisible().catch(() => false)) {
+    await providersNav.first().click();
+  }
   const nativeCheckbox = page.getByText(/Provider 原生 Web Search|Provider-native Web Search/i);
   const nativeVisible = await nativeCheckbox.first().isVisible().catch(() => false);
   if (!nativeVisible) {

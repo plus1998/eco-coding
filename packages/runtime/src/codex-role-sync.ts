@@ -14,7 +14,12 @@ import {
   type CodexMcpServerForConfigSync,
   type EcoProviderForCodexConfig,
 } from "./codex-config-sync.js";
-import type { CodexExecutionConfirmationMode, CodexSandboxMode, EcoToolPolicy } from "./codex-tool-policy.js";
+import type {
+  CodexExecutionConfirmationMode,
+  CodexSandboxMode,
+  CodexWebSearchMode,
+  EcoToolPolicy,
+} from "./codex-tool-policy.js";
 import {
   applyCodexExecutionConfirmation,
   cloneEcoToolPolicy,
@@ -50,6 +55,11 @@ export interface SyncOrchestrationAgentsToCodexRolesInput {
   /** Known secrets that must be removed if a user-authored prompt accidentally contains them. */
   secretsToRedact?: readonly string[];
   executionConfirmationMode?: CodexExecutionConfirmationMode;
+  /**
+   * Force Codex native `web_search` mode for every role (e.g. `"disabled"` when Eco Integrated
+   * Web Search MCP is armed). Main-thread `web_search` is applied separately via thread config.
+   */
+  webSearchOverride?: CodexWebSearchMode;
 }
 
 export interface CodexMcpServerVisibilityOverride {
@@ -163,12 +173,6 @@ export async function syncOrchestrationAgentsToCodexRoles(
   }
   const secretsToRedact = input.secretsToRedact ?? [];
   const mcpScope = normalizeMcpScope(input.mcpServers ?? [], input.threadEnabledMcpServers);
-  const configuredMainToolPolicy = normalizeEcoToolPolicy(input.orchestration.mainAgent.tools, {
-    allowSpawnDefault: true,
-  });
-  const mainToolPolicy = input.executionConfirmationMode
-    ? applyCodexExecutionConfirmation(configuredMainToolPolicy, input.executionConfirmationMode)
-    : configuredMainToolPolicy;
   const mainMcpVisibility = buildActorMcpVisibility({
     actor: "main",
     mcpScope,
@@ -178,9 +182,12 @@ export async function syncOrchestrationAgentsToCodexRoles(
   const drafts: CodexRoleDraft[] = [];
 
   if (includeExplore) {
-    const exploreToolPolicy = input.executionConfirmationMode
-      ? applyCodexExecutionConfirmation(BUILTIN_EXPLORE_TOOL_POLICY, input.executionConfirmationMode)
-      : BUILTIN_EXPLORE_TOOL_POLICY;
+    const exploreToolPolicy = applyCodexWebSearchOverride(
+      input.executionConfirmationMode
+        ? applyCodexExecutionConfirmation(BUILTIN_EXPLORE_TOOL_POLICY, input.executionConfirmationMode)
+        : BUILTIN_EXPLORE_TOOL_POLICY,
+      input.webSearchOverride,
+    );
     const mcpVisibility = buildActorMcpVisibility({
       actor: CODEX_EXPLORE_ROLE_ID,
       mcpScope,
@@ -212,9 +219,12 @@ export async function syncOrchestrationAgentsToCodexRoles(
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
     const configuredToolPolicy = resolveEffectiveAgentToolPolicy(agent, template);
-    const toolPolicy = input.executionConfirmationMode
-      ? applyCodexExecutionConfirmation(configuredToolPolicy, input.executionConfirmationMode)
-      : configuredToolPolicy;
+    const toolPolicy = applyCodexWebSearchOverride(
+      input.executionConfirmationMode
+        ? applyCodexExecutionConfirmation(configuredToolPolicy, input.executionConfirmationMode)
+        : configuredToolPolicy,
+      input.webSearchOverride,
+    );
     const mcpVisibility = buildActorMcpVisibility({
       actor: roleId,
       mcpScope,
@@ -835,6 +845,16 @@ function redactKnownSecrets(value: string, secrets: readonly string[]): string {
     redacted = redacted.split(trimmed).join("[redacted]");
   }
   return redacted;
+}
+
+function applyCodexWebSearchOverride(
+  policy: EcoToolPolicy,
+  override: CodexWebSearchMode | undefined,
+): EcoToolPolicy {
+  if (!override) {
+    return policy;
+  }
+  return cloneEcoToolPolicy({ ...policy, webSearch: override });
 }
 
 function findSecret(value: string, secrets: readonly string[]): string | undefined {

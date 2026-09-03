@@ -27,6 +27,7 @@ import {
   type CodexThreadResumeResult,
   type CodexThreadStatusKind,
   type CodexToolPolicy,
+  type CodexWebSearchMode,
   CodexTurnRouteRegistry,
   clearCodexSpawnPayloadQueueSync,
   collectCodexGatewayCatalogRoutes,
@@ -121,6 +122,8 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   resolveSkillConfig?: () => readonly { path: string; enabled: boolean }[];
   /** CWD used to discover and explicitly disable Codex's built-in imagegen Skill. */
   skillDiscoveryCwd?: string;
+  /** Force Codex native web_search on roles + thread config when Eco Integrated search is armed. */
+  resolveWebSearchOverride?: () => CodexWebSearchMode | undefined;
   /** Wait for thread-selected MCP servers to leave `starting` before the turn. */
   ensureMcpReady?: () => Promise<void>;
   /** Runs after the exact thread config is bound, before the driver starts the turn. */
@@ -237,6 +240,13 @@ export interface PrepareCodexRuntimeInput {
   skillDiscoveryCwd?: string;
   /** Validate that these thread-selected routes exist in the already global catalog. */
   requiredCatalogRoutes?: readonly CodexGatewayCatalogRoute[];
+  /**
+   * Force Codex native `web_search` on synced role TOML files and the main thread config
+   * (e.g. `"disabled"` when Eco Integrated Web Search MCP is armed). Role files are the
+   * reliable path for subagents; `web_search` on thread/start config covers the main actor
+   * (Codex defaults to disabled when omitted).
+   */
+  webSearchOverride?: CodexWebSearchMode;
   /** Refresh only global baseline state after a settings change; do not start a new client. */
   globalOnly?: boolean;
   /** Internal desired-baseline revision captured by the refresh coordinator. */
@@ -999,12 +1009,18 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   const registryToolPolicy = input.agentRegistry
     ? normalizeCodexToolPolicy(input.agentRegistry.orchestration.mainAgent.tools, { allowSpawnDefault: true })
     : undefined;
-  const orchestrationToolPolicy = input.executionConfirmationMode
+  const confirmedToolPolicy = input.executionConfirmationMode
     ? applyCodexExecutionConfirmation(
         registryToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY,
         input.executionConfirmationMode,
       )
     : registryToolPolicy;
+  const orchestrationToolPolicy = input.webSearchOverride
+    ? {
+        ...(confirmedToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY),
+        webSearch: input.webSearchOverride,
+      }
+    : confirmedToolPolicy;
   const roleSync =
     input.agentRegistry && input.enableSubagents !== false
       ? await syncOrchestrationAgentsToCodexRoles({
@@ -1019,6 +1035,7 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
           ...(input.executionConfirmationMode
             ? { executionConfirmationMode: input.executionConfirmationMode }
             : {}),
+          ...(input.webSearchOverride ? { webSearchOverride: input.webSearchOverride } : {}),
         })
       : undefined;
 
@@ -1027,6 +1044,9 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   }
   lastPreparedRoleIds = roleSync?.roleIds ?? [];
   const baseThreadConfig = roleSync?.threadConfig ?? buildDenyAllMcpThreadConfig(mcpServers);
+  const threadConfigWithWebSearch = input.webSearchOverride
+    ? { ...baseThreadConfig, web_search: input.webSearchOverride }
+    : baseThreadConfig;
   const prepared: PreparedCodexRuntime = {
     ...(orchestrationAppend ? { orchestrationAppend } : {}),
     ...(orchestrationToolPolicy ? { orchestrationToolPolicy } : {}),
@@ -1034,11 +1054,14 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     roleToolPolicies: Object.fromEntries(
       (roleSync?.roles ?? []).map((role) => [role.roleId, role.toolPolicy]),
     ),
-    threadConfig: withCodexSkillConfig(baseThreadConfig, input.skillConfig ?? []),
+    threadConfig: withCodexSkillConfig(threadConfigWithWebSearch, input.skillConfig ?? []),
     roleThreadConfigs: Object.fromEntries(
       Object.entries(roleSync?.roleThreadConfigs ?? {}).map(([role, config]) => [
         role,
-        withCodexSkillConfig(config, input.skillConfig ?? []),
+        withCodexSkillConfig(
+          input.webSearchOverride ? { ...config, web_search: input.webSearchOverride } : config,
+          input.skillConfig ?? [],
+        ),
       ]),
     ),
   };
@@ -1602,6 +1625,7 @@ export async function runThreadRequestWithRuntimeProxy(
       });
     }
     const systemPromptAppend = input.resolveSystemPromptAppend?.()?.trim();
+    const webSearchOverride = input.resolveWebSearchOverride?.();
     const prepared = await prepareCodexRuntime({
       ...(input.signal ? { signal: input.signal } : {}),
       ...(input.onConfigReloadWait ? { onConfigReloadWait: input.onConfigReloadWait } : {}),
@@ -1618,6 +1642,7 @@ export async function runThreadRequestWithRuntimeProxy(
       skillConfig,
       ...(input.skillDiscoveryCwd ? { skillDiscoveryCwd: input.skillDiscoveryCwd } : {}),
       requiredCatalogRoutes,
+      ...(webSearchOverride ? { webSearchOverride } : {}),
     });
     // Wait for readiness AFTER prepare: reload (when it runs) restarts MCP processes.
     await input.ensureMcpReady?.();

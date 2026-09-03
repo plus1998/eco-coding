@@ -284,6 +284,7 @@ import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewr
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
+import { IntegratedWebSearchSettingsPanel } from "./IntegratedWebSearchSettingsPanel";
 import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
 import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { ImageLightbox } from "./image-lightbox";
@@ -501,6 +502,7 @@ type SettingsSectionId =
   | "storage"
   | "browser"
   | "imageGeneration"
+  | "integratedWebSearch"
   | "providers"
   | "mcp"
   | "centerServer"
@@ -1202,6 +1204,19 @@ function App() {
           },
           { id: "centerServer", label: t("settings.connection"), icon: Cloud },
           { id: "asr", label: t("asr.title"), icon: Mic },
+          {
+            id: "integratedWebSearch",
+            label: t("settings.integratedWebSearch.title"),
+            icon: Search,
+            keywords: [
+              "web search",
+              "tavily",
+              "brave",
+              "doubao",
+              "网络搜索",
+              "Integrated Web Search",
+            ],
+          },
         ],
       },
       {
@@ -10387,22 +10402,30 @@ function App() {
                 />
               )}
 
+              {settingsSection === "integratedWebSearch" &&
+                (integratedWebSearchSettings ? (
+                  <IntegratedWebSearchSettingsPanel
+                    settings={integratedWebSearchSettings}
+                    busy={isSavingIntegratedWebSearchSettings}
+                    onSave={(next) => void saveIntegratedWebSearchSettings(next)}
+                    centerServerSyncVisible={centerServerSyncVisible}
+                    onSyncDomain={syncCenterServerConfigDomain}
+                  />
+                ) : (
+                  <p className="settings-empty-hint">{t("settings.integratedWebSearch.loading")}</p>
+                ))}
+
               {settingsSection === "providers" &&
-                (proxyBridgeSettings && integratedWebSearchSettings ? (
+                (proxyBridgeSettings ? (
                   <ModelsSettingsPanel
                     settings={settings}
                     proxyBridgeSettings={proxyBridgeSettings}
-                    integratedWebSearchSettings={integratedWebSearchSettings}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                    integratedWebSearchSettingsSaving={isSavingIntegratedWebSearchSettings}
                     mode="providerSettings"
                     busy={isSavingSettings}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
-                    onIntegratedWebSearchSettingsChange={(next) =>
-                      void saveIntegratedWebSearchSettings(next)
-                    }
                     onRequestCreateMainAgentConfig={(seed) => {
                       setPendingCreateMainConfig(seed);
                       setSettingsSection("orchestrationComponents");
@@ -10415,15 +10438,13 @@ function App() {
                 ))}
 
               {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
-                (proxyBridgeSettings && integratedWebSearchSettings ? (
+                (proxyBridgeSettings ? (
                   <ModelsSettingsPanel
                     settings={settings}
                     proxyBridgeSettings={proxyBridgeSettings}
-                    integratedWebSearchSettings={integratedWebSearchSettings}
                     mcpServers={mcpSettings.servers}
                     skillsSnapshot={skillsSnapshot}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                    integratedWebSearchSettingsSaving={isSavingIntegratedWebSearchSettings}
                     initialTab={
                       settingsSection === "orchestrationComponents" ? "compositionParts" : "subagents"
                     }
@@ -10454,9 +10475,6 @@ function App() {
                     onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
                     onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
-                    onIntegratedWebSearchSettingsChange={(next) =>
-                      void saveIntegratedWebSearchSettings(next)
-                    }
                     {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
                       ? {
                           centerServerSyncVisible,

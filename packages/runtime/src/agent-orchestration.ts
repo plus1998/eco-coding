@@ -320,6 +320,12 @@ export function resolveMainAgentHandsOnCapability(
   return resolveMainAgentHandsOnFromPolicy(orchestration.mainAgent.tools);
 }
 
+/** When Eco Integrated Web Search is armed, replace native WebSearch on Claude subagents. */
+export interface IntegratedWebSearchAgentDefOptions {
+  serverName: string;
+  fullToolName: string;
+}
+
 export function createAgentDefinitionsFromOrchestration(
   orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
@@ -330,6 +336,11 @@ export function createAgentDefinitionsFromOrchestration(
      * proxy role alias), so usage billing can attribute requests to the right agent role.
      */
     resolveModelId?: (agentKey: string, modelId: string) => string;
+    /**
+     * Session uses Eco Integrated search: deny native WebSearch on every subagent definition, and
+     * for search-capable agents expose the Eco MCP tool (explicit tools) / server (inherit tools).
+     */
+    integratedWebSearch?: IntegratedWebSearchAgentDefOptions;
   } = {},
 ): EcoResolvedAgentDefinitionSet {
   const templateById = new Map(templates.map((template) => [template.id, template]));
@@ -349,6 +360,7 @@ export function createAgentDefinitionsFromOrchestration(
       template,
       resolveOrchestrationAgentSkills(agent.agentKey, sdkKey, options),
       options.resolveModelId,
+      options.integratedWebSearch,
     );
     agentKeys.push(sdkKey);
   }
@@ -541,13 +553,26 @@ function buildSdkAgentDefinition(
   template: EcoAgentTemplateConfig,
   sessionSkills: readonly string[] = [],
   resolveModelId?: (agentKey: string, modelId: string) => string,
+  integratedWebSearch?: IntegratedWebSearchAgentDefOptions,
 ): Record<string, unknown> {
   const toolPolicy = materializeEcoToolPolicy(
     applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation),
   );
-  const mcpServers = resolveAssignedMcpServers(toolPolicy, [...template.mcpServers, ...agent.mcpServers]);
-  const tools = toolPolicy.allowed.length > 0 ? allowedToolPatternsFromPolicy(toolPolicy) : [];
-  const disallowedTools = toolPolicy.disallowed;
+  let mcpServers = resolveAssignedMcpServers(toolPolicy, [...template.mcpServers, ...agent.mcpServers]);
+  let tools = toolPolicy.allowed.length > 0 ? allowedToolPatternsFromPolicy(toolPolicy) : [];
+  let disallowedTools = [...toolPolicy.disallowed];
+  if (integratedWebSearch) {
+    const applied = applyIntegratedWebSearchToAgentToolFields({
+      tools,
+      disallowedTools,
+      mcpServers,
+      networkWebSearch: toolPolicy.network?.webSearch,
+      integratedWebSearch,
+    });
+    tools = applied.tools;
+    disallowedTools = applied.disallowedTools;
+    mcpServers = applied.mcpServers;
+  }
   const skills = sessionSkills.length > 0 ? [...sessionSkills] : [];
   return {
     description: buildAgentDescription(agent, template),
@@ -559,6 +584,46 @@ function buildSdkAgentDefinition(
       : requireModelId(agent.modelRef.modelId, agent.agentKey),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(skills.length > 0 ? { skills } : {}),
+  };
+}
+
+/**
+ * Session-level Integrated search: always deny native WebSearch on the definition.
+ * Search-capable agents get the Eco MCP server (and tool when they use an explicit allowlist).
+ */
+export function applyIntegratedWebSearchToAgentToolFields(input: {
+  tools: readonly string[];
+  disallowedTools: readonly string[];
+  mcpServers: readonly string[];
+  networkWebSearch?: boolean;
+  integratedWebSearch: IntegratedWebSearchAgentDefOptions;
+}): { tools: string[]; disallowedTools: string[]; mcpServers: string[] } {
+  const disallowedTools = uniqueToolPatterns([...input.disallowedTools, "WebSearch"]);
+  const wantsSearch =
+    input.networkWebSearch !== false &&
+    (input.tools.includes("WebSearch") ||
+      (input.tools.length === 0 && input.networkWebSearch === true));
+  if (!wantsSearch) {
+    return {
+      tools: [...input.tools],
+      disallowedTools,
+      mcpServers: [...input.mcpServers],
+    };
+  }
+  const mcpServers = uniqueToolPatterns([
+    ...input.mcpServers,
+    input.integratedWebSearch.serverName,
+  ]);
+  if (input.tools.length === 0) {
+    return { tools: [], disallowedTools, mcpServers };
+  }
+  return {
+    tools: uniqueToolPatterns([
+      ...input.tools.filter((tool) => tool !== "WebSearch"),
+      input.integratedWebSearch.fullToolName,
+    ]),
+    disallowedTools,
+    mcpServers,
   };
 }
 

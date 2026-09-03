@@ -2,6 +2,7 @@ import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser"
 import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
+import { isEcoWebSearchToolName } from "./integrated-web-search";
 
 export type ActivityActionIcon =
   | "search"
@@ -219,6 +220,9 @@ export function resolveActionKind(input: { toolName?: string; payload?: ActionKi
   }
   if (isEcoImageDisplayToolName(toolName)) {
     return resolved("imageDisplay");
+  }
+  if (isEcoWebSearchToolName(toolName)) {
+    return resolved("webSearch");
   }
 
   if (name.startsWith("mcp__")) {

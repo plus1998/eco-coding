@@ -8009,55 +8009,45 @@ button.sidebar-settings-meta {
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
-.integrated-web-search-provider-list {
-  margin-top: 0;
+.integrated-web-search-enable-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.integrated-web-search-provider-row {
-  cursor: pointer;
-  list-style: none;
+.integrated-web-search-enable-copy .mcp-field-label {
+  color: var(--text-heading);
+  font-size: 13px;
+  letter-spacing: -0.01em;
 }
 
-.integrated-web-search-provider-row.is-selected {
-  background: var(--accent-soft);
-}
-
-.integrated-web-search-provider-row.is-selected:hover {
-  background: var(--accent-soft);
-}
-
-.integrated-web-search-provider-row[aria-disabled="true"] {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.integrated-web-search-provider-row[aria-disabled="true"]:hover {
-  background: transparent;
-}
-
-.integrated-web-search-provider-row:focus-visible {
-  position: relative;
-  z-index: 1;
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: -2px;
-}
-
-.integrated-web-search-provider-row .mcp-server-meta {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+.integrated-web-search-enable-copy .mcp-field-hint {
+  margin: 0;
+  font-size: 12px;
   line-height: 1.45;
+  color: var(--text-muted);
 }
 
-.integrated-web-search-provider-check {
+.integrated-web-search-api-key-actions {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  color: var(--accent);
+  gap: 10px;
+}
+
+button.integrated-web-search-clear-key {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.integrated-web-search-clear-key:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .mcp-server-name {

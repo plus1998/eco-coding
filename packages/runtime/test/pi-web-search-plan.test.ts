@@ -47,6 +47,11 @@ test("resolvePiWebSearchPlan decision table", () => {
   ).toBe("none");
 });
 
+test("resolveWebSearchPlan aliases resolvePiWebSearchPlan", async () => {
+  const { resolveWebSearchPlan } = await import("../src/pi-web-search-plan.js");
+  expect(resolveWebSearchPlan).toBe(resolvePiWebSearchPlan);
+});
+
 test("isIntegratedWebSearchConfigured requires enabled + api key", () => {
   expect(isIntegratedWebSearchConfigured({ enabled: true, apiKey: "key" })).toBe(true);
   expect(isIntegratedWebSearchConfigured({ enabled: true, apiKey: "  " })).toBe(false);

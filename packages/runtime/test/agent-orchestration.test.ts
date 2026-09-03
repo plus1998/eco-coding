@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  applyIntegratedWebSearchToAgentToolFields,
   buildBuiltinPlanToolPermissionEntry,
   buildClaudeCodeSystemPrompt,
   buildCodexMainAgentOrchestrationAppend,
@@ -110,13 +111,39 @@ test("createAgentDefinitionsFromOrchestration builds enabled SDK agent definitio
   expect(definition.description).toContain("Use when: Need sourced findings or external context");
 });
 
-test("createAgentDefinitionsFromOrchestration merges dynamic session skills", () => {
+test("createAgentDefinitionsFromOrchestration swaps native WebSearch for Integrated MCP", () => {
   const resolved = createAgentDefinitionsFromOrchestration(orchestration, [researchTemplate], {
-    agentSkills: { eco_researcher: ["workspace-research"] },
+    integratedWebSearch: {
+      serverName: "eco_web_search",
+      fullToolName: "mcp__eco_web_search__search",
+    },
   });
 
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
-  expect(definition.skills).toEqual(["workspace-research"]);
+  expect(definition.tools).toEqual(
+    expect.arrayContaining(["Read", "mcp__eco_web_search__search"]),
+  );
+  expect(definition.tools).not.toContain("WebSearch");
+  expect(definition.disallowedTools).toEqual(
+    expect.arrayContaining(["Bash", "Agent", "Task", "TaskList", "TaskOutput", "WebSearch"]),
+  );
+  expect(definition.mcpServers).toEqual(expect.arrayContaining(["sources", "browser", "eco_web_search"]));
+});
+
+test("applyIntegratedWebSearchToAgentToolFields skips MCP for network.webSearch false", () => {
+  const applied = applyIntegratedWebSearchToAgentToolFields({
+    tools: ["Read", "Glob", "Grep"],
+    disallowedTools: ["Bash"],
+    mcpServers: [],
+    networkWebSearch: false,
+    integratedWebSearch: {
+      serverName: "eco_web_search",
+      fullToolName: "mcp__eco_web_search__search",
+    },
+  });
+  expect(applied.tools).toEqual(["Read", "Glob", "Grep"]);
+  expect(applied.disallowedTools).toContain("WebSearch");
+  expect(applied.mcpServers).toEqual([]);
 });
 
 test("buildMainAgentSystemPrompt appends only UI-configured main prompts", () => {

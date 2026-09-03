@@ -30,6 +30,8 @@ export interface EcoSdkSessionOptions {
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];
+  /** Extra bare tool names removed from model context for this session (e.g. WebSearch when Eco Integrated search is armed). */
+  disallowedTools?: string[];
   /** Composer-selected MCP servers for this session (merged with orchestration assignment). */
   runtimeMcpServers?: string[];
 }

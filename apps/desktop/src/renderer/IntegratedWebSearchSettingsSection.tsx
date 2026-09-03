@@ -1,5 +1,5 @@
-import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { LinkIcon } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   IntegratedWebSearchProvider,
@@ -13,7 +13,14 @@ interface IntegratedWebSearchSettingsSectionProps {
   onSave: (input: IntegratedWebSearchSettingsSaveInput) => void;
 }
 
-const PROVIDERS: IntegratedWebSearchProvider[] = ["tavily", "doubao", "brave"];
+const PROVIDERS: readonly {
+  id: IntegratedWebSearchProvider;
+  apiKeyUrl: string;
+}[] = [
+  { id: "tavily", apiKeyUrl: "https://app.tavily.com/home" },
+  { id: "doubao", apiKeyUrl: "https://console.volcengine.com/search-infinity" },
+  { id: "brave", apiKeyUrl: "https://api-dashboard.search.brave.com/" },
+];
 
 export function IntegratedWebSearchSettingsSection({
   settings,
@@ -21,6 +28,7 @@ export function IntegratedWebSearchSettingsSection({
   onSave,
 }: IntegratedWebSearchSettingsSectionProps) {
   const { t } = useTranslation();
+  const enableId = useId();
   const [enabled, setEnabled] = useState(settings.enabled);
   const [provider, setProvider] = useState(settings.provider);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
@@ -32,6 +40,9 @@ export function IntegratedWebSearchSettingsSection({
   useEffect(() => {
     setProvider(settings.provider);
   }, [settings.provider]);
+
+  const selectedProvider = PROVIDERS.find((entry) => entry.id === provider) ?? PROVIDERS[0]!;
+  const fieldsDisabled = disabled || !enabled;
 
   function commitEnabled(nextEnabled: boolean) {
     setEnabled(nextEnabled);
@@ -64,66 +75,80 @@ export function IntegratedWebSearchSettingsSection({
   }
 
   return (
-    <section className="mcp-list-section models-integrated-web-search-section">
-      <label className="mcp-field mcp-field-checkbox">
-        <input
-          type="checkbox"
-          checked={enabled}
-          disabled={disabled}
-          onChange={(event) => commitEnabled(event.target.checked)}
-        />
-        <span className="mcp-field-label">{t("settings.integratedWebSearch.enabled")}</span>
-      </label>
-      <p className="mcp-field-hint">{t("settings.integratedWebSearch.hint")}</p>
-      <div className="mcp-list-toolbar">
-        <span className="mcp-list-toolbar-label">{t("settings.integratedWebSearch.provider")}</span>
+    <section className="provider-form-section models-integrated-web-search-section">
+      <div className="mcp-field models-toggle-field provider-enable-row">
+        <span className="integrated-web-search-enable-copy" id={enableId}>
+          <span className="mcp-field-label">{t("settings.integratedWebSearch.enabled")}</span>
+          <span className="mcp-field-hint">{t("settings.integratedWebSearch.hint")}</span>
+        </span>
+        <label
+          className="mcp-toggle mcp-toggle-sm"
+          title={enabled ? t("common.enabled") : t("common.disabled")}
+        >
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={disabled}
+            aria-labelledby={enableId}
+            onChange={(event) => commitEnabled(event.target.checked)}
+          />
+          <span className="mcp-toggle-track" aria-hidden />
+        </label>
       </div>
-      <ul
-        className="mcp-server-list integrated-web-search-provider-list"
-        role="radiogroup"
-        aria-label={t("settings.integratedWebSearch.provider")}
-      >
-        {PROVIDERS.map((entry) => {
-          const selected = provider === entry;
-          return (
-            <li
-              key={entry}
-              role="radio"
-              aria-checked={selected}
-              aria-disabled={disabled || !enabled}
-              tabIndex={disabled || !enabled ? -1 : selected ? 0 : -1}
-              className={`mcp-server-row integrated-web-search-provider-row${selected ? " is-selected" : ""}`}
-              onClick={() => {
-                if (disabled || !enabled) {
-                  return;
-                }
-                commitProvider(entry);
-              }}
-              onKeyDown={(event) => {
-                if (disabled || !enabled) {
-                  return;
-                }
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  commitProvider(entry);
-                }
-              }}
-            >
-              <div className="mcp-server-summary">
-                <span className="mcp-server-name">{t(`settings.integratedWebSearch.providers.${entry}`)}</span>
-                <span className="mcp-server-meta">{t(`settings.integratedWebSearch.providerHint.${entry}`)}</span>
-              </div>
-              <div className="mcp-server-actions">
-                <span className="integrated-web-search-provider-check" aria-hidden="true">
-                  {selected ? <Check size={18} strokeWidth={2.2} /> : null}
+
+      <div className="mcp-field models-provider-preset-field">
+        <span className="mcp-field-label">{t("settings.integratedWebSearch.provider")}</span>
+        <div
+          className="provider-preset-tabs"
+          role="radiogroup"
+          aria-label={t("settings.integratedWebSearch.provider")}
+        >
+          {PROVIDERS.map((entry) => {
+            const selected = provider === entry.id;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="radio"
+                className={`provider-preset-tab${selected ? " is-active" : ""}`}
+                aria-checked={selected}
+                disabled={fieldsDisabled}
+                onClick={() => commitProvider(entry.id)}
+              >
+                <span className="provider-preset-tab-label">
+                  {t(`settings.integratedWebSearch.providers.${entry.id}`)}
                 </span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <label className="mcp-field">
-        <span className="mcp-field-label">{t(`settings.integratedWebSearch.apiKey.${provider}`)}</span>
+        <span className="models-provider-label-row">
+          <span className="mcp-field-label">{t(`settings.integratedWebSearch.apiKey.${provider}`)}</span>
+          <span className="integrated-web-search-api-key-actions">
+            <a
+              className="models-provider-inline-link"
+              href={selectedProvider.apiKeyUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <LinkIcon size={12} />
+              {t("settings.integratedWebSearch.createKey")}
+            </a>
+            {settings.hasApiKey ? (
+              <button
+                type="button"
+                className="models-provider-inline-link integrated-web-search-clear-key"
+                disabled={fieldsDisabled}
+                onClick={() => clearApiKey()}
+              >
+                {t("settings.integratedWebSearch.clearApiKey")}
+              </button>
+            ) : null}
+          </span>
+        </span>
         <input
           className="mcp-field-input"
           type="password"
@@ -133,7 +158,7 @@ export function IntegratedWebSearchSettingsSection({
               ? t("settings.integratedWebSearch.apiKeyConfigured")
               : t(`settings.integratedWebSearch.apiKeyPlaceholder.${provider}`)
           }
-          disabled={disabled || !enabled}
+          disabled={fieldsDisabled}
           onChange={(event) => setApiKeyDraft(event.target.value)}
           onBlur={() => commitApiKey()}
           onKeyDown={(event) => {
@@ -142,18 +167,7 @@ export function IntegratedWebSearchSettingsSection({
             }
           }}
         />
-        <span className="mcp-field-hint">{t("settings.integratedWebSearch.apiKeyHint")}</span>
       </label>
-      {settings.hasApiKey ? (
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={disabled || !enabled}
-          onClick={() => clearApiKey()}
-        >
-          {t("settings.integratedWebSearch.clearApiKey")}
-        </button>
-      ) : null}
     </section>
   );
 }

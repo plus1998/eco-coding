@@ -609,6 +609,28 @@ export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions
   return [...merged];
 }
 
+/** Detect Eco Integrated Web Search arming from session MCP + disallowed native WebSearch. */
+export function resolveIntegratedWebSearchAgentDefOptions(
+  session?: EcoSdkSessionOptions,
+): { serverName: string; fullToolName: string } | undefined {
+  if (!session?.disallowedTools?.some((tool) => tool.trim() === "WebSearch")) {
+    return undefined;
+  }
+  const fullToolName = session.mcpAllowedTools?.find((tool) => tool.includes("eco_web_search"))?.trim();
+  if (!fullToolName) {
+    return undefined;
+  }
+  const serverFromMcp = Object.keys(session.mcpServers ?? {}).find((name) =>
+    name.includes("eco_web_search"),
+  );
+  const serverFromRuntime = session.runtimeMcpServers?.find((name) => name.includes("eco_web_search"));
+  const serverName = (serverFromMcp ?? serverFromRuntime)?.trim();
+  if (!serverName) {
+    return undefined;
+  }
+  return { serverName, fullToolName };
+}
+
 export function resolveSdkSessionOptions(session?: EcoSdkSessionOptions): {
   settingSources: EcoSdkSessionOptions["settingSources"];
   skills: EcoSdkSessionOptions["skills"];
@@ -1016,6 +1038,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // Orchestration agents must request the role route's model id (the proxy alias), so the local
     // proxy can attribute usage to the right agent role instead of guessing by shared model.
     const resolveSdkModel = createSdkModelResolver(input.routes);
+    const integratedWebSearchForAgents = resolveIntegratedWebSearchAgentDefOptions(input.sdkSession);
     const dynamicAgents = input.agentRegistry
       ? createAgentDefinitionsFromOrchestration(
           input.agentRegistry.orchestration,
@@ -1023,6 +1046,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           {
             ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
             resolveModelId: resolveSdkModel,
+            ...(integratedWebSearchForAgents
+              ? { integratedWebSearch: integratedWebSearchForAgents }
+              : {}),
           },
         )
       : undefined;
@@ -1128,13 +1154,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         planModeToolPolicy === "forbidden",
     );
     const mergedAllowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
-    const allowedTools = stripProtectedPlanModeAutoApprovedTools(
+    const allowedToolsRaw = stripProtectedPlanModeAutoApprovedTools(
       this.options.toolPermissionHandler
         ? stripBashAutoApprovedTools(mergedAllowedTools)
         : mergedAllowedTools,
     );
     const sdkDisallowedTools = mergeSdkDisallowedTools(
       toolPermissions?.main.disallowed,
+      input.sdkSession?.disallowedTools,
       phase.askPhase ? askDisallowedSdkTools : [],
       !phase.planningPhase
         ? approvedExitPlanToolUseId
@@ -1142,6 +1169,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           : agentDisallowedSdkTools
         : [],
     );
+    const disallowedSet = new Set(sdkDisallowedTools);
+    const allowedTools = allowedToolsRaw.filter((tool) => !disallowedSet.has(tool));
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
     // attributed to the planner role; raw orchestration model ids are ambiguous when multiple
     // roles share the same upstream model.

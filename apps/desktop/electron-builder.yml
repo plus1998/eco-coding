@@ -38,6 +38,8 @@ extraResources:
     to: eco-image-generation-mcp-stdio.mjs
   - from: packaging/eco-image-view-mcp-stdio.mjs
     to: eco-image-view-mcp-stdio.mjs
+  - from: packaging/eco-web-search-mcp-stdio.mjs
+    to: eco-web-search-mcp-stdio.mjs
 
 npmRebuild: false
 nodeGypRebuild: false

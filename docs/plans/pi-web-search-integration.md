@@ -1,9 +1,9 @@
 # PI Web Search 集成计划
 
-> 状态：实施完成（Phase 1）  
-> 更新：2026-09-02  
-> 范围：PI runtime + 模型能力配置 + Integrated 搜索（Tavily / 豆包 / Brave）  
-> 不在本计划：Claude/Codex driver 改造、native 失败自动降级、models.dev 字段
+> 状态：Phase 1 完成；Claude/Codex Integrated MCP 已接入（与 PI 共用决策表）  
+> 更新：2026-09-03  
+> 范围：PI runtime + Claude/Codex MCP 注入 + 模型能力配置 + Integrated 搜索（Tavily / 豆包 / Brave）  
+> 不在本计划：native 失败自动降级、models.dev 字段、ACP
 
 ## 背景
 
@@ -39,8 +39,9 @@
 
 ### 与 Claude/Codex 的关系
 
-- Claude SDK / Codex 已有各自 WebSearch 路径，**本计划不修改**。
-- Integrated 设置先服务 PI；后续可对齐 Claude/Codex 的第三方搜索。
+- Native：Claude 内置 `WebSearch`、Codex `web_search`、PI `pi-web-search`（同类 provider 路径）。
+- Integrated：Eco MCP（Claude/Codex）+ PI extension，共用 `resolveWebSearchPlan` 决策表与 `searchIntegratedWeb` 后端。
+- `supportsNativeWebSearch === false` 且 Integrated 已配置时，三端均走 Eco 搜索；native 与 integrated 互斥。
 
 ## 架构
 
