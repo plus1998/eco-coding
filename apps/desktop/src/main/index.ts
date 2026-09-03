@@ -10116,6 +10116,9 @@ async function handleRunCancelled(
   worktreePlan: WorktreePlan,
   message?: string,
 ): Promise<void> {
+  // User stop lands on idle (not drainable). Pause remaining queued follow-ups so they
+  // do not silently sit forever, and so Resume/引导 stays an explicit next step.
+  autoPauseFollowUpQueueWhenQueuedRemain(threadId);
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
   await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps(), message);
 }
@@ -12651,6 +12654,15 @@ function autoPauseFollowUpQueueForErrorStatus(
   }
   conversationStore.setThreadFollowUpQueuePaused(threadId, true);
   return true;
+}
+
+/** Pause the follow-up queue when queued rows remain after a user stop. */
+function autoPauseFollowUpQueueWhenQueuedRemain(threadId: string): void {
+  const queued = conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] });
+  if (queued.length === 0) {
+    return;
+  }
+  setThreadFollowUpQueuePausedState(threadId, true);
 }
 
 function setThreadFollowUpQueuePausedState(
