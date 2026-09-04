@@ -31,12 +31,15 @@ export interface StorageUsageSnapshot {
   unmetered: StorageUnmeteredItem[];
 }
 
+export type StorageCleanupOlderThanUnit = "hours" | "days";
+
 export type StorageCleanupAction =
   | "clearLogs"
   | "clearCodexCheckpoints"
   | "clearCodexHomeCaches"
   | "clearClaudeSessions"
   | "clearPiAgent"
+  | "clearOldConversations"
   | "clearAllConversations"
   | "vacuumDatabase";
 
@@ -45,6 +48,13 @@ export interface StorageCleanupRequest {
   options?: {
     /** Only for clearLogs: delete upstream-*.log older than N days (mtime). */
     olderThanDays?: number;
+    /**
+     * For clearOldConversations: retention amount (positive).
+     * Combined with olderThanUnit; required for that action.
+     */
+    olderThanValue?: number;
+    /** For clearOldConversations: hours or days. Required with olderThanValue. */
+    olderThanUnit?: StorageCleanupOlderThanUnit;
     /**
      * For clearCodexCheckpoints: remove dirs whose thread is not in DB.
      * For clearClaudeSessions: remove only Eco worktree project dirs with no active Eco session.

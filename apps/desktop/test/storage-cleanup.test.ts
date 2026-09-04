@@ -238,6 +238,78 @@ test.skipIf(!sqliteAvailable)("clearAllConversations skips running threads", asy
   expect(store.listThreads().map((thread) => thread.id)).toEqual(["running-thread-id-01"]);
 });
 
+test("clearOldConversations deletes by updatedAt and skips busy", async () => {
+  const userDataDir = path.join(tempDir, "userdata-old");
+  const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+  const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+  const threads = [
+    {
+      id: "old-idle-thread-00001",
+      status: "idle" as const,
+      updatedAt: tenDaysAgo,
+    },
+    {
+      id: "recent-idle-thread-01",
+      status: "idle" as const,
+      updatedAt: oneDayAgo,
+    },
+    {
+      id: "old-running-thread-01",
+      status: "running" as const,
+      updatedAt: tenDaysAgo,
+    },
+  ];
+
+  const deleted: string[] = [];
+  const result = await runStorageCleanup(
+    {
+      userDataDir,
+      databasePath: path.join(userDataDir, "eco-coding.sqlite"),
+      conversationStore: {
+        listThreads: () => threads,
+      } as never,
+      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
+      deleteThreadWithExternalState: async (threadId) => {
+        deleted.push(threadId);
+        const index = threads.findIndex((thread) => thread.id === threadId);
+        if (index >= 0) {
+          threads.splice(index, 1);
+        }
+      },
+      hasActiveThreadRuns: () => true,
+    },
+    {
+      action: "clearOldConversations",
+      options: { olderThanValue: 7, olderThanUnit: "days" },
+    },
+  );
+
+  expect(deleted).toEqual(["old-idle-thread-00001"]);
+  expect(result.deletedCount).toBe(1);
+  expect(result.skippedThreadIds).toEqual(["old-running-thread-01"]);
+  expect(result.ok).toBe(false);
+  expect(threads.map((thread) => thread.id).sort()).toEqual([
+    "old-running-thread-01",
+    "recent-idle-thread-01",
+  ]);
+});
+
+test("clearOldConversations rejects missing retention options", async () => {
+  const result = await runStorageCleanup(
+    {
+      userDataDir: tempDir,
+      databasePath: path.join(tempDir, "x.sqlite"),
+      conversationStore: { listThreads: () => [] } as never,
+      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(tempDir, "cp")),
+      deleteThreadWithExternalState: async () => {},
+      hasActiveThreadRuns: () => false,
+    },
+    { action: "clearOldConversations" },
+  );
+  expect(result.ok).toBe(false);
+  expect(result.errors?.[0]).toMatch(/olderThanValue/i);
+});
+
 test.skipIf(!sqliteAvailable)("vacuumDatabase refuses while threads are active", async () => {
   const userDataDir = path.join(tempDir, "userdata-vac");
   const store = await createConversationStore(path.join(userDataDir, "eco-coding.sqlite"));

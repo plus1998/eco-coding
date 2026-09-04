@@ -2626,6 +2626,7 @@ export type {
   StorageCategoryId,
   StorageCategoryUsage,
   StorageCleanupAction,
+  StorageCleanupOlderThanUnit,
   StorageCleanupRequest,
   StorageCleanupResult,
   StorageUnmeteredId,
@@ -2647,13 +2648,14 @@ export function isStorageCleanupRequest(
     action !== "clearCodexHomeCaches" &&
     action !== "clearClaudeSessions" &&
     action !== "clearPiAgent" &&
+    action !== "clearOldConversations" &&
     action !== "clearAllConversations" &&
     action !== "vacuumDatabase"
   ) {
     return false;
   }
   if (record.options === undefined) {
-    return true;
+    return action !== "clearOldConversations";
   }
   if (!record.options || typeof record.options !== "object") {
     return false;
@@ -2665,8 +2667,28 @@ export function isStorageCleanupRequest(
   ) {
     return false;
   }
+  if (options.olderThanValue !== undefined) {
+    if (typeof options.olderThanValue !== "number" || !Number.isFinite(options.olderThanValue)) {
+      return false;
+    }
+  }
+  if (options.olderThanUnit !== undefined) {
+    if (options.olderThanUnit !== "hours" && options.olderThanUnit !== "days") {
+      return false;
+    }
+  }
   if (options.orphansOnly !== undefined && typeof options.orphansOnly !== "boolean") {
     return false;
+  }
+  if (action === "clearOldConversations") {
+    const valueOk =
+      typeof options.olderThanValue === "number" &&
+      Number.isFinite(options.olderThanValue) &&
+      options.olderThanValue > 0;
+    const unitOk = options.olderThanUnit === "hours" || options.olderThanUnit === "days";
+    if (!valueOk || !unitOk) {
+      return false;
+    }
   }
   return true;
 }

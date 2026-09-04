@@ -19,6 +19,7 @@ import type {
   StorageCategoryId,
   StorageCategoryUsage,
   StorageCleanupAction,
+  StorageCleanupOlderThanUnit,
   StorageCleanupRequest,
   StorageCleanupResult,
   StorageUsageSnapshot,
@@ -27,6 +28,9 @@ import type {
 /** Spring: critically damped, response ~0.35s — Apple move/reposition default. */
 const SPRING_SETTLE = { type: "spring" as const, bounce: 0, duration: 0.35 };
 const SPRING_BAR = { type: "spring" as const, bounce: 0, duration: 0.45 };
+
+const DEFAULT_OLD_CONVERSATIONS_VALUE = 7;
+const DEFAULT_OLD_CONVERSATIONS_UNIT: StorageCleanupOlderThanUnit = "days";
 
 type BusyKey =
   | StorageCleanupAction
@@ -171,6 +175,9 @@ export function StorageSettingsPanel() {
   const [busyKey, setBusyKey] = useState<BusyKey>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [oldConversationsValue, setOldConversationsValue] = useState(DEFAULT_OLD_CONVERSATIONS_VALUE);
+  const [oldConversationsUnit, setOldConversationsUnit] =
+    useState<StorageCleanupOlderThanUnit>(DEFAULT_OLD_CONVERSATIONS_UNIT);
 
   const springSettle = prefersReducedMotion ? { duration: 0.15 } : SPRING_SETTLE;
   const springBar = prefersReducedMotion ? { duration: 0.15 } : SPRING_BAR;
@@ -211,26 +218,83 @@ export function StorageSettingsPanel() {
     setErrorMessage(null);
     try {
       const result: StorageCleanupResult = await window.eco.cleanupStorage(def.request);
-      if (result.errors?.length) {
-        setErrorMessage(result.errors.join("\n"));
-      }
-      if (result.message) {
-        setStatusMessage(result.message);
-      } else if (result.ok) {
-        const freed =
-          typeof result.freedBytes === "number"
-            ? t("settings.storage.freed", {
-                size: formatBytes(result.freedBytes, i18n.language),
-              })
-            : t("settings.storage.done");
-        setStatusMessage(freed);
-      }
+      applyCleanupResult(result);
       await loadUsage();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusyKey(null);
     }
+  }
+
+  async function runClearOldConversations() {
+    if (!window.eco?.cleanupStorage) {
+      setErrorMessage(t("settings.storage.unavailable"));
+      return;
+    }
+    if (
+      !Number.isFinite(oldConversationsValue) ||
+      oldConversationsValue <= 0 ||
+      !Number.isInteger(oldConversationsValue)
+    ) {
+      setErrorMessage(t("settings.storage.clearOldConversationsInvalid"));
+      return;
+    }
+    const unitLabel = t(`settings.storage.olderThanUnit.${oldConversationsUnit}`);
+    if (
+      !window.confirm(
+        t("settings.storage.clearOldConversationsConfirm", {
+          count: oldConversationsValue,
+          unit: unitLabel,
+        }),
+      )
+    ) {
+      return;
+    }
+    setBusyKey("clearOldConversations");
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const result: StorageCleanupResult = await window.eco.cleanupStorage({
+        action: "clearOldConversations",
+        options: {
+          olderThanValue: oldConversationsValue,
+          olderThanUnit: oldConversationsUnit,
+        },
+      });
+      applyCleanupResult(result);
+      await loadUsage();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  function applyCleanupResult(result: StorageCleanupResult) {
+    if (result.errors?.length) {
+      setErrorMessage(result.errors.join("\n"));
+    }
+    if (result.message) {
+      setStatusMessage(result.message);
+      return;
+    }
+    if (!result.ok) {
+      return;
+    }
+    if (typeof result.freedBytes === "number") {
+      setStatusMessage(
+        t("settings.storage.freed", {
+          size: formatBytes(result.freedBytes, i18n.language),
+        }),
+      );
+      return;
+    }
+    if (typeof result.deletedCount === "number") {
+      setStatusMessage(t("settings.storage.deletedCount", { count: result.deletedCount }));
+      return;
+    }
+    setStatusMessage(t("settings.storage.done"));
   }
 
   const busy = busyKey !== null;
@@ -381,6 +445,56 @@ export function StorageSettingsPanel() {
         <h2 className="storage-section-title">{t("settings.storage.cleanup")}</h2>
         <p className="storage-section-lede">{t("settings.storage.cleanupSubtitle")}</p>
         <ul className="storage-inset-group storage-action-group">
+          <li className="storage-inset-row storage-action-row storage-old-conversations-row">
+            <span className="storage-row-copy storage-action-copy">
+              <strong>{t("settings.storage.clearOldConversations")}</strong>
+              <small>{t("settings.storage.clearOldConversationsHint")}</small>
+            </span>
+            <div className="storage-old-conversations-controls">
+              <input
+                type="number"
+                className="storage-old-conversations-input"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                disabled={busy}
+                value={oldConversationsValue}
+                aria-label={t("settings.storage.clearOldConversations")}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setOldConversationsValue(Number.isFinite(next) ? next : NaN);
+                }}
+              />
+              <label className="storage-old-conversations-unit">
+                <span className="sr-only">{t("settings.storage.olderThanUnitLabel")}</span>
+                <select
+                  disabled={busy}
+                  value={oldConversationsUnit}
+                  aria-label={t("settings.storage.olderThanUnitLabel")}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (next === "hours" || next === "days") {
+                      setOldConversationsUnit(next);
+                    }
+                  }}
+                >
+                  <option value="days">{t("settings.storage.olderThanUnit.days")}</option>
+                  <option value="hours">{t("settings.storage.olderThanUnit.hours")}</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="storage-pill-button"
+                disabled={busy || !Number.isFinite(oldConversationsValue) || oldConversationsValue <= 0}
+                onClick={() => void runClearOldConversations()}
+              >
+                {busyKey === "clearOldConversations" ? (
+                  <Loader2 size={14} className="storage-spin" aria-hidden />
+                ) : null}
+                {t("settings.storage.clear")}
+              </button>
+            </div>
+          </li>
           {MANAGE_ACTIONS.map((def) => (
             <StorageActionRow
               key={String(def.busyKey)}

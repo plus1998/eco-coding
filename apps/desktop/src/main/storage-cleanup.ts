@@ -3,6 +3,7 @@ import path from "node:path";
 import { resolveCodexHomeDir } from "@eco/runtime/codex-config-sync";
 import type {
   StorageCleanupAction,
+  StorageCleanupOlderThanUnit,
   StorageCleanupRequest,
   StorageCleanupResult,
 } from "../shared/storage-usage";
@@ -50,6 +51,8 @@ export async function runStorageCleanup(
       return clearClaudeSessions(deps, request.options?.orphansOnly === true);
     case "clearPiAgent":
       return clearPiAgent(deps, request.options?.orphansOnly === true);
+    case "clearOldConversations":
+      return clearOldConversations(deps, request.options?.olderThanValue, request.options?.olderThanUnit);
     case "clearAllConversations":
       return clearAllConversations(deps);
     case "vacuumDatabase":
@@ -382,6 +385,52 @@ export async function clearPiAgent(
   };
 }
 
+async function clearOldConversations(
+  deps: StorageCleanupDeps,
+  olderThanValue: number | undefined,
+  olderThanUnit: StorageCleanupOlderThanUnit | undefined,
+): Promise<StorageCleanupResult> {
+  const cutoffMs = resolveOlderThanCutoffMs(olderThanValue, olderThanUnit);
+  if (cutoffMs === undefined) {
+    return {
+      ok: false,
+      errors: ["clearOldConversations requires a positive olderThanValue and olderThanUnit (hours|days)."],
+    };
+  }
+
+  const threads = deps.conversationStore.listThreads();
+  const skippedThreadIds: string[] = [];
+  const errors: string[] = [];
+  let deletedCount = 0;
+
+  for (const thread of threads) {
+    const updatedAtMs = Date.parse(thread.updatedAt);
+    if (!Number.isFinite(updatedAtMs) || updatedAtMs >= cutoffMs) {
+      continue;
+    }
+    if (thread.status === "running" || thread.status === "queued") {
+      skippedThreadIds.push(thread.id);
+      continue;
+    }
+    try {
+      await deps.deleteThreadWithExternalState(thread.id);
+      deletedCount += 1;
+    } catch (error) {
+      errors.push(`${thread.id}: ${errorMessage(error)}`);
+    }
+  }
+
+  return {
+    ok: errors.length === 0 && skippedThreadIds.length === 0,
+    deletedCount,
+    ...(skippedThreadIds.length > 0 ? { skippedThreadIds } : {}),
+    ...(errors.length > 0 ? { errors } : {}),
+    ...(skippedThreadIds.length > 0
+      ? { message: "Some threads were still running or queued and were not deleted." }
+      : {}),
+  };
+}
+
 async function clearAllConversations(deps: StorageCleanupDeps): Promise<StorageCleanupResult> {
   const threads = deps.conversationStore.listThreads();
   const skippedThreadIds: string[] = [];
@@ -410,6 +459,22 @@ async function clearAllConversations(deps: StorageCleanupDeps): Promise<StorageC
       ? { message: "Some threads were still running or queued and were not deleted." }
       : {}),
   };
+}
+
+function resolveOlderThanCutoffMs(
+  olderThanValue: number | undefined,
+  olderThanUnit: StorageCleanupOlderThanUnit | undefined,
+): number | undefined {
+  if (
+    typeof olderThanValue !== "number" ||
+    !Number.isFinite(olderThanValue) ||
+    olderThanValue <= 0 ||
+    (olderThanUnit !== "hours" && olderThanUnit !== "days")
+  ) {
+    return undefined;
+  }
+  const msPerUnit = olderThanUnit === "hours" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  return Date.now() - olderThanValue * msPerUnit;
 }
 
 async function vacuumDatabase(deps: StorageCleanupDeps): Promise<StorageCleanupResult> {
@@ -442,6 +507,7 @@ export function isStorageCleanupAction(value: unknown): value is StorageCleanupA
     value === "clearCodexHomeCaches" ||
     value === "clearClaudeSessions" ||
     value === "clearPiAgent" ||
+    value === "clearOldConversations" ||
     value === "clearAllConversations" ||
     value === "vacuumDatabase"
   );
