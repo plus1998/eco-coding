@@ -151,6 +151,10 @@ Token usage may still appear when pricing is missing, but cost will be incomplet
 
 Mobile is not publicly released yet. Interop requires a user-owned Supabase project (no official Eco node).
 
+### Artifacts
+
+After Center is connected and the html-host functions are deployed, the agent can publish single-file HTML pages (progress, reports, and similar). Preview and copy the link from Feed and workspace Cards. Capability status and notes live under **Settings → Connection → Artifacts**. Without a Custom Domain on Cloud, share links may not render correctly (the Artifacts tab warns about this); see [supabase-deploy.md](supabase-deploy.md) “HTML hosting”. Mobile Feed is **not yet aligned** with this card.
+
 ### Deploy Supabase Center
 
 - Cloud: [supabase-deploy.md](supabase-deploy.md)

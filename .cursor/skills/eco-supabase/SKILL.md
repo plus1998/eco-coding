@@ -27,12 +27,14 @@ Schema / 函数：[supabase/](../../../supabase/)
 - 「自建 / 自托管 / Docker / VPS 上的 Supabase」
 - 「migration 怎么更新 / db push / self-host apply」
 - 「部署 Edge Functions」
+- 「HTML 托管 / Artifacts / Custom Domain」
 - 用户给了 `project-ref` 或 `compose-dir`
 
 先问清：**Cloud 还是自托管**。
 无人值守用 `bun run supabase:deploy -- --platform …`；人机交互可直接 `bun run supabase:deploy` 进向导。
 非 TTY（CI）必须传 `--platform`。
 
+**HTML Artifacts：** 部署 `html-host-probe` / `html-page-*` 后即可用。Cloud 无 Custom Domain 时外链可能被改成 `text/plain`（设置提示风险，不拦截发布）。
 ---
 
 ## Cloud：初次部署

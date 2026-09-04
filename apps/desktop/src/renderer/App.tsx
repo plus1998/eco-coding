@@ -76,6 +76,8 @@ import {
   normalizeProjectPath,
 } from "../shared/home-project";
 import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
+import type { HtmlHostArtifact } from "../shared/html-host";
+import { openPublishedHtmlInBrowser } from "./browser-link";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
 import {
   type AppMenuCommand,
@@ -1599,6 +1601,9 @@ function App() {
   const [imageDisplayArtifactsByThread, setImageDisplayArtifactsByThread] = useState<
     Record<string, ImageDisplayArtifact[]>
   >({});
+  const [htmlHostArtifactsByThread, setHtmlHostArtifactsByThread] = useState<
+    Record<string, HtmlHostArtifact[]>
+  >({});
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
@@ -2822,6 +2827,27 @@ function App() {
   }, [selectedThreadId]);
 
   useEffect(() => {
+    if (!selectedThreadId || !window.eco?.listHtmlHostArtifacts) return;
+    let cancelled = false;
+    void window.eco
+      .listHtmlHostArtifacts(selectedThreadId)
+      .then((artifacts) => {
+        if (!cancelled) {
+          setHtmlHostArtifactsByThread((current) => ({
+            ...current,
+            [selectedThreadId]: artifacts,
+          }));
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThreadId]);
+
+  useEffect(() => {
     if (!window.eco?.onImageGenerationArtifactChanged) return;
     return window.eco.onImageGenerationArtifactChanged((artifact) => {
       setImageArtifactsByThread((current) => {
@@ -2841,6 +2867,19 @@ function App() {
         const existing = current[artifact.threadId] ?? [];
         const next = [artifact, ...existing.filter((item) => item.id !== artifact.id)].sort((a, b) =>
           b.createdAt.localeCompare(a.createdAt),
+        );
+        return { ...current, [artifact.threadId]: next };
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!window.eco?.onHtmlHostArtifactChanged) return;
+    return window.eco.onHtmlHostArtifactChanged((artifact) => {
+      setHtmlHostArtifactsByThread((current) => {
+        const existing = current[artifact.threadId] ?? [];
+        const next = [artifact, ...existing.filter((item) => item.id !== artifact.id)].sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt),
         );
         return { ...current, [artifact.threadId]: next };
       });
@@ -5155,6 +5194,19 @@ function App() {
       if (artifact) openImageDisplayArtifact(artifact.id);
     },
     [activeThread?.id, imageDisplayArtifactsByThread, openImageDisplayArtifact],
+  );
+
+  const openHtmlHostArtifact = useCallback(
+    (artifactId: string) => {
+      const threadId = activeThread?.id;
+      if (!threadId) return;
+      const artifact = (htmlHostArtifactsByThread[threadId] ?? []).find(
+        (candidate) => candidate.id === artifactId,
+      );
+      if (!artifact?.publicUrl?.trim()) return;
+      void openPublishedHtmlInBrowser(artifact.publicUrl);
+    },
+    [activeThread?.id, htmlHostArtifactsByThread],
   );
 
   const closeTaskPanelTab = useCallback(
@@ -10227,6 +10279,10 @@ function App() {
                     activeThread ? (imageDisplayArtifactsByThread[activeThread.id] ?? []) : []
                   }
                   onOpenImageDisplayArtifact={openImageDisplayArtifact}
+                  htmlHostArtifacts={
+                    activeThread ? (htmlHostArtifactsByThread[activeThread.id] ?? []) : []
+                  }
+                  onOpenHtmlHostArtifact={openHtmlHostArtifact}
                   {...(projectWorkspace && { workspace: projectWorkspace })}
                   {...(currentProjectPath && { workspacePath: currentProjectPath })}
                   workspaceLabel={currentProjectName}

@@ -36,6 +36,8 @@ extraResources:
     to: eco-browser-mcp-stdio.mjs
   - from: packaging/eco-image-display-mcp-stdio.mjs
     to: eco-image-display-mcp-stdio.mjs
+  - from: packaging/eco-html-host-mcp-stdio.mjs
+    to: eco-html-host-mcp-stdio.mjs
   - from: packaging/eco-image-generation-mcp-stdio.mjs
     to: eco-image-generation-mcp-stdio.mjs
   - from: packaging/eco-image-view-mcp-stdio.mjs

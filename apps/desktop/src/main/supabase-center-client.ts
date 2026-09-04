@@ -47,6 +47,7 @@ import {
   type CenterServerVaultClaimView,
   type CenterServerVaultStatus,
   type CenterServerWrapVaultResult,
+  type HtmlHostingCapability,
   centerServerAuthRecoveryMessage,
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
@@ -139,6 +140,7 @@ interface DeviceRegisterResponse {
 const DEVICE_REGISTER_FUNCTION = "device-register";
 const DEVICE_DISABLE_FUNCTION = "device-disable";
 const DEVICE_SESSION_REGISTER_FUNCTION = "device-session-register";
+const HTML_PAGE_PUBLISH_FUNCTION = "html-page-publish";
 const BINDINGS_REFRESH_INTERVAL_MS = 60_000;
 const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60_000;
 const ACCESS_TOKEN_REFRESH_RETRY_MS = 10_000;
@@ -185,6 +187,10 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private approverSessionStop: (() => Promise<void>) | undefined;
   private approvalCode: string | undefined;
   private approvalClaimId: string | undefined;
+  private htmlHostingCapability: HtmlHostingCapability = {
+    available: false,
+    reason: "unchecked",
+  };
 
   constructor(options: SupabaseCenterDesktopClientOptions) {
     this.store = options.store;
@@ -238,7 +244,109 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   }
 
   getSnapshot(): CenterServerSettingsSnapshot {
-    return this.store.getSettings(this.status);
+    return {
+      ...this.store.getSettings(this.status),
+      htmlHosting: this.htmlHostingCapability,
+    };
+  }
+
+  getHtmlHostingCapability(): HtmlHostingCapability {
+    return this.htmlHostingCapability;
+  }
+
+  async refreshHtmlHostingCapability(options?: { force?: boolean }): Promise<HtmlHostingCapability> {
+    const settings = this.store.getSettingsWithSecrets();
+    if (!settings.enabled || !settings.supabaseUrl || !settings.anonKey) {
+      this.htmlHostingCapability = {
+        available: false,
+        reason: "not_connected",
+        checkedAt: this.now().toISOString(),
+        detail: "Supabase Center is not connected.",
+      };
+      this.onStatusChange?.(this.getSnapshot());
+      return this.htmlHostingCapability;
+    }
+    if (
+      !options?.force &&
+      this.htmlHostingCapability.reason !== "unchecked" &&
+      this.htmlHostingCapability.checkedAt
+    ) {
+      const age = this.now().getTime() - Date.parse(this.htmlHostingCapability.checkedAt);
+      if (Number.isFinite(age) && age >= 0 && age < 5 * 60_000) {
+        return this.htmlHostingCapability;
+      }
+    }
+    const { probeHtmlHostingCapability } = await import("./html-host-store");
+    this.htmlHostingCapability = await probeHtmlHostingCapability({
+      supabaseUrl: settings.supabaseUrl,
+      anonKey: settings.anonKey,
+      fetchImpl: this.fetchImpl as typeof fetch,
+    });
+    this.onStatusChange?.(this.getSnapshot());
+    return this.htmlHostingCapability;
+  }
+
+  async publishHtmlPage(input: {
+    title: string;
+    html: string;
+    pageId?: string;
+    threadId?: string;
+  }): Promise<{
+    pageId: string;
+    slug: string;
+    title: string;
+    publicUrl: string;
+    expiresAt: string;
+    extendedAt?: string | null;
+    canExtend: boolean;
+    createdAt: string;
+  }> {
+    const capability = await this.refreshHtmlHostingCapability();
+    if (!capability.available) {
+      throw new Error(capability.detail ?? "HTML hosting is unavailable.");
+    }
+    const settings = this.store.getSettingsWithSecrets();
+    const client = this.requireClient(settings);
+    const accessToken = await this.ensureAccessToken(settings, client);
+    const { data, error } = await client.functions.invoke(HTML_PAGE_PUBLISH_FUNCTION, {
+      headers: { authorization: `Bearer ${accessToken}` },
+      body: {
+        title: input.title,
+        html: input.html,
+        ...(input.pageId ? { pageId: input.pageId } : {}),
+        ...(input.threadId ? { threadId: input.threadId } : {}),
+      },
+    });
+    if (error) {
+      throw new Error(
+        isMissingEdgeFunctionError(error.message)
+          ? `Edge Function "${HTML_PAGE_PUBLISH_FUNCTION}" is not deployed. ${error.message}`
+          : error.message,
+      );
+    }
+    if (!data || typeof data !== "object") {
+      throw new Error("html-page-publish returned an empty response.");
+    }
+    const record = data as Record<string, unknown>;
+    const pageId = typeof record.pageId === "string" ? record.pageId : "";
+    const slug = typeof record.slug === "string" ? record.slug : "";
+    const title = typeof record.title === "string" ? record.title : input.title;
+    const publicUrl = typeof record.publicUrl === "string" ? record.publicUrl : "";
+    const expiresAt = typeof record.expiresAt === "string" ? record.expiresAt : "";
+    const createdAt = typeof record.createdAt === "string" ? record.createdAt : this.now().toISOString();
+    if (!pageId || !slug || !publicUrl || !expiresAt) {
+      throw new Error("html-page-publish response is missing required fields.");
+    }
+    return {
+      pageId,
+      slug,
+      title,
+      publicUrl,
+      expiresAt,
+      extendedAt: typeof record.extendedAt === "string" ? record.extendedAt : null,
+      canExtend: record.canExtend === true,
+      createdAt,
+    };
   }
 
   async start(): Promise<void> {
@@ -1315,6 +1423,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       this.reconnectAttempts = 0;
       this.store.markConnected(connectedAt);
       this.setStatus({ state: "connected", connectedAt });
+      void this.refreshHtmlHostingCapability({ force: true });
 
       if (this.settingsSyncHooks) {
         void this.getSyncStatus()

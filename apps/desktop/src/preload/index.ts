@@ -661,6 +661,23 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.imageDisplayArtifactChanged, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.imageDisplayArtifactChanged, listener);
   },
+  listHtmlHostArtifacts(threadId: string): Promise<import("../shared/html-host").HtmlHostArtifact[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.htmlHostArtifactsList, { threadId });
+  },
+  onHtmlHostArtifactChanged(
+    callback: (artifact: import("../shared/html-host").HtmlHostArtifact) => void,
+  ): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === "object") {
+        callback(payload as import("../shared/html-host").HtmlHostArtifact);
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.htmlHostArtifactChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.htmlHostArtifactChanged, listener);
+  },
+  refreshHtmlHostingCapability(): Promise<import("../shared/html-host").HtmlHostingCapability> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerHtmlHostingRefresh);
+  },
   onImageGenerationArtifactChanged(callback: (artifact: ImageGenerationArtifact) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       if (payload && typeof payload === "object") callback(payload as ImageGenerationArtifact);

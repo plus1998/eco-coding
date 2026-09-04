@@ -22,6 +22,7 @@ import type {
   IntegrationId,
   IntegrationsEnabledSettings,
 } from "../shared/integrations";
+import type { HtmlHostArtifact } from "../shared/html-host";
 import type {
   CoderTodoItem,
   CursorAgentInfo,
@@ -127,6 +128,8 @@ export interface WorkspaceFloatingCardsProps {
   onOpenImageArtifact?: (artifactId: string) => void;
   imageDisplayArtifacts?: readonly ImageDisplayArtifact[];
   onOpenImageDisplayArtifact?: (artifactId: string) => void;
+  htmlHostArtifacts?: readonly HtmlHostArtifact[];
+  onOpenHtmlHostArtifact?: (artifactId: string) => void;
   subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
   selectedSubagentAgentId?: string;
   agentDisplayNames?: RuntimeAgentDisplayNames;
@@ -481,6 +484,54 @@ function ImageDisplayWorkspaceCardBody({
   );
 }
 
+function HtmlHostWorkspaceCardBody({
+  artifacts,
+  onOpenHtmlHostArtifact,
+}: {
+  artifacts: readonly HtmlHostArtifact[];
+  onOpenHtmlHostArtifact?: (artifactId: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="workspace-resource-list workspace-image-artifact-list">
+      {artifacts.map((artifact) => {
+        const title = artifact.title?.trim() || t("task.htmlHost.emptyTitle");
+        const status = t(`task.htmlHost.status.${artifact.status}`);
+        const expires = artifact.expiresAt
+          ? t("task.htmlHost.expiresAt", {
+              time: artifact.expiresAt.replace("T", " ").slice(0, 19),
+            })
+          : undefined;
+        const meta = [status, expires].filter(Boolean).join(" · ");
+        return (
+          <button
+            key={artifact.id}
+            type="button"
+            className="workspace-resource-row workspace-image-artifact-trigger"
+            onClick={() => onOpenHtmlHostArtifact?.(artifact.id)}
+            disabled={!onOpenHtmlHostArtifact || artifact.status !== "completed"}
+            title={title}
+          >
+            <span className="workspace-resource-row-icon workspace-html-host-row-icon" aria-hidden>
+              <img
+                className="workspace-html-host-row-logo"
+                src="./splash-icon.png"
+                alt=""
+                width={16}
+                height={16}
+                draggable={false}
+              />
+            </span>
+            <span className="workspace-resource-row-title">{title}</span>
+            <span className="workspace-resource-row-meta">{meta}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function WorkspaceFloatingCards({
   workspace,
   workspacePath,
@@ -536,6 +587,8 @@ export function WorkspaceFloatingCards({
   onOpenImageArtifact,
   imageDisplayArtifacts = [],
   onOpenImageDisplayArtifact,
+  htmlHostArtifacts = [],
+  onOpenHtmlHostArtifact,
   subagentRunCards = [],
   selectedSubagentAgentId,
   agentDisplayNames,
@@ -755,6 +808,34 @@ export function WorkspaceFloatingCards({
             <ImageDisplayWorkspaceCardBody
               artifacts={imageDisplayArtifacts}
               {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {htmlHostArtifacts.length > 0 ? (
+          <WorkspacePanelSection
+            id="workspace-html-host-artifacts"
+            title={t("task.htmlHost.history")}
+            defaultExpanded
+            summary={
+              <>
+                <img
+                  className="workspace-html-host-section-logo"
+                  src="./splash-icon.png"
+                  alt=""
+                  width={14}
+                  height={14}
+                  draggable={false}
+                  aria-hidden
+                />
+                <span>{htmlHostArtifacts.length}</span>
+              </>
+            }
+            maxBodyHeight={280}
+          >
+            <HtmlHostWorkspaceCardBody
+              artifacts={htmlHostArtifacts}
+              {...(onOpenHtmlHostArtifact && { onOpenHtmlHostArtifact })}
             />
           </WorkspacePanelSection>
         ) : null}

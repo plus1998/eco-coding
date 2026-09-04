@@ -274,6 +274,9 @@ export const IPC_CHANNELS = {
   imageDisplayArtifactsList: "image-display-artifacts:list",
   imageDisplayRead: "image-display:read",
   imageDisplayArtifactChanged: "image-display-artifact:changed",
+  htmlHostArtifactsList: "html-host-artifacts:list",
+  htmlHostArtifactChanged: "html-host-artifact:changed",
+  centerServerHtmlHostingRefresh: "center-server:html-hosting-refresh",
 } as const;
 
 export type AppMenuCommand =

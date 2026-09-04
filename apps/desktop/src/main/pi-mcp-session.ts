@@ -1,7 +1,8 @@
 import path from "node:path";
-import { ECO_IMAGE_DISPLAY_MCP_SERVER } from "../shared/image-display-tool";
 import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
+import { ECO_HTML_HOST_MCP_SERVER } from "../shared/html-host-tool";
+import { ECO_IMAGE_DISPLAY_MCP_SERVER } from "../shared/image-display-tool";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../shared/image-generation";
 import type { McpSdkConfig } from "../shared/mcp";
 import { filterMcpSdkConfigByAssignedServers, sanitizeMcpServerName } from "../shared/mcp";
@@ -56,6 +57,11 @@ export function buildPiMcpSessionConfig(input: {
     sdkEntry?: Record<string, unknown>;
     promptAppend?: string;
   };
+  htmlHostInject?: {
+    enabled: boolean;
+    sdkEntry?: Record<string, unknown>;
+    promptAppend?: string;
+  };
   /** Absolute directory containing eco-agent-browser SKILL.md when browser is enabled. */
   browserSkillDirectory?: string;
 }): PiMcpSessionResolution {
@@ -67,7 +73,8 @@ export function buildPiMcpSessionConfig(input: {
         !key.startsWith("eco_ab_") &&
         key !== ECO_IMAGE_GENERATION_MCP_SERVER &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
-        key !== ECO_IMAGE_DISPLAY_MCP_SERVER,
+        key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
+        key !== ECO_HTML_HOST_MCP_SERVER,
     );
 
   const filtered = filterMcpSdkConfigByAssignedServers(input.globalSdkConfig, assignedUserKeys);
@@ -104,6 +111,13 @@ export function buildPiMcpSessionConfig(input: {
     mcpServers[ECO_IMAGE_DISPLAY_MCP_SERVER] = input.imageDisplayInject.sdkEntry;
     if (input.imageDisplayInject.promptAppend?.trim()) {
       appendSystemPrompt.push(input.imageDisplayInject.promptAppend.trim());
+    }
+  }
+
+  if (input.htmlHostInject?.enabled && input.htmlHostInject.sdkEntry) {
+    mcpServers[ECO_HTML_HOST_MCP_SERVER] = input.htmlHostInject.sdkEntry;
+    if (input.htmlHostInject.promptAppend?.trim()) {
+      appendSystemPrompt.push(input.htmlHostInject.promptAppend.trim());
     }
   }
 

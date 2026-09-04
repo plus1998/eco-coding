@@ -46,3 +46,16 @@ verify_jwt = true
 # Public HTML landing after email confirmation (opened from the mail link).
 [functions.auth-email-confirmed]
 verify_jwt = false
+
+# HTML hosting (Artifacts): probe/view/extend are public; publish requires JWT.
+[functions.html-host-probe]
+verify_jwt = false
+
+[functions.html-page-publish]
+verify_jwt = true
+
+[functions.html-page-view]
+verify_jwt = false
+
+[functions.html-page-extend]
+verify_jwt = false

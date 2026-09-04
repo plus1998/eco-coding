@@ -63,6 +63,15 @@ supabase functions deploy auth-email-confirmed
 # 或全量：bun run supabase:deploy -- --platform cloud --project-ref <ref>
 ```
 
+#### HTML 托管（Artifacts）
+
+Agent 可发布单文件 HTML 进度/汇报页（外链分享）。**不要用 Storage**：Storage 会把 `text/html` 强制成 `text/plain`。
+
+相关 Edge Functions：`html-host-probe`、`html-page-publish`、`html-page-view`、`html-page-extend`。
+
+**Cloud 注意：** 无 [Custom Domain](https://supabase.com/docs/guides/platform/custom-domains) 时，共享域名可能把 Edge Function 的 `text/html` 改写成 `text/plain`，**外链可能无法正常渲染**。Eco 仍允许发布；设置里会提示风险。配置 Custom Domain 后渲染更稳妥。
+
+默认保留 7 天；页面上可延期一次（+7 天），超过默认 7 天窗口后隐藏延期按钮。
 ### 3. 关联仓库并部署
 
 **Windows：** 不要依赖 `npx supabase`（常报 `No matching Supabase CLI binary package found for win32-x64`）。请先装官方二进制之一：

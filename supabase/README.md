@@ -1,7 +1,7 @@
 # Eco Supabase Center
 
-Schema and Edge Functions for identity, device binding, Realtime RPC, and
-account-scoped settings sync (password-wrapped vault).
+Schema and Edge Functions for identity, device binding, Realtime RPC,
+account-scoped settings sync (password-wrapped vault), and HTML Artifacts hosting.
 
 - **Deploy Cloud:** [docs/supabase-deploy.md](../docs/supabase-deploy.md)
 - **Self-host Docker:** [docs/supabase-self-host.md](../docs/supabase-self-host.md)
@@ -22,6 +22,12 @@ There is no official Eco-hosted node.
 Primary UX: same-account email/password login discovers registered PCs.
 Connect QR is `eco://center?supabase=...&anon=...` (server bootstrap only).
 
+### HTML hosting (Artifacts)
+
+Edge Functions `html-host-probe` / `html-page-publish` / `html-page-view` / `html-page-extend`
+store single-file HTML in Postgres and serve it with Eco chrome.
+
+**Cloud note:** without a Custom Domain, shared hosts may rewrite `text/html` to `text/plain`, so share links may not render. Eco still enables publishing and shows a warning in Settings.
 ## Quick commands
 
 ```sh

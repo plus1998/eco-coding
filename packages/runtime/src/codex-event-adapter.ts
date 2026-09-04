@@ -31,6 +31,10 @@ import {
   readImageDisplayMetadataFromToolOutput,
 } from "./eco-image-display-tool.js";
 import {
+  isEcoHtmlHostToolName,
+  readHtmlHostMetadataFromToolOutput,
+} from "./eco-html-host-tool.js";
+import {
   isEcoWebSearchToolName,
   parseEcoWebSearchToolOutput,
   readEcoWebSearchQuery,
@@ -1318,6 +1322,10 @@ function emitMcpToolEvent(
     ctx.emittedImageDisplayArtifacts.add(imageDisplayMeta.artifactId);
   }
   const imageDisplayArtifactId = imageDisplayMeta?.artifactId;
+  const htmlHostMeta =
+    isEcoHtmlHostToolName(toolName) && eventType === "tool.completed"
+      ? readHtmlHostMetadataFromToolOutput(item)
+      : undefined;
   const urlHint = readMcpToolUrlHint(item, mcpInput);
   const ecoWebSearchQuery = isEcoWebSearchToolName(toolName) ? readEcoWebSearchQuery(mcpInput) : undefined;
   const ecoWebSearchParsed =
@@ -1348,10 +1356,13 @@ function emitMcpToolEvent(
     ? [imageViewPath]
     : imageDisplayArtifactId
       ? [imageDisplayArtifactId]
-      : ecoWebSearchQuery
-        ? [ecoWebSearchQuery]
-        : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
-  const messageHint = imageViewPath ?? imageDisplayArtifactId ?? ecoWebSearchQuery ?? urlHint;
+      : htmlHostMeta?.publicUrl
+        ? [htmlHostMeta.publicUrl]
+        : ecoWebSearchQuery
+          ? [ecoWebSearchQuery]
+          : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+  const messageHint =
+    imageViewPath ?? imageDisplayArtifactId ?? htmlHostMeta?.publicUrl ?? ecoWebSearchQuery ?? urlHint;
 
   emit(ctx, {
     eventType,
@@ -1382,6 +1393,19 @@ function emitMcpToolEvent(
               imageDisplay: {
                 artifactId: imageDisplayMeta.artifactId,
                 ...(imageDisplayMeta.title ? { title: imageDisplayMeta.title } : {}),
+              },
+            }
+          : {}),
+        ...(htmlHostMeta
+          ? {
+              htmlHost: {
+                pageId: htmlHostMeta.pageId,
+                publicUrl: htmlHostMeta.publicUrl,
+                ...(htmlHostMeta.title ? { title: htmlHostMeta.title } : {}),
+                ...(htmlHostMeta.expiresAt ? { expiresAt: htmlHostMeta.expiresAt } : {}),
+                ...(typeof htmlHostMeta.canExtend === "boolean"
+                  ? { canExtend: htmlHostMeta.canExtend }
+                  : {}),
               },
             }
           : {}),

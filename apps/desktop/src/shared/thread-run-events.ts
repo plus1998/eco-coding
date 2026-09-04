@@ -64,6 +64,8 @@ export interface ThreadRunToolMetadata {
   imageView?: ThreadRunImageViewMetadata;
   /** eco_image_display.display_image artifact for user-facing feed previews. */
   imageDisplay?: ThreadRunImageDisplayMetadata;
+  /** eco_html_host.publish_html hosted page for Feed cards. */
+  htmlHost?: ThreadRunHtmlHostMetadata;
   /** PI `mcp({ search })` / `mcp({ action })` probes before a real `{ tool, args }` call. */
   mcpDiscovery?: ThreadRunMcpDiscoveryMetadata;
   /** Planner → subagent SendMessage resume/follow-up payload. */
@@ -87,6 +89,14 @@ export interface ThreadRunImageViewMetadata {
 export interface ThreadRunImageDisplayMetadata {
   artifactId: string;
   title?: string;
+}
+
+export interface ThreadRunHtmlHostMetadata {
+  pageId: string;
+  publicUrl: string;
+  title?: string;
+  expiresAt?: string;
+  canExtend?: boolean;
 }
 
 export interface ThreadRunMcpDiscoveryMetadata {

@@ -214,6 +214,10 @@ PI Core 额外支持会话私有 Skills 目录（`pi-agent/<threadId>/skills`）
 
 移动端尚未公开发布。开发或互联需要用户自建 Supabase 项目（无官方节点）。
 
+### Artifacts
+
+连接 Center 并部署 html-host 函数后，Agent 可发布单文件 HTML 页面（进度/汇报等），Feed 与工作区 Cards 可预览与复制链接。能力状态与说明在 **设置 → 互联 → Artifacts**。Cloud 无 Custom Domain 时外链可能无法正常渲染（该页会提示）；详见 [supabase-deploy.md](supabase-deploy.md)「HTML 托管」。Mobile Feed **尚未对齐**该卡片。
+
 ### 部署 Supabase Center
 
 - 云托管：[supabase-deploy.md](supabase-deploy.md)

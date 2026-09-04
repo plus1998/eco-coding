@@ -38,6 +38,7 @@ import type {
   CenterServerVaultClaimView,
   CenterServerVaultStatus,
   CenterServerWrapVaultResult,
+  HtmlHostingCapability,
 } from "../shared/center-server";
 import {
   CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
@@ -82,7 +83,7 @@ interface CenterServerSettingsPanelProps {
 
 type PanelView = "list" | "edit-server" | "edit-account";
 type AccountAuthMode = "signup" | "signin";
-type CenterPanelTab = "sync" | "devices";
+type CenterPanelTab = "sync" | "devices" | "artifacts";
 
 export function CenterServerSettingsPanel({
   snapshot,
@@ -164,6 +165,7 @@ export function CenterServerSettingsPanel({
   const centerPanelTabs: Array<{ id: CenterPanelTab; label: string }> = [
     { id: "sync", label: t("settings.center.tab.sync") },
     { id: "devices", label: t("settings.center.tab.devices") },
+    { id: "artifacts", label: t("settings.center.tab.artifacts") },
   ];
 
   const refreshVault = useCallback(async () => {
@@ -918,6 +920,24 @@ export function CenterServerSettingsPanel({
         </div>
       ) : null}
 
+      {registered && isLive && activeTab === "artifacts" ? (
+        <div className="cs-tab-panel" role="tabpanel">
+          <ArtifactsSettingsPanel
+            {...(snapshot.htmlHosting ? { capability: snapshot.htmlHosting } : {})}
+            busy={actionBusy}
+            onRefresh={async () => {
+              if (!window.eco?.refreshHtmlHostingCapability) return;
+              setError(undefined);
+              try {
+                await window.eco.refreshHtmlHostingCapability();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+              }
+            }}
+          />
+        </div>
+      ) : null}
+
       {registered && isLive && activeTab === "devices" ? (
         <div className="cs-tab-panel" role="tabpanel">
           <section className="cs-block cs-block--tab-first">
@@ -1535,6 +1555,76 @@ function OtpCodeInput({
         })}
       </div>
     </div>
+  );
+}
+
+function ArtifactsSettingsPanel({
+  capability,
+  busy,
+  onRefresh,
+}: {
+  capability?: HtmlHostingCapability;
+  busy: boolean;
+  onRefresh: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [refreshing, setRefreshing] = useState(false);
+  const detail =
+    capability?.reason === "content_type_rewritten" || capability?.renderRisk
+      ? t("settings.center.artifacts.renderRisk")
+      : capability?.detail?.trim() || t("settings.center.artifacts.unchecked");
+  const statusKind =
+    !capability || capability.reason === "unchecked"
+      ? "unchecked"
+      : capability.available
+        ? capability.renderRisk || capability.reason === "content_type_rewritten"
+          ? "available-risk"
+          : "available"
+        : "unavailable";
+  const statusLabel =
+    statusKind === "unchecked"
+      ? t("settings.center.artifacts.unchecked")
+      : statusKind === "available"
+        ? t("settings.center.artifacts.available")
+        : statusKind === "available-risk"
+          ? t("settings.center.artifacts.availableWithRisk")
+          : t("settings.center.artifacts.unavailable", { detail });
+
+  return (
+    <section className="cs-block cs-block--tab-first">
+      <h2 className="cs-block-label">{t("settings.center.artifacts.title")}</h2>
+      <p className="cs-artifacts-desc">{t("settings.center.artifacts.description")}</p>
+      <div className="cs-card cs-artifacts-card">
+        <div className="cs-artifacts-status-row">
+          <div className="cs-artifacts-status-copy">
+            <span className={`cs-artifacts-status-value is-${statusKind}`}>{statusLabel}</span>
+            {capability?.checkedAt ? (
+              <span className="cs-artifacts-status-meta">
+                {t("settings.center.artifacts.checkedAt", {
+                  time: formatLocalTime(capability.checkedAt),
+                })}
+              </span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="cs-btn cs-btn--ghost cs-btn--compact"
+            disabled={busy || refreshing}
+            onClick={() => {
+              setRefreshing(true);
+              void onRefresh().finally(() => setRefreshing(false));
+            }}
+          >
+            {refreshing ? (
+              <Loader2 size={14} className="spin" aria-hidden />
+            ) : (
+              <RefreshCw size={14} strokeWidth={1.75} aria-hidden />
+            )}
+            {t("settings.center.artifacts.refresh")}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

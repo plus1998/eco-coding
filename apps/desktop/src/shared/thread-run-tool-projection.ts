@@ -42,6 +42,16 @@ export function projectThreadRunToolMetadata(
         ...(tool.imageDisplay.title?.trim() ? { title: tool.imageDisplay.title.trim() } : {}),
       },
     }),
+    ...(tool.htmlHost?.pageId.trim() &&
+      tool.htmlHost.publicUrl.trim() && {
+        htmlHost: {
+          pageId: tool.htmlHost.pageId.trim(),
+          publicUrl: tool.htmlHost.publicUrl.trim(),
+          ...(tool.htmlHost.title?.trim() ? { title: tool.htmlHost.title.trim() } : {}),
+          ...(tool.htmlHost.expiresAt?.trim() ? { expiresAt: tool.htmlHost.expiresAt.trim() } : {}),
+          ...(typeof tool.htmlHost.canExtend === "boolean" ? { canExtend: tool.htmlHost.canExtend } : {}),
+        },
+      }),
     ...(tool.mcpDiscovery?.kind === "search" && { mcpDiscovery: { kind: "search" as const } }),
     ...(tool.sendMessage && { sendMessage: tool.sendMessage }),
   };

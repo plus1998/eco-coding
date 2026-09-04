@@ -521,6 +521,34 @@ test("live feed tool projection keeps imageDisplay artifact for Eco display_imag
   });
 });
 
+test("live feed tool projection keeps htmlHost page for Eco publish_html", () => {
+  expect(
+    projectThreadRunToolMetadataForFeed({
+      name: "mcp__eco_html_host__publish_html",
+      detail: "https://example.supabase.co/functions/v1/html-page-view/slug",
+      status: "completed",
+      htmlHost: {
+        pageId: "page-1",
+        publicUrl: "https://example.supabase.co/functions/v1/html-page-view/slug",
+        title: "CDP冒烟测试",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+        canExtend: true,
+      },
+    }),
+  ).toEqual({
+    name: "mcp__eco_html_host__publish_html",
+    detail: "https://example.supabase.co/functions/v1/html-page-view/slug",
+    status: "completed",
+    htmlHost: {
+      pageId: "page-1",
+      publicUrl: "https://example.supabase.co/functions/v1/html-page-view/slug",
+      title: "CDP冒烟测试",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      canExtend: true,
+    },
+  });
+});
+
 test("trimProjectionForFeed keeps imageDisplay artifact for Eco display_image on a live running turn", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const trimmed = trimProjectionForFeed({
@@ -562,6 +590,62 @@ test("trimProjectionForFeed keeps imageDisplay artifact for Eco display_image on
     toolUseId: "toolu_display",
     status: "completed",
     imageDisplay: { artifactId: "art-feed-1", title: "示例图" },
+  });
+});
+
+test("trimProjectionForFeed keeps htmlHost page for Eco publish_html on a live running turn", () => {
+  const projection = createProjection("short message", { longDelegation: false });
+  const trimmed = trimProjectionForFeed({
+    ...projection,
+    attempts: [
+      {
+        attemptId: "att_run",
+        phase: "run",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    timeline: [
+      {
+        id: "tool_html_host",
+        sequence: 1,
+        eventType: "tool.completed",
+        scope: "main",
+        text: "Tool: mcp__eco_html_host__publish_html · https://example.supabase.co/functions/v1/html-page-view/slug",
+        at: "2026-01-01T00:00:00.000Z",
+        runAttemptId: "att_run",
+        metadata: {
+          tool: {
+            name: "mcp__eco_html_host__publish_html",
+            detail: "https://example.supabase.co/functions/v1/html-page-view/slug",
+            toolUseId: "toolu_html",
+            status: "completed",
+            htmlHost: {
+              pageId: "page-1",
+              publicUrl: "https://example.supabase.co/functions/v1/html-page-view/slug",
+              title: "CDP冒烟测试",
+              expiresAt: "2030-01-01T00:00:00.000Z",
+              canExtend: true,
+            },
+          },
+        },
+      },
+    ],
+  });
+
+  expect(trimmed.timeline[0]?.metadata?.tool).toEqual({
+    name: "mcp__eco_html_host__publish_html",
+    detail: "https://example.supabase.co/functions/v1/html-page-view/slug",
+    toolUseId: "toolu_html",
+    status: "completed",
+    htmlHost: {
+      pageId: "page-1",
+      publicUrl: "https://example.supabase.co/functions/v1/html-page-view/slug",
+      title: "CDP冒烟测试",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      canExtend: true,
+    },
   });
 });
 

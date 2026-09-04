@@ -1,4 +1,5 @@
 import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
+import { isEcoHtmlHostToolName } from "./html-host-tool";
 import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
@@ -34,6 +35,7 @@ export type ActionKind =
   | "mcpSearch"
   | "imageView"
   | "imageDisplay"
+  | "htmlHost"
   | "imageCreate"
   | "browser"
   | "tool";
@@ -62,6 +64,7 @@ export interface ActionKindPayload {
   mcpDiscovery?: { kind?: "search" };
   imageView?: { path?: string };
   imageDisplay?: { artifactId?: string };
+  htmlHost?: { pageId?: string; publicUrl?: string; title?: string };
   bashRun?: { command?: string };
 }
 
@@ -107,6 +110,8 @@ const ALIASES: Record<string, ActionKind> = {
   view_image: "imageView",
   displayimage: "imageDisplay",
   display_image: "imageDisplay",
+  publishhtml: "htmlHost",
+  publish_html: "htmlHost",
 };
 
 const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
@@ -125,6 +130,7 @@ const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
   mcpSearch: "network",
   imageView: "images",
   imageDisplay: "images",
+  htmlHost: "browser",
   imageCreate: "image",
   browser: "browser",
   tool: "tool",
@@ -146,6 +152,7 @@ const KIND_BUCKET: Record<ActionKind, ActionGroupBucket> = {
   mcpSearch: "mcpTools",
   imageView: "images",
   imageDisplay: "images",
+  htmlHost: "browser",
   imageCreate: "images",
   browser: "browser",
   tool: "otherTools",
@@ -181,6 +188,9 @@ function kindFromPayload(payload: ActionKindPayload | undefined): ActionKind | u
   }
   if (payload.imageDisplay) {
     return "imageDisplay";
+  }
+  if (payload.htmlHost) {
+    return "htmlHost";
   }
   if (payload.bashRun) {
     return "command";
@@ -220,6 +230,9 @@ export function resolveActionKind(input: { toolName?: string; payload?: ActionKi
   }
   if (isEcoImageDisplayToolName(toolName)) {
     return resolved("imageDisplay");
+  }
+  if (isEcoHtmlHostToolName(toolName)) {
+    return resolved("htmlHost");
   }
   if (isEcoWebSearchToolName(toolName)) {
     return resolved("webSearch");
@@ -380,6 +393,9 @@ export function formatActionLine(
   }
   if (kind === "imageDisplay") {
     return t(phase === "running" ? "activity.imageDisplay.viewing" : "activity.imageDisplay.viewed");
+  }
+  if (kind === "htmlHost") {
+    return t(phase === "running" ? "activity.htmlHost.publishing" : "activity.htmlHost.published");
   }
   if (kind === "imageCreate") {
     return t(phase === "running" ? "activity.running.imageCreate" : "activity.done.imageCreate");

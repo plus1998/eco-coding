@@ -34,6 +34,12 @@ test("narrow composer does not wrap the config row or hide the spacer", () => {
   expect(styles).not.toMatch(/\.composer-footer-spacer\s*\{\s*display:\s*none/);
 });
 
+test("composer usage pills stay on one line under squeeze", () => {
+  expect(styles).toMatch(/\.composer-footer-usage\s*\{[^}]*flex:\s*0\s+0\s+auto/s);
+  expect(styles).toMatch(/\.composer-usage-pills\s*\{[^}]*flex-wrap:\s*nowrap/s);
+  expect(styles).toMatch(/\.composer-model-selector\s*\{[^}]*flex:\s*0\s+1\s+auto/s);
+});
+
 test("composer toolbar container is the card shared by landing and thread", () => {
   expect(styles).toContain("container-name: composer-toolbar");
   expect(styles).toContain("@container composer-toolbar (max-width: 640px)");

@@ -1,3 +1,5 @@
+import { buildHtmlDataNavigateUrl } from "../shared/browser";
+
 export const BROWSER_LINK_OPEN_EVENT = "eco:browser-link-open";
 export const BROWSER_HTML_OPEN_EVENT = "eco:browser-html-open";
 
@@ -34,4 +36,27 @@ export function dispatchBrowserHtmlOpen(html: string): void {
       detail: html,
     }),
   );
+}
+
+/**
+ * Open a hosted HTML page in Eco's built-in browser.
+ * Cloud shared domains often serve text/plain — fetch body and open as HTML instead of loadURL.
+ */
+export async function openPublishedHtmlInBrowser(publicUrl: string): Promise<void> {
+  try {
+    const response = await fetch(publicUrl);
+    const html = (await response.text()).trim();
+    if (html) {
+      const dataUrl = buildHtmlDataNavigateUrl(html);
+      if (dataUrl) {
+        dispatchBrowserLinkOpen(dataUrl);
+        return;
+      }
+      dispatchBrowserHtmlOpen(html);
+      return;
+    }
+  } catch {
+    // fall through
+  }
+  dispatchBrowserLinkOpen(publicUrl);
 }

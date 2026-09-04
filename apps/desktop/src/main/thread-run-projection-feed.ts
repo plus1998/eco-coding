@@ -118,6 +118,7 @@ function trimToolMetadata(value: unknown): unknown {
     "grepTarget",
     "imageView",
     "imageDisplay",
+    "htmlHost",
     "webSearch",
     "fileChange",
     "sendMessage",

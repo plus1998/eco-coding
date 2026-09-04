@@ -103,6 +103,14 @@ export type ActivityDetailBlock =
       webSearch?: WebSearchCardDisplay;
       imageView?: { path: string; eventId: string };
       imageDisplay?: { artifactId: string; eventId: string; title?: string };
+      htmlHost?: {
+        pageId: string;
+        publicUrl: string;
+        eventId: string;
+        title?: string;
+        expiresAt?: string;
+        canExtend?: boolean;
+      };
       mcpDiscovery?: { kind: "search" };
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;

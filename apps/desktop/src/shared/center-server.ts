@@ -1,3 +1,7 @@
+import type { HtmlHostingCapability } from "./html-host";
+
+export type { HtmlHostingCapability } from "./html-host";
+
 export type CenterServerConnectionState = "disabled" | "disconnected" | "connecting" | "connected" | "error";
 
 export interface CenterServerConnectionStatus {
@@ -55,6 +59,8 @@ export interface CenterServerSettingsInput {
 export interface CenterServerSettingsSnapshot {
   settings: CenterServerSettingsView;
   status: CenterServerConnectionStatus;
+  /** HTML Artifacts hosting probe status (availability + optional render risk). */
+  htmlHosting?: HtmlHostingCapability;
 }
 
 export interface CenterServerRegisterDesktopRequest {

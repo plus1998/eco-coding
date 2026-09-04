@@ -12589,19 +12589,186 @@ button.default-agent-option:focus-visible {
   opacity: 0.55;
 }
 
-.codex-main:not(.codex-main-landing) .markdown-code-block--html {
+.run-log-html-host-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: min(520px, 100%);
+  min-width: 0;
+}
+
+.run-log-html-host {
+  width: 100%;
+  min-width: 0;
+  letter-spacing: 0;
+}
+
+.run-log-html-host-summary {
+  width: fit-content;
+  min-height: 22px;
+  border-radius: 4px;
+}
+
+.run-log-html-host-summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 3px;
+}
+
+.run-log-html-host-summary .run-log-tool-group-chevron {
+  opacity: 1;
+}
+
+.run-log-html-host-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.run-log-html-host-card {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--codex-log-text, var(--markdown-text, #1d1d1f)) 10%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--codex-log-text, var(--markdown-text, #1d1d1f)) 4%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.run-log-html-host-card:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--codex-log-text, var(--markdown-text, #1d1d1f)) 7%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #7ddea0) 35%, transparent);
+}
+
+.run-log-html-host-card:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.run-log-html-host-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.run-log-html-host-card__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--codex-log-text, var(--markdown-text, #1d1d1f)) 7%, transparent);
+  color: color-mix(in srgb, var(--codex-log-text, var(--markdown-text, #1d1d1f)) 72%, transparent);
+}
+
+.workspace-html-host-row-icon {
+  overflow: hidden;
+}
+
+.workspace-html-host-row-logo,
+.workspace-html-host-section-logo {
+  display: block;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.run-log-html-host-card__logo {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+
+.run-log-html-host-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-log-html-host-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-html-host-card__meta {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--markdown-muted, color-mix(in srgb, currentColor 58%, transparent));
+}
+
+.run-log-html-host-card__hint {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+}
+
+.run-log-html-host-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.run-log-html-host-copy {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--codex-log-text, currentColor) 14%, transparent);
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.run-log-html-host-copy:hover {
+  border-color: color-mix(in srgb, var(--accent, #7ddea0) 55%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-html-host-card {
+  border-color: color-mix(in srgb, var(--codex-log-text) 10%, transparent);
   background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--codex-log-text) 8%, transparent);
   color: var(--codex-log-text);
 }
 
-.codex-main:not(.codex-main-landing) .markdown-html-card:hover {
-  background: color-mix(in srgb, var(--codex-log-text) 5%, transparent);
+.codex-main:not(.codex-main-landing) .run-log-html-host-card:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--codex-log-text) 7%, transparent);
 }
 
-.codex-main:not(.codex-main-landing) .markdown-html-card__icon {
-  background: color-mix(in srgb, var(--codex-log-text) 6%, transparent);
+.codex-main:not(.codex-main-landing) .run-log-html-host-card__icon {
+  background: color-mix(in srgb, var(--codex-log-text) 7%, transparent);
   color: color-mix(in srgb, var(--codex-log-text) 72%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-html-host-copy {
+  border-color: color-mix(in srgb, var(--codex-log-text) 14%, transparent);
+  color: var(--codex-log-text);
 }
 
 .markdown-lightbox {
@@ -16944,23 +17111,28 @@ a.run-log-web-search-detail-result-url:focus-visible {
 .composer-footer-actions {
   display: flex;
   flex: 0 1 auto;
+  flex-wrap: nowrap;
   align-items: center;
   gap: inherit;
   min-width: 0;
   margin-left: auto;
 }
 
+/* Do not shrink usage: thread-info-float-pills still wrap by default, and a
+   squeezed parent stacks cost above the context ring (narrow composer bug). */
 .composer-footer-usage {
   display: flex;
   align-items: center;
-  flex-shrink: 1;
+  flex: 0 0 auto;
   min-width: 0;
   margin-right: 2px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .composer-usage-pills {
   display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
 }
@@ -17015,6 +17187,7 @@ a.run-log-web-search-detail-result-url:focus-visible {
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .thread-info-float-stack-composer {
@@ -28515,6 +28688,59 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   white-space: nowrap;
 }
 
+.cs-artifacts-desc {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.cs-artifacts-card {
+  padding: 12px 14px;
+}
+
+.cs-artifacts-status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cs-artifacts-status-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cs-artifacts-status-value {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.cs-artifacts-status-value.is-available {
+  color: var(--success, #86efac);
+}
+
+.cs-artifacts-status-value.is-available-risk {
+  color: var(--text-primary);
+}
+
+.cs-artifacts-status-value.is-unavailable {
+  color: var(--status-deny-text, #f87171);
+}
+
+.cs-artifacts-status-value.is-unchecked {
+  color: var(--text-muted);
+}
+
+.cs-artifacts-status-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .cs-service-status {
   font-size: 11px;
   line-height: 1.4;
@@ -31277,7 +31503,8 @@ body,
 /* Composer main-model override */
 .composer-model-selector {
   display: inline-flex;
-  flex-shrink: 0;
+  /* Absorb squeeze before usage pills so cost + ring stay on one line. */
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -31285,6 +31512,8 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  width: 100%;
+  min-width: 0;
   height: 32px;
   max-width: min(220px, 42vw);
   padding: 0 9px;
@@ -31808,23 +32037,28 @@ body,
 
   .codex-composer .composer-footer-actions {
     flex: 0 1 auto;
+    flex-wrap: nowrap;
     margin-left: auto;
   }
 
   .codex-composer .composer-footer-usage {
+    flex: 0 0 auto;
     min-width: 0;
     margin-left: 0;
     margin-right: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .codex-composer .composer-usage-pills {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
     min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
+    max-width: none;
+    overflow: visible;
   }
 
   .codex-composer .composer-model-selector {
+    flex: 0 1 auto;
     min-width: 0;
     max-width: min(132px, 30vw);
   }
@@ -31957,6 +32191,11 @@ body,
     max-width: 48cqi;
     padding-inline: 7px;
   }
+
+  /* Extreme squeeze: drop billing cost, keep context ring clickable. */
+  .composer-usage-pills .thread-info-float-reopen:has(.composer-usage-pill-minimal.thread-info-float-pill-cost) {
+    display: none;
+  }
 }
 
 @container composer-toolbar (max-width: 640px) {
@@ -31982,23 +32221,28 @@ body,
 
   .codex-composer .composer-footer-actions {
     flex: 0 1 auto;
+    flex-wrap: nowrap;
     margin-left: auto;
   }
 
   .codex-composer .composer-footer-usage {
+    flex: 0 0 auto;
     min-width: 0;
     margin-left: 0;
     margin-right: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .codex-composer .composer-usage-pills {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
     min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
+    max-width: none;
+    overflow: visible;
   }
 
   .codex-composer .composer-model-selector {
+    flex: 0 1 auto;
     min-width: 0;
     max-width: min(132px, 30cqi);
   }

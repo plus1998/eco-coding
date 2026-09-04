@@ -141,6 +141,12 @@ import {
   isEcoImageDisplayToolName,
 } from "../shared/image-display-tool";
 import {
+  buildHtmlHostPromptAppend,
+  ECO_HTML_HOST_MCP_SERVER,
+  ECO_HTML_HOST_TOOL,
+  isEcoHtmlHostToolName,
+} from "../shared/html-host-tool";
+import {
   buildImageGenerationPromptAppend,
   ECO_IMAGE_GENERATION_MCP_SERVER,
   type ImageGenerationArtifact,
@@ -545,6 +551,8 @@ import {
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { ImageDisplayMcpGateway } from "./image-display-mcp-gateway";
 import { createImageDisplayStore, ImageDisplayError, ImageDisplayStore } from "./image-display-store";
+import { HtmlHostMcpGateway } from "./html-host-mcp-gateway";
+import { HtmlHostStore } from "./html-host-store";
 import { ImageGenerationMcpGateway } from "./image-generation-mcp-gateway";
 import {
   createImageGenerationStore,
@@ -1004,6 +1012,8 @@ let imageGenerationGateway: ImageGenerationMcpGateway;
 let imageViewGateway: ImageViewMcpGateway;
 let imageDisplayStore: ImageDisplayStore;
 let imageDisplayGateway: ImageDisplayMcpGateway;
+let htmlHostStore: HtmlHostStore;
+let htmlHostGateway: HtmlHostMcpGateway;
 let integratedWebSearchGateway: IntegratedWebSearchMcpGateway;
 let promptImageFileStore: PromptImageFileStore;
 
@@ -1024,6 +1034,16 @@ async function resolveCodexGlobalMcpServers() {
       () => imageGenerationGateway.resolveGlobalCodexServer(),
       () => imageViewGateway.resolveGlobalCodexServer(),
       () => imageDisplayGateway.resolveGlobalCodexServer(),
+      async () => {
+        if (!centerServerClient || !htmlHostGateway) {
+          return undefined;
+        }
+        const capability = await centerServerClient.refreshHtmlHostingCapability();
+        if (!capability.available) {
+          return undefined;
+        }
+        return htmlHostGateway.resolveGlobalCodexServer();
+      },
       () => integratedWebSearchGateway.resolveGlobalCodexServer(),
     ],
   });
@@ -1769,6 +1789,22 @@ app.whenReady().then(async () => {
       });
     },
   });
+  htmlHostStore = new HtmlHostStore();
+  htmlHostGateway = new HtmlHostMcpGateway({
+    store: htmlHostStore,
+    api: {
+      probeCapability: () => centerServerClient.refreshHtmlHostingCapability({ force: true }),
+      publish: (input) => centerServerClient.publishHtmlPage(input),
+    },
+    getCapability: () => centerServerClient.refreshHtmlHostingCapability(),
+    onArtifactChanged: (artifact) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.htmlHostArtifactChanged, artifact);
+        }
+      });
+    },
+  });
   const asrSecretCodec: AsrSecretCodec = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
     encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
@@ -2498,6 +2534,7 @@ installApplicationShutdownHook({
   },
   closeImageDisplayGateway: async () => {
     await imageDisplayGateway?.close();
+    await htmlHostGateway?.close();
   },
   closeIntegratedWebSearchGateway: async () => {
     await integratedWebSearchGateway?.close();
@@ -4862,6 +4899,15 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid image display list request.");
     }
     return imageDisplayStore.listArtifacts(payload.threadId);
+  });
+  registerDesktopCommand(IPC_CHANNELS.htmlHostArtifactsList, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.threadId !== "string") {
+      throw new Error("Invalid html host list request.");
+    }
+    return htmlHostStore.list(payload.threadId);
+  });
+  registerDesktopCommand(IPC_CHANNELS.centerServerHtmlHostingRefresh, async () => {
+    return centerServerClient.refreshHtmlHostingCapability({ force: true });
   });
   registerDesktopCommand(IPC_CHANNELS.imageDisplayRead, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.artifactId !== "string" || !payload.artifactId.trim()) {
@@ -7747,6 +7793,9 @@ async function startCodexThreadRun(
             }
             append = appendBrowserPrompt(append, buildImageViewPromptAppend());
             append = appendBrowserPrompt(append, buildImageDisplayPromptAppend());
+            if (centerServerClient.getHtmlHostingCapability().available) {
+              append = appendBrowserPrompt(append, buildHtmlHostPromptAppend());
+            }
             if (sessionIntegratedWebSearchEnabled) {
               append = appendBrowserPrompt(
                 append,
@@ -7806,6 +7855,10 @@ async function startCodexThreadRun(
             }
             await imageViewGateway.resolveInjection(input.thread.id);
             await imageDisplayGateway.resolveInjection(input.thread.id);
+            const htmlCap = await centerServerClient.refreshHtmlHostingCapability();
+            if (htmlCap.available) {
+              await htmlHostGateway.resolveInjection(input.thread.id);
+            }
             return globalPool;
           },
           resolveEnabledMcpServerKeys: async () => {
@@ -7827,11 +7880,16 @@ async function startCodexThreadRun(
             if (!keys.includes(ECO_IMAGE_DISPLAY_MCP_SERVER)) {
               keys.push(ECO_IMAGE_DISPLAY_MCP_SERVER);
             }
+            const htmlCap = centerServerClient.getHtmlHostingCapability();
+            if (htmlCap.available && !keys.includes(ECO_HTML_HOST_MCP_SERVER)) {
+              keys.push(ECO_HTML_HOST_MCP_SERVER);
+            }
             return keys.filter(
               (key) =>
                 (key !== ECO_AGENT_BROWSER_MCP_SERVER || sessionEcoBrowserEnabled) &&
                 (key !== ECO_IMAGE_GENERATION_MCP_SERVER || sessionImageGenerationEnabled) &&
-                (key !== ECO_WEB_SEARCH_MCP_SERVER || sessionIntegratedWebSearchEnabled),
+                (key !== ECO_WEB_SEARCH_MCP_SERVER || sessionIntegratedWebSearchEnabled) &&
+                (key !== ECO_HTML_HOST_MCP_SERVER || centerServerClient.getHtmlHostingCapability().available),
             );
           },
           resolveSkillConfig: () => {
@@ -8086,6 +8144,10 @@ async function resolvePiSessionResourcesForThread(
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
   const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
+  const htmlHostingCapability = await centerServerClient.refreshHtmlHostingCapability();
+  const htmlHostInject = htmlHostingCapability.available
+    ? await htmlHostGateway.resolveInjection(threadId)
+    : undefined;
 
   let browserSkillDirectory: string | undefined;
   if (browserInject.enabled) {
@@ -8119,6 +8181,15 @@ async function resolvePiSessionResourcesForThread(
       sdkEntry: imageDisplayInject.sdkEntry,
       promptAppend: imageDisplayInject.promptAppend,
     },
+    ...(htmlHostInject
+      ? {
+          htmlHostInject: {
+            enabled: true,
+            sdkEntry: htmlHostInject.sdkEntry,
+            promptAppend: htmlHostInject.promptAppend,
+          },
+        }
+      : {}),
     ...(browserSkillDirectory ? { browserSkillDirectory } : {}),
   });
 
@@ -10337,6 +10408,9 @@ function buildDesktopSdkRunInput(
   }
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageViewPromptAppend());
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageDisplayPromptAppend());
+  if (centerServerClient.getHtmlHostingCapability().available) {
+    globalUserRules = appendBrowserPrompt(globalUserRules, buildHtmlHostPromptAppend());
+  }
   if (threadId) {
     const agentRegistry = resolveAgentRuntimeConfigForThreadId(threadId);
     const plannerRoute = resolveRoleRoutesForThread(threadId).find((route) => route.role === "planner");
@@ -10547,6 +10621,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   imageGenerationGateway.disposeThread(threadId);
   imageViewGateway.disposeThread(threadId);
   imageDisplayGateway.disposeThread(threadId);
+  htmlHostGateway.disposeThread(threadId);
   integratedWebSearchGateway.disposeThread(threadId);
   const acpSessionId = acpSessionIdToDelete(conversationStore.getThreadCoreSession(threadId));
   if (acpSessionId) {
@@ -12337,6 +12412,10 @@ async function buildSdkSessionOptions(
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
   const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
+  const htmlHostingCapability = await centerServerClient.refreshHtmlHostingCapability();
+  const htmlHostInject = htmlHostingCapability.available
+    ? await htmlHostGateway.resolveInjection(threadId)
+    : undefined;
   const agentRegistry = resolveAgentRuntimeConfigForThreadId(threadId);
   const plannerRoute = resolveRoleRoutesForThread(threadId).find((route) => route.role === "planner");
   const webSearchPlan = resolveThreadWebSearchPlan({
@@ -12374,6 +12453,7 @@ async function buildSdkSessionOptions(
         !key.startsWith("eco_ab_") &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
         key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
+        key !== ECO_HTML_HOST_MCP_SERVER &&
         key !== ECO_WEB_SEARCH_MCP_SERVER,
     ),
   );
@@ -12381,8 +12461,11 @@ async function buildSdkSessionOptions(
   const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withBrowserMcp, imageInject);
   const withImageViewMcp = imageViewGateway.mergeIntoSdkConfig(withImageMcp, imageViewInject);
   const withImageDisplayMcp = imageDisplayGateway.mergeIntoSdkConfig(withImageViewMcp, imageDisplayInject);
+  const withHtmlHostMcp = htmlHostInject
+    ? htmlHostGateway.mergeIntoSdkConfig(withImageDisplayMcp, htmlHostInject)
+    : withImageDisplayMcp;
   const withWebSearchMcp = integratedWebSearchGateway.mergeIntoSdkConfig(
-    withImageDisplayMcp,
+    withHtmlHostMcp,
     webSearchInject,
   );
   const runtimeMcp = prepareMcpSdkConfigForRuntime(withWebSearchMcp);
@@ -12393,6 +12476,7 @@ async function buildSdkSessionOptions(
         !key.startsWith("eco_ab_") &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
         key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
+        key !== ECO_HTML_HOST_MCP_SERVER &&
         key !== ECO_WEB_SEARCH_MCP_SERVER,
     ),
     ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
@@ -12400,6 +12484,7 @@ async function buildSdkSessionOptions(
     ...(webSearchInject.enabled ? [ECO_WEB_SEARCH_MCP_SERVER] : []),
     ECO_IMAGE_VIEW_MCP_SERVER,
     ECO_IMAGE_DISPLAY_MCP_SERVER,
+    ...(htmlHostInject ? [ECO_HTML_HOST_MCP_SERVER] : []),
   ];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
@@ -12806,6 +12891,11 @@ function maybeRevealBrowserFromAgentTool(input: {
     const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
     if (threadId) imageDisplayGateway.noteUpcomingTool(threadId, toolName, toolUseId);
   }
+  if (toolName && (isEcoHtmlHostToolName(toolName) || toolName === ECO_HTML_HOST_TOOL)) {
+    const threadId = input.threadId?.trim();
+    const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
+    if (threadId) htmlHostGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+  }
   if (toolName && isEcoWebSearchToolName(toolName)) {
     const threadId = input.threadId?.trim();
     const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
@@ -12856,6 +12946,10 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
   if (name && (isEcoImageDisplayToolName(name) || name === ECO_IMAGE_DISPLAY_TOOL)) {
     const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
     imageDisplayGateway.noteUpcomingTool(event.threadId, name, toolUseId);
+  }
+  if (name && (isEcoHtmlHostToolName(name) || name === ECO_HTML_HOST_TOOL)) {
+    const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
+    htmlHostGateway.noteUpcomingTool(event.threadId, name, toolUseId);
   }
   if (name && isEcoWebSearchToolName(name)) {
     const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
@@ -13042,7 +13136,10 @@ function emitThreadEvent(
   }
   if (extras?.tool) {
     const tool = projectThreadRunToolMetadataForFeed(
-      enrichImageDisplayToolMetadata(threadId, extras.tool),
+      enrichHtmlHostToolMetadata(
+        threadId,
+        enrichImageDisplayToolMetadata(threadId, extras.tool),
+      ),
     );
     if (tool) {
       payload.tool = tool;
@@ -13073,7 +13170,9 @@ function projectEmitThreadEventExtras(
     return extras;
   }
   const { tool: _tool, ...rest } = extras;
-  const tool = projectThreadRunToolMetadata(enrichImageDisplayToolMetadata(threadId, extras.tool));
+  const tool = projectThreadRunToolMetadata(
+    enrichHtmlHostToolMetadata(threadId, enrichImageDisplayToolMetadata(threadId, extras.tool)),
+  );
   return tool ? { ...rest, tool } : rest;
 }
 
@@ -13106,6 +13205,38 @@ function enrichImageDisplayToolMetadata(
     imageDisplay: {
       artifactId: artifact.id,
       ...(artifact.title?.trim() ? { title: artifact.title.trim() } : {}),
+    },
+  };
+}
+
+function enrichHtmlHostToolMetadata(
+  threadId: string,
+  tool: ThreadRunToolMetadata,
+): ThreadRunToolMetadata {
+  if (!isEcoHtmlHostToolName(tool.name) && tool.name.trim() !== ECO_HTML_HOST_TOOL) {
+    return tool;
+  }
+  if (tool.status === "started" || tool.htmlHost?.pageId?.trim()) {
+    return tool;
+  }
+  if (!htmlHostStore) {
+    return tool;
+  }
+  const byToolUseId = tool.toolUseId?.trim()
+    ? htmlHostStore.getArtifactByToolUseId(tool.toolUseId)
+    : undefined;
+  const artifact = byToolUseId ?? htmlHostStore.getLatestArtifact(threadId);
+  if (!artifact || artifact.status !== "completed") {
+    return tool;
+  }
+  return {
+    ...tool,
+    htmlHost: {
+      pageId: artifact.pageId,
+      publicUrl: artifact.publicUrl,
+      title: artifact.title,
+      expiresAt: artifact.expiresAt,
+      canExtend: artifact.canExtend,
     },
   };
 }

@@ -18,6 +18,7 @@ import {
   CircleHelp,
   Copy,
   Database,
+  ExternalLink,
   FileText,
   Gauge,
   Globe2,
@@ -104,7 +105,7 @@ import {
 } from "./activity-log";
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
-import { dispatchBrowserLinkOpen, isHttpishHref } from "./browser-link";
+import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } from "./browser-link";
 import { i18n } from "./i18n";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { ImageLightbox } from "./image-lightbox";
@@ -1008,7 +1009,7 @@ function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch || block.imageView || block.imageDisplay)) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch || block.imageView || block.imageDisplay || block.htmlHost)) {
     return false;
   }
   return (
@@ -1628,6 +1629,7 @@ function resolveBlockAction(block: Extract<ActivityDetailBlock, { kind: "action"
       ...(block.mcpDiscovery && { mcpDiscovery: block.mcpDiscovery }),
       ...(block.imageView && { imageView: block.imageView }),
       ...(block.imageDisplay && { imageDisplay: block.imageDisplay }),
+      ...(block.htmlHost && { htmlHost: block.htmlHost }),
       ...(block.bashRun && { bashRun: block.bashRun }),
     },
   });
@@ -1650,6 +1652,7 @@ function formatBlockActionLine(
         ...(block.bashRun && { bashRun: block.bashRun }),
         ...(block.imageView && { imageView: block.imageView }),
         ...(block.imageDisplay && { imageDisplay: block.imageDisplay }),
+        ...(block.htmlHost && { htmlHost: block.htmlHost }),
       },
     },
     translateActionKind,
@@ -2949,6 +2952,17 @@ function DetailBlock({
           omitRoleLabel={omitSubagent}
           {...(!omitSubagent && modelByRole && { modelByRole })}
           {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
+        />
+      );
+    }
+    if (block.htmlHost) {
+      return (
+        <HtmlHostBlock
+          htmlHost={block.htmlHost}
+          {...(block.lifecycle && { lifecycle: block.lifecycle })}
+          {...(block.subagent && { subagent: block.subagent })}
+          omitRoleLabel={omitSubagent}
+          {...(!omitSubagent && modelByRole && { modelByRole })}
         />
       );
     }
@@ -4594,6 +4608,122 @@ type ImageDisplayLoadState =
       code?: import("../shared/image-display").ImageDisplayReadFailureCode | "bridge_unavailable";
       detail?: string;
     };
+
+export function HtmlHostBlock({
+  htmlHost,
+  lifecycle,
+  subagent,
+  modelByRole,
+  omitRoleLabel,
+}: {
+  htmlHost: {
+    pageId: string;
+    publicUrl: string;
+    eventId: string;
+    title?: string;
+    expiresAt?: string;
+    canExtend?: boolean;
+  };
+  lifecycle?: ToolActionLifecycle;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(lifecycle !== "running");
+  const [opening, setOpening] = useState(false);
+  const title = htmlHost.title?.trim() || i18n.t("activity.htmlHost.cardTitle");
+  const roleLabel =
+    subagent && !omitRoleLabel ? formatRoleModelLabel(subagent, modelByRole?.[subagent]) : undefined;
+  const statusLabel =
+    lifecycle === "running"
+      ? i18n.t("activity.htmlHost.publishing")
+      : i18n.t("activity.htmlHost.published");
+  const expiresLabel = htmlHost.expiresAt
+    ? i18n.t("activity.htmlHost.expiresAt", {
+        time: htmlHost.expiresAt.replace("T", " ").slice(0, 19),
+      })
+    : undefined;
+
+  useEffect(() => {
+    if (lifecycle === "running") {
+      setDetailsOpen(false);
+      return;
+    }
+    setDetailsOpen(true);
+  }, [htmlHost.eventId, lifecycle]);
+
+  const openInBrowser = useCallback(() => {
+    if (opening) return;
+    setOpening(true);
+    void openPublishedHtmlInBrowser(htmlHost.publicUrl).finally(() => setOpening(false));
+  }, [htmlHost.publicUrl, opening]);
+
+  return (
+    <div className="run-log-html-host-wrap">
+      {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
+      <article className="run-log-html-host" aria-busy={lifecycle === "running" || opening}>
+        <RunLogCollapsibleActionTrigger
+          className="run-log-html-host-summary"
+          icon="browser"
+          label={lifecycle === "running" ? <ShimmerText>{statusLabel}</ShimmerText> : statusLabel}
+          {...(lifecycle && { lifecycle })}
+          expanded={detailsOpen}
+          onClick={() => setDetailsOpen((value) => !value)}
+        />
+
+        {detailsOpen ? (
+          <div className="run-log-html-host-body">
+            <button
+              type="button"
+              className="run-log-html-host-card"
+              onClick={openInBrowser}
+              disabled={opening || lifecycle === "running"}
+              title={i18n.t("activity.htmlHost.openInBrowser")}
+              aria-label={`${title} — ${i18n.t("activity.htmlHost.openInBrowser")}`}
+            >
+              <span className="run-log-html-host-card__icon" aria-hidden>
+                <img
+                  className="run-log-html-host-card__logo"
+                  src="./splash-icon.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                  draggable={false}
+                />
+              </span>
+              <span className="run-log-html-host-card__body">
+                <span className="run-log-html-host-card__title">{title}</span>
+                <span className="run-log-html-host-card__meta">
+                  {statusLabel}
+                  {expiresLabel ? ` · ${expiresLabel}` : ""}
+                </span>
+              </span>
+              <span className="run-log-html-host-card__hint" aria-hidden>
+                <ExternalLink size={14} />
+              </span>
+            </button>
+            <div className="run-log-html-host-actions">
+              <button
+                type="button"
+                className="run-log-html-host-copy"
+                onClick={() => {
+                  void navigator.clipboard.writeText(htmlHost.publicUrl).then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1500);
+                  });
+                }}
+              >
+                <Copy size={14} aria-hidden />
+                {copied ? i18n.t("activity.htmlHost.copied") : i18n.t("activity.htmlHost.copyLink")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </article>
+    </div>
+  );
+}
 
 export function ImageDisplayBlock({
   imageDisplay,

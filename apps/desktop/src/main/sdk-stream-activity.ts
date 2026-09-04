@@ -9,8 +9,10 @@ import {
   parseSendMessageToolResult,
   readEcoWebSearchQuery,
   readImageDisplayMetadataFromToolOutput,
+  readHtmlHostMetadataFromToolOutput,
   readSendMessageToolInput,
   resolveEcoImageDisplayToolCall,
+  resolveEcoHtmlHostToolCall,
   resolveEcoImageViewToolCall,
   resolvePiMcpProxyDiscoveryCall,
   resolveSkillDisplayName,
@@ -662,7 +664,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
-  const { displayName, imageViewCall, imageDisplayCall, mcpDiscovery } =
+  const { displayName, imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery } =
     resolveSdkImageViewAndMcpDiscovery(name, record.input);
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const command =
@@ -713,12 +715,16 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   const imageDisplayMeta = imageDisplayCall
     ? readImageDisplayMetadataFromToolOutput(output ?? record.result ?? record.content)
     : undefined;
+  const htmlHostMeta = htmlHostCall
+    ? readHtmlHostMetadataFromToolOutput(output ?? record.result ?? record.content)
+    : undefined;
   return {
     name: displayName,
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(webSearch?.query && !command && { detail: webSearch.query }),
     ...(imageDisplayMeta?.artifactId && !command && !sendMessageDetail && { detail: imageDisplayMeta.artifactId }),
+    ...(htmlHostMeta?.publicUrl && !command && !sendMessageDetail && { detail: htmlHostMeta.publicUrl }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
     ...(sendMessageOutputPreview?.text && { outputPreview: sendMessageOutputPreview.text }),
     ...(outputPreview?.truncated && { outputPreviewTruncated: true }),
@@ -736,6 +742,16 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
         ...(imageDisplayMeta.title ? { title: imageDisplayMeta.title } : {}),
       },
     }),
+    ...(htmlHostMeta?.pageId &&
+      htmlHostMeta.publicUrl && {
+        htmlHost: {
+          pageId: htmlHostMeta.pageId,
+          publicUrl: htmlHostMeta.publicUrl,
+          ...(htmlHostMeta.title ? { title: htmlHostMeta.title } : {}),
+          ...(htmlHostMeta.expiresAt ? { expiresAt: htmlHostMeta.expiresAt } : {}),
+          ...(typeof htmlHostMeta.canExtend === "boolean" ? { canExtend: htmlHostMeta.canExtend } : {}),
+        },
+      }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(webSearch && { webSearch }),
     status: "completed",
@@ -876,17 +892,23 @@ function resolveSdkImageViewAndMcpDiscovery(
   displayName: string;
   imageViewCall: ReturnType<typeof resolveEcoImageViewToolCall>;
   imageDisplayCall: ReturnType<typeof resolveEcoImageDisplayToolCall>;
+  htmlHostCall: ReturnType<typeof resolveEcoHtmlHostToolCall>;
   mcpDiscovery: ReturnType<typeof resolvePiMcpProxyDiscoveryCall>;
 } {
   const imageViewCall = resolveEcoImageViewToolCall(name, input);
   const imageDisplayCall = imageViewCall ? undefined : resolveEcoImageDisplayToolCall(name, input);
-  const displayName = imageViewCall?.name ?? imageDisplayCall?.name ?? name;
+  const htmlHostCall =
+    imageViewCall || imageDisplayCall ? undefined : resolveEcoHtmlHostToolCall(name, input);
+  const displayName = imageViewCall?.name ?? imageDisplayCall?.name ?? htmlHostCall?.name ?? name;
   return {
     displayName,
     imageViewCall,
     imageDisplayCall,
+    htmlHostCall,
     mcpDiscovery:
-      imageViewCall || imageDisplayCall ? undefined : resolvePiMcpProxyDiscoveryCall(name, input),
+      imageViewCall || imageDisplayCall || htmlHostCall
+        ? undefined
+        : resolvePiMcpProxyDiscoveryCall(name, input),
   };
 }
 

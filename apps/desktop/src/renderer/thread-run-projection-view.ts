@@ -475,7 +475,7 @@ function isGroupableToolFeedEntry(
     return false;
   }
   const block = projectionItemToDetailBlock(entry.item);
-  return (block?.kind === "action" && !block.imageView && !block.imageDisplay) || block?.kind === "tool-failed";
+  return (block?.kind === "action" && !block.imageView && !block.imageDisplay && !block.htmlHost) || block?.kind === "tool-failed";
 }
 
 function groupProjectionThinkingFeedEntries(
@@ -1908,6 +1908,7 @@ function mergeFilesystemToolTimelineMetadata(
   const grepTarget = richerTool.grepTarget ?? placeholderTool?.grepTarget;
   const imageView = richerTool.imageView ?? placeholderTool?.imageView;
   const imageDisplay = richerTool.imageDisplay ?? placeholderTool?.imageDisplay;
+  const htmlHost = richerTool.htmlHost ?? placeholderTool?.htmlHost;
   const mcpDiscovery = richerTool.mcpDiscovery ?? placeholderTool?.mcpDiscovery;
   const fileChange = richerTool.fileChange ?? placeholderTool?.fileChange;
   const status =
@@ -1921,6 +1922,7 @@ function mergeFilesystemToolTimelineMetadata(
     ...(grepTarget !== undefined ? { grepTarget } : {}),
     ...(imageView !== undefined ? { imageView } : {}),
     ...(imageDisplay !== undefined ? { imageDisplay } : {}),
+    ...(htmlHost !== undefined ? { htmlHost } : {}),
     ...(mcpDiscovery !== undefined ? { mcpDiscovery } : {}),
     ...(fileChange !== undefined ? { fileChange } : {}),
     ...(detail !== undefined ? { detail } : {}),
@@ -2810,6 +2812,18 @@ function buildProjectionToolActionBlock(
         ...(metadataTool?.imageDisplay?.title ? { title: metadataTool.imageDisplay.title } : {}),
       }
     : undefined;
+  const htmlHostMeta = metadataTool?.htmlHost;
+  const htmlHost =
+    htmlHostMeta?.pageId?.trim() && htmlHostMeta.publicUrl?.trim()
+      ? {
+          pageId: htmlHostMeta.pageId.trim(),
+          publicUrl: htmlHostMeta.publicUrl.trim(),
+          eventId: item.id,
+          ...(htmlHostMeta.title?.trim() ? { title: htmlHostMeta.title.trim() } : {}),
+          ...(htmlHostMeta.expiresAt?.trim() ? { expiresAt: htmlHostMeta.expiresAt.trim() } : {}),
+          ...(typeof htmlHostMeta.canExtend === "boolean" ? { canExtend: htmlHostMeta.canExtend } : {}),
+        }
+      : undefined;
   const mcpDiscovery =
     metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
@@ -2826,6 +2840,7 @@ function buildProjectionToolActionBlock(
     ...(webSearch && { webSearch }),
     ...(imageView && { imageView }),
     ...(imageDisplay && { imageDisplay }),
+    ...(htmlHost && { htmlHost }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
@@ -3392,6 +3407,26 @@ function readProjectionToolMetadata(
             : {}),
         }
       : undefined;
+  const rawHtmlHost = record.htmlHost;
+  const htmlHostRecord =
+    rawHtmlHost && typeof rawHtmlHost === "object" ? (rawHtmlHost as Record<string, unknown>) : undefined;
+  const htmlHostPageId = typeof htmlHostRecord?.pageId === "string" ? htmlHostRecord.pageId.trim() : "";
+  const htmlHostPublicUrl =
+    typeof htmlHostRecord?.publicUrl === "string" ? htmlHostRecord.publicUrl.trim() : "";
+  const htmlHost =
+    htmlHostPageId && htmlHostPublicUrl
+      ? {
+          pageId: htmlHostPageId,
+          publicUrl: htmlHostPublicUrl,
+          ...(typeof htmlHostRecord?.title === "string" && htmlHostRecord.title.trim()
+            ? { title: htmlHostRecord.title.trim() }
+            : {}),
+          ...(typeof htmlHostRecord?.expiresAt === "string" && htmlHostRecord.expiresAt.trim()
+            ? { expiresAt: htmlHostRecord.expiresAt.trim() }
+            : {}),
+          ...(typeof htmlHostRecord?.canExtend === "boolean" ? { canExtend: htmlHostRecord.canExtend } : {}),
+        }
+      : undefined;
   const rawMcpDiscovery = record.mcpDiscovery;
   const mcpDiscovery =
     rawMcpDiscovery &&
@@ -3421,6 +3456,7 @@ function readProjectionToolMetadata(
     ...(webSearch && { webSearch }),
     ...(imageView && { imageView }),
     ...(imageDisplay && { imageDisplay }),
+    ...(htmlHost && { htmlHost }),
     ...(mcpDiscovery && { mcpDiscovery }),
   };
 }

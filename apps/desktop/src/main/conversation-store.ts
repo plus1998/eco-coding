@@ -6201,6 +6201,11 @@ function mergeThreadRunToolMetadata(
       : existing.imageDisplay
         ? { imageDisplay: existing.imageDisplay }
         : {}),
+    ...(incoming.htmlHost
+      ? { htmlHost: incoming.htmlHost }
+      : existing.htmlHost
+        ? { htmlHost: existing.htmlHost }
+        : {}),
     ...(incoming.mcpDiscovery
       ? { mcpDiscovery: incoming.mcpDiscovery }
       : existing.mcpDiscovery
@@ -6231,6 +6236,7 @@ function isRicherThreadRunToolMetadata(
         incoming.grepTarget ||
         incoming.imageView ||
         incoming.imageDisplay ||
+        incoming.htmlHost ||
         incoming.mcpDiscovery,
     );
   }
@@ -6251,6 +6257,7 @@ function isRicherThreadRunToolMetadata(
       (incoming.grepTarget && !isSameJsonValue(incoming.grepTarget, existing.grepTarget)) ||
       (incoming.imageView && !isSameJsonValue(incoming.imageView, existing.imageView)) ||
       (incoming.imageDisplay && !isSameJsonValue(incoming.imageDisplay, existing.imageDisplay)) ||
+      (incoming.htmlHost && !isSameJsonValue(incoming.htmlHost, existing.htmlHost)) ||
       (incoming.mcpDiscovery && !isSameJsonValue(incoming.mcpDiscovery, existing.mcpDiscovery)),
   );
 }
@@ -6276,6 +6283,7 @@ function readThreadRunToolMetadata(
   const sendMessage = parseThreadRunSendMessageMetadata(raw.sendMessage);
   const imageView = parseThreadRunImageViewMetadata(raw.imageView);
   const imageDisplay = parseThreadRunImageDisplayMetadata(raw.imageDisplay);
+  const htmlHost = parseThreadRunHtmlHostMetadata(raw.htmlHost);
   const mcpDiscovery = parseThreadRunMcpDiscoveryMetadata(raw.mcpDiscovery);
   const webSearch = parseThreadRunWebSearchMetadata(raw.webSearch);
   return {
@@ -6301,9 +6309,32 @@ function readThreadRunToolMetadata(
     ...(grepTarget && { grepTarget }),
     ...(imageView && { imageView }),
     ...(imageDisplay && { imageDisplay }),
+    ...(htmlHost && { htmlHost }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(sendMessage && { sendMessage }),
     ...(webSearch && { webSearch }),
+  };
+}
+
+function parseThreadRunHtmlHostMetadata(
+  value: unknown,
+): ThreadRunToolMetadata["htmlHost"] | undefined {
+  if (!isJsonRecord(value)) {
+    return undefined;
+  }
+  const pageId = typeof value.pageId === "string" ? value.pageId.trim() : "";
+  const publicUrl = typeof value.publicUrl === "string" ? value.publicUrl.trim() : "";
+  if (!pageId || !publicUrl) {
+    return undefined;
+  }
+  const title = typeof value.title === "string" ? value.title.trim() : "";
+  const expiresAt = typeof value.expiresAt === "string" ? value.expiresAt.trim() : "";
+  return {
+    pageId,
+    publicUrl,
+    ...(title ? { title } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+    ...(typeof value.canExtend === "boolean" ? { canExtend: value.canExtend } : {}),
   };
 }
 

@@ -30,7 +30,7 @@ Agent Skill：[`.cursor/skills/eco-supabase/SKILL.md`](../.cursor/skills/eco-sup
 
 需要 **Realtime + Edge Functions**（Eco 遥控依赖二者），不要为了省内存删掉这两个服务。
 
-Eco **不需要** Storage / imgproxy。若机器内存紧（例如 Windows Docker 上限约 8G），可只起最小栈：
+Eco **账密/设备中心不需要** Storage / imgproxy。HTML Artifacts 托管走 Edge Functions（Postgres 存正文），也不依赖 Storage。若机器内存紧（例如 Windows Docker 上限约 8G），可只起最小栈：
 
 ```bash
 docker compose up -d db auth rest realtime api-gw functions
