@@ -13,7 +13,8 @@
  *   (not a full-height column — content/terminal keep full width). Never on settings.
  *   Feed/task topbars reserve strip width only in the top toolbar plane.
  *
- * Cards: feed-panel docks; full floats in gutter on purpose so the ~750 feed is unobstructed.
+ * Cards: feed-panel marks docked (class/e2e); content keeps equal L/R insets — cards overlay,
+ * they do not reserve a full-height content column.
  */
 
 export type ActivityWorkspaceLayoutMode = "full" | "feed-panel" | "feed-nav" | "feed-only";
@@ -338,7 +339,7 @@ export function resolveActivityWorkspaceLayoutMode(
   return "feed-only";
 }
 
-/** Only mid `feed-panel` docks; `full` floats in gutters by design. */
+/** Only mid `feed-panel` is labeled docked; neither mode reserves a content column. */
 export function workspacePanelLayoutForMode(mode: ActivityWorkspaceLayoutMode): WorkspacePanelLayoutMode {
   return mode === "feed-panel" ? "docked" : "floating";
 }

@@ -728,7 +728,6 @@ const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
 const ACTIVITY_FEED_BOOT_TIMEOUT_MS = 10_000;
-const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
 const COMPOSER_DRAFT_SAVE_DEBOUNCE_MS = 250;
 const WORKSPACE_CARDS_PANEL_WIDTH_PX = 300;
 
@@ -8838,7 +8837,6 @@ function App() {
   const rightPanelStyle = {
     "--workspace-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
     "--workspace-cards-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
-    "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
     ...taskPanelGeometryCssVariables(),
     ...(showPanelChromeGroupB ? panelChromeCssVariables({ fullscreenSlotOpen: chromeFsSlotOpen }) : {}),

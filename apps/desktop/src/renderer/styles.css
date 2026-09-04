@@ -27,9 +27,9 @@
   --activity-title-gap: 15px;
   --activity-stack-below: 800px;
   --content-inline-start: 24px;
-  --content-inline-end: 48px;
+  --content-inline-end: 24px;
   --toolbar-edge-inset: 15px;
-  /* Floating workpanel `right` + docked content reserve (must match panel placement). */
+  /* Floating workpanel `right` inset (panel placement only; content uses equal inline insets). */
   --workspace-cards-panel-right: var(--toolbar-edge-inset);
   --feed-max-width: 750px;
   --composer-max-width: var(--feed-max-width);
@@ -67,7 +67,7 @@ html[data-platform="win32"] {
   --toolbar-edge-inset: calc(15px + var(--window-controls-overlay-end));
   /* Clear titlebar height only; no extra right inset for caption buttons. */
   --eco-modal-inset-top: max(24px, calc(var(--window-chrome-top) + 8px));
-  /* Panel is not under the caption buttons; keep docked reserve Mac-like (not WCO-sized). */
+  /* Panel is not under the caption buttons; keep right inset Mac-like (not WCO-sized). */
   --workspace-cards-panel-right: 10px;
   --window-sidebar-toolbar-inset: 56px;
   --window-sidebar-toolbar-inset-expanded: 88px;
@@ -25142,18 +25142,6 @@ html:not([data-platform="darwin"])
   .codex-main-scroll-body {
   padding-right: var(--content-inline-end);
   box-sizing: border-box;
-}
-
-/* docked (feed-panel): reserve only panel width + its actual right inset + gap */
-.codex-main:not(.codex-main-landing) .codex-main-scroll.is-workspace-cards-docked:not(
-    .is-workspace-panel-open
-  )
-  .codex-main-scroll-body {
-  padding-right: calc(
-    var(--workspace-cards-panel-width, 300px) +
-    var(--workspace-cards-panel-right) +
-    var(--workspace-cards-panel-gap, 18px)
-  );
 }
 
 .codex-main-landing .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
