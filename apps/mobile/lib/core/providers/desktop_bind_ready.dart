@@ -27,6 +27,13 @@ Future<bool> ensureDesktopBindReady(
       return true;
     }
 
+    // PC picker (Presence-only): do not promote to bind/RPC. Switching the
+    // selected desktop would otherwise rebuild shell providers under /connect
+    // and flash the global "Connecting…" banner.
+    if (client.isPresenceOnlyMode) {
+      return false;
+    }
+
     // Don't spin forever on auth / missing-binding failures.
     if (state == EcoConnectionState.error) {
       final recovery =

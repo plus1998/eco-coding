@@ -2327,7 +2327,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get followUpQueuePaused => 'Queue paused';
 
   @override
-  String get followUpQueuePausedEditing => 'Queue paused until you finish editing';
+  String get followUpQueuePausedEditing =>
+      'Queue paused until you finish editing';
 
   @override
   String get followUpQueueActive => 'Messages are queued';

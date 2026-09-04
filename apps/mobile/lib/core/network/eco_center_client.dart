@@ -49,12 +49,14 @@ class EcoCenterClient {
   RealtimeChannel? _presenceChannel;
   final Set<String> _onlineDesktopDeviceIds = {};
   Future<void>? _connectInFlight;
+  Future<void>? _presenceConnectInFlight;
   StreamSubscription<AuthState>? _authSub;
   Timer? _reconnectTimer;
   Timer? _keepaliveTimer;
   Timer? _deviceSessionRefreshTimer;
   bool _transportProbeInFlight = false;
   bool _intentionallyStopped = true;
+  bool _presenceOnlyMode = false;
   int _rpcCounter = 0;
 
   final _connectionController =
@@ -80,6 +82,26 @@ class EcoCenterClient {
 
   /// True after [_subscribeUserPresence] succeeds (online flags become meaningful).
   bool get hasUserPresenceChannel => _presenceChannel != null;
+
+  /// Picker owns the transport: Presence is up, bind/RPC must stay idle.
+  ///
+  /// Session providers under a pushed `/connect` route still watch desktop id
+  /// changes; they must not call [connect] until the picker leaves this mode.
+  bool get isPresenceOnlyMode => _presenceOnlyMode;
+
+  /// Mark the picker as Presence-only immediately (before the socket is up).
+  ///
+  /// [disconnect] clears this flag; call this right after so shell providers
+  /// cannot race a full [connect] while [connectPresence] is still starting.
+  void beginPresenceOnlyMode() {
+    _intentionallyStopped = false;
+    _presenceOnlyMode = true;
+  }
+
+  /// Allow bind/RPC again (enter `/threads`, or leave the picker via pop).
+  void leavePresenceOnlyMode() {
+    _presenceOnlyMode = false;
+  }
 
   Future<void> initialize() async {
     _credentials = await _store.load();
@@ -137,7 +159,10 @@ class EcoCenterClient {
     await setProjectConfig(supabaseUrl: normalized, anonKey: anon);
   }
 
-  Future<void> setSelectedDesktop(String? desktopDeviceId) async {
+  Future<void> setSelectedDesktop(
+    String? desktopDeviceId, {
+    String? knownBindingId,
+  }) async {
     final changed = _credentials.selectedDesktopId != desktopDeviceId;
     if (changed) {
       _teardownBindChannel();
@@ -152,17 +177,38 @@ class EcoCenterClient {
         clearSelectedDesktop: true,
         clearBindingId: true,
       );
-    } else if (changed) {
+      await _store.save(_credentials);
+      return;
+    }
+
+    final known = knownBindingId?.trim();
+    if (known != null && known.isNotEmpty) {
+      _credentials = _credentials.copyWith(
+        selectedDesktopId: desktopDeviceId,
+        bindingId: known,
+      );
+      await _store.save(_credentials);
+      return;
+    }
+
+    // Re-tapping the already-selected PC with a cached binding — no network.
+    if (!changed &&
+        _credentials.bindingId != null &&
+        _credentials.bindingId!.isNotEmpty) {
+      return;
+    }
+
+    if (changed) {
       _credentials = _credentials.copyWith(
         selectedDesktopId: desktopDeviceId,
         clearBindingId: true,
       );
+      await _store.save(_credentials);
     }
-    await _store.save(_credentials);
 
-    if (desktopDeviceId != null &&
-        desktopDeviceId.isNotEmpty &&
-        _credentials.hasDeviceCredentials) {
+    // First bind (or lost bindingId): create/reuse via Edge Function.
+    // Profile sync is not needed here — [connect] already calls syncDeviceProfile.
+    if (_credentials.hasDeviceCredentials) {
       try {
         await ensureBinding(desktopDeviceId);
       } catch (_) {
@@ -177,7 +223,7 @@ class EcoCenterClient {
     if (trimmed.isEmpty) {
       throw EcoCenterException.app(EcoCenterErrorKind.bindingRequired);
     }
-    await ensureMobileDevice();
+    await ensureMobileDevice(syncProfile: false);
     final client = await _ensureSupabaseClient();
     await _ensureUserAccessToken();
     final response = await client.functions.invoke(
@@ -296,9 +342,11 @@ class EcoCenterClient {
     return device;
   }
 
-  Future<void> ensureMobileDevice() async {
+  Future<void> ensureMobileDevice({bool syncProfile = false}) async {
     if (_credentials.hasDeviceCredentials) {
-      await syncDeviceProfile();
+      if (syncProfile) {
+        await syncDeviceProfile();
+      }
       return;
     }
     await registerMobileDevice();
@@ -470,15 +518,81 @@ class EcoCenterClient {
     }).toList();
   }
 
+  /// Opens only the shared user Presence channel for the PC picker.
+  ///
+  /// This intentionally leaves [hasActiveBindingChannel] false. [connect]
+  /// promotes the transport to the bind/RPC session when `/threads` mounts.
+  Future<void> connectPresence() async {
+    // A full session connection already includes Presence. Reuse it instead of
+    // racing a second auth/channel setup while /threads is mounting. If the
+    // caller just left /threads, wait for its intentional shutdown first.
+    final fullInFlight = _connectInFlight;
+    if (fullInFlight != null) {
+      try {
+        await fullInFlight;
+        return;
+      } catch (_) {
+        // The old full connection was cancelled or failed; start Presence-only
+        // below once its in-flight future has settled.
+      }
+    }
+
+    _intentionallyStopped = false;
+    if (_presenceChannel != null) {
+      // Reuse the live Presence socket, but keep bind/RPC deferred for the picker.
+      _presenceOnlyMode = true;
+      return;
+    }
+
+    final existing = _presenceConnectInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+
+    _presenceOnlyMode = true;
+    _clearReconnectTimer();
+    late Future<void> tracked;
+    tracked = _connectPresenceOnce().whenComplete(() {
+      if (identical(_presenceConnectInFlight, tracked)) {
+        _presenceConnectInFlight = null;
+      }
+    });
+    _presenceConnectInFlight = tracked;
+    return tracked;
+  }
+
   Future<void> connect() async {
     _intentionallyStopped = false;
-    if (_connectInFlight != null) {
-      return _connectInFlight!;
+
+    // Let an in-flight picker Presence handshake finish before promoting the
+    // transport to a full bind/RPC session.
+    final presenceInFlight = _presenceConnectInFlight;
+    if (presenceInFlight != null) {
+      try {
+        await presenceInFlight;
+      } catch (_) {
+        // The full connection retries auth and Presence below.
+      }
     }
-    _connectInFlight = _connectOnce().whenComplete(() {
-      _connectInFlight = null;
+    if (_intentionallyStopped) {
+      throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
+    }
+
+    final existing = _connectInFlight;
+    if (existing != null) {
+      return existing;
+    }
+
+    _presenceOnlyMode = false;
+    late Future<void> tracked;
+    tracked = _connectOnce().whenComplete(() {
+      if (identical(_connectInFlight, tracked)) {
+        _connectInFlight = null;
+      }
     });
-    return _connectInFlight!;
+    _connectInFlight = tracked;
+    return tracked;
   }
 
   void disconnect() {
@@ -488,6 +602,7 @@ class EcoCenterClient {
     _clearDeviceSessionRefresh();
     _teardownBindChannel();
     _teardownPresenceChannel();
+    _presenceOnlyMode = false;
     _emitStatus(
       const CenterServerConnectionStatus(
         state: EcoConnectionState.disconnected,
@@ -797,6 +912,56 @@ class EcoCenterClient {
     }
   }
 
+  Future<void> _connectPresenceOnce() async {
+    _requireProjectConfig();
+    if (!_credentials.hasDeviceCredentials) {
+      throw EcoCenterException.app(EcoCenterErrorKind.deviceCredentialsMissing);
+    }
+
+    try {
+      final accessToken = await _ensureUserAccessToken();
+      await _registerDeviceSession(accessToken);
+      await _supabase!.realtime.setAuth(accessToken);
+      if (_intentionallyStopped) {
+        throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
+      }
+
+      await _subscribeUserPresence();
+      if (_intentionallyStopped) {
+        _teardownPresenceChannel();
+        throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
+      }
+      // Presence-only mode must not make the setup page look like the bind
+      // channel is ready. Keep the full transport status disconnected.
+      if (_status.state == EcoConnectionState.error) {
+        _emitStatus(
+          const CenterServerConnectionStatus(
+            state: EcoConnectionState.disconnected,
+          ),
+        );
+      }
+    } catch (error) {
+      _teardownPresenceChannel();
+      if (_intentionallyStopped) {
+        rethrow;
+      }
+      final message = _exceptionMessage(error);
+      final recovery = _recoveryFromError(error);
+      _emitStatus(
+        CenterServerConnectionStatus(
+          state: EcoConnectionState.error,
+          lastError: message,
+          authRecovery: recovery,
+        ),
+      );
+      if (!_intentionallyStopped &&
+          !shouldStopCenterServerReconnect(recovery)) {
+        _scheduleReconnect();
+      }
+      rethrow;
+    }
+  }
+
   Future<void> _connectOnce() async {
     _clearReconnectTimer();
     _requireProjectConfig();
@@ -845,6 +1010,9 @@ class EcoCenterClient {
       }
 
       await syncDeviceProfile();
+      if (_intentionallyStopped) {
+        throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
+      }
       _emitStatus(
         CenterServerConnectionStatus(
           state: EcoConnectionState.connected,
@@ -854,6 +1022,9 @@ class EcoCenterClient {
       _startKeepalive();
       _startDeviceSessionRefresh();
     } catch (error) {
+      if (_intentionallyStopped) {
+        rethrow;
+      }
       final message = _exceptionMessage(error);
       final recovery = _recoveryFromError(error);
       _emitStatus(
@@ -964,9 +1135,15 @@ class EcoCenterClient {
       topic,
       opts: RealtimeChannelConfig(private: true, key: deviceId, enabled: true),
     );
+    final presenceSynced = Completer<void>();
     void refreshPresence() => _refreshPresenceState(channel);
     channel
-      ..onPresenceSync((_) => refreshPresence())
+      ..onPresenceSync((_) {
+        refreshPresence();
+        if (!presenceSynced.isCompleted) {
+          presenceSynced.complete();
+        }
+      })
       ..onPresenceJoin((_) => refreshPresence())
       ..onPresenceLeave((_) => refreshPresence());
 
@@ -996,6 +1173,10 @@ class EcoCenterClient {
     }
     _presenceChannel = channel;
     _refreshPresenceState(channel);
+    await presenceSynced.future.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () {},
+    );
   }
 
   Future<void> _awaitChannelSubscription(
@@ -1015,12 +1196,14 @@ class EcoCenterClient {
       if (identical(_presenceChannel, channel)) {
         _teardownPresenceChannel();
       }
-      _emitStatus(
-        CenterServerConnectionStatus(
-          state: EcoConnectionState.error,
-          lastError: exception.message,
-        ),
-      );
+      if (!_presenceOnlyMode) {
+        _emitStatus(
+          CenterServerConnectionStatus(
+            state: EcoConnectionState.error,
+            lastError: exception.message,
+          ),
+        );
+      }
       _scheduleReconnect();
     }
 
@@ -1155,8 +1338,12 @@ class EcoCenterClient {
     _clearReconnectTimer();
     _reconnectTimer = Timer(Duration(milliseconds: reconnectDelayMs), () {
       if (!_intentionallyStopped) {
-        // _connectOnce publishes the concrete error state before rethrowing.
-        unawaited(_connectOnce().catchError((Object _) {}));
+        if (_presenceOnlyMode) {
+          unawaited(connectPresence().catchError((Object _) {}));
+        } else {
+          // _connectOnce publishes the concrete error state before rethrowing.
+          unawaited(_connectOnce().catchError((Object _) {}));
+        }
       }
     });
   }

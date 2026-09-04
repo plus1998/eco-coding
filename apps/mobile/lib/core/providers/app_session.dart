@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_providers.dart';
 
 /// Runs once at app start: restore saved desktop selection and refresh the PC list.
-/// Realtime is intentionally started when entering the session screen.
+/// The picker may start Presence separately; bind/RPC starts in the session screen.
 final appSessionProvider = FutureProvider<void>((ref) async {
   final client = ref.read(ecoCenterClientProvider);
   await client.initialize();

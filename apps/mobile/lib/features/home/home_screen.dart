@@ -47,6 +47,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectingDesktopId;
   /// Set after scanning a full QR while logged out; completed automatically after login.
   PairingQrPayload? _pendingPairingQr;
+  /// Set when navigating into `/threads` so [dispose] does not resume bind.
+  bool _enteringSession = false;
+  EcoCenterClient? _centerClient;
 
   @override
   void initState() {
@@ -57,11 +60,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _bootstrap() async {
     await ref.read(appSessionProvider.future);
     final client = ref.read(ecoCenterClientProvider);
-    // The connect screen is a selection surface. Stop any session transport
-    // left by a previous visit; Realtime starts again when entering /threads.
+    _centerClient = client;
+    // The connect screen keeps Presence for the online indicators. The bind
+    // channel is created only after the session route is mounted.
     client.disconnect();
+    // Block shell ensureDesktopBindReady → connect() before Presence finishes.
+    client.beginPresenceOnlyMode();
     ref.invalidate(desktopPresenceProvider);
     final creds = client.credentials;
+    if (creds.hasUserSession &&
+        creds.hasDeviceCredentials &&
+        creds.hasProjectConfig) {
+      unawaited(_startPickerPresence());
+    }
     _serverUrlController.text = creds.supabaseUrl;
     _anonKeyController.text = '';
     _emailController.text = creds.userEmail ?? '';
@@ -70,6 +81,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       setState(() => _wizardStep ??= resolveSetupWizardStep(overview));
       _consumePendingAuthRecovery();
     }
+  }
+
+  Future<void> _startPickerPresence() async {
+    final client = ref.read(ecoCenterClientProvider);
+    if (!client.credentials.hasUserSession ||
+        !client.credentials.hasDeviceCredentials ||
+        !client.credentials.hasProjectConfig) {
+      return;
+    }
+    try {
+      await client.connectPresence();
+    } catch (_) {
+      // Keep the REST device list usable when Presence is temporarily down.
+    }
+    if (!mounted) return;
+    await ref.read(desktopPresenceProvider.notifier).refresh(force: true);
   }
 
   void _consumePendingAuthRecovery() {
@@ -124,7 +151,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _anonKeyController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    final client = _centerClient;
+    final entering = _enteringSession;
     super.dispose();
+    // Popping back to MainShell: leave Presence-only and restore bind/RPC.
+    if (!entering && client != null && client.isPresenceOnlyMode) {
+      client.leavePresenceOnlyMode();
+      unawaited(client.connect().catchError((Object _) {}));
+    }
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -150,28 +184,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(selectedDesktopIdProvider) ??
         client.credentials.selectedDesktopId;
 
-    // Publish selection for the router gate, then jump straight to /threads so
-    // bind + thread-list share one SessionContentBootLoading (no /connect splash).
-    if (ref.read(selectedDesktopIdProvider) != selected) {
-      ref.read(selectedDesktopIdProvider.notifier).state = selected;
-    }
-    if (previousDesktop != selected) {
-      resetDesktopScopedProviders(ref.invalidate);
-    }
-
-    context.go('/threads');
-
+    // Persist the selected target before mounting /threads. This prevents the
+    // session providers from opening a bind channel for the previous PC.
     unawaited(() async {
       try {
         await client.setSelectedDesktop(selected);
-        await client.connect();
+        if (!mounted) return;
+        if (ref.read(selectedDesktopIdProvider) != selected) {
+          ref.read(selectedDesktopIdProvider.notifier).state = selected;
+        }
         ref.invalidate(credentialsProvider);
         ref.invalidate(bindingsProvider);
         ref.invalidate(desktopPresenceProvider);
-        unawaited(
-          ref.read(desktopPresenceProvider.notifier).refresh(force: true),
-        );
+        // Leave picker mode before invalidating session providers / navigating,
+        // otherwise ensureDesktopBindReady stays blocked on Presence-only.
+        _enteringSession = true;
+        client.leavePresenceOnlyMode();
+        if (previousDesktop != selected) {
+          resetDesktopScopedProviders(ref.invalidate);
+        }
+        context.go('/threads');
       } catch (error) {
+        _enteringSession = false;
         if (!mounted) return;
         context.go('/connect');
         _showSnack(localizedAppError(error, context.l10n));
@@ -310,7 +344,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ? context.l10n.setupOpenedDevice(selected.name)
             : context.l10n.setupBoundDevice(selected.name),
       );
-      if (mounted) context.go('/threads');
+      if (mounted) {
+        _enteringSession = true;
+        client.leavePresenceOnlyMode();
+        context.go('/threads');
+      }
     }
   }
 
@@ -322,16 +360,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final previousDesktop =
         ref.read(selectedDesktopIdProvider) ??
         client.credentials.selectedDesktopId;
-    // Persist the selection and binding only. The Realtime transport is
-    // established by _enterApp after the session route is mounted.
-    await client.setSelectedDesktop(desktopId);
+    final mobileId = client.credentials.deviceId;
+    final bindings = ref.read(bindingsProvider).valueOrNull ?? const [];
+    final knownBinding = mobileId == null || mobileId.isEmpty
+        ? null
+        : bindings
+              .where(
+                (binding) =>
+                    binding.isActive &&
+                    binding.desktopDeviceId == desktopId &&
+                    binding.mobileDeviceId == mobileId,
+              )
+              .firstOrNull;
+
+    // Persist the selection and binding only. Presence may already be active for
+    // the picker, but the bind/RPC channel starts when /threads mounts.
+    // Reuse a known binding id so switching already-paired PCs stays local/fast.
+    await client.setSelectedDesktop(
+      desktopId,
+      knownBindingId: knownBinding?.id,
+    );
     ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
     ref.invalidate(credentialsProvider);
     ref.invalidate(bindingsProvider);
     ref.invalidate(desktopPresenceProvider);
+    // While Presence-only, keep shell providers idle — switching PC on this
+    // screen must not call connect() via ensureDesktopBindReady.
     // Clear shell caches before navigating so ThreadsScreen boots into its
     // loading surface instead of briefly showing the previous PC's list.
-    if (previousDesktop != desktopId) {
+    if (previousDesktop != desktopId && !client.isPresenceOnlyMode) {
       resetDesktopScopedProviders(ref.invalidate);
     }
     // Presence refresh is best-effort and must not block entering the app.
@@ -633,13 +690,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 password: _passwordController.text,
               );
             }
-            await client.ensureMobileDevice();
-            // Realtime is intentionally lazy: the picker only persists the
-            // selection; session entry establishes Presence + bind channels.
+            await client.ensureMobileDevice(syncProfile: true);
+            // Start the lightweight user Presence channel for the PC picker;
+            // the bind/RPC channel remains lazy until /threads is entered.
             ref.read(pendingAuthRecoveryProvider.notifier).state = null;
             ref.invalidate(credentialsProvider);
             ref.invalidate(bindingsProvider);
             ref.invalidate(desktopPresenceProvider);
+            unawaited(_startPickerPresence());
 
             final pending = _pendingPairingQr;
             if (pending != null && pending.canQuickJoin) {
@@ -1474,7 +1532,6 @@ class _ReadyConnectionView extends ConsumerWidget {
           break;
         }
       }
-      selectedOnline ??= presenceLoading ? null : false;
       selectedName ??= formatDesktopLabel(null, selectedDesktop);
     }
 

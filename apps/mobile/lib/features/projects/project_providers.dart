@@ -182,10 +182,14 @@ final desktopSwitchBootstrapProvider = Provider<void>((ref) {
   ref.onDispose(() => alive = false);
   ref.listen<String?>(selectedDesktopIdProvider, (previous, next) {
     if (previous == null || previous == next) return;
+    // Picker selection must not rebuild session caches — that would call
+    // ensureDesktopBindReady → connect() while Presence-only is active.
+    if (ref.read(ecoCenterClientProvider).isPresenceOnlyMode) return;
     // Invalidate outside the StateController notify loop to avoid nested
     // StateProvider updates throwing StateNotifierListenerError.
     Future.microtask(() {
       if (!alive) return;
+      if (ref.read(ecoCenterClientProvider).isPresenceOnlyMode) return;
       resetDesktopScopedProviders(ref.invalidate);
     });
   });
