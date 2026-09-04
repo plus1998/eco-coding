@@ -89,9 +89,17 @@ export class PromptImageFileStore {
       const targetPath = this.messageFilePath(threadId, activityLineId, imageId, mediaType);
       const sourcePath = attachment.path?.trim();
       if (sourcePath && this.isManagedPath(sourcePath)) {
-        await this.moveOrCopy(sourcePath, targetPath);
-        persisted.push({ mediaType, path: targetPath });
-        continue;
+        try {
+          await this.moveOrCopy(sourcePath, targetPath);
+          persisted.push({ mediaType, path: targetPath });
+          continue;
+        } catch (error) {
+          // Composer draft cleanup may race-delete spool files after the renderer
+          // already captured path-only attachments; fall back to inline data when present.
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+          }
+        }
       }
       const data = attachment.data?.trim();
       if (!data) {

@@ -5247,7 +5247,11 @@ export class ConversationStore {
     };
   }
 
-  deleteComposerDraft(contextKey: string, expectedRevision?: string): boolean {
+  deleteComposerDraft(
+    contextKey: string,
+    expectedRevision?: string,
+    options?: { releaseAttachments?: boolean },
+  ): boolean {
     const key = contextKey.trim();
     if (!key) {
       return false;
@@ -5260,7 +5264,8 @@ export class ConversationStore {
           .run(key, expected)
       : this.db.prepare(`DELETE FROM composer_drafts WHERE context_key = ?`).run(key);
     const deleted = Number(result.changes) > 0;
-    if (deleted) {
+    // Send handoff sets releaseAttachments:false so spool files stay until persistMessageAttachments moves them.
+    if (deleted && options?.releaseAttachments !== false) {
       void this.promptImageFileStore?.deleteSpoolContext(key);
       void this.promptImageFileStore?.releasePaths(
         this.promptImageFileStore.collectAttachmentPaths(existing?.attachments),

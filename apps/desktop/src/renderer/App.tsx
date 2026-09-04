@@ -4300,7 +4300,10 @@ function App() {
       });
   }
 
-  function removeComposerDraft(contextKey: string | undefined): void {
+  function removeComposerDraft(
+    contextKey: string | undefined,
+    options?: { releaseAttachments?: boolean },
+  ): void {
     clearComposerDraft(composerDraftsByKeyRef.current, contextKey);
     if (!contextKey) {
       return;
@@ -4313,11 +4316,18 @@ function App() {
       window.clearTimeout(pending.timer);
       composerDraftSaveTimerRef.current = undefined;
     }
-    if (typeof window.eco?.deleteComposerDraft === "function") {
-      void window.eco.deleteComposerDraft(contextKey).catch((caught) => {
+    if (typeof window.eco?.deleteComposerDraft !== "function") {
+      return;
+    }
+    // Send handoff must keep spool files until main persists them into message storage.
+    const releaseAttachments = options?.releaseAttachments !== false;
+    void window.eco
+      .deleteComposerDraft(
+        releaseAttachments ? contextKey : { contextKey, releaseAttachments: false },
+      )
+      .catch((caught) => {
         console.error("[eco] composer draft delete failed", caught);
       });
-    }
   }
 
   const canSendFollowUp = Boolean(
@@ -4428,6 +4438,16 @@ function App() {
     ) {
       return;
     }
+    // While a send is in flight the composer is cleared for UX; do not autosave that empty
+    // state (empty save deletes the draft and would release still-needed spool images).
+    if (isStarting || followUpBusy) {
+      const pending = composerDraftSaveTimerRef.current;
+      if (pending) {
+        window.clearTimeout(pending.timer);
+        composerDraftSaveTimerRef.current = undefined;
+      }
+      return;
+    }
     persistComposerDraftSnapshot(composerDraftsByKeyRef.current, composerContextKey, {
       prompt,
       attachments: composerAttachmentsRef.current,
@@ -4443,7 +4463,7 @@ function App() {
     }, COMPOSER_DRAFT_SAVE_DEBOUNCE_MS);
     composerDraftSaveTimerRef.current = { key: composerContextKey, timer };
     return () => window.clearTimeout(timer);
-  }, [composerAttachments, composerContextKey, prompt]);
+  }, [composerAttachments, composerContextKey, followUpBusy, isStarting, prompt]);
 
   useEffect(() => {
     const flushComposerDraft = () => {
@@ -6512,7 +6532,7 @@ function App() {
       // while a (possibly transient) queue card is visible.
       const restorePrompt = messagePrompt;
       const restoreAttachments = [...composerAttachments];
-      removeComposerDraft(composerContextKey);
+      removeComposerDraft(composerContextKey, { releaseAttachments: false });
       setPrompt("");
       setComposerRewindTarget(undefined);
       setComposerAttachments([]);
@@ -6569,7 +6589,7 @@ function App() {
         : undefined;
     const restorePrompt = messagePrompt;
     const restoreAttachments = [...composerAttachments];
-    removeComposerDraft(composerContextKey);
+    removeComposerDraft(composerContextKey, { releaseAttachments: false });
     setPrompt("");
     setComposerRewindTarget(undefined);
     setComposerAttachments([]);

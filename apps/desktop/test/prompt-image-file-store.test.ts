@@ -101,6 +101,32 @@ test("deleteThreadMessages removes all message-owned prompt images", async () =>
   await expect(fs.stat(persisted[0]!.path!)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
+test("persistMessageAttachments falls back to inline data when spool path is gone", async () => {
+  const store = await createStore();
+  const payload = Buffer.from("fallback-png").toString("base64");
+  const staged = await store.stageComposerImage({
+    contextKey: "landing:/tmp/project",
+    imageId: "img_gone",
+    mediaType: "image/png",
+    dataBase64: payload,
+  });
+  await store.releasePaths([staged.path]);
+
+  const persisted = await store.persistMessageAttachments("thr_fallback", "user:1", [
+    { mediaType: "image/png", path: staged.path, data: payload },
+  ]);
+
+  expect(persisted).toEqual([
+    {
+      mediaType: "image/png",
+      path: expect.stringContaining(`${path.sep}messages${path.sep}thr_fallback${path.sep}`),
+    },
+  ]);
+  await expect(fs.stat(persisted[0]!.path!)).resolves.toBeDefined();
+  const resolved = await store.resolveAttachmentsForRuntime(persisted);
+  expect(resolved[0]?.data).toBe(payload);
+});
+
 test("isManagedPath accepts paths under the store root regardless of separator style", async () => {
   const store = await createStore();
   const root = store.getRootDir();

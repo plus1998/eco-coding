@@ -1722,7 +1722,12 @@ export interface ComposerDraftSaveRequest {
 export interface ComposerDraftDeleteRequest {
   contextKey: string;
   /** Delete only when this exact opaque draft revision is still current. */
-  expectedRevision: string;
+  expectedRevision?: string;
+  /**
+   * When false, keep staged prompt-image spool files (send handoff).
+   * Default true: abandoning a draft also releases its images.
+   */
+  releaseAttachments?: boolean;
 }
 
 export interface ComposerDraftDeleteResult {

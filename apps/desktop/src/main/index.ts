@@ -3786,15 +3786,20 @@ function registerIpcHandlers(): void {
     const record = payload as {
       contextKey?: unknown;
       expectedRevision?: unknown;
+      releaseAttachments?: unknown;
     };
-    if (typeof record.expectedRevision !== "string" || !record.expectedRevision.trim()) {
-      throw new Error("Composer draft revision is required.");
-    }
+    const expectedRevision =
+      typeof record.expectedRevision === "string" && record.expectedRevision.trim()
+        ? record.expectedRevision.trim()
+        : undefined;
+    const releaseAttachments =
+      record.releaseAttachments === false ? { releaseAttachments: false as const } : undefined;
     return {
       ok: true as const,
       deleted: conversationStore.deleteComposerDraft(
         parseComposerDraftContextKey(record.contextKey),
-        record.expectedRevision,
+        expectedRevision,
+        releaseAttachments,
       ),
     };
   });
@@ -5643,6 +5648,11 @@ function registerIpcHandlers(): void {
     if (!prompt) {
       throw new Error("Task prompt is required.");
     }
+    // Materialize path-only spool attachments before any slow await (e.g. ACP CLI probe).
+    // Otherwise a concurrent composer-draft delete can wipe spool and yield ENOENT.
+    const attachmentsForHandOff = attachments.length
+      ? await loadPromptAttachmentsForRuntime(attachments)
+      : [];
     const coreKind = payload.coreKind ?? "claude";
     if (!isCoreKind(coreKind)) {
       throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
@@ -5700,9 +5710,9 @@ function registerIpcHandlers(): void {
     };
 
     conversationStore.saveThread(thread);
-    const recorded = await recordUserPrompt(thread.id, prompt, attachments);
+    const recorded = await recordUserPrompt(thread.id, prompt, attachmentsForHandOff);
     const attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
-      recorded.storedAttachments ?? attachments,
+      recorded.storedAttachments ?? attachmentsForHandOff,
     );
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
@@ -7016,6 +7026,7 @@ async function startPiThreadContinuation(input: StartThreadContinuationInput): P
 async function startAcpThreadContinuation(
   input: StartThreadContinuationInput,
 ): Promise<ThreadContinueResult> {
+  // Read spool images before ACP CLI probe — same race as thread:start.
   const attachmentsForPrompt = await loadPromptAttachmentsForRuntime(input.attachments);
   const prompt = resolveAcpRunPrompt({
     prompt: input.prompt,
@@ -7041,11 +7052,11 @@ async function startAcpThreadContinuation(
     const recorded = await recordUserPrompt(
       thread.id,
       input.displayPrompt?.trim() || prompt,
-      input.attachments,
+      attachmentsForPrompt ?? input.attachments,
     );
     recordedUserActivityLineId = recorded.line?.rewindTarget?.activityLineId ?? recorded.line?.id;
     attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
-      recorded.storedAttachments ?? input.attachments,
+      recorded.storedAttachments ?? attachmentsForPrompt ?? input.attachments,
     );
   }
   const updated = conversationStore.getThread(thread.id) ?? thread;
