@@ -10789,7 +10789,7 @@ function FollowUpQueuePanel({
           </div>
         ) : (
           <div className="follow-up-queue-pause-hint follow-up-queue-pause-hint-idle" aria-hidden>
-            {t("thread.followUpQueueActive")}
+            {t("thread.followUpQueueActive", { count: followUps.length })}
           </div>
         )}
         <button

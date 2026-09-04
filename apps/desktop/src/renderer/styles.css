@@ -11978,7 +11978,7 @@ button.default-agent-option:focus-visible {
 
 .markdown-content .markdown-table-block:hover .markdown-table-actions,
 .markdown-content .markdown-table-block:focus-within .markdown-table-actions,
-.markdown-content .markdown-table-block:has(.markdown-table-copy-wrap.is-open) .markdown-table-actions {
+.markdown-content .markdown-table-block:has(.markdown-table-menu-wrap.is-open) .markdown-table-actions {
   opacity: 1;
   pointer-events: auto;
 }
@@ -11991,11 +11991,11 @@ button.default-agent-option:focus-visible {
   box-shadow: var(--shadow-menu);
 }
 
-.markdown-content .markdown-table-copy-wrap {
+.markdown-content .markdown-table-menu-wrap {
   position: relative;
 }
 
-.markdown-content .markdown-table-copy-menu {
+.markdown-content .markdown-table-menu {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -12010,11 +12010,11 @@ button.default-agent-option:focus-visible {
   box-shadow: var(--shadow-menu);
 }
 
-.markdown-content .markdown-table-copy-menu[hidden] {
+.markdown-content .markdown-table-menu[hidden] {
   display: none;
 }
 
-.markdown-content .markdown-table-copy-menu__item {
+.markdown-content .markdown-table-menu__item {
   display: block;
   width: 100%;
   margin: 0;
@@ -12029,8 +12029,8 @@ button.default-agent-option:focus-visible {
   cursor: pointer;
 }
 
-.markdown-content .markdown-table-copy-menu__item:hover,
-.markdown-content .markdown-table-copy-menu__item:focus-visible {
+.markdown-content .markdown-table-menu__item:hover,
+.markdown-content .markdown-table-menu__item:focus-visible {
   background: var(--popover-hover, var(--nav-hover));
   outline: none;
 }

@@ -49,7 +49,7 @@ class FollowUpQueueBar extends StatelessWidget {
         ? context.l10n.followUpQueuePausedEditing
         : queuePaused
         ? context.l10n.followUpQueuePaused
-        : context.l10n.followUpQueueActive;
+        : context.l10n.followUpQueueActive(followUps.length);
     final pauseHintHeight = 28.0;
 
     return Transform.translate(

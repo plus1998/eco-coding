@@ -13,7 +13,13 @@ import {
 } from "../lightbox-zoom";
 import { repairMarkdown } from "../markdown-repair";
 import { copyMermaidAsImage, copyMermaidAsMarkdown } from "../markdown-mermaid-clipboard";
-import { copyTableAsHtml, copyTableAsImage, copyTableAsMarkdown } from "../markdown-table-clipboard";
+import {
+  copyTableAsHtml,
+  copyTableAsImage,
+  copyTableAsMarkdown,
+  downloadTableAsCsv,
+  downloadTableAsExcel,
+} from "../markdown-table-clipboard";
 import { getMaterialIconUrl, resolveMaterialIconName } from "../material-file-icon";
 import {
   dispatchWorkspaceFileReference,
@@ -569,6 +575,8 @@ const EXPAND_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>';
 const TABLE_COPY_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const TABLE_DOWNLOAD_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>';
 const CLOSE_PREVIEW_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
 const OPEN_PREVIEW_ICON =
@@ -946,105 +954,153 @@ function createTableNodeView(): {
   const expandBtn = createActionButton(i18n.t("markdown.table.expand"), EXPAND_ICON);
   expandBtn.classList.add("markdown-table-action");
 
-  const copyWrap = document.createElement("div");
-  copyWrap.className = "markdown-table-copy-wrap";
-
-  const copyBtn = createActionButton(i18n.t("markdown.table.copy"), TABLE_COPY_ICON);
-  copyBtn.classList.add("markdown-table-action", "markdown-table-copy-trigger");
-  copyBtn.setAttribute("aria-haspopup", "menu");
-  copyBtn.setAttribute("aria-expanded", "false");
-
-  const menu = document.createElement("div");
-  menu.className = "markdown-table-copy-menu";
-  menu.setAttribute("role", "menu");
-  menu.hidden = true;
-
-  const menuItems: Array<{
-    key: "markdown" | "html" | "image";
+  type TableMenuItem = {
     labelKey: string;
-    run: () => Promise<boolean>;
-  }> = [
-    {
-      key: "markdown",
-      labelKey: "markdown.table.copyMarkdown",
-      run: () => copyTableAsMarkdown(table),
-    },
-    {
-      key: "html",
-      labelKey: "markdown.table.copyHtml",
-      run: () => copyTableAsHtml(table),
-    },
-    {
-      key: "image",
-      labelKey: "markdown.table.copyImage",
-      run: () => copyTableAsImage(table),
-    },
-  ];
+    run: () => boolean | Promise<boolean>;
+  };
 
-  for (const item of menuItems) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "markdown-table-copy-menu__item";
-    btn.setAttribute("role", "menuitem");
-    btn.textContent = i18n.t(item.labelKey);
-    btn.addEventListener("mousedown", (event) => event.preventDefault());
-    btn.addEventListener("click", (event) => {
+  const createTableActionMenu = (options: {
+    wrapClassName: string;
+    triggerLabelKey: string;
+    triggerIcon: string;
+    failedLabelKey: string;
+    items: readonly TableMenuItem[];
+  }) => {
+    const menuWrap = document.createElement("div");
+    menuWrap.className = options.wrapClassName;
+
+    const trigger = createActionButton(i18n.t(options.triggerLabelKey), options.triggerIcon);
+    trigger.classList.add("markdown-table-action", "markdown-table-menu-trigger");
+    trigger.setAttribute("aria-haspopup", "menu");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const menu = document.createElement("div");
+    menu.className = "markdown-table-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+
+    let closePeerMenus: (() => void) | null = null;
+
+    const closeMenu = () => {
+      menu.hidden = true;
+      menuWrap.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+      window.removeEventListener("pointerdown", onPointerDownOutside, true);
+    };
+
+    const openMenu = () => {
+      closePeerMenus?.();
+      menu.hidden = false;
+      menuWrap.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+      window.addEventListener("pointerdown", onPointerDownOutside, true);
+    };
+
+    const onPointerDownOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || menuWrap.contains(target)) return;
+      closeMenu();
+    };
+
+    for (const item of options.items) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "markdown-table-menu__item";
+      btn.setAttribute("role", "menuitem");
+      btn.textContent = i18n.t(item.labelKey);
+      btn.addEventListener("mousedown", (event) => event.preventDefault());
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void Promise.resolve(item.run()).then((ok) => {
+          closeMenu();
+          if (!ok) {
+            trigger.title = i18n.t(options.failedLabelKey);
+            window.setTimeout(() => {
+              trigger.title = i18n.t(options.triggerLabelKey);
+            }, 1600);
+            return;
+          }
+          trigger.innerHTML = CHECK_ICON;
+          window.setTimeout(() => {
+            trigger.innerHTML = options.triggerIcon;
+          }, 1400);
+        });
+      });
+      menu.append(btn);
+    }
+
+    trigger.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void item.run().then((ok) => {
-        closeCopyMenu();
-        if (!ok) {
-          copyBtn.title = i18n.t("markdown.table.copyFailed");
-          window.setTimeout(() => {
-            copyBtn.title = i18n.t("markdown.table.copy");
-          }, 1600);
-          return;
-        }
-        copyBtn.innerHTML = CHECK_ICON;
-        window.setTimeout(() => {
-          copyBtn.innerHTML = TABLE_COPY_ICON;
-        }, 1400);
-      });
+      if (menu.hidden) openMenu();
+      else closeMenu();
     });
-    menu.append(btn);
-  }
 
-  const closeCopyMenu = () => {
-    menu.hidden = true;
-    copyWrap.classList.remove("is-open");
-    copyBtn.setAttribute("aria-expanded", "false");
-    window.removeEventListener("pointerdown", onPointerDownOutside, true);
+    menuWrap.append(trigger, menu);
+    return {
+      wrap: menuWrap,
+      closeMenu,
+      setClosePeerMenus(fn: () => void) {
+        closePeerMenus = fn;
+      },
+    };
   };
 
-  const openCopyMenu = () => {
-    menu.hidden = false;
-    copyWrap.classList.add("is-open");
-    copyBtn.setAttribute("aria-expanded", "true");
-    window.addEventListener("pointerdown", onPointerDownOutside, true);
-  };
-
-  const onPointerDownOutside = (event: PointerEvent) => {
-    const target = event.target;
-    if (!(target instanceof Node) || copyWrap.contains(target)) return;
-    closeCopyMenu();
-  };
-
-  copyBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (menu.hidden) openCopyMenu();
-    else closeCopyMenu();
+  const copyMenu = createTableActionMenu({
+    wrapClassName: "markdown-table-menu-wrap markdown-table-copy-wrap",
+    triggerLabelKey: "markdown.table.copy",
+    triggerIcon: TABLE_COPY_ICON,
+    failedLabelKey: "markdown.table.copyFailed",
+    items: [
+      {
+        labelKey: "markdown.table.copyMarkdown",
+        run: () => copyTableAsMarkdown(table),
+      },
+      {
+        labelKey: "markdown.table.copyHtml",
+        run: () => copyTableAsHtml(table),
+      },
+      {
+        labelKey: "markdown.table.copyImage",
+        run: () => copyTableAsImage(table),
+      },
+    ],
   });
+
+  const downloadMenu = createTableActionMenu({
+    wrapClassName: "markdown-table-menu-wrap markdown-table-download-wrap",
+    triggerLabelKey: "markdown.table.download",
+    triggerIcon: TABLE_DOWNLOAD_ICON,
+    failedLabelKey: "markdown.table.downloadFailed",
+    items: [
+      {
+        labelKey: "markdown.table.downloadCsv",
+        run: () => downloadTableAsCsv(table),
+      },
+      {
+        labelKey: "markdown.table.downloadExcel",
+        run: () => downloadTableAsExcel(table),
+      },
+    ],
+  });
+
+  copyMenu.setClosePeerMenus(() => downloadMenu.closeMenu());
+  downloadMenu.setClosePeerMenus(() => copyMenu.closeMenu());
+
+  const closeAllMenus = () => {
+    copyMenu.closeMenu();
+    downloadMenu.closeMenu();
+  };
 
   expandBtn.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    closeCopyMenu();
+    closeAllMenus();
     openTableLightbox(table.outerHTML);
   });
 
-  copyWrap.append(copyBtn, menu);
-  actions.append(expandBtn, copyWrap);
+  actions.append(expandBtn, copyMenu.wrap, downloadMenu.wrap);
   wrap.append(scroll, actions);
 
   return {
@@ -1054,7 +1110,7 @@ function createTableNodeView(): {
       return updated.type.name === "table";
     },
     destroy() {
-      closeCopyMenu();
+      closeAllMenus();
       dismissMarkdownLightbox();
     },
   };

@@ -773,7 +773,7 @@
   "followUpEditing": "Editing",
   "followUpQueuePaused": "Queue paused",
   "followUpQueuePausedEditing": "Queue paused until you finish editing",
-  "followUpQueueActive": "Messages are queued",
+  "followUpQueueActive": "{count} messages are queued",
   "followUpQueuePause": "Pause",
   "followUpQueueResume": "Resume",
   "followUpDeleting": "Deleting...",

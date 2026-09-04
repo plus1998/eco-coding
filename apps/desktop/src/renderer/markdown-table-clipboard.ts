@@ -80,6 +80,116 @@ export function tableElementToHtml(table: HTMLTableElement): string {
   return tableMatrixToHtml(readMarkdownTableMatrix(table));
 }
 
+function escapeCsvCell(text: string): string {
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+/** RFC 4180 CSV with UTF-8 BOM so Excel opens CJK correctly. */
+export function tableMatrixToCsv(rows: string[][]): string {
+  if (rows.length === 0) return "";
+  const width = Math.max(...rows.map((row) => row.length));
+  if (width < 1) return "";
+
+  const pad = (row: string[]) => {
+    const next = row.slice(0, width);
+    while (next.length < width) next.push("");
+    return next;
+  };
+
+  const lines = rows.map((row) => pad(row).map(escapeCsvCell).join(","));
+  return `\uFEFF${lines.join("\r\n")}`;
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * SpreadsheetML workbook (.xls) — opens in Excel / WPS / LibreOffice without extra deps.
+ */
+export function tableMatrixToExcelXml(rows: string[][]): string {
+  if (rows.length === 0) return "";
+  const width = Math.max(...rows.map((row) => row.length));
+  if (width < 1) return "";
+
+  const pad = (row: string[]) => {
+    const next = row.slice(0, width);
+    while (next.length < width) next.push("");
+    return next;
+  };
+
+  const rowXml = rows
+    .map((row) => {
+      const cells = pad(row)
+        .map((cell) => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`)
+        .join("");
+      return `<Row>${cells}</Row>`;
+    })
+    .join("");
+
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<?mso-application progid="Excel.Sheet"?>`,
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"`,
+    ` xmlns:o="urn:schemas-microsoft-com:office:office"`,
+    ` xmlns:x="urn:schemas-microsoft-com:office:excel"`,
+    ` xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`,
+    `<Worksheet ss:Name="Sheet1"><Table>${rowXml}</Table></Worksheet>`,
+    `</Workbook>`,
+  ].join("");
+}
+
+export function tableElementToCsv(table: HTMLTableElement): string {
+  return tableMatrixToCsv(readMarkdownTableMatrix(table));
+}
+
+export function tableElementToExcelXml(table: HTMLTableElement): string {
+  return tableMatrixToExcelXml(readMarkdownTableMatrix(table));
+}
+
+function defaultTableDownloadBasename(): string {
+  return `table-${new Date().toISOString().slice(0, 10)}`;
+}
+
+/** Trigger a browser/Electron download for a text (or XML) payload. */
+export function downloadTextFile(content: string, filename: string, mimeType: string): boolean {
+  if (!content) return false;
+  try {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function downloadTableAsCsv(table: HTMLTableElement, basename = defaultTableDownloadBasename()): boolean {
+  return downloadTextFile(tableElementToCsv(table), `${basename}.csv`, "text/csv;charset=utf-8");
+}
+
+export function downloadTableAsExcel(table: HTMLTableElement, basename = defaultTableDownloadBasename()): boolean {
+  return downloadTextFile(
+    tableElementToExcelXml(table),
+    `${basename}.xls`,
+    "application/vnd.ms-excel;charset=utf-8",
+  );
+}
+
 export async function copyTableAsMarkdown(table: HTMLTableElement): Promise<boolean> {
   return copyTextToClipboard(tableElementToMarkdown(table));
 }

@@ -498,9 +498,6 @@ function normalizeEndpoint(value: unknown, provider: ImageGenerationProvider): s
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new Error("图片创建 Base URL 必须使用 HTTP 或 HTTPS。");
   }
-  if (provider === "openai_compatible" && parsed.protocol !== "https:") {
-    throw new Error("OpenAI-compatible 图片创建 Base URL 必须使用 HTTPS。");
-  }
   parsed.search = "";
   parsed.hash = "";
   return parsed.toString().replace(/\/+$/, "");

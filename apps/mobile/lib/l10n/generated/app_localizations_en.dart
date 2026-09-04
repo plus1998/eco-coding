@@ -2331,7 +2331,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Queue paused until you finish editing';
 
   @override
-  String get followUpQueueActive => 'Messages are queued';
+  String followUpQueueActive(Object count) {
+    return '$count messages are queued';
+  }
 
   @override
   String get followUpQueuePause => 'Pause';

@@ -728,7 +728,7 @@
   "followUpEditing": "正在编辑",
   "followUpQueuePaused": "排队已暂停",
   "followUpQueuePausedEditing": "排队已暂停，完成编辑后继续发送",
-  "followUpQueueActive": "消息正在排队",
+  "followUpQueueActive": "{count}条消息正在排队",
   "followUpQueuePause": "暂停",
   "followUpQueueResume": "继续",
   "followUpDeleting": "删除中…",

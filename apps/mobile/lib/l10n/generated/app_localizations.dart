@@ -4049,8 +4049,8 @@ abstract class AppLocalizations {
   /// No description provided for @followUpQueueActive.
   ///
   /// In en, this message translates to:
-  /// **'Messages are queued'**
-  String get followUpQueueActive;
+  /// **'{count} messages are queued'**
+  String followUpQueueActive(Object count);
 
   /// No description provided for @followUpQueuePause.
   ///

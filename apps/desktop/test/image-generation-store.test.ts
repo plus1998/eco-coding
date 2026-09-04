@@ -168,15 +168,14 @@ test("image generation artifacts preserve tool id, parameters, success, and fail
   expect(store.listArtifacts("thread-1")).toHaveLength(2);
 });
 
-test("OpenAI-compatible profiles reject non-HTTPS endpoints", async () => {
+test("OpenAI-compatible profiles accept HTTP endpoints", async () => {
   const store = await createStore();
-  expect(() =>
-    store.saveProfile({
-      name: "Unsafe compatible",
-      provider: "openai_compatible",
-      endpoint: "http://example.com/v1",
-      model: "image-model",
-      apiKey: "key",
-    }),
-  ).toThrow(/HTTPS/);
+  const profile = store.saveProfile({
+    name: "Local compatible",
+    provider: "openai_compatible",
+    endpoint: "http://example.com/v1",
+    model: "image-model",
+    apiKey: "key",
+  });
+  expect(profile.endpoint).toBe("http://example.com/v1");
 });

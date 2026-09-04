@@ -291,8 +291,8 @@ async function fetchProviderImage(url: string, signal?: AbortSignal): Promise<Im
   } catch {
     throw new ImageGenerationError("invalid_response", "供应商返回了无效图片 URL。");
   }
-  if (parsed.protocol !== "https:" || isPrivateHost(parsed.hostname)) {
-    throw new ImageGenerationError("unsafe_image_url", "供应商图片 URL 必须是非私网 HTTPS 地址。");
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new ImageGenerationError("unsafe_image_url", "供应商图片 URL 必须是 HTTP 或 HTTPS 地址。");
   }
   const response = await providerFetch(parsed.toString(), { method: "GET" }, signal);
   if (!response.ok) {
@@ -374,20 +374,6 @@ function detectImageMime(bytes: Buffer): string | undefined {
   )
     return "image/webp";
   return undefined;
-}
-
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return (
-    host === "localhost" ||
-    host === "::1" ||
-    host.endsWith(".local") ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
