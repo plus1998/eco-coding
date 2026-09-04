@@ -28,7 +28,7 @@ import {
   isAgentBrowserScreenshotToolName,
   isEcoImageDisplayToolName,
   readAbsolutePathFromMcpToolOutput,
-  readImageDisplayArtifactFromToolOutput,
+  readImageDisplayMetadataFromToolOutput,
 } from "./eco-image-display-tool.js";
 import {
   isEcoWebSearchToolName,
@@ -1307,16 +1307,17 @@ function emitMcpToolEvent(
       ctx.emittedImageViewPaths.add(imageViewPath);
     }
   }
-  let imageDisplayArtifactId =
+  let imageDisplayMeta =
     isEcoImageDisplayToolName(toolName) && eventType === "tool.completed"
-      ? readImageDisplayArtifactFromToolOutput(item)
+      ? readImageDisplayMetadataFromToolOutput(item)
       : undefined;
-  if (imageDisplayArtifactId && eventType === "tool.completed") {
-    if (ctx.emittedImageDisplayArtifacts.has(imageDisplayArtifactId)) {
+  if (imageDisplayMeta && eventType === "tool.completed") {
+    if (ctx.emittedImageDisplayArtifacts.has(imageDisplayMeta.artifactId)) {
       return;
     }
-    ctx.emittedImageDisplayArtifacts.add(imageDisplayArtifactId);
+    ctx.emittedImageDisplayArtifacts.add(imageDisplayMeta.artifactId);
   }
+  const imageDisplayArtifactId = imageDisplayMeta?.artifactId;
   const urlHint = readMcpToolUrlHint(item, mcpInput);
   const ecoWebSearchQuery = isEcoWebSearchToolName(toolName) ? readEcoWebSearchQuery(mcpInput) : undefined;
   const ecoWebSearchParsed =
@@ -1376,7 +1377,14 @@ function emitMcpToolEvent(
         status: toolStatus,
         ...(durationMs !== undefined ? { durationMs } : {}),
         ...(imageViewPath ? { imageView: { path: imageViewPath } } : {}),
-        ...(imageDisplayArtifactId ? { imageDisplay: { artifactId: imageDisplayArtifactId } } : {}),
+        ...(imageDisplayMeta
+          ? {
+              imageDisplay: {
+                artifactId: imageDisplayMeta.artifactId,
+                ...(imageDisplayMeta.title ? { title: imageDisplayMeta.title } : {}),
+              },
+            }
+          : {}),
         ...(ecoWebSearch ? { webSearch: ecoWebSearch } : {}),
       },
     },

@@ -505,6 +505,66 @@ test("live feed tool projection keeps imageView path for Eco view_image", () => 
   });
 });
 
+test("live feed tool projection keeps imageDisplay artifact for Eco display_image", () => {
+  expect(
+    projectThreadRunToolMetadataForFeed({
+      name: "mcp__eco_image_display__display_image",
+      detail: "art-feed-1",
+      status: "completed",
+      imageDisplay: { artifactId: "art-feed-1", title: "示例图" },
+    }),
+  ).toEqual({
+    name: "mcp__eco_image_display__display_image",
+    detail: "art-feed-1",
+    status: "completed",
+    imageDisplay: { artifactId: "art-feed-1", title: "示例图" },
+  });
+});
+
+test("trimProjectionForFeed keeps imageDisplay artifact for Eco display_image on a live running turn", () => {
+  const projection = createProjection("short message", { longDelegation: false });
+  const trimmed = trimProjectionForFeed({
+    ...projection,
+    attempts: [
+      {
+        attemptId: "att_run",
+        phase: "run",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    timeline: [
+      {
+        id: "tool_image_display",
+        sequence: 1,
+        eventType: "tool.completed",
+        scope: "main",
+        text: "Tool: mcp__eco_image_display__display_image · art-feed-1",
+        at: "2026-01-01T00:00:00.000Z",
+        runAttemptId: "att_run",
+        metadata: {
+          tool: {
+            name: "mcp__eco_image_display__display_image",
+            detail: "art-feed-1",
+            toolUseId: "toolu_display",
+            status: "completed",
+            imageDisplay: { artifactId: "art-feed-1", title: "示例图" },
+          },
+        },
+      },
+    ],
+  });
+
+  expect(trimmed.timeline[0]?.metadata?.tool).toEqual({
+    name: "mcp__eco_image_display__display_image",
+    detail: "art-feed-1",
+    toolUseId: "toolu_display",
+    status: "completed",
+    imageDisplay: { artifactId: "art-feed-1", title: "示例图" },
+  });
+});
+
 test("trimProjectionForFeed keeps PI mcp discovery metadata on a live running turn", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const trimmed = trimProjectionForFeed({

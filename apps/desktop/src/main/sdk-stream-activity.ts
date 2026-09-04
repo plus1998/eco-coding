@@ -8,7 +8,9 @@ import {
   parseEcoWebSearchToolOutput,
   parseSendMessageToolResult,
   readEcoWebSearchQuery,
+  readImageDisplayMetadataFromToolOutput,
   readSendMessageToolInput,
+  resolveEcoImageDisplayToolCall,
   resolveEcoImageViewToolCall,
   resolvePiMcpProxyDiscoveryCall,
   resolveSkillDisplayName,
@@ -660,7 +662,8 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
-  const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const { displayName, imageViewCall, imageDisplayCall, mcpDiscovery } =
+    resolveSdkImageViewAndMcpDiscovery(name, record.input);
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const command =
     readString(record.command) ??
@@ -707,11 +710,15 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
         }
       : undefined;
   const webSearch = resolveEcoWebSearchToolMetadata(displayName, record.input, output);
+  const imageDisplayMeta = imageDisplayCall
+    ? readImageDisplayMetadataFromToolOutput(output ?? record.result ?? record.content)
+    : undefined;
   return {
     name: displayName,
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(webSearch?.query && !command && { detail: webSearch.query }),
+    ...(imageDisplayMeta?.artifactId && !command && !sendMessageDetail && { detail: imageDisplayMeta.artifactId }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
     ...(sendMessageOutputPreview?.text && { outputPreview: sendMessageOutputPreview.text }),
     ...(outputPreview?.truncated && { outputPreviewTruncated: true }),
@@ -723,6 +730,12 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
     ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(imageDisplayMeta?.artifactId && {
+      imageDisplay: {
+        artifactId: imageDisplayMeta.artifactId,
+        ...(imageDisplayMeta.title ? { title: imageDisplayMeta.title } : {}),
+      },
+    }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(webSearch && { webSearch }),
     status: "completed",
@@ -743,7 +756,8 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     return undefined;
   }
   const name = record.tool_name;
-  const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const { displayName, imageViewCall, mcpDiscovery } =
+    resolveSdkImageViewAndMcpDiscovery(name, record.input);
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const message =
     typeof record.message === "string"
@@ -861,13 +875,18 @@ function resolveSdkImageViewAndMcpDiscovery(
 ): {
   displayName: string;
   imageViewCall: ReturnType<typeof resolveEcoImageViewToolCall>;
+  imageDisplayCall: ReturnType<typeof resolveEcoImageDisplayToolCall>;
   mcpDiscovery: ReturnType<typeof resolvePiMcpProxyDiscoveryCall>;
 } {
   const imageViewCall = resolveEcoImageViewToolCall(name, input);
+  const imageDisplayCall = imageViewCall ? undefined : resolveEcoImageDisplayToolCall(name, input);
+  const displayName = imageViewCall?.name ?? imageDisplayCall?.name ?? name;
   return {
-    displayName: imageViewCall?.name ?? name,
+    displayName,
     imageViewCall,
-    mcpDiscovery: imageViewCall ? undefined : resolvePiMcpProxyDiscoveryCall(name, input),
+    imageDisplayCall,
+    mcpDiscovery:
+      imageViewCall || imageDisplayCall ? undefined : resolvePiMcpProxyDiscoveryCall(name, input),
   };
 }
 
@@ -880,7 +899,8 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     return undefined;
   }
   const name = record.tool_name.trim();
-  const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const { displayName, imageViewCall, mcpDiscovery } =
+    resolveSdkImageViewAndMcpDiscovery(name, record.input);
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const detail =
     imageViewCall?.path ||

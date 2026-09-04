@@ -209,15 +209,7 @@ export class ImageDisplayMcpGateway {
             content: [
               {
                 type: "text",
-                text: JSON.stringify({
-                  status: "ok",
-                  artifactId: artifact.id,
-                  mimeType: artifact.mimeType,
-                  bytes: artifact.bytes,
-                  ...(artifact.title ? { title: artifact.title } : {}),
-                  ...(artifact.width !== undefined ? { width: artifact.width } : {}),
-                  ...(artifact.height !== undefined ? { height: artifact.height } : {}),
-                }),
+                text: JSON.stringify({ status: "ok" }),
               },
             ],
           },
@@ -252,7 +244,7 @@ function imageDisplayToolDefinition(): Record<string, unknown> {
   return {
     name: ECO_IMAGE_DISPLAY_TOOL,
     description:
-      "Display an image to the user in the Eco conversation feed. Stores a feed artifact and returns artifactId.",
+      "Display an image to the user. On success returns { status: \"ok\" }. Eco places it in the workspace cards / task panel — tell the user to open it there. Do not embed Markdown image links.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

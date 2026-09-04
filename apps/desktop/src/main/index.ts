@@ -12875,7 +12875,7 @@ function emitThreadEvent(
   stream = false,
   extras?: EmitThreadEventExtras,
 ): ThreadActivityLine | undefined {
-  extras = projectEmitThreadEventExtras(extras);
+  extras = projectEmitThreadEventExtras(threadId, extras);
   if (type === "tool.started") {
     maybeRevealBrowserFromAgentTool({
       threadId,
@@ -13030,7 +13030,9 @@ function emitThreadEvent(
     payload.externalSessionId = extras.externalSessionId;
   }
   if (extras?.tool) {
-    const tool = projectThreadRunToolMetadataForFeed(extras.tool);
+    const tool = projectThreadRunToolMetadataForFeed(
+      enrichImageDisplayToolMetadata(threadId, extras.tool),
+    );
     if (tool) {
       payload.tool = tool;
     }
@@ -13053,14 +13055,48 @@ function emitThreadEvent(
 }
 
 function projectEmitThreadEventExtras(
+  threadId: string,
   extras: EmitThreadEventExtras | undefined,
 ): EmitThreadEventExtras | undefined {
   if (!extras?.tool) {
     return extras;
   }
   const { tool: _tool, ...rest } = extras;
-  const tool = projectThreadRunToolMetadata(extras.tool);
+  const tool = projectThreadRunToolMetadata(enrichImageDisplayToolMetadata(threadId, extras.tool));
   return tool ? { ...rest, tool } : rest;
+}
+
+/**
+ * Feed preview is attached via store lookup (toolUseId / latest), not model-visible tool output.
+ * display_image only returns `{ status: "ok" }` to the model.
+ */
+function enrichImageDisplayToolMetadata(
+  threadId: string,
+  tool: ThreadRunToolMetadata,
+): ThreadRunToolMetadata {
+  if (!isEcoImageDisplayToolName(tool.name) && tool.name.trim() !== ECO_IMAGE_DISPLAY_TOOL) {
+    return tool;
+  }
+  if (tool.status === "started" || tool.imageDisplay?.artifactId?.trim()) {
+    return tool;
+  }
+  if (!imageDisplayStore) {
+    return tool;
+  }
+  const byToolUseId = tool.toolUseId?.trim()
+    ? imageDisplayStore.getArtifactByToolUseId(tool.toolUseId)
+    : undefined;
+  const artifact = byToolUseId ?? imageDisplayStore.getLatestArtifact(threadId);
+  if (!artifact || artifact.status !== "completed") {
+    return tool;
+  }
+  return {
+    ...tool,
+    imageDisplay: {
+      artifactId: artifact.id,
+      ...(artifact.title?.trim() ? { title: artifact.title.trim() } : {}),
+    },
+  };
 }
 
 function emitContextCompactionStatus(

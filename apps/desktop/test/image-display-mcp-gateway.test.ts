@@ -45,11 +45,11 @@ async function createGateway() {
     onArtifactChanged: () => undefined,
   });
   gateways.push(gateway);
-  return gateway;
+  return { gateway, store };
 }
 
 test("mergeIntoSdkConfig includes display_image in allowedTools", async () => {
-  const gateway = await createGateway();
+  const { gateway } = await createGateway();
   const injection = await gateway.resolveInjection("thr_display");
   const merged = gateway.mergeIntoSdkConfig(
     { mcpServers: { docs: { command: "echo" } }, allowedTools: ["mcp__docs__*"] },
@@ -59,8 +59,8 @@ test("mergeIntoSdkConfig includes display_image in allowedTools", async () => {
   expect(merged.allowedTools).toContain(ECO_IMAGE_DISPLAY_FULL_TOOL);
 });
 
-test("display_image base64 stores artifact and returns artifactId", async () => {
-  const gateway = await createGateway();
+test("display_image base64 stores artifact and returns status ok only", async () => {
+  const { gateway, store } = await createGateway();
   const server = await gateway.resolveGlobalCodexServer();
   gateway.noteUpcomingTool("thr_base64", ECO_IMAGE_DISPLAY_TOOL, "tool-display");
   const response = await fetch(`${server.env!.ECO_IMAGE_DISPLAY_CONTROL_URL}/v1/tools/call`, {
@@ -77,8 +77,11 @@ test("display_image base64 stores artifact and returns artifactId", async () => 
   const payload = (await response.json()) as {
     result: { content: Array<{ text: string }> };
   };
-  const parsed = JSON.parse(payload.result.content[0]?.text ?? "{}") as { artifactId?: string };
-  expect(parsed.artifactId).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-  );
+  const parsed = JSON.parse(payload.result.content[0]?.text ?? "{}") as Record<string, unknown>;
+  expect(parsed).toEqual({ status: "ok" });
+  expect(parsed.artifactId).toBeUndefined();
+  const listed = store.listArtifacts("thr_base64");
+  expect(listed).toHaveLength(1);
+  expect(listed[0]?.toolUseId).toBe("tool-display");
+  expect(store.getArtifactByToolUseId("tool-display")?.id).toBe(listed[0]?.id);
 });

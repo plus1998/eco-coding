@@ -7,6 +7,7 @@ import {
   isAgentBrowserScreenshotToolName,
   readAbsolutePathFromMcpToolOutput,
   readImageDisplayArtifactFromToolOutput,
+  readImageDisplayMetadataFromToolOutput,
   resolveEcoImageDisplayToolCall,
 } from "../src/eco-image-display-tool";
 
@@ -25,6 +26,31 @@ test("readImageDisplayArtifactFromToolOutput parses artifactId JSON", () => {
       aggregatedOutput: JSON.stringify({ status: "ok", artifactId: "art-123" }),
     }),
   ).toBe("art-123");
+});
+
+test("readImageDisplayMetadataFromToolOutput parses artifactId and title", () => {
+  expect(
+    readImageDisplayMetadataFromToolOutput({
+      aggregatedOutput: JSON.stringify({
+        status: "ok",
+        artifactId: "art-456",
+        title: "封面",
+      }),
+    }),
+  ).toEqual({ artifactId: "art-456", title: "封面" });
+});
+
+test("readImageDisplayMetadataFromToolOutput accepts raw JSON string (PI/SDK path)", () => {
+  expect(
+    readImageDisplayMetadataFromToolOutput(
+      JSON.stringify({
+        status: "ok",
+        artifactId: "a8d81de1-fba7-4590-a3ad-3f41cad35b6d",
+        mimeType: "image/png",
+        bytes: 1652581,
+      }),
+    ),
+  ).toEqual({ artifactId: "a8d81de1-fba7-4590-a3ad-3f41cad35b6d" });
 });
 
 test("readAbsolutePathFromMcpToolOutput extracts screenshot path", () => {

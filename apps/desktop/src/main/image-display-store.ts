@@ -141,6 +141,26 @@ export class ImageDisplayStore {
     return rows.map(toArtifact);
   }
 
+  getArtifactByToolUseId(toolUseId: string): ImageDisplayArtifact | undefined {
+    const id = toolUseId.trim();
+    if (!id) {
+      return undefined;
+    }
+    const row = this.db
+      .prepare(
+        `SELECT * FROM image_display_artifacts
+         WHERE tool_use_id = ?
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(id) as unknown as ArtifactRow | undefined;
+    return row ? toArtifact(row) : undefined;
+  }
+
+  getLatestArtifact(threadId: string): ImageDisplayArtifact | undefined {
+    return this.listArtifacts(threadId)[0];
+  }
+
   async readArtifactFile(artifactId: string): Promise<{
     dataBase64: string;
     mimeType: string;

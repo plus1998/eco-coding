@@ -360,14 +360,18 @@ test("eco_image_display MCP completed calls attach imageDisplay artifactId", () 
         server: "eco_image_display",
         tool: "display_image",
         status: "completed",
-        aggregatedOutput: JSON.stringify({ status: "ok", artifactId: "art-feed-1" }),
+        aggregatedOutput: JSON.stringify({
+          status: "ok",
+          artifactId: "art-feed-1",
+          title: "封面图",
+        }),
       },
     });
   });
   expect(events[0]?.metadata?.tool).toEqual(
     expect.objectContaining({
       name: "mcp__eco_image_display__display_image",
-      imageDisplay: { artifactId: "art-feed-1" },
+      imageDisplay: { artifactId: "art-feed-1", title: "封面图" },
     }),
   );
 });

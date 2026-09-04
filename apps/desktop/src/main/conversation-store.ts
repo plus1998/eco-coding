@@ -6191,6 +6191,11 @@ function mergeThreadRunToolMetadata(
       : existing.imageView
         ? { imageView: existing.imageView }
         : {}),
+    ...(incoming.imageDisplay
+      ? { imageDisplay: incoming.imageDisplay }
+      : existing.imageDisplay
+        ? { imageDisplay: existing.imageDisplay }
+        : {}),
     ...(incoming.mcpDiscovery
       ? { mcpDiscovery: incoming.mcpDiscovery }
       : existing.mcpDiscovery
@@ -6220,6 +6225,7 @@ function isRicherThreadRunToolMetadata(
         incoming.readTarget ||
         incoming.grepTarget ||
         incoming.imageView ||
+        incoming.imageDisplay ||
         incoming.mcpDiscovery,
     );
   }
@@ -6239,6 +6245,7 @@ function isRicherThreadRunToolMetadata(
       (incoming.readTarget && !isSameJsonValue(incoming.readTarget, existing.readTarget)) ||
       (incoming.grepTarget && !isSameJsonValue(incoming.grepTarget, existing.grepTarget)) ||
       (incoming.imageView && !isSameJsonValue(incoming.imageView, existing.imageView)) ||
+      (incoming.imageDisplay && !isSameJsonValue(incoming.imageDisplay, existing.imageDisplay)) ||
       (incoming.mcpDiscovery && !isSameJsonValue(incoming.mcpDiscovery, existing.mcpDiscovery)),
   );
 }

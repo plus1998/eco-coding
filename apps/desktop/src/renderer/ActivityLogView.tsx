@@ -64,6 +64,7 @@ import {
   resolveActionKind,
   summarizeActionGroup,
 } from "../shared/feed-action-kind";
+import { isEcoImageDisplayToolName } from "../shared/image-display-tool";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import type {
   PromptImageAttachment,
@@ -159,6 +160,8 @@ type RewriteUserMessageHandler = (input: {
 }) => Promise<ThreadContinueResult>;
 type OpenSubagentHandler = (agentId: string) => void;
 type OpenImageGenerationToolHandler = (toolUseId: string) => void;
+type OpenImageDisplayToolHandler = (toolUseId: string) => void;
+type OpenImageDisplayArtifactHandler = (artifactId: string) => void;
 type ProjectionDetailLoader = (kind: ThreadRunProjectionDetailKind, key: string) => Promise<void>;
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
 type ProjectionRequestSpansById = Map<string, ProjectionRequestSpan>;
@@ -423,6 +426,8 @@ interface ActivityLogViewProps {
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
   onLoadProjectionDetail?: ProjectionDetailLoader;
@@ -476,6 +481,12 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.onOpenImageGenerationTool && {
         onOpenImageGenerationTool: props.onOpenImageGenerationTool,
       })}
+      {...(props.onOpenImageDisplayTool && {
+        onOpenImageDisplayTool: props.onOpenImageDisplayTool,
+      })}
+      {...(props.onOpenImageDisplayArtifact && {
+        onOpenImageDisplayArtifact: props.onOpenImageDisplayArtifact,
+      })}
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
       {...(props.onLoadProjectionDetail && { onLoadProjectionDetail: props.onLoadProjectionDetail })}
     />
@@ -497,6 +508,8 @@ function ProjectionActivityLogView({
   selectedSubagentAgentId,
   onOpenSubagent,
   onOpenImageGenerationTool,
+  onOpenImageDisplayTool,
+  onOpenImageDisplayArtifact,
 }: {
   projection: ThreadRunProjectionSnapshot;
   precomputedViewModel?: ThreadRunProjectionViewModel;
@@ -507,6 +520,8 @@ function ProjectionActivityLogView({
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
@@ -638,6 +653,8 @@ function ProjectionActivityLogView({
                 {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
                 {...(onOpenSubagent && { onOpenSubagent })}
                 {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+                {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
+                {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
                 {...(agentDisplayNames && { agentDisplayNames })}
                 {...(agentThemes && { agentThemes })}
                 {...(onRestorePrompt && { onRestorePrompt })}
@@ -660,6 +677,8 @@ function ProjectionActivityLogView({
                 {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
                 {...(onOpenSubagent && { onOpenSubagent })}
                 {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+                {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
+                {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
                 {...(agentDisplayNames && { agentDisplayNames })}
                 {...(agentThemes && { agentThemes })}
                 {...(onRestorePrompt && { onRestorePrompt })}
@@ -689,6 +708,8 @@ type ProjectionFeedEntrySharedProps = {
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
@@ -1021,6 +1042,17 @@ export function readImageGenerationToolUseId(item: ThreadRunProjectionTimelineIt
   return name && toolUseId && isEcoImageGenerationToolName(name) ? toolUseId : undefined;
 }
 
+export function readImageDisplayToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const rawTool = item.metadata?.tool;
+  if (!rawTool || typeof rawTool !== "object" || Array.isArray(rawTool)) {
+    return undefined;
+  }
+  const tool = rawTool as Record<string, unknown>;
+  const name = typeof tool.name === "string" ? tool.name : undefined;
+  const toolUseId = typeof tool.toolUseId === "string" ? tool.toolUseId.trim() : "";
+  return name && toolUseId && isEcoImageDisplayToolName(name) ? toolUseId : undefined;
+}
+
 function readProjectionToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
   const rawTool = item.metadata?.tool;
   if (rawTool && typeof rawTool === "object" && !Array.isArray(rawTool)) {
@@ -1043,6 +1075,8 @@ function ProjectionMainFeedEntry({
   selectedSubagentAgentId,
   onOpenSubagent,
   onOpenImageGenerationTool,
+  onOpenImageDisplayTool,
+  onOpenImageDisplayArtifact,
   onRestorePrompt,
   onLoadUserMessageEdit,
   onRewriteUserMessage,
@@ -1061,6 +1095,8 @@ function ProjectionMainFeedEntry({
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
@@ -1089,6 +1125,8 @@ function ProjectionMainFeedEntry({
         allowUserMessageRewrite={Boolean(allowUserMessageRewrite)}
         historyRevision={historyRevision ?? 0}
         {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+        {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
+        {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
       />
     );
   }
@@ -1098,6 +1136,7 @@ function ProjectionMainFeedEntry({
         entry={entry}
         requestSpansById={requestSpansById}
         {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+        {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
         {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
       />,
       { tight: true },
@@ -1136,12 +1175,14 @@ export function ProjectionToolGroupEntry({
   requestSpansById,
   defaultExpanded = false,
   onOpenImageGenerationTool,
+  onOpenImageDisplayTool,
   onLoadProjectionDetail,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   defaultExpanded?: boolean;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
   onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -1178,6 +1219,15 @@ export function ProjectionToolGroupEntry({
     ),
   ];
   const imageToolUseId = imageToolUseIds.length === 1 ? imageToolUseIds[0] : undefined;
+  const imageDisplayToolUseIds = [
+    ...new Set(
+      entry.entries
+        .map((child) => readImageDisplayToolUseId(child.item))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  const imageDisplayToolUseId =
+    imageDisplayToolUseIds.length === 1 ? imageDisplayToolUseIds[0] : undefined;
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -1189,6 +1239,7 @@ export function ProjectionToolGroupEntry({
         onClick={() => {
           setExpanded((value) => !value);
           if (imageToolUseId) onOpenImageGenerationTool?.(imageToolUseId);
+          if (imageDisplayToolUseId) onOpenImageDisplayTool?.(imageDisplayToolUseId);
         }}
       />
       {expanded ? (
@@ -1199,6 +1250,7 @@ export function ProjectionToolGroupEntry({
               entry={child}
               requestSpansById={requestSpansById}
               {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+              {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
               {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
             />
           ))}
@@ -1317,11 +1369,13 @@ function ProjectionToolGroupChildEntry({
   entry,
   requestSpansById,
   onOpenImageGenerationTool,
+  onOpenImageDisplayTool,
   onLoadProjectionDetail,
 }: {
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
   onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
@@ -1356,6 +1410,7 @@ function ProjectionToolGroupChildEntry({
         })}
         compact
         {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+        {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
       />
     );
   }
@@ -1572,6 +1627,7 @@ function resolveBlockAction(block: Extract<ActivityDetailBlock, { kind: "action"
       ...(block.webSearch && { webSearch: block.webSearch }),
       ...(block.mcpDiscovery && { mcpDiscovery: block.mcpDiscovery }),
       ...(block.imageView && { imageView: block.imageView }),
+      ...(block.imageDisplay && { imageDisplay: block.imageDisplay }),
       ...(block.bashRun && { bashRun: block.bashRun }),
     },
   });
@@ -1593,6 +1649,7 @@ function formatBlockActionLine(
         ...(block.webSearch && { webSearch: block.webSearch }),
         ...(block.bashRun && { bashRun: block.bashRun }),
         ...(block.imageView && { imageView: block.imageView }),
+        ...(block.imageDisplay && { imageDisplay: block.imageDisplay }),
       },
     },
     translateActionKind,
@@ -2520,6 +2577,8 @@ function ProjectionTimelineEntry({
   showMessageMeta = false,
   stickyMessageMeta = false,
   onOpenImageGenerationTool,
+  onOpenImageDisplayTool,
+  onOpenImageDisplayArtifact,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
@@ -2537,6 +2596,8 @@ function ProjectionTimelineEntry({
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
 }) {
   if (deferWaitingIndicator && isWaitingThinkingItem(item, requestSpansById)) {
     return null;
@@ -2570,6 +2631,7 @@ function ProjectionTimelineEntry({
   const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
   const requestActive = isProjectionRequestActive(requestSpan);
   const imageToolUseId = readImageGenerationToolUseId(item);
+  const imageDisplayToolUseId = readImageDisplayToolUseId(item);
   const retryTarget = !compact ? retryTargets?.get(item.id) : undefined;
   const onRetry =
     retryTarget && onRetryFailedRequest
@@ -2657,6 +2719,12 @@ function ProjectionTimelineEntry({
         onOpenImageGenerationTool && {
           onActionActivate: () => onOpenImageGenerationTool(imageToolUseId),
         })}
+      {...(!imageToolUseId &&
+        imageDisplayToolUseId &&
+        onOpenImageDisplayTool && {
+          onActionActivate: () => onOpenImageDisplayTool(imageDisplayToolUseId),
+        })}
+      {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
     />,
     { compact, tight: isTightFeedDetailBlock(block) },
   );
@@ -2817,6 +2885,7 @@ function DetailBlock({
   agentThemes,
   createdAt,
   onActionActivate,
+  onOpenImageDisplayArtifact,
   onRetry,
 }: {
   block: ActivityDetailBlock;
@@ -2830,6 +2899,7 @@ function DetailBlock({
   agentThemes?: RuntimeAgentThemes;
   createdAt?: string;
   onActionActivate?: () => void;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   onRetry?: () => void;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
@@ -2878,6 +2948,7 @@ function DetailBlock({
           {...(block.subagent && { subagent: block.subagent })}
           omitRoleLabel={omitSubagent}
           {...(!omitSubagent && modelByRole && { modelByRole })}
+          {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
         />
       );
     }
@@ -4530,12 +4601,14 @@ export function ImageDisplayBlock({
   subagent,
   modelByRole,
   omitRoleLabel,
+  onOpenImageDisplayArtifact,
 }: {
   imageDisplay: { artifactId: string; eventId: string; title?: string };
   lifecycle?: ToolActionLifecycle;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
+  onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
 }) {
   const [loadState, setLoadState] = useState<ImageDisplayLoadState>({ status: "loading" });
   const [detailsOpen, setDetailsOpen] = useState(true);
@@ -4603,7 +4676,10 @@ export function ImageDisplayBlock({
           label={lifecycle === "running" ? <ShimmerText>{statusLabel}</ShimmerText> : statusLabel}
           {...(lifecycle && { lifecycle })}
           expanded={detailsOpen}
-          onClick={() => setDetailsOpen((value) => !value)}
+          onClick={() => {
+            setDetailsOpen((value) => !value);
+            onOpenImageDisplayArtifact?.(imageDisplay.artifactId);
+          }}
         />
 
         {detailsOpen ? (

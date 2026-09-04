@@ -29,6 +29,7 @@ import type {
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
   ImageGenerationArtifact,
+  ImageDisplayArtifact,
   McpServerConfigView,
   SubagentEnabledSettings,
   SubagentRole,
@@ -124,6 +125,8 @@ export interface WorkspaceFloatingCardsProps {
   onCloseAllBrowsers?: () => void;
   imageArtifacts?: readonly ImageGenerationArtifact[];
   onOpenImageArtifact?: (artifactId: string) => void;
+  imageDisplayArtifacts?: readonly ImageDisplayArtifact[];
+  onOpenImageDisplayArtifact?: (artifactId: string) => void;
   subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
   selectedSubagentAgentId?: string;
   agentDisplayNames?: RuntimeAgentDisplayNames;
@@ -438,6 +441,46 @@ function ImageGenerationWorkspaceCardBody({
   );
 }
 
+function ImageDisplayWorkspaceCardBody({
+  artifacts,
+  onOpenImageDisplayArtifact,
+}: {
+  artifacts: readonly ImageDisplayArtifact[];
+  onOpenImageDisplayArtifact?: (artifactId: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="workspace-resource-list workspace-image-artifact-list">
+      {artifacts.map((artifact) => {
+        const title =
+          artifact.title?.trim() ||
+          artifact.sourceRef?.split(/[\\/]/u).at(-1) ||
+          t("task.imageDisplay.emptyTitle");
+        const status = t(`task.imageDisplay.status.${artifact.status}`);
+        const source = t(`task.imageDisplay.source.${artifact.sourceKind}`);
+        const meta = [status, source].filter(Boolean).join(" · ");
+        return (
+          <button
+            key={artifact.id}
+            type="button"
+            className="workspace-resource-row workspace-image-artifact-trigger"
+            onClick={() => onOpenImageDisplayArtifact?.(artifact.id)}
+            disabled={!onOpenImageDisplayArtifact}
+            title={title}
+          >
+            <span className="workspace-resource-row-icon" aria-hidden>
+              <ImageIcon size={16} strokeWidth={1.75} />
+            </span>
+            <span className="workspace-resource-row-title">{title}</span>
+            <span className="workspace-resource-row-meta">{meta}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function WorkspaceFloatingCards({
   workspace,
   workspacePath,
@@ -491,6 +534,8 @@ export function WorkspaceFloatingCards({
   onCloseAllBrowsers,
   imageArtifacts = [],
   onOpenImageArtifact,
+  imageDisplayArtifacts = [],
+  onOpenImageDisplayArtifact,
   subagentRunCards = [],
   selectedSubagentAgentId,
   agentDisplayNames,
@@ -690,6 +735,26 @@ export function WorkspaceFloatingCards({
             <ImageGenerationWorkspaceCardBody
               artifacts={imageArtifacts}
               {...(onOpenImageArtifact && { onOpenImageArtifact })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {imageDisplayArtifacts.length > 0 ? (
+          <WorkspacePanelSection
+            id="workspace-image-display-artifacts"
+            title={t("task.imageDisplay.history")}
+            defaultExpanded
+            summary={
+              <>
+                <ImageIcon size={14} aria-hidden />
+                <span>{imageDisplayArtifacts.length}</span>
+              </>
+            }
+            maxBodyHeight={280}
+          >
+            <ImageDisplayWorkspaceCardBody
+              artifacts={imageDisplayArtifacts}
+              {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
             />
           </WorkspacePanelSection>
         ) : null}

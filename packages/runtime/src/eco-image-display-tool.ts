@@ -44,11 +44,20 @@ export function resolveEcoImageDisplayToolCall(
 }
 
 export function readImageDisplayArtifactFromToolOutput(item: unknown): string | undefined {
+  return readImageDisplayMetadataFromToolOutput(item)?.artifactId;
+}
+
+export function readImageDisplayMetadataFromToolOutput(
+  item: unknown,
+): { artifactId: string; title?: string } | undefined {
+  if (typeof item === "string") {
+    return readImageDisplayFieldsFromResultText(item);
+  }
   const text = readMcpToolOutputText(item);
   if (!text) {
     return undefined;
   }
-  return readArtifactIdFromDisplayResultText(text);
+  return readImageDisplayFieldsFromResultText(text);
 }
 
 export function readAbsolutePathFromMcpToolOutput(item: unknown): string | undefined {
@@ -168,24 +177,34 @@ function readMcpToolOutputText(item: unknown): string | undefined {
   return undefined;
 }
 
-function readArtifactIdFromDisplayResultText(text: string): string | undefined {
+function readImageDisplayFieldsFromResultText(
+  text: string,
+): { artifactId: string; title?: string } | undefined {
   const trimmed = text.trim();
   if (!trimmed) {
     return undefined;
   }
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    if (isRecord(parsed) && typeof parsed.artifactId === "string" && parsed.artifactId.trim()) {
-      return parsed.artifactId.trim();
-    }
-    if (isRecord(parsed) && parsed.status === "ok" && typeof parsed.artifactId === "string") {
-      return parsed.artifactId.trim();
+    if (isRecord(parsed)) {
+      const artifactId =
+        typeof parsed.artifactId === "string" ? parsed.artifactId.trim() : "";
+      if (artifactId) {
+        const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+        return { artifactId, ...(title ? { title } : {}) };
+      }
     }
   } catch {
     // fall through
   }
   const match = trimmed.match(/"artifactId"\s*:\s*"([^"]+)"/u);
-  return match?.[1]?.trim();
+  const artifactId = match?.[1]?.trim();
+  if (!artifactId) {
+    return undefined;
+  }
+  const titleMatch = trimmed.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/u);
+  const title = titleMatch?.[1]?.replace(/\\"/gu, '"').trim();
+  return { artifactId, ...(title ? { title } : {}) };
 }
 
 function readRecord(value: unknown): Record<string, unknown> | undefined {

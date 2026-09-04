@@ -20,8 +20,10 @@ import { useTranslation } from "react-i18next";
 import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
+import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
 import type {
   BackgroundTerminalTask,
+  ImageDisplayArtifact,
   ImageGenerationArtifact,
   ThreadPendingPlan,
   ThreadRunProjectionSnapshot,
@@ -35,6 +37,7 @@ import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { BrowserPanel } from "./BrowserPanel";
 import { useBrowserTaskInstances } from "./browser-state-store";
 import { i18n } from "./i18n";
+import { ImageLightbox } from "./image-lightbox";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -742,6 +745,106 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
   );
 }
 
+function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifact }) {
+  const { t } = useTranslation();
+  const [src, setSrc] = useState<string>();
+  const [fileName, setFileName] = useState<string>();
+  const [loadError, setLoadError] = useState<string>();
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(undefined);
+    setFileName(undefined);
+    setLoadError(undefined);
+    setLightboxOpen(false);
+    if (!window.eco?.readImageDisplay) {
+      setLoadError(t("activity.imageDisplay.error.bridgeUnavailable"));
+      return;
+    }
+    void window.eco
+      .readImageDisplay({ artifactId: artifact.id })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          const codeKey =
+            result.code === "invalid_artifact"
+              ? "invalidArtifact"
+              : result.code === "not_found"
+                ? "notFound"
+                : result.code === "too_large"
+                  ? "tooLarge"
+                  : result.code === "unsupported_type"
+                    ? "unsupportedType"
+                    : "readFailed";
+          setLoadError(t(`activity.imageDisplay.error.${codeKey}`));
+          return;
+        }
+        setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
+        setFileName(result.fileName);
+      })
+      .catch((error) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.id, t]);
+
+  const title =
+    artifact.title?.trim() || fileName || artifact.sourceRef || t("task.imageDisplay.emptyTitle");
+  const metaParts = [
+    t(`task.imageDisplay.source.${artifact.sourceKind}`),
+    artifact.width && artifact.height
+      ? t("task.imageDisplay.dimensions", { width: artifact.width, height: artifact.height })
+      : undefined,
+    artifact.bytes > 0 ? t("task.imageDisplay.bytes", { bytes: artifact.bytes }) : undefined,
+  ].filter(Boolean);
+  const previewAlt = t("activity.imageDisplay.previewAlt", { name: title });
+
+  return (
+    <section className="image-artifact-detail image-artifact-detail--display">
+      <header>
+        <div className="image-artifact-detail-heading">
+          <span className={`image-artifact-status is-${artifact.status}`}>
+            {t(`task.imageDisplay.status.${artifact.status}`)}
+          </span>
+          <p className="image-artifact-detail-title" title={title}>
+            {title}
+          </p>
+        </div>
+        {metaParts.length > 0 ? <span className="image-artifact-detail-meta">{metaParts.join(" · ")}</span> : null}
+      </header>
+      {loadError ? <p className="image-artifact-error">{loadError}</p> : null}
+      {src ? (
+        <div className="image-artifact-gallery image-artifact-gallery--display">
+          <figure>
+            <button
+              type="button"
+              className="image-artifact-preview-button"
+              onClick={() => setLightboxOpen(true)}
+              aria-label={t("activity.imageDisplay.open", { name: title })}
+              title={t("activity.imageDisplay.open", { name: title })}
+            >
+              <img src={src} alt={previewAlt} />
+            </button>
+          </figure>
+        </div>
+      ) : null}
+      {lightboxOpen && src ? (
+        <ImageLightbox
+          src={src}
+          alt={previewAlt}
+          title={title}
+          dialogLabel={t("activity.imageDisplay.open", { name: title })}
+          onClose={closeLightbox}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 export function SubagentTaskDrawer({
   open,
   surfaceActive = open,
@@ -756,6 +859,7 @@ export function SubagentTaskDrawer({
   agentThemes,
   backgroundTasks,
   imageArtifacts = [],
+  imageDisplayArtifacts = [],
   reviewDiff,
   reviewLoading,
   reviewError,
@@ -778,6 +882,7 @@ export function SubagentTaskDrawer({
   onOpenTerminalTask,
   onStopTerminalTask,
   onSelectImageArtifact,
+  onSelectImageDisplayArtifact,
   sshBookmarks = [],
   onSelectSshBookmarks,
   onConnectSshBookmark,
@@ -802,6 +907,7 @@ export function SubagentTaskDrawer({
   agentThemes?: RuntimeAgentThemes;
   backgroundTasks: readonly BackgroundTerminalTask[];
   imageArtifacts?: readonly ImageGenerationArtifact[];
+  imageDisplayArtifacts?: readonly ImageDisplayArtifact[];
   reviewDiff?: WorkspaceDiffResult;
   reviewLoading?: boolean;
   reviewError?: string;
@@ -824,6 +930,7 @@ export function SubagentTaskDrawer({
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
   onSelectImageArtifact: (artifactId: string) => void;
+  onSelectImageDisplayArtifact: (artifactId: string) => void;
   sshBookmarks?: readonly SshBookmarkView[];
   onSelectSshBookmarks: () => void;
   onConnectSshBookmark: (bookmark: SshBookmarkView) => void | Promise<void>;
@@ -855,6 +962,16 @@ export function SubagentTaskDrawer({
     .filter((id): id is string => Boolean(id))
     .map((id) => imageArtifacts.find((artifact) => artifact.id === id))
     .filter((artifact): artifact is ImageGenerationArtifact => Boolean(artifact));
+  const activeImageDisplayArtifactId = parseImageDisplayTaskTabId(String(activeTab));
+  const imageDisplaySelected = Boolean(activeImageDisplayArtifactId);
+  const activeImageDisplayArtifact = imageDisplayArtifacts.find(
+    (artifact) => artifact.id === activeImageDisplayArtifactId,
+  );
+  const openImageDisplayArtifacts = openTabIds
+    .map((tabId) => parseImageDisplayTaskTabId(String(tabId)))
+    .filter((id): id is string => Boolean(id))
+    .map((id) => imageDisplayArtifacts.find((artifact) => artifact.id === id))
+    .filter((artifact): artifact is ImageDisplayArtifact => Boolean(artifact));
   const browserTabIds = openTabIds.filter((tabId) => isBrowserTaskTabId(String(tabId)));
   const openBrowserInstances = resolvedBrowserInstances.filter((instance) =>
     browserTabIds.includes(browserTaskTabId(instance.id)),
@@ -892,7 +1009,8 @@ export function SubagentTaskDrawer({
     !terminalTasksSelected &&
     !sshBookmarksSelected &&
     !browserSelected &&
-    !imageSelected
+    !imageSelected &&
+    !imageDisplaySelected
       ? cards.find((card) => card.key === activeTab)
       : undefined;
   const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
@@ -1086,6 +1204,37 @@ export function SubagentTaskDrawer({
                 >
                   <ImageIcon size={15} aria-hidden />
                   <span className="subagent-task-panel-tab-label">{t("task.image.title")}</span>
+                </button>
+                <button
+                  type="button"
+                  className="subagent-task-panel-tab-close"
+                  title={t("task.closeTabTitle")}
+                  onClick={() => onCloseTab(tabId)}
+                >
+                  <X size={13} aria-hidden />
+                </button>
+              </span>
+            );
+          })}
+          {openImageDisplayArtifacts.map((artifact) => {
+            const tabId = imageDisplayTaskTabId(artifact.id);
+            const isActive = activeTab === tabId;
+            const label =
+              artifact.title?.trim() ||
+              artifact.sourceRef?.split(/[\\/]/u).at(-1) ||
+              t("task.imageDisplay.title");
+            return (
+              <span key={tabId} className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}>
+                <button
+                  type="button"
+                  className={`subagent-task-panel-tab${isActive ? " is-active" : ""}`}
+                  role="tab"
+                  aria-selected={isActive}
+                  title={label}
+                  onClick={() => onSelectImageDisplayArtifact(artifact.id)}
+                >
+                  <ImageIcon size={15} aria-hidden />
+                  <span className="subagent-task-panel-tab-label">{t("task.imageDisplay.title")}</span>
                 </button>
                 <button
                   type="button"
@@ -1304,6 +1453,14 @@ export function SubagentTaskDrawer({
             role="tabpanel"
           >
             <ImageGenerationArtifactDetail artifact={activeImageArtifact} />
+          </div>
+        ) : null}
+        {imageDisplaySelected && activeImageDisplayArtifact ? (
+          <div
+            className="subagent-task-panel-tab-pane subagent-task-panel-tab-pane--image-artifact"
+            role="tabpanel"
+          >
+            <ImageDisplayArtifactDetail artifact={activeImageDisplayArtifact} />
           </div>
         ) : null}
         {activeSubagentCard ? (

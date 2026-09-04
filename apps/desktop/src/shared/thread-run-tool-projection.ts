@@ -36,6 +36,12 @@ export function projectThreadRunToolMetadata(
     ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
     ...(tool.webSearch && { webSearch: projectWebSearchMetadata(tool.webSearch) }),
     ...(tool.imageView?.path.trim() && { imageView: { path: tool.imageView.path.trim() } }),
+    ...(tool.imageDisplay?.artifactId.trim() && {
+      imageDisplay: {
+        artifactId: tool.imageDisplay.artifactId.trim(),
+        ...(tool.imageDisplay.title?.trim() ? { title: tool.imageDisplay.title.trim() } : {}),
+      },
+    }),
     ...(tool.mcpDiscovery?.kind === "search" && { mcpDiscovery: { kind: "search" as const } }),
     ...(tool.sendMessage && { sendMessage: tool.sendMessage }),
   };

@@ -75,6 +75,7 @@ import {
   isHomeProjectPath,
   normalizeProjectPath,
 } from "../shared/home-project";
+import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
 import {
   type AppMenuCommand,
@@ -102,6 +103,7 @@ import {
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
   hasCompleteOrchestrationSelection,
+  type ImageDisplayArtifact,
   type ImageGenerationArtifact,
   type ImageGenerationSettingsSnapshot,
   type IntegrationAvailabilitySnapshot,
@@ -1591,6 +1593,9 @@ function App() {
   const [imageArtifactsByThread, setImageArtifactsByThread] = useState<
     Record<string, ImageGenerationArtifact[]>
   >({});
+  const [imageDisplayArtifactsByThread, setImageDisplayArtifactsByThread] = useState<
+    Record<string, ImageDisplayArtifact[]>
+  >({});
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
@@ -2793,9 +2798,43 @@ function App() {
   }, [selectedThreadId]);
 
   useEffect(() => {
+    if (!selectedThreadId || !window.eco?.listImageDisplayArtifacts) return;
+    let cancelled = false;
+    void window.eco
+      .listImageDisplayArtifacts(selectedThreadId)
+      .then((artifacts) => {
+        if (!cancelled) {
+          setImageDisplayArtifactsByThread((current) => ({
+            ...current,
+            [selectedThreadId]: artifacts,
+          }));
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThreadId]);
+
+  useEffect(() => {
     if (!window.eco?.onImageGenerationArtifactChanged) return;
     return window.eco.onImageGenerationArtifactChanged((artifact) => {
       setImageArtifactsByThread((current) => {
+        const existing = current[artifact.threadId] ?? [];
+        const next = [artifact, ...existing.filter((item) => item.id !== artifact.id)].sort((a, b) =>
+          b.createdAt.localeCompare(a.createdAt),
+        );
+        return { ...current, [artifact.threadId]: next };
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!window.eco?.onImageDisplayArtifactChanged) return;
+    return window.eco.onImageDisplayArtifactChanged((artifact) => {
+      setImageDisplayArtifactsByThread((current) => {
         const existing = current[artifact.threadId] ?? [];
         const next = [artifact, ...existing.filter((item) => item.id !== artifact.id)].sort((a, b) =>
           b.createdAt.localeCompare(a.createdAt),
@@ -4866,6 +4905,9 @@ function App() {
         if (parseImageGenerationTaskTabId(String(tabId))) {
           return true;
         }
+        if (parseImageDisplayTaskTabId(String(tabId))) {
+          return true;
+        }
         const browserId = parseBrowserTaskTabId(String(tabId));
         if (browserId) {
           return liveBrowserIds.has(browserId);
@@ -5066,6 +5108,30 @@ function App() {
       if (artifact) openImageGenerationArtifact(artifact.id);
     },
     [activeThread?.id, imageArtifactsByThread, openImageGenerationArtifact],
+  );
+
+  const openImageDisplayArtifact = useCallback(
+    (artifactId: string) => {
+      const tabId = imageDisplayTaskTabId(artifactId);
+      setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+      setTaskPanelActiveTab(tabId);
+      setSelectedSubagentAgentId(undefined);
+      setTaskPanelFullscreen(false);
+      revealTaskPanel();
+    },
+    [revealTaskPanel],
+  );
+
+  const openImageDisplayTool = useCallback(
+    (toolUseId: string) => {
+      const threadId = activeThread?.id;
+      if (!threadId) return;
+      const artifact = (imageDisplayArtifactsByThread[threadId] ?? []).find(
+        (candidate) => candidate.toolUseId === toolUseId,
+      );
+      if (artifact) openImageDisplayArtifact(artifact.id);
+    },
+    [activeThread?.id, imageDisplayArtifactsByThread, openImageDisplayArtifact],
   );
 
   const closeTaskPanelTab = useCallback(
@@ -8856,6 +8922,10 @@ function App() {
           backgroundTasks={backgroundTerminalTasks}
           imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
           onSelectImageArtifact={openImageGenerationArtifact}
+          imageDisplayArtifacts={
+            activeThread ? (imageDisplayArtifactsByThread[activeThread.id] ?? []) : []
+          }
+          onSelectImageDisplayArtifact={openImageDisplayArtifact}
           {...(reviewDiff && { reviewDiff })}
           reviewLoading={reviewDiffLoading}
           {...(reviewDiffError && { reviewError: reviewDiffError })}
@@ -9989,6 +10059,8 @@ function App() {
                                   {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
                                   onOpenSubagent={openSubagentTaskDrawer}
                                   onOpenImageGenerationTool={openImageGenerationTool}
+                                  onOpenImageDisplayTool={openImageDisplayTool}
+                                  onOpenImageDisplayArtifact={openImageDisplayArtifact}
                                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                                   {...(subagentTimings && { subagentTimings })}
                                   {...(subagentMetrics && { subagentMetrics })}
@@ -10128,6 +10200,10 @@ function App() {
                   }}
                   imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
                   onOpenImageArtifact={openImageGenerationArtifact}
+                  imageDisplayArtifacts={
+                    activeThread ? (imageDisplayArtifactsByThread[activeThread.id] ?? []) : []
+                  }
+                  onOpenImageDisplayArtifact={openImageDisplayArtifact}
                   {...(projectWorkspace && { workspace: projectWorkspace })}
                   {...(currentProjectPath && { workspacePath: currentProjectPath })}
                   workspaceLabel={currentProjectName}
