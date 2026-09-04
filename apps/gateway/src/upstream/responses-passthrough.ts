@@ -439,6 +439,8 @@ function observeResponsesSseBody(input: {
       return true;
     }
 
+    input.lifecycle?.tracker.noteFirstChunk();
+
     if (type === "response.output_item.done") {
       const item = (event as { item?: unknown }).item;
       if (item && typeof item === "object" && !Array.isArray(item)) {
@@ -636,6 +638,7 @@ function emitGatewayUsage(input: {
     usage: input.usage,
     stream: input.stream,
     observedAt: new Date().toISOString(),
+    ...(input.stream && input.lifecycle ? input.lifecycle.tracker.generationTiming() : {}),
     ...(input.responseId && { responseId: input.responseId }),
     ...(resolvedProviderRequestId ? { providerRequestId: resolvedProviderRequestId } : {}),
     ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),

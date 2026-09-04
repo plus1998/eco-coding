@@ -51,6 +51,7 @@ describe("POST /v1/messages stream usage", () => {
         }),
       () => undefined,
       (event) => usageEvents.push(event),
+      () => undefined,
     );
 
     const response = await handler(
@@ -79,6 +80,8 @@ describe("POST /v1/messages stream usage", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(usageEvents).toHaveLength(1);
+    expect(typeof usageEvents[0]?.ttftMs).toBe("number");
+    expect(typeof usageEvents[0]?.generationMs).toBe("number");
     expect(usageEvents[0]).toMatchObject({
       source: "messages",
       providerId: "anthropic_stream",
@@ -146,6 +149,7 @@ describe("POST /v1/messages stream usage", () => {
         }),
       () => undefined,
       (event) => usageEvents.push(event),
+      () => undefined,
     );
 
     const response = await handler(
@@ -176,6 +180,8 @@ describe("POST /v1/messages stream usage", () => {
     expect(last?.source).toBe("messages");
     expect(last?.providerId).toBe("resp_stream");
     expect(last?.stream).toBe(true);
+    expect(typeof last?.ttftMs).toBe("number");
+    expect(typeof last?.generationMs).toBe("number");
     expect((last?.usage.inputTokens ?? 0) + (last?.usage.outputTokens ?? 0)).toBeGreaterThan(0);
   });
 });

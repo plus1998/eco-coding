@@ -2,14 +2,7 @@ import { expect, test } from "bun:test";
 import {
   attachOutputTokensToRequestSpans,
   dedupeUsageLedgerRowsForSpanJoin,
-  visibleOutputTokensForRate,
 } from "../src/shared/request-span-usage";
-
-test("visibleOutputTokensForRate subtracts reasoning from completion total", () => {
-  expect(visibleOutputTokensForRate({ outputTokens: 550, reasoningTokens: 129 })).toBe(421);
-  expect(visibleOutputTokensForRate({ outputTokens: 100 })).toBe(100);
-  expect(visibleOutputTokensForRate({ outputTokens: 0 })).toBeUndefined();
-});
 
 test("attachOutputTokensToRequestSpans collapses partial+final rows per invocation", () => {
   const spans = [{ requestId: "r1", status: "completed" as const, startedAt: "2025-01-01T00:00:00.000Z" }];
@@ -34,7 +27,8 @@ test("attachOutputTokensToRequestSpans sums distinct provider invocations in a t
       reasoningTokens: 40,
       providerRequestId: "prov-a",
       logicalRequestId: "logical-1",
-      generationMs: 2_000,
+      ttftMs: 2_000,
+      generationMs: 1_000,
       source: "codex",
     },
     {
@@ -42,6 +36,7 @@ test("attachOutputTokensToRequestSpans sums distinct provider invocations in a t
       reasoningTokens: 30,
       providerRequestId: "prov-b",
       logicalRequestId: "logical-1",
+      ttftMs: 3_000,
       generationMs: 3_000,
       source: "codex",
     },
@@ -50,14 +45,16 @@ test("attachOutputTokensToRequestSpans sums distinct provider invocations in a t
       reasoningTokens: 10,
       providerRequestId: "prov-a",
       logicalRequestId: "logical-1",
-      generationMs: 2_100,
+      ttftMs: 2_100,
+      generationMs: 1_100,
       source: "codex",
     },
   ]);
   expect(attached[0]).toMatchObject({
     outputTokens: 180,
     reasoningTokens: 70,
-    generationMs: 5_100,
+    ttftMs: 5_100,
+    generationMs: 4_100,
   });
 });
 
@@ -66,6 +63,7 @@ test("dedupeUsageLedgerRowsForSpanJoin drops pi rows when proxy already billed t
     {
       outputTokens: 120,
       logicalRequestId: "req_a",
+      ttftMs: 2_000,
       generationMs: 2_000,
       source: "proxy",
       providerRequestId: "msg_a",
@@ -93,6 +91,7 @@ test("attachOutputTokensToRequestSpans avoids double-counting pi and proxy for o
       outputTokens: 500,
       reasoningTokens: 0,
       logicalRequestId: "req_a",
+      ttftMs: 4_000,
       generationMs: 4_000,
       source: "proxy",
       providerRequestId: "msg_a",
@@ -105,6 +104,7 @@ test("attachOutputTokensToRequestSpans avoids double-counting pi and proxy for o
   ]);
   expect(attached[0]).toMatchObject({
     outputTokens: 500,
+    ttftMs: 4_000,
     generationMs: 4_000,
   });
 });

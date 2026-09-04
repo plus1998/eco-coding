@@ -18,6 +18,7 @@ export class RequestLifecycleTracker {
   private httpFailureEmitted = false;
   private upstreamStartedAtMs: number | null = null;
   private firstHeadersAtMs: number | null = null;
+  private firstChunkAtMs: number | null = null;
 
   hasLogicalTerminal(): boolean {
     return this.logicalTerminal !== null;
@@ -69,6 +70,33 @@ export class RequestLifecycleTracker {
     if (this.firstHeadersAtMs === null) {
       this.firstHeadersAtMs = atMs;
     }
+  }
+
+  /** Record the first SSE data chunk of any kind (thinking, role, content — matches new-api FirstResponseTime). */
+  noteFirstChunk(atMs = Date.now()): void {
+    if (this.firstChunkAtMs === null) {
+      this.firstChunkAtMs = atMs;
+    }
+  }
+
+  /**
+   * new-api style: TTFT = upstream start → first response chunk;
+   * generationMs = stream end → first response chunk (fallback: total latency when no chunk).
+   * Call at stream end / usage settlement with the end timestamp.
+   */
+  generationTiming(endAtMs = Date.now()): { ttftMs?: number; generationMs?: number } {
+    const startedAtMs = this.upstreamStartedAtMs;
+    if (startedAtMs === null) {
+      return {};
+    }
+    const latencyMs = Math.max(0, endAtMs - startedAtMs);
+    const firstAtMs = this.firstChunkAtMs;
+    if (firstAtMs === null) {
+      return { generationMs: latencyMs };
+    }
+    const ttftMs = Math.max(0, firstAtMs - startedAtMs);
+    const generationMs = Math.max(0, endAtMs - firstAtMs);
+    return { ttftMs, generationMs: generationMs > 0 ? generationMs : latencyMs };
   }
 
   private _attemptIndex = 0;
@@ -192,9 +220,12 @@ export function tryEmitLogicalCompleted(
   if (startedAtMs !== null) {
     const upstreamMs = completedAtMs - startedAtMs;
     const ttfbMs = headersAtMs !== null ? headersAtMs - startedAtMs : undefined;
+    const tokenTiming = ctx.tracker.generationTiming();
     ctx.onLog(
       `request lifecycle complete logical=${ctx.logicalRequestId} upstreamMs=${upstreamMs}` +
         `${ttfbMs !== undefined ? ` ttfbMs=${ttfbMs}` : ""}` +
+        `${tokenTiming.ttftMs !== undefined ? ` ttftMs=${tokenTiming.ttftMs}` : ""}` +
+        `${tokenTiming.generationMs !== undefined ? ` generationMs=${tokenTiming.generationMs}` : ""}` +
         `${providerRequestId ? ` provider=${providerRequestId}` : ""}`,
     );
   }

@@ -189,6 +189,71 @@ describe("responses passthrough", () => {
     });
   });
 
+  test("stream usage event carries gateway-measured ttft and decode span", async () => {
+    const provider: GatewayProvider = {
+      id: "openai",
+      name: "OpenAI mock",
+      upstreamKind: "responses",
+      baseUrl: "https://mock.openai.test",
+      apiKey: "test-key",
+      upstreamModelId: "gpt-4.1",
+      models: ["gpt-4.1"],
+    };
+    const config: GatewayConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      providers: [provider],
+    };
+    // Reasoning delta precedes the first content delta — it must not count as content.
+    const sse = [
+      "event: response.created",
+      'data: {"type":"response.created","response":{"id":"resp_t","model":"gpt-4.1","status":"in_progress","output":[]}}',
+      "",
+      "event: response.reasoning_summary_text.delta",
+      'data: {"type":"response.reasoning_summary_text.delta","delta":"thinking"}',
+      "",
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hi"}',
+      "",
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":" there"}',
+      "",
+      "event: response.completed",
+      'data: {"type":"response.completed","response":{"id":"resp_t","model":"gpt-4.1","status":"completed","output":[],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}',
+      "",
+    ].join("\n");
+    const mockFetch: typeof fetch = async () =>
+      new Response(sse, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    const usageEvents: GatewayUsageEvent[] = [];
+    const handler = createTestGatewayFetchHandler(
+      config,
+      mockFetch,
+      () => undefined,
+      (event) => {
+        usageEvents.push(event);
+      },
+      () => undefined,
+    );
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "gpt-4.1", stream: true, input: "[]" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({ stream: true, responseId: "resp_t" });
+    expect(typeof usageEvents[0]?.ttftMs).toBe("number");
+    expect(typeof usageEvents[0]?.generationMs).toBe("number");
+    expect(usageEvents[0]?.ttftMs).toBeGreaterThanOrEqual(0);
+    expect(usageEvents[0]?.generationMs).toBeGreaterThanOrEqual(0);
+  });
+
   test("POST /v1/responses observes non-stream JSON usage", async () => {
     const provider: GatewayProvider = {
       id: "custom",
@@ -259,6 +324,8 @@ describe("responses passthrough", () => {
     expect(response.headers.get("x-request-id")).toBe("req_json_1");
     expect(await response.json()).toMatchObject({ id: "resp_json" });
     expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]?.ttftMs).toBeUndefined();
+    expect(usageEvents[0]?.generationMs).toBeUndefined();
     expect(usageEvents[0]).toMatchObject({
       sourceEventId: "responses:custom:response:resp_json",
       providerId: "custom",

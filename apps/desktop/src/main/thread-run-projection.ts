@@ -43,31 +43,10 @@ interface MutableRequestSpan {
   status: ThreadRunProjectionRequestStatus;
   startedAt: string;
   firstTokenAt?: string;
-  lastTokenAt?: string;
-  decodeActiveMs?: number;
-  streamingEndedAt?: string;
   endedAt?: string;
   error?: string;
   providerRequestId?: string;
   sawStreamStart: boolean;
-  /** Internal accumulator for {@link decodeActiveMs}. */
-  lastStreamChunkAtMs?: number;
-}
-
-const MAX_NARRATIVE_STREAM_GAP_MS = 2_000;
-
-function noteNarrativeStreamChunk(span: MutableRequestSpan, observedAt: string): void {
-  const ms = Date.parse(observedAt);
-  if (!Number.isFinite(ms)) {
-    return;
-  }
-  if (span.lastStreamChunkAtMs !== undefined) {
-    const gap = ms - span.lastStreamChunkAtMs;
-    if (gap > 0 && gap <= MAX_NARRATIVE_STREAM_GAP_MS) {
-      span.decodeActiveMs = (span.decodeActiveMs ?? 0) + gap;
-    }
-  }
-  span.lastStreamChunkAtMs = ms;
 }
 
 export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): ThreadRunProjectionSnapshot {
@@ -639,9 +618,6 @@ function buildRequestSpans(
       ...(span.role && { role: span.role }),
       ...(span.source && { source: span.source }),
       ...(span.firstTokenAt && { firstTokenAt: span.firstTokenAt }),
-      ...(span.lastTokenAt && { lastTokenAt: span.lastTokenAt }),
-      ...(span.decodeActiveMs !== undefined && span.decodeActiveMs > 0 && { decodeActiveMs: span.decodeActiveMs }),
-      ...(span.streamingEndedAt && { streamingEndedAt: span.streamingEndedAt }),
       ...(span.endedAt && { endedAt: span.endedAt }),
       ...(span.error && { error: span.error }),
       ...(span.providerRequestId && { providerRequestId: span.providerRequestId }),
@@ -684,7 +660,7 @@ function closeRequestSpansForTerminalAgents(
       } else {
         span.status = "completed";
       }
-      span.endedAt = span.streamingEndedAt ?? span.endedAt ?? agent.endedAt ?? agent.updatedAt;
+      span.endedAt = span.endedAt ?? agent.endedAt ?? agent.updatedAt;
     }
   }
 }
@@ -757,8 +733,6 @@ function applyNarrativeMessageStreamTiming(
     if (!span.firstTokenAt) {
       span.firstTokenAt = event.observedAt;
     }
-    noteNarrativeStreamChunk(span, event.observedAt);
-    span.lastTokenAt = event.observedAt;
     span.sawStreamStart = true;
     seenStreamingKeys.add(span.requestId);
     return;
@@ -767,10 +741,7 @@ function applyNarrativeMessageStreamTiming(
   if (!span.firstTokenAt) {
     span.firstTokenAt = event.observedAt;
   }
-  noteNarrativeStreamChunk(span, event.observedAt);
-  span.lastTokenAt = event.observedAt;
-  span.streamingEndedAt = event.observedAt;
-  span.endedAt = span.streamingEndedAt;
+  span.endedAt = event.observedAt;
   span.status = "completed";
   span.sawStreamStart = true;
   seenStreamingKeys.add(span.requestId);
@@ -835,11 +806,8 @@ function applyEventToRequestSpan(
   }
   if (event.eventType === "request.completed") {
     span.status = "completed";
-    // Keep decode window at stream finalize — request.completed may arrive after tool work.
-    if (!span.streamingEndedAt) {
+    if (!span.endedAt) {
       span.endedAt = event.observedAt;
-    } else if (!span.endedAt) {
-      span.endedAt = span.streamingEndedAt;
     }
   }
   if (event.eventType === "request.cancelled") {

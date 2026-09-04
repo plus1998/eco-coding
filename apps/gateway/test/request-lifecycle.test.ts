@@ -5,6 +5,7 @@ import {
   buildRequestLifecycleContext,
   fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
+  RequestLifecycleTracker,
   tryEmitLogicalCompleted,
 } from "../src/request-lifecycle.js";
 import { createGatewayFetchHandler } from "../src/server.js";
@@ -1568,5 +1569,16 @@ describe("gateway request lifecycle", () => {
     expect(events.filter((e) => e.type === "logical.failed")).toHaveLength(0);
     expect(events.filter((e) => e.type === "logical.cancelled")).toHaveLength(0);
     expect(hanging.upstreamCancelCount()).toBe(1);
+  });
+
+  test("generationTiming measures ttft and generation span (new-api style)", () => {
+    const tracker = new RequestLifecycleTracker();
+    expect(tracker.generationTiming(1000)).toEqual({});
+    tracker.noteUpstreamStarted(1000);
+    // No chunk yet — falls back to total latency.
+    expect(tracker.generationTiming(2000)).toEqual({ generationMs: 1000 });
+    tracker.noteFirstChunk(1350);
+    tracker.noteFirstChunk(1900); // second chunk ignored
+    expect(tracker.generationTiming(3000)).toEqual({ ttftMs: 350, generationMs: 1650 });
   });
 });

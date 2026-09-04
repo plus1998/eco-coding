@@ -71,6 +71,10 @@ export interface GatewayUsageEvent {
   usage: ParsedUsage;
   stream: boolean;
   observedAt: string;
+  /** Gateway-measured time to first upstream response chunk (stream only; new-api TTFT). */
+  ttftMs?: number;
+  /** Gateway-measured first-chunk → stream-end window in ms (new-api generationMs). */
+  generationMs?: number;
   responseId?: string;
   providerRequestId?: string;
   codexTurnMetadata?: GatewayCodexTurnMetadata;

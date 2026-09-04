@@ -795,7 +795,7 @@ test("buildThreadRunProjection closes span with explicit request.completed", () 
   expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(false);
 });
 
-test("buildThreadRunProjection keeps streamingEndedAt when request.completed arrives after finalize", () => {
+test("buildThreadRunProjection anchors span end on narrative finalize when request.completed arrives late", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
     status: "completed",
@@ -850,12 +850,11 @@ test("buildThreadRunProjection keeps streamingEndedAt when request.completed arr
     requestId: "req_late_terminal",
     status: "completed",
     firstTokenAt: "2026-01-01T00:00:02.000Z",
-    streamingEndedAt: "2026-01-01T00:00:04.000Z",
     endedAt: "2026-01-01T00:00:04.000Z",
   });
 });
 
-test("buildThreadRunProjection anchors decode window on narrative message stream, not thinking finalize", () => {
+test("buildThreadRunProjection anchors first token and span end on narrative stream, not thinking finalize", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
     status: "completed",
@@ -932,81 +931,7 @@ test("buildThreadRunProjection anchors decode window on narrative message stream
     status: "completed",
     startedAt: "2026-01-01T00:00:01.000Z",
     firstTokenAt: "2026-01-01T00:00:08.000Z",
-    lastTokenAt: "2026-01-01T00:00:10.000Z",
-    decodeActiveMs: 2000,
-    streamingEndedAt: "2026-01-01T00:00:10.000Z",
     endedAt: "2026-01-01T00:00:10.000Z",
-  });
-});
-
-test("buildThreadRunProjection excludes tool-idle gaps from decodeActiveMs", () => {
-  const projection = buildThreadRunProjection({
-    threadId: "thr_projection",
-    status: "completed",
-    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:02:00.000Z" }],
-    agents: [],
-    events: [
-      event({
-        id: "request-start",
-        sequence: 1,
-        eventType: "request.started",
-        scope: "main",
-        role: "planner",
-        requestId: "req_gap",
-        observedAt: "2026-01-01T00:00:01.000Z",
-      }),
-      event({
-        id: "msg-a1",
-        sequence: 2,
-        eventType: "message.delta",
-        scope: "main",
-        role: "planner",
-        requestId: "req_gap",
-        streamState: "streaming",
-        message: "A",
-        observedAt: "2026-01-01T00:00:02.000Z",
-      }),
-      event({
-        id: "msg-a2",
-        sequence: 3,
-        eventType: "message.delta",
-        scope: "main",
-        role: "planner",
-        requestId: "req_gap",
-        streamState: "streaming",
-        message: "AB",
-        observedAt: "2026-01-01T00:00:03.000Z",
-      }),
-      event({
-        id: "msg-b1",
-        sequence: 4,
-        eventType: "message.delta",
-        scope: "main",
-        role: "planner",
-        requestId: "req_gap",
-        streamState: "streaming",
-        message: "Done",
-        observedAt: "2026-01-01T00:01:03.000Z",
-      }),
-      event({
-        id: "msg-final",
-        sequence: 5,
-        eventType: "message.final",
-        scope: "main",
-        role: "planner",
-        requestId: "req_gap",
-        streamState: "finalized",
-        message: "Done.",
-        observedAt: "2026-01-01T00:01:04.000Z",
-      }),
-    ],
-  });
-
-  expect(projection.requestSpans[0]).toMatchObject({
-    requestId: "req_gap",
-    firstTokenAt: "2026-01-01T00:00:02.000Z",
-    lastTokenAt: "2026-01-01T00:01:04.000Z",
-    decodeActiveMs: 2000,
   });
 });
 

@@ -28,7 +28,11 @@ import { buildUsageRequestKey } from "./thread-usage-accumulator";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
-import { USAGE_LEDGER_GENERATION_MS_METADATA_KEY, USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY } from "./usage-ledger-cost-metadata";
+import {
+  USAGE_LEDGER_GENERATION_MS_METADATA_KEY,
+  USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY,
+  USAGE_LEDGER_TTFT_MS_METADATA_KEY,
+} from "./usage-ledger-cost-metadata";
 
 export interface UsageBillingPricingRoute {
   provider: { baseUrl: string };
@@ -87,6 +91,7 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   attributionPending?: boolean;
   aliasModelId?: string;
   providerId?: string;
+  ttftMs?: number;
   generationMs?: number;
   logicalRequestId?: string;
 }
@@ -204,6 +209,8 @@ export async function resolveSingleUsageBillingArtifacts(
         ...(input.providerId && { [USAGE_LEDGER_PROVIDER_ID_METADATA_KEY]: input.providerId }),
         ...(input.sourceDedupId && { sourceDedupId: input.sourceDedupId }),
         ...(contextUpdate && { [USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY]: contextUpdate }),
+        ...(input.ttftMs !== undefined &&
+          input.ttftMs > 0 && { [USAGE_LEDGER_TTFT_MS_METADATA_KEY]: input.ttftMs }),
         ...(input.generationMs !== undefined &&
           input.generationMs > 0 && { [USAGE_LEDGER_GENERATION_MS_METADATA_KEY]: input.generationMs }),
         ...(input.logicalRequestId?.trim() && {

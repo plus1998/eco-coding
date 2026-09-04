@@ -432,6 +432,7 @@ export async function forwardAnthropicMessagesBody(
           ...(codexTurnMetadata && { codexTurnMetadata }),
           onUsage,
           onLog,
+          ...(lifecycle && { lifecycle }),
         });
       }
       tryEmitLogicalCompleted(lifecycle, providerRequestId);
@@ -506,6 +507,7 @@ export async function forwardAnthropicMessagesBody(
           ...(codexTurnMetadata && { codexTurnMetadata }),
           onUsage,
           onLog,
+          ...(lifecycle && { lifecycle }),
         });
       };
 
@@ -576,6 +578,7 @@ export async function forwardAnthropicMessagesBody(
           failStream(message);
           return true;
         }
+        lifecycle?.tracker.noteFirstChunk();
         const responsesEvents = anthropicEventToResponsesEvents(anthropicEvent, state);
         trackAnthropicStreamUsage(usageTracker, anthropicEvent);
         writeResponsesEvents(responsesEvents);
@@ -668,6 +671,7 @@ function emitAnthropicGatewayUsage(input: {
   codexTurnMetadata?: GatewayCodexTurnMetadata;
   onUsage: GatewayUsageObserver | undefined;
   onLog: GatewayLogFn;
+  lifecycle?: RequestLifecycleContext;
 }): void {
   if (!input.onUsage) {
     return;
@@ -682,6 +686,7 @@ function emitAnthropicGatewayUsage(input: {
     usage: input.usage,
     stream: input.stream,
     observedAt: new Date().toISOString(),
+    ...(input.stream && input.lifecycle ? input.lifecycle.tracker.generationTiming() : {}),
     responseId: input.responseId,
     ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
     ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),

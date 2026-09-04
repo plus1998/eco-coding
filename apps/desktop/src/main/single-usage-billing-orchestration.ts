@@ -37,7 +37,9 @@ export interface SingleUsageBillingRequest {
   aliasModelId?: string;
   providerId?: string;
   apiCompat?: UpstreamApiCompat;
-  /** Gateway upstream generation duration when lifecycle timing is available at billing time. */
+  /** Gateway-measured time to first upstream response chunk (ms), new-api TTFT. */
+  ttftMs?: number;
+  /** Gateway-measured first-chunk → stream-end window (ms), new-api generationMs. */
   generationMs?: number;
   /** Bridge logical request id for joining multi-invocation usage onto one feed span. */
   logicalRequestId?: string;
@@ -100,8 +102,8 @@ export async function resolveSingleUsageBillingOrchestration(
     ...(request.attributionPending && { attributionPending: true }),
     ...(request.aliasModelId && { aliasModelId: request.aliasModelId }),
     ...(request.providerId && { providerId: request.providerId }),
-    ...(request.generationMs !== undefined &&
-      request.generationMs > 0 && { generationMs: request.generationMs }),
+    ...(request.ttftMs !== undefined && request.ttftMs > 0 && { ttftMs: request.ttftMs }),
+    ...(request.generationMs !== undefined && request.generationMs > 0 && { generationMs: request.generationMs }),
     ...(request.logicalRequestId?.trim() && { logicalRequestId: request.logicalRequestId.trim() }),
   });
   const updateContext =

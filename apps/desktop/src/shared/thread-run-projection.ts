@@ -99,13 +99,8 @@ export interface ThreadRunProjectionRequestSpan {
   source?: string;
   status: ThreadRunProjectionRequestStatus;
   startedAt: string;
+  /** First assistant message.delta observedAt — live waiting/TTFT display only. */
   firstTokenAt?: string;
-  /** Last assistant message.delta observedAt — decode end for tok/s when present. */
-  lastTokenAt?: string;
-  /** Sum of inter-chunk gaps during narrative streaming; excludes tool-idle gaps (>2s). */
-  decodeActiveMs?: number;
-  /** Assistant message.final observedAt — not extended by request.completed or tool gaps. */
-  streamingEndedAt?: string;
   endedAt?: string;
   error?: string;
   /**
@@ -121,8 +116,13 @@ export interface ThreadRunProjectionRequestSpan {
   /** Subset of {@link outputTokens} billed as reasoning/thinking, when provider reports it. */
   reasoningTokens?: number;
   /**
-   * Sum of gateway generation durations for matched ledger invocations (Cherry model TPS denominator).
-   * Stored in ledger metadata at billing time when lifecycle timing is available.
+   * Gateway-measured time to first upstream response chunk (ms), summed across
+   * matched ledger invocations for the turn (new-api TTFT).
+   */
+  ttftMs?: number;
+  /**
+   * Gateway-measured first-chunk → stream-end window (ms), summed across matched
+   * ledger invocations — tok/s denominator (new-api generationMs).
    */
   generationMs?: number;
 }

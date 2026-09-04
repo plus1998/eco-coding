@@ -45,22 +45,23 @@ test("thinking-labeled spans remain eligible when badge binds via narrative item
   ).toBe(true);
 });
 
-test("generationMs on span drives Cherry-style aggregate model TPS", () => {
+test("gateway ttftMs and generationMs on span drive closed-span timing", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
     startedAt: isoAt(0),
     firstTokenAt: isoAt(1_000),
-    lastTokenAt: isoAt(1_080),
-    streamingEndedAt: isoAt(10_000),
-    endedAt: isoAt(10_000),
+    endedAt: isoAt(13_000),
     outputTokens: 546,
     reasoningTokens: 276,
+    ttftMs: 940,
     generationMs: 12_000,
   };
   const stats = formatTokenSpeedStats(span, "Hello", T0 + 999_999);
   expect(stats.tokenSource).toBe("usage");
-  expect(stats.rateTps).toBeCloseTo(270 / 12, 5);
+  expect(stats.ttftMs).toBe(940);
+  // new-api style: full completion tokens (546, incl. reasoning) over generationMs.
+  expect(stats.rateTps).toBeCloseTo(546 / 12, 5);
 });
 
 test("waiting span reports elapsed wait and no ttft/rate", () => {
@@ -100,7 +101,7 @@ test("completed span without first token stays inactive with no timing", () => {
   expect(stats.tokenSource).toBe("estimate");
 });
 
-test("completed span keeps final ttft and rate measured over the full decode window", () => {
+test("completed span without gateway timing keeps ttft but reports no rate", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
@@ -113,85 +114,48 @@ test("completed span keeps final ttft and rate measured over the full decode win
   expect(stats.active).toBe(false);
   expect(stats.ttftMs).toBe(1_200);
   expect(stats.tokenSource).toBe("estimate");
-  // 4 tokens over (4_200 - 1_200) ms = 4/3 tps, independent of `now`
-  expect(stats.rateTps).toBeCloseTo(4 / 3, 5);
+  // No gateway decode window — rate is withheld.
+  expect(stats.rateTps).toBeUndefined();
 });
 
-test("completed span keeps decode rate at stream finalize when request.completed arrives later", () => {
+test("gateway generationMs drives closed-span rate from provider usage", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
     startedAt: isoAt(0),
     firstTokenAt: isoAt(1_000),
-    streamingEndedAt: isoAt(4_000),
     endedAt: isoAt(4_000),
     outputTokens: 100,
-    decodeActiveMs: 3_000,
-  };
-  const text = "x".repeat(400);
-  const stats = formatTokenSpeedStats(span, text, T0 + 999_999);
-  expect(stats.rateTps).toBeCloseTo(100 / 3, 5);
-});
-
-test("provider usage tokens prefer Cherry-style rate when usage matches visible text", () => {
-  const span = {
-    requestId: "r",
-    status: "completed" as const,
-    startedAt: isoAt(0),
-    firstTokenAt: isoAt(1_000),
-    lastTokenAt: isoAt(5_000),
-    decodeActiveMs: 4_000,
-    endedAt: isoAt(5_000),
-    outputTokens: 100,
+    generationMs: 3_000,
   };
   const text = "x".repeat(400);
   const stats = formatTokenSpeedStats(span, text, T0 + 999_999);
   expect(stats.tokenSource).toBe("usage");
   expect(stats.streamedTokens).toBe(100);
-  expect(stats.rateTps).toBeCloseTo(25, 5);
+  expect(stats.rateTps).toBeCloseTo(100 / 3, 5);
 });
 
-test("withholds unreliable decode rate when turn-aggregated usage meets short thinking window", () => {
-  const span = {
-    requestId: "r",
-    status: "completed" as const,
-    startedAt: isoAt(0),
-    firstTokenAt: isoAt(85_000),
-    lastTokenAt: isoAt(85_057),
-    streamingEndedAt: isoAt(85_057),
-    endedAt: isoAt(85_057),
-    outputTokens: 1094,
-    reasoningTokens: 646,
-  };
-  const stats = formatTokenSpeedStats(span, "x".repeat(100), T0 + 999_999);
-  expect(stats.ttftMs).toBe(85_000);
-  expect(stats.rateTps).toBeUndefined();
-});
-
-test("withholds tok/s when decode window is too short to measure", () => {
+test("withholds tok/s when gateway generation window is too short to measure", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
     startedAt: isoAt(0),
     firstTokenAt: isoAt(1_000),
-    lastTokenAt: isoAt(1_040),
-    streamingEndedAt: isoAt(1_040),
-    endedAt: isoAt(2_000),
+    endedAt: isoAt(1_040),
     outputTokens: 500,
+    generationMs: 40,
   };
   const stats = formatTokenSpeedStats(span, "x".repeat(2000), T0 + 999_999);
   expect(stats.ttftMs).toBe(1_000);
   expect(stats.rateTps).toBeUndefined();
 });
 
-test("generationMs path uses provider completion tokens for tool-call invocations", () => {
+test("gateway generationMs path uses provider completion tokens for tool-call invocations", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
     startedAt: isoAt(0),
     firstTokenAt: isoAt(500),
-    lastTokenAt: isoAt(2_500),
-    streamingEndedAt: isoAt(2_500),
     endedAt: isoAt(2_500),
     outputTokens: 480,
     generationMs: 2_000,
@@ -202,41 +166,38 @@ test("generationMs path uses provider completion tokens for tool-call invocation
   expect(stats.rateTps).toBeCloseTo(240, 0);
 });
 
-test("reasoning_tokens on span drives visible tok/s without text-estimate fallback", () => {
+test("reasoning tokens count toward the gateway rate (full completion tokens)", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
     startedAt: isoAt(0),
     firstTokenAt: isoAt(9_000),
-    lastTokenAt: isoAt(10_000),
-    streamingEndedAt: isoAt(10_000),
     endedAt: isoAt(11_000),
     outputTokens: 500,
     reasoningTokens: 497,
+    generationMs: 1_000,
   };
   const visible = "Hello world"; // ~3 estimated tokens
   const stats = formatTokenSpeedStats(span, visible, T0 + 999_999);
   expect(stats.streamedTokens).toBe(500);
   expect(stats.tokenSource).toBe("usage");
-  expect(stats.rateTps).toBeCloseTo(3, 1);
+  expect(stats.rateTps).toBeCloseTo(500, 0);
 });
 
-test("thinking-shortened decode window falls back to visible text tokens when reasoning_tokens missing", () => {
+test("without reasoning_tokens, completion tokens drive gateway rate", () => {
   const span = {
     requestId: "r",
     status: "completed" as const,
     startedAt: isoAt(0),
     firstTokenAt: isoAt(9_000),
-    lastTokenAt: isoAt(10_000),
-    streamingEndedAt: isoAt(10_000),
     endedAt: isoAt(11_000),
     outputTokens: 500,
+    generationMs: 2_000,
   };
   const visible = "Hello world"; // ~3 estimated tokens
   const stats = formatTokenSpeedStats(span, visible, T0 + 999_999);
-  // Without fallback: 500 / 2s = 250 tps. With usage>>text guard: ~1.5 tps from estimate.
-  expect(stats.tokenSource).toBe("estimate");
-  expect(stats.rateTps).toBeCloseTo(3, 1);
+  expect(stats.tokenSource).toBe("usage");
+  expect(stats.rateTps).toBeCloseTo(250, 0);
 });
 
 test("attachOutputTokensToRequestSpans joins by providerRequestId and proxy requestKey", () => {

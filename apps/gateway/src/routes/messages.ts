@@ -652,7 +652,7 @@ function passThroughAnthropicSseWithUsage(
       return;
     }
     usageSettled = true;
-    settleMessagesStreamUsage(tracker, route, onUsage, onLog, undefined);
+    settleMessagesStreamUsage(tracker, route, onUsage, onLog, undefined, lifecycle);
   };
 
   const closeDownstreamAndCancelUpstream = (controller: ReadableStreamDefaultController<Uint8Array>) => {
@@ -701,6 +701,7 @@ function passThroughAnthropicSseWithUsage(
       closeDownstreamAndCancelUpstream(controller);
       return true;
     }
+    lifecycle?.tracker.noteFirstChunk();
     trackAnthropicStreamUsage(tracker, event);
     if (event.type === "message_stop") {
       sawMessageStop = true;
@@ -856,6 +857,7 @@ function mapResponsesSseBodyToAnthropic(input: {
             ...(fallbackResponseId ? { responseId: fallbackResponseId } : {}),
           }
         : undefined,
+      input.lifecycle,
     );
   };
 
@@ -1180,6 +1182,7 @@ function emitConverted(
 ): { raw: number; anth: number; parseFail: number } {
   const type = typeof event.type === "string" ? event.type : "unknown";
   rawTypes[type] = (rawTypes[type] ?? 0) + 1;
+  lifecycle?.tracker.noteFirstChunk();
 
   if (type === "response.completed") {
     hooks?.onResponseCompleted?.();
@@ -1247,10 +1250,11 @@ function settleMessagesStreamUsage(
   onUsage: GatewayUsageObserver,
   onLog: GatewayLogFn,
   fallback?: { usage: ParsedUsage; responseId?: string },
+  lifecycle?: RequestLifecycleContext,
 ): void {
   const outcome = resolveAnthropicStreamUsage(tracker);
   if (outcome.status === "resolved") {
-    emitMessagesUsage(onUsage, route, outcome.usage, true, outcome.responseId, onLog);
+    emitMessagesUsage(onUsage, route, outcome.usage, true, outcome.responseId, onLog, lifecycle);
     return;
   }
   if (fallback?.usage) {
@@ -1258,7 +1262,7 @@ function settleMessagesStreamUsage(
       `messages stream anthropic tracker rejected (${outcome.reason}); using Responses usage fallback ` +
         `provider=${route.provider.id} model=${route.upstreamModelId}`,
     );
-    emitMessagesUsage(onUsage, route, fallback.usage, true, fallback.responseId, onLog);
+    emitMessagesUsage(onUsage, route, fallback.usage, true, fallback.responseId, onLog, lifecycle);
     return;
   }
   onLog(
@@ -1468,6 +1472,7 @@ function emitMessagesUsage(
   stream: boolean,
   responseId: string | undefined,
   onLog: GatewayLogFn,
+  lifecycle?: RequestLifecycleContext,
 ): void {
   const event: GatewayUsageEvent = {
     source: "messages",
@@ -1483,6 +1488,7 @@ function emitMessagesUsage(
     ...(route.threadId ? { threadId: route.threadId } : {}),
     ...(route.runAttemptId ? { runAttemptId: route.runAttemptId } : {}),
     ...(route.logicalRequestId?.trim() ? { logicalRequestId: route.logicalRequestId.trim() } : {}),
+    ...(stream && lifecycle ? lifecycle.tracker.generationTiming() : {}),
   };
   try {
     void Promise.resolve(onUsage(event)).catch((error) => {

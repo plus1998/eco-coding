@@ -356,6 +356,7 @@ export async function forwardOpenAIChat(
         if (typeof parsed.chunk.id === "string" && parsed.chunk.id.trim()) {
           lastChatResponseId = parsed.chunk.id.trim();
         }
+        lifecycle?.tracker.noteFirstChunk();
         if (!usageEmitted && parsed.chunk.usage) {
           const usage = normalizeChatCompletionsUsage(
             parsed.chunk.usage,
@@ -372,6 +373,7 @@ export async function forwardOpenAIChat(
               ...(codexTurnMetadata && { codexTurnMetadata }),
               onUsage,
               onLog,
+              ...(lifecycle && { lifecycle }),
             });
           }
         }
@@ -530,6 +532,7 @@ function observeChatUsage(input: {
   codexTurnMetadata?: GatewayCodexTurnMetadata;
   onUsage: GatewayUsageObserver | undefined;
   onLog: GatewayLogFn;
+  lifecycle?: RequestLifecycleContext;
 }): void {
   if (!input.usage || !input.onUsage) {
     return;
@@ -544,6 +547,7 @@ function observeChatUsage(input: {
     usage: input.usage,
     stream: input.stream,
     observedAt: new Date().toISOString(),
+    ...(input.stream && input.lifecycle ? input.lifecycle.tracker.generationTiming() : {}),
     ...(input.responseId && { responseId: input.responseId }),
     ...(input.providerRequestId
       ? { providerRequestId: input.providerRequestId }

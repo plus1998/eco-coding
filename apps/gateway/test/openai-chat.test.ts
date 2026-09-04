@@ -266,6 +266,7 @@ describe("openai-chat upstream", () => {
       (event) => {
         usageEvents.push(event);
       },
+      () => undefined,
     );
     const response = await handler(
       new Request("http://127.0.0.1/v1/responses", {
@@ -294,6 +295,8 @@ describe("openai-chat upstream", () => {
     expect(eventTypes).toContain("response.created");
     expect(eventTypes).toContain("response.completed");
     expect(usageEvents).toHaveLength(1);
+    expect(typeof usageEvents[0]?.ttftMs).toBe("number");
+    expect(typeof usageEvents[0]?.generationMs).toBe("number");
     expect(usageEvents[0]).toMatchObject({
       source: "responses",
       sourceEventId: "chat:llama-local:response:chatcmpl-1",

@@ -148,8 +148,12 @@ export interface AnthropicProxyUsageInfo {
   requestedModel?: string;
   aliasModelId?: string;
   requestId?: string;
-  /** Bridge logical request id — joins feed spans to gateway generationMs. */
+  /** Bridge logical request id — joins feed spans to the ledger rows of the same turn. */
   logicalRequestId?: string;
+  /** Gateway-measured time to first upstream response chunk (ms), new-api TTFT. */
+  ttftMs?: number;
+  /** Gateway-measured first-chunk → stream-end window (ms), new-api generationMs. */
+  generationMs?: number;
   downstreamMessageId?: string;
   usage: ParsedUsage;
   stampedAgentId?: string;
@@ -678,6 +682,8 @@ export async function emitClaudeGatewayUsageIfSession(input: {
   requestId?: string;
   bridgeBindingId?: string;
   logicalRequestId?: string;
+  ttftMs?: number;
+  generationMs?: number;
   stampedAgentId?: string;
   stampedBillingRole?: RuntimeAgentRole;
   stampedParentToolUseId?: string;
@@ -706,6 +712,8 @@ export async function emitClaudeGatewayUsageIfSession(input: {
       requestedModel: input.requestedModel,
       ...(input.requestId ? { requestId: input.requestId } : {}),
       ...(input.logicalRequestId?.trim() ? { logicalRequestId: input.logicalRequestId.trim() } : {}),
+      ...(input.ttftMs !== undefined && { ttftMs: input.ttftMs }),
+      ...(input.generationMs !== undefined && { generationMs: input.generationMs }),
       ...(binding.runAttemptId ? { stampedRunAttemptId: binding.runAttemptId } : {}),
       ...(input.stampedAgentId?.trim() ? { stampedAgentId: input.stampedAgentId.trim() } : {}),
       ...(input.stampedBillingRole ? { stampedBillingRole: input.stampedBillingRole } : {}),

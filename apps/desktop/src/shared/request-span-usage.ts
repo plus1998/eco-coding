@@ -9,7 +9,9 @@ export interface RequestSpanLedgerUsageRow {
   requestKey?: string;
   /** Feed logical request id when stored on ledger metadata (multi-invocation turn join). */
   logicalRequestId?: string;
-  /** Gateway upstream generation duration for this provider invocation, when known. */
+  /** Gateway-measured time to first content token (ms) for this provider invocation, when known. */
+  ttftMs?: number;
+  /** Gateway-measured first-chunk → stream-end window (ms, new-api generationMs). */
   generationMs?: number;
   /** Ledger billing source — used to dedupe pi vs gateway proxy rows for the same invocation. */
   source?: RequestSpanLedgerUsageSource;
@@ -116,6 +118,7 @@ export function dedupeUsageLedgerRowsForSpanJoin(
 function collapseInvocationRows(rows: readonly RequestSpanLedgerUsageRow[]): RequestSpanLedgerUsageRow {
   let outputTokens = 0;
   let reasoningTokens = 0;
+  let ttftMs = 0;
   let generationMs = 0;
   for (const row of rows) {
     if (row.outputTokens > outputTokens) {
@@ -124,6 +127,10 @@ function collapseInvocationRows(rows: readonly RequestSpanLedgerUsageRow[]): Req
     const reasoning = row.reasoningTokens ?? 0;
     if (reasoning > reasoningTokens) {
       reasoningTokens = reasoning;
+    }
+    const ttft = row.ttftMs ?? 0;
+    if (ttft > ttftMs) {
+      ttftMs = ttft;
     }
     const generation = row.generationMs ?? 0;
     if (generation > generationMs) {
@@ -138,14 +145,16 @@ function collapseInvocationRows(rows: readonly RequestSpanLedgerUsageRow[]): Req
     ...base,
     outputTokens,
     ...(reasoningTokens > 0 && { reasoningTokens: reasoningTokens }),
+    ...(ttftMs > 0 && { ttftMs }),
     ...(generationMs > 0 && { generationMs }),
   };
 }
 
-/** Cherry-style turn aggregate: sum tokens and generation ms across distinct invocations. */
+/** Gateway turn aggregate: sum tokens and gateway timing across distinct invocations. */
 function aggregateMatchedLedgerRows(rows: readonly RequestSpanLedgerUsageRow[]): {
   outputTokens: number;
   reasoningTokens?: number;
+  ttftMs?: number;
   generationMs?: number;
 } | undefined {
   if (rows.length === 0) {
@@ -167,17 +176,20 @@ function aggregateMatchedLedgerRows(rows: readonly RequestSpanLedgerUsageRow[]):
 
   let outputTokens = 0;
   let reasoningTokens = 0;
+  let ttftMs = 0;
   let generationMs = 0;
   for (const group of groups.values()) {
     const collapsed = collapseInvocationRows(group);
     outputTokens += collapsed.outputTokens;
     reasoningTokens += collapsed.reasoningTokens ?? 0;
+    ttftMs += collapsed.ttftMs ?? 0;
     generationMs += collapsed.generationMs ?? 0;
   }
 
   return {
     outputTokens,
     ...(reasoningTokens > 0 && { reasoningTokens }),
+    ...(ttftMs > 0 && { ttftMs }),
     ...(generationMs > 0 && { generationMs }),
   };
 }
@@ -206,38 +218,33 @@ export function attachOutputTokensToRequestSpans<T extends ThreadRunProjectionRe
       outputTokens: aggregated.outputTokens,
       ...(aggregated.reasoningTokens !== undefined &&
         aggregated.reasoningTokens > 0 && { reasoningTokens: aggregated.reasoningTokens }),
+      ...(aggregated.ttftMs !== undefined && aggregated.ttftMs > 0 && { ttftMs: aggregated.ttftMs }),
       ...(aggregated.generationMs !== undefined &&
         aggregated.generationMs > 0 && { generationMs: aggregated.generationMs }),
     };
   });
 }
 
-/** Visible completion tokens for tok/s (excludes provider-reported reasoning). */
-export function visibleOutputTokensForRate(span: {
-  outputTokens?: number;
-  reasoningTokens?: number;
-}): number | undefined {
-  if (typeof span.outputTokens !== "number" || !Number.isFinite(span.outputTokens) || span.outputTokens <= 0) {
-    return undefined;
-  }
-  const reasoning =
-    typeof span.reasoningTokens === "number" && Number.isFinite(span.reasoningTokens) && span.reasoningTokens > 0
-      ? Math.floor(span.reasoningTokens)
-      : 0;
-  return Math.max(0, Math.floor(span.outputTokens) - reasoning);
-}
-
-/** Provider completion tokens minus reasoning — includes tool-call JSON when present. */
+/**
+ * Rate numerator, new-api style: full provider completion tokens (includes
+ * thinking + tool-call tokens) over the first-chunk → stream-end window;
+ * falls back to a local text estimate when the provider reported no usage.
+ */
 export function resolveRateNumeratorTokens(input: {
-  span: { outputTokens?: number; reasoningTokens?: number };
+  span: { outputTokens?: number };
   estimatedTokens: number;
 }): { tokens: number; tokenSource: "usage" | "estimate" } {
-  const visibleTokens = visibleOutputTokensForRate(input.span);
-  if (visibleTokens === undefined) {
-    return {
-      tokens: input.estimatedTokens,
-      tokenSource: input.estimatedTokens > 0 ? "estimate" : "usage",
-    };
+  const totalOutput =
+    typeof input.span.outputTokens === "number" &&
+    Number.isFinite(input.span.outputTokens) &&
+    input.span.outputTokens > 0
+      ? Math.floor(input.span.outputTokens)
+      : undefined;
+  if (totalOutput !== undefined) {
+    return { tokens: totalOutput, tokenSource: "usage" };
   }
-  return { tokens: visibleTokens, tokenSource: "usage" };
+  return {
+    tokens: input.estimatedTokens,
+    tokenSource: input.estimatedTokens > 0 ? "estimate" : "usage",
+  };
 }
