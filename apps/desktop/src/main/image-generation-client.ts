@@ -4,12 +4,15 @@ import path from "node:path";
 import {
   type GeneratedImageFile,
   ImageGenerationError,
+  IMAGE_GENERATION_REQUEST_TIMEOUT_MS,
+  type ImageGenerationProvider,
   type ImageGenerationToolInput,
 } from "../shared/image-generation";
 import type { ImageGenerationClientConfig } from "./image-generation-store";
-
-const REQUEST_TIMEOUT_MS = 180_000;
 const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+const MAX_INPUT_IMAGE_BYTES = 50 * 1024 * 1024;
+const OPENAI_MAX_INPUT_IMAGES = 16;
+const GEMINI_MAX_INPUT_IMAGES = 3;
 const OPENAI_SIZES = new Set(["auto", "1024x1024", "1536x1024", "1024x1536"]);
 const GEMINI_SIZES = new Set(["1K", "2K", "4K"]);
 const GEMINI_ASPECT_RATIOS = new Set([
@@ -30,18 +33,36 @@ interface ImagePayload {
   mimeType: string;
 }
 
+interface LoadedInputImage {
+  bytes: Buffer;
+  mimeType: string;
+  fileName: string;
+}
+
+type NormalizedToolInput = Required<Pick<ImageGenerationToolInput, "prompt" | "count">> &
+  Omit<ImageGenerationToolInput, "prompt" | "count">;
+
 export async function generateImagesToWorkspace(input: {
   config: ImageGenerationClientConfig;
   toolInput: ImageGenerationToolInput;
   generationRoot: string;
   threadDirectory: string;
+  workspacePath: string;
   signal?: AbortSignal;
 }): Promise<GeneratedImageFile[]> {
-  const args = normalizeToolInput(input.toolInput, input.config.provider);
+  const args = normalizeToolInput(
+    input.toolInput,
+    input.config.provider,
+    input.config.supportsImageToImage,
+  );
+  const inputImages =
+    args.input_images && args.input_images.length > 0
+      ? await loadInputImages(args.input_images, input.workspacePath, input.config.provider)
+      : [];
   const payloads =
     input.config.provider === "gemini"
-      ? await generateGemini(input.config, args, input.signal)
-      : await generateOpenAi(input.config, args, input.signal);
+      ? await generateGemini(input.config, args, inputImages, input.signal)
+      : await generateOpenAi(input.config, args, inputImages, input.signal);
   if (payloads.length === 0) {
     throw new ImageGenerationError("empty_response", "供应商未返回任何图片。");
   }
@@ -54,16 +75,19 @@ export async function generateImagesToWorkspace(input: {
 
 export function normalizeImageGenerationToolInput(
   input: ImageGenerationToolInput,
-  provider: ImageGenerationClientConfig["provider"],
+  providerOrConfig: ImageGenerationClientConfig | ImageGenerationClientConfig["provider"],
 ): ImageGenerationToolInput {
-  return normalizeToolInput(input, provider);
+  if (typeof providerOrConfig === "string") {
+    return normalizeToolInput(input, providerOrConfig, true);
+  }
+  return normalizeToolInput(input, providerOrConfig.provider, providerOrConfig.supportsImageToImage);
 }
 
 function normalizeToolInput(
   input: ImageGenerationToolInput,
-  provider: ImageGenerationClientConfig["provider"],
-): Required<Pick<ImageGenerationToolInput, "prompt" | "count">> &
-  Omit<ImageGenerationToolInput, "prompt" | "count"> {
+  provider: ImageGenerationProvider,
+  supportsImageToImage: boolean,
+): NormalizedToolInput {
   const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
   if (!prompt) throw new ImageGenerationError("invalid_prompt", "prompt 不能为空。");
   if (prompt.length > 32_000) {
@@ -75,6 +99,13 @@ function normalizeToolInput(
   }
   const size = input.size?.trim();
   const aspectRatio = input.aspect_ratio?.trim();
+  const inputImages = normalizeInputImagePaths(input.input_images);
+  if (inputImages.length > 0 && !supportsImageToImage) {
+    throw new ImageGenerationError(
+      "unsupported_parameter",
+      "当前创意绘画 Profile 未开启图生图，不能传入 input_images。",
+    );
+  }
   if (provider === "gemini") {
     if (count !== 1) {
       throw new ImageGenerationError("unsupported_parameter", "Gemini 渠道首版只支持 count=1。");
@@ -116,15 +147,130 @@ function normalizeToolInput(
     ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
     ...(input.quality ? { quality: input.quality } : {}),
     ...(outputName ? { output_name: outputName } : {}),
+    ...(inputImages.length > 0 ? { input_images: inputImages } : {}),
   };
+}
+
+function normalizeInputImagePaths(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new ImageGenerationError("unsupported_parameter", "input_images 必须是字符串路径数组。");
+  }
+  const paths: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string" || !entry.trim()) {
+      throw new ImageGenerationError("unsupported_parameter", "input_images 只能包含非空字符串路径。");
+    }
+    paths.push(entry.trim());
+  }
+  return paths;
+}
+
+async function loadInputImages(
+  imagePaths: string[],
+  workspacePath: string,
+  provider: ImageGenerationProvider,
+): Promise<LoadedInputImage[]> {
+  const maxCount = provider === "gemini" ? GEMINI_MAX_INPUT_IMAGES : OPENAI_MAX_INPUT_IMAGES;
+  if (imagePaths.length > maxCount) {
+    throw new ImageGenerationError(
+      "unsupported_parameter",
+      provider === "gemini"
+        ? `Gemini 图生图最多支持 ${GEMINI_MAX_INPUT_IMAGES} 张参考图。`
+        : `OpenAI-style 图生图最多支持 ${OPENAI_MAX_INPUT_IMAGES} 张参考图。`,
+    );
+  }
+  const workspaceRoot = path.resolve(workspacePath);
+  const loaded: LoadedInputImage[] = [];
+  for (const rawPath of imagePaths) {
+    const absolutePath = path.isAbsolute(rawPath)
+      ? path.resolve(rawPath)
+      : path.resolve(workspaceRoot, rawPath);
+    if (absolutePath !== workspaceRoot && !absolutePath.startsWith(`${workspaceRoot}${path.sep}`)) {
+      throw new ImageGenerationError(
+        "invalid_input_path",
+        `参考图必须位于当前工作区内：${rawPath}`,
+      );
+    }
+    let linkStat;
+    try {
+      linkStat = await fs.lstat(absolutePath);
+    } catch {
+      throw new ImageGenerationError("invalid_input_path", `参考图不存在：${rawPath}`);
+    }
+    if (linkStat.isSymbolicLink()) {
+      throw new ImageGenerationError("invalid_input_path", `不允许使用符号链接作为参考图：${rawPath}`);
+    }
+    if (!linkStat.isFile()) {
+      throw new ImageGenerationError("invalid_input_path", `参考图不是普通文件：${rawPath}`);
+    }
+    const realPath = await fs.realpath(absolutePath);
+    if (realPath !== workspaceRoot && !realPath.startsWith(`${workspaceRoot}${path.sep}`)) {
+      throw new ImageGenerationError(
+        "invalid_input_path",
+        `参考图解析后逃逸了工作区：${rawPath}`,
+      );
+    }
+    if (linkStat.size > MAX_INPUT_IMAGE_BYTES) {
+      throw new ImageGenerationError("image_too_large", `参考图超过 50 MB 限制：${rawPath}`);
+    }
+    const bytes = await fs.readFile(absolutePath);
+    if (bytes.length > MAX_INPUT_IMAGE_BYTES) {
+      throw new ImageGenerationError("image_too_large", `参考图超过 50 MB 限制：${rawPath}`);
+    }
+    const mimeType = detectImageMime(bytes);
+    if (!mimeType) {
+      throw new ImageGenerationError(
+        "invalid_image",
+        `参考图必须是 PNG、JPEG 或 WebP：${rawPath}`,
+      );
+    }
+    loaded.push({
+      bytes,
+      mimeType,
+      fileName: path.basename(absolutePath),
+    });
+  }
+  return loaded;
 }
 
 async function generateOpenAi(
   config: ImageGenerationClientConfig,
-  args: ReturnType<typeof normalizeToolInput>,
+  args: NormalizedToolInput,
+  inputImages: LoadedInputImage[],
   signal?: AbortSignal,
 ): Promise<ImagePayload[]> {
-  const endpoint = `${config.endpoint.replace(/\/images\/generations\/?$/i, "")}/images/generations`;
+  const base = config.endpoint.replace(/\/images\/(?:generations|edits)\/?$/i, "");
+  if (inputImages.length > 0) {
+    const endpoint = `${base}/images/edits`;
+    const form = new FormData();
+    form.append("model", config.model);
+    form.append("prompt", args.prompt);
+    form.append("n", String(args.count));
+    if (args.size) form.append("size", args.size);
+    if (args.quality) form.append("quality", args.quality);
+    for (const image of inputImages) {
+      form.append(
+        "image[]",
+        new Blob([new Uint8Array(image.bytes)], { type: image.mimeType }),
+        image.fileName,
+      );
+    }
+    const response = await providerFetch(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: form,
+      },
+      signal,
+    );
+    return readOpenAiImagePayloads(response, args.count, signal);
+  }
+
+  const endpoint = `${base}/images/generations`;
   const body = {
     model: config.model,
     prompt: args.prompt,
@@ -144,6 +290,14 @@ async function generateOpenAi(
     },
     signal,
   );
+  return readOpenAiImagePayloads(response, args.count, signal);
+}
+
+async function readOpenAiImagePayloads(
+  response: Response,
+  expectedCount: number,
+  signal?: AbortSignal,
+): Promise<ImagePayload[]> {
   const json = await readProviderJson(response);
   if (!response.ok) throw providerHttpError(response, json);
   const data = Array.isArray(json.data) ? json.data : undefined;
@@ -159,10 +313,10 @@ async function generateOpenAi(
       images.push(await fetchProviderImage(entry.url, signal));
     }
   }
-  if (images.length !== args.count) {
+  if (images.length !== expectedCount) {
     throw new ImageGenerationError(
       "partial_response",
-      `供应商请求 ${args.count} 张图片，但只返回 ${images.length} 张。`,
+      `供应商请求 ${expectedCount} 张图片，但只返回 ${images.length} 张。`,
     );
   }
   return images;
@@ -170,7 +324,8 @@ async function generateOpenAi(
 
 async function generateGemini(
   config: ImageGenerationClientConfig,
-  args: ReturnType<typeof normalizeToolInput>,
+  args: NormalizedToolInput,
+  inputImages: LoadedInputImage[],
   signal?: AbortSignal,
 ): Promise<ImagePayload[]> {
   const base = config.endpoint.replace(/\/models(?:\/.*)?$/i, "");
@@ -179,6 +334,15 @@ async function generateGemini(
     ...(args.size ? { imageSize: args.size } : {}),
     ...(args.aspect_ratio ? { aspectRatio: args.aspect_ratio } : {}),
   };
+  const parts: Array<Record<string, unknown>> = [
+    ...inputImages.map((image) => ({
+      inlineData: {
+        mimeType: image.mimeType,
+        data: image.bytes.toString("base64"),
+      },
+    })),
+    { text: args.prompt },
+  ];
   const response = await providerFetch(
     endpoint,
     {
@@ -188,7 +352,7 @@ async function generateGemini(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: args.prompt }] }],
+        contents: [{ role: "user", parts }],
         generationConfig: {
           responseModalities: ["IMAGE"],
           ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
@@ -235,18 +399,18 @@ async function generateGemini(
 
 async function providerFetch(url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error("timeout")), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(new Error("timeout")), IMAGE_GENERATION_REQUEST_TIMEOUT_MS);
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abort, { once: true });
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new ImageGenerationError("timeout", "图片创建请求超时或已取消。");
+      throw new ImageGenerationError("timeout", "创意绘画请求超时或已取消。");
     }
     throw new ImageGenerationError(
       "network_error",
-      `图片创建网络请求失败：${error instanceof Error ? error.message : String(error)}`,
+      `创意绘画网络请求失败：${error instanceof Error ? error.message : String(error)}`,
     );
   } finally {
     clearTimeout(timer);

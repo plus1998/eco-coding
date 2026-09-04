@@ -68,6 +68,8 @@ export interface EcoSyncedImageProfile {
   provider: string;
   endpoint: string;
   model: string;
+  /** Absent on older cloud snapshots; treat as false. */
+  supportsImageToImage?: boolean;
 }
 
 /** Workflow / default-agent settings without Cursor API key (secret synced separately). */

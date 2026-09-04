@@ -33616,6 +33616,20 @@ body,
   padding-right: 10px;
 }
 
+.image-generation-profile-form .settings-form-field-checkbox {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.image-generation-profile-form .settings-form-field-checkbox .settings-form-hint {
+  grid-column: 1 / -1;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .image-generation-form-actions {
   display: flex;
   justify-content: flex-end;

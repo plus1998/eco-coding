@@ -179,7 +179,7 @@ test("session integrations expand by default when there are only two items", () 
   expect(markup).toContain('aria-controls="workspace-integrations-body"');
   expect(markup).toContain("集成");
   expect(markup).toContain("浏览器");
-  expect(markup).toContain("图片创建");
+  expect(markup).toContain("创意绘画");
   expect(markup).toContain("默认配置");
   expect(markup).toContain("1/2");
 });

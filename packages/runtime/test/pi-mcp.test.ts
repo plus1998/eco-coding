@@ -24,11 +24,23 @@ test("toPiMcpServerEntry maps stdio and strips Claude-only fields", () => {
     command: "npx",
     args: ["-y", "demo-mcp"],
     env: { TOKEN: "x" },
+    requestTimeoutMs: 60_000,
     lifecycle: "lazy",
   });
   expect(mapped).not.toHaveProperty("alwaysLoad");
   expect(mapped).not.toHaveProperty("timeout");
   expect(mapped).not.toHaveProperty("type");
+});
+
+test("toPiMcpServerEntry prefers requestTimeoutMs over Claude timeout", () => {
+  expect(
+    toPiMcpServerEntry({
+      command: "node",
+      args: ["server.mjs"],
+      timeout: 60_000,
+      requestTimeoutMs: 210_000,
+    }),
+  ).toMatchObject({ requestTimeoutMs: 210_000 });
 });
 
 test("toPiMcpServerEntry maps http and sse", () => {
@@ -37,10 +49,12 @@ test("toPiMcpServerEntry maps http and sse", () => {
       type: "http",
       url: "https://mcp.example.com/mcp",
       headers: { Authorization: "Bearer a" },
+      timeout: 120_000,
     }),
   ).toEqual({
     url: "https://mcp.example.com/mcp",
     headers: { Authorization: "Bearer a" },
+    requestTimeoutMs: 120_000,
     lifecycle: "lazy",
   });
 

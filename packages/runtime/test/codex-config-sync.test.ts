@@ -211,6 +211,27 @@ test("buildCodexConfigToml writes startup_timeout_sec for prepared MCP servers",
   expect(toml).toContain('PATH = "/usr/local/bin"');
 });
 
+test("buildCodexConfigToml writes tool_timeout_sec when set", () => {
+  const toml = buildCodexConfigToml({
+    ecoDataDir: "/data",
+    gatewayBaseUrl: "http://127.0.0.1:18765/v1",
+    providers: [{ id: "custom", name: "Custom", enabled: true }],
+    mcpServers: [
+      {
+        name: "eco_image_generation",
+        transport: "stdio",
+        command: "/bin/electron",
+        args: ["stdio.mjs"],
+        startupTimeoutSec: 60,
+        toolTimeoutSec: 300,
+      },
+    ],
+  });
+  expect(toml).toContain("[mcp_servers.eco_image_generation]");
+  expect(toml).toContain("startup_timeout_sec = 60");
+  expect(toml).toContain("tool_timeout_sec = 300");
+});
+
 test("buildCodexConfigToml omits MCP section when none selected", () => {
   const toml = buildCodexConfigToml({
     ecoDataDir: "/data",

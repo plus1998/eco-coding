@@ -121,6 +121,15 @@ export interface CodexApprovalBridgeDeps {
    * tool-run elicitations for eco_agent_browser when mode is always_allow.
    */
   getBrowserOpenApprovalMode?: () => BrowserOpenApprovalMode;
+  /**
+   * Codex image MCP has no per-thread auth token. Register a claim when the
+   * elicitation is accepted so create_image can bind to this Eco thread.
+   */
+  noteUpcomingImageGenerationTool?: (
+    ecoThreadId: string,
+    toolName: string,
+    toolUseId?: string,
+  ) => void;
   reviewApproval?: (
     ecoThreadId: string,
     request: BashApprovalRequest,
@@ -495,7 +504,7 @@ async function handleMcpServerElicitationRequest(
       threadId: ecoThreadId,
       command: "创建图片",
       cwd: deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath,
-      reason: "Agent 请求调用当前启用的图片创建供应商。",
+      reason: "Agent 请求调用当前启用的创意绘画供应商。",
       riskScore: 50,
       riskLevel: "medium",
       agentId: deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`,
@@ -520,7 +529,13 @@ async function handleMcpServerElicitationRequest(
         feedback: resolution.feedback,
       });
     }
-    return resolution.decision === "approved" ? { action: "accept", content: {} } : { action: "decline" };
+    if (resolution.decision !== "approved") {
+      return { action: "decline" };
+    }
+    // Claim must be fresh at accept time: earlier tool.started claims expire in 60s,
+    // and Codex image MCP has no ECO_IMAGE_AUTH_TOKEN (unlike Pi/Claude injection).
+    deps.noteUpcomingImageGenerationTool?.(ecoThreadId, ECO_IMAGE_GENERATION_TOOL, toolUseId);
+    return { action: "accept", content: {} };
   }
 
   if (mode === "url") {

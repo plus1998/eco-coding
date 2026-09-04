@@ -1203,11 +1203,10 @@ function App() {
             icon: ImageIcon,
             keywords: [
               t("settings.imageGeneration.masterTitle"),
-              "image generation",
+              "creative drawing",
               "OpenAI",
               "Gemini",
-              "生图",
-              "图片创建",
+              "创意绘画",
             ],
           },
           { id: "centerServer", label: t("settings.connection"), icon: Cloud },

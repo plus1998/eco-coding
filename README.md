@@ -32,7 +32,7 @@
 - **混用模型** — GPT、Claude、DeepSeek、Kimi 等可自由组合，Responses / Messages / Chat Completions 都能接
 - **分工降本** — 主代理规划验收，子代理并行搜索 / 编码 / 测试，各绑不同价位的模型
 - **会话隔离** — MCP、Skills、工具权限按项目或会话配置，无关上下文不全局注入
-- **独立视觉** — 支持给所有模型装上独立的「眼睛」（视觉）和「画笔」（生图）
+- **独立视觉** — 支持给所有模型装上独立的「眼睛」（视觉）和「画笔」（创意绘画）
 - **费用透明** — 按会话清晰知道自己花了多少钱，并查看缓存命中率
 - **Mobile 互联** — 开源 Flutter 客户端：远程看会话、继续对话、处理审批、发图与语音；配对桌面后走自建 Supabase 中继，无需订阅
 - **全栈开源** — macOS / Windows / Linux 桌面 + Supabase Center，MIT License
@@ -64,7 +64,7 @@ bun run dev
 | 会话模式 | Agent、Plan、Ask |
 | 上下文 | 占用率、自动压缩、交接恢复、文件检查点 |
 | 成本 | Token、费用、缓存读写、命中率、明细对比 |
-| 扩展 | MCP、Skills、内置浏览器、图片创建、视觉模型、ASR |
+| 扩展 | MCP、Skills、内置浏览器、创意绘画、视觉模型、ASR |
 | 工程工作流 | Git diff、检查点回退、Worktree、终端、代码审查 |
 | 移动协同 | 设备配对、远程会话、审批、图片附件、语音输入 |
 
@@ -79,9 +79,9 @@ bun run dev
 ## 特点
 
 - **三 Agent Core**：Codex、Claude Code、PI 按会话选择；同一项目可并行跑不同内核。
-- **会话级隔离**：MCP、Skills、浏览器、图片创建按会话开启；自动发现项目级 Skills。
+- **会话级隔离**：MCP、Skills、浏览器、创意绘画按会话开启；自动发现项目级 Skills。
 - **多协议网关**：OpenAI Responses、Anthropic Messages、Chat Completions 及本地兼容接口。
-- **独立视觉与集成**：视觉任务单独指定模型；支持图片生成 API 与移动端 ASR。
+- **独立视觉与集成**：视觉任务单独指定模型；支持创意绘画 API 与移动端 ASR。
 - **全栈开源**：Electron 桌面 + 自建 Supabase Center + Flutter 移动端，MIT License。
 
 ### 跨供应商 Agent Team

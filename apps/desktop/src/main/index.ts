@@ -1737,7 +1737,7 @@ app.whenReady().then(async () => {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
     encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
     decrypt: (value) => {
-      if (!value.startsWith("safe-v1:")) throw new Error("图片创建 API Key 存储格式无效。");
+      if (!value.startsWith("safe-v1:")) throw new Error("创意绘画 API Key 存储格式无效。");
       return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
     },
   };
@@ -2314,6 +2314,9 @@ app.whenReady().then(async () => {
         : "always";
     },
     getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
+    noteUpcomingImageGenerationTool: (threadId, toolName, toolUseId) => {
+      imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+    },
     reviewApproval: (threadId, request, tool) => reviewThreadToolApproval(threadId, request, tool, "codex"),
     injectCodexApprovalFeedback: async ({ ecoThreadId, codexThreadId, turnId, toolUseId, text }) => {
       const phase = codexMidTurnPorts.getPhase(ecoThreadId);
@@ -4816,9 +4819,9 @@ function registerIpcHandlers(): void {
       (profile) => profile.id === imageSettings.activeProfileId,
     );
     let imageReason: string | undefined;
-    if (!activeImageProfile?.hasApiKey) imageReason = "当前图片创建 Profile 尚未配置 API Key。";
+    if (!activeImageProfile?.hasApiKey) imageReason = "当前创意绘画 Profile 尚未配置 API Key。";
     else if (!imageSettings.apiKeyEncryptionAvailable)
-      imageReason = "系统加密不可用，无法读取图片创建 API Key。";
+      imageReason = "系统加密不可用，无法读取创意绘画 API Key。";
     return {
       integrations: [
         {
@@ -4843,26 +4846,26 @@ function registerIpcHandlers(): void {
   );
   registerDesktopCommand(IPC_CHANNELS.imageGenerationSettingsSave, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.enabled !== "boolean") {
-      throw new Error("图片创建设置无效。");
+      throw new Error("创意绘画设置无效。");
     }
     const saved = imageGenerationStore.setEnabled(payload.enabled);
     scheduleCodexGlobalRuntimeRefresh();
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileSave, async (payload: unknown) => {
-    if (!isRecord(payload)) throw new Error("图片创建 Profile 无效。");
+    if (!isRecord(payload)) throw new Error("创意绘画 Profile 无效。");
     const saved = imageGenerationStore.saveProfile(payload as unknown as ImageGenerationProfileSaveInput);
     scheduleCodexGlobalRuntimeRefresh();
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileDelete, async (payload: unknown) => {
-    if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
+    if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("创意绘画 Profile ID 无效。");
     const saved = imageGenerationStore.deleteProfile(payload.id);
     scheduleCodexGlobalRuntimeRefresh();
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileActivate, async (payload: unknown) => {
-    if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
+    if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("创意绘画 Profile ID 无效。");
     const saved = imageGenerationStore.activateProfile(payload.id);
     scheduleCodexGlobalRuntimeRefresh();
     return saved;
@@ -7838,7 +7841,7 @@ async function startCodexThreadRun(
               });
               if (!imageInject.enabled || !imageInject.codexServer) {
                 throw new Error(
-                  `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
+                  `本会话已开启创意绘画，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
                 );
               }
             }
@@ -8140,7 +8143,7 @@ async function resolvePiSessionResourcesForThread(
     sessionEnabled: sessionImageGenerationEnabled,
   });
   if (sessionImageGenerationEnabled && !imageInject.enabled) {
-    throw new Error(`本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`);
+    throw new Error(`本会话已开启创意绘画，但不可用：${imageInject.unavailableReason ?? "未知原因"}`);
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
   const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
@@ -12408,7 +12411,7 @@ async function buildSdkSessionOptions(
     sessionEnabled: sessionImageGenerationEnabled,
   });
   if (sessionImageGenerationEnabled && !imageInject.enabled) {
-    throw new Error(`本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`);
+    throw new Error(`本会话已开启创意绘画，但不可用：${imageInject.unavailableReason ?? "未知原因"}`);
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
   const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
@@ -14538,7 +14541,7 @@ function createImageGenerationToolPermissionHandler(
     emitThreadEvent(
       threadId,
       "bash_approval.requested",
-      "等待确认图片创建请求",
+      "等待确认创意绘画请求",
       "tool",
       false,
       bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
@@ -14548,7 +14551,7 @@ function createImageGenerationToolPermissionHandler(
       emitThreadEvent(
         threadId,
         "bash_approval.approved",
-        "已允许本次图片创建",
+        "已允许本次创意绘画",
         "tool",
         false,
         bashApprovalEventExtras(approvalRequest, "bash_approval.approved"),
@@ -14558,7 +14561,7 @@ function createImageGenerationToolPermissionHandler(
     emitThreadEvent(
       threadId,
       "bash_approval.rejected",
-      "已拒绝本次图片创建",
+      "已拒绝本次创意绘画",
       "tool",
       false,
       bashApprovalEventExtras(approvalRequest, "bash_approval.rejected"),

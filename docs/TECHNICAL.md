@@ -54,7 +54,7 @@ Preload 使用 Electron context bridge 暴露受控 API，保持 Renderer 与 No
 - 模型供应商、路由和嵌入式网关
 - Git、终端、文件检查点和系统集成
 - SQLite 持久化与系统 Keychain 密钥访问
-- MCP、Skills、浏览器、图片创建和 ASR 配置
+- MCP、Skills、浏览器、创意绘画和 ASR 配置
 - Supabase 设备连接和移动端 Realtime RPC
 - Desktop 更新策略
 
@@ -192,7 +192,7 @@ Ledger 记录模型、Provider、Agent、输入/输出 Token、cache read、cach
 ## 9. 图片、视觉与 ASR
 
 - 主代理配置可以指定独立视觉模型；未设置时跟随主模型。
-- 图片创建支持多个 Provider profile、模型与 API Key，通过会话工具调用，每次调用需要用户确认。
+- 创意绘画支持多个 Provider profile、模型与 API Key，通过会话工具调用，每次调用需要用户确认。
 - ASR 支持 `audio/transcriptions` 与 Chat Completions 形态的兼容服务。
 - Mobile 负责录音；识别配置和请求由配对的 Desktop 管理，从而避免在移动端重复保存供应商密钥。
 
@@ -222,7 +222,7 @@ Supabase 只负责身份与路由；代码读取、模型调用、Git 与终端�
 - 会话、事件、用量、配置和压缩归档使用 SQLite。
 - API Key 等敏感值优先保存到系统安全存储 / Keychain；云同步时为客户端加密密文。
 - Renderer 不直接获取明文密钥。
-- MCP、终端、浏览器、文件写入和图片创建遵循各自审批与工具策略。
+- MCP、终端、浏览器、文件写入和创意绘画遵循各自审批与工具策略。
 - 客户端只配置 Supabase Project URL + anon key；**禁止**下发 `service_role`。
 - 仓库不得提交签名证书、App Store Connect Key、生产 `.env` 或真实 API Key。
 

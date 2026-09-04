@@ -225,7 +225,7 @@ const demoIntegrationAvailability: IntegrationAvailabilitySnapshot = {
       id: "imageGeneration",
       enabled: false,
       available: false,
-      reason: "演示模式未配置图片创建 Profile",
+      reason: "演示模式未配置创意绘画 Profile",
     },
   ],
 };

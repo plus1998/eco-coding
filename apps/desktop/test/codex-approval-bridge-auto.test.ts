@@ -189,6 +189,7 @@ test("Codex file-change rejection injects feedback before returning decline", as
 
 test("image generation MCP approval accepts only a one-time approval", async () => {
   const feedback: string[] = [];
+  const claims: Array<{ threadId: string; toolName: string; toolUseId?: string }> = [];
 
   async function request(decision: BashApprovalDecision, userFeedback?: string) {
     const events: ThreadLiveEvent[] = [];
@@ -213,6 +214,9 @@ test("image generation MCP approval accepts only a one-time approval", async () 
       },
       updateThreadStatus: () => undefined,
       getApprovalMode: () => "always",
+      noteUpcomingImageGenerationTool: (threadId, toolName, toolUseId) => {
+        claims.push({ threadId, toolName, ...(toolUseId ? { toolUseId } : {}) });
+      },
       injectCodexApprovalFeedback: async ({ text }) => {
         feedback.push(text);
       },
@@ -233,9 +237,13 @@ test("image generation MCP approval accepts only a one-time approval", async () 
   }
 
   await expect(request("approved")).resolves.toEqual({ action: "accept", content: {} });
+  expect(claims).toEqual([
+    expect.objectContaining({ threadId: "thread-image", toolName: "create_image" }),
+  ]);
   await expect(request("approved_for_session")).resolves.toEqual({ action: "decline" });
   await expect(request("approved_remember_prefix")).resolves.toEqual({ action: "decline" });
   await expect(request("denied", "不要创建图片，先说明成本")).resolves.toEqual({ action: "decline" });
+  expect(claims).toHaveLength(1);
   expect(feedback).toHaveLength(1);
   expect(feedback[0]).toContain("不要创建图片，先说明成本");
   expect(feedback[0]).toContain("image generation");

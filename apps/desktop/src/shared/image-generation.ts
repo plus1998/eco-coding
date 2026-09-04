@@ -3,6 +3,17 @@ export const ECO_IMAGE_GENERATION_TOOL = "create_image";
 export const ECO_IMAGE_GENERATION_FULL_TOOL = `mcp__${ECO_IMAGE_GENERATION_MCP_SERVER}__${ECO_IMAGE_GENERATION_TOOL}`;
 export const IMAGE_GENERATION_TASK_TAB_PREFIX = "image:";
 
+/** Upstream HTTP wall clock for create_image (generations / edits). */
+export const IMAGE_GENERATION_REQUEST_TIMEOUT_MS = 300_000;
+/**
+ * Agent-facing MCP tool-call timeout (Claude `timeout`, Pi `requestTimeoutMs`,
+ * Codex `tool_timeout_sec`). Default SDK/Codex tool timeout is 60s — too short for drawing.
+ */
+export const IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS = 300_000;
+export const IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC = Math.ceil(
+  IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS / 1000,
+);
+
 export function imageGenerationTaskTabId(artifactId: string): string {
   return `${IMAGE_GENERATION_TASK_TAB_PREFIX}${artifactId}`;
 }
@@ -22,6 +33,8 @@ export interface ImageGenerationProfileSnapshot {
   provider: ImageGenerationProvider;
   endpoint: string;
   model: string;
+  /** When true, create_image may accept input_images for image-to-image edits. */
+  supportsImageToImage: boolean;
   hasApiKey: boolean;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +46,7 @@ export interface ImageGenerationProfileSaveInput {
   provider: ImageGenerationProvider;
   endpoint: string;
   model: string;
+  supportsImageToImage?: boolean;
   apiKey?: string;
 }
 
@@ -49,6 +63,8 @@ export interface ImageGenerationSettingsSaveInput {
 
 export interface ImageGenerationToolInput {
   prompt: string;
+  /** Absolute or workspace-relative paths to reference images for image-to-image. */
+  input_images?: string[];
   size?: string;
   aspect_ratio?: string;
   quality?: "auto" | "low" | "medium" | "high";
@@ -128,20 +144,32 @@ export function defaultImageGenerationModel(provider: ImageGenerationProvider): 
   return "";
 }
 
+/** Default for new profiles: official OpenAI/Gemini support edits; compatible gateways often do not. */
+export function defaultSupportsImageToImage(provider: ImageGenerationProvider): boolean {
+  return provider === "openai" || provider === "gemini";
+}
+
 export function buildImageGenerationPromptAppend(input: {
   provider: ImageGenerationProvider;
   profileName: string;
   model: string;
+  supportsImageToImage: boolean;
 }): string {
   const providerParameters =
     input.provider === "gemini"
       ? "Gemini accepts size=1K|2K|4K, aspect_ratio, and count=1; quality is unsupported."
       : "OpenAI-style providers accept size, quality, and count=1..4; aspect_ratio is unsupported.";
+  const imageToImage = input.supportsImageToImage
+    ? input.provider === "gemini"
+      ? "Image-to-image is enabled: pass input_images (1..3 absolute or workspace-relative PNG/JPEG/WebP paths) with the edit prompt."
+      : "Image-to-image is enabled: pass input_images (1..16 absolute or workspace-relative PNG/JPEG/WebP paths) with the edit prompt."
+    : "Image-to-image is disabled on this profile; do not pass input_images.";
   return [
-    "Built-in image creation (Eco) is enabled for this conversation.",
+    "Built-in Creative Drawing (Eco) is enabled for this conversation.",
     `Use only \`${ECO_IMAGE_GENERATION_FULL_TOOL}\`; do not use the built-in imagegen Skill or another image tool.`,
     `Active profile: ${input.profileName}; provider=${input.provider}; model=${input.model}.`,
     providerParameters,
+    imageToImage,
     "Every invocation requires user approval. Never change provider, model, size, quality, count, or aspect ratio after an error unless the user decides.",
     "The tool returns absolute and workspace-relative file paths. Use those paths for subsequent file operations.",
   ].join("\n");

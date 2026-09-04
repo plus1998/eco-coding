@@ -29,6 +29,9 @@ test("prepareMcpSdkConfigForRuntime resolves stdio command and merges spawn env"
   const env = mongo.env as Record<string, string>;
   expect(env.MDB_MCP_CONNECTION_STRING).toBe("mongodb://localhost:27017");
   expect(env.PATH?.length ?? 0).toBeGreaterThan(0);
+  // Must stay slim: full process.env dump overflows Claude spawn on Windows.
+  expect(Object.keys(env).length).toBeLessThan(20);
+  expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
 });
 
 test("prepareMcpSdkConfigForRuntime enriches http MCP servers", () => {
@@ -53,6 +56,40 @@ test("prepareMcpSdkConfigForRuntime enriches http MCP servers", () => {
   expect(docs.type).toBe("http");
   expect(docs.alwaysLoad).toBe(true);
   expect(docs.timeout).toBe(60_000);
+});
+
+test("prepareMcpSdkConfigForRuntime preserves explicit Claude tool-call timeout", () => {
+  const prepared = prepareMcpSdkConfigForRuntime({
+    mcpServers: {
+      eco_image_generation: {
+        type: "stdio",
+        command: process.execPath,
+        args: ["stdio.mjs"],
+        timeout: 300_000,
+        requestTimeoutMs: 300_000,
+      },
+    },
+    allowedTools: [],
+  });
+  const entry = prepared.mcpServers.eco_image_generation as Record<string, unknown>;
+  expect(entry.timeout).toBe(300_000);
+  expect(entry.requestTimeoutMs).toBe(300_000);
+});
+
+test("prepareCodexGlobalMcpServerPool preserves toolTimeoutSec from builtins", async () => {
+  const prepared = await prepareCodexGlobalMcpServerPool({
+    configuredServers: [],
+    builtinServerResolvers: [
+      () => ({
+        name: "eco_image_generation",
+        transport: "stdio",
+        command: process.execPath,
+        startupTimeoutSec: 60,
+        toolTimeoutSec: 300,
+      }),
+    ],
+  });
+  expect(prepared[0]?.toolTimeoutSec).toBe(300);
 });
 
 test("global Codex MCP pool includes built-ins and lets trusted definitions win", async () => {

@@ -16,6 +16,8 @@ export type PiMcpAdapterServerEntry = {
   headers?: Record<string, string>;
   httpTransport?: "streamable-http" | "sse";
   lifecycle?: "lazy" | "eager" | "keep-alive" | "lazy-keep-alive";
+  /** Live MCP call timeout (ms). Overrides adapter/SDK default (60s). */
+  requestTimeoutMs?: number;
   includeTools?: string[];
   disabled?: boolean;
 };
@@ -31,6 +33,8 @@ export function toPiMcpServerEntry(entry: unknown): PiMcpAdapterServerEntry | un
   }
   const record = entry as Record<string, unknown>;
 
+  const requestTimeoutMs = resolveRequestTimeoutMs(record);
+
   if (typeof record.command === "string" && record.command.trim()) {
     const args = Array.isArray(record.args)
       ? record.args.filter((value): value is string => typeof value === "string")
@@ -42,6 +46,7 @@ export function toPiMcpServerEntry(entry: unknown): PiMcpAdapterServerEntry | un
       ...(args && args.length > 0 ? { args } : {}),
       ...(env && Object.keys(env).length > 0 ? { env } : {}),
       ...(cwd ? { cwd } : {}),
+      ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
       lifecycle: "lazy",
     };
   }
@@ -53,6 +58,7 @@ export function toPiMcpServerEntry(entry: unknown): PiMcpAdapterServerEntry | un
       url: record.url.trim(),
       ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
       ...(transportType === "sse" ? { httpTransport: "sse" as const } : {}),
+      ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
       lifecycle: "lazy",
     };
   }
@@ -152,4 +158,18 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
     }
   }
   return out;
+}
+
+/**
+ * Prefer pi-mcp-adapter `requestTimeoutMs`; fall back to Claude Agent SDK `timeout`
+ * so Eco sdkEntry can set one field that works on both runtimes.
+ */
+function resolveRequestTimeoutMs(record: Record<string, unknown>): number | undefined {
+  for (const key of ["requestTimeoutMs", "timeout"] as const) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return undefined;
 }

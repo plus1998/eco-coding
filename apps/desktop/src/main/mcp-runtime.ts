@@ -2,7 +2,7 @@ import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import type { McpSdkConfig } from "../shared/mcp";
 import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 
-const DEFAULT_MCP_CONNECT_TIMEOUT_MS = 60_000;
+const DEFAULT_MCP_TOOL_TIMEOUT_MS = 60_000;
 const DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC = 60;
 
 export function prepareMcpSdkConfigForRuntime(config: McpSdkConfig): McpSdkConfig {
@@ -57,6 +57,25 @@ export async function prepareCodexGlobalMcpServerPool(input: {
   ]);
 }
 
+/**
+ * Claude Agent SDK may serialize MCP `env` into the child spawn command line.
+ * Dumping the full process env (huge PATH / Electron vars) overflows Windows
+ * CreateProcess limits → spawn ENAMETOOLONG. Keep the same slim base Codex uses.
+ */
+function slimMcpSpawnEnv(customEnv: Record<string, string>): Record<string, string> {
+  const spawnEnv = toSpawnEnv();
+  const base: Record<string, string> = {
+    PATH: spawnEnv.PATH ?? spawnEnv.Path ?? "",
+  };
+  for (const key of ["HOME", "USERPROFILE", "SystemRoot", "TEMP", "TMP", "ComSpec", "PATHEXT"] as const) {
+    const value = spawnEnv[key];
+    if (typeof value === "string" && value.length > 0) {
+      base[key] = value;
+    }
+  }
+  return { ...base, ...customEnv };
+}
+
 function prepareMcpServerEntryForRuntime(entry: Record<string, unknown>): Record<string, unknown> {
   const prepared: Record<string, unknown> = { ...entry };
   const transportType = typeof prepared.type === "string" ? prepared.type : undefined;
@@ -72,16 +91,17 @@ function prepareMcpServerEntryForRuntime(entry: Record<string, unknown>): Record
             >,
           )
         : {};
-    prepared.env = { ...toSpawnEnv(), ...customEnv };
+    prepared.env = slimMcpSpawnEnv(customEnv);
     prepared.alwaysLoad = prepared.alwaysLoad ?? true;
-    prepared.timeout = prepared.timeout ?? DEFAULT_MCP_CONNECT_TIMEOUT_MS;
+    // Claude Agent SDK: per-server tool-call wall clock (not connect timeout).
+    prepared.timeout = prepared.timeout ?? DEFAULT_MCP_TOOL_TIMEOUT_MS;
     return prepared;
   }
 
   if (typeof prepared.url === "string" && prepared.url.trim()) {
     prepared.type = transportType ?? "http";
     prepared.alwaysLoad = prepared.alwaysLoad ?? true;
-    prepared.timeout = prepared.timeout ?? DEFAULT_MCP_CONNECT_TIMEOUT_MS;
+    prepared.timeout = prepared.timeout ?? DEFAULT_MCP_TOOL_TIMEOUT_MS;
   }
 
   return prepared;

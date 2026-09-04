@@ -12,6 +12,8 @@ import {
   ECO_IMAGE_GENERATION_TOOL,
   type ImageGenerationArtifact,
   ImageGenerationError,
+  IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC,
+  IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
   type ImageGenerationToolInput,
 } from "../shared/image-generation";
 import type { McpSdkConfig } from "../shared/mcp";
@@ -64,7 +66,7 @@ export class ImageGenerationMcpGateway {
     await this.start();
     const script = resolveStdioScriptPath();
     if (!fs.existsSync(script)) {
-      throw new Error(`Image generation MCP stdio front-end not found: ${script}`);
+      throw new Error(`Creative Drawing MCP stdio front-end not found: ${script}`);
     }
     return {
       name: ECO_IMAGE_GENERATION_MCP_SERVER,
@@ -78,6 +80,7 @@ export class ImageGenerationMcpGateway {
       },
       enabledTools: [ECO_IMAGE_GENERATION_TOOL],
       startupTimeoutSec: 60,
+      toolTimeoutSec: IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC,
     };
   }
 
@@ -106,6 +109,10 @@ export class ImageGenerationMcpGateway {
           args: globalCodexServer.args ?? [],
           env: { ...baseEnv, ECO_IMAGE_AUTH_TOKEN: auth.token },
           alwaysLoad: true,
+          // Claude Agent SDK: per-server tool-call wall clock (default ~60s via MCP_TOOL_TIMEOUT).
+          timeout: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
+          // pi-mcp-adapter: forwarded as requestTimeoutMs by toPiMcpServerEntry.
+          requestTimeoutMs: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
         },
         codexServer: globalCodexServer,
         promptAppend: buildImageGenerationPromptAppend(config),
@@ -150,7 +157,7 @@ export class ImageGenerationMcpGateway {
   }
 
   private get controlBaseUrl(): string {
-    if (!this.port) throw new Error("图片创建 MCP 控制服务尚未启动。");
+    if (!this.port) throw new Error("创意绘画 MCP 控制服务尚未启动。");
     return `http://127.0.0.1:${this.port}`;
   }
 
@@ -170,7 +177,7 @@ export class ImageGenerationMcpGateway {
         ...(claimed.toolUseId && { toolUseId: claimed.toolUseId }),
       };
     }
-    throw new Error("图片创建 MCP 无法绑定会话：缺少有效线程令牌或 tool.started claim。");
+    throw new Error("创意绘画 MCP 无法绑定会话：缺少有效线程令牌或 tool.started claim。");
   }
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
@@ -202,17 +209,17 @@ export class ImageGenerationMcpGateway {
         sendJson(response, 404, { error: "not found" });
         return;
       }
-      if (body.name !== ECO_IMAGE_GENERATION_TOOL) throw new Error(`未知图片创建工具：${String(body.name)}`);
+      if (body.name !== ECO_IMAGE_GENERATION_TOOL) throw new Error(`未知创意绘画工具：${String(body.name)}`);
       const claim = this.resolveThread(authToken);
       const threadId = claim.threadId;
       const workspacePath = this.deps.resolveWorkspacePath(threadId)?.trim();
       const generationRoot = this.deps.resolveGenerationRoot(threadId)?.trim();
-      if (!workspacePath || !generationRoot) throw new Error("图片创建会话缺少 workspace 或运行目录。");
+      if (!workspacePath || !generationRoot) throw new Error("创意绘画会话缺少 workspace 或运行目录。");
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
       const config = this.deps.store.getActiveClientConfig();
       const normalized = normalizeImageGenerationToolInput(
         rawArgs as unknown as ImageGenerationToolInput,
-        config.provider,
+        config,
       );
       const { prompt, ...parameters } = normalized;
       const artifact = this.deps.store.createArtifact({
@@ -231,6 +238,7 @@ export class ImageGenerationMcpGateway {
           toolInput: normalized,
           generationRoot,
           threadDirectory: threadDirectoryName(threadId),
+          workspacePath,
         });
         const completed = this.deps.store.completeArtifact(artifact.id, images);
         this.deps.onArtifactChanged(completed);
@@ -330,13 +338,19 @@ function imageGenerationToolDefinition(): Record<string, unknown> {
   return {
     name: ECO_IMAGE_GENERATION_TOOL,
     description:
-      "Create images with Eco's active image provider and save them into the current conversation work directory. Every call requires user approval.",
+      "Create or edit images with Eco's active Creative Drawing provider and save them into the current conversation work directory. Pass input_images for image-to-image edits when the active profile supports it. Every call requires user approval.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["prompt"],
       properties: {
         prompt: { type: "string", minLength: 1, maxLength: 32000 },
+        input_images: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+          description:
+            "Optional absolute or workspace-relative PNG/JPEG/WebP paths for image-to-image edits (OpenAI up to 16, Gemini up to 3).",
+        },
         size: { type: "string", description: "OpenAI: auto or WIDTHxHEIGHT; Gemini: 1K, 2K, or 4K." },
         aspect_ratio: { type: "string", description: "Gemini only, for example 1:1 or 16:9." },
         quality: {

@@ -126,7 +126,7 @@ Default cache-break detection requires at least 8,000 billed prompt tokens, a pr
 ## 9. Vision, image generation, and ASR
 
 - A dedicated vision model may be selected; otherwise vision follows the lead model.
-- Image generation supports multiple provider profiles and requires confirmation per tool invocation.
+- Creative Drawing supports multiple provider profiles and requires confirmation per tool invocation.
 - ASR supports compatible `audio/transcriptions` and Chat Completions APIs.
 - Mobile records audio while the paired Desktop owns recognition configuration and requests, avoiding duplicate provider secrets on the phone.
 

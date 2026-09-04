@@ -5,6 +5,7 @@ import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../sh
 import {
   defaultImageGenerationEndpoint,
   defaultImageGenerationModel,
+  defaultSupportsImageToImage,
   type ImageGenerationProfileSaveInput,
   type ImageGenerationProfileSnapshot,
   type ImageGenerationProvider,
@@ -30,6 +31,7 @@ function formFromProfile(profile: ImageGenerationProfileSnapshot): ImageGenerati
     provider: profile.provider,
     endpoint: profile.endpoint,
     model: profile.model,
+    supportsImageToImage: profile.supportsImageToImage,
   };
 }
 
@@ -188,6 +190,7 @@ export function ImageGenerationSettingsPanel({
                   provider,
                   endpoint: defaultImageGenerationEndpoint(provider),
                   model: defaultImageGenerationModel(provider),
+                  supportsImageToImage: defaultSupportsImageToImage(provider),
                 });
               }}
             >
@@ -216,6 +219,20 @@ export function ImageGenerationSettingsPanel({
               required
               onChange={(event) => setForm({ ...form, model: event.target.value })}
             />
+          </label>
+          <label className="settings-form-field settings-form-field-checkbox">
+            <span className="settings-form-label">{t("settings.imageGeneration.supportsImageToImage")}</span>
+            <label className="composer-switch">
+              <input
+                type="checkbox"
+                checked={form.supportsImageToImage ?? false}
+                disabled={busy}
+                aria-label={t("settings.imageGeneration.supportsImageToImage")}
+                onChange={(event) => setForm({ ...form, supportsImageToImage: event.target.checked })}
+              />
+              <span className="composer-switch-track" aria-hidden />
+            </label>
+            <small className="settings-form-hint">{t("settings.imageGeneration.supportsImageToImageHint")}</small>
           </label>
           <label className="settings-form-field">
             <span className="settings-form-label">API Key</span>
@@ -278,6 +295,7 @@ function newProfileForm(provider: ImageGenerationProvider): ImageGenerationProfi
     provider,
     endpoint: defaultImageGenerationEndpoint(provider),
     model: defaultImageGenerationModel(provider),
+    supportsImageToImage: defaultSupportsImageToImage(provider),
     apiKey: "",
   };
 }

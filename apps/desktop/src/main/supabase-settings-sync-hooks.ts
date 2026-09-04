@@ -114,6 +114,7 @@ function collectPayload(input: {
         provider: profile.provider,
         endpoint: profile.endpoint,
         model: profile.model,
+        supportsImageToImage: profile.supportsImageToImage,
       })),
     },
     mainAgentConfigs: orchestration.listMainAgentConfigs().filter((row) => isUserOwnedSource(row.source)),
@@ -256,6 +257,7 @@ async function applyPayload(
       provider: profile.provider as ImageGenerationProfileSaveInput["provider"],
       endpoint: profile.endpoint,
       model: profile.model,
+      supportsImageToImage: profile.supportsImageToImage === true,
     };
     input.imageGenerationStore.saveProfile(saveInput);
   }

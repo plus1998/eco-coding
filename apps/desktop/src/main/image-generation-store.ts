@@ -5,6 +5,7 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
   defaultImageGenerationEndpoint,
   defaultImageGenerationModel,
+  defaultSupportsImageToImage,
   type GeneratedImageFile,
   type ImageGenerationArtifact,
   type ImageGenerationArtifactStatus,
@@ -30,6 +31,7 @@ interface ProfileRow {
   provider: string;
   endpoint: string;
   model: string;
+  supports_image_to_image: number;
   encrypted_api_key: string;
   created_at: string;
   updated_at: string;
@@ -60,6 +62,7 @@ export interface ImageGenerationClientConfig {
   provider: ImageGenerationProvider;
   endpoint: string;
   model: string;
+  supportsImageToImage: boolean;
   apiKey: string;
 }
 
@@ -94,6 +97,7 @@ export class ImageGenerationStore {
         provider TEXT NOT NULL CHECK(provider IN ('openai', 'gemini', 'openai_compatible')),
         endpoint TEXT NOT NULL,
         model TEXT NOT NULL,
+        supports_image_to_image INTEGER NOT NULL DEFAULT 0 CHECK(supports_image_to_image IN (0, 1)),
         encrypted_api_key TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -126,6 +130,7 @@ export class ImageGenerationStore {
       CREATE INDEX IF NOT EXISTS image_generation_artifacts_thread_idx
         ON image_generation_artifacts(thread_id, created_at DESC);
     `);
+    this.ensureProfileColumns();
     const count = Number(
       (
         this.db.prepare("SELECT COUNT(*) AS count FROM image_generation_profiles").get() as
@@ -138,8 +143,8 @@ export class ImageGenerationStore {
       this.db
         .prepare(
           `INSERT INTO image_generation_profiles
-           (id, name, provider, endpoint, model, encrypted_api_key, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, '', ?, ?)`,
+           (id, name, provider, endpoint, model, supports_image_to_image, encrypted_api_key, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)`,
         )
         .run(
           DEFAULT_IMAGE_PROFILE_ID,
@@ -147,6 +152,7 @@ export class ImageGenerationStore {
           "openai",
           defaultImageGenerationEndpoint("openai"),
           defaultImageGenerationModel("openai"),
+          defaultSupportsImageToImage("openai") ? 1 : 0,
           now,
           now,
         );
@@ -168,7 +174,7 @@ export class ImageGenerationStore {
       const first = this.db
         .prepare("SELECT id FROM image_generation_profiles ORDER BY created_at, id LIMIT 1")
         .get() as { id: string } | undefined;
-      if (!first) throw new Error("图片创建配置初始化失败：没有可用 Profile。");
+      if (!first) throw new Error("创意绘画配置初始化失败：没有可用 Profile。");
       this.db
         .prepare(
           `INSERT INTO image_generation_settings
@@ -182,7 +188,7 @@ export class ImageGenerationStore {
     const settings = this.requireSettingsRow();
     const profiles = this.db
       .prepare(
-        `SELECT id, name, provider, endpoint, model, encrypted_api_key, created_at, updated_at
+        `SELECT id, name, provider, endpoint, model, supports_image_to_image, encrypted_api_key, created_at, updated_at
          FROM image_generation_profiles ORDER BY name COLLATE NOCASE, created_at, id`,
       )
       .all() as unknown as ProfileRow[];
@@ -212,15 +218,21 @@ export class ImageGenerationStore {
     const endpoint = normalizeEndpoint(input.endpoint, provider);
     const model = normalizeModel(input.model);
     const existing = this.readProfileOptional(id);
+    const supportsImageToImage =
+      typeof input.supportsImageToImage === "boolean"
+        ? input.supportsImageToImage
+        : existing
+          ? existing.supports_image_to_image === 1
+          : defaultSupportsImageToImage(provider);
     const duplicate = this.db
       .prepare("SELECT id FROM image_generation_profiles WHERE name = ? COLLATE NOCASE AND id <> ?")
       .get(name, id) as { id: string } | undefined;
-    if (duplicate) throw new Error(`图片创建 Profile 名称已存在：${name}`);
+    if (duplicate) throw new Error(`创意绘画 Profile 名称已存在：${name}`);
     let encryptedApiKey = existing?.encrypted_api_key ?? "";
     const apiKey = input.apiKey?.trim();
     if (apiKey) {
       if (!this.secretCodec?.isAvailable()) {
-        throw new Error("系统加密不可用，无法保存图片创建 API Key。");
+        throw new Error("系统加密不可用，无法保存创意绘画 API Key。");
       }
       encryptedApiKey = this.secretCodec.encrypt(apiKey);
     }
@@ -229,17 +241,17 @@ export class ImageGenerationStore {
       this.db
         .prepare(
           `UPDATE image_generation_profiles SET name = ?, provider = ?, endpoint = ?, model = ?,
-           encrypted_api_key = ?, updated_at = ? WHERE id = ?`,
+           supports_image_to_image = ?, encrypted_api_key = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(name, provider, endpoint, model, encryptedApiKey, now, id);
+        .run(name, provider, endpoint, model, supportsImageToImage ? 1 : 0, encryptedApiKey, now, id);
     } else {
       this.db
         .prepare(
           `INSERT INTO image_generation_profiles
-           (id, name, provider, endpoint, model, encrypted_api_key, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, name, provider, endpoint, model, supports_image_to_image, encrypted_api_key, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, name, provider, endpoint, model, encryptedApiKey, now, now);
+        .run(id, name, provider, endpoint, model, supportsImageToImage ? 1 : 0, encryptedApiKey, now, now);
     }
     return this.toProfileSnapshot(this.readProfile(id));
   }
@@ -265,7 +277,7 @@ export class ImageGenerationStore {
   deleteProfile(id: string): ImageGenerationSettingsSnapshot {
     const normalized = normalizeUuid(id);
     const settings = this.requireSettingsRow();
-    if (settings.active_profile_id === normalized) throw new Error("不能删除当前激活的图片创建 Profile。");
+    if (settings.active_profile_id === normalized) throw new Error("不能删除当前激活的创意绘画 Profile。");
     const count = Number(
       (
         this.db.prepare("SELECT COUNT(*) AS count FROM image_generation_profiles").get() as {
@@ -273,7 +285,7 @@ export class ImageGenerationStore {
         }
       ).count,
     );
-    if (count <= 1) throw new Error("至少必须保留一个图片创建 Profile。");
+    if (count <= 1) throw new Error("至少必须保留一个创意绘画 Profile。");
     this.db.prepare("DELETE FROM image_generation_profiles WHERE id = ?").run(normalized);
     return this.getSettings();
   }
@@ -303,7 +315,7 @@ export class ImageGenerationStore {
       .prepare("UPDATE image_generation_profiles SET encrypted_api_key = '', updated_at = ? WHERE id = ?")
       .run(new Date().toISOString(), id);
     if (result.changes === 0) {
-      throw new Error(`图片创建 Profile 不存在：${id}`);
+      throw new Error(`创意绘画 Profile 不存在：${id}`);
     }
   }
 
@@ -361,7 +373,7 @@ export class ImageGenerationStore {
     const row = this.db.prepare("SELECT * FROM image_generation_artifacts WHERE id = ?").get(id) as unknown as
       | ArtifactRow
       | undefined;
-    if (!row) throw new Error(`图片创建产物不存在：${id}`);
+    if (!row) throw new Error(`创意绘画产物不存在：${id}`);
     return toArtifact(row);
   }
 
@@ -398,8 +410,22 @@ export class ImageGenerationStore {
       );
   }
 
+  private ensureProfileColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(image_generation_profiles)").all() as Array<{
+      name: string;
+    }>;
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("supports_image_to_image")) {
+      this.db.exec(
+        `ALTER TABLE image_generation_profiles
+         ADD COLUMN supports_image_to_image INTEGER NOT NULL DEFAULT 0
+         CHECK(supports_image_to_image IN (0, 1))`,
+      );
+    }
+  }
+
   private requireClientConfig(row: ProfileRow): ImageGenerationClientConfig {
-    if (!row.encrypted_api_key) throw new Error(`图片创建 Profile “${row.name}” 尚未配置 API Key。`);
+    if (!row.encrypted_api_key) throw new Error(`创意绘画 Profile “${row.name}” 尚未配置 API Key。`);
     const apiKey = this.decryptStoredApiKey(row.encrypted_api_key);
     return {
       profileId: row.id,
@@ -407,18 +433,19 @@ export class ImageGenerationStore {
       provider: normalizeProvider(row.provider),
       endpoint: row.endpoint,
       model: row.model,
+      supportsImageToImage: row.supports_image_to_image === 1,
       apiKey,
     };
   }
 
   private decryptStoredApiKey(stored: string): string {
     if (!this.secretCodec?.isAvailable()) {
-      throw new Error("系统加密不可用，无法读取图片创建 API Key。");
+      throw new Error("系统加密不可用，无法读取创意绘画 API Key。");
     }
     try {
       return this.secretCodec.decrypt(stored);
     } catch (error) {
-      throw new Error(`图片创建 API Key 解密失败：${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`创意绘画 API Key 解密失败：${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -430,14 +457,14 @@ export class ImageGenerationStore {
 
   private requireSettingsRow(): { enabled: number; active_profile_id: string } {
     const row = this.readSettingsRow();
-    if (!row) throw new Error("图片创建全局设置缺失。");
+    if (!row) throw new Error("创意绘画全局设置缺失。");
     return row;
   }
 
   private readProfileOptional(id: string): ProfileRow | undefined {
     return this.db
       .prepare(
-        `SELECT id, name, provider, endpoint, model, encrypted_api_key, created_at, updated_at
+        `SELECT id, name, provider, endpoint, model, supports_image_to_image, encrypted_api_key, created_at, updated_at
          FROM image_generation_profiles WHERE id = ?`,
       )
       .get(id) as unknown as ProfileRow | undefined;
@@ -445,7 +472,7 @@ export class ImageGenerationStore {
 
   private readProfile(id: string): ProfileRow {
     const row = this.readProfileOptional(id);
-    if (!row) throw new Error(`图片创建 Profile 不存在：${id}`);
+    if (!row) throw new Error(`创意绘画 Profile 不存在：${id}`);
     return row;
   }
 
@@ -456,6 +483,7 @@ export class ImageGenerationStore {
       provider: normalizeProvider(row.provider),
       endpoint: row.endpoint,
       model: row.model,
+      supportsImageToImage: row.supports_image_to_image === 1,
       hasApiKey: Boolean(row.encrypted_api_key),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -468,35 +496,35 @@ function normalizeUuid(value: unknown): string {
     typeof value !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
   ) {
-    throw new Error("图片创建 Profile ID 无效。");
+    throw new Error("创意绘画 Profile ID 无效。");
   }
   return value.toLowerCase();
 }
 
 function normalizeName(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) throw new Error("图片创建 Profile 名称不能为空。");
+  if (typeof value !== "string" || !value.trim()) throw new Error("创意绘画 Profile 名称不能为空。");
   const name = value.trim();
-  if (name.length > 80) throw new Error("图片创建 Profile 名称不能超过 80 个字符。");
+  if (name.length > 80) throw new Error("创意绘画 Profile 名称不能超过 80 个字符。");
   return name;
 }
 
 function normalizeProvider(value: unknown): ImageGenerationProvider {
-  if (!isImageGenerationProvider(value)) throw new Error("图片创建供应商渠道无效。");
+  if (!isImageGenerationProvider(value)) throw new Error("创意绘画供应商渠道无效。");
   return value;
 }
 
 function normalizeEndpoint(value: unknown, provider: ImageGenerationProvider): string {
   const raw = typeof value === "string" ? value.trim() : "";
   const endpoint = raw || defaultImageGenerationEndpoint(provider);
-  if (!endpoint) throw new Error("图片创建 Base URL 不能为空。");
+  if (!endpoint) throw new Error("创意绘画 Base URL 不能为空。");
   let parsed: URL;
   try {
     parsed = new URL(endpoint);
   } catch {
-    throw new Error("图片创建 Base URL 无效。");
+    throw new Error("创意绘画 Base URL 无效。");
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("图片创建 Base URL 必须使用 HTTP 或 HTTPS。");
+    throw new Error("创意绘画 Base URL 必须使用 HTTP 或 HTTPS。");
   }
   parsed.search = "";
   parsed.hash = "";
@@ -504,9 +532,9 @@ function normalizeEndpoint(value: unknown, provider: ImageGenerationProvider): s
 }
 
 function normalizeModel(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) throw new Error("图片创建模型不能为空。");
+  if (typeof value !== "string" || !value.trim()) throw new Error("创意绘画模型不能为空。");
   const model = value.trim();
-  if (model.length > 256) throw new Error("图片创建模型不能超过 256 个字符。");
+  if (model.length > 256) throw new Error("创意绘画模型不能超过 256 个字符。");
   return model;
 }
 

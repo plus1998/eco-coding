@@ -58,6 +58,11 @@ export interface CodexMcpServerForConfigSync {
    * Eco writes 60s for stdio servers prepared for runtime.
    */
   startupTimeoutSec?: number;
+  /**
+   * Codex default is 60s — too short for long tools (e.g. Creative Drawing).
+   * Written as `tool_timeout_sec` when set.
+   */
+  toolTimeoutSec?: number;
 }
 
 export interface SyncCodexConfigFromEcoProvidersInput {
@@ -335,6 +340,13 @@ export function buildCodexMcpServerTomlLines(server: CodexMcpServerForConfigSync
     server.startupTimeoutSec > 0
   ) {
     lines.push(`startup_timeout_sec = ${Math.ceil(server.startupTimeoutSec)}`);
+  }
+  if (
+    typeof server.toolTimeoutSec === "number" &&
+    Number.isFinite(server.toolTimeoutSec) &&
+    server.toolTimeoutSec > 0
+  ) {
+    lines.push(`tool_timeout_sec = ${Math.ceil(server.toolTimeoutSec)}`);
   }
   lines.push("enabled = true", "");
 

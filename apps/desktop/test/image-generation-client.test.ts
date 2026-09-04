@@ -11,7 +11,8 @@ import { ImageGenerationError } from "../src/shared/image-generation";
 
 const originalFetch = globalThis.fetch;
 const temporaryDirectories: string[] = [];
-const pngBase64 = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]).toString("base64");
+const pngBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+const pngBase64 = pngBytes.toString("base64");
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
@@ -26,7 +27,10 @@ async function generationRoot(): Promise<string> {
   return directory;
 }
 
-function config(provider: ImageGenerationClientConfig["provider"]): ImageGenerationClientConfig {
+function config(
+  provider: ImageGenerationClientConfig["provider"],
+  overrides?: Partial<ImageGenerationClientConfig>,
+): ImageGenerationClientConfig {
   return {
     profileId: "profile-1",
     profileName: "Primary",
@@ -37,6 +41,8 @@ function config(provider: ImageGenerationClientConfig["provider"]): ImageGenerat
         : "https://api.example.com/v1",
     model: provider === "gemini" ? "gemini-image" : "exact-image-model",
     apiKey: "secret-key",
+    supportsImageToImage: true,
+    ...overrides,
   };
 }
 
@@ -64,6 +70,7 @@ test("OpenAI request preserves model and parameters and writes under the thread 
     },
     generationRoot: root,
     threadDirectory: "thread-safe",
+    workspacePath: root,
   });
 
   expect(requestedUrl).toBe("https://api.example.com/v1/images/generations");
@@ -80,6 +87,79 @@ test("OpenAI request preserves model and parameters and writes under the thread 
   expect(await fs.readFile(images[0]!.absolutePath)).toEqual(Buffer.from(pngBase64, "base64"));
 });
 
+test("OpenAI image-to-image uses /images/edits multipart with image[] files", async () => {
+  let requestedUrl = "";
+  let contentType = "";
+  let form: FormData | undefined;
+  globalThis.fetch = (async (url, init) => {
+    requestedUrl = String(url);
+    contentType = String((init?.headers as Record<string, string>)?.["Content-Type"] ?? "");
+    form = init?.body as FormData;
+    return new Response(JSON.stringify({ data: [{ b64_json: pngBase64 }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  const root = await generationRoot();
+  const reference = path.join(root, "source.png");
+  await fs.writeFile(reference, pngBytes);
+
+  await generateImagesToWorkspace({
+    config: config("openai"),
+    toolInput: {
+      prompt: "Make it sunset",
+      input_images: ["source.png"],
+      size: "1024x1024",
+      quality: "high",
+      count: 1,
+    },
+    generationRoot: root,
+    threadDirectory: "thread-edit",
+    workspacePath: root,
+  });
+
+  expect(requestedUrl).toBe("https://api.example.com/v1/images/edits");
+  expect(contentType).not.toContain("application/json");
+  expect(form?.get("model")).toBe("exact-image-model");
+  expect(form?.get("prompt")).toBe("Make it sunset");
+  expect(form?.get("n")).toBe("1");
+  expect(form?.get("size")).toBe("1024x1024");
+  expect(form?.get("quality")).toBe("high");
+  const image = form?.get("image[]");
+  expect(image).toBeInstanceOf(Blob);
+});
+
+test("Gemini image-to-image puts inlineData parts before the text prompt", async () => {
+  let requestedBody: Record<string, unknown> = {};
+  globalThis.fetch = (async (_url, init) => {
+    requestedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(
+      JSON.stringify({
+        candidates: [{ content: { parts: [{ inlineData: { data: pngBase64, mimeType: "image/png" } }] } }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  const root = await generationRoot();
+  await fs.writeFile(path.join(root, "ref.png"), pngBytes);
+
+  await generateImagesToWorkspace({
+    config: config("gemini"),
+    toolInput: { prompt: "Cartoonize", input_images: [path.join(root, "ref.png")], count: 1 },
+    generationRoot: root,
+    threadDirectory: "thread-gemini-edit",
+    workspacePath: root,
+  });
+
+  const contents = requestedBody.contents as Array<{ parts: Array<Record<string, unknown>> }>;
+  expect(contents[0]?.parts).toEqual([
+    { inlineData: { mimeType: "image/png", data: pngBase64 } },
+    { text: "Cartoonize" },
+  ]);
+});
+
 test("Gemini request uses imageConfig without inventing OpenAI fields", async () => {
   let requestedBody: Record<string, unknown> = {};
   globalThis.fetch = (async (_url, init) => {
@@ -92,11 +172,13 @@ test("Gemini request uses imageConfig without inventing OpenAI fields", async ()
     );
   }) as typeof fetch;
 
+  const root = await generationRoot();
   await generateImagesToWorkspace({
     config: config("gemini"),
     toolInput: { prompt: "Portrait", size: "2k", aspect_ratio: "3:4", count: 1 },
-    generationRoot: await generationRoot(),
+    generationRoot: root,
     threadDirectory: "thread-gemini",
+    workspacePath: root,
   });
   expect(requestedBody).toEqual({
     contents: [{ role: "user", parts: [{ text: "Portrait" }] }],
@@ -123,17 +205,52 @@ test("provider-specific unsupported parameters fail with a stable error code", (
   }
 });
 
+test("input_images are rejected when the profile disables image-to-image", () => {
+  try {
+    normalizeImageGenerationToolInput(
+      { prompt: "edit", input_images: ["a.png"] },
+      config("openai", { supportsImageToImage: false }),
+    );
+    throw new Error("expected validation failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(ImageGenerationError);
+    expect((error as ImageGenerationError).code).toBe("unsupported_parameter");
+  }
+});
+
+test("reference images outside the workspace are rejected", async () => {
+  const root = await generationRoot();
+  const outside = await generationRoot();
+  await fs.writeFile(path.join(outside, "leak.png"), pngBytes);
+  globalThis.fetch = (async () => new Response("should not call", { status: 500 })) as typeof fetch;
+  try {
+    await generateImagesToWorkspace({
+      config: config("openai"),
+      toolInput: { prompt: "x", input_images: [path.join(outside, "leak.png")] },
+      generationRoot: root,
+      threadDirectory: "thread-escape",
+      workspacePath: root,
+    });
+    throw new Error("expected path escape failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(ImageGenerationError);
+    expect((error as ImageGenerationError).code).toBe("invalid_input_path");
+  }
+});
+
 test("invalid image bytes are returned as an Agent-visible stable error", async () => {
   globalThis.fetch = (async () =>
     new Response(JSON.stringify({ data: [{ b64_json: Buffer.from("not-image").toString("base64") }] }), {
       status: 200,
     })) as typeof fetch;
+  const root = await generationRoot();
   try {
     await generateImagesToWorkspace({
       config: config("openai_compatible"),
       toolInput: { prompt: "x" },
-      generationRoot: await generationRoot(),
+      generationRoot: root,
       threadDirectory: "thread-error",
+      workspacePath: root,
     });
     throw new Error("expected invalid image failure");
   } catch (error) {
