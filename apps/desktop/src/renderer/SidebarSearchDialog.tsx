@@ -159,6 +159,14 @@ export function SidebarSearchDialog({
               setActiveIndex(0);
             }}
             onKeyDown={(event) => {
+              // IME composition (e.g. Chinese candidate confirm): do not hijack Enter/arrows.
+              if (
+                event.nativeEvent.isComposing ||
+                event.key === "Process" ||
+                event.keyCode === 229
+              ) {
+                return;
+              }
               if (event.key === "ArrowDown" && results.length > 0) {
                 event.preventDefault();
                 setActiveIndex((current) => (current + 1) % results.length);
