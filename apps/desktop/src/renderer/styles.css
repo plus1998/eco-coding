@@ -33619,15 +33619,25 @@ body,
 .image-generation-profile-form .settings-form-field-checkbox {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 6px 12px;
+  gap: 4px 12px;
   align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+}
+
+.image-generation-profile-form .settings-form-field-checkbox .settings-form-label {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .image-generation-profile-form .settings-form-field-checkbox .settings-form-hint {
   grid-column: 1 / -1;
   color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .image-generation-form-actions {

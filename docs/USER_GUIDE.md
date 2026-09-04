@@ -188,11 +188,11 @@ PI Core 额外支持会话私有 Skills 目录（`pi-agent/<threadId>/skills`）
 
 1. 在“设置 -> 集成 -> 创意绘画”添加供应商配置。
 2. 填写 Base URL、API Key、模型和参数。
-3. 如需图生图（参考图 + 文字编辑），勾选「支持图生图」（OpenAI 走 `/images/edits`，Gemini 在同一 `generateContent` 请求中附带图片；兼容渠道需自行确认上游是否支持）。
+3. 如需图片编辑（参考图 + 文字编辑），勾选「支持图片编辑」（OpenAI 走 `/images/edits`，Gemini 在同一 `generateContent` 请求中附带图片；兼容渠道需自行确认上游是否支持）。
 4. 设为启用配置。
 5. 在目标会话的集成菜单中开启创意绘画。
 
-每次创意绘画调用都需要确认，输出保存到本地并进入任务记录。启用图生图后，工具可传入 workspace 内的参考图路径与 prompt。
+每次创意绘画调用都需要确认，输出保存到本地并进入任务记录。启用图片编辑后，工具可传入 workspace 内的参考图路径与 prompt。
 
 ### ASR
 

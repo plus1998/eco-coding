@@ -103,7 +103,7 @@ function normalizeToolInput(
   if (inputImages.length > 0 && !supportsImageToImage) {
     throw new ImageGenerationError(
       "unsupported_parameter",
-      "当前创意绘画 Profile 未开启图生图，不能传入 input_images。",
+      "当前创意绘画 Profile 未开启图片编辑，不能传入 input_images。",
     );
   }
   if (provider === "gemini") {
@@ -176,8 +176,8 @@ async function loadInputImages(
     throw new ImageGenerationError(
       "unsupported_parameter",
       provider === "gemini"
-        ? `Gemini 图生图最多支持 ${GEMINI_MAX_INPUT_IMAGES} 张参考图。`
-        : `OpenAI-style 图生图最多支持 ${OPENAI_MAX_INPUT_IMAGES} 张参考图。`,
+        ? `Gemini 图片编辑最多支持 ${GEMINI_MAX_INPUT_IMAGES} 张参考图。`
+        : `OpenAI-style 图片编辑最多支持 ${OPENAI_MAX_INPUT_IMAGES} 张参考图。`,
     );
   }
   const workspaceRoot = path.resolve(workspacePath);

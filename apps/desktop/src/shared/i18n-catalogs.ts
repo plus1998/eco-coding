@@ -385,9 +385,9 @@ export const i18nCatalogs = {
       "settings.imageGeneration.profileName": "配置名称",
       "settings.imageGeneration.provider": "供应商渠道",
       "settings.imageGeneration.model": "模型",
-      "settings.imageGeneration.supportsImageToImage": "支持图生图",
+      "settings.imageGeneration.supportsImageToImage": "支持图片编辑",
       "settings.imageGeneration.supportsImageToImageHint":
-        "开启后，工具可同时传入参考图路径与文字进行编辑。OpenAI 走 /images/edits；Gemini 在同一 generateContent 请求中附带图片。兼容渠道需自行确认上游是否实现编辑接口。",
+        "开启后，提示词可附带参考图进行图像编辑。",
       "settings.imageGeneration.keyConfigured": "已配置；留空则保持不变",
       "settings.imageGeneration.activate": "设为启用",
       "settings.imageGeneration.desktopOnly": "创意绘画配置仅在 Desktop 可用。",
@@ -2484,9 +2484,9 @@ export const i18nCatalogs = {
       "settings.imageGeneration.profileName": "Profile name",
       "settings.imageGeneration.provider": "Provider",
       "settings.imageGeneration.model": "Model",
-      "settings.imageGeneration.supportsImageToImage": "Support image-to-image",
+      "settings.imageGeneration.supportsImageToImage": "Support image editing",
       "settings.imageGeneration.supportsImageToImageHint":
-        "When enabled, the tool can take reference image paths plus a text prompt. OpenAI uses /images/edits; Gemini sends images in the same generateContent request. For compatible gateways, confirm the upstream implements the edit API.",
+        "When enabled, prompts can include reference images for editing.",
       "settings.imageGeneration.keyConfigured": "Configured; leave blank to keep it",
       "settings.imageGeneration.activate": "Set active",
       "settings.imageGeneration.desktopOnly": "Creative Drawing settings are only available on Desktop.",
