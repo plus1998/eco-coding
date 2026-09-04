@@ -130,32 +130,6 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                           );
                           return;
                         }
-                        if (option.value == 'allow_all' &&
-                            liveRuntimeConfig.bashReviewMode != 'allow_all') {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (dialogContext) => AlertDialog(
-                              title: Text(context.l10n.bashReviewAllowAll),
-                              content: Text(
-                                context.l10n.bashReviewAllowAllConfirm,
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(dialogContext).pop(false),
-                                  child: Text(context.l10n.commonCancel),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(dialogContext).pop(true),
-                                  child: Text(context.l10n.bashReviewAllowAll),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirmed != true) return;
-                          if (!context.mounted) return;
-                        }
                         _update(
                           context,
                           ref,

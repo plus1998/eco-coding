@@ -2774,32 +2774,6 @@ Future<void> showComposerBashReviewSheet(
                         );
                         return;
                       }
-                      if (option.value == 'allow_all' &&
-                          runtimeConfig.bashReviewMode != 'allow_all') {
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (dialogContext) => AlertDialog(
-                            title: Text(context.l10n.bashReviewAllowAll),
-                            content: Text(
-                              context.l10n.bashReviewAllowAllConfirm,
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(false),
-                                child: Text(context.l10n.commonCancel),
-                              ),
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(true),
-                                child: Text(context.l10n.bashReviewAllowAll),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirmed != true) return;
-                        if (!context.mounted) return;
-                      }
                       final saved = await persistRuntimeConfig(
                         ref,
                         threadId: threadId,
@@ -2855,7 +2829,9 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
       tooltip: bashReviewUi(mode, context.l10n).title,
       icon: ComposerBashReviewToolbarIcon(
         mode: mode,
-        color: ecoColors(context).textSecondary,
+        color: mode == 'allow_all'
+            ? ecoColors(context).warnAccent
+            : ecoColors(context).textSecondary,
       ),
     );
   }
