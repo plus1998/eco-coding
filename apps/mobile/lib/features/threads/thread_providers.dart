@@ -1451,18 +1451,30 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         if (!_centerConnectionWasInterrupted && _projectionSynchronized) {
           return;
         }
+        final needsFullBootstrap =
+            _centerConnectionWasInterrupted && !_projectionSynchronized;
         _centerConnectionWasInterrupted = false;
+        if (needsFullBootstrap) {
+          unawaited(_bootstrapSession());
+          return;
+        }
         unawaited(_refreshFollowUpsFromRpc());
         unawaited(_refreshComposerDraftFromRpc());
         unawaited(recoverProjection());
       });
     });
 
+    await _bootstrapSession();
+  }
+
+  Future<void> _bootstrapSession() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
+      if (!mounted) return;
       state = state.copyWith(
         loading: false,
         error: threadNoPcSelectedErrorCode,
+        projectionSynchronizing: false,
       );
       return;
     }
@@ -1473,7 +1485,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       seededThread = seed;
       ref.read(threadSessionSeedProvider.notifier).state = null;
     }
-    final cachedThread = seededThread ?? _threadFromCacheSync();
+    final cachedThread = seededThread ?? state.thread ?? _threadFromCacheSync();
     if (cachedThread != null) {
       // Show session chrome immediately; bootstrap continues below.
       state = state.copyWith(
@@ -1481,6 +1493,25 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         loading: false,
         projectionSynchronizing: true,
       );
+    } else if (!state.projectionSynchronizing) {
+      state = state.copyWith(
+        loading: true,
+        projectionSynchronizing: true,
+      );
+    }
+
+    // Wait for Realtime bind before any Desktop RPC — keeps the boot overlay
+    // up instead of flashing "Realtime not connected" after a PC switch.
+    final ready = await ensureDesktopBindReady(ref);
+    if (!mounted) return;
+    if (!ready) {
+      _centerConnectionWasInterrupted = true;
+      state = state.copyWith(
+        thread: cachedThread ?? state.thread,
+        loading: false,
+        projectionSynchronizing: true,
+      );
+      return;
     }
 
     try {
@@ -1527,7 +1558,20 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       _loadUsageDeferred();
       unawaited(_refreshComposerDraftFromRpc());
     } catch (error) {
-      state = state.copyWith(loading: false, error: error.toString());
+      if (!mounted) return;
+      if (isTransientDesktopBindError(error)) {
+        _centerConnectionWasInterrupted = true;
+        state = state.copyWith(
+          loading: false,
+          projectionSynchronizing: true,
+        );
+        return;
+      }
+      state = state.copyWith(
+        loading: false,
+        error: error.toString(),
+        projectionSynchronizing: false,
+      );
     }
   }
 

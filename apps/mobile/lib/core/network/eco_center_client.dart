@@ -165,12 +165,21 @@ class EcoCenterClient {
   }) async {
     final changed = _credentials.selectedDesktopId != desktopDeviceId;
     if (changed) {
+      // Drop the previous PC's bind channel before pointing credentials at the
+      // next one. Full Presence teardown stays on [disconnect] (picker entry).
+      _clearReconnectTimer();
+      _clearKeepalive();
       _teardownBindChannel();
+      // Abort any in-flight connect so it cannot resurrect the old bind after
+      // credentials flip. The next explicit [connect] clears this again.
+      _intentionallyStopped = true;
+      _connectInFlight = null;
       _emitStatus(
         const CenterServerConnectionStatus(
           state: EcoConnectionState.disconnected,
         ),
       );
+      _intentionallyStopped = false;
     }
     if (desktopDeviceId == null || desktopDeviceId.isEmpty) {
       _credentials = _credentials.copyWith(

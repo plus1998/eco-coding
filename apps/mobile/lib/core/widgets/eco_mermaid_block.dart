@@ -166,14 +166,31 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
     final showSource =
         !EcoMermaidBlock.useWebView || !_previewOpen || _error != null;
     final radius = widget.embeddedInFence ? 8.0 : 14.0;
+    // Match desktop mermaid chrome: muted label + actions on a text-tinted
+    // surface so light/dark both keep readable contrast (do not rely on
+    // IconButtonTheme / ambient IconTheme from Markdown).
+    final chromeColor = eco.textMuted.withValues(alpha: 0.78);
+    final chromeDisabled = eco.textMuted.withValues(alpha: 0.32);
+    final actionStyle = IconButton.styleFrom(
+      foregroundColor: chromeColor,
+      disabledForegroundColor: chromeDisabled,
+      hoverColor: eco.navHover,
+      highlightColor: eco.navHover,
+      padding: EdgeInsets.zero,
+      minimumSize: const Size(32, 32),
+      maximumSize: const Size(32, 32),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          eco.textHeading.withValues(alpha: 0.035),
-          eco.codeBg.withValues(alpha: 0.55),
-        ),
+        // Nested inside flutter_markdown codeblockDecoration when embedded —
+        // keep transparent there so we don't double-tint over codeBg.
+        color: widget.embeddedInFence
+            ? Colors.transparent
+            : eco.textHeading.withValues(alpha: 0.035),
         borderRadius: BorderRadius.circular(radius),
         border: widget.embeddedInFence
             ? null
@@ -191,27 +208,32 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
                 Expanded(
                   child: Text(
                     'mermaid',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: chromeColor,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0.02,
                         ),
                   ),
                 ),
                 IconButton(
                   tooltip: l10n.markdownMermaidExpand,
+                  style: actionStyle,
                   onPressed: showSource || _controller == null
                       ? null
                       : _openExpanded,
-                  icon: const Icon(EcoIcons.expandFullscreen, size: 16),
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 32,
-                    height: 32,
+                  icon: Icon(
+                    EcoIcons.expandFullscreen,
+                    size: 16,
+                    color: showSource || _controller == null
+                        ? chromeDisabled
+                        : chromeColor,
                   ),
                 ),
                 IconButton(
                   tooltip: _previewOpen
                       ? l10n.markdownMermaidClosePreview
                       : l10n.markdownMermaidOpenPreview,
+                  style: actionStyle,
                   onPressed: () {
                     setState(() {
                       _previewOpen = !_previewOpen;
@@ -225,11 +247,7 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
                   icon: Icon(
                     _previewOpen ? EcoIcons.previewOff : EcoIcons.previewOn,
                     size: 16,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 32,
-                    height: 32,
+                    color: chromeColor,
                   ),
                 ),
               ],
@@ -254,7 +272,7 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
                     widget.source,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontFamily: 'monospace',
-                          color: eco.textHeading,
+                          color: eco.textPrimary,
                         ),
                   ),
                 ],
@@ -269,7 +287,7 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: eco.textMuted,
+                    color: chromeColor,
                   ),
                 ),
               ),
@@ -306,7 +324,6 @@ class _MermaidExpandDialog extends StatefulWidget {
 class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
   WebViewController? _controller;
   String? _error;
-  double _height = 320;
 
   @override
   void initState() {
@@ -329,13 +346,7 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
           try {
             final payload = jsonDecode(message.message) as Map<String, dynamic>;
             if (payload['ok'] == true) {
-              final height = (payload['height'] as num?)?.toDouble();
-              setState(() {
-                _error = null;
-                if (height != null && height > 0) {
-                  _height = height.clamp(160, 4200);
-                }
-              });
+              setState(() => _error = null);
             } else {
               setState(() {
                 _error = (payload['error'] as String?) ?? 'unknown error';
@@ -351,8 +362,10 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {
+            // Zoomable: pinch/pan lives in host.html (PlatformView steals
+            // InteractiveViewer gestures). Compact dialog relies on zoom.
             controller.runJavaScript(
-              'renderEcoMermaid(${jsonEncode(widget.source)}, ${jsonEncode(widget.theme)});',
+              'renderEcoMermaid(${jsonEncode(widget.source)}, ${jsonEncode(widget.theme)}, {zoomable:true});',
             );
           },
         ),
@@ -374,14 +387,15 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
     final stageBg = widget.theme == 'dark'
         ? const Color(0xFF1C1C1E)
         : eco.cardSurface;
+    final screen = MediaQuery.sizeOf(context);
+    // Large enough to read most diagrams; pinch-zoom still available for detail.
+    final dialogHeight = (screen.height * 0.88).clamp(420.0, screen.height - 48);
     return Dialog(
       backgroundColor: eco.bgElevated,
-      insetPadding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 900,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
-        ),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: SizedBox(
+        width: screen.width.clamp(0, 640),
+        height: dialogHeight,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -394,13 +408,19 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
                       widget.title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: eco.textHeading,
+                            fontWeight: FontWeight.w600,
                           ),
                     ),
                   ),
                   IconButton(
                     tooltip: widget.closeLabel,
+                    style: IconButton.styleFrom(
+                      foregroundColor: eco.textMuted,
+                      hoverColor: eco.navHover,
+                      highlightColor: eco.navHover,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(EcoIcons.close, color: eco.textHeading),
+                    icon: Icon(EcoIcons.close, color: eco.textMuted),
                   ),
                 ],
               ),
@@ -433,12 +453,7 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
                               borderRadius: BorderRadius.circular(12),
                               child: ColoredBox(
                                 color: stageBg,
-                                child: SingleChildScrollView(
-                                  child: SizedBox(
-                                    height: _height,
-                                    child: WebViewWidget(controller: _controller!),
-                                  ),
-                                ),
+                                child: WebViewWidget(controller: _controller!),
                               ),
                             ),
                 ),

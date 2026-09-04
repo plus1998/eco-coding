@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
     <style>
       html,
@@ -23,6 +23,22 @@
         display: block;
         max-width: 100%;
         height: auto;
+      }
+      html.eco-mermaid-zoom,
+      html.eco-mermaid-zoom body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        touch-action: none;
+        overscroll-behavior: none;
+      }
+      html.eco-mermaid-zoom #out {
+        overflow: visible;
+        width: 100%;
+        height: 100%;
+        padding: 8px;
+        transform-origin: 0 0;
+        will-change: transform;
       }
     </style>
     <script src="mermaid.min.js"></script>
@@ -141,10 +157,175 @@
       }
 
       let initializedMode = null;
+      let zoomCleanup = null;
 
-      async function renderEcoMermaid(source, theme) {
+      const ZOOM_MIN = 0.4;
+      const ZOOM_MAX = 5;
+
+      function clampZoom(scale) {
+        return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+      }
+
+      function disableEcoMermaidViewerZoom() {
+        if (typeof zoomCleanup === "function") {
+          zoomCleanup();
+          zoomCleanup = null;
+        }
+        document.documentElement.classList.remove("eco-mermaid-zoom");
+        const out = document.getElementById("out");
+        if (out) {
+          out.style.transform = "";
+        }
+      }
+
+      /**
+       * Pinch / pan zoom for the expand dialog. Browser viewport zoom is locked
+       * (maximum-scale=1); PlatformView + InteractiveViewer is unreliable, so
+       * gestures are handled here inside the WebView via touch events.
+       */
+      function enableEcoMermaidViewerZoom() {
+        disableEcoMermaidViewerZoom();
+        const out = document.getElementById("out");
+        const stage = document.body;
+        if (!out || !stage) return;
+
+        document.documentElement.classList.add("eco-mermaid-zoom");
+
+        let scale = 1;
+        let tx = 0;
+        let ty = 0;
+        let lastPinchDist = 0;
+        let lastMidX = 0;
+        let lastMidY = 0;
+        let panStartX = 0;
+        let panStartY = 0;
+        let panOriginTx = 0;
+        let panOriginTy = 0;
+        let active = false;
+
+        function applyTransform() {
+          out.style.transform =
+            "translate(" + tx + "px, " + ty + "px) scale(" + scale + ")";
+        }
+
+        function touchPoint(touch) {
+          return { x: touch.clientX, y: touch.clientY };
+        }
+
+        function onTouchStart(event) {
+          active = true;
+          if (event.touches.length === 1) {
+            const p = touchPoint(event.touches[0]);
+            panStartX = p.x;
+            panStartY = p.y;
+            panOriginTx = tx;
+            panOriginTy = ty;
+            lastPinchDist = 0;
+          } else if (event.touches.length >= 2) {
+            const a = touchPoint(event.touches[0]);
+            const b = touchPoint(event.touches[1]);
+            lastPinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+            lastMidX = (a.x + b.x) / 2;
+            lastMidY = (a.y + b.y) / 2;
+          }
+          event.preventDefault();
+        }
+
+        function onTouchMove(event) {
+          if (!active) return;
+          if (event.touches.length >= 2) {
+            const a = touchPoint(event.touches[0]);
+            const b = touchPoint(event.touches[1]);
+            const dist = Math.hypot(a.x - b.x, a.y - b.y);
+            const midX = (a.x + b.x) / 2;
+            const midY = (a.y + b.y) / 2;
+            if (lastPinchDist > 0) {
+              const nextScale = clampZoom(scale * (dist / lastPinchDist));
+              const ratio = nextScale / scale;
+              tx = midX - (midX - tx) * ratio;
+              ty = midY - (midY - ty) * ratio;
+              scale = nextScale;
+            }
+            tx += midX - lastMidX;
+            ty += midY - lastMidY;
+            lastPinchDist = dist;
+            lastMidX = midX;
+            lastMidY = midY;
+            applyTransform();
+          } else if (event.touches.length === 1) {
+            const p = touchPoint(event.touches[0]);
+            tx = panOriginTx + (p.x - panStartX);
+            ty = panOriginTy + (p.y - panStartY);
+            applyTransform();
+          }
+          event.preventDefault();
+        }
+
+        function onTouchEnd(event) {
+          if (event.touches.length === 1) {
+            const p = touchPoint(event.touches[0]);
+            panStartX = p.x;
+            panStartY = p.y;
+            panOriginTx = tx;
+            panOriginTy = ty;
+            lastPinchDist = 0;
+          } else if (event.touches.length === 0) {
+            active = false;
+            lastPinchDist = 0;
+          }
+          event.preventDefault();
+        }
+
+        function onWheel(event) {
+          event.preventDefault();
+          const factor = event.deltaY > 0 ? 1 / 1.08 : 1.08;
+          const nextScale = clampZoom(scale * factor);
+          if (nextScale === scale) return;
+          const ratio = nextScale / scale;
+          tx = event.clientX - (event.clientX - tx) * ratio;
+          ty = event.clientY - (event.clientY - ty) * ratio;
+          scale = nextScale;
+          if (scale <= 1.01) {
+            scale = 1;
+          }
+          applyTransform();
+        }
+
+        function onDblClick(event) {
+          event.preventDefault();
+          scale = 1;
+          tx = 0;
+          ty = 0;
+          applyTransform();
+        }
+
+        applyTransform();
+        // Listen on body so empty stage padding still receives pinch/pan.
+        stage.addEventListener("touchstart", onTouchStart, { passive: false });
+        stage.addEventListener("touchmove", onTouchMove, { passive: false });
+        stage.addEventListener("touchend", onTouchEnd, { passive: false });
+        stage.addEventListener("touchcancel", onTouchEnd, { passive: false });
+        stage.addEventListener("wheel", onWheel, { passive: false });
+        stage.addEventListener("dblclick", onDblClick);
+
+        zoomCleanup = function () {
+          stage.removeEventListener("touchstart", onTouchStart);
+          stage.removeEventListener("touchmove", onTouchMove);
+          stage.removeEventListener("touchend", onTouchEnd);
+          stage.removeEventListener("touchcancel", onTouchEnd);
+          stage.removeEventListener("wheel", onWheel);
+          stage.removeEventListener("dblclick", onDblClick);
+        };
+      }
+
+      async function renderEcoMermaid(source, theme, options) {
         try {
           const mode = theme === "dark" ? "dark" : "light";
+          const zoomable =
+            options && typeof options === "object" && options.zoomable === true;
+          if (!zoomable) {
+            disableEcoMermaidViewerZoom();
+          }
           if (initializedMode !== mode) {
             mermaid.initialize({
               startOnLoad: false,
@@ -188,6 +369,9 @@
           const { svg } = await mermaid.render(id, source);
           const out = document.getElementById("out");
           out.innerHTML = svg;
+          if (zoomable) {
+            enableEcoMermaidViewerZoom();
+          }
           const height = Math.ceil(
             Math.max(
               out.scrollHeight,
@@ -199,6 +383,7 @@
             JSON.stringify({ ok: true, height: Math.max(height, 48) }),
           );
         } catch (error) {
+          disableEcoMermaidViewerZoom();
           EcoMermaid.postMessage(
             JSON.stringify({
               ok: false,

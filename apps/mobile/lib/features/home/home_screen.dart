@@ -179,38 +179,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    final client = ref.read(ecoCenterClientProvider);
-    final previousDesktop =
-        ref.read(selectedDesktopIdProvider) ??
-        client.credentials.selectedDesktopId;
+    unawaited(_run(() async {
+      final client = ref.read(ecoCenterClientProvider);
+      final previousDesktop =
+          ref.read(selectedDesktopIdProvider) ??
+          client.credentials.selectedDesktopId;
 
-    // Persist the selected target before mounting /threads. This prevents the
-    // session providers from opening a bind channel for the previous PC.
-    unawaited(() async {
+      // Persist the selected target before mounting /threads. This prevents the
+      // session providers from opening a bind channel for the previous PC.
+      await client.setSelectedDesktop(selected);
+      if (!mounted) return;
+      if (ref.read(selectedDesktopIdProvider) != selected) {
+        ref.read(selectedDesktopIdProvider.notifier).state = selected;
+      }
+      ref.invalidate(credentialsProvider);
+      ref.invalidate(bindingsProvider);
+      ref.invalidate(desktopPresenceProvider);
+      // Leave picker mode before connecting / navigating, otherwise
+      // ensureDesktopBindReady stays blocked on Presence-only.
+      _enteringSession = true;
+      client.leavePresenceOnlyMode();
+      if (previousDesktop != selected) {
+        resetDesktopScopedProviders(ref.invalidate);
+      }
+      // Disconnect-old is done in setSelectedDesktop; wait for the new bind
+      // before showing threads so we don't flash "Realtime not connected".
       try {
-        await client.setSelectedDesktop(selected);
-        if (!mounted) return;
-        if (ref.read(selectedDesktopIdProvider) != selected) {
-          ref.read(selectedDesktopIdProvider.notifier).state = selected;
-        }
-        ref.invalidate(credentialsProvider);
-        ref.invalidate(bindingsProvider);
-        ref.invalidate(desktopPresenceProvider);
-        // Leave picker mode before invalidating session providers / navigating,
-        // otherwise ensureDesktopBindReady stays blocked on Presence-only.
-        _enteringSession = true;
-        client.leavePresenceOnlyMode();
-        if (previousDesktop != selected) {
-          resetDesktopScopedProviders(ref.invalidate);
-        }
-        context.go('/threads');
+        await client.connect();
       } catch (error) {
         _enteringSession = false;
         if (!mounted) return;
-        context.go('/connect');
         _showSnack(localizedAppError(error, context.l10n));
+        return;
       }
-    }());
+      if (!mounted) return;
+      context.go('/threads');
+    }));
   }
 
   void _goToStep(SetupWizardStep step) {
@@ -347,6 +351,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (mounted) {
         _enteringSession = true;
         client.leavePresenceOnlyMode();
+        try {
+          await client.connect();
+        } catch (error) {
+          _enteringSession = false;
+          if (!mounted) return;
+          _showSnack(localizedAppError(error, context.l10n));
+          return;
+        }
+        if (!mounted) return;
         context.go('/threads');
       }
     }

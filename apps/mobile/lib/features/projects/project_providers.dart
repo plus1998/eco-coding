@@ -107,6 +107,7 @@ final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   final rpc = ref.watch(desktopRpcProvider);
   final client = ref.watch(ecoCenterClientProvider);
   ref.watch(credentialsProvider);
+  final connection = ref.watch(connectionStatusProvider).valueOrNull;
   final pendingDesktop =
       ref.watch(selectedDesktopIdProvider) ??
       client.credentials.selectedDesktopId;
@@ -115,6 +116,17 @@ final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   // Bootstrapping session or RPC for a saved desktop — keep loading instead of
   // flashing the empty projects state.
   if (hasPendingDesktop && (sessionAsync.isLoading || rpc == null)) {
+    return const AsyncValue.loading();
+  }
+
+  // Switching / entering a PC: keep the boot overlay until Realtime bind is up.
+  // Do not surface "Realtime 通道尚未连接" while connect() is still in flight.
+  if (isDesktopBindPending(
+    hasPendingDesktop: hasPendingDesktop,
+    hasActiveBindingChannel: client.hasActiveBindingChannel,
+    connectionState: connection?.state,
+    authRecovery: connection?.authRecovery,
+  )) {
     return const AsyncValue.loading();
   }
 

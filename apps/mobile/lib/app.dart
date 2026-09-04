@@ -448,28 +448,52 @@ class _ConnectionStatusNoticeState
 }
 
 /// Lightweight floating connection status banner shown during reconnection.
-class _ConnectionBannerOverlay extends ConsumerWidget {
+///
+/// Initial bind / session boot already has a full-screen loading surface — do
+/// not also show "Connecting…". That copy is reserved for reconnect after a
+/// prior successful Realtime session.
+class _ConnectionBannerOverlay extends ConsumerStatefulWidget {
   const _ConnectionBannerOverlay();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final connectionAsync = ref.watch(connectionStatusProvider);
-    final status = connectionAsync.valueOrNull;
+  ConsumerState<_ConnectionBannerOverlay> createState() =>
+      _ConnectionBannerOverlayState();
+}
 
-    // Only show banner when not connected and we have been connected before
-    // (to avoid showing on initial app start).
+class _ConnectionBannerOverlayState
+    extends ConsumerState<_ConnectionBannerOverlay> {
+  var _hadConnected = false;
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (status.state == EcoConnectionState.connected && !_hadConnected) {
+          setState(() => _hadConnected = true);
+        }
+      });
+    });
+
+    final status = ref.watch(connectionStatusProvider).valueOrNull;
     if (status == null) return const SizedBox.shrink();
+    // listen() does not replay; seed from the current snapshot.
+    if (!_hadConnected && status.state == EcoConnectionState.connected) {
+      _hadConnected = true;
+    }
 
     final l10n = context.l10n;
     final eco = ecoColors(context);
 
     final ({Color bg, Color text, String message})? config = switch (status.state) {
       EcoConnectionState.connected => null,
-      EcoConnectionState.connecting => (
-          bg: eco.warnAccent.withValues(alpha: 0.9),
-          text: eco.bgMain,
-          message: l10n.connectionReconnectBanner,
-        ),
+      // First-time connect overlaps session/boot loading — stay quiet.
+      EcoConnectionState.connecting => _hadConnected
+          ? (
+              bg: eco.warnAccent.withValues(alpha: 0.9),
+              text: eco.bgMain,
+              message: l10n.connectionReconnectBanner,
+            )
+          : null,
       EcoConnectionState.error => (
           bg: eco.danger,
           text: eco.onAccent,

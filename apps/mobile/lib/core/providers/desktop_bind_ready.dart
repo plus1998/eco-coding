@@ -64,6 +64,38 @@ Future<bool> ensureDesktopBindReady(
           EcoConnectionState.connected;
 }
 
+/// True while Realtime bind is still coming up (or recoverable), so UI should
+/// keep the boot loading surface instead of flashing "Realtime not connected".
+bool isDesktopBindPending({
+  required bool hasPendingDesktop,
+  required bool hasActiveBindingChannel,
+  required EcoConnectionState? connectionState,
+  CenterServerAuthRecovery? authRecovery,
+}) {
+  if (!hasPendingDesktop) return false;
+  if (connectionState == EcoConnectionState.connected &&
+      hasActiveBindingChannel) {
+    return false;
+  }
+  if (connectionState == EcoConnectionState.error &&
+      authRecovery != null &&
+      shouldStopCenterServerReconnect(authRecovery)) {
+    return false;
+  }
+  return true;
+}
+
+/// Transport errors that should not replace the session/list boot loading UI.
+bool isTransientDesktopBindError(Object? error) {
+  if (error is EcoCenterException) {
+    return error.kind == EcoCenterErrorKind.websocketDisconnected ||
+        error.kind == EcoCenterErrorKind.websocketTimeout ||
+        error.kind == EcoCenterErrorKind.connectionAborted ||
+        error.kind == EcoCenterErrorKind.bindingRequired;
+  }
+  return false;
+}
+
 Future<T> withDesktopRpcRetry<T>(
   Future<T> Function() action, {
   int attempts = 3,

@@ -70,6 +70,62 @@ graph TD
     expect(find.textContaining('A-->B'), findsOneWidget);
   });
 
+  testWidgets('EcoMermaidBlock toolbar chrome adapts to light and dark', (
+    tester,
+  ) async {
+    Future<void> pumpWithTheme(ThemeData theme) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: EcoMarkdown(
+                text: '''
+```mermaid
+graph TD
+  A-->B
+```
+''',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Color? labelColor() {
+      final text = tester.widget<Text>(find.text('mermaid'));
+      return text.style?.color;
+    }
+
+    Color? previewIconColor() {
+      final icon = tester.widget<Icon>(find.byIcon(EcoIcons.previewOff));
+      return icon.color;
+    }
+
+    await pumpWithTheme(buildEcoDarkTheme());
+    final darkLabel = labelColor();
+    final darkIcon = previewIconColor();
+    expect(darkLabel, isNotNull);
+    expect(darkIcon, isNotNull);
+    expect(darkLabel, equals(darkIcon));
+
+    await pumpWithTheme(buildEcoLightTheme());
+    final lightLabel = labelColor();
+    final lightIcon = previewIconColor();
+    expect(lightLabel, isNotNull);
+    expect(lightIcon, isNotNull);
+    expect(lightLabel, equals(lightIcon));
+    expect(lightLabel, isNot(equals(darkLabel)));
+  });
+
   testWidgets('EcoMarkdown keeps normal code fences as text', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
