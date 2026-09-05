@@ -22,6 +22,7 @@ import type {
 import { normalizeIntegratedWebSearchProvider } from "./integrated-web-search-settings-store";
 import type { SshBookmarkPublic } from "../shared/ssh-bookmarks";
 import { defaultGitSettings, normalizeGitSettingsSnapshot } from "./git-settings-store";
+import { normalizePersonalizationSettingsSnapshot } from "./personalization-settings-store";
 import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
 
 export const ECO_SYNCED_SETTINGS_VERSION = 1 as const;
@@ -99,6 +100,8 @@ export interface EcoSyncedSettingsPayload {
   proxyBridge?: EcoSyncedProxyBridgeSettings;
   /** Git commit message preferences and instructions. */
   git?: EcoSyncedGitSettings;
+  /** Personalization (global user rules). */
+  personalization?: EcoSyncedPersonalizationSettings;
   /** npm/bun/pnpm/yarn script extra args keyed by workspace path, then script name. */
   packageScriptArgs?: EcoSyncedPackageScriptArgs;
   /** SSH bookmark metadata (passwords/keys synced via user_secrets). */
@@ -106,6 +109,11 @@ export interface EcoSyncedSettingsPayload {
 }
 
 export type EcoSyncedSshBookmark = SshBookmarkPublic;
+
+/** Mirrors personalization-settings-store snapshot (global user rules). */
+export type EcoSyncedPersonalizationSettings = {
+  globalRules?: string;
+};
 
 /** Mirrors git-settings-store snapshot (commit message route prefs + instructions). */
 export type EcoSyncedGitSettings = {
@@ -225,6 +233,12 @@ export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSe
     (record.routeProfiles === undefined || Array.isArray(record.routeProfiles)) &&
     (record.proxyBridge === undefined || isEcoSyncedProxyBridgeSettings(record.proxyBridge)) &&
     (record.git === undefined || (Boolean(record.git) && typeof record.git === "object")) &&
+    (record.personalization === undefined ||
+      (Boolean(record.personalization) &&
+        typeof record.personalization === "object" &&
+        !Array.isArray(record.personalization) &&
+        (record.personalization.globalRules === undefined ||
+          typeof record.personalization.globalRules === "string"))) &&
     (record.packageScriptArgs === undefined ||
       (Boolean(record.packageScriptArgs) &&
         typeof record.packageScriptArgs === "object" &&
@@ -405,6 +419,7 @@ export function normalizeEcoSyncedSettingsPayload(
     routeProfiles: payload.routeProfiles ?? [],
     proxyBridge: normalizeEcoSyncedProxyBridgeSettings(payload.proxyBridge),
     ...(payload.git !== undefined ? { git: payload.git } : {}),
+    ...(payload.personalization !== undefined ? { personalization: payload.personalization } : {}),
     ...(payload.packageScriptArgs !== undefined ? { packageScriptArgs: payload.packageScriptArgs } : {}),
     sshBookmarks: payload.sshBookmarks ?? [],
   };
@@ -753,7 +768,8 @@ export type EcoSettingsSyncDomain =
   | "agentLibrary"
   | "git"
   | "packageScriptArgs"
-  | "sshBookmarks";
+  | "sshBookmarks"
+  | "personalization";
 
 export const ECO_SETTINGS_SYNC_DOMAINS: readonly EcoSettingsSyncDomain[] = [
   "providers",
@@ -765,6 +781,7 @@ export const ECO_SETTINGS_SYNC_DOMAINS: readonly EcoSettingsSyncDomain[] = [
   "git",
   "packageScriptArgs",
   "sshBookmarks",
+  "personalization",
 ];
 
 /** Cursor API key only; workflow JSON is local-only. */
@@ -814,6 +831,8 @@ export function secretKindsForDomain(domain: EcoSettingsSyncDomain): readonly Ec
       return [];
     case "sshBookmarks":
       return ["ssh"];
+    case "personalization":
+      return [];
   }
 }
 
@@ -868,6 +887,8 @@ export function extractDomainPayloadSlice(
       };
     case "git":
       return normalized.git ?? {};
+    case "personalization":
+      return normalized.personalization ?? {};
     case "packageScriptArgs":
       return normalized.packageScriptArgs ?? {};
     case "sshBookmarks":
@@ -926,6 +947,13 @@ export function mergeDomainIntoPayload(
       return {
         ...normalizedBase,
         ...(normalizedSource.git !== undefined ? { git: normalizedSource.git } : {}),
+      };
+    case "personalization":
+      return {
+        ...normalizedBase,
+        ...(normalizedSource.personalization !== undefined
+          ? { personalization: normalizedSource.personalization }
+          : {}),
       };
     case "packageScriptArgs":
       return {
@@ -1060,6 +1088,8 @@ export function canonicalizeDomainPayloadSlice(domain: EcoSettingsSyncDomain, sl
     }
     case "git":
       return normalizeGitSettingsSnapshot(slice);
+    case "personalization":
+      return normalizePersonalizationSettingsSnapshot(slice);
     case "packageScriptArgs": {
       const record = slice as Record<string, Record<string, string>>;
       const sorted: Record<string, Record<string, string>> = {};
@@ -1123,6 +1153,8 @@ function isDomainSliceEmpty(domain: EcoSettingsSyncDomain, slice: unknown): bool
       );
     case "git":
       return isGitSyncSliceEmpty(slice);
+    case "personalization":
+      return !(normalizePersonalizationSettingsSnapshot(slice).globalRules ?? "").trim();
     case "packageScriptArgs":
       return Object.keys(slice as Record<string, unknown>).length === 0;
     case "sshBookmarks":
@@ -1236,6 +1268,8 @@ export function buildDomainSyncSummary(
       const count = normalized.sshBookmarks?.length ?? 0;
       return count > 0 ? String(count) : "";
     }
+    case "personalization":
+      return normalized.personalization?.globalRules?.trim() ? "rules" : "";
   }
 }
 

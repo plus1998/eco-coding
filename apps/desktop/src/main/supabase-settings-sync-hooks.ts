@@ -13,6 +13,10 @@ import type {
 import type { AgentOrchestrationStore } from "./agent-orchestration-store";
 import type { AsrSettingsStore } from "./asr-settings-store";
 import { type GitSettingsStore, normalizeGitSettingsSnapshot } from "./git-settings-store";
+import {
+  type PersonalizationSettingsStore,
+  normalizePersonalizationSettingsSnapshot,
+} from "./personalization-settings-store";
 import type { ImageGenerationStore } from "./image-generation-store";
 import type { IntegratedWebSearchSettingsStore } from "./integrated-web-search-settings-store";
 import type { PackageScriptArgsStore } from "./package-script-args-store";
@@ -46,6 +50,7 @@ export function createDesktopSettingsSyncHooks(input: {
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
   integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
   gitSettingsStore: GitSettingsStore;
+  personalizationSettingsStore: PersonalizationSettingsStore;
   packageScriptArgsStore: PackageScriptArgsStore;
   projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
   sshBookmarkStore: SshBookmarkStore;
@@ -72,6 +77,7 @@ function collectPayload(input: {
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
   integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
   gitSettingsStore: GitSettingsStore;
+  personalizationSettingsStore: PersonalizationSettingsStore;
   packageScriptArgsStore: PackageScriptArgsStore;
   sshBookmarkStore: SshBookmarkStore;
 }): EcoSyncedSettingsPayload {
@@ -153,6 +159,7 @@ function collectPayload(input: {
       },
     },
     git: input.gitSettingsStore.get(),
+    personalization: input.personalizationSettingsStore.get(),
     packageScriptArgs: input.packageScriptArgsStore.getAllSync(),
     sshBookmarks: input.sshBookmarkStore.getSnapshot().bookmarks,
   };
@@ -168,6 +175,7 @@ async function applyPayload(
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
     integratedWebSearchSettingsStore: IntegratedWebSearchSettingsStore;
     gitSettingsStore: GitSettingsStore;
+    personalizationSettingsStore: PersonalizationSettingsStore;
     packageScriptArgsStore: PackageScriptArgsStore;
     projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
     sshBookmarkStore: SshBookmarkStore;
@@ -358,6 +366,9 @@ async function applyPayload(
 
   if (payload.git !== undefined) {
     input.gitSettingsStore.save(normalizeGitSettingsSnapshot(payload.git));
+  }
+  if (payload.personalization !== undefined) {
+    input.personalizationSettingsStore.save(normalizePersonalizationSettingsSnapshot(payload.personalization));
   }
   if (payload.packageScriptArgs !== undefined) {
     await input.packageScriptArgsStore.replaceAll(payload.packageScriptArgs);

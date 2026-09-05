@@ -321,7 +321,8 @@ export type CenterServerSyncDomain =
   | "agentLibrary"
   | "git"
   | "packageScriptArgs"
-  | "sshBookmarks";
+  | "sshBookmarks"
+  | "personalization";
 
 export type CenterServerDomainSyncState = "synced" | "dirty" | "never_synced" | "cloud_empty" | "needs_vault";
 

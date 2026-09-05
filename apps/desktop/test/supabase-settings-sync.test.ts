@@ -1133,6 +1133,28 @@ test("mergeDomainIntoPayload replaces only git settings", async () => {
   expect(merged.packageScriptArgs).toEqual(local.packageScriptArgs);
 });
 
+test("mergeDomainIntoPayload replaces only personalization settings", async () => {
+  const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    personalization: { globalRules: "Use Chinese in replies" },
+  };
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    personalization: { globalRules: "Local only" },
+    packageScriptArgs: {
+      "/tmp/project": { dev: "--port 3000" },
+    },
+  };
+
+  const merged = mergeDomainIntoPayload(local, remote, "personalization");
+  expect(merged.personalization?.globalRules).toBe("Use Chinese in replies");
+  expect(merged.packageScriptArgs).toEqual(local.packageScriptArgs);
+});
+
 test("mergeDomainIntoPayload replaces only packageScriptArgs", async () => {
   const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload } = await import(
     "../src/main/supabase-settings-sync"
@@ -1329,6 +1351,42 @@ test("computeDomainSyncStatuses marks never_synced when local git changed and cl
   const git = statuses.find((entry) => entry.domain === "git");
   expect(git?.state).toBe("never_synced");
   expect(git?.lastSyncedAt).toBe("2026-01-02T00:00:00.000Z");
+});
+
+test("computeDomainSyncStatuses tracks personalization domain", async () => {
+  const { computeDomainSyncStatuses, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    personalization: { globalRules: "Use Chinese in replies" },
+  };
+
+  const neverSynced = computeDomainSyncStatuses({
+    localPayload: local,
+    remotePayload: emptyEcoSyncedSettingsPayload(),
+    localSecrets: [],
+    remoteSecrets: [],
+    hasVaultKey: true,
+    domainSyncTimes: { personalization: "2026-01-02T00:00:00.000Z" },
+  });
+  expect(neverSynced.find((entry) => entry.domain === "personalization")?.state).toBe(
+    "never_synced",
+  );
+
+  const synced = computeDomainSyncStatuses({
+    localPayload: local,
+    remotePayload: {
+      ...emptyEcoSyncedSettingsPayload(),
+      personalization: { globalRules: "Use Chinese in replies" },
+    },
+    localSecrets: [],
+    remoteSecrets: [],
+    hasVaultKey: true,
+    domainSyncTimes: {},
+  });
+  expect(synced.find((entry) => entry.domain === "personalization")?.state).toBe("synced");
 });
 
 test("normalizeEcoSyncedProxyBridgeSettings preserves integrated web search", async () => {

@@ -1,14 +1,27 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import type { PersonalizationSettingsSnapshot } from "../shared/ipc";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface PersonalizationSettingsPanelProps {
   settings: PersonalizationSettingsSnapshot;
   busy?: boolean;
   onSave: (settings: PersonalizationSettingsSnapshot) => Promise<void>;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: CenterServerSyncDomain,
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }
 
-export function PersonalizationSettingsPanel({ settings, busy, onSave }: PersonalizationSettingsPanelProps) {
+export function PersonalizationSettingsPanel({
+  settings,
+  busy,
+  onSave,
+  centerServerSyncVisible,
+  onSyncDomain,
+}: PersonalizationSettingsPanelProps) {
   const { t } = useTranslation();
   const savedRules = settings.globalRules ?? "";
   const [draft, setDraft] = useState(savedRules);
@@ -46,14 +59,24 @@ export function PersonalizationSettingsPanel({ settings, busy, onSave }: Persona
             <span className="settings-section-label">{t("settings.personalization.rules")}</span>
             <p className="settings-section-subtitle">{t("settings.personalization.rulesSubtitle")}</p>
           </div>
-          <button
-            type="button"
-            className={dirty ? "settings-primary-button" : "settings-secondary-button"}
-            disabled={!dirty || saving || busy}
-            onClick={() => void handleSave()}
-          >
-            {saving ? t("settings.personalization.saving") : t("common.save")}
-          </button>
+          <div className="git-settings-section-actions">
+            <button
+              type="button"
+              className={dirty ? "settings-primary-button" : "settings-secondary-button"}
+              disabled={!dirty || saving || busy}
+              onClick={() => void handleSave()}
+            >
+              {saving ? t("settings.personalization.saving") : t("common.save")}
+            </button>
+            {onSyncDomain ? (
+              <SettingsSyncControl
+                domain="personalization"
+                visible={centerServerSyncVisible ?? false}
+                disabled={busy || saving}
+                onSync={onSyncDomain}
+              />
+            ) : null}
+          </div>
         </div>
 
         <textarea

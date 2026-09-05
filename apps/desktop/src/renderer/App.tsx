@@ -8300,6 +8300,9 @@ function App() {
     if (domain === "git") {
       await eco.getGitSettings().then(setGitSettings);
     }
+    if (domain === "personalization") {
+      await eco.getPersonalizationSettings().then(setPersonalizationSettings);
+    }
     if (domain === "packageScriptArgs") {
       setPackageScriptArgsRevision((revision) => revision + 1);
     }
@@ -10606,6 +10609,8 @@ function App() {
                 <PersonalizationSettingsPanel
                   settings={personalizationSettings}
                   onSave={savePersonalizationSettingsSnapshot}
+                  centerServerSyncVisible={centerServerSyncVisible}
+                  onSyncDomain={syncCenterServerConfigDomain}
                 />
               )}
 

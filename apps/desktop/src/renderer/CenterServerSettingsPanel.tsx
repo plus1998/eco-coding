@@ -1753,6 +1753,10 @@ function formatDomainSyncSummary(domain: CenterServerSyncDomain, summary: string
     }
   }
 
+  if (domain === "personalization" && trimmed === "rules") {
+    return i18n.t("settings.center.syncStatus.summary.personalizationRules");
+  }
+
   return trimmed;
 }
 
@@ -1774,6 +1778,8 @@ function domainSyncLabel(domain: CenterServerSyncDomain): string {
       return i18n.t("settings.center.syncStatus.domain.git");
     case "packageScriptArgs":
       return i18n.t("settings.center.syncStatus.domain.packageScriptArgs");
+    case "personalization":
+      return i18n.t("settings.center.syncStatus.domain.personalization");
     case "defaultAgent":
       return i18n.t("settings.center.syncStatus.domain.defaultAgent");
     case "sshBookmarks":

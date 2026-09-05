@@ -1879,6 +1879,7 @@ app.whenReady().then(async () => {
       proxyBridgeSettingsStore,
       integratedWebSearchSettingsStore,
       gitSettingsStore,
+      personalizationSettingsStore,
       packageScriptArgsStore,
       projectOrchestrationSettingsStore,
       sshBookmarkStore,
