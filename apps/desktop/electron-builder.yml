@@ -18,6 +18,7 @@ asarUnpack:
   # Native Codex CLI + platform binaries (and code-mode host) cannot run from inside asar.
   - "**/node_modules/@openai/**"
   - "**/node_modules/agent-browser/**"
+  - "**/node_modules/@qwen-code/open-computer-use/**"
   # pi-mcp-adapter OAuth credential store (external native binding).
   - "**/node_modules/@napi-rs/keyring/**"
   - "**/node_modules/@napi-rs/keyring-*/**"
@@ -28,6 +29,12 @@ extraResources:
     to: agent-browser
     filter:
       - "**/*"
+  - from: packaging/open-computer-use/
+    to: open-computer-use
+    filter:
+      - "**/*"
+  - from: packaging/computer-use-presence-overlay.html
+    to: computer-use-presence-overlay.html
   - from: packaging/skills/
     to: skills
     filter:
@@ -44,6 +51,8 @@ extraResources:
     to: eco-image-view-mcp-stdio.mjs
   - from: packaging/eco-web-search-mcp-stdio.mjs
     to: eco-web-search-mcp-stdio.mjs
+  - from: packaging/eco-computer-use-mcp-stdio.mjs
+    to: eco-computer-use-mcp-stdio.mjs
 
 npmRebuild: false
 nodeGypRebuild: false

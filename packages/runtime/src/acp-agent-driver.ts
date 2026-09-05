@@ -6,6 +6,7 @@ import { AcpClient } from "./acp-client.js";
 import {
   cursorAcpSpawnError,
   getCursorAcpDiagnostics,
+  killChildProcessTree,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "./acp-cursor-agent.js";
@@ -571,13 +572,8 @@ export class AcpAgentDriver {
       unsubscribeUpdate?.();
       peer?.dispose();
       input.signal?.removeEventListener("abort", abort);
-      if (!child.killed) {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // process may already be gone
-        }
-      }
+      // Windows: kill the full cmd→powershell→node(+MCP) tree, not just cmd.exe.
+      killChildProcessTree(child);
       this.processes.delete(input.threadId);
     }
   }
@@ -595,11 +591,23 @@ export class AcpAgentDriver {
     }
     active.peer?.dispose();
     try {
-      active.child.kill("SIGINT");
+      killChildProcessTree(active.child);
     } catch {
       return false;
     }
     return true;
+  }
+
+  /** Cancel every active ACP run and tear down process trees (app quit). */
+  cancelAll(): number {
+    const threadIds = [...this.processes.keys()];
+    let cancelled = 0;
+    for (const threadId of threadIds) {
+      if (this.cancel(threadId)) {
+        cancelled += 1;
+      }
+    }
+    return cancelled;
   }
 }
 

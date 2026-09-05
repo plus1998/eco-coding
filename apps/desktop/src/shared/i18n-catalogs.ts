@@ -372,6 +372,26 @@ export const i18nCatalogs = {
       "settings.browser.openApprovalHint": "选择 Agent 在打开网站前是否请求批准。",
       "settings.browser.openApproval.always_allow": "始终允许",
       "settings.browser.openApproval.always_ask": "始终询问",
+      "settings.computerUse": "电脑操控",
+      "settings.computerUse.pageDesc":
+        "通过 accessibility API 操控本机桌面应用。会话可单独开启；多会话共享同一桌面，无浏览器式隔离。",
+      "settings.computerUse.masterTitle": "电脑操控",
+      "settings.computerUse.masterHint": "让 Agent 使用 open-computer-use 操控本机应用",
+      "settings.computerUse.agentUnknownReason": "未知原因",
+      "settings.computerUse.statusUnavailable": "不可用 · {{reason}}",
+      "settings.computerUse.sharedDesktopWarning":
+        "注意：电脑操控作用于整台电脑，同时开启的会话会共享同一桌面，不会按会话隔离。",
+      "settings.computerUse.permissions": "权限",
+      "settings.computerUse.actionApproval": "动作审批",
+      "settings.computerUse.actionApprovalHint":
+        "选择 Agent 在点击、输入等操控动作前是否请求批准。列出应用 / 读取状态始终允许。",
+      "settings.computerUse.actionApproval.always_allow": "始终允许",
+      "settings.computerUse.actionApproval.always_ask": "始终询问",
+      "settings.computerUse.runDoctor": "检查系统权限",
+      "settings.computerUse.doctorOk": "系统权限检查通过",
+      "settings.computerUse.doctorBusy": "正在检查…",
+      "settings.computerUse.previewPresence": "预览桌面效果",
+      "settings.computerUse.previewPresenceHint": "在真实桌面上显示彩虹边框与指针（约 15 秒后消失）",
       "settings.integrations": "集成",
       "settings.integrations.desc":
         "管理可按会话注入的内置能力。全局配置完成后，在 Composer 中为当前会话开启。",
@@ -2468,6 +2488,27 @@ export const i18nCatalogs = {
       "settings.browser.openApprovalHint": "Choose whether the agent must ask before opening a website.",
       "settings.browser.openApproval.always_allow": "Always allow",
       "settings.browser.openApproval.always_ask": "Always ask",
+      "settings.computerUse": "Computer Use",
+      "settings.computerUse.pageDesc":
+        "Control desktop apps via accessibility APIs. Enable per session; the OS desktop is shared across sessions (not isolated like the built-in browser).",
+      "settings.computerUse.masterTitle": "Computer Use",
+      "settings.computerUse.masterHint": "Let agents drive local apps with open-computer-use",
+      "settings.computerUse.agentUnknownReason": "Unknown reason",
+      "settings.computerUse.statusUnavailable": "Unavailable · {{reason}}",
+      "settings.computerUse.sharedDesktopWarning":
+        "Note: Computer Use acts on the whole machine. Concurrent sessions share the same desktop and are not isolated per conversation.",
+      "settings.computerUse.permissions": "Permissions",
+      "settings.computerUse.actionApproval": "Action approval",
+      "settings.computerUse.actionApprovalHint":
+        "Choose whether the agent must ask before click, type, and other mutating actions. list_apps / get_app_state always allow.",
+      "settings.computerUse.actionApproval.always_allow": "Always allow",
+      "settings.computerUse.actionApproval.always_ask": "Always ask",
+      "settings.computerUse.runDoctor": "Check system permissions",
+      "settings.computerUse.doctorOk": "System permission check passed",
+      "settings.computerUse.doctorBusy": "Checking…",
+      "settings.computerUse.previewPresence": "Preview desktop effect",
+      "settings.computerUse.previewPresenceHint":
+        "Show the rainbow frame and pointer on the real desktop (clears after ~15s)",
       "settings.integrations": "Integrations",
       "settings.integrations.desc":
         "Manage built-in capabilities that can be injected per session. Configure them globally, then enable them in the Composer.",

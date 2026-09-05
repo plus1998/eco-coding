@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import path from "node:path";
 import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 import { buildPiMcpSessionConfig, mergePiAppendSystemPrompt } from "../src/main/pi-mcp-session";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../src/shared/browser";
@@ -41,6 +42,15 @@ test("buildPiMcpSessionConfig merges browser and image integrations", () => {
       },
       promptAppend: "Use eco_agent_browser for this thread.",
     },
+    computerUseInject: {
+      enabled: true,
+      sdkEntry: {
+        type: "stdio",
+        command: "/bin/open-computer-use",
+        args: ["mcp"],
+      },
+      promptAppend: "Use eco_computer_use for desktop control.",
+    },
     imageInject: {
       enabled: true,
       sdkEntry: {
@@ -54,14 +64,16 @@ test("buildPiMcpSessionConfig merges browser and image integrations", () => {
   });
   expect(Object.keys(result.mcpServers).sort()).toEqual([
     ECO_AGENT_BROWSER_MCP_SERVER,
+    "eco_computer_use",
     ECO_IMAGE_GENERATION_MCP_SERVER,
     "github",
   ]);
   expect(result.appendSystemPrompt).toEqual([
     "Use eco_agent_browser for this thread.",
+    "Use eco_computer_use for desktop control.",
     "Use eco_image_generation when asked.",
   ]);
-  expect(result.extraSkillDirectories).toEqual(["/tmp/skills/eco-agent-browser"]);
+  expect(result.extraSkillDirectories).toEqual([path.resolve("/tmp/skills/eco-agent-browser")]);
 });
 
 test("buildPiMcpSessionConfig always merges imageViewInject even when Composer integrations are off", () => {

@@ -9,7 +9,10 @@ import {
   cursorAcpSpawnError,
   getCursorAcpDiagnostics,
   isWindowsShellScript,
+  killProcessTree,
+  killTrackedCursorAcpProcesses,
   redactCursorAcpStderr,
+  resetTrackedCursorAcpPidsForTests,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
   wrapForWindowsShellScript,
@@ -276,5 +279,69 @@ describe("cursorAcpSpawnError", () => {
       }),
     ]);
     expect(outcome).toBe("no-settle");
+  });
+});
+
+describe("killProcessTree / tracked ACP cleanup", () => {
+  afterEach(() => {
+    resetTrackedCursorAcpPidsForTests();
+    mock.restore();
+  });
+
+  test("killProcessTree uses taskkill /T /F on Windows", () => {
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+    killProcessTree(4242, {
+      platform: "win32",
+      execFileSyncFn: ((command: string, args: readonly string[]) => {
+        calls.push({ command, args: [...args] });
+        return Buffer.from("");
+      }) as typeof import("node:child_process").execFileSync,
+    });
+    expect(calls).toEqual([{ command: "taskkill", args: ["/PID", "4242", "/T", "/F"] }]);
+  });
+
+  test("killProcessTree prefers process-group SIGKILL on POSIX", () => {
+    const killed: Array<{ pid: number; signal?: NodeJS.Signals | number }> = [];
+    killProcessTree(99, {
+      platform: "linux",
+      killFn: (pid, signal) => {
+        killed.push({ pid, signal });
+        return true;
+      },
+    });
+    expect(killed).toEqual([{ pid: -99, signal: "SIGKILL" }]);
+  });
+
+  test("killTrackedCursorAcpProcesses only kills spawn-tracked root PIDs", () => {
+    const child = {
+      pid: 777,
+      killed: false,
+      kill() {
+        this.killed = true;
+        return true;
+      },
+      on() {
+        return this;
+      },
+      once() {
+        return this;
+      },
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+    } as unknown as ChildProcess;
+    const spawnFn = mock(() => child);
+    spawnCursorAcpProcess({ spawnFn, executable: "/fake/agent" });
+    const killed: number[] = [];
+    const count = killTrackedCursorAcpProcesses({
+      platform: "linux",
+      killFn: (pid) => {
+        killed.push(pid);
+        return true;
+      },
+    });
+    expect(count).toBe(1);
+    expect(killed).toEqual([-777]);
+    expect(killTrackedCursorAcpProcesses()).toBe(0);
   });
 });

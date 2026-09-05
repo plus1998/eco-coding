@@ -72,6 +72,8 @@ export interface ApplicationShutdownDeps {
   closeImageDisplayGateway: () => Promise<void>;
   closeIntegratedWebSearchGateway: () => Promise<void>;
   stopGlobalCodexRuntime: () => Promise<void>;
+  /** Tear down Cursor ACP process trees Eco spawned this session (tracked only). */
+  stopAllAcpRuntimes: () => void;
   stopGlobalEcoGateway: () => Promise<void>;
   disposeDesktopUpdateService: () => void;
   clearCodexSubagentRuntimeLimit: () => void;
@@ -252,6 +254,7 @@ export async function shutdownApplicationServices(deps: ApplicationShutdownDeps)
   deps.disposeGitAutoFetcher();
   deps.disposeCenterServerClient();
   await deps.stopGlobalCodexRuntime();
+  deps.stopAllAcpRuntimes();
   await deps.stopGlobalEcoGateway();
 }
 

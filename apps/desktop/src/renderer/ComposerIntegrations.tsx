@@ -1,4 +1,4 @@
-import { Blocks, Globe, Image } from "lucide-react";
+import { Blocks, Globe, Image, Monitor } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,18 @@ interface Props {
   onToggle: (id: IntegrationId, enabled: boolean) => void;
 }
 
+function integrationLabelKey(id: IntegrationId): string {
+  if (id === "browser") return "settings.browser";
+  if (id === "imageGeneration") return "settings.imageGeneration.title";
+  return "settings.computerUse";
+}
+
+function IntegrationIcon({ id }: { id: IntegrationId }) {
+  if (id === "browser") return <Globe size={16} strokeWidth={1.75} />;
+  if (id === "imageGeneration") return <Image size={16} strokeWidth={1.75} />;
+  return <Monitor size={16} strokeWidth={1.75} />;
+}
+
 function IntegrationRows({ availability, enabledSettings, canEdit, saving, onToggle }: Props) {
   const { t } = useTranslation();
 
@@ -27,13 +39,12 @@ function IntegrationRows({ availability, enabledSettings, canEdit, saving, onTog
     <>
       {availability.integrations.map((item) => {
         const enabled = enabledSettings[item.id] === true;
-        const Icon = item.id === "browser" ? Globe : Image;
-        const label = t(item.id === "browser" ? "settings.browser" : "settings.imageGeneration.title");
+        const label = t(integrationLabelKey(item.id));
         return (
           <div key={item.id} className="composer-mcp-row">
             <div className="composer-mcp-row-main">
               <span className="composer-mcp-row-leading-icon" aria-hidden>
-                <Icon size={16} strokeWidth={1.75} />
+                <IntegrationIcon id={item.id} />
               </span>
               <span className="composer-mcp-row-name">{label}</span>
               <span

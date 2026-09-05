@@ -4,6 +4,7 @@ import {
   type DesktopAutoUpdaterPolicyTarget,
   formatDesktopUpdateError,
 } from "../src/main/desktop-update-policy";
+import { canRunAutomaticUpdateCheck } from "../src/shared/desktop-update";
 
 test("desktop updater policy disables downgrades and GitHub prerelease heuristics", () => {
   let assignedChannel: string | null = null;
@@ -58,4 +59,15 @@ test("formatDesktopUpdateError collapses channel-file 404 noise", () => {
   ).toBe("CHANNEL_FILE_NOT_FOUND");
   expect(formatDesktopUpdateError(new Error("ENOTFOUND api.github.com"))).toBe("NETWORK_ERROR");
   expect(formatDesktopUpdateError(new Error("plain failure"))).toBe("plain failure");
+});
+
+test("automatic update checks only run while idle or after error", () => {
+  expect(canRunAutomaticUpdateCheck("idle")).toBe(true);
+  expect(canRunAutomaticUpdateCheck("error")).toBe(true);
+  expect(canRunAutomaticUpdateCheck("available")).toBe(false);
+  expect(canRunAutomaticUpdateCheck("downloading")).toBe(false);
+  expect(canRunAutomaticUpdateCheck("downloaded")).toBe(false);
+  expect(canRunAutomaticUpdateCheck("checking")).toBe(false);
+  expect(canRunAutomaticUpdateCheck("installing")).toBe(false);
+  expect(canRunAutomaticUpdateCheck("disabled")).toBe(false);
 });

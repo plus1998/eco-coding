@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eco Computer Use Presence</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        pointer-events: none;
+        user-select: none;
+      }
+      #root {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        opacity: 0;
+        transition: opacity 180ms ease;
+      }
+      #root.is-agent-active {
+        opacity: 1;
+      }
+      #root.is-agent-active::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background:
+          radial-gradient(110% 42% at 50% -6%, color-mix(in srgb, #7c5cff 55%, transparent), transparent 70%),
+          radial-gradient(110% 42% at 50% 106%, color-mix(in srgb, #5ce1ff 50%, transparent), transparent 70%),
+          radial-gradient(42% 110% at -6% 50%, color-mix(in srgb, #ff5cc8 48%, transparent), transparent 70%),
+          radial-gradient(42% 110% at 106% 50%, color-mix(in srgb, #5cff9a 45%, transparent), transparent 70%);
+        opacity: 0.55;
+        animation: veil-breathe 2.8s ease-in-out infinite;
+      }
+      #root.is-breath-pulse::before {
+        animation: veil-pulse 920ms ease-out;
+      }
+      /* Only changes vs original working look: inset 0 (no padding), no 3px hard ring. */
+      .light-strip {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        border-radius: 0;
+        overflow: visible;
+        box-shadow:
+          0 0 32px 10px color-mix(in srgb, #5ce1ff 40%, transparent),
+          inset 0 0 48px color-mix(in srgb, #ff5cc8 22%, transparent);
+      }
+      .holo-aura,
+      .holo-band,
+      .holo-spinner {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        box-sizing: border-box;
+        -webkit-mask-image: radial-gradient(
+          ellipse 86% 82% at 50% 50%,
+          transparent 0%,
+          transparent 48%,
+          rgba(0, 0, 0, 0.12) 58%,
+          rgba(0, 0, 0, 0.45) 68%,
+          rgba(0, 0, 0, 0.85) 78%,
+          rgba(0, 0, 0, 0.55) 88%,
+          transparent 100%
+        );
+        mask-image: radial-gradient(
+          ellipse 86% 82% at 50% 50%,
+          transparent 0%,
+          transparent 48%,
+          rgba(0, 0, 0, 0.12) 58%,
+          rgba(0, 0, 0, 0.45) 68%,
+          rgba(0, 0, 0, 0.85) 78%,
+          rgba(0, 0, 0, 0.55) 88%,
+          transparent 100%
+        );
+      }
+      .holo-aura,
+      .holo-band {
+        background: conic-gradient(
+          from 0deg,
+          transparent 0deg,
+          color-mix(in srgb, #ff9ad5 48%, transparent) 40deg,
+          color-mix(in srgb, #c4b5fd 62%, transparent) 85deg,
+          color-mix(in srgb, #93c5fd 58%, transparent) 130deg,
+          transparent 175deg,
+          color-mix(in srgb, #e9d5ff 54%, transparent) 220deg,
+          color-mix(in srgb, #f0abfc 50%, transparent) 275deg,
+          color-mix(in srgb, #a5b4fc 56%, transparent) 325deg,
+          transparent 360deg
+        );
+        animation: holo-spin 5.2s linear infinite;
+      }
+      .holo-aura {
+        inset: -18px;
+        filter: blur(42px) saturate(1.08);
+        opacity: 0.55;
+        animation:
+          holo-spin 5.2s linear infinite,
+          aura-breathe 3.8s ease-in-out infinite;
+      }
+      .holo-band {
+        opacity: 0.42;
+        filter: blur(14px) saturate(1.05);
+      }
+      .holo-spinner {
+        inset: -10px;
+        opacity: 0.4;
+        mix-blend-mode: screen;
+        filter: blur(18px) saturate(1.1);
+        animation: holo-spin 7s linear infinite reverse;
+        background: conic-gradient(
+          from 90deg,
+          transparent 0deg,
+          color-mix(in srgb, #f0abfc 42%, transparent) 50deg,
+          transparent 120deg,
+          color-mix(in srgb, #93c5fd 46%, transparent) 200deg,
+          transparent 280deg,
+          color-mix(in srgb, #5ce1ff 40%, transparent) 340deg,
+          transparent 360deg
+        );
+      }
+      .mist {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+      }
+      .mist-blob {
+        position: absolute;
+        display: block;
+        border-radius: 58% 42% 63% 37% / 44% 55% 45% 56%;
+        background: radial-gradient(
+          ellipse at 40% 40%,
+          color-mix(in srgb, var(--mist-color, #5ce1ff) 82%, white),
+          color-mix(in srgb, var(--mist-color, #5ce1ff) 48%, transparent) 48%,
+          transparent 74%
+        );
+        filter: blur(18px) saturate(1.3);
+        opacity: 0.58;
+        mix-blend-mode: screen;
+        animation:
+          mist-drift-a 5.6s ease-in-out infinite alternate,
+          mist-morph 7.2s ease-in-out infinite alternate,
+          mist-breathe 2.8s ease-in-out infinite;
+      }
+      .mist-blob.is-drift-b {
+        animation-name: mist-drift-b, mist-morph, mist-breathe;
+      }
+      .mist-blob.is-drift-c {
+        animation-name: mist-drift-c, mist-morph, mist-breathe;
+      }
+      .mist-blob.is-cyan {
+        --mist-color: #5ce1ff;
+      }
+      .mist-blob.is-violet {
+        --mist-color: #8b6cff;
+      }
+      .mist-blob.is-magenta {
+        --mist-color: #ff5cc8;
+      }
+      .mist-blob.is-amber {
+        --mist-color: #ffd15c;
+      }
+      .mist-blob.is-mint {
+        --mist-color: #5cff9a;
+      }
+      .cursor {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 48px;
+        height: 48px;
+        z-index: 3;
+        opacity: 0;
+        transform: translate3d(-40px, -40px, 0);
+        transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+        filter: drop-shadow(0 0 14px color-mix(in srgb, #ff5cc8 70%, transparent))
+          drop-shadow(0 0 6px color-mix(in srgb, #5ce1ff 80%, transparent));
+        will-change: transform;
+      }
+      .cursor.is-visible {
+        opacity: 1;
+      }
+      .cursor.is-pressed {
+        transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0) scale(0.88);
+      }
+      .cursor.is-click-pop {
+        animation: cursor-pop 420ms ease-out;
+      }
+      .cursor svg {
+        display: block;
+        width: 48px;
+        height: 48px;
+      }
+      .ripple {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        margin: -9px 0 0 -9px;
+        border-radius: 50%;
+        z-index: 2;
+        pointer-events: none;
+        border: 2px solid color-mix(in srgb, #c4b5fd 70%, white);
+        box-shadow: 0 0 18px color-mix(in srgb, #5ce1ff 45%, transparent);
+        opacity: 0;
+        transform: scale(0.4);
+      }
+      .ripple.is-active {
+        animation: ripple-burst 420ms ease-out;
+      }
+      @keyframes veil-breathe {
+        0%,
+        100% {
+          opacity: 0.16;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      @keyframes veil-pulse {
+        0% {
+          opacity: 0.2;
+        }
+        28% {
+          opacity: 0.92;
+        }
+        100% {
+          opacity: 0.28;
+        }
+      }
+      @keyframes holo-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes aura-breathe {
+        0%,
+        100% {
+          opacity: 0.42;
+        }
+        50% {
+          opacity: 0.68;
+        }
+      }
+      @keyframes mist-drift-a {
+        from {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        to {
+          transform: translate3d(10px, -8px, 0) scale(1.08);
+        }
+      }
+      @keyframes mist-drift-b {
+        from {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        to {
+          transform: translate3d(-12px, 6px, 0) scale(1.05);
+        }
+      }
+      @keyframes mist-drift-c {
+        from {
+          transform: translate3d(0, 0, 0) scale(1.02);
+        }
+        to {
+          transform: translate3d(6px, 10px, 0) scale(0.96);
+        }
+      }
+      @keyframes mist-morph {
+        from {
+          border-radius: 58% 42% 63% 37% / 44% 55% 45% 56%;
+        }
+        to {
+          border-radius: 42% 58% 37% 63% / 55% 44% 56% 45%;
+        }
+      }
+      @keyframes mist-breathe {
+        0%,
+        100% {
+          opacity: 0.42;
+        }
+        50% {
+          opacity: 0.72;
+        }
+      }
+      @keyframes cursor-pop {
+        0% {
+          transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0) scale(1);
+        }
+        40% {
+          transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0) scale(1.28);
+        }
+        100% {
+          transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0) scale(1);
+        }
+      }
+      @keyframes ripple-burst {
+        0% {
+          opacity: 0.9;
+          transform: scale(0.4);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(3.2);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" aria-hidden="true">
+      <div class="mist" id="mist"></div>
+      <div class="light-strip">
+        <span class="holo-aura"></span>
+        <span class="holo-band"></span>
+        <span class="holo-spinner"></span>
+      </div>
+      <div class="ripple" id="ripple"></div>
+      <div class="cursor" id="cursor">
+        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="g" x1="2" y1="2" x2="18" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#5ce1ff" />
+              <stop offset="0.28" stop-color="#8b6cff" />
+              <stop offset="0.55" stop-color="#ff5cc8" />
+              <stop offset="0.78" stop-color="#ffd15c" />
+              <stop offset="1" stop-color="#5cff9a" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M4.5 2.5 L4.5 18.2 L8.4 14.6 L11.6 21.4 L14.2 20.2 L11 13.4 L16.8 13.4 Z"
+            fill="url(#g)"
+            stroke="rgba(255,255,255,0.75)"
+            stroke-width="1.15"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+    </div>
+    <script>
+      const { ipcRenderer } = require("electron");
+      const root = document.getElementById("root");
+      const mist = document.getElementById("mist");
+      const cursor = document.getElementById("cursor");
+      const ripple = document.getElementById("ripple");
+      const COLORS = ["is-cyan", "is-violet", "is-magenta", "is-amber", "is-mint"];
+      const DRIFTS = ["is-drift-a", "is-drift-b", "is-drift-c"];
+      const SPECS = [
+        { left: "4%", top: "-3%", w: 88, h: 64 },
+        { left: "16%", top: "-4%", w: 72, h: 56 },
+        { left: "28%", top: "-2%", w: 80, h: 58 },
+        { left: "42%", top: "-5%", w: 70, h: 52 },
+        { left: "56%", top: "-3%", w: 78, h: 60 },
+        { left: "70%", top: "-4%", w: 74, h: 54 },
+        { left: "84%", top: "-2%", w: 82, h: 62 },
+        { right: "-3%", top: "10%", w: 64, h: 86 },
+        { right: "-4%", top: "28%", w: 58, h: 78 },
+        { right: "-2%", top: "46%", w: 66, h: 84 },
+        { right: "-4%", top: "64%", w: 60, h: 76 },
+        { right: "-3%", top: "80%", w: 62, h: 72 },
+        { left: "6%", bottom: "-3%", w: 84, h: 60 },
+        { left: "20%", bottom: "-4%", w: 70, h: 54 },
+        { left: "34%", bottom: "-2%", w: 76, h: 58 },
+        { left: "50%", bottom: "-5%", w: 68, h: 50 },
+        { left: "64%", bottom: "-3%", w: 80, h: 56 },
+        { left: "78%", bottom: "-4%", w: 72, h: 52 },
+        { left: "-3%", top: "12%", w: 62, h: 82 },
+        { left: "-4%", top: "32%", w: 56, h: 74 },
+        { left: "-2%", top: "52%", w: 64, h: 80 },
+        { left: "-4%", top: "70%", w: 58, h: 70 },
+      ];
+      let pulseTimer = null;
+      let moveTimer = null;
+      let localX = window.innerWidth * 0.18;
+      let localY = window.innerHeight * 0.22;
+      let displayOriginX = 0;
+      let displayOriginY = 0;
+
+      function buildMist() {
+        mist.innerHTML = "";
+        SPECS.forEach((spec, i) => {
+          const blob = document.createElement("span");
+          blob.className = `mist-blob ${COLORS[i % COLORS.length]} ${DRIFTS[i % DRIFTS.length]}`;
+          blob.style.width = `${spec.w}px`;
+          blob.style.height = `${spec.h}px`;
+          if (spec.left !== undefined) blob.style.left = spec.left;
+          if (spec.right !== undefined) blob.style.right = spec.right;
+          if (spec.top !== undefined) blob.style.top = spec.top;
+          if (spec.bottom !== undefined) blob.style.bottom = spec.bottom;
+          blob.style.animationDelay = `${(-i * 0.37).toFixed(2)}s, ${(-i * 0.51).toFixed(2)}s, ${(-i * 0.23).toFixed(2)}s`;
+          mist.appendChild(blob);
+        });
+      }
+
+      function setCursor(x, y, animate, durationMs) {
+        localX = x;
+        localY = y;
+        cursor.style.setProperty("--cx", `${x}px`);
+        cursor.style.setProperty("--cy", `${y}px`);
+        cursor.style.transition = animate
+          ? `transform ${durationMs || 320}ms cubic-bezier(0.22, 1, 0.36, 1)`
+          : "none";
+        cursor.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        if (!animate) {
+          void cursor.offsetWidth;
+          cursor.style.transition = `transform ${durationMs || 320}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+        }
+      }
+
+      function pulse() {
+        root.classList.remove("is-breath-pulse");
+        void root.offsetWidth;
+        root.classList.add("is-breath-pulse");
+        if (pulseTimer) clearTimeout(pulseTimer);
+        pulseTimer = setTimeout(() => root.classList.remove("is-breath-pulse"), 920);
+      }
+
+      function toLocal(screenX, screenY) {
+        return { x: screenX - displayOriginX, y: screenY - displayOriginY };
+      }
+
+      function applyActive(doPulse) {
+        root.classList.add("is-agent-active");
+        cursor.classList.add("is-visible");
+        if (doPulse !== false) pulse();
+      }
+
+      function applyIdle() {
+        root.classList.remove("is-agent-active", "is-breath-pulse");
+        cursor.classList.remove("is-visible", "is-pressed", "is-click-pop");
+        ripple.classList.remove("is-active");
+        if (moveTimer) {
+          clearTimeout(moveTimer);
+          moveTimer = null;
+        }
+      }
+
+      function applyClick(screenX, screenY) {
+        applyActive(true);
+        const { x, y } = toLocal(screenX, screenY);
+        cursor.classList.remove("is-pressed", "is-click-pop");
+        setCursor(x, y, true, 320);
+        ripple.style.left = `${x}px`;
+        ripple.style.top = `${y}px`;
+        ripple.classList.remove("is-active");
+        void ripple.offsetWidth;
+        if (moveTimer) clearTimeout(moveTimer);
+        moveTimer = setTimeout(() => {
+          cursor.classList.remove("is-click-pop");
+          void cursor.offsetWidth;
+          cursor.classList.add("is-click-pop");
+          ripple.classList.add("is-active");
+          setTimeout(() => {
+            cursor.classList.remove("is-click-pop");
+            cursor.classList.add("is-pressed");
+          }, 420);
+        }, 320);
+      }
+
+      function applyMove(screenX, screenY, dragging) {
+        applyActive(false);
+        const { x, y } = toLocal(screenX, screenY);
+        setCursor(x, y, true, dragging ? 90 : 320);
+        if (dragging) cursor.classList.add("is-pressed");
+        else cursor.classList.remove("is-pressed");
+      }
+
+      function applyRelease(screenX, screenY) {
+        applyActive(true);
+        const { x, y } = toLocal(screenX, screenY);
+        setCursor(x, y, true, 90);
+        cursor.classList.add("is-pressed");
+        ripple.style.left = `${x}px`;
+        ripple.style.top = `${y}px`;
+        ripple.classList.remove("is-active");
+        void ripple.offsetWidth;
+        ripple.classList.add("is-active");
+        setTimeout(() => cursor.classList.remove("is-pressed"), 280);
+      }
+
+      ipcRenderer.on("computer-use-presence:init", (_e, payload) => {
+        displayOriginX = Number(payload?.originX) || 0;
+        displayOriginY = Number(payload?.originY) || 0;
+        localX = (Number(payload?.width) || window.innerWidth) * 0.18;
+        localY = (Number(payload?.height) || window.innerHeight) * 0.22;
+        setCursor(localX, localY, false);
+      });
+
+      ipcRenderer.on("computer-use-presence:event", (_e, event) => {
+        if (!event || typeof event !== "object") return;
+        switch (event.type) {
+          case "active":
+            applyActive(true);
+            break;
+          case "click":
+            applyClick(event.x, event.y);
+            break;
+          case "move":
+            applyMove(event.x, event.y, Boolean(event.dragging));
+            break;
+          case "release":
+            applyRelease(event.x, event.y);
+            break;
+          case "idle":
+            applyIdle();
+            break;
+        }
+      });
+
+      buildMist();
+      setCursor(localX, localY, false);
+      ipcRenderer.send("computer-use-presence:ready");
+    </script>
+  </body>
+</html>

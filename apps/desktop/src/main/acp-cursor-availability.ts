@@ -5,6 +5,7 @@ import {
   AcpClient,
   AcpJsonRpcPeer,
   cursorAcpSpawnError,
+  killChildProcessTree,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "@eco/runtime";
@@ -127,9 +128,7 @@ export async function handshakeAcpCursor(options: AcpCursorHandshakeOptions = {}
     await Promise.race([handshake, spawnFailure]);
   } finally {
     peer?.dispose();
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGTERM");
-    }
+    killChildProcessTree(child);
   }
 }
 

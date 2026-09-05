@@ -66,6 +66,8 @@ import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import { type BashReviewMode, normalizeBashReviewMode } from "../shared/bash-review-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import type { BrowserSettingsSnapshot } from "../shared/browser";
+import type { ComputerUseSettingsSnapshot } from "../shared/computer-use";
+import type { IntegrationId } from "../shared/integrations";
 import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
 import { deriveSkillsEnabled, type ProjectSkillsSettingsSnapshot } from "../shared/composer-skills-settings";
 import type { DesktopUpdateState } from "../shared/desktop-update";
@@ -233,6 +235,7 @@ import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
+import { ComputerUseSettingsPanel } from "./ComputerUseSettingsPanel";
 import { BrowserWebviewLayer } from "./BrowserWebviewLayer";
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { browserStateStore, useBrowserInstanceIds } from "./browser-state-store";
@@ -507,6 +510,7 @@ type SettingsSectionId =
   | "personalization"
   | "storage"
   | "browser"
+  | "computerUse"
   | "imageGeneration"
   | "integratedWebSearch"
   | "providers"
@@ -559,6 +563,7 @@ const emptyIntegrationAvailability: IntegrationAvailabilitySnapshot = {
   integrations: [
     { id: "browser", enabled: false, available: false },
     { id: "imageGeneration", enabled: false, available: false },
+    { id: "computerUse", enabled: false, available: false },
   ],
 };
 
@@ -1198,6 +1203,18 @@ function App() {
             keywords: [t("settings.browser.agentIntegration"), "browser", "cdp", "agent-browser", "浏览器"],
           },
           {
+            id: "computerUse",
+            label: t("settings.computerUse"),
+            icon: Monitor,
+            keywords: [
+              t("settings.computerUse.masterTitle"),
+              "computer use",
+              "open-computer-use",
+              "电脑操控",
+              "accessibility",
+            ],
+          },
+          {
             id: "imageGeneration",
             label: t("settings.imageGeneration.title"),
             icon: ImageIcon,
@@ -1564,6 +1581,10 @@ function App() {
   const [browserSettings, setBrowserSettings] = useState<BrowserSettingsSnapshot>({
     agentIntegrationEnabled: false,
     openApprovalMode: "always_allow",
+  });
+  const [computerUseSettings, setComputerUseSettings] = useState<ComputerUseSettingsSnapshot>({
+    agentIntegrationEnabled: false,
+    actionApprovalMode: "always_ask",
   });
   const [imageGenerationSettings, setImageGenerationSettings] = useState<ImageGenerationSettingsSnapshot>(
     emptyImageGenerationSettings,
@@ -3597,6 +3618,7 @@ function App() {
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
     void window.eco.getBrowserSettings?.().then(setBrowserSettings);
+    void window.eco.getComputerUseSettings?.().then(setComputerUseSettings);
     void window.eco.getImageGenerationSettings?.().then(setImageGenerationSettings);
     void window.eco.getIntegrationAvailability?.().then(setIntegrationAvailability);
     void window.eco.getWebChatList?.().then(setWebChatList);
@@ -7085,6 +7107,29 @@ function App() {
     setIntegrationAvailability(await window.eco.getIntegrationAvailability());
   }
 
+  async function saveComputerUseSettingsSnapshot(snapshot: ComputerUseSettingsSnapshot) {
+    if (!window.eco?.saveComputerUseSettings) {
+      return;
+    }
+    const saved = await window.eco.saveComputerUseSettings(snapshot);
+    setComputerUseSettings(saved);
+    setIntegrationAvailability(await window.eco.getIntegrationAvailability());
+  }
+
+  async function runComputerUseDoctor() {
+    if (!window.eco?.runComputerUseDoctor) {
+      return { ok: false, reason: "电脑操控 doctor 不可用。" };
+    }
+    return window.eco.runComputerUseDoctor();
+  }
+
+  async function previewComputerUsePresence() {
+    if (!window.eco?.previewComputerUsePresence) {
+      throw new Error("电脑操控桌面效果预览不可用。");
+    }
+    await window.eco.previewComputerUsePresence();
+  }
+
   async function saveNotificationSettingsSnapshot(snapshot: NotificationSettingsSnapshot) {
     if (!window.eco?.saveNotificationSettings) {
       return;
@@ -7715,7 +7760,7 @@ function App() {
     }
   }
 
-  async function toggleComposerIntegration(integrationId: "browser" | "imageGeneration", enabled: boolean) {
+  async function toggleComposerIntegration(integrationId: IntegrationId, enabled: boolean) {
     if (!composerRuntimeConfig || !currentProjectPath || !window.eco) return;
     const nextEnabled = { ...composerIntegrationSettings, [integrationId]: enabled };
     await persistComposerRuntimeConfig(
@@ -10490,6 +10535,16 @@ function App() {
 
               {settingsSection === "browser" && (
                 <BrowserSettingsPanel settings={browserSettings} onSave={saveBrowserSettingsSnapshot} />
+              )}
+
+              {settingsSection === "computerUse" && (
+                <ComputerUseSettingsPanel
+                  settings={computerUseSettings}
+                  availability={integrationAvailability.integrations.find((item) => item.id === "computerUse")}
+                  onSave={saveComputerUseSettingsSnapshot}
+                  onRunDoctor={runComputerUseDoctor}
+                  onPreviewPresence={previewComputerUsePresence}
+                />
               )}
 
               {settingsSection === "imageGeneration" && (
