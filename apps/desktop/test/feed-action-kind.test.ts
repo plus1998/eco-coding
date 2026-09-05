@@ -64,6 +64,20 @@ test("resolveActionKind classifies eco browser and image tools", () => {
   expect(resolveActionKind({ toolName: "mcp__eco_image_view__view_image" }).icon).toBe("images");
   expect(resolveActionKind({ toolName: "mcp__eco_web_search__search" }).kind).toBe("webSearch");
   expect(resolveActionKind({ toolName: "mcp__eco_web_search__search" }).icon).toBe("network");
+  expect(resolveActionKind({ toolName: "eco_agent_browser_agent_browser_open" }).kind).toBe("browser");
+  expect(resolveActionKind({ toolName: "eco_agent_browser_agent_browser_open" }).namedSuffix).toBe(
+    "agent_browser_open",
+  );
+});
+
+test("resolveActionKind classifies eco computer use tools", () => {
+  const resolved = resolveActionKind({ toolName: "mcp__eco_computer_use__click" });
+  expect(resolved.kind).toBe("computerUse");
+  expect(resolved.icon).toBe("computer");
+  expect(resolved.bucket).toBe("computerUse");
+  expect(formatActionLine({ resolved, phase: "running" }, tZh)).toBe("正在操控电脑");
+  expect(formatActionLine({ resolved, phase: "done" }, tZh)).toBe("操控了电脑");
+  expect(formatActionLine({ resolved, phase: "running" }, tEn)).toBe("Controlling computer");
 });
 
 test("resolveActionKind does not let skill heuristic steal mcp tools", () => {

@@ -621,6 +621,7 @@ String? _toolNameForActionIcon(ActivityActionIcon? icon) {
     ActivityActionIcon.image => 'ViewImage',
     ActivityActionIcon.images => 'ViewImage',
     ActivityActionIcon.browser => 'mcp__eco_agent_browser__browser',
+    ActivityActionIcon.computer => 'mcp__eco_computer_use__click',
     ActivityActionIcon.tool || ActivityActionIcon.context || null => null,
   };
 }

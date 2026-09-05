@@ -153,6 +153,12 @@ bool isEcoAgentBrowserToolName(String? toolName) {
       name.contains('agent_browser_');
 }
 
+bool isEcoComputerUseToolName(String? value) {
+  final name = value?.trim().toLowerCase() ?? '';
+  if (name.isEmpty) return false;
+  return name.contains('eco_computer_use') || name.contains('open_computer_use');
+}
+
 String? ecoAgentBrowserToolSuffix(String toolName) {
   final name = toolName.trim();
   if (name.isEmpty) return null;
@@ -160,7 +166,11 @@ String? ecoAgentBrowserToolSuffix(String toolName) {
     r'^mcp__(?:[^_]+(?:_[^_]+)*)__(.+)$',
     caseSensitive: false,
   ).firstMatch(name);
-  final suffix = (match?.group(1) ?? name).trim().toLowerCase();
+  var suffix = (match?.group(1) ?? name).trim().toLowerCase();
+  // Pi proxy form `eco_agent_browser_agent_browser_open` → short tool name.
+  if (!suffix.startsWith('agent_browser') && suffix.startsWith('eco_agent_browser_')) {
+    suffix = suffix.substring('eco_agent_browser_'.length);
+  }
   if (!suffix.contains('agent_browser')) return null;
   return suffix;
 }
@@ -169,6 +179,7 @@ String? _resolveEcoBuiltinToolLabel(String tool) {
   final exact = _mcpToolDisplayLabels[tool];
   if (exact != null) return exact;
   if (isEcoImageGenerationToolName(tool)) return '生成图片';
+  if (isEcoComputerUseToolName(tool)) return '电脑操控';
   final browserSuffix = ecoAgentBrowserToolSuffix(tool);
   if (browserSuffix != null) {
     final known = _ecoBuiltinToolSuffixLabels[browserSuffix];
@@ -256,6 +267,7 @@ enum ActivityActionIcon {
   image,
   images,
   browser,
+  computer,
   tool,
 }
 

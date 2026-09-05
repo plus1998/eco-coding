@@ -92,6 +92,12 @@ void main() {
     );
     expect(
       resolveActionKind(
+        toolName: 'eco_agent_browser_agent_browser_open',
+      ).namedSuffix,
+      'agent_browser_open',
+    );
+    expect(
+      resolveActionKind(
         toolName: 'mcp__eco_image_generation__create_image',
       ).kind,
       ActionKind.imageCreate,
@@ -117,6 +123,31 @@ void main() {
     expect(
       resolveActionKind(toolName: 'custom_skill_loader').kind,
       ActionKind.skill,
+    );
+  });
+
+  test('eco computer use tools classify', () {
+    final resolved = resolveActionKind(
+      toolName: 'mcp__eco_computer_use__click',
+    );
+    expect(resolved.kind, ActionKind.computerUse);
+    expect(resolved.icon, ActivityActionIcon.computer);
+    expect(resolved.bucket, ActionGroupBucket.computerUse);
+    expect(
+      formatActionLine(
+        resolved: resolved,
+        phase: ActionLinePhase.running,
+        l10n: l10n,
+      ),
+      '正在操控电脑',
+    );
+    expect(
+      formatActionLine(
+        resolved: resolved,
+        phase: ActionLinePhase.done,
+        l10n: l10n,
+      ),
+      '操控了电脑',
     );
   });
 

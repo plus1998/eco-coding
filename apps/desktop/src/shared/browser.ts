@@ -565,7 +565,11 @@ export function ecoAgentBrowserToolSuffix(toolName: string): string | undefined 
     return undefined;
   }
   const match = name.match(/^mcp__(?:[^_]+(?:_[^_]+)*)__(.+)$/i);
-  const suffix = (match?.[1] ?? name).trim().toLowerCase();
+  let suffix = (match?.[1] ?? name).trim().toLowerCase();
+  // Pi proxy form `eco_agent_browser_agent_browser_open` → short tool name.
+  if (!suffix.startsWith("agent_browser") && suffix.startsWith(`${ECO_AGENT_BROWSER_MCP_SERVER}_`)) {
+    suffix = suffix.slice(ECO_AGENT_BROWSER_MCP_SERVER.length + 1);
+  }
   if (!suffix.includes("agent_browser")) {
     return undefined;
   }

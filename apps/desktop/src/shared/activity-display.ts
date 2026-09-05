@@ -4,6 +4,7 @@ export { resolveFileChangeCardDisplay } from "./file-change";
 import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/runtime/agent-mission";
 import { shortenModelId } from "@eco/runtime/usage";
 import { ecoAgentBrowserToolSuffix } from "./browser";
+import { isEcoComputerUseToolName } from "./computer-use";
 import { type ActionKindTranslate, formatActionLine, resolveActionKind } from "./feed-action-kind";
 import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
@@ -137,6 +138,7 @@ const MCP_TOOL_LINE_PATTERN = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/;
 const NAMED_ECO_TOOL_SUFFIXES = new Set([
   "finalize_plan",
   "create_image",
+  "computer_use",
   "view_image",
   "display_image",
   "agent_browser_open",
@@ -157,6 +159,9 @@ export function isMcpToolName(tool: string): boolean {
 function resolveNamedToolSuffix(tool: string): string | undefined {
   if (isEcoImageGenerationToolName(tool)) {
     return "create_image";
+  }
+  if (isEcoComputerUseToolName(tool)) {
+    return "computer_use";
   }
   if (isEcoImageViewToolName(tool)) {
     return "view_image";
@@ -345,11 +350,7 @@ export interface WebSearchCardDisplay {
 }
 
 export function isNetworkToolName(toolName: string | undefined): boolean {
-  return (
-    toolName === "WebSearch" ||
-    toolName === "WebFetch" ||
-    isEcoWebSearchToolName(toolName)
-  );
+  return toolName === "WebSearch" || toolName === "WebFetch" || isEcoWebSearchToolName(toolName);
 }
 
 export function resolveWebSearchCardDisplay(
@@ -374,8 +375,7 @@ export function resolveWebSearchCardDisplay(
   if (!isNetworkToolName(input.toolName) && !input.webSearch) {
     return undefined;
   }
-  const kind =
-    input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
+  const kind = input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
   const structured = input.webSearch;
   const query =
     structured?.query?.trim() ||

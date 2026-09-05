@@ -1,4 +1,5 @@
 import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
+import { isEcoComputerUseToolName } from "./computer-use";
 import { isEcoHtmlHostToolName } from "./html-host-tool";
 import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
@@ -17,6 +18,7 @@ export type ActivityActionIcon =
   | "agent"
   | "context"
   | "network"
+  | "computer"
   | "tool";
 
 export type ActionKind =
@@ -38,6 +40,7 @@ export type ActionKind =
   | "htmlHost"
   | "imageCreate"
   | "browser"
+  | "computerUse"
   | "tool";
 
 export type ActionGroupBucket =
@@ -54,6 +57,7 @@ export type ActionGroupBucket =
   | "mcpTools"
   | "images"
   | "browser"
+  | "computerUse"
   | "otherTools";
 
 export interface ActionKindPayload {
@@ -133,6 +137,7 @@ const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
   htmlHost: "browser",
   imageCreate: "image",
   browser: "browser",
+  computerUse: "computer",
   tool: "tool",
 };
 
@@ -155,6 +160,7 @@ const KIND_BUCKET: Record<ActionKind, ActionGroupBucket> = {
   htmlHost: "browser",
   imageCreate: "images",
   browser: "browser",
+  computerUse: "computerUse",
   tool: "otherTools",
 };
 
@@ -222,6 +228,9 @@ export function resolveActionKind(input: { toolName?: string; payload?: ActionKi
   if (isEcoAgentBrowserToolName(toolName)) {
     return resolved("browser", ecoAgentBrowserToolSuffix(toolName));
   }
+  if (isEcoComputerUseToolName(toolName)) {
+    return resolved("computerUse");
+  }
   if (isEcoImageGenerationToolName(toolName)) {
     return resolved("imageCreate");
   }
@@ -259,6 +268,7 @@ export const ACTION_GROUP_ICON_PRIORITY: readonly ActivityActionIcon[] = [
   "network",
   "terminal",
   "browser",
+  "computer",
   "images",
   "image",
   "agent",
@@ -279,6 +289,7 @@ const SUMMARY_BUCKET_ORDER: readonly ActionGroupBucket[] = [
   "mcpTools",
   "images",
   "browser",
+  "computerUse",
   "otherTools",
 ];
 
@@ -296,6 +307,7 @@ const SUMMARY_I18N_KEY: Record<ActionGroupBucket, string> = {
   mcpTools: "activity.summary.mcpTools",
   images: "activity.summary.images",
   browser: "activity.summary.browser",
+  computerUse: "activity.summary.computerUse",
   otherTools: "activity.summary.tools",
 };
 
@@ -399,6 +411,9 @@ export function formatActionLine(
   }
   if (kind === "imageCreate") {
     return t(phase === "running" ? "activity.running.imageCreate" : "activity.done.imageCreate");
+  }
+  if (kind === "computerUse") {
+    return t(phase === "running" ? "activity.running.computerUse" : "activity.done.computerUse");
   }
   if (kind === "mcpSearch") {
     return t(phase === "running" ? "activity.running.mcpSearch" : "activity.done.mcpSearch");

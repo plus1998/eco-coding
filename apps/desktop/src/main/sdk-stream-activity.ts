@@ -8,11 +8,11 @@ import {
   parseEcoWebSearchToolOutput,
   parseSendMessageToolResult,
   readEcoWebSearchQuery,
-  readImageDisplayMetadataFromToolOutput,
   readHtmlHostMetadataFromToolOutput,
+  readImageDisplayMetadataFromToolOutput,
   readSendMessageToolInput,
-  resolveEcoImageDisplayToolCall,
   resolveEcoHtmlHostToolCall,
+  resolveEcoImageDisplayToolCall,
   resolveEcoImageViewToolCall,
   resolvePiMcpProxyDiscoveryCall,
   resolveSkillDisplayName,
@@ -24,6 +24,7 @@ import {
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
 import type { ThreadLocalStreamUpdate, ThreadRunToolMetadata } from "../shared/ipc";
+import { resolvePiMcpProxyCall, resolvePiMcpProxyToolName } from "../shared/pi-mcp-proxy.js";
 import {
   formatThreadRunGrepTargetLabel,
   formatThreadRunReadTargetLabel,
@@ -683,8 +684,13 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
-  const { displayName, imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery } =
-    resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const proxyCall = resolvePiMcpProxyCall(name, record.input);
+  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
+  const toolInput = proxyCall?.args ?? record.input;
+  const { imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
+    displayName,
+    toolInput,
+  );
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const command =
     readString(record.command) ??
@@ -692,7 +698,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readString(record.bash_command) ??
     (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ??
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ??
-    resolveSdkToolDisplayDetail(name, record.input);
+    resolveSdkToolDisplayDetail(displayName, toolInput);
   const output =
     readToolResultText(record.output) ??
     readToolResultText(record.stdout) ??
@@ -730,7 +736,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
           ...(sendMessageResult ?? {}),
         }
       : undefined;
-  const webSearch = resolveEcoWebSearchToolMetadata(displayName, record.input, output);
+  const webSearch = resolveEcoWebSearchToolMetadata(displayName, toolInput, output);
   const imageDisplayMeta = imageDisplayCall
     ? readImageDisplayMetadataFromToolOutput(output ?? record.result ?? record.content)
     : undefined;
@@ -742,7 +748,9 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(webSearch?.query && !command && { detail: webSearch.query }),
-    ...(imageDisplayMeta?.artifactId && !command && !sendMessageDetail && { detail: imageDisplayMeta.artifactId }),
+    ...(imageDisplayMeta?.artifactId &&
+      !command &&
+      !sendMessageDetail && { detail: imageDisplayMeta.artifactId }),
     ...(htmlHostMeta?.publicUrl && !command && !sendMessageDetail && { detail: htmlHostMeta.publicUrl }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
     ...(sendMessageOutputPreview?.text && { outputPreview: sendMessageOutputPreview.text }),
@@ -791,8 +799,10 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     return undefined;
   }
   const name = record.tool_name;
-  const { displayName, imageViewCall, mcpDiscovery } =
-    resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const proxyCall = resolvePiMcpProxyCall(name, record.input);
+  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
+  const toolInput = proxyCall?.args ?? record.input;
+  const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const message =
     typeof record.message === "string"
@@ -940,21 +950,23 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     return undefined;
   }
   const name = record.tool_name.trim();
-  const { displayName, imageViewCall, mcpDiscovery } =
-    resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const proxyCall = resolvePiMcpProxyCall(name, record.input);
+  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
+  const toolInput = proxyCall?.args ?? record.input;
+  const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
   const targets = resolveThreadRunToolTargets(displayName, record.input);
   const detail =
     imageViewCall?.path ||
     (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ||
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
-    resolveSdkToolDisplayDetail(name, record.input);
+    resolveSdkToolDisplayDetail(displayName, toolInput);
   const toolUseId = readString(record.tool_use_id);
   const description = name === "Bash" ? readBashDescriptionFromToolInput(record.input) : undefined;
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
   const sendMessage = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
-  const webSearch = resolveEcoWebSearchToolMetadata(displayName, record.input);
+  const webSearch = resolveEcoWebSearchToolMetadata(displayName, toolInput);
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -1186,8 +1198,7 @@ function resolveEcoWebSearchToolMetadata(
   output?: string,
 ): ThreadRunToolMetadata["webSearch"] | undefined {
   const normalized = toolName.trim();
-  const isPiOrNativeSearch =
-    normalized === "WebSearch" || normalized.toLowerCase() === "web_search";
+  const isPiOrNativeSearch = normalized === "WebSearch" || normalized.toLowerCase() === "web_search";
   if (!isEcoWebSearchToolName(normalized) && !isPiOrNativeSearch) {
     return undefined;
   }

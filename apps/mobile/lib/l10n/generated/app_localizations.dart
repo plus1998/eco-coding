@@ -1844,6 +1844,12 @@ abstract class AppLocalizations {
   /// **'Used the browser {count} times'**
   String activitySummaryBrowser(Object count);
 
+  /// No description provided for @activitySummaryComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Used computer use {count} times'**
+  String activitySummaryComputerUse(Object count);
+
   /// No description provided for @activityRunningRead.
   ///
   /// In en, this message translates to:
@@ -1921,6 +1927,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Generating image'**
   String get activityRunningImageCreate;
+
+  /// No description provided for @activityRunningComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Controlling computer'**
+  String get activityRunningComputerUse;
 
   /// No description provided for @activityRunningBrowserOpen.
   ///
@@ -2107,6 +2119,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Generated an image'**
   String get activityDoneImageCreate;
+
+  /// No description provided for @activityDoneComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Controlled the computer'**
+  String get activityDoneComputerUse;
 
   /// No description provided for @activityDoneBrowserOpen.
   ///

@@ -25,6 +25,7 @@ import {
   Image as ImageIcon,
   Images,
   Minimize2,
+  Monitor,
   Pencil,
   RefreshCw,
   Reply,
@@ -103,9 +104,10 @@ import {
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
 } from "./activity-log";
+import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } from "./browser-link";
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
-import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } from "./browser-link";
+import { resolveFeedPaceTargetKey } from "./feed-pace-target";
 import { i18n } from "./i18n";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { ImageLightbox } from "./image-lightbox";
@@ -147,7 +149,6 @@ import {
   type ThreadRunProjectionToolGroupFeedEntry,
   type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
-import { resolveFeedPaceTargetKey } from "./feed-pace-target";
 import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
@@ -1014,7 +1015,15 @@ function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch || block.imageView || block.imageDisplay || block.htmlHost)) {
+  if (
+    block.kind === "action" &&
+    (block.bashRun ||
+      block.fileChange ||
+      block.webSearch ||
+      block.imageView ||
+      block.imageDisplay ||
+      block.htmlHost)
+  ) {
     return false;
   }
   return (
@@ -1242,8 +1251,7 @@ export function ProjectionToolGroupEntry({
         .filter((value): value is string => Boolean(value)),
     ),
   ];
-  const imageDisplayToolUseId =
-    imageDisplayToolUseIds.length === 1 ? imageDisplayToolUseIds[0] : undefined;
+  const imageDisplayToolUseId = imageDisplayToolUseIds.length === 1 ? imageDisplayToolUseIds[0] : undefined;
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -4689,9 +4697,7 @@ export function HtmlHostBlock({
   const roleLabel =
     subagent && !omitRoleLabel ? formatRoleModelLabel(subagent, modelByRole?.[subagent]) : undefined;
   const statusLabel =
-    lifecycle === "running"
-      ? i18n.t("activity.htmlHost.publishing")
-      : i18n.t("activity.htmlHost.published");
+    lifecycle === "running" ? i18n.t("activity.htmlHost.publishing") : i18n.t("activity.htmlHost.published");
   const expiresLabel = htmlHost.expiresAt
     ? i18n.t("activity.htmlHost.expiresAt", {
         time: htmlHost.expiresAt.replace("T", " ").slice(0, 19),
@@ -5298,7 +5304,9 @@ function RunLogWebSearchDetail({
       ) : null}
       {display.provider ? (
         <div className="run-log-web-search-detail-row">
-          <span className="run-log-web-search-detail-label">{i18n.t("activity.webSearch.providerLabel")}</span>
+          <span className="run-log-web-search-detail-label">
+            {i18n.t("activity.webSearch.providerLabel")}
+          </span>
           <span className="run-log-web-search-detail-value is-muted">{display.provider}</span>
         </div>
       ) : null}
@@ -5495,6 +5503,7 @@ const actionIcons = {
   agent: Bot,
   context: Minimize2,
   network: Globe2,
+  computer: Monitor,
   tool: Wrench,
 } as const;
 
@@ -5525,10 +5534,7 @@ function RunLogActionIcon({
       <Icon size={14} className="run-log-action-icon" />
       {StatusIcon && approvalLifecycle ? (
         <span
-          className={[
-            "run-log-action-status-badge",
-            approvalStatusBadgeClass(approvalLifecycle),
-          ].join(" ")}
+          className={["run-log-action-status-badge", approvalStatusBadgeClass(approvalLifecycle)].join(" ")}
           title={statusLabel}
         >
           <StatusIcon size={8} className="run-log-action-status-icon" strokeWidth={2.5} />

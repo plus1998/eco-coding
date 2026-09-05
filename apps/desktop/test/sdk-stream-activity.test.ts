@@ -137,6 +137,109 @@ test("copies raw thinking extras onto the local stream overlay payload", () => {
   expect(overlay?.reasoningDisplay).toBe("raw");
 });
 
+test("resolves pi mcp proxy calls into canonical eco tool names", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    role: string;
+    agentId?: string;
+    tool?: {
+      name: string;
+      detail?: string;
+      toolUseId?: string;
+      status?: string;
+      mcpDiscovery?: { kind: string };
+      webSearch?: { query?: string };
+    };
+  }> = [];
+
+  const handleTool = (payload: unknown) =>
+    bridge.handleEvent(
+      "thr_pi_proxy",
+      { type: "tool.started", role: "explore", payload },
+      (_threadId, type, message, role, _stream, agentId, extras) => {
+        emitted.push({
+          type,
+          message,
+          role,
+          ...(agentId && { agentId }),
+          ...(extras?.tool && { tool: extras.tool }),
+        });
+      },
+      undefined,
+    );
+
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_browser",
+    input: {
+      tool: "eco_agent_browser_agent_browser_open",
+      args: { url: "https://example.com/page" },
+    },
+  });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_image",
+    input: {
+      tool: "create_image",
+      server: "eco_image_generation",
+      args: { prompt: "a cat" },
+    },
+  });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_click",
+    input: {
+      tool: "eco_computer_use_click",
+      args: { x: 10, y: 20 },
+    },
+  });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_search",
+    input: {
+      tool: "eco_web_search_search",
+      args: { query: "eco desktop app" },
+    },
+  });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_discovery",
+    input: { search: "browser" },
+  });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcpScript",
+    tool_use_id: "pi_tool_script",
+    input: { code: 'await tools.eco_image_generation_create_image({ prompt: "x" });' },
+  });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_third_party",
+    input: { tool: "linear_create_issue", args: { title: "bug" } },
+  });
+
+  expect(emitted.map((entry) => entry.tool?.name)).toEqual([
+    "mcp__eco_agent_browser__agent_browser_open",
+    "mcp__eco_image_generation__create_image",
+    "mcp__eco_computer_use__click",
+    "mcp__eco_web_search__search",
+    "mcp",
+    "mcp__eco_image_generation__create_image",
+    "mcp",
+  ]);
+  expect(emitted[0]?.tool?.detail).toBe("https://example.com/page");
+  expect(emitted[3]?.tool?.webSearch?.query).toBe("eco desktop app");
+  expect(emitted[4]?.tool?.mcpDiscovery).toEqual({ kind: "search" });
+});
+
 test("emits structured SDK tool metadata with tool started activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

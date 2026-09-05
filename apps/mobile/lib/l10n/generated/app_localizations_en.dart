@@ -1060,6 +1060,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String activitySummaryComputerUse(Object count) {
+    return 'Used computer use $count times';
+  }
+
+  @override
   String activityRunningRead(Object suffix) {
     return 'Reading$suffix';
   }
@@ -1119,6 +1124,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityRunningImageCreate => 'Generating image';
+
+  @override
+  String get activityRunningComputerUse => 'Controlling computer';
 
   @override
   String activityRunningBrowserOpen(Object suffix) {
@@ -1244,6 +1252,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityDoneImageCreate => 'Generated an image';
+
+  @override
+  String get activityDoneComputerUse => 'Controlled the computer';
 
   @override
   String activityDoneBrowserOpen(Object suffix) {

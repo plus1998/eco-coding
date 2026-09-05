@@ -20,6 +20,7 @@ enum ActionKind {
   imageView,
   imageCreate,
   browser,
+  computerUse,
   tool,
 }
 
@@ -37,6 +38,7 @@ enum ActionGroupBucket {
   mcpTools,
   images,
   browser,
+  computerUse,
   otherTools,
 }
 
@@ -165,6 +167,7 @@ const _kindIcon = <ActionKind, ActivityActionIcon>{
   ActionKind.imageView: ActivityActionIcon.images,
   ActionKind.imageCreate: ActivityActionIcon.image,
   ActionKind.browser: ActivityActionIcon.browser,
+  ActionKind.computerUse: ActivityActionIcon.computer,
   ActionKind.tool: ActivityActionIcon.tool,
 };
 
@@ -185,6 +188,7 @@ const _kindBucket = <ActionKind, ActionGroupBucket>{
   ActionKind.imageView: ActionGroupBucket.images,
   ActionKind.imageCreate: ActionGroupBucket.images,
   ActionKind.browser: ActionGroupBucket.browser,
+  ActionKind.computerUse: ActionGroupBucket.computerUse,
   ActionKind.tool: ActionGroupBucket.otherTools,
 };
 
@@ -196,6 +200,7 @@ const _actionGroupIconPriority = <ActivityActionIcon>[
   ActivityActionIcon.network,
   ActivityActionIcon.terminal,
   ActivityActionIcon.browser,
+  ActivityActionIcon.computer,
   ActivityActionIcon.images,
   ActivityActionIcon.image,
   ActivityActionIcon.agent,
@@ -216,6 +221,7 @@ const _summaryBucketOrder = <ActionGroupBucket>[
   ActionGroupBucket.mcpTools,
   ActionGroupBucket.images,
   ActionGroupBucket.browser,
+  ActionGroupBucket.computerUse,
   ActionGroupBucket.otherTools,
 ];
 
@@ -289,6 +295,9 @@ ResolvedAction resolveActionKind({
   if (_isEcoImageViewToolName(toolName)) {
     return _resolved(ActionKind.imageView);
   }
+  if (isEcoComputerUseToolName(toolName)) {
+    return _resolved(ActionKind.computerUse);
+  }
 
   if (name.startsWith('mcp__')) {
     return _resolved(ActionKind.mcp);
@@ -361,6 +370,7 @@ String? resolveActionTarget(
     case ActionKind.mcpSearch:
     case ActionKind.imageView:
     case ActionKind.imageCreate:
+    case ActionKind.computerUse:
       return null;
   }
 }
@@ -405,6 +415,7 @@ String _runningLine(ActionKind kind, String suffix, AppLocalizations l10n) {
     ActionKind.imageView => l10n.activityImageViewViewing,
     ActionKind.imageCreate => l10n.activityRunningImageCreate,
     ActionKind.browser => l10n.activityRunningBrowserOpen(suffix),
+    ActionKind.computerUse => l10n.activityRunningComputerUse,
   };
 }
 
@@ -427,6 +438,7 @@ String _doneLine(ActionKind kind, String suffix, AppLocalizations l10n) {
     ActionKind.imageView => l10n.activityImageViewViewed,
     ActionKind.imageCreate => l10n.activityDoneImageCreate,
     ActionKind.browser => l10n.activityDoneBrowserOpen(suffix),
+    ActionKind.computerUse => l10n.activityDoneComputerUse,
   };
 }
 
@@ -449,6 +461,7 @@ String _doneFallback(ActionKind kind, AppLocalizations l10n) {
     ActionKind.imageView => l10n.activityImageViewViewed,
     ActionKind.imageCreate => l10n.activityDoneImageCreate,
     ActionKind.browser => l10n.activityDoneToolFallback,
+    ActionKind.computerUse => l10n.activityDoneComputerUse,
   };
 }
 
@@ -470,6 +483,11 @@ String formatActionLine({
     return phase == ActionLinePhase.running
         ? l10n.activityRunningImageCreate
         : l10n.activityDoneImageCreate;
+  }
+  if (kind == ActionKind.computerUse) {
+    return phase == ActionLinePhase.running
+        ? l10n.activityRunningComputerUse
+        : l10n.activityDoneComputerUse;
   }
   if (kind == ActionKind.mcpSearch) {
     return phase == ActionLinePhase.running
@@ -535,6 +553,7 @@ String _summaryClause(
     ActionGroupBucket.mcpTools => l10n.activitySummaryMcpTools(count),
     ActionGroupBucket.images => l10n.activitySummaryImages(count),
     ActionGroupBucket.browser => l10n.activitySummaryBrowser(count),
+    ActionGroupBucket.computerUse => l10n.activitySummaryComputerUse(count),
     ActionGroupBucket.otherTools => l10n.activityRanTools(count),
   };
 }

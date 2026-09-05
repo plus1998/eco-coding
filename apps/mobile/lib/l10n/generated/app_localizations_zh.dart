@@ -983,6 +983,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String activitySummaryComputerUse(Object count) {
+    return '电脑操控 $count 次';
+  }
+
+  @override
   String activityRunningRead(Object suffix) {
     return '正在读取$suffix';
   }
@@ -1042,6 +1047,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityRunningImageCreate => '正在生成图片';
+
+  @override
+  String get activityRunningComputerUse => '正在操控电脑';
 
   @override
   String activityRunningBrowserOpen(Object suffix) {
@@ -1167,6 +1175,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityDoneImageCreate => '生成了图片';
+
+  @override
+  String get activityDoneComputerUse => '操控了电脑';
 
   @override
   String activityDoneBrowserOpen(Object suffix) {

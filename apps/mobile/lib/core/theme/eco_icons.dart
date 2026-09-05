@@ -95,6 +95,7 @@ abstract final class EcoIcons {
   static const IconData images = LucideIcons.images;
   static const IconData browser = LucideIcons.appWindow;
   static const IconData tool = LucideIcons.wrench;
+  static const IconData computer = LucideIcons.monitor;
   static const IconData skills = LucideIcons.bookOpen;
 
   // ── Markdown / Mermaid ────────────────────────────────
@@ -132,6 +133,7 @@ abstract final class EcoIcons {
       ActivityActionIcon.image => image,
       ActivityActionIcon.images => images,
       ActivityActionIcon.browser => browser,
+      ActivityActionIcon.computer => computer,
       ActivityActionIcon.tool => tool,
     };
   }
