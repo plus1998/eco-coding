@@ -1,18 +1,29 @@
 import { Monitor, ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ComputerUseActionApprovalMode,
   ComputerUseSettingsSnapshot,
 } from "../shared/computer-use";
 
+interface ComputerUseDoctorResult {
+  ok: boolean;
+  /** True when the package's onboarding window was launched (macOS permission missing). */
+  onboardingLaunched: boolean;
+  reason?: string;
+  output?: string;
+}
+
 interface ComputerUseSettingsPanelProps {
   settings: ComputerUseSettingsSnapshot;
   availability?: { available: boolean; reason?: string };
   onSave: (settings: ComputerUseSettingsSnapshot) => Promise<void>;
-  onRunDoctor?: () => Promise<{ ok: boolean; reason?: string; output?: string }>;
+  onRunDoctor?: () => Promise<ComputerUseDoctorResult>;
+  onCheckPermissionStatus?: () => Promise<{ ok: boolean; missing: string[] }>;
   onPreviewPresence?: () => Promise<void>;
 }
+
+const PERMISSION_POLL_INTERVAL_MS = 3_000;
 
 const ACTION_APPROVAL_OPTIONS: ComputerUseActionApprovalMode[] = ["always_ask", "always_allow"];
 
@@ -21,6 +32,7 @@ export function ComputerUseSettingsPanel({
   availability,
   onSave,
   onRunDoctor,
+  onCheckPermissionStatus,
   onPreviewPresence,
 }: ComputerUseSettingsPanelProps) {
   const { t } = useTranslation();
@@ -30,6 +42,16 @@ export function ComputerUseSettingsPanel({
   const [doctorBusy, setDoctorBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [doctorMessage, setDoctorMessage] = useState<string | undefined>();
+  const pollTimerRef = useRef<number | undefined>(undefined);
+
+  function stopPermissionPolling() {
+    if (pollTimerRef.current !== undefined) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = undefined;
+    }
+  }
+
+  useEffect(() => stopPermissionPolling, []);
 
   const unavailable = settings.agentIntegrationEnabled && availability?.available === false;
   const unavailableReason = availability?.reason ?? t("settings.computerUse.agentUnknownReason");
@@ -41,7 +63,12 @@ export function ComputerUseSettingsPanel({
     setBusy(true);
     try {
       await onSave(next);
+      stopPermissionPolling();
       setDoctorMessage(undefined);
+    } catch (error) {
+      // Master switch on while permissions are missing throws with guidance;
+      // surface it here (the onboarding window is opened by the main process).
+      setDoctorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -51,14 +78,31 @@ export function ComputerUseSettingsPanel({
     if (!onRunDoctor || doctorBusy) {
       return;
     }
+    stopPermissionPolling();
     setDoctorBusy(true);
     try {
       const result = await onRunDoctor();
       if (result.ok) {
         setDoctorMessage(t("settings.computerUse.doctorOk"));
-      } else {
-        setDoctorMessage(result.reason ?? result.output ?? t("settings.computerUse.agentUnknownReason"));
+        return;
       }
+      if (result.onboardingLaunched) {
+        setDoctorMessage(
+          `${t("settings.computerUse.doctorOnboardingHint")} ${t("settings.computerUse.waitingForPermissions")}`,
+        );
+        if (onCheckPermissionStatus) {
+          pollTimerRef.current = window.setInterval(() => {
+            void onCheckPermissionStatus().then((status) => {
+              if (status.ok) {
+                stopPermissionPolling();
+                setDoctorMessage(t("settings.computerUse.doctorOk"));
+              }
+            });
+          }, PERMISSION_POLL_INTERVAL_MS);
+        }
+        return;
+      }
+      setDoctorMessage(result.reason ?? result.output ?? t("settings.computerUse.agentUnknownReason"));
     } catch (error) {
       setDoctorMessage(error instanceof Error ? error.message : String(error));
     } finally {

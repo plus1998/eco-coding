@@ -4845,15 +4845,38 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.computerUseDoctor, async () => {
     const resolved = computerUseGateway.resolveBinary();
     if (!resolved.available || !resolved.binaryPath) {
-      return { ok: false, reason: resolved.reason ?? "open-computer-use 不可用" };
+      return { ok: false, onboardingLaunched: false, reason: resolved.reason ?? "open-computer-use 不可用" };
     }
-    const { probeOpenComputerUseDoctor } = await import("./computer-use-mcp-gateway");
-    const doctor = await probeOpenComputerUseDoctor(resolved.binaryPath);
+    const { probeOpenComputerUsePermissionStatus, launchOpenComputerUseOnboarding } = await import(
+      "./computer-use-mcp-gateway"
+    );
+    const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
+    if (probe.ok) {
+      return {
+        ok: true,
+        onboardingLaunched: false,
+        ...(probe.output ? { output: probe.output } : {}),
+      };
+    }
+    const launch = launchOpenComputerUseOnboarding(resolved.binaryPath);
     return {
-      ok: doctor.ok,
-      ...(doctor.reason ? { reason: doctor.reason } : {}),
-      ...(doctor.output ? { output: doctor.output } : {}),
+      ok: false,
+      onboardingLaunched: launch.launched,
+      reason: launch.launched
+        ? undefined
+        : (probe.reason ?? "系统权限未就绪"),
+      ...(probe.output ? { output: probe.output } : {}),
     };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.computerUsePermissionStatus, async () => {
+    const resolved = computerUseGateway.resolveBinary();
+    if (!resolved.available || !resolved.binaryPath) {
+      return { ok: false, missing: [] as string[] };
+    }
+    const { probeOpenComputerUsePermissionStatus } = await import("./computer-use-mcp-gateway");
+    const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
+    return { ok: probe.ok, missing: probe.missing };
   });
 
   registerDesktopCommand(IPC_CHANNELS.computerUsePresencePreview, async () => {

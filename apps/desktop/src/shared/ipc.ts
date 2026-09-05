@@ -237,6 +237,7 @@ export const IPC_CHANNELS = {
   computerUseSettingsGet: "computer-use-settings:get",
   computerUseSettingsSave: "computer-use-settings:save",
   computerUseDoctor: "computer-use:doctor",
+  computerUsePermissionStatus: "computer-use:permission-status",
   computerUsePresencePreview: "computer-use:presence-preview",
   webChatListGet: "web-chat-list:get",
   webChatListSave: "web-chat-list:save",

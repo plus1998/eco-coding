@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,7 +56,148 @@ export type ComputerUseMcpGatewayDeps = {
   }) => void;
 };
 
-const DOCTOR_TIMEOUT_MS = 12_000;
+const PERMISSION_STATUS_TIMEOUT_MS = 15_000;
+
+export interface OpenComputerUsePermissionProbe {
+  ok: boolean;
+  /** Missing permission keys: "accessibility" | "screenRecording". */
+  missing: string[];
+  reason?: string;
+  /** Raw command output (permission summary). */
+  output?: string;
+}
+
+function runBinaryCommand(
+  binaryPath: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<{ code: number | null; output: string; timedOut: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const chunks: Buffer[] = [];
+    const child = spawn(binaryPath, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    const finish = (result: { code: number | null; output: string; timedOut: boolean; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+      finish({
+        code: null,
+        output: Buffer.concat(chunks).toString("utf8").trim(),
+        timedOut: true,
+      });
+    }, timeoutMs);
+
+    child.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      finish({ code: null, output: "", timedOut: false, error: error.message });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      finish({
+        code,
+        output: Buffer.concat(chunks).toString("utf8").trim(),
+        timedOut: false,
+      });
+    });
+  });
+}
+
+/**
+ * Fast permission check via `permission-status`.
+ * Unlike `doctor`, this command never launches the onboarding window and always
+ * exits 0, so it is safe to poll while the user is granting permissions.
+ */
+export async function probeOpenComputerUsePermissionStatus(
+  binaryPath: string,
+  timeoutMs: number = PERMISSION_STATUS_TIMEOUT_MS,
+): Promise<OpenComputerUsePermissionProbe> {
+  const result = await runBinaryCommand(binaryPath, ["permission-status"], timeoutMs);
+  const output = result.output;
+  if (result.error) {
+    return {
+      ok: false,
+      missing: [],
+      reason: `无法启动 open-computer-use permission-status：${result.error}`,
+    };
+  }
+  if (result.timedOut) {
+    return { ok: false, missing: [], reason: "open-computer-use permission-status timed out", output };
+  }
+  const accessibility = /accessibility=(granted|missing)/.exec(output)?.[1];
+  const screenRecording = /screenRecording=(granted|missing)/.exec(output)?.[1];
+  if (!accessibility || !screenRecording) {
+    return {
+      ok: false,
+      missing: [],
+      reason:
+        output ||
+        `open-computer-use permission-status 失败（退出码 ${result.code ?? "unknown"}）`,
+      output,
+    };
+  }
+  const missing: string[] = [];
+  if (accessibility === "missing") missing.push("accessibility");
+  if (screenRecording === "missing") missing.push("screenRecording");
+  return { ok: missing.length === 0, missing, output };
+}
+
+let onboardingChild: ChildProcess | undefined;
+
+/**
+ * Launch the package's built-in permission onboarding window
+ * ("Enable Open Computer Use"). The binary stays alive until the user grants the
+ * permissions or closes the window, so do not await its exit. The onboarding
+ * window itself guides the user into the right System Settings panes, so we
+ * never open `x-apple.systempreferences` URLs manually.
+ */
+export function launchOpenComputerUseOnboarding(
+  binaryPath: string,
+): { launched: boolean; reason?: string } {
+  try {
+    const child = spawn(binaryPath, ["doctor"], {
+      stdio: "ignore",
+      detached: true,
+      windowsHide: true,
+    });
+    child.on("error", () => {
+      // Onboarding spawn failures surface via the next permission probe.
+    });
+    child.unref();
+    onboardingChild = child;
+    return { launched: true };
+  } catch (error) {
+    return {
+      launched: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function stopOpenComputerUseOnboarding(): void {
+  if (!onboardingChild) {
+    return;
+  }
+  try {
+    onboardingChild.kill();
+  } catch {
+    // ignore
+  }
+  onboardingChild = undefined;
+}
 
 function resolveStdioScriptPath(): string {
   const candidates = [
@@ -84,70 +225,6 @@ function resolveStdioScriptPath(): string {
     }
   }
   return candidates[0]!;
-}
-
-/**
- * Probe OS permissions via `open-computer-use doctor`.
- * On success exits 0. Non-zero / timeout / spawn failure → unavailable with reason.
- * Windows/Linux still run doctor when the binary supports it; failure surfaces as unavailable.
- */
-export async function probeOpenComputerUseDoctor(
-  binaryPath: string,
-  timeoutMs: number = DOCTOR_TIMEOUT_MS,
-): Promise<{ ok: boolean; output: string; reason?: string }> {
-  return await new Promise((resolve) => {
-    let settled = false;
-    const chunks: Buffer[] = [];
-    const child = spawn(binaryPath, ["doctor"], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-
-    const finish = (result: { ok: boolean; output: string; reason?: string }) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
-
-    const timer = setTimeout(() => {
-      try {
-        child.kill();
-      } catch {
-        // ignore
-      }
-      finish({
-        ok: false,
-        output: Buffer.concat(chunks).toString("utf8").trim(),
-        reason: "open-computer-use doctor timed out",
-      });
-    }, timeoutMs);
-
-    child.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr?.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      finish({
-        ok: false,
-        output: "",
-        reason: `无法启动 open-computer-use doctor：${error.message}`,
-      });
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      const output = Buffer.concat(chunks).toString("utf8").trim();
-      if (code === 0) {
-        finish({ ok: true, output });
-        return;
-      }
-      finish({
-        ok: false,
-        output,
-        reason:
-          output ||
-          `open-computer-use doctor 失败（退出码 ${code ?? "unknown"}）。请授予 Accessibility / Screen Recording（macOS）或确认桌面会话可用。`,
-      });
-    });
-  });
 }
 
 export class ComputerUseMcpGateway {
@@ -196,6 +273,7 @@ export class ComputerUseMcpGateway {
 
   async close(): Promise<void> {
     this.disposed = true;
+    stopOpenComputerUseOnboarding();
     await this.upstream.close();
     if (this.controlServer) {
       await new Promise<void>((resolve) => this.controlServer!.close(() => resolve()));
@@ -228,23 +306,27 @@ export class ComputerUseMcpGateway {
     return { available: true };
   }
 
-  /** Full gate used when turning the master switch on (includes doctor). */
-  async checkFeatureAvailable(): Promise<ComputerUseFeatureAvailability> {
+  /** Full gate used when turning the master switch on (includes permission check). */
+  async checkFeatureAvailable(): Promise<ComputerUseFeatureAvailability & { onboardingLaunched?: boolean }> {
     const resolved = this.resolveBinary();
     if (!resolved.available || !resolved.binaryPath) {
       return { available: false, reason: resolved.reason ?? "open-computer-use 不可用" };
     }
-    const doctor = await probeOpenComputerUseDoctor(resolved.binaryPath);
-    if (!doctor.ok) {
+    const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
+    if (!probe.ok) {
+      const launch = launchOpenComputerUseOnboarding(resolved.binaryPath);
       return {
         available: false,
-        reason: doctor.reason ?? "系统权限未就绪",
-        ...(doctor.output ? { doctorOutput: doctor.output } : {}),
+        reason: launch.launched
+          ? "系统权限未就绪，已打开授权窗口，请在弹出窗口中完成授权。"
+          : (probe.reason ?? "系统权限未就绪"),
+        onboardingLaunched: launch.launched,
+        ...(probe.output ? { doctorOutput: probe.output } : {}),
       };
     }
     return {
       available: true,
-      ...(doctor.output ? { doctorOutput: doctor.output } : {}),
+      ...(probe.output ? { doctorOutput: probe.output } : {}),
     };
   }
 

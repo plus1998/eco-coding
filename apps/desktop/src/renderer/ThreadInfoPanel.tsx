@@ -14,7 +14,6 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type {
-  BillingUsageSource,
   CoderTodoItem,
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
@@ -44,7 +43,7 @@ import { i18n } from "./i18n";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 import type { RuntimeAgentThemes } from "./runtime-agent-theme";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
-import { ExpandableBillingSection, UsageBreakdownPanel } from "./UsageBreakdownPanel";
+import { UsageBreakdownPanel } from "./UsageBreakdownPanel";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 
@@ -129,90 +128,6 @@ function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBilli
     billing.sourceReportedCostUsd > 0 ||
     billing.plannerTokenCostUsd > 0 ||
     billing.ecoCostUsd > 0
-  );
-}
-
-const billingSourceLabels: Record<BillingUsageSource, string> = {
-  pi: "PI",
-  proxy: "Proxy",
-  sdk: "SDK",
-  codex: "Codex",
-};
-
-function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
-  const sources = billing.sourceBreakdown;
-  if (!sources) {
-    return null;
-  }
-  const rows = (["pi", "codex", "proxy", "sdk"] as BillingUsageSource[])
-    .map((source) => sources[source])
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-  if (rows.length === 0) {
-    return null;
-  }
-
-  const summary = rows.map((row) => billingSourceLabels[row.source]).join(" · ");
-
-  return (
-    <ExpandableBillingSection
-      title={i18n.t("billing.validation")}
-      summary={summary}
-      className="thread-info-source-compare"
-    >
-      <ul className="thread-info-source-list">
-        {rows.map((row) => {
-          const tokenBadge = formatUsageBadge({
-            inputTokens: row.totalTokens.input,
-            outputTokens: row.totalTokens.output,
-            cacheReadTokens: row.totalTokens.cacheRead,
-            cacheCreationTokens: row.totalTokens.cacheCreation,
-          });
-          const isPrimary = billing.primarySource === row.source;
-          const isDisplay =
-            (billing.displaySource ?? billing.primarySource) === row.source &&
-            billing.displaySource !== billing.primarySource;
-          return (
-            <li
-              key={row.source}
-              className="thread-info-source-row"
-              title={i18n.t("billing.sourcePricingTitle", {
-                source: billingSourceLabels[row.source],
-                reported:
-                  row.reportedCostUsd !== undefined
-                    ? i18n.t("billing.reported", {
-                        cost: formatCostUsd(row.reportedCostUsd),
-                      })
-                    : "",
-              })}
-            >
-              <div className="thread-info-source-row-head">
-                <span className="thread-info-source-label">
-                  {billingSourceLabels[row.source]}
-                  {isPrimary ? (
-                    <span className="thread-info-source-primary">{i18n.t("billing.primary")}</span>
-                  ) : null}
-                  {isDisplay ? (
-                    <span className="thread-info-source-display">{i18n.t("billing.displayed")}</span>
-                  ) : null}
-                </span>
-                <span className="thread-info-source-cost">
-                  {formatCostUsd(row.ecoCostUsd)}
-                  {row.reportedCostUsd !== undefined ? (
-                    <span className="thread-info-source-reported">
-                      {" "}
-                      / {formatCostUsd(row.reportedCostUsd)}
-                    </span>
-                  ) : null}
-                </span>
-              </div>
-              <span className="thread-info-source-tokens" title={i18n.t("billing.tokenTitle")}>
-                {tokenBadge}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </ExpandableBillingSection>
   );
 }
 
@@ -448,7 +363,6 @@ function BillingFloatingCard({
           {...(agentDisplayNames && { agentDisplayNames })}
         />
       ) : null}
-      {showBilling && billing ? <BillingSourceRows billing={billing} /> : null}
     </div>
   );
 }

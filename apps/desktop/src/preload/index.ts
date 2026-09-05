@@ -622,8 +622,16 @@ const api = {
   ): Promise<import("../shared/computer-use").ComputerUseSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUseSettingsSave, settings);
   },
-  runComputerUseDoctor(): Promise<{ ok: boolean; reason?: string; output?: string }> {
+  runComputerUseDoctor(): Promise<{
+    ok: boolean;
+    onboardingLaunched: boolean;
+    reason?: string;
+    output?: string;
+  }> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUseDoctor);
+  },
+  checkComputerUsePermissionStatus(): Promise<{ ok: boolean; missing: string[] }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.computerUsePermissionStatus);
   },
   previewComputerUsePresence(): Promise<{ ok: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUsePresencePreview);

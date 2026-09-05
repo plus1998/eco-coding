@@ -16155,19 +16155,6 @@ a.run-log-web-search-detail-result-url:focus-visible {
   transform: translateY(0);
 }
 
-.usage-breakdown-events-hint {
-  margin: 0 0 8px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-secondary);
-}
-
-.usage-breakdown-shadow-events {
-  margin-top: 10px;
-  padding-top: 0;
-  border-top: 0;
-}
-
 .usage-breakdown-compact {
   margin: 0 0 12px;
   border: 1px solid var(--border-subtle);
@@ -16274,81 +16261,6 @@ a.run-log-web-search-detail-result-url:focus-visible {
 
 .usage-breakdown-expand-body {
   margin-top: 8px;
-}
-
-.thread-info-source-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.thread-info-source-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.thread-info-source-row-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.thread-info-source-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.thread-info-source-primary {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.thread-info-source-display {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--status-allow-bg);
-  color: var(--status-allow-text);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.thread-info-source-cost {
-  flex-shrink: 0;
-  color: var(--text-primary);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.thread-info-source-reported {
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.thread-info-source-tokens {
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-  word-break: break-word;
 }
 
 .thread-info-billing-card .usage-breakdown-toggle {

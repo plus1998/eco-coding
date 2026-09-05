@@ -587,58 +587,20 @@ function LedgerEventRows({
   }
 
   const primarySource = resolveBillingPrimarySource(billing);
-  const { primaryEvents, shadowEvents } = partitionLedgerEventsForDisplay(events, primarySource);
+  const { primaryEvents } = partitionLedgerEventsForDisplay(events, primarySource);
   const sortedPrimary = sortLedgerEventsNewestFirst(primaryEvents);
-  const sortedShadow = sortLedgerEventsNewestFirst(shadowEvents);
 
   if (sortedPrimary.length === 0) {
-    return (
-      <>
-        <p className="usage-breakdown-events-empty">{i18n.t("usage.noPrimaryEvents")}</p>
-        {sortedShadow.length > 0 ? (
-          <ExpandableBillingSection
-            title={i18n.t("usage.validationSource")}
-            summary={i18n.t("usage.shadowSummary", { count: sortedShadow.length })}
-            className="usage-breakdown-shadow-events"
-          >
-            <LedgerEventList
-              events={sortedShadow}
-              compact={compact}
-              scrollable
-              showSource
-              {...(agentDisplayNames && { agentDisplayNames })}
-            />
-          </ExpandableBillingSection>
-        ) : null}
-      </>
-    );
+    return <p className="usage-breakdown-events-empty">{i18n.t("usage.noPrimaryEvents")}</p>;
   }
 
   return (
-    <>
-      <LedgerEventList
-        events={sortedPrimary}
-        compact={compact}
-        scrollable
-        {...(agentDisplayNames && { agentDisplayNames })}
-      />
-      {sortedShadow.length > 0 ? (
-        <ExpandableBillingSection
-          title={i18n.t("usage.validationSource")}
-          summary={i18n.t("usage.shadowSummary", { count: sortedShadow.length })}
-          className="usage-breakdown-shadow-events"
-        >
-          <p className="usage-breakdown-events-hint">{i18n.t("usage.shadowHint")}</p>
-          <LedgerEventList
-            events={sortedShadow}
-            compact={compact}
-            scrollable
-            showSource
-            {...(agentDisplayNames && { agentDisplayNames })}
-          />
-        </ExpandableBillingSection>
-      ) : null}
-    </>
+    <LedgerEventList
+      events={sortedPrimary}
+      compact={compact}
+      scrollable
+      {...(agentDisplayNames && { agentDisplayNames })}
+    />
   );
 }
 

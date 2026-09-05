@@ -7118,7 +7118,7 @@ function App() {
 
   async function runComputerUseDoctor() {
     if (!window.eco?.runComputerUseDoctor) {
-      return { ok: false, reason: "电脑操控 doctor 不可用。" };
+      return { ok: false, onboardingLaunched: false, reason: "电脑操控 doctor 不可用。" };
     }
     return window.eco.runComputerUseDoctor();
   }
@@ -7128,6 +7128,13 @@ function App() {
       throw new Error("电脑操控桌面效果预览不可用。");
     }
     await window.eco.previewComputerUsePresence();
+  }
+
+  async function checkComputerUsePermissionStatus() {
+    if (!window.eco?.checkComputerUsePermissionStatus) {
+      return { ok: false, missing: [] as string[] };
+    }
+    return window.eco.checkComputerUsePermissionStatus();
   }
 
   async function saveNotificationSettingsSnapshot(snapshot: NotificationSettingsSnapshot) {
@@ -10544,6 +10551,7 @@ function App() {
                   onSave={saveComputerUseSettingsSnapshot}
                   onRunDoctor={runComputerUseDoctor}
                   onPreviewPresence={previewComputerUsePresence}
+                  onCheckPermissionStatus={checkComputerUsePermissionStatus}
                 />
               )}
 
