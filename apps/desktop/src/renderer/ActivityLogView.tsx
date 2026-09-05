@@ -147,6 +147,7 @@ import {
   type ThreadRunProjectionToolGroupFeedEntry,
   type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
+import { resolveFeedPaceTargetKey } from "./feed-pace-target";
 import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
@@ -548,6 +549,7 @@ function ProjectionActivityLogView({
     () => buildThreadRunTurnFeedSections(viewModel.mainFeedEntries, projection),
     [projection, viewModel.mainFeedEntries],
   );
+  const paceTargetKey = useMemo(() => resolveFeedPaceTargetKey(feedSections), [feedSections]);
   const retryTargets = useMemo(
     () =>
       buildRequestFailureRetryTargets({
@@ -666,6 +668,7 @@ function ProjectionActivityLogView({
                 allowUserMessageRewrite={allowUserMessageRewrite}
                 historyRevision={projection.historyRevision ?? 0}
                 stopping={Boolean(thread?.cancelling)}
+                {...(paceTargetKey && { paceTargetKey })}
                 {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
               />
             ) : (
@@ -689,6 +692,7 @@ function ProjectionActivityLogView({
                 retryTargets={retryTargets}
                 allowUserMessageRewrite={allowUserMessageRewrite}
                 historyRevision={projection.historyRevision ?? 0}
+                {...(paceTargetKey && { paceTargetKey })}
                 {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
               />
             ),
@@ -721,6 +725,7 @@ type ProjectionFeedEntrySharedProps = {
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   stopping?: boolean;
+  paceTargetKey?: string;
   onLoadProjectionDetail?: ProjectionDetailLoader;
 };
 
@@ -1087,6 +1092,7 @@ function ProjectionMainFeedEntry({
   historyRevision,
   agentDisplayNames,
   agentThemes,
+  paceTargetKey,
   onLoadProjectionDetail,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
@@ -1107,6 +1113,7 @@ function ProjectionMainFeedEntry({
   historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
+  paceTargetKey?: string;
   onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   if (entry.kind === "timeline") {
@@ -1118,6 +1125,7 @@ function ProjectionMainFeedEntry({
         deferWaitingIndicator
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
+        pacing={paceTargetKey ? entry.key === paceTargetKey : true}
         {...(onRestorePrompt && { onRestorePrompt })}
         {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
         {...(onRewriteUserMessage && { onRewriteUserMessage })}
@@ -1159,9 +1167,16 @@ function ProjectionMainFeedEntry({
       />,
     );
   }
-  return wrapRunLogFeedEntry(<ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />, {
-    tight: isTightAgentEchoEntry(entry),
-  });
+  return wrapRunLogFeedEntry(
+    <ProjectionAgentEchoEntry
+      entry={entry}
+      requestSpansById={requestSpansById}
+      pacing={paceTargetKey ? entry.key === paceTargetKey : true}
+    />,
+    {
+      tight: isTightAgentEchoEntry(entry),
+    },
+  );
 }
 
 function isTightAgentEchoEntry(
@@ -2106,10 +2121,12 @@ function ProjectionAgentEchoEntry({
   entry,
   requestSpansById,
   forceActionDetailsExpanded = false,
+  pacing = true,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   forceActionDetailsExpanded?: boolean;
+  pacing?: boolean;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
   if (!block) {
@@ -2125,6 +2142,7 @@ function ProjectionAgentEchoEntry({
           text={block.text}
           createdAt={entry.item.at}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
+          pacing={pacing}
           omitSubagentBadge
           {...(requestSpan && { requestSpan })}
         />
@@ -2137,6 +2155,7 @@ function ProjectionAgentEchoEntry({
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
+          pacing={pacing}
           {...(block.startedAt && { startedAt: block.startedAt })}
           {...(block.endedAt && { endedAt: block.endedAt })}
           {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
@@ -2579,6 +2598,7 @@ function ProjectionTimelineEntry({
   actionLabelOverride,
   showMessageMeta = false,
   stickyMessageMeta = false,
+  pacing = true,
   onOpenImageGenerationTool,
   onOpenImageDisplayTool,
   onOpenImageDisplayArtifact,
@@ -2598,6 +2618,7 @@ function ProjectionTimelineEntry({
   actionLabelOverride?: string;
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
+  pacing?: boolean;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
@@ -2657,6 +2678,7 @@ function ProjectionTimelineEntry({
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={stickyMessageMeta}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
+        pacing={pacing}
         {...(block.subagent && { subagent: block.subagent })}
         omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
         compact={compact}
@@ -2671,6 +2693,7 @@ function ProjectionTimelineEntry({
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
+        pacing={pacing}
         {...(block.startedAt && { startedAt: block.startedAt })}
         {...(block.endedAt && { endedAt: block.endedAt })}
         {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
@@ -3386,12 +3409,14 @@ function RunLogActiveTail({ waiting, stopping = false }: { waiting: boolean; sto
 function ThinkingBlock({
   text,
   streaming,
+  pacing = true,
   startedAt,
   endedAt,
   durationMs: projectedDurationMs = 0,
 }: {
   text: string;
   streaming?: boolean;
+  pacing?: boolean;
   startedAt?: string;
   endedAt?: string;
   durationMs?: number;
@@ -3672,7 +3697,7 @@ function ThinkingBlock({
                 <div className="run-log-thinking-body">
                   <StreamingMarkdownContent
                     text={text}
-                    streaming={Boolean(streaming)}
+                    streaming={Boolean(streaming) && pacing}
                     onRevealStateChange={setRevealing}
                     className="markdown-content"
                   />
@@ -5521,6 +5546,7 @@ function RunLogNarrative({
   showMessageMeta = false,
   stickyMessageMeta = false,
   streaming,
+  pacing = true,
   subagent,
   compact,
   modelByRole,
@@ -5534,6 +5560,7 @@ function RunLogNarrative({
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
   streaming?: boolean;
+  pacing?: boolean;
   subagent?: string;
   compact?: boolean;
   modelByRole?: Record<string, string>;
@@ -5588,7 +5615,10 @@ function RunLogNarrative({
       ) : null}
       {showBody ? (
         <div className="run-log-narrative-body">
-          <StreamingMarkdownContent text={text} {...(streaming !== undefined && { streaming })} />
+          <StreamingMarkdownContent
+            text={text}
+            {...(streaming !== undefined && { streaming: Boolean(streaming) && pacing })}
+          />
         </div>
       ) : null}
       {showFinalMessageMeta ? (

@@ -20,9 +20,9 @@ test("resolvePacedRevealCount accelerates as the live backlog grows", () => {
   expect(resolvePacedRevealCount(140, true)).toBe(8);
 });
 
-test("resolvePacedRevealCount drains a completed stream in at most three ticks", () => {
+test("revealPacedText still can drain when streaming is false (hook snaps instead)", () => {
   expect(resolvePacedRevealCount(6, false)).toBe(4);
-  expect(resolvePacedRevealCount(60, false)).toBe(20);
+  expect(revealPacedText("开", "开始输出", false)).toBe("开始输出");
 });
 
 test("revealPacedText applies non-append replacements immediately", () => {
