@@ -136,6 +136,7 @@ export function activityStreamKey(
   role?: string,
   parentToolUseId?: string,
   streamBlockKey?: string,
+  runAttemptId?: string,
 ): string {
   let key: string;
   if (agentId?.trim()) {
@@ -144,6 +145,12 @@ export function activityStreamKey(
     key = `${threadId}:parent:${parentToolUseId.trim()}`;
   } else {
     key = `${threadId}:${role ?? "planner"}`;
+  }
+  // Scope unkeyed narrative streams per Eco run attempt so ACP/PI block
+  // generations (message:0) cannot collide across turns in persisted streamKey.
+  const attempt = runAttemptId?.trim();
+  if (attempt) {
+    key = `${key}:attempt:${attempt}`;
   }
   return streamBlockKey?.trim() ? `${key}:block:${streamBlockKey.trim()}` : key;
 }

@@ -13413,6 +13413,7 @@ function resolveLiveEventStreamKey(input: {
   stream: boolean;
   agentId?: string;
   parentToolUseId?: string;
+  runAttemptId?: string;
   persistedActivityLine?: ThreadActivityLine;
   extras?: EmitThreadEventExtras;
 }): string | undefined {
@@ -13439,6 +13440,7 @@ function resolveLiveEventStreamKey(input: {
       input.role,
       input.parentToolUseId,
       readLiveEventSdkStreamBlockKey(input.extras),
+      input.runAttemptId,
     );
   }
   return undefined;

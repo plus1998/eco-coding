@@ -1488,8 +1488,9 @@ String? _projectionOwnerKey(ThreadRunProjectionTimelineItem item) {
 String _appendStreamScopeSuffix(
   String key,
   ThreadRunProjectionTimelineItem item,
-  String? effectiveRequestId,
-) {
+  String? effectiveRequestId, [
+  List<ThreadRunProjectionTimelineItem> timeline = const [],
+]) {
   final isStream =
       item.eventType == 'thinking.delta' ||
       item.eventType == 'thinking.final' ||
@@ -1498,10 +1499,40 @@ String _appendStreamScopeSuffix(
   if (!isStream) {
     return key;
   }
+  var scoped = key;
   final requestId = effectiveRequestId?.trim() ?? item.requestId?.trim();
-  return requestId != null && requestId.isNotEmpty
-      ? '$key:req:$requestId'
-      : key;
+  if (requestId != null && requestId.isNotEmpty) {
+    if (!scoped.contains(':req:$requestId') &&
+        !scoped.contains(':request:$requestId')) {
+      scoped = '$scoped:req:$requestId';
+    }
+    return scoped;
+  }
+  final attemptId = item.runAttemptId?.trim();
+  if (attemptId != null &&
+      attemptId.isNotEmpty &&
+      !scoped.contains(':attempt:$attemptId') &&
+      !RegExp(r':attempt:[^:]+:block:').hasMatch(scoped)) {
+    scoped = '$scoped:attempt:$attemptId';
+  }
+  final afterUser = _resolvePrecedingUserPromptSequence(item, timeline);
+  return '$scoped:afterUser:$afterUser';
+}
+
+int _resolvePrecedingUserPromptSequence(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  var sequence = 0;
+  for (final entry in timeline) {
+    if (_compareTimelineItems(entry, item) >= 0) {
+      break;
+    }
+    if (_isProjectionUserPromptItem(entry)) {
+      sequence = entry.sequence;
+    }
+  }
+  return sequence;
 }
 
 ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
@@ -2257,23 +2288,48 @@ String? _projectionStreamDisplayKey(
   if (streamKey != null &&
       streamKey.isNotEmpty &&
       (hasExplicitStreamBlockKey || hasExplicitLogicalItemKey)) {
-    return _appendStreamScopeSuffix('$channel:sk:$streamKey', item, requestId);
+    return _appendStreamScopeSuffix(
+      '$channel:sk:$streamKey',
+      item,
+      requestId,
+      timeline,
+    );
   }
   if (requestId != null) {
     final span = requestSpansById[requestId];
     if (span != null && !_isProjectionRequestActive(span)) {
-      return '$channel:request:$requestId';
+      return _appendStreamScopeSuffix(
+        '$channel:request:$requestId',
+        item,
+        requestId,
+        timeline,
+      );
     }
   }
   if (streamKey != null && streamKey.isNotEmpty) {
-    return _appendStreamScopeSuffix('$channel:sk:$streamKey', item, requestId);
+    return _appendStreamScopeSuffix(
+      '$channel:sk:$streamKey',
+      item,
+      requestId,
+      timeline,
+    );
   }
   if (item.eventType == 'message.final' || item.eventType == 'thinking.final') {
-    return '$channel:${item.id}';
+    return _appendStreamScopeSuffix(
+      '$channel:${item.id}',
+      item,
+      requestId,
+      timeline,
+    );
   }
   final ownerKey = _projectionOwnerKey(item);
   if (ownerKey != null) {
-    return _appendStreamScopeSuffix('$channel:$ownerKey', item, requestId);
+    return _appendStreamScopeSuffix(
+      '$channel:$ownerKey',
+      item,
+      requestId,
+      timeline,
+    );
   }
   final requestKey = item.requestId?.trim();
   if (requestKey != null && requestKey.isNotEmpty) {
@@ -2281,9 +2337,15 @@ String? _projectionStreamDisplayKey(
       '$channel:request:$requestKey',
       item,
       requestId,
+      timeline,
     );
   }
-  return '$channel:${item.id}';
+  return _appendStreamScopeSuffix(
+    '$channel:${item.id}',
+    item,
+    requestId,
+    timeline,
+  );
 }
 
 bool _isStreamingRequestDisplayItem(ThreadRunProjectionTimelineItem item) {

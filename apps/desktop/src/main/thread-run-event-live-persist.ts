@@ -131,6 +131,7 @@ export function createThreadRunEventLivePersister(deps: ThreadRunEventLivePersis
       stream: input.stream,
       ...(agentId && { agentId }),
       ...(parentToolUseId && { parentToolUseId }),
+      ...(runAttemptId && { runAttemptId }),
       ...(input.persistedActivityLine && { persistedActivityLine: input.persistedActivityLine }),
       ...(input.extras && { extras: input.extras }),
     });
@@ -232,6 +233,7 @@ function resolveLiveEventStreamKey(input: {
   stream: boolean;
   agentId?: string;
   parentToolUseId?: string;
+  runAttemptId?: string;
   persistedActivityLine?: ThreadActivityLine;
   extras?: ThreadRunEventLivePersistExtras;
 }): string | undefined {
@@ -258,6 +260,7 @@ function resolveLiveEventStreamKey(input: {
       input.role,
       input.parentToolUseId,
       readLiveEventSdkStreamBlockKey(input.extras),
+      input.runAttemptId,
     );
   }
   return undefined;

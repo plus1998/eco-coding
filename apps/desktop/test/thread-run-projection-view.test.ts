@@ -1105,9 +1105,9 @@ test("buildThreadRunProjectionViewModel interleaves planner and agent speech by 
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:stream:thinking:role:thinking",
+    "main:stream:thinking:role:thinking:afterUser:0",
     "agent-card:coder_agent_00000001",
-    "main:stream:message:role:planner",
+    "main:stream:message:role:planner:afterUser:0",
   ]);
   expect(view.subagentCards[0]?.agent.timeline[0]?.text).toBe("我找到问题了。");
 });
@@ -1146,7 +1146,7 @@ test("buildThreadRunProjectionViewModel does not echo request or lifecycle noise
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:stream:message:role:planner",
+    "main:stream:message:role:planner:afterUser:0",
     "agent-card:coder_agent_00000001",
   ]);
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
@@ -1220,7 +1220,7 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
     "main:prompt",
-    "tool-group:main:stream:message:sk:activity-line-approved",
+    "tool-group:main:stream:message:sk:activity-line-approved:afterUser:1",
   ]);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:generic-wait")).toBe(false);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:approval-wait")).toBe(false);
@@ -1621,7 +1621,7 @@ test("buildThreadRunProjectionViewModel removes main feed status and usage noise
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
     "main:prompt",
-    "main:stream:message:role:planner",
+    "main:stream:message:role:planner:afterUser:1",
   ]);
 });
 
@@ -1681,7 +1681,7 @@ test("buildThreadRunProjectionViewModel hides follow-up interrupt and resume sta
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
     "main:prompt",
-    "main:stream:message:role:planner",
+    "main:stream:message:role:planner:afterUser:1",
   ]);
 });
 
@@ -2222,7 +2222,7 @@ test("buildThreadRunProjectionViewModel collapses superseded stream deltas after
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:thinking:role:thinking"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:thinking:role:thinking:afterUser:0"]);
   const entry = view.mainFeedEntries[0];
   expect(entry?.kind).toBe("timeline");
   if (entry?.kind === "timeline") {
@@ -2703,7 +2703,7 @@ test("buildThreadRunProjectionViewModel hides request placeholders once owner ou
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:role:planner"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:role:planner:afterUser:0"]);
 });
 
 test("buildThreadRunProjectionViewModel hides request placeholder for completed message-only responses", () => {
@@ -3234,7 +3234,7 @@ test("buildThreadRunProjectionViewModel keeps final main agent text after empty 
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:sk:act_weather"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:sk:act_weather:afterUser:0"]);
   const entry = view.mainFeedEntries[0];
   expect(entry?.kind).toBe("timeline");
   if (entry?.kind === "timeline") {
@@ -3621,7 +3621,7 @@ test("projectionMainFeedEntryKey scopes message stream by requestId when present
     text: "AB",
     sequence: 2,
   });
-  expect(projectionMainFeedEntryKey(withoutRequest)).toBe("main:stream:message:role:planner");
+  expect(projectionMainFeedEntryKey(withoutRequest)).toBe("main:stream:message:role:planner:afterUser:0");
   expect(projectionMainFeedEntryKey(withRequest)).toBe("main:stream:message:role:planner:req:req_planner");
 });
 
@@ -6277,4 +6277,223 @@ test("message.final rows without streamKey collapse per stream owner (document b
     return [];
   });
   expect(narrativeTexts).toEqual(["最终答复"]);
+});
+
+test("stream collapse keeps same block:message:0 across attempts (ACP / unscoped request)", () => {
+  const streamKey = "thr_view:planner:block:message:0";
+  const timeline = [
+    item({
+      id: "user_1",
+      sequence: 1,
+      eventType: "thread.status",
+      role: "user",
+      text: "第一问",
+      at: "2026-01-01T00:00:00.000Z",
+      metadata: { liveType: "thread.user_prompt" },
+    }),
+    item({
+      id: "ans_1",
+      sequence: 2,
+      eventType: "message.final",
+      role: "planner",
+      text: "第一答",
+      streamKey,
+      runAttemptId: "att_1",
+      at: "2026-01-01T00:00:01.000Z",
+    }),
+    item({
+      id: "user_2",
+      sequence: 3,
+      eventType: "thread.status",
+      role: "user",
+      text: "第二问",
+      at: "2026-01-01T00:00:02.000Z",
+      metadata: { liveType: "thread.user_prompt" },
+    }),
+    item({
+      id: "ans_2",
+      sequence: 4,
+      eventType: "message.final",
+      role: "planner",
+      text: "第二答",
+      streamKey,
+      runAttemptId: "att_2",
+      at: "2026-01-01T00:00:03.000Z",
+    }),
+  ];
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline,
+      thread: {
+        threadId: "thr_view",
+        status: "completed",
+        generatedAt: "2026-01-01T00:00:10.000Z",
+      },
+      attempts: [
+        { attemptId: "att_1", startedAt: "2026-01-01T00:00:00.500Z", status: "completed" },
+        { attemptId: "att_2", startedAt: "2026-01-01T00:00:02.500Z", status: "completed" },
+      ],
+    }),
+  );
+  const narrativeTexts = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      const block = projectionItemToDetailBlock(entry.item);
+      return block?.kind === "narrative" ? [block.text] : [];
+    }
+    return [];
+  });
+  expect(narrativeTexts).toEqual(["第一答", "第二答"]);
+});
+
+test("stream collapse keeps same streamKey across requests when requestId differs", () => {
+  const streamKey = "thr_view:planner:block:pi-text:abc:m4:";
+  const timeline = [
+    item({
+      id: "ans_1",
+      sequence: 1,
+      eventType: "message.final",
+      role: "planner",
+      text: "请求一",
+      streamKey,
+      requestId: "req_1",
+      runAttemptId: "att_1",
+    }),
+    item({
+      id: "ans_2",
+      sequence: 2,
+      eventType: "message.final",
+      role: "planner",
+      text: "请求二",
+      streamKey,
+      requestId: "req_2",
+      runAttemptId: "att_1",
+    }),
+  ];
+  const view = buildThreadRunProjectionViewModel(projection({ timeline }));
+  const narrativeTexts = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      const block = projectionItemToDetailBlock(entry.item);
+      return block?.kind === "narrative" ? [block.text] : [];
+    }
+    return [];
+  });
+  expect(narrativeTexts).toEqual(["请求一", "请求二"]);
+});
+
+test("stream collapse still merges delta+final for the same scoped stream", () => {
+  const streamKey = "thr_view:planner:block:message:0";
+  const timeline = [
+    item({
+      id: "d1",
+      sequence: 1,
+      eventType: "message.delta",
+      role: "planner",
+      text: "半",
+      streamKey,
+      runAttemptId: "att_1",
+    }),
+    item({
+      id: "f1",
+      sequence: 2,
+      eventType: "message.final",
+      role: "planner",
+      text: "完整答复",
+      streamKey,
+      runAttemptId: "att_1",
+    }),
+  ];
+  const display = buildProjectionDisplayTimelineItems(timeline, new Map());
+  const finals = display.filter((row) => row.eventType === "message.final" || row.eventType === "message.delta");
+  expect(finals).toHaveLength(1);
+  expect(finals[0]?.text).toBe("完整答复");
+});
+
+test("stream collapse keeps distinct blocks in the same attempt", () => {
+  const timeline = [
+    item({
+      id: "a",
+      sequence: 1,
+      eventType: "message.final",
+      role: "planner",
+      text: "过程话",
+      streamKey: "thr_view:planner:block:message:0",
+      runAttemptId: "att_1",
+    }),
+    item({
+      id: "b",
+      sequence: 2,
+      eventType: "message.final",
+      role: "planner",
+      text: "终答",
+      streamKey: "thr_view:planner:block:message:1",
+      runAttemptId: "att_1",
+    }),
+  ];
+  const view = buildThreadRunProjectionViewModel(projection({ timeline }));
+  const narrativeTexts = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      const block = projectionItemToDetailBlock(entry.item);
+      return block?.kind === "narrative" ? [block.text] : [];
+    }
+    return [];
+  });
+  expect(narrativeTexts).toEqual(["过程话", "终答"]);
+});
+
+test("stream collapse does not merge across mid-turn user_prompt with reused streamKey", () => {
+  const streamKey = "thr_view:planner:block:message:0";
+  const timeline = [
+    item({
+      id: "user_1",
+      sequence: 1,
+      eventType: "thread.status",
+      role: "user",
+      text: "先问",
+      at: "2026-01-01T00:00:00.000Z",
+      metadata: { liveType: "thread.user_prompt" },
+    }),
+    item({
+      id: "ans_1",
+      sequence: 2,
+      eventType: "message.final",
+      role: "planner",
+      text: "先答",
+      streamKey,
+      runAttemptId: "att_1",
+      at: "2026-01-01T00:00:01.000Z",
+    }),
+    item({
+      id: "user_steer",
+      sequence: 3,
+      eventType: "thread.status",
+      role: "user",
+      text: "中途插话",
+      at: "2026-01-01T00:00:02.000Z",
+      metadata: { liveType: "thread.user_prompt" },
+    }),
+    item({
+      id: "ans_2",
+      sequence: 4,
+      eventType: "message.final",
+      role: "planner",
+      text: "插话后答",
+      streamKey,
+      runAttemptId: "att_1",
+      at: "2026-01-01T00:00:03.000Z",
+    }),
+  ];
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline,
+      attempts: [{ attemptId: "att_1", startedAt: "2026-01-01T00:00:00.500Z", status: "completed" }],
+    }),
+  );
+  const narrativeTexts = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      const block = projectionItemToDetailBlock(entry.item);
+      return block?.kind === "narrative" ? [block.text] : [];
+    }
+    return [];
+  });
+  expect(narrativeTexts).toEqual(["先答", "插话后答"]);
 });

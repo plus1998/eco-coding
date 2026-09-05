@@ -116,6 +116,9 @@ test("activityStreamKey isolates parallel subagent streams", () => {
   expect(activityStreamKey("thr_1", "agent_a", "coder", undefined, "text:2")).toBe(
     "thr_1:agent_a:block:text:2",
   );
+  expect(activityStreamKey("thr_1", undefined, "planner", undefined, "message:0", "attempt_1")).toBe(
+    "thr_1:planner:attempt:attempt_1:block:message:0",
+  );
 });
 
 const metricsStoreStub: SubagentMetricsPersistenceStore = {

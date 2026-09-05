@@ -1732,3 +1732,35 @@ test("finalized ACP thinking keeps thinkingStartedAt from the first chunk", () =
   expect(finals[0]?.message).toBe("想一");
   expect(typeof finals[0]?.metadata?.thinkingStartedAt).toBe("string");
 });
+
+test("unkeyed narrative streamKeys are isolated per runAttemptId", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const keys: string[] = [];
+  const emit = () => {};
+  const capture = (runAttemptId: string, text: string) => {
+    bridge.handleEvent(
+      "thr_attempt",
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: { type: "eco_stream", text },
+      },
+      emit,
+      undefined,
+      {
+        onLocalStreamUpdate(update) {
+          keys.push(update.streamKey);
+        },
+        runAttemptId,
+      },
+    );
+  };
+
+  capture("attempt_a", "第一轮");
+  capture("attempt_b", "第二轮");
+
+  const unique = [...new Set(keys)];
+  expect(unique).toHaveLength(2);
+  expect(unique[0]).toContain(":attempt:attempt_a:block:message:0");
+  expect(unique[1]).toContain(":attempt:attempt_b:block:message:0");
+});

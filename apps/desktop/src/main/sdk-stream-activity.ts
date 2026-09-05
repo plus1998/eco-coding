@@ -163,10 +163,12 @@ export class SdkStreamActivityBridge {
     options?: {
       activityAgentId?: string;
       parentToolUseId?: string;
+      runAttemptId?: string;
       onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
     },
   ): void {
     const activityAgentId = options?.activityAgentId;
+    const runAttemptId = options?.runAttemptId?.trim() || undefined;
 
     if (event.type === "usage.recorded") {
       emitUsage?.(threadId, event);
@@ -181,6 +183,7 @@ export class SdkStreamActivityBridge {
         threadId,
         ...(activityAgentId !== undefined ? { activityAgentId } : {}),
         ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
+        ...(runAttemptId !== undefined ? { runAttemptId } : {}),
         emit,
         ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
       });
@@ -235,6 +238,7 @@ export class SdkStreamActivityBridge {
         ...(activityAgentId !== undefined ? { activityAgentId } : {}),
         role,
         ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
+        ...(runAttemptId !== undefined ? { runAttemptId } : {}),
         emit,
         ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
         ...(messageId ? { messageId } : {}),
@@ -246,6 +250,7 @@ export class SdkStreamActivityBridge {
       role,
       options?.parentToolUseId,
       sdkStreamBlockKey,
+      runAttemptId,
     );
     const stableSdkMessageBlock = readSdkMessageId(event.payload) ? streamKey : undefined;
     if (stableSdkMessageBlock && this.finalizedSdkMessageBlocks.has(stableSdkMessageBlock)) {
@@ -455,6 +460,7 @@ export class SdkStreamActivityBridge {
     activityAgentId?: string;
     role: string;
     parentToolUseId?: string;
+    runAttemptId?: string;
     emit: SdkActivityEmit;
     onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
     messageId?: string;
@@ -464,6 +470,8 @@ export class SdkStreamActivityBridge {
       input.activityAgentId,
       input.role,
       input.parentToolUseId,
+      undefined,
+      input.runAttemptId,
     );
     const channel: "thinking" | "message" = input.role === "thinking" ? "thinking" : "message";
     const current = this.unkeyedNarrativeBlocks.get(ownerKey);
@@ -490,6 +498,7 @@ export class SdkStreamActivityBridge {
       current.channel === "thinking" ? "thinking" : input.role,
       input.parentToolUseId,
       `${current.channel}:${current.generation}`,
+      input.runAttemptId,
     );
     this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
     const generation = current.generation + 1;
@@ -511,6 +520,7 @@ export class SdkStreamActivityBridge {
     threadId: string;
     activityAgentId?: string;
     parentToolUseId?: string;
+    runAttemptId?: string;
     emit: SdkActivityEmit;
     onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
   }): void {
@@ -525,6 +535,7 @@ export class SdkStreamActivityBridge {
         current.channel === "thinking" ? "thinking" : "planner",
         input.parentToolUseId,
         `${current.channel}:${current.generation}`,
+        input.runAttemptId,
       );
       this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
       this.unkeyedNarrativeBlocks.set(ownerKey, {
@@ -538,11 +549,19 @@ export class SdkStreamActivityBridge {
     threadId: string;
     activityAgentId?: string;
     parentToolUseId?: string;
+    runAttemptId?: string;
   }): string[] {
     return [
       ...new Set(
         (["thinking", "planner"] as const).map((role) =>
-          activityStreamKey(input.threadId, input.activityAgentId, role, input.parentToolUseId),
+          activityStreamKey(
+            input.threadId,
+            input.activityAgentId,
+            role,
+            input.parentToolUseId,
+            undefined,
+            input.runAttemptId,
+          ),
         ),
       ),
     ];

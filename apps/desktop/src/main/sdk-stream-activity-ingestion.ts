@@ -414,6 +414,9 @@ export function createSdkStreamActivityIngestion(
       }
     }
 
+    const runAttemptId =
+      deps.lifecycle.currentRunAttemptId(threadId) ?? deps.lifecycle.usageRunAttemptId(threadId);
+
     bridge.handleEvent(
       threadId,
       event,
@@ -463,6 +466,7 @@ export function createSdkStreamActivityIngestion(
       {
         ...(activityAgentId && { activityAgentId }),
         ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
+        ...(runAttemptId && { runAttemptId }),
         ...(deps.onLocalStreamUpdate
           ? {
               onLocalStreamUpdate: (update: SdkLocalStreamUpdate) =>

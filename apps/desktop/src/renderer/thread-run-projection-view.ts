@@ -766,7 +766,7 @@ export function collapseProjectionTimelineStreamsForDetail(
 ): ThreadRunProjectionTimelineItem[] {
   const latestByStream = new Map<string, { latest: ThreadRunProjectionTimelineItem; hasDelta: boolean }>();
   for (const item of timeline) {
-    const key = explicitProjectionDetailStreamKey(item);
+    const key = explicitProjectionDetailStreamKey(item, timeline);
     if (!key) {
       continue;
     }
@@ -786,7 +786,7 @@ export function collapseProjectionTimelineStreamsForDetail(
   }
 
   return timeline.flatMap((item) => {
-    const key = explicitProjectionDetailStreamKey(item);
+    const key = explicitProjectionDetailStreamKey(item, timeline);
     if (!key) {
       return [item];
     }
@@ -927,7 +927,10 @@ function mergeConsecutiveThinkingMetadata(
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
-function explicitProjectionDetailStreamKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+function explicitProjectionDetailStreamKey(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[] = [],
+): string | undefined {
   if (!isStreamingRequestDisplayItem(item)) {
     return undefined;
   }
@@ -937,7 +940,13 @@ function explicitProjectionDetailStreamKey(item: ThreadRunProjectionTimelineItem
   }
   const channel =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
-  return [channel, item.agentId ?? "", item.requestId ?? "", streamKey].join(":");
+  const requestId = item.requestId?.trim();
+  if (requestId) {
+    return [channel, item.agentId ?? "", requestId, streamKey].join(":");
+  }
+  const attemptId = item.runAttemptId?.trim() || "";
+  const afterUser = resolvePrecedingUserPromptSequence(item, timeline);
+  return [channel, item.agentId ?? "", attemptId, streamKey, `afterUser:${afterUser}`].join(":");
 }
 
 function isEmptyTerminalThinkingItem(item: ThreadRunProjectionTimelineItem): boolean {
@@ -1667,6 +1676,7 @@ function appendStreamScopeSuffix(
   key: string,
   item: ThreadRunProjectionTimelineItem,
   effectiveRequestId?: string,
+  timeline: readonly ThreadRunProjectionTimelineItem[] = [],
 ): string {
   const isStream =
     item.eventType === "thinking.delta" ||
@@ -1676,8 +1686,41 @@ function appendStreamScopeSuffix(
   if (!isStream) {
     return key;
   }
+  let scoped = key;
   const requestId = effectiveRequestId?.trim() || item.requestId?.trim();
-  return requestId ? `${key}:req:${requestId}` : key;
+  if (requestId) {
+    // Request-scoped streams are already turn-isolated for PI/Claude; do not also
+    // stamp afterUser (keeps display keys stable when requestId is present).
+    if (!scoped.includes(`:req:${requestId}`) && !scoped.includes(`:request:${requestId}`)) {
+      scoped = `${scoped}:req:${requestId}`;
+    }
+    return scoped;
+  }
+  const attemptId = item.runAttemptId?.trim();
+  // Skip when streamKey already embeds attempt (new write path).
+  if (attemptId && !scoped.includes(`:attempt:${attemptId}`) && !/:attempt:[^:]+:block:/.test(scoped)) {
+    scoped = `${scoped}:attempt:${attemptId}`;
+  }
+  // Hard boundary for mid-turn steer that reuses streamKey inside one attempt.
+  const afterUser = resolvePrecedingUserPromptSequence(item, timeline);
+  return `${scoped}:afterUser:${afterUser}`;
+}
+
+/** Last user_prompt sequence strictly before this item; 0 when none (hard turn boundary). */
+function resolvePrecedingUserPromptSequence(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): number {
+  let sequence = 0;
+  for (const entry of timeline) {
+    if (compareTimelineItems(entry, item) >= 0) {
+      break;
+    }
+    if (isProjectionUserPromptItem(entry)) {
+      sequence = entry.sequence;
+    }
+  }
+  return sequence;
 }
 
 function hasUserPromptBetween(
@@ -2432,26 +2475,26 @@ function projectionStreamDisplayKey(
     streamKey && (item.metadata?.logicalEntityId === streamKey || item.metadata?.itemId === streamKey),
   );
   if (streamKey && (hasExplicitStreamBlockKey || hasExplicitLogicalItemKey)) {
-    return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId, timeline);
   }
   if (requestId && requestSpansById) {
     const span = requestSpansById.get(requestId);
     if (span && !isProjectionRequestActive(span)) {
-      return `${channel}:request:${requestId}`;
+      return appendStreamScopeSuffix(`${channel}:request:${requestId}`, item, requestId, timeline);
     }
   }
   if (streamKey) {
-    return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId, timeline);
   }
   const ownerKey = projectionOwnerKey(item);
   if (ownerKey) {
-    return appendStreamScopeSuffix(`${channel}:${ownerKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:${ownerKey}`, item, requestId, timeline);
   }
   const requestKey = projectionRequestKey(item);
   if (requestKey) {
-    return appendStreamScopeSuffix(`${channel}:${requestKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:${requestKey}`, item, requestId, timeline);
   }
-  return `${channel}:${item.id}`;
+  return appendStreamScopeSuffix(`${channel}:${item.id}`, item, requestId, timeline);
 }
 
 const FEED_SORT_LANE_NORMAL = 0;
