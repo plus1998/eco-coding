@@ -24,6 +24,28 @@ test("core tool catalog covers open/snapshot without spawning CDP", () => {
   expect(catalog.every((tool) => typeof tool.name === "string" && tool.inputSchema)).toBe(true);
 });
 
+test("agent_browser_open schema declares required url (matches CLI/native impl)", () => {
+  const open = agentBrowserCoreToolsCatalog().find((tool) => tool.name === "agent_browser_open");
+  expect(open).toBeDefined();
+  const schema = open!.inputSchema as {
+    type: string;
+    required?: string[];
+    properties?: Record<string, unknown>;
+  };
+  expect(schema.type).toBe("object");
+  expect(schema.required).toEqual(["url"]);
+  expect(schema.properties?.url).toMatchObject({ type: "string" });
+  expect(Object.keys(schema.properties ?? {})).toContain("url");
+});
+
+test("click/fill schemas require ref (or selector) matching bridge", () => {
+  const catalog = agentBrowserCoreToolsCatalog();
+  const click = catalog.find((tool) => tool.name === "agent_browser_click")!;
+  const fill = catalog.find((tool) => tool.name === "agent_browser_fill")!;
+  expect((click.inputSchema as { required: string[] }).required).toEqual(["ref"]);
+  expect((fill.inputSchema as { required: string[] }).required).toEqual(["ref", "text"]);
+});
+
 test("auth registry issues unique thread tokens", () => {
   const reg = new BrowserMcpAuthRegistry();
   const a = reg.issue("thr_a");
@@ -84,6 +106,7 @@ test("logical MCP server name is always eco_agent_browser", () => {
   expect(isEcoAgentBrowserRuntimeServerName("eco_agent_browser")).toBe(true);
   expect(buildEcoAgentBrowserPromptAppend("thr_x")).toContain("mcp__eco_agent_browser__*");
   expect(buildEcoAgentBrowserPromptAppend("thr_x")).toContain("auth");
+  expect(buildEcoAgentBrowserPromptAppend("thr_x")).toContain("list_mcp_resources");
 });
 
 test("merge eco browser SDK config keeps fixed server name", () => {
@@ -100,6 +123,10 @@ test("merge eco browser SDK config keeps fixed server name", () => {
   expect(merged.allowedTools).toContain(ECO_AGENT_BROWSER_ALLOWED_TOOL);
 });
 
+function controlBaseUrl(codexServer: { url?: string }): string {
+  return String(codexServer.url).replace(/\/mcp$/, "");
+}
+
 test("global browser Codex server starts control plane without creating a thread CDP", async () => {
   let cdpRequests = 0;
   const gateway = new BrowserMcpGateway({
@@ -112,8 +139,9 @@ test("global browser Codex server starts control plane without creating a thread
   try {
     const server = await gateway.prepareCodexServer();
     expect(server.name).toBe(ECO_AGENT_BROWSER_MCP_SERVER);
-    expect(server.command).toBe(process.execPath);
-    expect(server.env?.ECO_BROWSER_CONTROL_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(server.transport).toBe("http");
+    expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    expect(server.httpHeaders?.["X-Eco-Browser-Control-Secret"]).toBeTruthy();
     expect(cdpRequests).toBe(0);
   } finally {
     await gateway.close();
@@ -131,17 +159,22 @@ test("prepareThread injects MCP without starting CDP or minting a page", async (
   });
   try {
     const prepared = await gateway.prepareThread("thr_lazy_browser");
-    const env = prepared.sdkEntry.env as Record<string, string>;
-    expect(typeof env.ECO_BROWSER_AUTH_TOKEN).toBe("string");
-    expect(env.ECO_BROWSER_AUTH_TOKEN.length).toBeGreaterThan(0);
+    expect(prepared.sdkEntry).toMatchObject({
+      type: "http",
+      url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+    });
+    const headers = prepared.sdkEntry.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${prepared.token}`);
     expect(prepared.cdpPort).toBeUndefined();
     expect(cdpRequests).toBe(0);
 
-    const res = await fetch(`${prepared.codexServer.env?.ECO_BROWSER_CONTROL_URL}/v1/tools/list`, {
+    const res = await fetch(`${controlBaseUrl(prepared.codexServer)}/v1/tools/list`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Eco-Browser-Control-Secret": String(prepared.codexServer.env?.ECO_BROWSER_CONTROL_SECRET),
+        "X-Eco-Browser-Control-Secret": String(
+          prepared.codexServer.httpHeaders?.["X-Eco-Browser-Control-Secret"],
+        ),
         Authorization: `Bearer ${prepared.token}`,
       },
       body: "{}",
@@ -173,11 +206,13 @@ test("tab_list native path does not start CDP", async () => {
   });
   try {
     const prepared = await gateway.prepareThread("thr_on_demand_tabs");
-    const res = await fetch(`${prepared.codexServer.env?.ECO_BROWSER_CONTROL_URL}/v1/tools/call`, {
+    const res = await fetch(`${controlBaseUrl(prepared.codexServer)}/v1/tools/call`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Eco-Browser-Control-Secret": String(prepared.codexServer.env?.ECO_BROWSER_CONTROL_SECRET),
+        "X-Eco-Browser-Control-Secret": String(
+          prepared.codexServer.httpHeaders?.["X-Eco-Browser-Control-Secret"],
+        ),
         Authorization: `Bearer ${prepared.token}`,
       },
       body: JSON.stringify({ name: "agent_browser_tab_list", arguments: {} }),
@@ -208,11 +243,13 @@ test("tab_switch native path does not start CDP", async () => {
   });
   try {
     const prepared = await gateway.prepareThread("thr_tab_switch_native");
-    const res = await fetch(`${prepared.codexServer.env?.ECO_BROWSER_CONTROL_URL}/v1/tools/call`, {
+    const res = await fetch(`${controlBaseUrl(prepared.codexServer)}/v1/tools/call`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Eco-Browser-Control-Secret": String(prepared.codexServer.env?.ECO_BROWSER_CONTROL_SECRET),
+        "X-Eco-Browser-Control-Secret": String(
+          prepared.codexServer.httpHeaders?.["X-Eco-Browser-Control-Secret"],
+        ),
         Authorization: `Bearer ${prepared.token}`,
       },
       body: JSON.stringify({

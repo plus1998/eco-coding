@@ -57,7 +57,9 @@ export function toPiMcpServerEntry(entry: unknown): PiMcpAdapterServerEntry | un
     return {
       url: record.url.trim(),
       ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
-      ...(transportType === "sse" ? { httpTransport: "sse" as const } : {}),
+      ...(transportType === "sse"
+        ? { httpTransport: "sse" as const }
+        : { httpTransport: "streamable-http" as const }),
       ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
       lifecycle: "lazy",
     };

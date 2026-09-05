@@ -45,6 +45,8 @@ export function buildEcoAgentBrowserPromptAppend(_threadId?: string): string {
     "MCP server `eco_agent_browser` is Eco-hosted: each connection is bound to this conversation (auth token / tool claims) — never another thread's open pages.",
     "Site data (cookies / localStorage / IndexedDB) is shared across conversations in the same workspace (login once, reuse).",
     "When `mcp__eco_agent_browser__*` tools are available, ALWAYS use them.",
+    "Do NOT use `list_mcp_resources` / `list_mcp_resource_templates` to probe `eco_agent_browser` — Codex MCP is tools-only; those resource RPCs fail even when browser tools work.",
+    "If `mcp__eco_agent_browser__*` tools are missing from your tool list, say so and stop; do not fall back to shell `agent-browser` or external skills.",
     "Do NOT pass a custom `session` argument (or session=__active__/web/chat) — Eco binds one short session per conversation thread.",
     "Do NOT shell `agent-browser` CLI (`Bash`/`agent-browser open|--headed|tab`).",
     "Do NOT read or follow `~/.agents/skills/agent-browser` or external agent-browser skills; use Skill `eco-agent-browser` only.",

@@ -1,9 +1,5 @@
-import fs from "node:fs";
 import http from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   browserAgentSessionKey,
@@ -17,42 +13,16 @@ import { agentBrowserCoreToolsCatalog } from "./agent-browser-core-tools";
 import { resolveAgentBrowserBinary } from "./agent-browser-resolve";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 
-const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Browser-Control-Secret";
 
 /**
- * Agent-facing MCP is `eco_agent_browser` (stdio → Eco control HTTP).
+ * Agent-facing MCP is `eco_agent_browser` (HTTP Streamable MCP → Eco control).
  * Tool execution uses agent-browser CLI + thread CDP — not agent-browser's MCP
  * subprocess (avoids double MCP and Windows tools/call hang).
  */
-
-function resolveStdioScriptPath(): string {
-  const candidates = [
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../packaging/eco-browser-mcp-stdio.mjs"),
-    path.join(process.cwd(), "apps/desktop/packaging/eco-browser-mcp-stdio.mjs"),
-    path.join(process.cwd(), "packaging/eco-browser-mcp-stdio.mjs"),
-  ];
-  try {
-    const electron = require("electron") as {
-      app?: { getAppPath?: () => string };
-    };
-    if (electron.app?.getAppPath) {
-      candidates.unshift(path.join(electron.app.getAppPath(), "packaging/eco-browser-mcp-stdio.mjs"));
-    }
-    if (typeof process.resourcesPath === "string") {
-      candidates.unshift(path.join(process.resourcesPath, "packaging/eco-browser-mcp-stdio.mjs"));
-      candidates.unshift(path.join(process.resourcesPath, "eco-browser-mcp-stdio.mjs"));
-    }
-  } catch {
-    // non-electron
-  }
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-  return candidates[0]!;
-}
 
 export type BrowserMcpGatewayDeps = {
   ensureCdpPort: (threadId: string) => Promise<number>;
@@ -112,26 +82,16 @@ export class BrowserMcpGateway {
   /** Stable process-global definition written to Codex config.toml. */
   async prepareCodexServer(): Promise<CodexMcpServerForConfigSync> {
     await this.start();
-    const stdioPath = resolveStdioScriptPath();
-    if (!fs.existsSync(stdioPath)) {
-      throw new Error(`Browser MCP stdio front-end not found: ${stdioPath}`);
-    }
-    return {
+    return buildEcoHttpCodexServer({
       name: ECO_AGENT_BROWSER_MCP_SERVER,
-      transport: "stdio",
-      command: process.execPath,
-      args: [stdioPath],
-      env: {
-        ECO_BROWSER_CONTROL_URL: this.controlBaseUrl,
-        ECO_BROWSER_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
-      startupTimeoutSec: 60,
-    };
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
+    });
   }
 
   /**
-   * Auth + stdio injection for a thread. Does not start CDP or mint an about:blank
+   * Auth + HTTP injection for a thread. Does not start CDP or mint an about:blank
    * page — that happens on the first tools/call.
    */
   async prepareThread(threadId: string): Promise<{
@@ -143,26 +103,18 @@ export class BrowserMcpGateway {
   }> {
     await this.start();
     const record = this.auth.ensure(threadId);
-    const codexServer = await this.prepareCodexServer();
-    const baseEnv = codexServer.env ?? {};
-
-    const sealedEnv = {
-      ...baseEnv,
-      ECO_BROWSER_AUTH_TOKEN: record.token,
-    };
-
-    const sdkEntry = {
-      type: "stdio" as const,
-      command: codexServer.command ?? process.execPath,
-      args: codexServer.args ?? [],
-      env: sealedEnv,
-      alwaysLoad: true,
-    };
+    const http = buildEcoHttpInjection({
+      name: ECO_AGENT_BROWSER_MCP_SERVER,
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
+      authToken: record.token,
+    });
 
     return {
       token: record.token,
-      sdkEntry,
-      codexServer,
+      sdkEntry: http.sdkEntry,
+      codexServer: http.codexServer,
       promptAppend: buildEcoAgentBrowserPromptAppend(threadId),
     };
   }
@@ -203,7 +155,52 @@ export class BrowserMcpGateway {
     });
   }
 
+  private async executeToolCall(
+    name: string,
+    args: Record<string, unknown>,
+    authToken: string | undefined,
+  ): Promise<AgentBrowserMcpToolResult> {
+    const threadId = this.resolveThreadForCall({
+      ...(authToken !== undefined ? { authToken } : {}),
+      toolName: name,
+    });
+    this.deps.onToolCall?.(threadId, name);
+    const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args);
+    const result =
+      nativeResult ??
+      (await (async () => {
+        const cdp = await this.deps.ensureCdpPort(threadId);
+        await this.deps.ensureScopeGuestsReady?.(threadId);
+        return this.invokeToolViaCli(threadId, cdp, name, args);
+      })());
+    if (name === "agent_browser_close" && !result.isError) {
+      await this.deps.afterAgentBrowserClose?.(threadId);
+    }
+    return result;
+  }
+
   private async handleControl(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const urlPath = (req.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        req,
+        res,
+        {
+          serverName: ECO_AGENT_BROWSER_MCP_SERVER,
+          instructions:
+            "Eco built-in browser. Tools apply only to the authenticated conversation thread.",
+          listTools: async () => ({ tools: agentBrowserCoreToolsCatalog() }),
+          callTool: async ({ name, arguments: args, authToken }) =>
+            this.executeToolCall(name, args, authToken),
+        },
+        {
+          controlSecretHeader: "x-eco-browser-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     const secret = req.headers["x-eco-browser-control-secret"];
     if (secret !== this.controlSecret) {
       res.writeHead(401, { "Content-Type": "application/json" });
@@ -250,22 +247,7 @@ export class BrowserMcpGateway {
           body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
             ? (body.arguments as Record<string, unknown>)
             : {};
-        const threadId = this.resolveThreadForCall({
-          ...(authToken !== undefined ? { authToken } : {}),
-          toolName: name,
-        });
-        this.deps.onToolCall?.(threadId, name);
-        const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args);
-        const result =
-          nativeResult ??
-          (await (async () => {
-            const cdp = await this.deps.ensureCdpPort(threadId);
-            await this.deps.ensureScopeGuestsReady?.(threadId);
-            return this.invokeToolViaCli(threadId, cdp, name, args);
-          })());
-        if (name === "agent_browser_close" && !result.isError) {
-          await this.deps.afterAgentBrowserClose?.(threadId);
-        }
+        const result = await this.executeToolCall(name, args, authToken);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ result }));
         return;

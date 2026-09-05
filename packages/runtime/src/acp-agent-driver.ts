@@ -572,6 +572,11 @@ export class AcpAgentDriver {
       unsubscribeUpdate?.();
       peer?.dispose();
       input.signal?.removeEventListener("abort", abort);
+      try {
+        child.stdin?.end();
+      } catch {
+        // stdin may already be closed
+      }
       // Windows: kill the full cmd→powershell→node(+MCP) tree, not just cmd.exe.
       killChildProcessTree(child);
       this.processes.delete(input.threadId);

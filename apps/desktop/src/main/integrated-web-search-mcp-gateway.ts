@@ -1,9 +1,5 @@
-import fs from "node:fs";
 import http from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   formatIntegratedWebSearchResults,
@@ -22,8 +18,10 @@ import type { McpSdkConfig } from "../shared/mcp";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import type { IntegratedWebSearchSettingsStore } from "./integrated-web-search-settings-store";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 
-const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Web-Search-Control-Secret";
 
 export interface IntegratedWebSearchMcpInjection {
   enabled: boolean;
@@ -61,23 +59,13 @@ export class IntegratedWebSearchMcpGateway {
       return undefined;
     }
     await this.start();
-    const script = resolveStdioScriptPath();
-    if (!fs.existsSync(script)) {
-      throw new Error(`Integrated web search MCP stdio front-end not found: ${script}`);
-    }
-    return {
+    return buildEcoHttpCodexServer({
       name: ECO_WEB_SEARCH_MCP_SERVER,
-      transport: "stdio",
-      command: process.execPath,
-      args: [script],
-      env: {
-        ECO_WEB_SEARCH_CONTROL_URL: this.controlBaseUrl,
-        ECO_WEB_SEARCH_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
       enabledTools: [ECO_WEB_SEARCH_TOOL],
-      startupTimeoutSec: 60,
-    };
+    });
   }
 
   async resolveInjection(input: {
@@ -102,19 +90,20 @@ export class IntegratedWebSearchMcpGateway {
         return { enabled: false, serverName: ECO_WEB_SEARCH_MCP_SERVER };
       }
       const auth = this.auth.ensure(input.threadId);
-      const baseEnv = globalCodexServer.env ?? {};
+      const http = buildEcoHttpInjection({
+        name: ECO_WEB_SEARCH_MCP_SERVER,
+        controlBaseUrl: this.controlBaseUrl,
+        controlSecretHeader: CONTROL_SECRET_HEADER,
+        controlSecret: this.controlSecret,
+        authToken: auth.token,
+        enabledTools: [ECO_WEB_SEARCH_TOOL],
+      });
       const providerLabel = integratedWebSearchProviderLabel(settings.provider);
       return {
         enabled: true,
         serverName: ECO_WEB_SEARCH_MCP_SERVER,
-        sdkEntry: {
-          type: "stdio",
-          command: globalCodexServer.command ?? process.execPath,
-          args: globalCodexServer.args ?? [],
-          env: { ...baseEnv, ECO_WEB_SEARCH_AUTH_TOKEN: auth.token },
-          alwaysLoad: true,
-        },
-        codexServer: globalCodexServer,
+        sdkEntry: http.sdkEntry,
+        codexServer: http.codexServer,
         promptAppend: buildIntegratedWebSearchPromptAppend(providerLabel),
       };
     } catch (error) {
@@ -183,6 +172,27 @@ export class IntegratedWebSearchMcpGateway {
   }
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
+    const urlPath = (request.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        request,
+        response,
+        {
+          serverName: ECO_WEB_SEARCH_MCP_SERVER,
+          instructions:
+            "Eco Integrated Web Search (Tavily, Doubao, or Brave). Use when you need up-to-date information.",
+          listTools: async () => ({ tools: [webSearchToolDefinition()] }),
+          callTool: async ({ name, arguments: args, authToken }) =>
+            this.executeToolCall(name, args, authToken),
+        },
+        {
+          controlSecretHeader: "x-eco-web-search-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     if (request.headers["x-eco-web-search-control-secret"] !== this.controlSecret) {
       sendJson(response, 401, { error: "unauthorized control secret" });
       return;
@@ -211,57 +221,47 @@ export class IntegratedWebSearchMcpGateway {
         sendJson(response, 404, { error: "not found" });
         return;
       }
-      if (body.name !== ECO_WEB_SEARCH_TOOL) throw new Error(`未知网络搜索工具：${String(body.name)}`);
-      this.resolveThread(authToken);
-      const settings = this.deps.store.get();
-      const apiKey = this.deps.getApiKey()?.trim();
-      if (!settings.enabled || !apiKey) {
-        throw new Error("Integrated Web Search is not configured.");
-      }
+      const name = typeof body.name === "string" ? body.name : "";
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
-      const query = typeof rawArgs.query === "string" ? rawArgs.query.trim() : "";
-      const provider = settings.provider as IntegratedWebSearchProvider;
-      const results = await searchIntegratedWeb(provider, query, apiKey);
-      const text = formatIntegratedWebSearchResults(provider, query, results);
-      sendJson(response, 200, {
-        result: {
-          content: [{ type: "text", text }],
-          structuredContent: {
-            provider,
-            query,
-            resultCount: results.length,
-            results: results.map((entry) => ({
-              title: entry.title,
-              url: entry.url,
-              description: entry.description,
-            })),
-          },
-        },
-      });
+      const result = await this.executeToolCall(name, rawArgs, authToken);
+      sendJson(response, 200, { result });
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
     }
   }
-}
 
-function resolveStdioScriptPath(): string {
-  const candidates = [
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../packaging/eco-web-search-mcp-stdio.mjs"),
-    path.join(process.cwd(), "apps/desktop/packaging/eco-web-search-mcp-stdio.mjs"),
-    path.join(process.cwd(), "packaging/eco-web-search-mcp-stdio.mjs"),
-  ];
-  try {
-    const electron = require("electron") as { app?: { getAppPath?: () => string } };
-    if (electron.app?.getAppPath) {
-      candidates.unshift(path.join(electron.app.getAppPath(), "packaging/eco-web-search-mcp-stdio.mjs"));
+  private async executeToolCall(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    authToken: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    if (name !== ECO_WEB_SEARCH_TOOL) {
+      throw new Error(`未知网络搜索工具：${name}`);
     }
-    if (typeof process.resourcesPath === "string") {
-      candidates.unshift(path.join(process.resourcesPath, "eco-web-search-mcp-stdio.mjs"));
+    this.resolveThread(authToken);
+    const settings = this.deps.store.get();
+    const apiKey = this.deps.getApiKey()?.trim();
+    if (!settings.enabled || !apiKey) {
+      throw new Error("Integrated Web Search is not configured.");
     }
-  } catch {
-    // Tests run without Electron.
+    const query = typeof rawArgs.query === "string" ? rawArgs.query.trim() : "";
+    const provider = settings.provider as IntegratedWebSearchProvider;
+    const results = await searchIntegratedWeb(provider, query, apiKey);
+    const text = formatIntegratedWebSearchResults(provider, query, results);
+    return {
+      content: [{ type: "text", text }],
+      structuredContent: {
+        provider,
+        query,
+        resultCount: results.length,
+        results: results.map((entry) => ({
+          title: entry.title,
+          url: entry.url,
+          description: entry.description,
+        })),
+      },
+    };
   }
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
 }
 
 function webSearchToolDefinition(): Record<string, unknown> {

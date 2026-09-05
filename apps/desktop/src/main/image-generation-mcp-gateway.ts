@@ -1,9 +1,5 @@
-import fs from "node:fs";
 import http from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   buildImageGenerationPromptAppend,
@@ -21,8 +17,10 @@ import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { generateImagesToWorkspace, normalizeImageGenerationToolInput } from "./image-generation-client";
 import type { ImageGenerationStore } from "./image-generation-store";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 
-const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Image-Control-Secret";
 
 export interface ImageGenerationMcpInjection {
   enabled: boolean;
@@ -64,24 +62,14 @@ export class ImageGenerationMcpGateway {
       return undefined;
     }
     await this.start();
-    const script = resolveStdioScriptPath();
-    if (!fs.existsSync(script)) {
-      throw new Error(`Creative Drawing MCP stdio front-end not found: ${script}`);
-    }
-    return {
+    return buildEcoHttpCodexServer({
       name: ECO_IMAGE_GENERATION_MCP_SERVER,
-      transport: "stdio",
-      command: process.execPath,
-      args: [script],
-      env: {
-        ECO_IMAGE_CONTROL_URL: this.controlBaseUrl,
-        ECO_IMAGE_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
       enabledTools: [ECO_IMAGE_GENERATION_TOOL],
-      startupTimeoutSec: 60,
       toolTimeoutSec: IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC,
-    };
+    });
   }
 
   async resolveInjection(input: {
@@ -99,22 +87,26 @@ export class ImageGenerationMcpGateway {
         return { enabled: false, serverName: ECO_IMAGE_GENERATION_MCP_SERVER };
       }
       const auth = this.auth.ensure(input.threadId);
-      const baseEnv = globalCodexServer.env ?? {};
+      const http = buildEcoHttpInjection({
+        name: ECO_IMAGE_GENERATION_MCP_SERVER,
+        controlBaseUrl: this.controlBaseUrl,
+        controlSecretHeader: CONTROL_SECRET_HEADER,
+        controlSecret: this.controlSecret,
+        authToken: auth.token,
+        enabledTools: [ECO_IMAGE_GENERATION_TOOL],
+        toolTimeoutSec: IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC,
+      });
       return {
         enabled: true,
         serverName: ECO_IMAGE_GENERATION_MCP_SERVER,
         sdkEntry: {
-          type: "stdio",
-          command: globalCodexServer.command ?? process.execPath,
-          args: globalCodexServer.args ?? [],
-          env: { ...baseEnv, ECO_IMAGE_AUTH_TOKEN: auth.token },
-          alwaysLoad: true,
+          ...http.sdkEntry,
           // Claude Agent SDK: per-server tool-call wall clock (default ~60s via MCP_TOOL_TIMEOUT).
           timeout: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
           // pi-mcp-adapter: forwarded as requestTimeoutMs by toPiMcpServerEntry.
           requestTimeoutMs: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
         },
-        codexServer: globalCodexServer,
+        codexServer: http.codexServer,
         promptAppend: buildImageGenerationPromptAppend(config),
       };
     } catch (error) {
@@ -181,6 +173,27 @@ export class ImageGenerationMcpGateway {
   }
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
+    const urlPath = (request.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        request,
+        response,
+        {
+          serverName: ECO_IMAGE_GENERATION_MCP_SERVER,
+          instructions:
+            "Eco Creative Drawing. Create or edit images into the conversation work directory; every call requires user approval.",
+          listTools: async () => ({ tools: [imageGenerationToolDefinition()] }),
+          callTool: async ({ name, arguments: args, authToken }) =>
+            this.executeToolCall(name, args, authToken),
+        },
+        {
+          controlSecretHeader: "x-eco-image-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     if (request.headers["x-eco-image-control-secret"] !== this.controlSecret) {
       sendJson(response, 401, { error: "unauthorized control secret" });
       return;
@@ -209,129 +222,116 @@ export class ImageGenerationMcpGateway {
         sendJson(response, 404, { error: "not found" });
         return;
       }
-      if (body.name !== ECO_IMAGE_GENERATION_TOOL) throw new Error(`未知创意绘画工具：${String(body.name)}`);
-      const claim = this.resolveThread(authToken);
-      const threadId = claim.threadId;
-      const workspacePath = this.deps.resolveWorkspacePath(threadId)?.trim();
-      const generationRoot = this.deps.resolveGenerationRoot(threadId)?.trim();
-      if (!workspacePath || !generationRoot) throw new Error("创意绘画会话缺少 workspace 或运行目录。");
+      const name = typeof body.name === "string" ? body.name : "";
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
-      const config = this.deps.store.getActiveClientConfig();
-      const normalized = normalizeImageGenerationToolInput(
-        rawArgs as unknown as ImageGenerationToolInput,
-        config,
-      );
-      const { prompt, ...parameters } = normalized;
-      const artifact = this.deps.store.createArtifact({
-        threadId,
-        ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
-        prompt,
-        parameters,
-        config,
-        workspacePath,
-        generationRoot,
-      });
-      this.deps.onArtifactChanged(artifact);
-      try {
-        const images = await generateImagesToWorkspace({
-          config,
-          toolInput: normalized,
-          generationRoot,
-          threadDirectory: threadDirectoryName(threadId),
-          workspacePath,
-        });
-        const completed = this.deps.store.completeArtifact(artifact.id, images);
-        this.deps.onArtifactChanged(completed);
-        sendJson(response, 200, {
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ status: "completed", artifactId: artifact.id, images }, null, 2),
-              },
-            ],
-            structuredContent: {
-              status: "completed",
-              artifactId: artifact.id,
-              provider: config.provider,
-              model: config.model,
-              images,
-            },
-          },
-        });
-      } catch (error) {
-        const failure =
-          error instanceof ImageGenerationError
-            ? error
-            : new ImageGenerationError(
-                "internal_error",
-                error instanceof Error ? error.message : String(error),
-              );
-        const failed = this.deps.store.failArtifact(
-          artifact.id,
-          failure.code,
-          failure.message,
-          failure.partialImages,
-        );
-        this.deps.onArtifactChanged(failed);
-        sendJson(response, 200, {
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    status: "failed",
-                    artifactId: artifact.id,
-                    code: failure.code,
-                    message: failure.message,
-                    ...(failure.providerStatus ? { providerStatus: failure.providerStatus } : {}),
-                    ...(failure.requestId ? { requestId: failure.requestId } : {}),
-                    partialImages: failure.partialImages,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-            isError: true,
-            structuredContent: {
-              status: "failed",
-              artifactId: artifact.id,
-              code: failure.code,
-              message: failure.message,
-              partialImages: failure.partialImages,
-            },
-          },
-        });
-      }
+      const result = await this.executeToolCall(name, rawArgs, authToken);
+      sendJson(response, 200, { result });
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
     }
   }
-}
 
-function resolveStdioScriptPath(): string {
-  const candidates = [
-    path.join(
-      path.dirname(fileURLToPath(import.meta.url)),
-      "../../packaging/eco-image-generation-mcp-stdio.mjs",
-    ),
-    path.join(process.cwd(), "apps/desktop/packaging/eco-image-generation-mcp-stdio.mjs"),
-    path.join(process.cwd(), "packaging/eco-image-generation-mcp-stdio.mjs"),
-  ];
-  try {
-    const electron = require("electron") as { app?: { getAppPath?: () => string } };
-    if (electron.app?.getAppPath)
-      candidates.unshift(
-        path.join(electron.app.getAppPath(), "packaging/eco-image-generation-mcp-stdio.mjs"),
+  private async executeToolCall(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    authToken: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    if (name !== ECO_IMAGE_GENERATION_TOOL) {
+      throw new Error(`未知创意绘画工具：${name}`);
+    }
+    const claim = this.resolveThread(authToken);
+    const threadId = claim.threadId;
+    const workspacePath = this.deps.resolveWorkspacePath(threadId)?.trim();
+    const generationRoot = this.deps.resolveGenerationRoot(threadId)?.trim();
+    if (!workspacePath || !generationRoot) {
+      throw new Error("创意绘画会话缺少 workspace 或运行目录。");
+    }
+    const config = this.deps.store.getActiveClientConfig();
+    const normalized = normalizeImageGenerationToolInput(
+      rawArgs as unknown as ImageGenerationToolInput,
+      config,
+    );
+    const { prompt, ...parameters } = normalized;
+    const artifact = this.deps.store.createArtifact({
+      threadId,
+      ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
+      prompt,
+      parameters,
+      config,
+      workspacePath,
+      generationRoot,
+    });
+    this.deps.onArtifactChanged(artifact);
+    try {
+      const images = await generateImagesToWorkspace({
+        config,
+        toolInput: normalized,
+        generationRoot,
+        threadDirectory: threadDirectoryName(threadId),
+        workspacePath,
+      });
+      const completed = this.deps.store.completeArtifact(artifact.id, images);
+      this.deps.onArtifactChanged(completed);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ status: "completed", artifactId: artifact.id, images }, null, 2),
+          },
+        ],
+        structuredContent: {
+          status: "completed",
+          artifactId: artifact.id,
+          provider: config.provider,
+          model: config.model,
+          images,
+        },
+      };
+    } catch (error) {
+      const failure =
+        error instanceof ImageGenerationError
+          ? error
+          : new ImageGenerationError(
+              "internal_error",
+              error instanceof Error ? error.message : String(error),
+            );
+      const failed = this.deps.store.failArtifact(
+        artifact.id,
+        failure.code,
+        failure.message,
+        failure.partialImages,
       );
-    if (typeof process.resourcesPath === "string")
-      candidates.unshift(path.join(process.resourcesPath, "eco-image-generation-mcp-stdio.mjs"));
-  } catch {
-    // Tests run without Electron.
+      this.deps.onArtifactChanged(failed);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "failed",
+                artifactId: artifact.id,
+                code: failure.code,
+                message: failure.message,
+                ...(failure.providerStatus ? { providerStatus: failure.providerStatus } : {}),
+                ...(failure.requestId ? { requestId: failure.requestId } : {}),
+                partialImages: failure.partialImages,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+        isError: true,
+        structuredContent: {
+          status: "failed",
+          artifactId: artifact.id,
+          code: failure.code,
+          message: failure.message,
+          partialImages: failure.partialImages,
+        },
+      };
+    }
   }
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
 }
 
 function imageGenerationToolDefinition(): Record<string, unknown> {

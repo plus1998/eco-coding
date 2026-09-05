@@ -54,6 +54,7 @@ test("toPiMcpServerEntry maps http and sse", () => {
   ).toEqual({
     url: "https://mcp.example.com/mcp",
     headers: { Authorization: "Bearer a" },
+    httpTransport: "streamable-http",
     requestTimeoutMs: 120_000,
     lifecycle: "lazy",
   });

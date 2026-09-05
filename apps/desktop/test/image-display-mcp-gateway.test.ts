@@ -51,6 +51,10 @@ async function createGateway() {
 test("mergeIntoSdkConfig includes display_image in allowedTools", async () => {
   const { gateway } = await createGateway();
   const injection = await gateway.resolveInjection("thr_display");
+  expect(injection.sdkEntry).toMatchObject({
+    type: "http",
+    url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+  });
   const merged = gateway.mergeIntoSdkConfig(
     { mcpServers: { docs: { command: "echo" } }, allowedTools: ["mcp__docs__*"] },
     injection,
@@ -62,12 +66,15 @@ test("mergeIntoSdkConfig includes display_image in allowedTools", async () => {
 test("display_image base64 stores artifact and returns status ok only", async () => {
   const { gateway, store } = await createGateway();
   const server = await gateway.resolveGlobalCodexServer();
+  expect(server.transport).toBe("http");
+  expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+  const baseUrl = server.url!.replace(/\/mcp$/, "");
   gateway.noteUpcomingTool("thr_base64", ECO_IMAGE_DISPLAY_TOOL, "tool-display");
-  const response = await fetch(`${server.env!.ECO_IMAGE_DISPLAY_CONTROL_URL}/v1/tools/call`, {
+  const response = await fetch(`${baseUrl}/v1/tools/call`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-eco-image-display-control-secret": server.env!.ECO_IMAGE_DISPLAY_CONTROL_SECRET,
+      "x-eco-image-display-control-secret": server.httpHeaders!["X-Eco-Image-Display-Control-Secret"]!,
     },
     body: JSON.stringify({
       name: ECO_IMAGE_DISPLAY_TOOL,

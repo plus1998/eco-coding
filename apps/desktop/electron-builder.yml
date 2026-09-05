@@ -41,18 +41,7 @@ extraResources:
     to: skills
     filter:
       - "**/*"
-  - from: packaging/eco-browser-mcp-stdio.mjs
-    to: eco-browser-mcp-stdio.mjs
-  - from: packaging/eco-image-display-mcp-stdio.mjs
-    to: eco-image-display-mcp-stdio.mjs
-  - from: packaging/eco-html-host-mcp-stdio.mjs
-    to: eco-html-host-mcp-stdio.mjs
-  - from: packaging/eco-image-generation-mcp-stdio.mjs
-    to: eco-image-generation-mcp-stdio.mjs
-  - from: packaging/eco-image-view-mcp-stdio.mjs
-    to: eco-image-view-mcp-stdio.mjs
-  - from: packaging/eco-web-search-mcp-stdio.mjs
-    to: eco-web-search-mcp-stdio.mjs
+  # Legacy debug-only; agents use HTTP MCP. Keep for offline stdio probing.
   - from: packaging/eco-computer-use-mcp-stdio.mjs
     to: eco-computer-use-mcp-stdio.mjs
 
