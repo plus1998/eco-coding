@@ -250,10 +250,9 @@ Future<ThreadRuntimeConfigInput> loadGlobalRuntimeConfig(WidgetRef ref) async {
   final workflow = await ref.read(workflowSettingsProvider.future);
   final modelSettings = await ref.read(modelSettingsProvider.future);
   final mcpSettings = await ref.read(mcpSettingsProvider.future);
-  return buildDefaultRuntimeConfig(
+  return buildGlobalSettingsRuntimeConfig(
     modelSettings: modelSettings,
     workflow: workflow,
     mcpServers: mcpSettings?.servers,
-    orchestrationSelection: workflow?.defaultOrchestrationSelection,
   );
 }

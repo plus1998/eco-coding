@@ -276,6 +276,26 @@ ThreadRuntimeConfig buildAcpRuntimeConfig({
   );
 }
 
+/// Draft config for Settings → Runtime config / Models.
+///
+/// Always surfaces [WorkflowSettingsSnapshot.defaultOrchestrationSelection],
+/// even when [WorkflowSettingsSnapshot.defaultCoreKind] is ACP. Composer ACP
+/// runs ignore Eco orchestration, but the stored defaults remain editable here.
+ThreadRuntimeConfig buildGlobalSettingsRuntimeConfig({
+  ModelSettingsSnapshot? modelSettings,
+  WorkflowSettingsSnapshot? workflow,
+  List<McpServerConfigView>? mcpServers,
+}) {
+  return buildDefaultRuntimeConfig(
+    modelSettings: modelSettings,
+    workflow: workflow,
+    mcpServers: mcpServers,
+    orchestrationSelection: workflow?.defaultOrchestrationSelection,
+    // Force Eco path so ACP default core does not drop orchestrationSelection.
+    coreKind: 'claude',
+  );
+}
+
 ThreadRuntimeConfig buildDefaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,
   WorkflowSettingsSnapshot? workflow,

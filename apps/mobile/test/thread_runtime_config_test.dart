@@ -665,4 +665,31 @@ void main() {
     expect(decoded.visionModel?.modelId, 'vision-model');
     expect(isThreadRuntimeConfigReady(null, decoded, coreKind: 'acp'), isTrue);
   });
+
+  test(
+    'buildGlobalSettingsRuntimeConfig keeps orchestration when default core is ACP',
+    () {
+      const auxiliaryModel = AuxiliaryModelSelection(
+        providerId: 'provider-2',
+        modelId: 'fast-model',
+        candidateModelId: 'candidate-fast',
+      );
+      final config = buildGlobalSettingsRuntimeConfig(
+        modelSettings: _settings(),
+        workflow: WorkflowSettingsSnapshot(
+          sessionMode: 'agent',
+          defaultCoreKind: 'acp',
+          acpCursorModelId: 'auto',
+          defaultOrchestrationSelection: _selection(),
+          defaultAuxiliaryModel: auxiliaryModel,
+        ),
+        mcpServers: const [],
+      );
+
+      expect(config.orchestrationSelection?.mainAgentConfigId, 'main-1');
+      expect(config.resolvedOrchestrationSnapshot, isNotNull);
+      expect(config.auxiliaryModel?.modelId, 'fast-model');
+      expect(config.cursorModelId, isNull);
+    },
+  );
 }
