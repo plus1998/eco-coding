@@ -1,0 +1,206 @@
+import { motion, useReducedMotion } from "framer-motion";
+import { LoaderCircle, Maximize2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { ImageGalleryQueueItem } from "./image-gallery-float-state";
+
+/** 竖直画廊最多同时展示的层数：当前一张 + 下方两张排队预览。 */
+const GALLERY_LAYER_COUNT = 3;
+
+function galleryLayerTransform(layer: number): {
+  y: number;
+  scale: number;
+  opacity: number;
+  zIndex: number;
+} {
+  switch (layer) {
+    case 0:
+      return { y: 0, scale: 1, opacity: 1, zIndex: 30 };
+    case 1:
+      return { y: 44, scale: 0.965, opacity: 0.55, zIndex: 20 };
+    default:
+      return { y: 76, scale: 0.93, opacity: 0.28, zIndex: 10 };
+  }
+}
+
+function GalleryCard({
+  item,
+  layer,
+  onAdvance,
+  onOpenDetail,
+}: {
+  item: ImageGalleryQueueItem;
+  layer: number;
+  onAdvance: (item: ImageGalleryQueueItem) => void;
+  onOpenDetail: (item: ImageGalleryQueueItem) => void;
+}) {
+  const { t } = useTranslation();
+  const isCurrent = layer === 0;
+  const [src, setSrc] = useState<string>();
+  const [fileName, setFileName] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(undefined);
+    setFileName(undefined);
+    setError(undefined);
+    const bridge = window.eco;
+    if (!bridge) {
+      setError(t("imageGallery.loadError"));
+      return;
+    }
+    void (async () => {
+      if (item.kind === "display") {
+        const result = await bridge.readImageDisplay({ artifactId: item.artifactId });
+        if (!result.ok) {
+          const codeKey =
+            result.code === "not_found"
+              ? "notFound"
+              : result.code === "too_large"
+                ? "tooLarge"
+                : result.code === "unsupported_type"
+                  ? "unsupportedType"
+                  : "readFailed";
+          throw new Error(t(`activity.imageDisplay.error.${codeKey}`));
+        }
+        if (cancelled) return;
+        setFileName(result.fileName);
+        setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
+        return;
+      }
+      const result = await bridge.readImageGenerationArtifact({
+        artifactId: item.artifactId,
+        imageIndex: item.imageIndex ?? 0,
+      });
+      if (cancelled) return;
+      setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
+    })().catch((caught) => {
+      if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.kind, item.artifactId, item.imageIndex, t]);
+
+  const alt =
+    item.kind === "display"
+      ? t("activity.imageDisplay.previewAlt", { name: fileName ?? t("task.imageDisplay.emptyTitle") })
+      : t("task.image.title");
+  const transform = galleryLayerTransform(layer);
+  const showOverlays = isCurrent && !error;
+
+  return (
+    <motion.div
+      className={isCurrent ? "image-gallery-card image-gallery-card--current" : "image-gallery-card"}
+      aria-hidden={!isCurrent}
+      initial={false}
+      animate={{
+        y: transform.y,
+        scale: transform.scale,
+        opacity: transform.opacity,
+        zIndex: transform.zIndex,
+      }}
+      transition={{ type: "spring", stiffness: 280, damping: 28, mass: 0.9 }}
+      style={{ pointerEvents: isCurrent ? "auto" : "none" }}
+    >
+      <div className="image-gallery-card-frame">
+        {src ? (
+          <button
+            type="button"
+            className="image-gallery-card-media"
+            onClick={() => onOpenDetail(item)}
+            aria-label={t("imageGallery.openDetail")}
+            title={t("imageGallery.openDetail")}
+          >
+            <img src={src} alt={alt} draggable={false} />
+          </button>
+        ) : error ? (
+          <div className="image-gallery-card-media image-gallery-card-media--error" role="alert">
+            {error}
+          </div>
+        ) : (
+          <div className="image-gallery-card-media image-gallery-card-media--loading">
+            <LoaderCircle className="image-gallery-card-spinner" size={22} aria-hidden />
+            <span>{t("imageGallery.loading")}</span>
+          </div>
+        )}
+        {showOverlays ? (
+          <>
+            <button
+              type="button"
+              className="image-gallery-card-overlay image-gallery-card-overlay--preview"
+              onClick={() => onOpenDetail(item)}
+              aria-label={t("imageGallery.openDetail")}
+            >
+              <Maximize2 size={20} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="image-gallery-card-overlay image-gallery-card-overlay--close"
+              onClick={() => onAdvance(item)}
+              aria-label={t("imageGallery.closeCurrent")}
+            >
+              <X size={16} aria-hidden />
+            </button>
+          </>
+        ) : null}
+      </div>
+    </motion.div>
+  );
+}
+
+/**
+ * 图片画廊悬浮窗：停靠在右侧，竖直方向排队展示展示图片 / 创意绘画工具产出的图片。
+ * 纯图片无边框；hover 当前图片时右上角显示关闭图标、居中显示预览图标，点击预览图标直接打开预览。
+ * 关闭当前一张即切换到下一张；队列清空或按 Esc 整体关闭后回到 workspace cards。
+ */
+export function ImageGalleryFloat({
+  items,
+  onAdvance,
+  onCloseAll,
+  onOpenDetail,
+}: {
+  items: readonly ImageGalleryQueueItem[];
+  onAdvance: (item: ImageGalleryQueueItem) => void;
+  onCloseAll: () => void;
+  onOpenDetail: (item: ImageGalleryQueueItem) => void;
+}) {
+  const { t } = useTranslation();
+  const reducedMotion = useReducedMotion();
+  const closeCurrent = useCallback((item: ImageGalleryQueueItem) => onAdvance(item), [onAdvance]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onCloseAll();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCloseAll]);
+
+  return (
+    <motion.div
+      className="image-gallery-float"
+      role="region"
+      aria-label={t("imageGallery.title")}
+      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, x: 48, scale: 0.98 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: 48, scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 320, damping: 30, mass: 0.9 }}
+    >
+      <div className="image-gallery-float-stack" aria-live="polite">
+        {items.slice(0, GALLERY_LAYER_COUNT).map((item, layer) => (
+          <GalleryCard
+            key={item.key}
+            item={item}
+            layer={layer}
+            onAdvance={closeCurrent}
+            onOpenDetail={onOpenDetail}
+          />
+        ))}
+      </div>
+    </motion.div>
+  );
+}

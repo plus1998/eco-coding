@@ -34704,3 +34704,141 @@ body,
 .composer-model-trigger.model-cascade-trigger:hover:not(:disabled) {
   background: var(--popover-hover, rgba(255, 255, 255, 0.08));
 }
+
+/* ===== Image gallery float：图片展示 / 创意绘画工具产出的图片画廊悬浮窗（停靠右侧，纯图片无边框） ===== */
+
+.image-gallery-float {
+  position: absolute;
+  top: calc(var(--workspace-toolbar-clearance, 36px) + 14px);
+  right: var(--workspace-cards-panel-right, 10px);
+  z-index: 84;
+  width: min(348px, calc(100% - var(--workspace-cards-panel-right, 10px) - 12px));
+  -webkit-app-region: no-drag;
+}
+
+.image-gallery-float-stack {
+  position: relative;
+  height: 380px;
+}
+
+.image-gallery-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 300px;
+  overflow: visible;
+  will-change: transform, opacity;
+}
+
+.image-gallery-card-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.image-gallery-card-media {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+
+.image-gallery-card-media:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 2px;
+}
+
+.image-gallery-card-media img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter:
+    drop-shadow(0 16px 28px rgba(0, 0, 0, 0.45))
+    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.28));
+}
+
+.image-gallery-card-media--loading,
+.image-gallery-card-media--error {
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: default;
+}
+
+.image-gallery-card-spinner {
+  color: var(--text-muted);
+  animation: eco-spin 1s linear infinite;
+}
+
+/* hover 时浮现的操作图标：关闭（右上角）+ 预览（居中） */
+.image-gallery-card-overlay {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(15, 17, 21, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  backdrop-filter: blur(2px);
+  transition:
+    opacity 0.16s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.16s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.16s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.image-gallery-card-overlay--close {
+  top: 10px;
+  right: 10px;
+}
+
+.image-gallery-card-overlay--preview {
+  top: 50%;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.image-gallery-card--current:hover .image-gallery-card-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.image-gallery-card--current:hover .image-gallery-card-overlay--preview {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.image-gallery-card-overlay:hover {
+  background: rgba(15, 17, 21, 0.72);
+}
+
+.image-gallery-card-overlay:focus-visible {
+  outline: 2px solid var(--focus-ring, #fff);
+  outline-offset: 2px;
+}

@@ -1,7 +1,7 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime/acp-prompt";
 import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
-import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import {
   Activity,
   ArrowUp,
@@ -292,10 +292,18 @@ import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
+import { ImageGalleryFloat } from "./ImageGalleryFloat";
 import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
 import { IntegratedWebSearchSettingsPanel } from "./IntegratedWebSearchSettingsPanel";
 import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
 import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import {
+  advanceImageGalleryQueue,
+  appendImageGalleryItems,
+  imageGalleryDisplayItem,
+  imageGalleryGenerationItem,
+  type ImageGalleryQueueItem,
+} from "./image-gallery-float-state";
 import { ImageLightbox } from "./image-lightbox";
 import {
   applyLocalStreamUpdatesToProjection,
@@ -1620,6 +1628,35 @@ function App() {
   const [imageDisplayArtifactsByThread, setImageDisplayArtifactsByThread] = useState<
     Record<string, ImageDisplayArtifact[]>
   >({});
+  const [imageGalleryQueue, setImageGalleryQueue] = useState<ImageGalleryQueueItem[]>([]);
+  const [imageGalleryOpen, setImageGalleryOpen] = useState(false);
+  /** 已入队过的画廊项（按 key 去重，保证每次工具调用只触发一次悬浮窗）。 */
+  const imageGalleryEnqueuedRef = useRef<Set<string>>(new Set());
+  const activeThreadIdRef = useRef<string | undefined>(undefined);
+
+  const enqueueImageGalleryItems = useCallback(
+    (items: ImageGalleryQueueItem[]) => {
+      const fresh = items.filter((item) => !imageGalleryEnqueuedRef.current.has(item.key));
+      if (fresh.length === 0) {
+        return;
+      }
+      for (const item of fresh) {
+        imageGalleryEnqueuedRef.current.add(item.key);
+      }
+      setImageGalleryQueue((current) => appendImageGalleryItems(current, fresh));
+      setImageGalleryOpen(true);
+    },
+    [],
+  );
+
+  const advanceImageGallery = useCallback(() => {
+    setImageGalleryQueue((current) => advanceImageGalleryQueue(current));
+  }, []);
+
+  const closeImageGallery = useCallback(() => {
+    setImageGalleryOpen(false);
+    setImageGalleryQueue([]);
+  }, []);
   const [htmlHostArtifactsByThread, setHtmlHostArtifactsByThread] = useState<
     Record<string, HtmlHostArtifact[]>
   >({});
@@ -2876,8 +2913,20 @@ function App() {
         );
         return { ...current, [artifact.threadId]: next };
       });
+      // 创意绘画完成且有产出图片时排入右侧画廊队列（仅当前查看的会话触发）。
+      if (
+        artifact.threadId === activeThreadIdRef.current &&
+        artifact.status === "completed" &&
+        artifact.images.length > 0
+      ) {
+        enqueueImageGalleryItems(
+          artifact.images.map((_image, imageIndex) =>
+            imageGalleryGenerationItem(artifact.id, imageIndex),
+          ),
+        );
+      }
     });
-  }, []);
+  }, [enqueueImageGalleryItems]);
 
   useEffect(() => {
     if (!window.eco?.onImageDisplayArtifactChanged) return;
@@ -2889,8 +2938,12 @@ function App() {
         );
         return { ...current, [artifact.threadId]: next };
       });
+      // 展示图片成功时排入右侧画廊队列（仅当前查看的会话触发）。
+      if (artifact.threadId === activeThreadIdRef.current && artifact.status === "completed") {
+        enqueueImageGalleryItems([imageGalleryDisplayItem(artifact.id)]);
+      }
     });
-  }, []);
+  }, [enqueueImageGalleryItems]);
 
   useEffect(() => {
     if (!window.eco?.onHtmlHostArtifactChanged) return;
@@ -2904,6 +2957,20 @@ function App() {
       });
     });
   }, []);
+  useEffect(() => {
+    activeThreadIdRef.current = activeThread?.id;
+  }, [activeThread?.id]);
+  // 切换会话时清空画廊队列（其他会话的图片仍保留在各自 cards）。
+  useEffect(() => {
+    setImageGalleryQueue([]);
+    setImageGalleryOpen(false);
+  }, [selectedThreadId]);
+  // 队列清空后自动收起悬浮窗，图片回到 cards。
+  useEffect(() => {
+    if (imageGalleryOpen && imageGalleryQueue.length === 0) {
+      setImageGalleryOpen(false);
+    }
+  }, [imageGalleryOpen, imageGalleryQueue.length]);
   const workspacePanelResponsiveDefaultOpen = Boolean(
     activeThread && shouldAutoOpenWorkspacePanel(activityWorkspaceLayoutMode),
   );
@@ -5214,6 +5281,17 @@ function App() {
       if (artifact) openImageDisplayArtifact(artifact.id);
     },
     [activeThread?.id, imageDisplayArtifactsByThread, openImageDisplayArtifact],
+  );
+
+  const openImageGalleryDetail = useCallback(
+    (item: ImageGalleryQueueItem) => {
+      if (item.kind === "generation") {
+        openImageGenerationArtifact(item.artifactId);
+        return;
+      }
+      openImageDisplayArtifact(item.artifactId);
+    },
+    [openImageGenerationArtifact, openImageDisplayArtifact],
   );
 
   const openHtmlHostArtifact = useCallback(
@@ -10369,6 +10447,17 @@ function App() {
             ) : null}
           </div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
+          <AnimatePresence>
+            {imageGalleryOpen && imageGalleryQueue.length > 0 ? (
+              <ImageGalleryFloat
+                key="image-gallery-float"
+                items={imageGalleryQueue}
+                onAdvance={advanceImageGallery}
+                onCloseAll={closeImageGallery}
+                onOpenDetail={openImageGalleryDetail}
+              />
+            ) : null}
+          </AnimatePresence>
           <BrowserWebviewLayer />
           {showPanelChromeGroupB ? panelControlButtons : null}
           {!showLanding && !activityFeedBootReady ? (
