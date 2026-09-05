@@ -614,6 +614,17 @@ const api = {
   saveBrowserSettings(settings: BrowserSettingsSnapshot): Promise<BrowserSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserSettingsSave, settings);
   },
+  getComputerUseSettings(): Promise<import("../shared/computer-use").ComputerUseSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.computerUseSettingsGet);
+  },
+  saveComputerUseSettings(
+    settings: import("../shared/computer-use").ComputerUseSettingsSnapshot,
+  ): Promise<import("../shared/computer-use").ComputerUseSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.computerUseSettingsSave, settings);
+  },
+  runComputerUseDoctor(): Promise<{ ok: boolean; reason?: string; output?: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.computerUseDoctor);
+  },
   getIntegrationAvailability(): Promise<IntegrationAvailabilitySnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.integrationAvailabilityGet);
   },

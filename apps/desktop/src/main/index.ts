@@ -128,6 +128,10 @@ import {
   requiresBrowserOpenApproval,
   resolveToolNameFromActivityPayload,
 } from "../shared/browser";
+import {
+  ECO_COMPUTER_USE_MCP_SERVER,
+  requiresComputerUseActionApproval,
+} from "../shared/computer-use";
 import { codexTurnHasRetryBlockingProgress } from "../shared/codex-request-retry-gate";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
@@ -446,6 +450,13 @@ import {
   isBrowserSettingsSnapshot,
   normalizeBrowserSettingsSnapshot,
 } from "./browser-settings-store";
+import { ComputerUseMcpGateway } from "./computer-use-mcp-gateway";
+import {
+  type ComputerUseSettingsStore,
+  createComputerUseSettingsStore,
+  isComputerUseSettingsSnapshot,
+  normalizeComputerUseSettingsSnapshot,
+} from "./computer-use-settings-store";
 import {
   type FinalizeCancelledRunDeps,
   finalizeCancelledRun,
@@ -1002,6 +1013,8 @@ let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let personalizationSettingsStore: PersonalizationSettingsStore;
 let browserSettingsStore: BrowserSettingsStore;
+let computerUseSettingsStore: ComputerUseSettingsStore;
+let computerUseGateway: ComputerUseMcpGateway;
 let webChatListStore: WebChatListStore;
 let sshBookmarkStore: SshBookmarkStore;
 let notificationSettingsStore: NotificationSettingsStore;
@@ -1030,6 +1043,7 @@ async function resolveCodexGlobalMcpServers() {
     configuredServers: configured,
     builtinServerResolvers: [
       () => requireBrowserHost().resolveGlobalAgentBrowserMcpServer(),
+      () => computerUseGateway.resolveGlobalCodexServer(),
       () => imageGenerationGateway.resolveGlobalCodexServer(),
       () => imageViewGateway.resolveGlobalCodexServer(),
       () => imageDisplayGateway.resolveGlobalCodexServer(),
@@ -1710,6 +1724,8 @@ app.whenReady().then(async () => {
   gitSettingsStore = await createGitSettingsStore(dbPath);
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
   browserSettingsStore = await createBrowserSettingsStore(dbPath);
+  computerUseSettingsStore = await createComputerUseSettingsStore(dbPath);
+  computerUseGateway = new ComputerUseMcpGateway(() => computerUseSettingsStore.get());
   webChatListStore = await createWebChatListStore(dbPath);
   sshBookmarkStore = await createSshBookmarkStore(dbPath, createLocalSecretCodec());
   notificationSettingsStore = await createNotificationSettingsStore(dbPath);
@@ -2303,6 +2319,7 @@ app.whenReady().then(async () => {
         : "always";
     },
     getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
+    getComputerUseActionApprovalMode: () => computerUseSettingsStore.get().actionApprovalMode,
     noteUpcomingImageGenerationTool: (threadId, toolName, toolUseId) => {
       imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
     },
@@ -4800,9 +4817,27 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.browserSettingsGet, async () => browserSettingsStore.get());
 
+  registerDesktopCommand(IPC_CHANNELS.computerUseSettingsGet, async () => computerUseSettingsStore.get());
+
+  registerDesktopCommand(IPC_CHANNELS.computerUseDoctor, async () => {
+    const resolved = computerUseGateway.resolveBinary();
+    if (!resolved.available || !resolved.binaryPath) {
+      return { ok: false, reason: resolved.reason ?? "open-computer-use 不可用" };
+    }
+    const { probeOpenComputerUseDoctor } = await import("./computer-use-mcp-gateway");
+    const doctor = await probeOpenComputerUseDoctor(resolved.binaryPath);
+    return {
+      ok: doctor.ok,
+      ...(doctor.reason ? { reason: doctor.reason } : {}),
+      ...(doctor.output ? { output: doctor.output } : {}),
+    };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.integrationAvailabilityGet, async () => {
     const browserSettings = browserSettingsStore.get();
     const browserFeature = requireBrowserHost().isFeatureAvailable();
+    const computerUseSettings = computerUseSettingsStore.get();
+    const computerUseFeature = computerUseGateway.isFeatureAvailableQuick();
     const imageSettings = imageGenerationStore.getSettings();
     const activeImageProfile = imageSettings.profiles.find(
       (profile) => profile.id === imageSettings.activeProfileId,
@@ -4818,6 +4853,12 @@ function registerIpcHandlers(): void {
           enabled: browserSettings.agentIntegrationEnabled,
           available: browserFeature.available,
           ...(browserFeature.reason ? { reason: browserFeature.reason } : {}),
+        },
+        {
+          id: "computerUse" as const,
+          enabled: computerUseSettings.agentIntegrationEnabled,
+          available: computerUseFeature.available,
+          ...(computerUseFeature.reason ? { reason: computerUseFeature.reason } : {}),
         },
         {
           id: "imageGeneration" as const,
@@ -5003,6 +5044,25 @@ function registerIpcHandlers(): void {
     }
     await removeClaudeUserEcoAgentBrowserSkill();
     const saved = browserSettingsStore.save(next);
+    scheduleCodexGlobalRuntimeRefresh();
+    return saved;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.computerUseSettingsSave, async (payload: unknown) => {
+    if (!isComputerUseSettingsSnapshot(payload)) {
+      throw new Error("Invalid computer use settings.");
+    }
+    const next = normalizeComputerUseSettingsSnapshot(payload);
+    if (next.agentIntegrationEnabled) {
+      const feature = await computerUseGateway.checkFeatureAvailable();
+      if (!feature.available) {
+        throw new Error(`无法启用电脑操控 Agent 能力：${feature.reason ?? "未知原因"}`);
+      }
+      const saved = computerUseSettingsStore.save(next);
+      scheduleCodexGlobalRuntimeRefresh();
+      return saved;
+    }
+    const saved = computerUseSettingsStore.save(next);
     scheduleCodexGlobalRuntimeRefresh();
     return saved;
   });
@@ -7726,6 +7786,9 @@ async function startCodexThreadRun(
     const sessionEcoBrowserEnabled =
       browserSettingsStore.get().agentIntegrationEnabled &&
       integrationEnabled(threadRuntimeForIntegrations?.integrationsEnabled, "browser");
+    const sessionComputerUseEnabled =
+      computerUseSettingsStore.get().agentIntegrationEnabled &&
+      integrationEnabled(threadRuntimeForIntegrations?.integrationsEnabled, "computerUse");
     const sessionImageGenerationEnabled =
       imageGenerationStore.getSettings().enabled &&
       integrationEnabled(threadRuntimeForIntegrations?.integrationsEnabled, "imageGeneration");
@@ -7769,6 +7832,9 @@ async function startCodexThreadRun(
           resolveAgentRegistry: () => resolveAgentRuntimeConfigForThreadId(input.thread.id),
           resolveSystemPromptAppend: () => {
             let append = requireBrowserHost().getAgentPromptAppend(sessionEcoBrowserEnabled, input.thread.id);
+            if (sessionComputerUseEnabled) {
+              append = appendBrowserPrompt(append, computerUseGateway.getAgentPromptAppend(true));
+            }
             if (sessionImageGenerationEnabled) {
               append = appendBrowserPrompt(
                 append,
@@ -7826,6 +7892,17 @@ async function startCodexThreadRun(
                 );
               }
             }
+            if (sessionComputerUseEnabled) {
+              const computerUseInject = await computerUseGateway.resolveInjection({
+                threadId: input.thread.id,
+                sessionEnabled: true,
+              });
+              if (!computerUseInject.enabled || !computerUseInject.codexServer) {
+                throw new Error(
+                  `本会话已开启电脑操控，但不可用：${computerUseInject.unavailableReason ?? "未知原因"}`,
+                );
+              }
+            }
             if (sessionIntegratedWebSearchEnabled) {
               const webSearchInject = await integratedWebSearchGateway.resolveInjection({
                 threadId: input.thread.id,
@@ -7852,6 +7929,9 @@ async function startCodexThreadRun(
             if (sessionEcoBrowserEnabled && !keys.includes(ECO_AGENT_BROWSER_MCP_SERVER)) {
               keys.push(ECO_AGENT_BROWSER_MCP_SERVER);
             }
+            if (sessionComputerUseEnabled && !keys.includes(ECO_COMPUTER_USE_MCP_SERVER)) {
+              keys.push(ECO_COMPUTER_USE_MCP_SERVER);
+            }
             if (sessionImageGenerationEnabled && !keys.includes(ECO_IMAGE_GENERATION_MCP_SERVER)) {
               keys.push(ECO_IMAGE_GENERATION_MCP_SERVER);
             }
@@ -7871,6 +7951,7 @@ async function startCodexThreadRun(
             return keys.filter(
               (key) =>
                 (key !== ECO_AGENT_BROWSER_MCP_SERVER || sessionEcoBrowserEnabled) &&
+                (key !== ECO_COMPUTER_USE_MCP_SERVER || sessionComputerUseEnabled) &&
                 (key !== ECO_IMAGE_GENERATION_MCP_SERVER || sessionImageGenerationEnabled) &&
                 (key !== ECO_WEB_SEARCH_MCP_SERVER || sessionIntegratedWebSearchEnabled) &&
                 (key !== ECO_HTML_HOST_MCP_SERVER || centerServerClient.getHtmlHostingCapability().available),
@@ -8108,6 +8189,9 @@ async function resolvePiSessionResourcesForThread(
   const sessionEcoBrowserEnabled =
     browserSettingsStore.get().agentIntegrationEnabled &&
     integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "browser");
+  const sessionComputerUseEnabled =
+    computerUseSettingsStore.get().agentIntegrationEnabled &&
+    integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "computerUse");
   const sessionImageGenerationEnabled =
     imageGenerationStore.getSettings().enabled &&
     integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "imageGeneration");
@@ -8118,6 +8202,13 @@ async function resolvePiSessionResourcesForThread(
   });
   if (sessionEcoBrowserEnabled && !browserInject.enabled) {
     throw new Error(`本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`);
+  }
+  const computerUseInject = await computerUseGateway.resolveInjection({
+    threadId,
+    sessionEnabled: sessionComputerUseEnabled,
+  });
+  if (sessionComputerUseEnabled && !computerUseInject.enabled) {
+    throw new Error(`本会话已开启电脑操控，但不可用：${computerUseInject.unavailableReason ?? "未知原因"}`);
   }
   const imageInject = await imageGenerationGateway.resolveInjection({
     threadId,
@@ -8149,6 +8240,11 @@ async function resolvePiSessionResourcesForThread(
       enabled: browserInject.enabled,
       ...(browserInject.sdkEntry ? { sdkEntry: browserInject.sdkEntry } : {}),
       ...(browserInject.promptAppend ? { promptAppend: browserInject.promptAppend } : {}),
+    },
+    computerUseInject: {
+      enabled: computerUseInject.enabled,
+      ...(computerUseInject.sdkEntry ? { sdkEntry: computerUseInject.sdkEntry } : {}),
+      ...(computerUseInject.promptAppend ? { promptAppend: computerUseInject.promptAppend } : {}),
     },
     imageInject: {
       enabled: imageInject.enabled,
@@ -10367,6 +10463,7 @@ function buildDesktopSdkRunInput(
       : undefined;
   let sessionEco = false;
   let sessionImage = false;
+  let sessionComputerUse = false;
   if (threadId) {
     const thread = conversationStore.getThread(threadId);
     sessionEco =
@@ -10374,6 +10471,12 @@ function buildDesktopSdkRunInput(
       integrationEnabled(
         thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.integrationsEnabled : undefined,
         "browser",
+      );
+    sessionComputerUse =
+      computerUseSettingsStore.get().agentIntegrationEnabled &&
+      integrationEnabled(
+        thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.integrationsEnabled : undefined,
+        "computerUse",
       );
     sessionImage =
       imageGenerationStore.getSettings().enabled &&
@@ -10386,6 +10489,12 @@ function buildDesktopSdkRunInput(
     personalizationSettingsStore.get().globalRules,
     requireBrowserHost().getAgentPromptAppend(sessionEco, threadId),
   );
+  if (sessionComputerUse) {
+    globalUserRules = appendBrowserPrompt(
+      globalUserRules,
+      computerUseGateway.getAgentPromptAppend(true),
+    );
+  }
   if (sessionImage && threadId) {
     const config = imageGenerationStore.getActiveClientConfig();
     globalUserRules = appendBrowserPrompt(globalUserRules, buildImageGenerationPromptAppend(config));
@@ -12231,6 +12340,9 @@ async function buildSdkSessionOptions(
   const sessionEcoBrowserEnabled =
     browserSettingsStore.get().agentIntegrationEnabled &&
     integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "browser");
+  const sessionComputerUseEnabled =
+    computerUseSettingsStore.get().agentIntegrationEnabled &&
+    integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "computerUse");
   const sessionImageGenerationEnabled =
     imageGenerationStore.getSettings().enabled &&
     integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "imageGeneration");
@@ -12240,6 +12352,13 @@ async function buildSdkSessionOptions(
   });
   if (sessionEcoBrowserEnabled && !browserInject.enabled) {
     throw new Error(`本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`);
+  }
+  const computerUseInject = await computerUseGateway.resolveInjection({
+    threadId,
+    sessionEnabled: sessionComputerUseEnabled,
+  });
+  if (sessionComputerUseEnabled && !computerUseInject.enabled) {
+    throw new Error(`本会话已开启电脑操控，但不可用：${computerUseInject.unavailableReason ?? "未知原因"}`);
   }
   const imageInject = await imageGenerationGateway.resolveInjection({
     threadId,
@@ -12289,6 +12408,7 @@ async function buildSdkSessionOptions(
       (key) =>
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
+        key !== ECO_COMPUTER_USE_MCP_SERVER &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
         key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
         key !== ECO_HTML_HOST_MCP_SERVER &&
@@ -12296,7 +12416,8 @@ async function buildSdkSessionOptions(
     ),
   );
   const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
-  const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withBrowserMcp, imageInject);
+  const withComputerUseMcp = computerUseGateway.mergeIntoSdkConfig(withBrowserMcp, computerUseInject);
+  const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withComputerUseMcp, imageInject);
   const withImageViewMcp = imageViewGateway.mergeIntoSdkConfig(withImageMcp, imageViewInject);
   const withImageDisplayMcp = imageDisplayGateway.mergeIntoSdkConfig(withImageViewMcp, imageDisplayInject);
   const withHtmlHostMcp = htmlHostInject
@@ -12312,12 +12433,14 @@ async function buildSdkSessionOptions(
       (key) =>
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
+        key !== ECO_COMPUTER_USE_MCP_SERVER &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
         key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
         key !== ECO_HTML_HOST_MCP_SERVER &&
         key !== ECO_WEB_SEARCH_MCP_SERVER,
     ),
     ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
+    ...(computerUseInject.enabled ? [ECO_COMPUTER_USE_MCP_SERVER] : []),
     ...(imageInject.enabled ? [ECO_IMAGE_GENERATION_MCP_SERVER] : []),
     ...(webSearchInject.enabled ? [ECO_WEB_SEARCH_MCP_SERVER] : []),
     ECO_IMAGE_VIEW_MCP_SERVER,
@@ -14314,11 +14437,13 @@ function createThreadToolPermissionHandler(
   skipExecutionApprovals = false,
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   const browserOpenHandler = createBrowserOpenToolPermissionHandler(threadId);
+  const computerUseHandler = createComputerUseToolPermissionHandler(threadId);
   const imageGenerationHandler = createImageGenerationToolPermissionHandler(threadId);
   if (skipExecutionApprovals) {
     return composeCanUseToolHandlers(
       createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
       imageGenerationHandler,
+      computerUseHandler,
       browserOpenHandler,
     );
   }
@@ -14326,6 +14451,7 @@ function createThreadToolPermissionHandler(
   return composeCanUseToolHandlers(
     createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
     imageGenerationHandler,
+    computerUseHandler,
     browserOpenHandler,
     bashAndFilesystemHandler,
   );
@@ -14405,6 +14531,86 @@ function createImageGenerationToolPermissionHandler(
     return {
       behavior: "deny",
       message: resolution.feedback?.trim() || "User rejected this image generation request.",
+      interrupt: false,
+    };
+  };
+}
+
+function createComputerUseToolPermissionHandler(
+  threadId: string,
+): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  return async (request) => {
+    const needsGate = requiresComputerUseActionApproval(request.toolName);
+    const mode = computerUseSettingsStore.get().actionApprovalMode;
+    if (!needsGate) {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    if (mode !== "always_ask") {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      return {
+        behavior: "deny",
+        message: "Thread was not found; Eco could not request Computer Use approval.",
+        interrupt: true,
+      };
+    }
+    const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
+    if (!approvalAgentId) {
+      return {
+        behavior: "deny",
+        message: "Eco could not attribute this Computer Use approval to an agent instance.",
+        interrupt: false,
+      };
+    }
+
+    const cwd = request.cwd?.trim() || thread.sdkCwd || thread.workspacePath || ".";
+    const approvalRequest: BashApprovalRequest = {
+      toolUseId: request.toolUseId,
+      threadId,
+      command: request.toolName,
+      cwd,
+      reason: "Agent 请求执行电脑操控动作（点击 / 输入等）。",
+      riskScore: 55,
+      riskLevel: "medium",
+      agentId: approvalAgentId,
+      ...(request.agentType ? { agentType: request.agentType } : {}),
+      description: "Computer Use action",
+    };
+
+    emitThreadEvent(
+      threadId,
+      "bash_approval.requested",
+      "等待确认电脑操控动作",
+      "tool",
+      false,
+      bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
+    );
+    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    if (isBashApprovalGranted(resolution)) {
+      emitThreadEvent(
+        threadId,
+        "bash_approval.approved",
+        "已允许本次电脑操控",
+        "tool",
+        false,
+        bashApprovalEventExtras(approvalRequest, "bash_approval.approved"),
+      );
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    emitThreadEvent(
+      threadId,
+      "bash_approval.rejected",
+      "已拒绝本次电脑操控",
+      "tool",
+      false,
+      bashApprovalEventExtras(approvalRequest, "bash_approval.rejected"),
+    );
+    return {
+      behavior: "deny",
+      message: resolution.feedback?.trim() || "User rejected this Computer Use action.",
       interrupt: false,
     };
   };

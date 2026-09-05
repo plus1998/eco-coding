@@ -234,6 +234,9 @@ export const IPC_CHANNELS = {
   storageCleanup: "storage:cleanup",
   browserSettingsGet: "browser-settings:get",
   browserSettingsSave: "browser-settings:save",
+  computerUseSettingsGet: "computer-use-settings:get",
+  computerUseSettingsSave: "computer-use-settings:save",
+  computerUseDoctor: "computer-use:doctor",
   webChatListGet: "web-chat-list:get",
   webChatListSave: "web-chat-list:save",
   sshBookmarksGet: "ssh-bookmarks:get",
@@ -1095,6 +1098,16 @@ export type {
   BrowserSetVisibleRequest,
   BrowserViewState,
 } from "./browser";
+
+export type {
+  ComputerUseActionApprovalMode,
+  ComputerUseSettingsSnapshot,
+} from "./computer-use";
+export {
+  defaultComputerUseSettings,
+  isComputerUseSettingsSnapshot,
+  normalizeComputerUseSettingsSnapshot,
+} from "./computer-use";
 
 export type { BrowserAgentPresenceEvent } from "./browser-agent-presence";
 export { BROWSER_AGENT_PRESENCE_IDLE_MS } from "./browser-agent-presence";

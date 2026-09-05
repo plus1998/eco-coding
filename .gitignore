@@ -6,6 +6,8 @@ apps/desktop/release/
 apps/desktop/packaging/**/*.iconset/
 apps/desktop/packaging/agent-browser/agent-browser
 apps/desktop/packaging/agent-browser/agent-browser.exe
+apps/desktop/packaging/open-computer-use/open-computer-use
+apps/desktop/packaging/open-computer-use/open-computer-use.exe
 coverage/
 .turbo/
 .tools/

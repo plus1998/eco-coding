@@ -50,3 +50,8 @@ export interface DesktopReleaseManifest {
   updateFeedUrl: string;
   updateModes: Record<DesktopUpdatePlatform, DesktopUpdateMode>;
 }
+
+/** Automatic checks must not clobber in-flight download / ready-to-install UI. */
+export function canRunAutomaticUpdateCheck(phase: DesktopUpdatePhase): boolean {
+  return phase === "idle" || phase === "error";
+}

@@ -8,6 +8,11 @@ import {
   isEcoAgentBrowserRuntimeServerName,
   requiresBrowserOpenApproval,
 } from "../shared/browser";
+import {
+  type ComputerUseActionApprovalMode,
+  isEcoComputerUseRuntimeServerName,
+  requiresComputerUseActionApproval,
+} from "../shared/computer-use";
 import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
 import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_HTML_HOST_MCP_SERVER, ECO_HTML_HOST_TOOL } from "../shared/html-host-tool";
@@ -95,6 +100,33 @@ export function shouldAutoAcceptEcoBrowserToolElicitation(input: {
   return !requiresBrowserOpenApproval(toolName);
 }
 
+/**
+ * Whether Eco should accept an eco_computer_use tool-run elicitation without UI.
+ * - always_allow: all Computer Use tool-run confirms auto-accept
+ * - always_ask: only read tools (list_apps / get_app_state) auto-accept
+ */
+export function shouldAutoAcceptEcoComputerUseToolElicitation(input: {
+  serverName: string;
+  message: string;
+  actionApprovalMode: ComputerUseActionApprovalMode;
+}): boolean {
+  const server = input.serverName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-");
+  if (!isEcoComputerUseRuntimeServerName(server)) {
+    return false;
+  }
+  const toolName = parseMcpToolRunElicitationMessage(input.serverName, input.message);
+  if (!toolName) {
+    return false;
+  }
+  if (input.actionApprovalMode === "always_allow") {
+    return true;
+  }
+  return !requiresComputerUseActionApproval(toolName);
+}
+
 const LEGACY_TOOL_REQUEST_USER_INPUT = "tool/requestUserInput";
 const IGNORED_CLARIFICATION_ANSWER = "忽略 — 请根据代码与常见做法推进，并在计划中写明假设";
 const MCP_FORM_SKIP_LABEL = "不提供此字段";
@@ -121,6 +153,11 @@ export interface CodexApprovalBridgeDeps {
    * tool-run elicitations for eco_agent_browser when mode is always_allow.
    */
   getBrowserOpenApprovalMode?: () => BrowserOpenApprovalMode;
+  /**
+   * Computer Use action approval (settings). Used to auto-accept Codex MCP
+   * tool-run elicitations for eco_computer_use when mode is always_allow.
+   */
+  getComputerUseActionApprovalMode?: () => ComputerUseActionApprovalMode;
   /**
    * Codex image MCP has no per-thread auth token. Register a claim when the
    * elicitation is accepted so create_image can bind to this Eco thread.
@@ -462,6 +499,16 @@ async function handleMcpServerElicitationRequest(
     openApprovalMode,
   });
   if (autoAccept && mode === "form") {
+    return { action: "accept", content: {} };
+  }
+
+  const computerUseActionMode = deps.getComputerUseActionApprovalMode?.() ?? "always_ask";
+  const autoAcceptComputerUse = shouldAutoAcceptEcoComputerUseToolElicitation({
+    serverName,
+    message,
+    actionApprovalMode: computerUseActionMode,
+  });
+  if (autoAcceptComputerUse && mode === "form") {
     return { action: "accept", content: {} };
   }
 

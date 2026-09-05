@@ -1,6 +1,7 @@
 import path from "node:path";
 import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
+import { ECO_COMPUTER_USE_MCP_SERVER } from "../shared/computer-use";
 import { ECO_HTML_HOST_MCP_SERVER } from "../shared/html-host-tool";
 import { ECO_IMAGE_DISPLAY_MCP_SERVER } from "../shared/image-display-tool";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../shared/image-generation";
@@ -42,6 +43,11 @@ export function buildPiMcpSessionConfig(input: {
     sdkEntry?: Record<string, unknown>;
     promptAppend?: string;
   };
+  computerUseInject?: {
+    enabled: boolean;
+    sdkEntry?: Record<string, unknown>;
+    promptAppend?: string;
+  };
   imageInject: {
     enabled: boolean;
     sdkEntry?: Record<string, unknown>;
@@ -71,6 +77,7 @@ export function buildPiMcpSessionConfig(input: {
       (key) =>
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
+        key !== ECO_COMPUTER_USE_MCP_SERVER &&
         key !== ECO_IMAGE_GENERATION_MCP_SERVER &&
         key !== ECO_IMAGE_VIEW_MCP_SERVER &&
         key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
@@ -90,6 +97,13 @@ export function buildPiMcpSessionConfig(input: {
     }
     if (input.browserSkillDirectory?.trim()) {
       extraSkillDirectories.push(path.resolve(input.browserSkillDirectory.trim()));
+    }
+  }
+
+  if (input.computerUseInject?.enabled && input.computerUseInject.sdkEntry) {
+    mcpServers[ECO_COMPUTER_USE_MCP_SERVER] = input.computerUseInject.sdkEntry;
+    if (input.computerUseInject.promptAppend?.trim()) {
+      appendSystemPrompt.push(input.computerUseInject.promptAppend.trim());
     }
   }
 

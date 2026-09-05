@@ -5,6 +5,7 @@ import {
 } from "../main/thread-run-projection-detail";
 import type { BrowserViewState } from "../shared/browser";
 import { defaultBrowserSettings } from "../shared/browser";
+import { defaultComputerUseSettings } from "../shared/computer-use";
 import type { DesktopUpdateState } from "../shared/desktop-update";
 import type { IntegrationAvailabilitySnapshot } from "../shared/integrations";
 import { IPC_CHANNELS } from "../shared/ipc";
@@ -222,6 +223,12 @@ const demoIntegrationAvailability: IntegrationAvailabilitySnapshot = {
       available: true,
     },
     {
+      id: "computerUse",
+      enabled: false,
+      available: false,
+      reason: "演示模式未启用电脑操控",
+    },
+    {
       id: "imageGeneration",
       enabled: false,
       available: false,
@@ -371,6 +378,9 @@ const handlers: Partial<Record<string, DemoHandler>> = {
   [IPC_CHANNELS.gitSettingsGet]: () => demoGitSettings,
   [IPC_CHANNELS.personalizationSettingsGet]: () => demoPersonalizationSettings,
   [IPC_CHANNELS.browserSettingsGet]: () => defaultBrowserSettings(),
+  [IPC_CHANNELS.computerUseSettingsGet]: () => defaultComputerUseSettings(),
+  [IPC_CHANNELS.computerUseSettingsSave]: (payload) => payload,
+  [IPC_CHANNELS.computerUseDoctor]: () => ({ ok: false, reason: "Demo mode has no Computer Use runtime." }),
   [IPC_CHANNELS.integrationAvailabilityGet]: () => demoIntegrationAvailability,
   [IPC_CHANNELS.imageGenerationSettingsGet]: () => ({
     enabled: false,

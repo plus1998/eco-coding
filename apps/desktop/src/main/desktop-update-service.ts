@@ -1,11 +1,12 @@
 import fs from "node:fs";
-import { app, shell } from "electron";
+import { app, net, powerMonitor, shell } from "electron";
 import electronUpdater from "electron-updater";
-import type {
-  DesktopReleaseManifest,
-  DesktopUpdateMode,
-  DesktopUpdateProgress,
-  DesktopUpdateState,
+import {
+  canRunAutomaticUpdateCheck,
+  type DesktopReleaseManifest,
+  type DesktopUpdateMode,
+  type DesktopUpdateProgress,
+  type DesktopUpdateState,
 } from "../shared/desktop-update";
 import { setApplicationQuitBypassConfirmation } from "./application-quit-bypass";
 import { applyDesktopAutoUpdaterPolicy, formatDesktopUpdateError } from "./desktop-update-policy";
@@ -13,7 +14,10 @@ import { applyDesktopAutoUpdaterPolicy, formatDesktopUpdateError } from "./deskt
 const { autoUpdater } = electronUpdater;
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
-const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+/** Align with VS Code default periodic update cadence. */
+const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1_000;
+/** Throttle resume/online-style auto checks so lid-open storms do not hammer the feed. */
+const MIN_AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1_000;
 
 interface DesktopUpdateServiceOptions {
   manifestPath: string;
@@ -30,6 +34,10 @@ export class DesktopUpdateService {
   private checkPromise: Promise<DesktopUpdateState> | undefined;
   private startupTimer: ReturnType<typeof setTimeout> | undefined;
   private periodicTimer: ReturnType<typeof setInterval> | undefined;
+  private lastAutoCheckAt = 0;
+  private readonly onPowerResume = (): void => {
+    void this.checkForUpdates(false, { throttle: true });
+  };
 
   constructor(options: DesktopUpdateServiceOptions) {
     this.manifestPath = options.manifestPath;
@@ -55,19 +63,45 @@ export class DesktopUpdateService {
 
     this.configureUpdater();
     this.startupTimer = setTimeout(() => {
-      void this.checkForUpdates();
+      this.startupTimer = undefined;
+      void this.checkForUpdates(false);
     }, STARTUP_CHECK_DELAY_MS);
     this.periodicTimer = setInterval(() => {
-      void this.checkForUpdates();
+      void this.checkForUpdates(false);
     }, PERIODIC_CHECK_INTERVAL_MS);
+    powerMonitor.on("resume", this.onPowerResume);
   }
 
-  async checkForUpdates(): Promise<DesktopUpdateState> {
+  /**
+   * @param explicit - User/IPC initiated checks always run; automatic checks skip busy phases.
+   * @param options.throttle - Resume-style auto checks respect a minimum interval.
+   */
+  async checkForUpdates(
+    explicit = true,
+    options?: { throttle?: boolean },
+  ): Promise<DesktopUpdateState> {
     if (this.state.capability !== "auto") {
       return this.state;
     }
     if (this.checkPromise) {
       return this.checkPromise;
+    }
+    if (!explicit) {
+      if (!canRunAutomaticUpdateCheck(this.state.phase)) {
+        return this.state;
+      }
+      if (!net.isOnline()) {
+        return this.state;
+      }
+      const now = Date.now();
+      if (
+        options?.throttle &&
+        this.lastAutoCheckAt > 0 &&
+        now - this.lastAutoCheckAt < MIN_AUTO_CHECK_INTERVAL_MS
+      ) {
+        return this.state;
+      }
+      this.lastAutoCheckAt = now;
     }
 
     this.setState({
@@ -150,6 +184,7 @@ export class DesktopUpdateService {
       clearInterval(this.periodicTimer);
       this.periodicTimer = undefined;
     }
+    powerMonitor.removeListener("resume", this.onPowerResume);
   }
 
   private configureUpdater(): void {
