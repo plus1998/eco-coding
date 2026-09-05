@@ -7123,6 +7123,13 @@ function App() {
     return window.eco.runComputerUseDoctor();
   }
 
+  async function previewComputerUsePresence() {
+    if (!window.eco?.previewComputerUsePresence) {
+      throw new Error("电脑操控桌面效果预览不可用。");
+    }
+    await window.eco.previewComputerUsePresence();
+  }
+
   async function saveNotificationSettingsSnapshot(snapshot: NotificationSettingsSnapshot) {
     if (!window.eco?.saveNotificationSettings) {
       return;
@@ -10536,6 +10543,7 @@ function App() {
                   availability={integrationAvailability.integrations.find((item) => item.id === "computerUse")}
                   onSave={saveComputerUseSettingsSnapshot}
                   onRunDoctor={runComputerUseDoctor}
+                  onPreviewPresence={previewComputerUsePresence}
                 />
               )}
 

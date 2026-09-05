@@ -11,6 +11,7 @@ interface ComputerUseSettingsPanelProps {
   availability?: { available: boolean; reason?: string };
   onSave: (settings: ComputerUseSettingsSnapshot) => Promise<void>;
   onRunDoctor?: () => Promise<{ ok: boolean; reason?: string; output?: string }>;
+  onPreviewPresence?: () => Promise<void>;
 }
 
 const ACTION_APPROVAL_OPTIONS: ComputerUseActionApprovalMode[] = ["always_ask", "always_allow"];
@@ -20,12 +21,14 @@ export function ComputerUseSettingsPanel({
   availability,
   onSave,
   onRunDoctor,
+  onPreviewPresence,
 }: ComputerUseSettingsPanelProps) {
   const { t } = useTranslation();
   const switchId = useId();
   const approvalId = useId();
   const [busy, setBusy] = useState(false);
   const [doctorBusy, setDoctorBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [doctorMessage, setDoctorMessage] = useState<string | undefined>();
 
   const unavailable = settings.agentIntegrationEnabled && availability?.available === false;
@@ -60,6 +63,20 @@ export function ComputerUseSettingsPanel({
       setDoctorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setDoctorBusy(false);
+    }
+  }
+
+  async function runPreview() {
+    if (!onPreviewPresence || previewBusy) {
+      return;
+    }
+    setPreviewBusy(true);
+    try {
+      await onPreviewPresence();
+    } catch (error) {
+      setDoctorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPreviewBusy(false);
     }
   }
 
@@ -116,16 +133,29 @@ export function ComputerUseSettingsPanel({
         </p>
       ) : null}
 
-      {onRunDoctor ? (
-        <div className="browser-settings-section">
-          <button
-            type="button"
-            className="settings-secondary-button"
-            disabled={doctorBusy || busy}
-            onClick={() => void runDoctor()}
-          >
-            {doctorBusy ? t("settings.computerUse.doctorBusy") : t("settings.computerUse.runDoctor")}
-          </button>
+      {onRunDoctor || onPreviewPresence ? (
+        <div className="browser-settings-section" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {onRunDoctor ? (
+            <button
+              type="button"
+              className="settings-secondary-button"
+              disabled={doctorBusy || busy}
+              onClick={() => void runDoctor()}
+            >
+              {doctorBusy ? t("settings.computerUse.doctorBusy") : t("settings.computerUse.runDoctor")}
+            </button>
+          ) : null}
+          {onPreviewPresence ? (
+            <button
+              type="button"
+              className="settings-secondary-button"
+              disabled={previewBusy || busy}
+              title={t("settings.computerUse.previewPresenceHint")}
+              onClick={() => void runPreview()}
+            >
+              {t("settings.computerUse.previewPresence")}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

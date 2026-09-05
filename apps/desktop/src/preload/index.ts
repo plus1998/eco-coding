@@ -625,6 +625,9 @@ const api = {
   runComputerUseDoctor(): Promise<{ ok: boolean; reason?: string; output?: string }> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUseDoctor);
   },
+  previewComputerUsePresence(): Promise<{ ok: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.computerUsePresencePreview);
+  },
   getIntegrationAvailability(): Promise<IntegrationAvailabilitySnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.integrationAvailabilityGet);
   },

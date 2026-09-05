@@ -381,6 +381,7 @@ const handlers: Partial<Record<string, DemoHandler>> = {
   [IPC_CHANNELS.computerUseSettingsGet]: () => defaultComputerUseSettings(),
   [IPC_CHANNELS.computerUseSettingsSave]: (payload) => payload,
   [IPC_CHANNELS.computerUseDoctor]: () => ({ ok: false, reason: "Demo mode has no Computer Use runtime." }),
+  [IPC_CHANNELS.computerUsePresencePreview]: () => ({ ok: true }),
   [IPC_CHANNELS.integrationAvailabilityGet]: () => demoIntegrationAvailability,
   [IPC_CHANNELS.imageGenerationSettingsGet]: () => ({
     enabled: false,

@@ -132,6 +132,9 @@ import {
   ECO_COMPUTER_USE_MCP_SERVER,
   requiresComputerUseActionApproval,
 } from "../shared/computer-use";
+import {
+  isEcoComputerUseToolName,
+} from "../shared/computer-use-agent-presence";
 import { codexTurnHasRetryBlockingProgress } from "../shared/codex-request-retry-gate";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
@@ -451,6 +454,7 @@ import {
   normalizeBrowserSettingsSnapshot,
 } from "./browser-settings-store";
 import { ComputerUseMcpGateway } from "./computer-use-mcp-gateway";
+import { ComputerUsePresenceOverlayHost } from "./computer-use-presence-overlay";
 import {
   type ComputerUseSettingsStore,
   createComputerUseSettingsStore,
@@ -1015,6 +1019,7 @@ let personalizationSettingsStore: PersonalizationSettingsStore;
 let browserSettingsStore: BrowserSettingsStore;
 let computerUseSettingsStore: ComputerUseSettingsStore;
 let computerUseGateway: ComputerUseMcpGateway;
+let computerUsePresenceOverlay: ComputerUsePresenceOverlayHost;
 let webChatListStore: WebChatListStore;
 let sshBookmarkStore: SshBookmarkStore;
 let notificationSettingsStore: NotificationSettingsStore;
@@ -1725,7 +1730,16 @@ app.whenReady().then(async () => {
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
   browserSettingsStore = await createBrowserSettingsStore(dbPath);
   computerUseSettingsStore = await createComputerUseSettingsStore(dbPath);
-  computerUseGateway = new ComputerUseMcpGateway(() => computerUseSettingsStore.get());
+  computerUsePresenceOverlay = new ComputerUsePresenceOverlayHost();
+  computerUseGateway = new ComputerUseMcpGateway(() => computerUseSettingsStore.get(), {
+    onToolCall: ({ threadId, toolName, toolInput }) => {
+      computerUsePresenceOverlay.noteToolActivity({
+        threadId,
+        toolName,
+        ...(toolInput ? { toolInput } : {}),
+      });
+    },
+  });
   webChatListStore = await createWebChatListStore(dbPath);
   sshBookmarkStore = await createSshBookmarkStore(dbPath, createLocalSecretCodec());
   notificationSettingsStore = await createNotificationSettingsStore(dbPath);
@@ -2534,6 +2548,8 @@ installApplicationShutdownHook({
   },
   disposeBrowserHost: () => {
     browserHost?.dispose();
+    void computerUseGateway?.close();
+    void computerUsePresenceOverlay?.close();
   },
   closeImageGenerationGateway: async () => {
     await imageGenerationGateway?.close();
@@ -4831,6 +4847,11 @@ function registerIpcHandlers(): void {
       ...(doctor.reason ? { reason: doctor.reason } : {}),
       ...(doctor.output ? { output: doctor.output } : {}),
     };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.computerUsePresencePreview, async () => {
+    computerUsePresenceOverlay.preview();
+    return { ok: true as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.integrationAvailabilityGet, async () => {
@@ -12873,6 +12894,34 @@ function maybeRevealBrowserFromAgentTool(input: {
   ) {
     requireBrowserHost().noteBrowserToolStarted(threadId, toolName);
   }
+  if (isEcoComputerUseToolName(toolName)) {
+    const payload =
+      input.payload && typeof input.payload === "object"
+        ? (input.payload as Record<string, unknown>)
+        : undefined;
+    const toolMeta =
+      payload?.tool && typeof payload.tool === "object"
+        ? (payload.tool as Record<string, unknown>)
+        : undefined;
+    const toolInputCandidate =
+      (toolMeta?.input && typeof toolMeta.input === "object"
+        ? (toolMeta.input as Record<string, unknown>)
+        : undefined) ??
+      (payload?.mcpInput && typeof payload.mcpInput === "object"
+        ? (payload.mcpInput as Record<string, unknown>)
+        : undefined) ??
+      (payload?.input && typeof payload.input === "object"
+        ? (payload.input as Record<string, unknown>)
+        : undefined) ??
+      (payload?.arguments && typeof payload.arguments === "object"
+        ? (payload.arguments as Record<string, unknown>)
+        : undefined);
+    computerUsePresenceOverlay.noteToolActivity({
+      threadId,
+      toolName,
+      ...(toolInputCandidate ? { toolInput: toolInputCandidate } : {}),
+    });
+  }
   // Navigation / tab creation run once in BrowserHost.invokeNativeAgentBrowserTool (MCP path).
   // tool.started only registers auth claims — no notifyAgentBrowserOpen (avoid double open).
 }
@@ -12922,6 +12971,26 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
       (name.includes("agent_browser") || name.includes("eco_agent_browser") || name.includes("eco_ab_"))
     ) {
       requireBrowserHost().noteBrowserToolStarted(event.threadId, name);
+    }
+    if (isEcoComputerUseToolName(name)) {
+      const args =
+        (typeof metaTool?.input === "object" && metaTool.input
+          ? (metaTool.input as Record<string, unknown>)
+          : undefined) ??
+        (typeof event.metadata?.mcpInput === "object" && event.metadata.mcpInput
+          ? (event.metadata.mcpInput as Record<string, unknown>)
+          : undefined) ??
+        (typeof event.metadata?.arguments === "object" && event.metadata.arguments
+          ? (event.metadata.arguments as Record<string, unknown>)
+          : undefined) ??
+        (typeof event.metadata?.input === "object" && event.metadata.input
+          ? (event.metadata.input as Record<string, unknown>)
+          : undefined);
+      computerUsePresenceOverlay.noteToolActivity({
+        threadId: event.threadId,
+        toolName: name,
+        ...(args ? { toolInput: args } : {}),
+      });
     }
     return;
   }
@@ -14540,6 +14609,13 @@ function createComputerUseToolPermissionHandler(
   threadId: string,
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   return async (request) => {
+    if (isEcoComputerUseToolName(request.toolName)) {
+      computerUsePresenceOverlay.noteToolActivity({
+        threadId,
+        toolName: request.toolName,
+        toolInput: request.input,
+      });
+    }
     const needsGate = requiresComputerUseActionApproval(request.toolName);
     const mode = computerUseSettingsStore.get().actionApprovalMode;
     if (!needsGate) {

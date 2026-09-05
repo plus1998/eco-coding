@@ -33,6 +33,8 @@ extraResources:
     to: open-computer-use
     filter:
       - "**/*"
+  - from: packaging/computer-use-presence-overlay.html
+    to: computer-use-presence-overlay.html
   - from: packaging/skills/
     to: skills
     filter:
@@ -49,6 +51,8 @@ extraResources:
     to: eco-image-view-mcp-stdio.mjs
   - from: packaging/eco-web-search-mcp-stdio.mjs
     to: eco-web-search-mcp-stdio.mjs
+  - from: packaging/eco-computer-use-mcp-stdio.mjs
+    to: eco-computer-use-mcp-stdio.mjs
 
 npmRebuild: false
 nodeGypRebuild: false
