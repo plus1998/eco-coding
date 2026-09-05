@@ -1,0 +1,397 @@
+/**
+ * Minimal MCP Streamable HTTP (JSON response mode) for Eco gateways.
+ * Speaks initialize / ping / tools/list / tools/call over POST /mcp and
+ * forwards tool ops to the existing private /v1 control handlers.
+ *
+ * Codex (rmcp) requires notifications (e.g. notifications/initialized) to
+ * return HTTP 202 with an empty body — not 200 + a fake JSON-RPC result.
+ * @see https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#sending-messages-to-the-server
+ */
+import type http from "node:http";
+import { randomUUID } from "node:crypto";
+
+export const ECO_MCP_HTTP_PATH = "/mcp";
+
+export type McpToolDefinition = {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type McpToolCallResult = {
+  content?: Array<Record<string, unknown>>;
+  isError?: boolean;
+  [key: string]: unknown;
+};
+
+export type McpStreamableHttpHandlers = {
+  serverName: string;
+  instructions?: string;
+  /** Return tool catalog (same shape as /v1/tools/list `tools`). */
+  listTools: (input: { authToken?: string; headers: http.IncomingHttpHeaders }) => Promise<{
+    tools: McpToolDefinition[];
+  }>;
+  /** Execute a tool (same shape as /v1/tools/call result). */
+  callTool: (input: {
+    name: string;
+    arguments: Record<string, unknown>;
+    authToken?: string;
+    headers: http.IncomingHttpHeaders;
+  }) => Promise<McpToolCallResult>;
+};
+
+type JsonRpcId = string | number | null;
+
+type JsonRpcRequest = {
+  jsonrpc?: string;
+  id?: JsonRpcId;
+  method?: string;
+  params?: Record<string, unknown>;
+};
+
+function extractBearer(headers: http.IncomingHttpHeaders): string | undefined {
+  const auth = headers.authorization;
+  if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) {
+    const token = auth.slice(7).trim();
+    return token || undefined;
+  }
+  return undefined;
+}
+
+function sendJson(
+  response: http.ServerResponse,
+  status: number,
+  body: unknown,
+  extraHeaders?: Record<string, string>,
+): void {
+  const payload = JSON.stringify(body);
+  response.writeHead(status, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(payload),
+    ...(extraHeaders ?? {}),
+  });
+  response.end(payload);
+}
+
+function sendEmpty(
+  response: http.ServerResponse,
+  status: number,
+  extraHeaders?: Record<string, string>,
+): void {
+  response.writeHead(status, {
+    "Content-Length": 0,
+    ...(extraHeaders ?? {}),
+  });
+  response.end();
+}
+
+async function readRawBody(request: http.IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** JSON-RPC 2.0 notification: has `method`, no `id` member (Codex sends these after initialize). */
+export function isJsonRpcNotification(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.method !== "string" || !value.method.trim()) {
+    return false;
+  }
+  if (!("id" in value)) {
+    return true;
+  }
+  return value.method.startsWith("notifications/");
+}
+
+/**
+ * Handle POST /mcp. Returns true when the request was consumed.
+ * Caller must already have validated the Eco control secret (or allow this helper to).
+ */
+export async function handleMcpStreamableHttpRequest(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  handlers: McpStreamableHttpHandlers,
+  options?: {
+    /** When set, reject unless header matches. */
+    controlSecretHeader?: string;
+    controlSecret?: string;
+  },
+): Promise<boolean> {
+  const url = (request.url ?? "").split("?")[0] ?? "";
+  if (url !== ECO_MCP_HTTP_PATH && !url.startsWith(`${ECO_MCP_HTTP_PATH}/`)) {
+    return false;
+  }
+
+  if (options?.controlSecretHeader && options.controlSecret) {
+    if (request.headers[options.controlSecretHeader.toLowerCase()] !== options.controlSecret) {
+      sendJson(response, 401, { error: "unauthorized control secret" });
+      return true;
+    }
+  }
+
+  if (request.method === "GET" || request.method === "DELETE") {
+    // JSON-only mode: no long-lived SSE session. Spec: 405 when SSE is unsupported.
+    // Codex treats GET 405 as ServerDoesNotSupportSse and continues with POST-only.
+    sendEmpty(response, 405, { Allow: "POST" });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendEmpty(response, 405, { Allow: "POST" });
+    return true;
+  }
+
+  const raw = await readRawBody(request).catch((error) => {
+    throw error;
+  });
+  let parsed: unknown;
+  try {
+    parsed = raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    sendJson(response, 400, { error: "invalid json" });
+    return true;
+  }
+
+  const messages = Array.isArray(parsed) ? parsed : [parsed];
+  const authToken = extractBearer(request.headers);
+  const sessionHeader =
+    typeof request.headers["mcp-session-id"] === "string"
+      ? request.headers["mcp-session-id"]
+      : undefined;
+  let sessionId = sessionHeader?.trim() || undefined;
+  const responses: unknown[] = [];
+  let sawNotification = false;
+  let sawRequest = false;
+
+  for (const entry of messages) {
+    if (!isRecord(entry)) continue;
+    if (isJsonRpcNotification(entry)) {
+      sawNotification = true;
+      continue;
+    }
+    const msg = entry as JsonRpcRequest;
+    const method = typeof msg.method === "string" ? msg.method : "";
+    if (!method) {
+      continue;
+    }
+    sawRequest = true;
+    const id = (msg.id ?? null) as JsonRpcId;
+    try {
+      if (method === "initialize") {
+        if (!sessionId) {
+          sessionId = randomUUID();
+        }
+        const protocolVersion =
+          typeof msg.params?.protocolVersion === "string" && msg.params.protocolVersion.trim()
+            ? msg.params.protocolVersion.trim()
+            : "2024-11-05";
+        responses.push({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion,
+            capabilities: { tools: {} },
+            serverInfo: { name: handlers.serverName, version: "1.0.0" },
+            ...(handlers.instructions ? { instructions: handlers.instructions } : {}),
+          },
+        });
+        continue;
+      }
+      if (method === "ping") {
+        responses.push({ jsonrpc: "2.0", id, result: {} });
+        continue;
+      }
+      if (method === "tools/list") {
+        const listed = await handlers.listTools({
+          ...(authToken ? { authToken } : {}),
+          headers: request.headers,
+        });
+        responses.push({
+          jsonrpc: "2.0",
+          id,
+          result: { tools: listed.tools ?? [] },
+        });
+        continue;
+      }
+      if (method === "tools/call") {
+        const params = isRecord(msg.params) ? msg.params : {};
+        const name = typeof params.name === "string" ? params.name : "";
+        if (!name) {
+          throw new Error("tools/call requires name");
+        }
+        const args = isRecord(params.arguments) ? params.arguments : {};
+        const result = await handlers.callTool({
+          name,
+          arguments: args,
+          ...(authToken ? { authToken } : {}),
+          headers: request.headers,
+        });
+        responses.push({ jsonrpc: "2.0", id, result });
+        continue;
+      }
+      responses.push({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `Method not found: ${method}` },
+      });
+    } catch (error) {
+      responses.push({
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32000,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  // Spec: notification-only POST → 202 Accepted, empty body (Codex handshake).
+  if (!sawRequest && sawNotification) {
+    sendEmpty(response, 202, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
+    return true;
+  }
+
+  if (!sawRequest) {
+    sendJson(response, 400, { error: "expected JSON-RPC request or notification" });
+    return true;
+  }
+
+  const body = Array.isArray(parsed) ? responses : (responses[0] ?? { jsonrpc: "2.0", result: {} });
+  sendJson(response, 200, body, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
+  return true;
+}
+
+export function mcpHttpUrl(controlBaseUrl: string): string {
+  return `${controlBaseUrl.replace(/\/$/, "")}${ECO_MCP_HTTP_PATH}`;
+}
+
+/**
+ * Codex-shaped Streamable HTTP handshake against an Eco gateway `/mcp`.
+ * Catches dead ports, bad control secrets, and notification/202 incompatibilities
+ * before Codex app-server swallows them as a silent "handshake failed".
+ */
+export async function probeCodexStyleHttpMcpHandshake(input: {
+  name: string;
+  url: string;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}): Promise<{ toolCount: number }> {
+  const headers: Record<string, string> = {
+    accept: "text/event-stream, application/json",
+    "content-type": "application/json",
+    ...(input.headers ?? {}),
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 10_000);
+  try {
+    const initRes = await fetch(input.url, {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "eco_handshake_probe", version: "1.0.0" },
+        },
+      }),
+    });
+    if (initRes.status !== 200) {
+      throw new Error(`initialize HTTP ${initRes.status}`);
+    }
+    const sessionId = initRes.headers.get("mcp-session-id");
+    await initRes.json().catch(() => undefined);
+
+    const notified = await fetch(input.url, {
+      method: "POST",
+      headers: {
+        ...headers,
+        ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+      }),
+    });
+    if (notified.status !== 202) {
+      const body = await notified.text().catch(() => "");
+      throw new Error(
+        `notifications/initialized expected HTTP 202 (empty), got ${notified.status}${
+          body ? `: ${body.slice(0, 200)}` : ""
+        }`,
+      );
+    }
+
+    const listRes = await fetch(input.url, {
+      method: "POST",
+      headers: {
+        ...headers,
+        ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    if (listRes.status !== 200) {
+      throw new Error(`tools/list HTTP ${listRes.status}`);
+    }
+    const listBody = (await listRes.json()) as {
+      result?: { tools?: unknown[] };
+      error?: { message?: string };
+    };
+    if (listBody.error) {
+      throw new Error(`tools/list error: ${listBody.error.message ?? JSON.stringify(listBody.error)}`);
+    }
+    if (!Array.isArray(listBody.result?.tools)) {
+      throw new Error("tools/list missing tools array");
+    }
+    return { toolCount: listBody.result.tools.length };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Eco HTTP MCP \`${input.name}\` Codex 握手探测失败（${input.url}）：${detail}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Probe Eco-hosted HTTP MCP entries that will be written into Codex config.toml. */
+export async function assertEcoHttpMcpServersReachable(
+  servers: ReadonlyArray<{
+    name: string;
+    transport: string;
+    url?: string;
+    httpHeaders?: Record<string, string>;
+  }>,
+  onLog?: (message: string) => void,
+): Promise<void> {
+  for (const server of servers) {
+    if (server.transport !== "http" || !server.url?.trim()) {
+      continue;
+    }
+    // Only Eco-hosted builtins — do not block prepare on arbitrary user HTTP MCPs.
+    if (!server.name.startsWith("eco_")) {
+      continue;
+    }
+    const result = await probeCodexStyleHttpMcpHandshake({
+      name: server.name,
+      url: server.url.trim(),
+      ...(server.httpHeaders ? { headers: server.httpHeaders } : {}),
+    });
+    onLog?.(
+      `[eco-codex] http mcp handshake ok name=${server.name} tools=${result.toolCount} url=${server.url}`,
+    );
+  }
+}

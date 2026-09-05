@@ -1,9 +1,6 @@
-import fs from "node:fs";
 import http from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   ECO_IMAGE_VIEW_FULL_TOOL,
@@ -16,8 +13,10 @@ import type { McpSdkConfig } from "../shared/mcp";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { ImageViewReadError, type ImageViewReadFailureCode, readImageViewFile } from "./image-view-reader";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 
-const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Image-View-Control-Secret";
 
 const IMAGE_VIEW_READ_ERRORS: Record<ImageViewReadFailureCode, string> = {
   invalid_path: "图片路径不是有效的绝对路径。",
@@ -67,40 +66,31 @@ export class ImageViewMcpGateway {
 
   async resolveGlobalCodexServer(): Promise<CodexMcpServerForConfigSync> {
     await this.start();
-    const script = resolveStdioScriptPath();
-    if (!fs.existsSync(script)) {
-      throw new Error(`Image view MCP stdio front-end not found: ${script}`);
-    }
-    return {
+    return buildEcoHttpCodexServer({
       name: ECO_IMAGE_VIEW_MCP_SERVER,
-      transport: "stdio",
-      command: process.execPath,
-      args: [script],
-      env: {
-        ECO_IMAGE_VIEW_CONTROL_URL: this.controlBaseUrl,
-        ECO_IMAGE_VIEW_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
       enabledTools: [ECO_IMAGE_VIEW_TOOL],
-      startupTimeoutSec: 60,
-    };
+    });
   }
 
   async resolveInjection(threadId: string): Promise<ImageViewMcpInjection> {
-    const globalCodexServer = await this.resolveGlobalCodexServer();
+    await this.start();
     const auth = this.auth.ensure(threadId);
-    const baseEnv = globalCodexServer.env ?? {};
+    const http = buildEcoHttpInjection({
+      name: ECO_IMAGE_VIEW_MCP_SERVER,
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
+      authToken: auth.token,
+      enabledTools: [ECO_IMAGE_VIEW_TOOL],
+    });
     return {
       enabled: true,
       serverName: ECO_IMAGE_VIEW_MCP_SERVER,
-      sdkEntry: {
-        type: "stdio",
-        command: globalCodexServer.command ?? process.execPath,
-        args: globalCodexServer.args ?? [],
-        env: { ...baseEnv, ECO_IMAGE_VIEW_AUTH_TOKEN: auth.token },
-        alwaysLoad: true,
-      },
-      codexServer: globalCodexServer,
+      sdkEntry: http.sdkEntry,
+      codexServer: http.codexServer,
       promptAppend: buildImageViewPromptAppend(),
     };
   }
@@ -159,6 +149,27 @@ export class ImageViewMcpGateway {
   }
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
+    const urlPath = (request.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        request,
+        response,
+        {
+          serverName: ECO_IMAGE_VIEW_MCP_SERVER,
+          instructions:
+            "Eco local image viewing. Pass an absolute path; returns a structured text report.",
+          listTools: async () => ({ tools: [imageViewToolDefinition()] }),
+          callTool: async ({ name, arguments: args, authToken }) =>
+            this.executeToolCall(name, args, authToken),
+        },
+        {
+          controlSecretHeader: "x-eco-image-view-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     if (request.headers["x-eco-image-view-control-secret"] !== this.controlSecret) {
       sendJson(response, 401, { error: "unauthorized control secret" });
       return;
@@ -187,49 +198,47 @@ export class ImageViewMcpGateway {
         sendJson(response, 404, { error: "not found" });
         return;
       }
-      if (body.name !== ECO_IMAGE_VIEW_TOOL) {
-        throw new Error(`未知看图工具：${String(body.name)}`);
-      }
-      const claim = this.resolveThread(authToken);
+      const name = typeof body.name === "string" ? body.name : "";
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
-      const imagePath = typeof rawArgs.path === "string" ? rawArgs.path.trim() : "";
-      const question = typeof rawArgs.question === "string" ? rawArgs.question.trim() : "";
-      if (!imagePath || !path.isAbsolute(imagePath)) {
-        sendJson(response, 200, {
-          result: mcpErrorResult(IMAGE_VIEW_READ_ERRORS.invalid_path, "invalid_path"),
-        });
-        return;
-      }
-      let file;
-      try {
-        file = await readImageViewFile(imagePath);
-      } catch (error) {
-        if (error instanceof ImageViewReadError) {
-          sendJson(response, 200, {
-            result: mcpErrorResult(IMAGE_VIEW_READ_ERRORS[error.code], error.code),
-          });
-          return;
-        }
-        throw error;
-      }
-      void file;
-      const fallbackPrompt = this.threadPrompts.get(claim.threadId)?.trim() ?? "";
-      const report = await this.deps.analyze({
-        threadId: claim.threadId,
-        path: imagePath,
-        ...(question ? { question } : fallbackPrompt ? { question: fallbackPrompt } : {}),
-        ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
-      });
-      sendJson(response, 200, {
-        result: {
-          content: [{ type: "text", text: report }],
-        },
-      });
+      const result = await this.executeToolCall(name, rawArgs, authToken);
+      sendJson(response, 200, { result });
     } catch (error) {
       sendJson(response, 200, {
         result: mcpErrorResult(error instanceof Error ? error.message : String(error), "analyze_failed"),
       });
     }
+  }
+
+  private async executeToolCall(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    authToken: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    if (name !== ECO_IMAGE_VIEW_TOOL) {
+      throw new Error(`未知看图工具：${name}`);
+    }
+    const claim = this.resolveThread(authToken);
+    const imagePath = typeof rawArgs.path === "string" ? rawArgs.path.trim() : "";
+    const question = typeof rawArgs.question === "string" ? rawArgs.question.trim() : "";
+    if (!imagePath || !path.isAbsolute(imagePath)) {
+      return mcpErrorResult(IMAGE_VIEW_READ_ERRORS.invalid_path, "invalid_path");
+    }
+    try {
+      await readImageViewFile(imagePath);
+    } catch (error) {
+      if (error instanceof ImageViewReadError) {
+        return mcpErrorResult(IMAGE_VIEW_READ_ERRORS[error.code], error.code);
+      }
+      throw error;
+    }
+    const fallbackPrompt = this.threadPrompts.get(claim.threadId)?.trim() ?? "";
+    const report = await this.deps.analyze({
+      threadId: claim.threadId,
+      path: imagePath,
+      ...(question ? { question } : fallbackPrompt ? { question: fallbackPrompt } : {}),
+      ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
+    });
+    return { content: [{ type: "text", text: report }] };
   }
 }
 
@@ -255,26 +264,6 @@ function imageViewToolDefinition(): Record<string, unknown> {
       },
     },
   };
-}
-
-function resolveStdioScriptPath(): string {
-  const candidates = [
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../packaging/eco-image-view-mcp-stdio.mjs"),
-    path.join(process.cwd(), "apps/desktop/packaging/eco-image-view-mcp-stdio.mjs"),
-    path.join(process.cwd(), "packaging/eco-image-view-mcp-stdio.mjs"),
-  ];
-  try {
-    const electron = require("electron") as { app?: { getAppPath?: () => string } };
-    if (electron.app?.getAppPath) {
-      candidates.unshift(path.join(electron.app.getAppPath(), "packaging/eco-image-view-mcp-stdio.mjs"));
-    }
-    if (typeof process.resourcesPath === "string") {
-      candidates.unshift(path.join(process.resourcesPath, "eco-image-view-mcp-stdio.mjs"));
-    }
-  } catch {
-    // Tests run without Electron.
-  }
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
 }
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {

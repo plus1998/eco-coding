@@ -15,13 +15,17 @@ import {
   type ComputerUseSettingsSnapshot,
 } from "../shared/computer-use";
 import type { McpSdkConfig } from "../shared/mcp";
-import { createBrowserMcpControlSecret } from "./browser-mcp-auth";
+import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 import {
   resolveOpenComputerUseBinary,
   type OpenComputerUseResolveResult,
 } from "./open-computer-use-resolve";
+import { SharedMcpStdioUpstream } from "./shared-mcp-stdio-upstream";
 
 const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Computer-Use-Control-Secret";
 
 export interface ComputerUseMcpInjection {
   enabled: boolean;
@@ -44,7 +48,7 @@ export interface ComputerUseFeatureAvailability {
 export type ComputerUseSettingsGetter = () => ComputerUseSettingsSnapshot;
 
 export type ComputerUseMcpGatewayDeps = {
-  /** Fired when the stdio proxy observes tools/call (presence overlay). */
+  /** Fired when a tools/call is bound to a thread (presence overlay). */
   onToolCall?: (input: {
     threadId: string;
     toolName: string;
@@ -114,7 +118,7 @@ export async function probeOpenComputerUseDoctor(
       finish({
         ok: false,
         output: Buffer.concat(chunks).toString("utf8").trim(),
-        reason: "open-computer-use doctor 超时；无法确认系统权限。",
+        reason: "open-computer-use doctor timed out",
       });
     }, timeoutMs);
 
@@ -148,6 +152,8 @@ export async function probeOpenComputerUseDoctor(
 
 export class ComputerUseMcpGateway {
   private readonly controlSecret = createBrowserMcpControlSecret();
+  private readonly auth = new BrowserMcpAuthRegistry();
+  private readonly upstream = new SharedMcpStdioUpstream();
   private controlServer: http.Server | undefined;
   private controlPort: number | undefined;
   private disposed = false;
@@ -156,6 +162,16 @@ export class ComputerUseMcpGateway {
     private readonly getSettings: ComputerUseSettingsGetter,
     private readonly deps: ComputerUseMcpGatewayDeps = {},
   ) {}
+
+  /** Test/diag: packaging script still ships for offline debugging. */
+  static packagingStdioScriptPath(): string {
+    return resolveStdioScriptPath();
+  }
+
+  /** Test/diag: shared upstream PID when running. */
+  getSharedUpstreamPid(): number | undefined {
+    return this.upstream.pid;
+  }
 
   async start(): Promise<void> {
     if (this.controlServer || this.disposed) {
@@ -180,11 +196,16 @@ export class ComputerUseMcpGateway {
 
   async close(): Promise<void> {
     this.disposed = true;
+    await this.upstream.close();
     if (this.controlServer) {
       await new Promise<void>((resolve) => this.controlServer!.close(() => resolve()));
       this.controlServer = undefined;
       this.controlPort = undefined;
     }
+  }
+
+  disposeThread(threadId: string): void {
+    this.auth.revokeThread(threadId);
   }
 
   resolveBinary(): OpenComputerUseResolveResult {
@@ -234,29 +255,6 @@ export class ComputerUseMcpGateway {
     return buildEcoComputerUsePromptAppend();
   }
 
-  private async buildStdioLaunch(binaryPath: string, threadId?: string): Promise<{
-    command: string;
-    args: string[];
-    env: Record<string, string>;
-  }> {
-    await this.start();
-    const stdioPath = resolveStdioScriptPath();
-    if (!fs.existsSync(stdioPath)) {
-      throw new Error(`Computer Use MCP stdio front-end not found: ${stdioPath}`);
-    }
-    return {
-      command: process.execPath,
-      args: [stdioPath],
-      env: {
-        ECO_COMPUTER_USE_CONTROL_URL: this.controlBaseUrl,
-        ECO_COMPUTER_USE_CONTROL_SECRET: this.controlSecret,
-        ECO_OPEN_COMPUTER_USE_BINARY: binaryPath,
-        ELECTRON_RUN_AS_NODE: "1",
-        ...(threadId?.trim() ? { ECO_COMPUTER_USE_THREAD_ID: threadId.trim() } : {}),
-      },
-    };
-  }
-
   async resolveGlobalCodexServer(): Promise<CodexMcpServerForConfigSync | undefined> {
     if (!this.getSettings().agentIntegrationEnabled) {
       return undefined;
@@ -265,16 +263,14 @@ export class ComputerUseMcpGateway {
     if (!resolved.available || !resolved.binaryPath) {
       throw new Error(resolved.reason ?? "open-computer-use unavailable");
     }
-    const launch = await this.buildStdioLaunch(resolved.binaryPath);
-    return {
+    await this.start();
+    return buildEcoHttpCodexServer({
       name: ECO_COMPUTER_USE_MCP_SERVER,
-      transport: "stdio",
-      command: launch.command,
-      args: launch.args,
-      env: launch.env,
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
       enabledTools: [...ECO_COMPUTER_USE_TOOLS],
-      startupTimeoutSec: 60,
-    };
+    });
   }
 
   async resolveInjection(input: {
@@ -296,28 +292,22 @@ export class ComputerUseMcpGateway {
         unavailableReason: resolved.reason ?? "open-computer-use 不可用",
       };
     }
+    await this.start();
     const autoApproveTools = shouldAutoApproveEcoComputerUseTools(settings.actionApprovalMode);
-    const launch = await this.buildStdioLaunch(resolved.binaryPath, input.threadId);
-    const codexServer: CodexMcpServerForConfigSync = {
+    const auth = this.auth.ensure(input.threadId);
+    const http = buildEcoHttpInjection({
       name: ECO_COMPUTER_USE_MCP_SERVER,
-      transport: "stdio",
-      command: launch.command,
-      args: launch.args,
-      env: launch.env,
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
+      authToken: auth.token,
       enabledTools: [...ECO_COMPUTER_USE_TOOLS],
-      startupTimeoutSec: 60,
-    };
+    });
     return {
       enabled: true,
       serverName: ECO_COMPUTER_USE_MCP_SERVER,
-      sdkEntry: {
-        type: "stdio",
-        command: launch.command,
-        args: launch.args,
-        env: launch.env,
-        alwaysLoad: true,
-      },
-      codexServer,
+      sdkEntry: http.sdkEntry,
+      codexServer: http.codexServer,
       allowedToolPattern: ECO_COMPUTER_USE_ALLOWED_TOOL,
       autoApproveTools,
       promptAppend: buildEcoComputerUsePromptAppend(),
@@ -332,7 +322,6 @@ export class ComputerUseMcpGateway {
     if (injection.autoApproveTools && injection.allowedToolPattern) {
       allowedTools.push(injection.allowedToolPattern);
     } else if (injection.allowedToolPattern) {
-      // Strip any prior auto-approve patterns for this server when always_ask.
       const filtered = allowedTools.filter((tool) => tool !== injection.allowedToolPattern);
       return {
         mcpServers: { ...base.mcpServers, [ECO_COMPUTER_USE_MCP_SERVER]: injection.sdkEntry },
@@ -345,12 +334,74 @@ export class ComputerUseMcpGateway {
     };
   }
 
+  private async ensureUpstream(): Promise<void> {
+    const resolved = this.resolveBinary();
+    if (!resolved.available || !resolved.binaryPath) {
+      throw new Error(resolved.reason ?? "open-computer-use unavailable");
+    }
+    await this.upstream.ensure(resolved.binaryPath, ["mcp"]);
+  }
+
+  private resolveThreadId(authToken: string | undefined): string {
+    const authenticated = this.auth.resolve(authToken);
+    if (authenticated) {
+      return authenticated.threadId;
+    }
+    return "global";
+  }
+
   private async handleControl(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (this.disposed) {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "disposed" }));
       return;
     }
+
+    const urlPath = (req.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        req,
+        res,
+        {
+          serverName: ECO_COMPUTER_USE_MCP_SERVER,
+          instructions: "Eco computer use (shared open-computer-use upstream).",
+          listTools: async () => {
+            await this.ensureUpstream();
+            const listed = await this.upstream.listTools();
+            return {
+              tools: listed.tools.filter(
+                (tool): tool is { name: string; [key: string]: unknown } =>
+                  Boolean(tool) &&
+                  typeof tool === "object" &&
+                  typeof (tool as { name?: unknown }).name === "string",
+              ),
+            };
+          },
+          callTool: async ({ name, arguments: args, authToken }) => {
+            const threadId = this.resolveThreadId(authToken);
+            this.deps.onToolCall?.({
+              threadId,
+              toolName:
+                name.includes("eco_computer_use") || name.startsWith("mcp__")
+                  ? name
+                  : `mcp__${ECO_COMPUTER_USE_MCP_SERVER}__${name}`,
+              toolInput: args,
+            });
+            await this.ensureUpstream();
+            const result = await this.upstream.callTool(name, args);
+            return result && typeof result === "object"
+              ? (result as Record<string, unknown>)
+              : { content: [{ type: "text", text: String(result ?? "") }] };
+          },
+        },
+        {
+          controlSecretHeader: "x-eco-computer-use-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     if (req.method !== "POST") {
       res.writeHead(405, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "method not allowed" }));

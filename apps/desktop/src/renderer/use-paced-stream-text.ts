@@ -90,6 +90,19 @@ export function usePacedStreamText(text: string, streaming: boolean): string {
     targetTextRef.current = text;
     streamingRef.current = streaming;
 
+    if (!streaming) {
+      // Settled or no longer the feed pace target: snap full text (no slow catch-up).
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (displayTextRef.current !== text) {
+        displayTextRef.current = text;
+        setDisplayText(text);
+      }
+      return;
+    }
+
     if (!displayTextRef.current && text) {
       displayTextRef.current = text;
       setDisplayText(text);

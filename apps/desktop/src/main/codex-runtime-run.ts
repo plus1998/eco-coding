@@ -79,6 +79,7 @@ import type { CodexThreadMap } from "./codex-thread-map";
 import { resolveCodexThreadAttribution } from "./codex-thread-map";
 import { normalizeCodexThreadRunEventForProjection } from "./codex-thread-run-event-normalizer";
 import { ensureGlobalEcoGateway } from "./eco-gateway-lifecycle";
+import { assertEcoHttpMcpServersReachable } from "./mcp-streamable-http";
 import {
   probeCliVersionExecutable,
   readElectronResourcesPath,
@@ -1183,6 +1184,11 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
       `Codex MCP sync failed: config.toml still contains [mcp_servers.*] after clearing MCP selection (${configSync.configPath}).`,
     );
   }
+
+  // Fail before Codex app-server starts: dead ports / notification≠202 look like silent MCP absence.
+  await assertEcoHttpMcpServersReachable(mcpServers, (message) => {
+    runtimeDeps.onStderr?.(`${message}\n`);
+  });
 
   runtimeDeps.onStderr?.(
     `[eco-codex] config ${configSync.configPath} gateway=${configSync.gatewayBaseUrl} providers=${configSync.providerSlugs.join(",")} mcp=${configSync.mcpServerNames.join(",") || "(none)"} catalog=${configSync.modelCatalogJsonPath ?? "(none)"}`,

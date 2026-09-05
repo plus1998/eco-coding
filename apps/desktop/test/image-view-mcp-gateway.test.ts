@@ -32,19 +32,25 @@ function createGateway(
   return gateway;
 }
 
-test("global image view Codex server starts once and has a stable definition", async () => {
+test("global image view Codex server starts once and has a stable HTTP definition", async () => {
   const gateway = createGateway(async () => "unused");
   const first = await gateway.resolveGlobalCodexServer();
   const second = await gateway.resolveGlobalCodexServer();
   expect(first.name).toBe(ECO_IMAGE_VIEW_MCP_SERVER);
+  expect(first.transport).toBe("http");
   expect(first.enabledTools).toEqual([ECO_IMAGE_VIEW_TOOL]);
-  expect(first.env?.ECO_IMAGE_VIEW_CONTROL_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+  expect(first.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+  expect(first.httpHeaders?.["X-Eco-Image-View-Control-Secret"]).toBeTruthy();
   expect(second).toEqual(first);
 });
 
 test("mergeIntoSdkConfig includes view_image in allowedTools", async () => {
   const gateway = createGateway(async () => "unused");
   const injection = await gateway.resolveInjection("thr_merge");
+  expect(injection.sdkEntry).toMatchObject({
+    type: "http",
+    url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+  });
   const merged = gateway.mergeIntoSdkConfig(
     { mcpServers: { docs: { command: "echo" } }, allowedTools: ["mcp__docs__*"] },
     injection,
@@ -62,12 +68,13 @@ test("relative path fails without calling analyze", async () => {
     return "should not run";
   });
   const server = await gateway.resolveGlobalCodexServer();
+  const baseUrl = server.url!.replace(/\/mcp$/, "");
   gateway.noteUpcomingTool("thr_rel", ECO_IMAGE_VIEW_TOOL, "tool-rel");
-  const response = await fetch(`${server.env!.ECO_IMAGE_VIEW_CONTROL_URL}/v1/tools/call`, {
+  const response = await fetch(`${baseUrl}/v1/tools/call`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-eco-image-view-control-secret": server.env!.ECO_IMAGE_VIEW_CONTROL_SECRET,
+      "x-eco-image-view-control-secret": server.httpHeaders!["X-Eco-Image-View-Control-Secret"]!,
     },
     body: JSON.stringify({ name: ECO_IMAGE_VIEW_TOOL, arguments: { path: "shot.png" } }),
   });
@@ -90,12 +97,13 @@ test("absolute PNG calls analyze once and returns text without image bytes", asy
     return "## Overview\nred pixel";
   });
   const server = await gateway.resolveGlobalCodexServer();
+  const baseUrl = server.url!.replace(/\/mcp$/, "");
   gateway.noteUpcomingTool("thr_abs", ECO_IMAGE_VIEW_TOOL, "tool-abs");
-  const response = await fetch(`${server.env!.ECO_IMAGE_VIEW_CONTROL_URL}/v1/tools/call`, {
+  const response = await fetch(`${baseUrl}/v1/tools/call`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-eco-image-view-control-secret": server.env!.ECO_IMAGE_VIEW_CONTROL_SECRET,
+      "x-eco-image-view-control-secret": server.httpHeaders!["X-Eco-Image-View-Control-Secret"]!,
     },
     body: JSON.stringify({
       name: ECO_IMAGE_VIEW_TOOL,
@@ -112,4 +120,52 @@ test("absolute PNG calls analyze once and returns text without image bytes", asy
   expect(calls).toEqual([
     { threadId: "thr_abs", path: imagePath, question: "找报错", toolUseId: "tool-abs" },
   ]);
+});
+
+test("streamable HTTP /mcp initialize + tools/list + tools/call", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "eco-image-view-mcp-http-"));
+  temporaryDirectories.push(directory);
+  const imagePath = path.join(directory, "shot.png");
+  await fs.writeFile(imagePath, PNG);
+  const gateway = createGateway(async () => "ok-report");
+  const injection = await gateway.resolveInjection("thr_http");
+  const url = String(injection.sdkEntry.url);
+  const headers = injection.sdkEntry.headers as Record<string, string>;
+  gateway.noteUpcomingTool("thr_http", ECO_IMAGE_VIEW_TOOL, "tool-http");
+
+  const init = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+    }),
+  });
+  expect(init.status).toBe(200);
+  expect(init.headers.get("mcp-session-id")).toBeTruthy();
+
+  const listed = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+  });
+  const listBody = (await listed.json()) as { result: { tools: Array<{ name: string }> } };
+  expect(listBody.result.tools.some((tool) => tool.name === ECO_IMAGE_VIEW_TOOL)).toBe(true);
+
+  const called = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: ECO_IMAGE_VIEW_TOOL, arguments: { path: imagePath } },
+    }),
+  });
+  const callBody = (await called.json()) as {
+    result: { content: Array<{ text: string }> };
+  };
+  expect(callBody.result.content[0]?.text).toBe("ok-report");
 });

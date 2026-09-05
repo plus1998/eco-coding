@@ -71,11 +71,17 @@ test("integrated web search Codex server starts when configured", async () => {
     const first = await gateway.resolveGlobalCodexServer();
     const second = await gateway.resolveGlobalCodexServer();
     expect(first?.name).toBe(ECO_WEB_SEARCH_MCP_SERVER);
-    expect(first?.env?.ECO_WEB_SEARCH_CONTROL_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(first?.transport).toBe("http");
+    expect(first?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    expect(first?.httpHeaders?.["X-Eco-Web-Search-Control-Secret"]).toBeTruthy();
     expect(second).toEqual(first);
 
     const injection = await gateway.resolveInjection({ threadId: "thread-1", sessionEnabled: true });
     expect(injection.enabled).toBe(true);
+    expect(injection.sdkEntry).toMatchObject({
+      type: "http",
+      url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+    });
     const merged = gateway.mergeIntoSdkConfig(
       { mcpServers: {}, allowedTools: [] },
       injection,

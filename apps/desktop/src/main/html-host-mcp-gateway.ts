@@ -1,9 +1,5 @@
-import fs from "node:fs";
 import http from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   buildHtmlHostPromptAppend,
@@ -22,8 +18,10 @@ import {
   normalizeHtmlHostToolInput,
   type HtmlHostApi,
 } from "./html-host-store";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 
-const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Html-Host-Control-Secret";
 
 const HOST_ERRORS: Record<string, string> = {
   invalid_title: "title 不能为空。",
@@ -66,40 +64,31 @@ export class HtmlHostMcpGateway {
 
   async resolveGlobalCodexServer(): Promise<CodexMcpServerForConfigSync> {
     await this.start();
-    const script = resolveStdioScriptPath();
-    if (!fs.existsSync(script)) {
-      throw new Error(`HTML host MCP stdio front-end not found: ${script}`);
-    }
-    return {
+    return buildEcoHttpCodexServer({
       name: ECO_HTML_HOST_MCP_SERVER,
-      transport: "stdio",
-      command: process.execPath,
-      args: [script],
-      env: {
-        ECO_HTML_HOST_CONTROL_URL: this.controlBaseUrl,
-        ECO_HTML_HOST_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
       enabledTools: [ECO_HTML_HOST_TOOL],
-      startupTimeoutSec: 60,
-    };
+    });
   }
 
   async resolveInjection(threadId: string): Promise<HtmlHostMcpInjection> {
-    const globalCodexServer = await this.resolveGlobalCodexServer();
+    await this.start();
     const auth = this.auth.ensure(threadId);
-    const baseEnv = globalCodexServer.env ?? {};
+    const http = buildEcoHttpInjection({
+      name: ECO_HTML_HOST_MCP_SERVER,
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
+      authToken: auth.token,
+      enabledTools: [ECO_HTML_HOST_TOOL],
+    });
     return {
       enabled: true,
       serverName: ECO_HTML_HOST_MCP_SERVER,
-      sdkEntry: {
-        type: "stdio",
-        command: globalCodexServer.command ?? process.execPath,
-        args: globalCodexServer.args ?? [],
-        env: { ...baseEnv, ECO_HTML_HOST_AUTH_TOKEN: auth.token },
-        alwaysLoad: true,
-      },
-      codexServer: globalCodexServer,
+      sdkEntry: http.sdkEntry,
+      codexServer: http.codexServer,
       promptAppend: buildHtmlHostPromptAppend(),
     };
   }
@@ -157,6 +146,27 @@ export class HtmlHostMcpGateway {
   }
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
+    const urlPath = (request.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        request,
+        response,
+        {
+          serverName: ECO_HTML_HOST_MCP_SERVER,
+          instructions:
+            "Eco HTML hosting for progress/report pages. Publish single-file HTML; Eco wraps chrome and returns a publicUrl.",
+          listTools: async () => ({ tools: [htmlHostToolDefinition()] }),
+          callTool: async ({ name, arguments: args, authToken }) =>
+            this.executeToolCall(name, args, authToken),
+        },
+        {
+          controlSecretHeader: "x-eco-html-host-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     if (request.headers["x-eco-html-host-control-secret"] !== this.controlSecret) {
       sendJson(response, 401, { error: "unauthorized control secret" });
       return;
@@ -185,83 +195,86 @@ export class HtmlHostMcpGateway {
         sendJson(response, 404, { error: "not found" });
         return;
       }
-      if (body.name !== ECO_HTML_HOST_TOOL) {
-        throw new Error(`Unknown HTML host tool: ${String(body.name)}`);
-      }
-      const claim = this.resolveThread(authToken);
+      const name = typeof body.name === "string" ? body.name : "";
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
-      let toolInput: HtmlHostToolInput;
-      try {
-        toolInput = normalizeHtmlHostToolInput(rawArgs);
-      } catch (error) {
-        const code = error instanceof HtmlHostError ? error.code : "invalid_html";
-        sendJson(response, 200, {
-          result: mcpErrorResult(HOST_ERRORS[code] ?? String(error), code),
-        });
-        return;
-      }
-
-      const capability = await this.deps.getCapability();
-      if (!capability.available) {
-        sendJson(response, 200, {
-          result: mcpErrorResult(
-            capability.detail ?? HOST_ERRORS.unavailable!,
-            capability.reason === "not_connected" ? "not_connected" : "unavailable",
-          ),
-        });
-        return;
-      }
-
-      try {
-        const published = await this.deps.api.publish({
-          ...toolInput,
-          threadId: claim.threadId,
-        });
-        const now = new Date().toISOString();
-        const artifact: HtmlHostArtifact = {
-          id: published.pageId,
-          threadId: claim.threadId,
-          ...(claim.toolUseId ? { toolUseId: claim.toolUseId } : {}),
-          status: "completed",
-          pageId: published.pageId,
-          slug: published.slug,
-          title: published.title,
-          publicUrl: published.publicUrl,
-          expiresAt: published.expiresAt,
-          ...(published.extendedAt ? { extendedAt: published.extendedAt } : {}),
-          canExtend: published.canExtend,
-          createdAt: published.createdAt || now,
-          updatedAt: now,
-        };
-        this.deps.store.upsert(artifact);
-        this.deps.onArtifactChanged(artifact);
-        sendJson(response, 200, {
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  status: "ok",
-                  pageId: published.pageId,
-                  publicUrl: published.publicUrl,
-                  title: published.title,
-                  expiresAt: published.expiresAt,
-                  canExtend: published.canExtend,
-                }),
-              },
-            ],
-          },
-        });
-      } catch (error) {
-        const code = error instanceof HtmlHostError ? error.code : "publish_failed";
-        sendJson(response, 200, {
-          result: mcpErrorResult(HOST_ERRORS[code] ?? (error instanceof Error ? error.message : String(error)), code),
-        });
-      }
+      const result = await this.executeToolCall(name, rawArgs, authToken);
+      sendJson(response, 200, { result });
     } catch (error) {
       sendJson(response, 200, {
         result: mcpErrorResult(error instanceof Error ? error.message : String(error), "publish_failed"),
       });
+    }
+  }
+
+  private async executeToolCall(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    authToken: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    if (name !== ECO_HTML_HOST_TOOL) {
+      throw new Error(`Unknown HTML host tool: ${name}`);
+    }
+    const claim = this.resolveThread(authToken);
+    let toolInput: HtmlHostToolInput;
+    try {
+      toolInput = normalizeHtmlHostToolInput(rawArgs);
+    } catch (error) {
+      const code = error instanceof HtmlHostError ? error.code : "invalid_html";
+      return mcpErrorResult(HOST_ERRORS[code] ?? String(error), code);
+    }
+
+    const capability = await this.deps.getCapability();
+    if (!capability.available) {
+      return mcpErrorResult(
+        capability.detail ?? HOST_ERRORS.unavailable!,
+        capability.reason === "not_connected" ? "not_connected" : "unavailable",
+      );
+    }
+
+    try {
+      const published = await this.deps.api.publish({
+        ...toolInput,
+        threadId: claim.threadId,
+      });
+      const now = new Date().toISOString();
+      const artifact: HtmlHostArtifact = {
+        id: published.pageId,
+        threadId: claim.threadId,
+        ...(claim.toolUseId ? { toolUseId: claim.toolUseId } : {}),
+        status: "completed",
+        pageId: published.pageId,
+        slug: published.slug,
+        title: published.title,
+        publicUrl: published.publicUrl,
+        expiresAt: published.expiresAt,
+        ...(published.extendedAt ? { extendedAt: published.extendedAt } : {}),
+        canExtend: published.canExtend,
+        createdAt: published.createdAt || now,
+        updatedAt: now,
+      };
+      this.deps.store.upsert(artifact);
+      this.deps.onArtifactChanged(artifact);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              status: "ok",
+              pageId: published.pageId,
+              publicUrl: published.publicUrl,
+              title: published.title,
+              expiresAt: published.expiresAt,
+              canExtend: published.canExtend,
+            }),
+          },
+        ],
+      };
+    } catch (error) {
+      const code = error instanceof HtmlHostError ? error.code : "publish_failed";
+      return mcpErrorResult(
+        HOST_ERRORS[code] ?? (error instanceof Error ? error.message : String(error)),
+        code,
+      );
     }
   }
 }
@@ -295,26 +308,6 @@ function htmlHostToolDefinition(): Record<string, unknown> {
       },
     },
   };
-}
-
-function resolveStdioScriptPath(): string {
-  const candidates = [
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../packaging/eco-html-host-mcp-stdio.mjs"),
-    path.join(process.cwd(), "apps/desktop/packaging/eco-html-host-mcp-stdio.mjs"),
-    path.join(process.cwd(), "packaging/eco-html-host-mcp-stdio.mjs"),
-  ];
-  try {
-    const electron = require("electron") as { app?: { getAppPath?: () => string } };
-    if (electron.app?.getAppPath) {
-      candidates.unshift(path.join(electron.app.getAppPath(), "packaging/eco-html-host-mcp-stdio.mjs"));
-    }
-    if (typeof process.resourcesPath === "string") {
-      candidates.unshift(path.join(process.resourcesPath, "eco-html-host-mcp-stdio.mjs"));
-    }
-  } catch {
-    // Tests run without Electron.
-  }
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
 }
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {

@@ -10743,6 +10743,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   imageViewGateway.disposeThread(threadId);
   imageDisplayGateway.disposeThread(threadId);
   htmlHostGateway.disposeThread(threadId);
+  computerUseGateway.disposeThread(threadId);
   integratedWebSearchGateway.disposeThread(threadId);
   const acpSessionId = acpSessionIdToDelete(conversationStore.getThreadCoreSession(threadId));
   if (acpSessionId) {

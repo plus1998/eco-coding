@@ -1,9 +1,5 @@
-import fs from "node:fs";
 import http from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   ECO_IMAGE_DISPLAY_FULL_TOOL,
@@ -18,8 +14,10 @@ import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { ImageDisplayError, ImageDisplayStore, normalizeImageDisplayToolInput } from "./image-display-store";
 import { ImageViewReadError } from "./image-view-reader";
+import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
+import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
 
-const require = createRequire(import.meta.url);
+const CONTROL_SECRET_HEADER = "X-Eco-Image-Display-Control-Secret";
 
 const DISPLAY_ERRORS: Record<string, string> = {
   invalid_source: "source 必须是 path、url 或 base64。",
@@ -63,40 +61,31 @@ export class ImageDisplayMcpGateway {
 
   async resolveGlobalCodexServer(): Promise<CodexMcpServerForConfigSync> {
     await this.start();
-    const script = resolveStdioScriptPath();
-    if (!fs.existsSync(script)) {
-      throw new Error(`Image display MCP stdio front-end not found: ${script}`);
-    }
-    return {
+    return buildEcoHttpCodexServer({
       name: ECO_IMAGE_DISPLAY_MCP_SERVER,
-      transport: "stdio",
-      command: process.execPath,
-      args: [script],
-      env: {
-        ECO_IMAGE_DISPLAY_CONTROL_URL: this.controlBaseUrl,
-        ECO_IMAGE_DISPLAY_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
       enabledTools: [ECO_IMAGE_DISPLAY_TOOL],
-      startupTimeoutSec: 60,
-    };
+    });
   }
 
   async resolveInjection(threadId: string): Promise<ImageDisplayMcpInjection> {
-    const globalCodexServer = await this.resolveGlobalCodexServer();
+    await this.start();
     const auth = this.auth.ensure(threadId);
-    const baseEnv = globalCodexServer.env ?? {};
+    const http = buildEcoHttpInjection({
+      name: ECO_IMAGE_DISPLAY_MCP_SERVER,
+      controlBaseUrl: this.controlBaseUrl,
+      controlSecretHeader: CONTROL_SECRET_HEADER,
+      controlSecret: this.controlSecret,
+      authToken: auth.token,
+      enabledTools: [ECO_IMAGE_DISPLAY_TOOL],
+    });
     return {
       enabled: true,
       serverName: ECO_IMAGE_DISPLAY_MCP_SERVER,
-      sdkEntry: {
-        type: "stdio",
-        command: globalCodexServer.command ?? process.execPath,
-        args: globalCodexServer.args ?? [],
-        env: { ...baseEnv, ECO_IMAGE_DISPLAY_AUTH_TOKEN: auth.token },
-        alwaysLoad: true,
-      },
-      codexServer: globalCodexServer,
+      sdkEntry: http.sdkEntry,
+      codexServer: http.codexServer,
       promptAppend: buildImageDisplayPromptAppend(),
     };
   }
@@ -154,6 +143,27 @@ export class ImageDisplayMcpGateway {
   }
 
   private async handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
+    const urlPath = (request.url ?? "").split("?")[0] ?? "";
+    if (urlPath === "/mcp" || urlPath.startsWith("/mcp/")) {
+      await handleMcpStreamableHttpRequest(
+        request,
+        response,
+        {
+          serverName: ECO_IMAGE_DISPLAY_MCP_SERVER,
+          instructions:
+            "Eco image display for the user. Stores images as feed artifacts; returns artifactId text.",
+          listTools: async () => ({ tools: [imageDisplayToolDefinition()] }),
+          callTool: async ({ name, arguments: args, authToken }) =>
+            this.executeToolCall(name, args, authToken),
+        },
+        {
+          controlSecretHeader: "x-eco-image-display-control-secret",
+          controlSecret: this.controlSecret,
+        },
+      );
+      return;
+    }
+
     if (request.headers["x-eco-image-display-control-secret"] !== this.controlSecret) {
       sendJson(response, 401, { error: "unauthorized control secret" });
       return;
@@ -182,53 +192,56 @@ export class ImageDisplayMcpGateway {
         sendJson(response, 404, { error: "not found" });
         return;
       }
-      if (body.name !== ECO_IMAGE_DISPLAY_TOOL) {
-        throw new Error(`未知图片展示工具：${String(body.name)}`);
-      }
-      const claim = this.resolveThread(authToken);
+      const name = typeof body.name === "string" ? body.name : "";
       const rawArgs = isRecord(body.arguments) ? body.arguments : {};
-      let toolInput: ImageDisplayToolInput;
-      try {
-        toolInput = normalizeImageDisplayToolInput(rawArgs as ImageDisplayToolInput);
-      } catch (error) {
-        const code = error instanceof ImageDisplayError ? error.code : "invalid_source";
-        sendJson(response, 200, {
-          result: mcpErrorResult(DISPLAY_ERRORS[code] ?? String(error), code),
-        });
-        return;
-      }
-      try {
-        const artifact = await this.deps.store.ingestFromToolInput({
-          threadId: claim.threadId,
-          ...(claim.toolUseId ? { toolUseId: claim.toolUseId } : {}),
-          toolInput,
-        });
-        this.deps.onArtifactChanged(artifact);
-        sendJson(response, 200, {
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ status: "ok" }),
-              },
-            ],
-          },
-        });
-      } catch (error) {
-        const code =
-          error instanceof ImageDisplayError
-            ? error.code
-            : error instanceof ImageViewReadError
-              ? error.code
-              : "load_failed";
-        sendJson(response, 200, {
-          result: mcpErrorResult(DISPLAY_ERRORS[code] ?? String(error), code),
-        });
-      }
+      const result = await this.executeToolCall(name, rawArgs, authToken);
+      sendJson(response, 200, { result });
     } catch (error) {
       sendJson(response, 200, {
         result: mcpErrorResult(error instanceof Error ? error.message : String(error), "display_failed"),
       });
+    }
+  }
+
+  private async executeToolCall(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    authToken: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    if (name !== ECO_IMAGE_DISPLAY_TOOL) {
+      throw new Error(`未知图片展示工具：${name}`);
+    }
+    const claim = this.resolveThread(authToken);
+    let toolInput: ImageDisplayToolInput;
+    try {
+      toolInput = normalizeImageDisplayToolInput(rawArgs as ImageDisplayToolInput);
+    } catch (error) {
+      const code = error instanceof ImageDisplayError ? error.code : "invalid_source";
+      return mcpErrorResult(DISPLAY_ERRORS[code] ?? String(error), code);
+    }
+    try {
+      const artifact = await this.deps.store.ingestFromToolInput({
+        threadId: claim.threadId,
+        ...(claim.toolUseId ? { toolUseId: claim.toolUseId } : {}),
+        toolInput,
+      });
+      this.deps.onArtifactChanged(artifact);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ status: "ok" }),
+          },
+        ],
+      };
+    } catch (error) {
+      const code =
+        error instanceof ImageDisplayError
+          ? error.code
+          : error instanceof ImageViewReadError
+            ? error.code
+            : "load_failed";
+      return mcpErrorResult(DISPLAY_ERRORS[code] ?? String(error), code);
     }
   }
 }
@@ -263,26 +276,6 @@ function imageDisplayToolDefinition(): Record<string, unknown> {
       },
     },
   };
-}
-
-function resolveStdioScriptPath(): string {
-  const candidates = [
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../packaging/eco-image-display-mcp-stdio.mjs"),
-    path.join(process.cwd(), "apps/desktop/packaging/eco-image-display-mcp-stdio.mjs"),
-    path.join(process.cwd(), "packaging/eco-image-display-mcp-stdio.mjs"),
-  ];
-  try {
-    const electron = require("electron") as { app?: { getAppPath?: () => string } };
-    if (electron.app?.getAppPath) {
-      candidates.unshift(path.join(electron.app.getAppPath(), "packaging/eco-image-display-mcp-stdio.mjs"));
-    }
-    if (typeof process.resourcesPath === "string") {
-      candidates.unshift(path.join(process.resourcesPath, "eco-image-display-mcp-stdio.mjs"));
-    }
-  } catch {
-    // Tests run without Electron.
-  }
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
 }
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
