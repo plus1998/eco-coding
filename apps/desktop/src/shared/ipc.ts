@@ -2322,11 +2322,24 @@ export interface ThreadUsageLedgerEventView {
   providerRequestId?: string;
   attributionStatus: "attributed" | "pending" | "unattributed";
   attributionReason?: string;
+  usageKind: "request_final" | "request_partial" | "assistant_fallback" | "context";
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   reasoningTokens?: number;
+  /** Gateway-measured time to first content token (ms), when known. */
+  ttftMs?: number;
+  /** Gateway-measured first-chunk → stream-end window (ms, new-api generationMs). */
+  generationMs?: number;
+  /** Feed logical request id — joins multi-invocation rows onto one span. */
+  logicalRequestId?: string;
+  /** Client-side request span start (fallback timing for rows without gateway timing). */
+  spanStartedAt?: string;
+  /** Client-side first narrative delta time (fallback timing). */
+  spanFirstTokenAt?: string;
+  /** Client-side request span end (fallback timing). */
+  spanEndedAt?: string;
   ecoCostUsd?: number;
   reportedCostUsd?: number;
   pricingResolved?: boolean;

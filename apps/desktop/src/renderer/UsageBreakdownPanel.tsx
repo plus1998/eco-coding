@@ -26,6 +26,8 @@ import {
   type RuntimeAgentDisplayNames,
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
+import { formatTokenSpeedRate, formatTokenSpeedSeconds } from "./token-speed";
+import { resolveLedgerEventTiming } from "../shared/ledger-event-timing";
 
 type BreakdownView = "agent" | "model" | "events";
 
@@ -344,6 +346,15 @@ function LedgerEventRow({
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
   });
+  const timing = resolveLedgerEventTiming(event);
+  const timingParts = [
+    timing.ttftMs !== undefined
+      ? i18n.t("activity.tokenSpeed.ttft", { seconds: formatTokenSpeedSeconds(timing.ttftMs) })
+      : undefined,
+    timing.rateTps !== undefined
+      ? i18n.t("activity.tokenSpeed.rate", { rate: formatTokenSpeedRate(timing.rateTps) })
+      : undefined,
+  ].filter(Boolean);
   const observedTime = formatLedgerEventTime(event.observedAt);
   const computedCostAvailable = event.ecoCostUsd !== undefined && event.pricingResolved !== false;
   const primaryCostUsd = computedCostAvailable ? event.ecoCostUsd : event.reportedCostUsd;
@@ -357,6 +368,7 @@ function LedgerEventRow({
     attributionLabel || undefined,
     event.attributionReason,
     showSource ? event.source : undefined,
+    timingParts.length > 0 ? timingParts.join(" · ") : undefined,
   ].filter(Boolean);
 
   return (
@@ -438,6 +450,11 @@ function LedgerEventRow({
         <span className="usage-breakdown-event-token-detail" title={i18n.t("billing.tokenTitle")}>
           {tokenBadge}
         </span>
+        {timingParts.length > 0 ? (
+          <span className="usage-breakdown-event-timing" title={i18n.t("usage.eventTimingTitle")}>
+            {timingParts.join(" · ")}
+          </span>
+        ) : null}
       </span>
       {observedTime ? (
         <time className="usage-breakdown-event-time" dateTime={event.observedAt} title={event.observedAt}>

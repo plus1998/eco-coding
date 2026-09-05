@@ -5,8 +5,13 @@ import {
   USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY,
   USAGE_LEDGER_PROVIDER_ID_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
-import type { UsageAttributionStatus, UsageLedgerEvent } from "./usage-ledger";
-import { readUsageLedgerComputedBilling } from "./usage-ledger-cost-metadata";
+import type { UsageAttributionStatus, UsageLedgerEvent, UsageLedgerKind } from "./usage-ledger";
+import {
+  readUsageLedgerComputedBilling,
+  readUsageLedgerGenerationMs,
+  readUsageLedgerLogicalRequestId,
+  readUsageLedgerTtftMs,
+} from "./usage-ledger-cost-metadata";
 
 export interface ThreadUsageLedgerEventView {
   id: string;
@@ -22,11 +27,24 @@ export interface ThreadUsageLedgerEventView {
   providerRequestId?: string;
   attributionStatus: UsageAttributionStatus;
   attributionReason?: string;
+  usageKind: UsageLedgerKind;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   reasoningTokens?: number;
+  /** Gateway-measured time to first content token (ms), when known. */
+  ttftMs?: number;
+  /** Gateway-measured first-chunk → stream-end window (ms, new-api generationMs). */
+  generationMs?: number;
+  /** Feed logical request id — joins multi-invocation rows onto one span. */
+  logicalRequestId?: string;
+  /** Client-side request span start (fallback timing for rows without gateway timing). */
+  spanStartedAt?: string;
+  /** Client-side first narrative delta time (fallback timing). */
+  spanFirstTokenAt?: string;
+  /** Client-side request span end (fallback timing). */
+  spanEndedAt?: string;
   ecoCostUsd?: number;
   reportedCostUsd?: number;
   pricingResolved?: boolean;
@@ -37,6 +55,9 @@ export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): Thread
   const aliasModelId = readMetadataString(event, USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY);
   const providerId = readMetadataString(event, USAGE_LEDGER_PROVIDER_ID_METADATA_KEY);
   const computedBilling = readUsageLedgerComputedBilling(event.metadata);
+  const ttftMs = readUsageLedgerTtftMs(event.metadata);
+  const generationMs = readUsageLedgerGenerationMs(event.metadata);
+  const logicalRequestId = readUsageLedgerLogicalRequestId(event.metadata);
   return {
     id: event.id,
     source: event.source,
@@ -51,12 +72,16 @@ export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): Thread
     ...(event.providerRequestId && { providerRequestId: event.providerRequestId }),
     attributionStatus: event.attribution.status,
     ...(event.attribution.reason && { attributionReason: event.attribution.reason }),
+    usageKind: event.usageKind,
     inputTokens: event.inputTokens,
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
     ...(event.reasoningTokens !== undefined &&
       event.reasoningTokens > 0 && { reasoningTokens: event.reasoningTokens }),
+    ...(ttftMs !== undefined && { ttftMs }),
+    ...(generationMs !== undefined && { generationMs }),
+    ...(logicalRequestId && { logicalRequestId }),
     ...(computedBilling && {
       ecoCostUsd: computedBilling.ecoCostUsd,
       pricingResolved: computedBilling.pricingResolved,

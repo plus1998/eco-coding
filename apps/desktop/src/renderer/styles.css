@@ -16123,6 +16123,13 @@ a.run-log-web-search-detail-result-url:focus-visible {
   line-height: 1.25;
 }
 
+.usage-breakdown-event-timing {
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
 .usage-breakdown-event-time {
   position: absolute;
   top: 4px;

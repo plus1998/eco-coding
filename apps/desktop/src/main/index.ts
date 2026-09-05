@@ -316,6 +316,10 @@ import {
 import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
 import { BUILTIN_VISION_AGENT_ROLE, buildPromptWithVisionAnalysis } from "../shared/prompt-image-vision";
 import { attachOutputTokensToRequestSpans, type RequestSpanLedgerUsageRow } from "../shared/request-span-usage";
+import {
+  attachPeerGatewayTimingToLedgerEventViews,
+  attachSpanTimingToLedgerEventViews,
+} from "../shared/ledger-event-timing";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
@@ -5958,7 +5962,7 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [] as ThreadUsageLedgerEventView[];
     }
-    return usageLedgerCoordinator.listUsageLedgerEventViews(threadId.trim());
+    return listThreadUsageLedgerEventViewsForBilling(threadId.trim());
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadGetPendingPlan, async (threadId: unknown) => {
@@ -13665,6 +13669,33 @@ function persistThreadFeedSkeletonRecord(record: ThreadFeedSkeletonRecord): void
     snapshot: record.snapshot,
     ...(record.patchState && { patchState: record.patchState }),
   });
+}
+
+/**
+ * Ledger rows for the per-billing (逐笔) view. Rows missing gateway timing first
+ * inherit the exact gateway measurement from a same-`logicalRequestId` peer row
+ * (e.g. PI rows billed alongside the gateway proxy row); client span timing is
+ * the remaining fallback. Gateway rows keep their own ttftMs/generationMs.
+ */
+function listThreadUsageLedgerEventViewsForBilling(threadId: string): ThreadUsageLedgerEventView[] {
+  const views = usageLedgerCoordinator.listUsageLedgerEventViews(threadId);
+  if (views.length === 0) {
+    return views;
+  }
+  const withPeerTiming = attachPeerGatewayTimingToLedgerEventViews(views);
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return withPeerTiming;
+  }
+  const spans = buildThreadRunProjectionRequestSpans({
+    events: conversationStore.listThreadRunEventsForProjection(threadId),
+    threadStatus: thread.status,
+    agents: conversationStore.listAgentInstances(threadId),
+  });
+  if (spans.length === 0) {
+    return withPeerTiming;
+  }
+  return attachSpanTimingToLedgerEventViews(withPeerTiming, spans);
 }
 
 function usageLedgerRowsForRequestSpanJoin(threadId: string): RequestSpanLedgerUsageRow[] {

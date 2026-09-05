@@ -263,31 +263,37 @@ export function resolveLiveRequestIdForEvent(
   return undefined;
 }
 
-/** PI usage.recorded may arrive after lifecycle finalize — prefer active, else newest finalized tombstone. */
+/**
+ * PI usage.recorded may arrive after lifecycle finalize — prefer active, else newest
+ * finalized tombstone.
+ *
+ * Resolution order (fail closed at each step — never mix a different agent's request):
+ * 1. Strict agent-scoped match (registry entries stamped with the event's agentId).
+ * 2. Active role-only match — bridge entries are commonly created without an agentId,
+ *    so an agentId on the event alone must not disqualify the unstamped entry.
+ * 3. Newest finalized tombstone for the role — stamped with the agent first, else unstamped.
+ */
 export function resolvePiUsageLogicalRequestId(
   registry: ThreadLiveRequestRegistry,
   threadId: string,
   input: { role: string; agentId?: string },
 ): string | undefined {
-  const active = registry.resolve(threadId, {
-    role: input.role,
-    ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}),
-  });
-  if (active) {
-    return active;
-  }
   const agentId = input.agentId?.trim();
   const role = input.role.trim();
-  const matches = registry.listFinalized(threadId).filter((entry) => {
-    if (entry.role !== role) {
-      return false;
+  if (agentId) {
+    const strict = registry.resolve(threadId, { role, agentId });
+    if (strict) {
+      return strict;
     }
-    if (agentId) {
-      return entry.agentId === agentId;
-    }
-    return !entry.agentId;
-  });
-  return matches.at(-1)?.logicalRequestId;
+  }
+  const byRole = registry.resolve(threadId, { role });
+  if (byRole) {
+    return byRole;
+  }
+  const finalized = registry.listFinalized(threadId).filter((entry) => entry.role === role);
+  const stamped = agentId ? finalized.filter((entry) => entry.agentId === agentId) : [];
+  const pool = stamped.length > 0 ? stamped : finalized.filter((entry) => !entry.agentId);
+  return pool.at(-1)?.logicalRequestId;
 }
 
 /** Only Bridge-emitted request.started (explicit extras logical id) may persist a shadow event. */

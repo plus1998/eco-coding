@@ -34,7 +34,7 @@ function logicalRequestIdMatchesSpan(logicalRequestId: string, spanRequestId: st
   return logicalSuffix === requestSuffix;
 }
 
-function ledgerRowMatchesRequest(
+export function ledgerRowMatchesRequest(
   span: Pick<ThreadRunProjectionRequestSpan, "requestId" | "providerRequestId">,
   row: RequestSpanLedgerUsageRow,
 ): boolean {

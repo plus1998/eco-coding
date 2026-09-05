@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   applyLogicalRequestTerminal,
   handleBridgeMessagesRequest,
+  resolvePiUsageLogicalRequestId,
 } from "../src/main/thread-live-request-coordinator";
 import { ThreadLiveRequestRegistry } from "../src/main/thread-live-request-registry";
 
@@ -84,4 +85,68 @@ test("applyLogicalRequestTerminal emits logical correlation id then always clear
 
   expect(uiEvents).toEqual([`${logicalRequestId}:provider_1:failed:HTTP 502`]);
   expect(registry.listActive(threadId)).toHaveLength(0);
+});
+
+test("resolvePiUsageLogicalRequestId prefers the strict agent-scoped match", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const threadId = "thr_pi_strict";
+  handleBridgeMessagesRequest(registry, { threadId, role: "planner", agentId: "session_a" });
+
+  expect(
+    resolvePiUsageLogicalRequestId(registry, threadId, { role: "planner", agentId: "session_a" }),
+  ).toBe(registry.listActive(threadId)[0]?.logicalRequestId);
+});
+
+test("resolvePiUsageLogicalRequestId falls back to an unstamped active entry when the event carries an agentId", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const threadId = "thr_pi_unstamped";
+  const begun = handleBridgeMessagesRequest(registry, { threadId, role: "planner" });
+
+  expect(
+    resolvePiUsageLogicalRequestId(registry, threadId, {
+      role: "planner",
+      agentId: "planner:attempt_execution_0_1",
+    }),
+  ).toBe(begun.logicalRequestId);
+});
+
+test("resolvePiUsageLogicalRequestId falls back to the newest unstamped finalized tombstone", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const threadId = "thr_pi_finalized";
+  const begun = handleBridgeMessagesRequest(registry, { threadId, role: "planner" });
+  registry.moveToFinalized(threadId, begun.logicalRequestId);
+
+  expect(
+    resolvePiUsageLogicalRequestId(registry, threadId, {
+      role: "planner",
+      agentId: "planner:attempt_execution_0_1",
+    }),
+  ).toBe(begun.logicalRequestId);
+});
+
+test("resolvePiUsageLogicalRequestId fails closed when only a foreign-agent tombstone exists", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const threadId = "thr_pi_foreign";
+  const begun = handleBridgeMessagesRequest(registry, { threadId, role: "planner", agentId: "session_b" });
+  registry.moveToFinalized(threadId, begun.logicalRequestId);
+
+  expect(
+    resolvePiUsageLogicalRequestId(registry, threadId, {
+      role: "planner",
+      agentId: "session_a",
+    }),
+  ).toBeUndefined();
+});
+
+test("resolvePiUsageLogicalRequestId never crosses roles", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const threadId = "thr_pi_role";
+  const begun = handleBridgeMessagesRequest(registry, { threadId, role: "coder" });
+
+  expect(
+    resolvePiUsageLogicalRequestId(registry, threadId, { role: "planner", agentId: "session_a" }),
+  ).toBeUndefined();
+  expect(
+    resolvePiUsageLogicalRequestId(registry, threadId, { role: "coder" }),
+  ).toBe(begun.logicalRequestId);
 });

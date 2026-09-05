@@ -41,6 +41,7 @@ test("buildThreadUsageLedgerEventView exposes routeRole billingRole and attribut
     requestKey: "proxy:coder:req_1",
     attributionStatus: "pending",
     attributionReason: PROXY_PENDING_ATTRIBUTION_REASON,
+    usageKind: "request_final",
     inputTokens: 1000,
     outputTokens: 100,
     cacheReadTokens: 0,
@@ -50,4 +51,45 @@ test("buildThreadUsageLedgerEventView exposes routeRole billingRole and attribut
     pricingResolved: true,
     observedAt: event.observedAt,
   });
+});
+
+test("buildThreadUsageLedgerEventView surfaces gateway timing metadata", () => {
+  const event = buildSingleUsageLedgerEvent({
+    threadId: "thr_view_timing",
+    role: "planner",
+    source: "proxy",
+    sourceEventId: "proxy:planner:req_7",
+    usage: { inputTokens: 500, outputTokens: 120, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    attribution: { status: "attributed", agentId: "planner" },
+    modelId: "haiku",
+    requestKey: "proxy:planner:req_7",
+    metadata: {
+      ttftMs: 250.7,
+      generationMs: 4200.3,
+      logicalRequestId: "req_7",
+    },
+  });
+
+  const view = buildThreadUsageLedgerEventView(event);
+  expect(view.ttftMs).toBe(250);
+  expect(view.generationMs).toBe(4200);
+  expect(view.logicalRequestId).toBe("req_7");
+});
+
+test("buildThreadUsageLedgerEventView omits timing fields when metadata has none", () => {
+  const event = buildSingleUsageLedgerEvent({
+    threadId: "thr_view_timing_none",
+    role: "planner",
+    source: "sdk",
+    sourceEventId: "sdk:planner:req_8",
+    usage: { inputTokens: 500, outputTokens: 120, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    attribution: { status: "unattributed", reason: "agent_id_missing" },
+    modelId: "haiku",
+    requestKey: "sdk:planner:req_8",
+  });
+
+  const view = buildThreadUsageLedgerEventView(event);
+  expect(view.ttftMs).toBeUndefined();
+  expect(view.generationMs).toBeUndefined();
+  expect(view.logicalRequestId).toBeUndefined();
 });
