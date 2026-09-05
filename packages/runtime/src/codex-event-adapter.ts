@@ -6,6 +6,8 @@
  * - `turn/started|completed`: `{ threadId, turn: { id, status, error?, ... } }`
  * - `item/started|completed`: `{ threadId, turnId, item: { id, type, ... } }`
  * - `item/agentMessage/delta`: `{ threadId, turnId, itemId, delta }`
+ * - `item/reasoning/summaryPartAdded`: `{ threadId, turnId, itemId, summaryIndex }`
+ * - `item/reasoning/summaryTextDelta`: `{ threadId, turnId, itemId, delta, summaryIndex? }`
  *
  * **itemId → logicalEntityId**: every item-scoped event uses `streamKey = itemId`
  * so projection can merge `message.delta` chunks and the final `message.final`
@@ -186,6 +188,10 @@ type AdapterContext = CodexEventAdapterOptions & {
   reasoningTextByItemId: Map<string, string>;
   /** summary vs raw CoT for Feed stage lines; last write wins per item. */
   reasoningDisplayByItemId: Map<string, "summary" | "raw">;
+  /** Last summaryIndex seen per reasoning item (Codex / Responses multi-part). */
+  reasoningSummaryIndexByItemId: Map<string, number>;
+  /** Insert `\n` before the next summary delta after summaryPartAdded. */
+  reasoningSummaryNeedsSeparatorByItemId: Set<string>;
   /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
   reasoningStartedAtByItemId: Map<string, string>;
   agentMessageTextByItemId: Map<string, string>;
@@ -226,6 +232,7 @@ const POC_HANDLERS: Record<string, NotificationHandler> = {
   "thread/tokenUsage/updated": handleTokenUsageUpdated,
   "item/started": handleItemStarted,
   "item/agentMessage/delta": handleAgentMessageDelta,
+  "item/reasoning/summaryPartAdded": handleReasoningSummaryPartAdded,
   "item/reasoning/summaryTextDelta": handleReasoningSummaryTextDelta,
   "item/reasoning/textDelta": handleReasoningTextDelta,
   "item/commandExecution/outputDelta": handleCommandExecutionOutputDelta,
@@ -241,6 +248,10 @@ export class CodexEventAdapter {
   private readonly reasoningTextByItemId = new Map<string, string>();
   /** summary vs raw CoT for Feed stage lines; last write wins per item. */
   private readonly reasoningDisplayByItemId = new Map<string, "summary" | "raw">();
+  /** Last summaryIndex seen per reasoning item (Codex / Responses multi-part). */
+  private readonly reasoningSummaryIndexByItemId = new Map<string, number>();
+  /** Insert `\n` before the next summary delta after summaryPartAdded. */
+  private readonly reasoningSummaryNeedsSeparatorByItemId = new Set<string>();
   /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
   private readonly reasoningStartedAtByItemId = new Map<string, string>();
   /**
@@ -268,6 +279,8 @@ export class CodexEventAdapter {
       commandOutputPreviewByItemId: this.commandOutputPreviewByItemId,
       reasoningTextByItemId: this.reasoningTextByItemId,
       reasoningDisplayByItemId: this.reasoningDisplayByItemId,
+      reasoningSummaryIndexByItemId: this.reasoningSummaryIndexByItemId,
+      reasoningSummaryNeedsSeparatorByItemId: this.reasoningSummaryNeedsSeparatorByItemId,
       reasoningStartedAtByItemId: this.reasoningStartedAtByItemId,
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
@@ -743,6 +756,22 @@ function handleAgentMessageDelta(ctx: AdapterContext, params: Record<string, unk
   });
 }
 
+function handleReasoningSummaryPartAdded(ctx: AdapterContext, params: Record<string, unknown>): void {
+  const itemId = readCodexItemId(params);
+  if (!itemId) {
+    return;
+  }
+  const previous = ctx.reasoningTextByItemId.get(itemId) ?? "";
+  if (previous.length > 0 && !previous.endsWith("\n")) {
+    // OpenAI/Codex do not emit a newline between summary parts; mark the next delta.
+    ctx.reasoningSummaryNeedsSeparatorByItemId.add(itemId);
+  }
+  const summaryIndex = readSummaryIndex(params);
+  if (summaryIndex !== undefined) {
+    ctx.reasoningSummaryIndexByItemId.set(itemId, summaryIndex);
+  }
+}
+
 function handleReasoningSummaryTextDelta(ctx: AdapterContext, params: Record<string, unknown>): void {
   emitReasoningDelta(ctx, params, "item/reasoning/summaryTextDelta", "summary");
 }
@@ -769,7 +798,29 @@ function emitReasoningDelta(
   }
   const thinkingStartedAt = ctx.reasoningStartedAtByItemId.get(itemId) ?? ctx.observedAt;
   const previous = ctx.reasoningTextByItemId.get(itemId) ?? "";
-  const next = `${previous}${delta}`;
+  let separator = "";
+  if (reasoningDisplay === "summary" && previous.length > 0 && !previous.endsWith("\n")) {
+    if (ctx.reasoningSummaryNeedsSeparatorByItemId.has(itemId)) {
+      separator = "\n";
+      ctx.reasoningSummaryNeedsSeparatorByItemId.delete(itemId);
+    } else {
+      const summaryIndex = readSummaryIndex(params);
+      const previousIndex = ctx.reasoningSummaryIndexByItemId.get(itemId);
+      if (
+        summaryIndex !== undefined &&
+        previousIndex !== undefined &&
+        summaryIndex !== previousIndex
+      ) {
+        // Fallback when summaryPartAdded is missing but summaryIndex advances.
+        separator = "\n";
+      }
+    }
+  }
+  const summaryIndex = readSummaryIndex(params);
+  if (reasoningDisplay === "summary" && summaryIndex !== undefined) {
+    ctx.reasoningSummaryIndexByItemId.set(itemId, summaryIndex);
+  }
+  const next = `${previous}${separator}${delta}`;
   ctx.reasoningTextByItemId.set(itemId, next);
   ctx.reasoningDisplayByItemId.set(itemId, reasoningDisplay);
 
@@ -923,6 +974,8 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
     const reasoningDisplay = readReasoningDisplay(item) ?? ctx.reasoningDisplayByItemId.get(itemId);
     ctx.reasoningTextByItemId.delete(itemId);
     ctx.reasoningDisplayByItemId.delete(itemId);
+    ctx.reasoningSummaryIndexByItemId.delete(itemId);
+    ctx.reasoningSummaryNeedsSeparatorByItemId.delete(itemId);
     if (!ctx.reasoningStartedAtByItemId.has(itemId)) {
       ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
     }
@@ -2436,6 +2489,11 @@ function readDeltaText(params: Record<string, unknown>): string | undefined {
     return params.text;
   }
   return undefined;
+}
+
+function readSummaryIndex(params: Record<string, unknown>): number | undefined {
+  const value = params.summaryIndex ?? params.summary_index;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {

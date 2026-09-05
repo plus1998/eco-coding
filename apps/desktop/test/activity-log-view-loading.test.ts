@@ -11,7 +11,7 @@ import {
   resolveMinimumVisibleToolRunningState,
   splitThinkingCarouselLines,
 } from "../src/renderer/ActivityLogView";
-import { formatDuration, iconForToolName } from "../src/renderer/activity-log";
+import { formatDuration, iconForToolName, reasoningSummaryLabel } from "../src/renderer/activity-log";
 import { i18n } from "../src/renderer/i18n";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
@@ -1306,15 +1306,36 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   expect(completedHtml).toContain("运行了命令");
 });
 
-test("splitThinkingCarouselLines separates camel-cased Summary stages", () => {
+test("splitThinkingCarouselLines prefers newlines and sentence boundaries over camelCase", () => {
+  expect(
+    splitThinkingCarouselLines(
+      "Planning summary placement after tool outputs\nRefining summary and tool collapse logic",
+    ),
+  ).toEqual(["Planning summary placement after tool outputs", "Refining summary and tool collapse logic"]);
+  expect(splitThinkingCarouselLines("先定位事件合并。再检查 Feed 投影。")).toEqual([
+    "先定位事件合并。",
+    "再检查 Feed 投影。",
+  ]);
+  expect(splitThinkingCarouselLines("Done.Next stage starts")).toEqual(["Done.", "Next stage starts"]);
+  // No camelCase heuristic — glued TitleCase without punctuation stays one stage.
   expect(
     splitThinkingCarouselLines(
       "Planning summary placement after tool outputsRefining summary and tool collapse logic",
     ),
-  ).toEqual(["Planning summary placement after tool outputs", "Refining summary and tool collapse logic"]);
+  ).toEqual(["Planning summary placement after tool outputsRefining summary and tool collapse logic"]);
   expect(splitThinkingCarouselLines("HTTPServer remains one stage")).toEqual([
     "HTTPServer remains one stage",
   ]);
+  expect(splitThinkingCarouselLines("Ship iPhone build next")).toEqual(["Ship iPhone build next"]);
+});
+
+test("reasoningSummaryLabel separates adjacent bold summary stage titles", () => {
+  expect(reasoningSummaryLabel("**Planning ordered file reading****Confirming path**")).toBe(
+    "Planning ordered file reading\nConfirming path",
+  );
+  expect(reasoningSummaryLabel("**Planning ordered file reading**\n**Confirming path**")).toBe(
+    "Planning ordered file reading\nConfirming path",
+  );
 });
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {

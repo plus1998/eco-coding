@@ -2083,6 +2083,67 @@ test("dispatch stamps reasoningDisplay summary on summaryTextDelta and completed
   });
 });
 
+test("dispatch inserts newlines between summary parts on the same reasoning item", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/reasoning/summaryPartAdded", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_parts",
+      itemId: "item_summary_parts",
+      summaryIndex: 0,
+    });
+    adapter.dispatch("item/reasoning/summaryTextDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_parts",
+      itemId: "item_summary_parts",
+      summaryIndex: 0,
+      delta: "**Planning ordered file reading**",
+    });
+    adapter.dispatch("item/reasoning/summaryPartAdded", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_parts",
+      itemId: "item_summary_parts",
+      summaryIndex: 1,
+    });
+    adapter.dispatch("item/reasoning/summaryTextDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_parts",
+      itemId: "item_summary_parts",
+      summaryIndex: 1,
+      delta: "**Confirming smoke-skill file path**",
+    });
+  });
+
+  expect(events).toHaveLength(2);
+  expect(events[0]?.message).toBe("**Planning ordered file reading**");
+  expect(events[1]?.message).toBe(
+    "**Planning ordered file reading**\n**Confirming smoke-skill file path**",
+  );
+});
+
+test("dispatch inserts newlines when summaryIndex advances without summaryPartAdded", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/reasoning/summaryTextDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_index",
+      itemId: "item_summary_index",
+      summaryIndex: 0,
+      delta: "First stage",
+    });
+    adapter.dispatch("item/reasoning/summaryTextDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_index",
+      itemId: "item_summary_index",
+      summaryIndex: 1,
+      delta: "Second stage",
+    });
+  });
+
+  expect(events).toHaveLength(2);
+  expect(events[1]?.message).toBe("First stage\nSecond stage");
+});
+
 test("dispatch reads structured reasoning summary text on item completion", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });

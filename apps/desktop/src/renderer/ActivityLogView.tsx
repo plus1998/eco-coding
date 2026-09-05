@@ -3279,8 +3279,24 @@ function ShimmerText({ children }: { children: string }) {
 export function splitThinkingCarouselLines(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .flatMap((line) => line.replace(/([a-z0-9])([A-Z])/g, "$1\n$2").split("\n"))
+    .flatMap((line) => splitReasoningCarouselStageLine(line))
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+}
+
+/**
+ * Split one physical line into carousel stages.
+ * Prefer sentence boundaries (EN/CJK) when parts were glued without newlines —
+ * not camelCase, which falsely splits identifiers like iPhone.
+ */
+function splitReasoningCarouselStageLine(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return [];
+  }
+  return trimmed
+    .split(/(?<=[.!?。！？])\s*(?=[A-Z\u4e00-\u9fff])/u)
+    .map((part) => part.trim())
     .filter(Boolean);
 }
 

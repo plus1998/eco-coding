@@ -173,13 +173,17 @@ export function thinkingPreviewLine(text: string, max = 120): string {
 /**
  * Reasoning summary label — keeps natural line breaks so the carousel can
  * rotate one stage at a time. Strips markdown markers like the preview line
- * but does not flatten whitespace. Keeps a generous `maxLines` (default 20)
- * as a sanity bound against pathological inputs.
+ * but does not flatten whitespace. Adjacent bold stage titles (`**A****B**`)
+ * become separate lines (OpenAI often emits one bold title per summary part).
+ * Keeps a generous `maxLines` (default 20) as a sanity bound against
+ * pathological inputs.
  */
 export function reasoningSummaryLabel(text: string, maxLines = 20): string {
   const plain = text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
+    // Separate glued bold stage titles (`**A****B**`) before stripping markers.
+    .replace(/\*\*([^*]+)\*\*(?=\*\*)/g, "$1\n")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/^#+\s+/gm, "")
