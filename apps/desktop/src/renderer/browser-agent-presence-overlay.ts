@@ -3,58 +3,18 @@ import { resolveBrowserWebviewHostSlot } from "./browser-webview-layout";
 
 const CURSOR_CLASS = "browser-agent-cursor";
 const RIPPLE_CLASS = "browser-agent-click-ripple";
-const MIST_CLASS = "browser-agent-mist";
 const STRIP_CLASS = "browser-agent-light-strip";
+const HALO_CLASS = "browser-agent-halo";
+/** Legacy heavy mist layer — removed from the DOM if a previous version left one. */
+const LEGACY_MIST_CLASS = "browser-agent-mist";
 const ACTIVE_CLASS = "is-agent-active";
 const CLICKING_CLASS = "is-agent-clicking";
 const PULSE_CLASS = "is-breath-pulse";
 const MOVE_MS = 320;
 const DRAG_MOVE_MS = 90;
 const PULSE_MS = 920;
-const MIST_VERSION = "6";
-
-const MIST_COLORS = ["is-cyan", "is-violet", "is-magenta", "is-amber", "is-mint"] as const;
-const MIST_DRIFTS = ["is-drift-a", "is-drift-b", "is-drift-c"] as const;
-
-/**
- * Many small edge-hugging blobs. Positions are % of the overlay frame.
- * Keep them near the rim so the page center stays readable.
- */
-const MIST_SPECS: ReadonlyArray<{
-  left?: string;
-  top?: string;
-  right?: string;
-  bottom?: string;
-  w: number;
-  h: number;
-}> = [
-  // top
-  { left: "4%", top: "-3%", w: 88, h: 64 },
-  { left: "16%", top: "-4%", w: 72, h: 56 },
-  { left: "28%", top: "-2%", w: 80, h: 58 },
-  { left: "42%", top: "-5%", w: 70, h: 52 },
-  { left: "56%", top: "-3%", w: 78, h: 60 },
-  { left: "70%", top: "-4%", w: 74, h: 54 },
-  { left: "84%", top: "-2%", w: 82, h: 62 },
-  // right
-  { right: "-3%", top: "10%", w: 64, h: 86 },
-  { right: "-4%", top: "28%", w: 58, h: 78 },
-  { right: "-2%", top: "46%", w: 66, h: 84 },
-  { right: "-4%", top: "64%", w: 60, h: 76 },
-  { right: "-3%", top: "80%", w: 62, h: 72 },
-  // bottom
-  { left: "6%", bottom: "-3%", w: 84, h: 60 },
-  { left: "20%", bottom: "-4%", w: 70, h: 54 },
-  { left: "34%", bottom: "-2%", w: 76, h: 58 },
-  { left: "50%", bottom: "-5%", w: 68, h: 50 },
-  { left: "64%", bottom: "-3%", w: 80, h: 56 },
-  { left: "78%", bottom: "-4%", w: 72, h: 52 },
-  // left
-  { left: "-3%", top: "12%", w: 62, h: 82 },
-  { left: "-4%", top: "32%", w: 56, h: 74 },
-  { left: "-2%", top: "52%", w: 64, h: 80 },
-  { left: "-4%", top: "70%", w: 58, h: 70 },
-];
+/** Bump when the overlay DOM structure changes to force a rebuild. */
+const OVERLAY_VERSION = "8";
 
 type CursorState = {
   x: number;
@@ -75,71 +35,43 @@ function findOverlay(browserId: string): HTMLDivElement | null {
   return slot.querySelector<HTMLDivElement>(".browser-panel-overlay-host");
 }
 
-function ensureMist(overlay: HTMLDivElement): HTMLDivElement {
-  let mist = overlay.querySelector<HTMLDivElement>(`.${MIST_CLASS}`);
-  if (mist?.dataset.mistVersion === MIST_VERSION) {
-    return mist;
+function ensureHalo(overlay: HTMLDivElement): HTMLDivElement {
+  let halo = overlay.querySelector<HTMLDivElement>(`.${HALO_CLASS}`);
+  if (halo?.dataset.haloVersion === OVERLAY_VERSION) {
+    return halo;
   }
-  mist?.remove();
-  mist = document.createElement("div");
-  mist.className = MIST_CLASS;
-  mist.dataset.mistVersion = MIST_VERSION;
-  mist.setAttribute("aria-hidden", "true");
-  for (let i = 0; i < MIST_SPECS.length; i += 1) {
-    const spec = MIST_SPECS[i]!;
-    const blob = document.createElement("span");
-    const color = MIST_COLORS[i % MIST_COLORS.length]!;
-    const drift = MIST_DRIFTS[i % MIST_DRIFTS.length]!;
-    blob.className = `browser-agent-mist-blob ${color} ${drift} is-n${(i % 5) + 1}`;
-    blob.style.width = `${spec.w}px`;
-    blob.style.height = `${spec.h}px`;
-    if (spec.left !== undefined) blob.style.left = spec.left;
-    if (spec.right !== undefined) blob.style.right = spec.right;
-    if (spec.top !== undefined) blob.style.top = spec.top;
-    if (spec.bottom !== undefined) blob.style.bottom = spec.bottom;
-    // Stagger ambient motion / pulse phase.
-    blob.style.animationDelay = `${(-i * 0.37).toFixed(2)}s, ${(-i * 0.51).toFixed(2)}s, ${(-i * 0.23).toFixed(2)}s`;
-    mist.append(blob);
-  }
-  overlay.prepend(mist);
-  return mist;
+  halo?.remove();
+  halo = document.createElement("div");
+  halo.className = HALO_CLASS;
+  halo.dataset.haloVersion = OVERLAY_VERSION;
+  halo.setAttribute("aria-hidden", "true");
+  overlay.prepend(halo);
+  return halo;
 }
 
 function ensureLightStrip(overlay: HTMLDivElement): HTMLDivElement {
   let strip = overlay.querySelector<HTMLDivElement>(`.${STRIP_CLASS}`);
-  if (strip?.dataset.stripVersion === MIST_VERSION) {
+  if (strip?.dataset.stripVersion === OVERLAY_VERSION) {
     return strip;
   }
   strip?.remove();
   strip = document.createElement("div");
   strip.className = STRIP_CLASS;
-  strip.dataset.stripVersion = MIST_VERSION;
+  strip.dataset.stripVersion = OVERLAY_VERSION;
   strip.setAttribute("aria-hidden", "true");
-  // Aura = soft outer bloom; band = sharp holographic sweep ring.
-  strip.innerHTML =
-    '<span class="browser-agent-holo-aura"></span>' +
-    '<span class="browser-agent-holo-band"></span>' +
-    '<span class="browser-agent-holo-spinner" aria-hidden="true"></span>';
-  const mist = overlay.querySelector(`.${MIST_CLASS}`);
-  if (mist?.nextSibling) {
-    overlay.insertBefore(strip, mist.nextSibling);
-  } else if (mist) {
-    mist.after(strip);
-  } else {
-    overlay.prepend(strip);
-  }
+  overlay.append(strip);
   return strip;
 }
 
 function ensureCursor(overlay: HTMLDivElement): HTMLDivElement {
   let cursor = overlay.querySelector<HTMLDivElement>(`.${CURSOR_CLASS}`);
-  if (cursor?.dataset.cursorVersion === MIST_VERSION) {
+  if (cursor?.dataset.cursorVersion === OVERLAY_VERSION) {
     return cursor;
   }
   cursor?.remove();
   cursor = document.createElement("div");
   cursor.className = CURSOR_CLASS;
-  cursor.dataset.cursorVersion = MIST_VERSION;
+  cursor.dataset.cursorVersion = OVERLAY_VERSION;
   cursor.setAttribute("aria-hidden", "true");
   cursor.innerHTML = CURSOR_SVG;
   overlay.append(cursor);
@@ -207,7 +139,9 @@ function applyActive(browserId: string, options?: { pulse?: boolean }): void {
     return;
   }
   overlay.classList.add(ACTIVE_CLASS);
-  ensureMist(overlay);
+  // Drop the legacy heavy mist layer if an older overlay version left one.
+  overlay.querySelector(`.${LEGACY_MIST_CLASS}`)?.remove();
+  ensureHalo(overlay);
   ensureLightStrip(overlay);
   const cursor = ensureCursor(overlay);
   ensureRipple(overlay);
