@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import fs from "node:fs";
 import { ComputerUseMcpGateway } from "../src/main/computer-use-mcp-gateway";
-import { ECO_COMPUTER_USE_MCP_SERVER } from "../src/shared/computer-use";
 
 test("eco-computer-use-mcp-stdio packaging script still exists for debug", () => {
   const packagingStdio = ComputerUseMcpGateway.packagingStdioScriptPath();
@@ -12,16 +11,10 @@ test("eco-computer-use-mcp-stdio packaging script still exists for debug", () =>
 });
 
 test("resolveInjection uses shared HTTP MCP (no per-session Electron stdio)", async () => {
-  const calls: Array<{ threadId: string; toolName: string; toolInput?: Record<string, unknown> }> =
-    [];
-  const gateway = new ComputerUseMcpGateway(
-    () => ({ agentIntegrationEnabled: true, actionApprovalMode: "always_allow" }),
-    {
-      onToolCall: (input) => {
-        calls.push(input);
-      },
-    },
-  );
+  const gateway = new ComputerUseMcpGateway(() => ({
+    agentIntegrationEnabled: true,
+    actionApprovalMode: "always_allow",
+  }));
 
   try {
     const first = await gateway.resolveInjection({
@@ -58,13 +51,6 @@ test("resolveInjection uses shared HTTP MCP (no per-session Electron stdio)", as
       }),
     });
     expect(response.ok).toBe(true);
-    expect(calls).toEqual([
-      {
-        threadId: "thr_presence",
-        toolName: `mcp__${ECO_COMPUTER_USE_MCP_SERVER}__click`,
-        toolInput: { x: 10, y: 20 },
-      },
-    ]);
   } finally {
     await gateway.close();
   }

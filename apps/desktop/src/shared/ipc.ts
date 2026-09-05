@@ -238,7 +238,6 @@ export const IPC_CHANNELS = {
   computerUseSettingsSave: "computer-use-settings:save",
   computerUseDoctor: "computer-use:doctor",
   computerUsePermissionStatus: "computer-use:permission-status",
-  computerUsePresencePreview: "computer-use:presence-preview",
   webChatListGet: "web-chat-list:get",
   webChatListSave: "web-chat-list:save",
   sshBookmarksGet: "ssh-bookmarks:get",

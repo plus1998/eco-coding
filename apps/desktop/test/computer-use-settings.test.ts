@@ -6,6 +6,7 @@ import {
   ECO_COMPUTER_USE_MCP_SERVER,
   ECO_COMPUTER_USE_TOOLS,
   isComputerUseSettingsSnapshot,
+  isEcoComputerUseToolName,
   normalizeComputerUseSettingsSnapshot,
   requiresComputerUseActionApproval,
   shouldAutoApproveEcoComputerUseTools,
@@ -64,6 +65,16 @@ test("requiresComputerUseActionApproval only for mutating eco_computer_use tools
   expect(requiresComputerUseActionApproval("mcp__eco_agent_browser__agent_browser_click")).toBe(false);
   expect(requiresComputerUseActionApproval("click")).toBe(false);
   expect(requiresComputerUseActionApproval("Bash")).toBe(false);
+});
+
+test("isEcoComputerUseToolName matches eco server tools only", () => {
+  expect(isEcoComputerUseToolName("mcp__eco_computer_use__click")).toBe(true);
+  expect(isEcoComputerUseToolName("eco_computer_use")).toBe(true);
+  expect(isEcoComputerUseToolName("mcp__eco-computer-use__click")).toBe(true);
+  expect(isEcoComputerUseToolName("open-computer-use")).toBe(true);
+  expect(isEcoComputerUseToolName("mcp__eco_agent_browser__agent_browser_click")).toBe(false);
+  expect(isEcoComputerUseToolName("click")).toBe(false);
+  expect(isEcoComputerUseToolName(undefined)).toBe(false);
 });
 
 test("shouldAutoApproveEcoComputerUseTools follows actionApprovalMode", () => {

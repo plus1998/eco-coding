@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
  * Pack the desktop app for the current host OS/arch only.
+ *
+ * Pass `--dir` or `--unpacked` to skip installer artifacts (dmg / nsis / AppImage).
  */
 import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveElectronBuilderCliArgs } from "./pack-builder-args.mjs";
 import { githubGenericPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -19,14 +22,19 @@ const TARGETS = {
 };
 
 const key = `${process.platform}:${process.arch}`;
-const args = TARGETS[key];
+const hostArgs = TARGETS[key];
 const repository = resolveGitHubRepository();
-if (!args) {
+if (!hostArgs) {
   console.error(
     `Unsupported host for local packaging: ${process.platform} ${process.arch}. ` +
       `Supported: ${Object.keys(TARGETS).join(", ")}`,
   );
   process.exit(1);
+}
+
+const { unpacked, args } = resolveElectronBuilderCliArgs([...hostArgs, ...process.argv.slice(2)]);
+if (unpacked) {
+  console.log("Packing unpacked app only (--dir / --unpacked); skipping dmg/zip/installer artifacts.");
 }
 
 rmSync(path.join(desktopRoot, "release"), { recursive: true, force: true });

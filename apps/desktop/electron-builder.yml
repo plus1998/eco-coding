@@ -35,8 +35,6 @@ extraResources:
     to: open-computer-use
     filter:
       - "**/*"
-  - from: packaging/computer-use-presence-overlay.html
-    to: computer-use-presence-overlay.html
   - from: packaging/skills/
     to: skills
     filter:

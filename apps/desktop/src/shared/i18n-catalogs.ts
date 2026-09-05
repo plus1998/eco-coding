@@ -390,10 +390,8 @@ export const i18nCatalogs = {
       "settings.computerUse.runDoctor": "检查系统权限",
       "settings.computerUse.doctorOk": "系统权限检查通过",
       "settings.computerUse.doctorBusy": "正在检查…",
-      "settings.computerUse.previewPresence": "预览桌面效果",
-      "settings.computerUse.previewPresenceHint": "在真实桌面上显示彩虹边框与指针（约 15 秒后消失）",
       "settings.computerUse.doctorOnboardingHint":
-        "系统权限未就绪，已打开授权窗口。请在弹出窗口中完成 辅助功能 / 屏幕录制 授权。",
+        "系统权限未就绪。请在「Open Computer Use」窗口完成辅助功能授权；录屏请打开「Eco Coding」（不是包内的 Open Computer Use）。未签名本地包每次重装后需重新授权录屏。",
       "settings.computerUse.waitingForPermissions": "等待授权中，完成授权后会自动变为通过。",
       "settings.integrations": "集成",
       "settings.integrations.desc":
@@ -2502,11 +2500,8 @@ export const i18nCatalogs = {
       "settings.computerUse.runDoctor": "Check system permissions",
       "settings.computerUse.doctorOk": "System permission check passed",
       "settings.computerUse.doctorBusy": "Checking…",
-      "settings.computerUse.previewPresence": "Preview desktop effect",
-      "settings.computerUse.previewPresenceHint":
-        "Show the rainbow frame and pointer on the real desktop (clears after ~15s)",
       "settings.computerUse.doctorOnboardingHint":
-        "System permissions are not ready. The onboarding window has been opened — grant Accessibility / Screen Recording there.",
+        "System permissions are not ready. Grant Accessibility to Open Computer Use in its onboarding window; grant Screen Recording to Eco Coding (not the nested helper). Unsigned local builds need Screen Recording re-granted after each reinstall.",
       "settings.computerUse.waitingForPermissions":
         "Waiting for you to finish granting… the status updates automatically.",
       "settings.integrations": "Integrations",

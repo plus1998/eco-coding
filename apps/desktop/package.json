@@ -26,7 +26,7 @@
     "build:main": "bun run --cwd ../../packages/runtime bundle:pi-mcp-adapter && bun build src/main/index.ts --target=node --external electron --external electron-updater --external @anthropic-ai/claude-agent-sdk --external node-pty --external @napi-rs/keyring --external koffi --outdir dist/main && node scripts/verify-main-bundle.mjs",
     "build:demo-main": "bun build src/main/demo.ts --target=node --external electron --outdir dist/demo-main",
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",
-    "test:release": "bun test test/desktop-update-policy.test.ts test/desktop-update-banner-state.test.ts test/release-repository.test.ts test/after-pack-mac-sign.test.ts",
+    "test:release": "bun test test/desktop-update-policy.test.ts test/desktop-update-banner-state.test.ts test/release-repository.test.ts test/after-pack-mac-sign.test.ts test/pack-builder-args.test.ts",
     "typecheck:release": "bun run --cwd ../../packages/runtime bundle:pi-mcp-adapter && tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes --esModuleInterop --skipLibCheck --types node src/shared/desktop-update.ts src/main/desktop-update-policy.ts src/main/desktop-update-service.ts src/renderer/desktop-update-banner-state.ts",
     "postinstall": "electron-rebuild -f -w node-pty",
     "icons": "bun scripts/generate-icons.mjs",

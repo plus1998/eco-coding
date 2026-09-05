@@ -12,6 +12,8 @@ interface ComputerUseDoctorResult {
   onboardingLaunched: boolean;
   reason?: string;
   output?: string;
+  /** Diagnostics when the launched onboarding process failed or exited. */
+  onboardingError?: string;
 }
 
 interface ComputerUseSettingsPanelProps {
@@ -20,7 +22,6 @@ interface ComputerUseSettingsPanelProps {
   onSave: (settings: ComputerUseSettingsSnapshot) => Promise<void>;
   onRunDoctor?: () => Promise<ComputerUseDoctorResult>;
   onCheckPermissionStatus?: () => Promise<{ ok: boolean; missing: string[] }>;
-  onPreviewPresence?: () => Promise<void>;
 }
 
 const PERMISSION_POLL_INTERVAL_MS = 3_000;
@@ -33,14 +34,12 @@ export function ComputerUseSettingsPanel({
   onSave,
   onRunDoctor,
   onCheckPermissionStatus,
-  onPreviewPresence,
 }: ComputerUseSettingsPanelProps) {
   const { t } = useTranslation();
   const switchId = useId();
   const approvalId = useId();
   const [busy, setBusy] = useState(false);
   const [doctorBusy, setDoctorBusy] = useState(false);
-  const [previewBusy, setPreviewBusy] = useState(false);
   const [doctorMessage, setDoctorMessage] = useState<string | undefined>();
   const pollTimerRef = useRef<number | undefined>(undefined);
 
@@ -102,25 +101,13 @@ export function ComputerUseSettingsPanel({
         }
         return;
       }
-      setDoctorMessage(result.reason ?? result.output ?? t("settings.computerUse.agentUnknownReason"));
+      setDoctorMessage(
+        result.reason ?? result.onboardingError ?? result.output ?? t("settings.computerUse.agentUnknownReason"),
+      );
     } catch (error) {
       setDoctorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setDoctorBusy(false);
-    }
-  }
-
-  async function runPreview() {
-    if (!onPreviewPresence || previewBusy) {
-      return;
-    }
-    setPreviewBusy(true);
-    try {
-      await onPreviewPresence();
-    } catch (error) {
-      setDoctorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setPreviewBusy(false);
     }
   }
 
@@ -177,29 +164,16 @@ export function ComputerUseSettingsPanel({
         </p>
       ) : null}
 
-      {onRunDoctor || onPreviewPresence ? (
+      {onRunDoctor ? (
         <div className="browser-settings-section" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {onRunDoctor ? (
-            <button
-              type="button"
-              className="settings-secondary-button"
-              disabled={doctorBusy || busy}
-              onClick={() => void runDoctor()}
-            >
-              {doctorBusy ? t("settings.computerUse.doctorBusy") : t("settings.computerUse.runDoctor")}
-            </button>
-          ) : null}
-          {onPreviewPresence ? (
-            <button
-              type="button"
-              className="settings-secondary-button"
-              disabled={previewBusy || busy}
-              title={t("settings.computerUse.previewPresenceHint")}
-              onClick={() => void runPreview()}
-            >
-              {t("settings.computerUse.previewPresence")}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="settings-secondary-button"
+            disabled={doctorBusy || busy}
+            onClick={() => void runDoctor()}
+          >
+            {doctorBusy ? t("settings.computerUse.doctorBusy") : t("settings.computerUse.runDoctor")}
+          </button>
         </div>
       ) : null}
 

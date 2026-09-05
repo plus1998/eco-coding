@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 /**
- * Copy the host-platform open-computer-use native binary into packaging/open-computer-use
- * for electron-builder extraResources (avoid shipping every OS binary).
+ * Copy the host-platform open-computer-use native runtime into
+ * packaging/open-computer-use for electron-builder extraResources
+ * (avoid shipping every OS binary).
+ *
+ * macOS: must ship the whole "Open Computer Use.app" bundle (not the bare
+ * executable). The binary is signed as part of the bundle; running the bare
+ * executable outside the bundle is SIGKILLed by the system, and the
+ * app-agent proxy + TCC permission identity ("Open Computer Use") only work
+ * with the bundle. Layout mirrors the npm package: dist/Open Computer Use.app.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -49,19 +56,46 @@ if (!packageRoot) {
   process.exit(1);
 }
 
-const source = path.join(packageRoot, ...relative);
-if (!fs.existsSync(source)) {
-  console.error(`open-computer-use native binary not found at ${source}`);
-  process.exit(1);
+// Start clean so stale layouts (e.g. an old bare-binary copy) never shadow
+// the bundle.
+fs.rmSync(outDir, { recursive: true, force: true });
+fs.mkdirSync(outDir, { recursive: true });
+
+function copyRecursive(source, dest) {
+  fs.cpSync(source, dest, { recursive: true, dereference: false });
 }
 
-fs.mkdirSync(outDir, { recursive: true });
-const destName = process.platform === "win32" ? "open-computer-use.exe" : "open-computer-use";
-const dest = path.join(outDir, destName);
-fs.copyFileSync(source, dest);
-try {
-  fs.chmodSync(dest, 0o755);
-} catch {
-  // Windows
+if (process.platform === "darwin") {
+  const appBundleSource = path.join(packageRoot, "dist", "Open Computer Use.app");
+  if (!fs.existsSync(appBundleSource)) {
+    console.error(`open-computer-use app bundle not found at ${appBundleSource}`);
+    process.exit(1);
+  }
+  const appBundleDest = path.join(outDir, "dist", "Open Computer Use.app");
+  fs.mkdirSync(path.dirname(appBundleDest), { recursive: true });
+  copyRecursive(appBundleSource, appBundleDest);
+  const executable = path.join(appBundleDest, "Contents", "MacOS", "OpenComputerUse");
+  try {
+    fs.chmodSync(executable, 0o755);
+  } catch {
+    // ignore
+  }
+  console.log(`Prepared ${appBundleDest} from ${appBundleSource}`);
+} else {
+  const source = path.join(packageRoot, ...relative);
+  if (!fs.existsSync(source)) {
+    console.error(`open-computer-use native binary not found at ${source}`);
+    process.exit(1);
+  }
+  const destName = process.platform === "win32" ? "open-computer-use.exe" : "open-computer-use";
+  const dest = path.join(outDir, destName);
+  fs.copyFileSync(source, dest);
+  if (process.platform !== "win32") {
+    try {
+      fs.chmodSync(dest, 0o755);
+    } catch {
+      // ignore
+    }
+  }
+  console.log(`Prepared ${dest} from ${source}`);
 }
-console.log(`Prepared ${dest} from ${source}`);

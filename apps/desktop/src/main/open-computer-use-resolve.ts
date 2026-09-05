@@ -2,11 +2,18 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { ensureNativeBinaryExecutable } from "./agent-browser-resolve";
+import {
+  installPackagedOpenComputerUse,
+  openComputerUseAppBundleFromBinary,
+  shouldPreferInstalledOpenComputerUse,
+} from "./open-computer-use-install";
 
 export interface OpenComputerUseResolveResult {
   available: boolean;
   /** Native open-computer-use binary (not the Node launcher). */
   binaryPath?: string;
+  /** macOS .app bundle path when running from Open Computer Use.app. */
+  appBundlePath?: string;
   /** Package root containing bin/ + dist/ (when resolved from node_modules). */
   packageRoot?: string;
   reason?: string;
@@ -85,9 +92,24 @@ function packageRootCandidates(): string[] {
   return candidates;
 }
 
+function withAppBundle(
+  result: OpenComputerUseResolveResult,
+): OpenComputerUseResolveResult {
+  if (!result.available || !result.binaryPath || result.appBundlePath) {
+    return result;
+  }
+  const appBundlePath = openComputerUseAppBundleFromBinary(result.binaryPath);
+  return appBundlePath ? { ...result, appBundlePath } : result;
+}
+
 /**
  * Resolve the platform-native open-computer-use binary.
- * Prefer extraResources (`process.resourcesPath/open-computer-use/...`) then node_modules.
+ * On packaged macOS, copy the helper out of Eco Coding.app into Application
+ * Support first — nested Resources helpers cannot receive Screen Recording TCC.
+ * Otherwise prefer extraResources then node_modules.
+ * On macOS prefer the in-bundle executable: the bare executable outside the
+ * ".app" bundle is SIGKILLed by the system (broken signing context), and the
+ * app-agent proxy + TCC identity only work with the bundle.
  */
 export function resolveOpenComputerUseBinary(
   platform: NodeJS.Platform = process.platform,
@@ -101,18 +123,40 @@ export function resolveOpenComputerUseBinary(
     };
   }
 
+  if (platform === "darwin" && shouldPreferInstalledOpenComputerUse()) {
+    try {
+      const installed = installPackagedOpenComputerUse();
+      if (installed && ensureNativeBinaryExecutable(installed.binaryPath, platform)) {
+        return withAppBundle({
+          available: true,
+          binaryPath: installed.binaryPath,
+          appBundlePath: installed.appPath,
+          packageRoot: path.dirname(installed.appPath),
+        });
+      }
+    } catch (error) {
+      return {
+        available: false,
+        reason: `无法安装 Open Computer Use 到用户目录（录屏授权需要独立 .app）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
+
   const tried: string[] = [];
   for (const root of packageRootCandidates()) {
     const nested = path.join(root, ...relative);
     const flat = path.join(root, packagedBinaryName(platform));
-    for (const candidate of [flat, nested]) {
+    const candidates = platform === "darwin" ? [nested, flat] : [flat, nested];
+    for (const candidate of candidates) {
       tried.push(candidate);
       if (ensureNativeBinaryExecutable(candidate, platform)) {
-        return {
+        return withAppBundle({
           available: true,
           binaryPath: candidate,
           packageRoot: root,
-        };
+        });
       }
     }
   }
@@ -125,11 +169,15 @@ export function resolveOpenComputerUseBinary(
     try {
       const entries = fs.readdirSync(root);
       for (const entry of entries) {
+        // A bare macOS executable outside the ".app" bundle is unusable (SIGKILL).
+        if (platform === "darwin" && entry === packagedBinaryName(platform)) {
+          continue;
+        }
         if (entry === packagedBinaryName(platform) || entry === "OpenComputerUse") {
           const candidate = path.join(root, entry);
           tried.push(candidate);
           if (ensureNativeBinaryExecutable(candidate, platform)) {
-            return { available: true, binaryPath: candidate, packageRoot: root };
+            return withAppBundle({ available: true, binaryPath: candidate, packageRoot: root });
           }
         }
       }

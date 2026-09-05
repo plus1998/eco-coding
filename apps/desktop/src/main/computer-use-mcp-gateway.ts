@@ -18,6 +18,7 @@ import type { McpSdkConfig } from "../shared/mcp";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
 import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { openComputerUseAppBundleFromBinary } from "./open-computer-use-install";
 import {
   resolveOpenComputerUseBinary,
   type OpenComputerUseResolveResult,
@@ -26,6 +27,63 @@ import { SharedMcpStdioUpstream } from "./shared-mcp-stdio-upstream";
 
 const require = createRequire(import.meta.url);
 const CONTROL_SECRET_HEADER = "X-Eco-Computer-Use-Control-Secret";
+
+function tryElectronDesktopApis(): {
+  desktopCapturer?: { getSources: (opts: { types: string[] }) => Promise<unknown> };
+  shell?: { openExternal: (url: string) => Promise<void> };
+  systemPreferences?: { getMediaAccessStatus: (mediaType: string) => string };
+} | undefined {
+  try {
+    return require("electron") as {
+      desktopCapturer?: { getSources: (opts: { types: string[] }) => Promise<unknown> };
+      shell?: { openExternal: (url: string) => Promise<void> };
+      systemPreferences?: { getMediaAccessStatus: (mediaType: string) => string };
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Screen Recording for MCP is attributed to Eco (stdio parent), not the helper. */
+export function getEcoScreenRecordingStatus(): "granted" | "missing" | "unknown" {
+  const electron = tryElectronDesktopApis();
+  const status = electron?.systemPreferences?.getMediaAccessStatus?.("screen");
+  if (status === "granted") {
+    return "granted";
+  }
+  if (status === "denied" || status === "restricted" || status === "not-determined") {
+    return "missing";
+  }
+  return "unknown";
+}
+
+/**
+ * Register Eco Coding in the Screen Recording list and open the privacy pane.
+ * Nested Open Computer Use.app cannot hold Screen Recording for Eco-spawned MCP.
+ */
+export async function ensureEcoScreenRecordingPrompt(): Promise<void> {
+  const electron = tryElectronDesktopApis();
+  if (!electron || process.platform !== "darwin") {
+    return;
+  }
+  try {
+    await electron.desktopCapturer?.getSources?.({ types: ["screen"] });
+  } catch {
+    // Prompt / registration best-effort.
+  }
+  const urls = [
+    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  ];
+  for (const url of urls) {
+    try {
+      await electron.shell?.openExternal?.(url);
+      break;
+    } catch {
+      // try fallback
+    }
+  }
+}
 
 export interface ComputerUseMcpInjection {
   enabled: boolean;
@@ -46,15 +104,6 @@ export interface ComputerUseFeatureAvailability {
 }
 
 export type ComputerUseSettingsGetter = () => ComputerUseSettingsSnapshot;
-
-export type ComputerUseMcpGatewayDeps = {
-  /** Fired when a tools/call is bound to a thread (presence overlay). */
-  onToolCall?: (input: {
-    threadId: string;
-    toolName: string;
-    toolInput?: Record<string, unknown>;
-  }) => void;
-};
 
 const PERMISSION_STATUS_TIMEOUT_MS = 15_000;
 
@@ -120,6 +169,10 @@ function runBinaryCommand(
  * Fast permission check via `permission-status`.
  * Unlike `doctor`, this command never launches the onboarding window and always
  * exits 0, so it is safe to poll while the user is granting permissions.
+ *
+ * On macOS, Screen Recording for Eco-spawned MCP is attributed to Eco Coding
+ * (responsible process). Merge Eco's media-access status into screenRecording so
+ * granting only the nested helper cannot false-pass / false-fail the gate.
  */
 export async function probeOpenComputerUsePermissionStatus(
   binaryPath: string,
@@ -138,7 +191,7 @@ export async function probeOpenComputerUsePermissionStatus(
     return { ok: false, missing: [], reason: "open-computer-use permission-status timed out", output };
   }
   const accessibility = /accessibility=(granted|missing)/.exec(output)?.[1];
-  const screenRecording = /screenRecording=(granted|missing)/.exec(output)?.[1];
+  let screenRecording = /screenRecording=(granted|missing)/.exec(output)?.[1];
   if (!accessibility || !screenRecording) {
     return {
       ok: false,
@@ -149,13 +202,25 @@ export async function probeOpenComputerUsePermissionStatus(
       output,
     };
   }
+
+  let mergedOutput = output;
+  if (process.platform === "darwin") {
+    const ecoScreen = getEcoScreenRecordingStatus();
+    if (ecoScreen !== "unknown") {
+      // MCP stdio child → Eco is responsible for Screen Recording.
+      screenRecording = ecoScreen === "granted" ? "granted" : "missing";
+      mergedOutput = `${output}; ecoScreenRecording=${ecoScreen}`;
+    }
+  }
+
   const missing: string[] = [];
   if (accessibility === "missing") missing.push("accessibility");
   if (screenRecording === "missing") missing.push("screenRecording");
-  return { ok: missing.length === 0, missing, output };
+  return { ok: missing.length === 0, missing, output: mergedOutput };
 }
 
 let onboardingChild: ChildProcess | undefined;
+let onboardingError: string | undefined;
 
 /**
  * Launch the package's built-in permission onboarding window
@@ -163,21 +228,59 @@ let onboardingChild: ChildProcess | undefined;
  * permissions or closes the window, so do not await its exit. The onboarding
  * window itself guides the user into the right System Settings panes, so we
  * never open `x-apple.systempreferences` URLs manually.
+ *
+ * On macOS prefer `open -n -a <Open Computer Use.app>` so LaunchServices owns
+ * the process: spawning the Mach-O as Eco's child attributes Screen Recording
+ * TCC to Eco Coding instead of the helper.
  */
 export function launchOpenComputerUseOnboarding(
   binaryPath: string,
+  appBundlePath?: string,
 ): { launched: boolean; reason?: string } {
+  stopOpenComputerUseOnboarding();
+  onboardingError = undefined;
   try {
-    const child = spawn(binaryPath, ["doctor"], {
-      stdio: "ignore",
-      detached: true,
-      windowsHide: true,
+    const bundle =
+      appBundlePath?.trim() || openComputerUseAppBundleFromBinary(binaryPath);
+    const child =
+      process.platform === "darwin" && bundle
+        ? spawn("open", ["-n", "-a", bundle, "--args", "doctor"], {
+            stdio: ["ignore", "ignore", "pipe"],
+            detached: true,
+          })
+        : spawn(binaryPath, ["doctor"], {
+            stdio: ["ignore", "ignore", "pipe"],
+            detached: true,
+            windowsHide: true,
+          });
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+      if (stderr.length > 4_000) {
+        stderr = stderr.slice(-4_000);
+      }
     });
-    child.on("error", () => {
-      // Onboarding spawn failures surface via the next permission probe.
+    child.on("error", (error) => {
+      onboardingError = `无法启动授权窗口：${error.message}`;
+    });
+    child.on("close", (code) => {
+      if (onboardingChild !== child) {
+        return;
+      }
+      onboardingChild = undefined;
+      const tail = stderr.trim().slice(-500);
+      // `open` exits immediately after handing off to LaunchServices (code 0).
+      if (process.platform === "darwin" && bundle) {
+        return;
+      }
+      if (code !== 0 && tail) {
+        onboardingError = `授权窗口已退出（退出码 ${code}）：${tail}`;
+      }
     });
     child.unref();
     onboardingChild = child;
+    // Fire-and-forget: register Eco in Screen Recording + open the privacy pane.
+    void ensureEcoScreenRecordingPrompt();
     return { launched: true };
   } catch (error) {
     return {
@@ -185,6 +288,10 @@ export function launchOpenComputerUseOnboarding(
       reason: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export function getOpenComputerUseOnboardingError(): string | undefined {
+  return onboardingError;
 }
 
 export function stopOpenComputerUseOnboarding(): void {
@@ -235,10 +342,7 @@ export class ComputerUseMcpGateway {
   private controlPort: number | undefined;
   private disposed = false;
 
-  constructor(
-    private readonly getSettings: ComputerUseSettingsGetter,
-    private readonly deps: ComputerUseMcpGatewayDeps = {},
-  ) {}
+  constructor(private readonly getSettings: ComputerUseSettingsGetter) {}
 
   /** Test/diag: packaging script still ships for offline debugging. */
   static packagingStdioScriptPath(): string {
@@ -314,11 +418,11 @@ export class ComputerUseMcpGateway {
     }
     const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
     if (!probe.ok) {
-      const launch = launchOpenComputerUseOnboarding(resolved.binaryPath);
+      const launch = launchOpenComputerUseOnboarding(resolved.binaryPath, resolved.appBundlePath);
       return {
         available: false,
         reason: launch.launched
-          ? "系统权限未就绪，已打开授权窗口，请在弹出窗口中完成授权。"
+          ? "系统权限未就绪：请给「Open Computer Use」开辅助功能，给「Eco Coding」开录屏（不要授权包内嵌套的 helper）。"
           : (probe.reason ?? "系统权限未就绪"),
         onboardingLaunched: launch.launched,
         ...(probe.output ? { doctorOutput: probe.output } : {}),
@@ -424,14 +528,6 @@ export class ComputerUseMcpGateway {
     await this.upstream.ensure(resolved.binaryPath, ["mcp"]);
   }
 
-  private resolveThreadId(authToken: string | undefined): string {
-    const authenticated = this.auth.resolve(authToken);
-    if (authenticated) {
-      return authenticated.threadId;
-    }
-    return "global";
-  }
-
   private async handleControl(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (this.disposed) {
       res.writeHead(503, { "Content-Type": "application/json" });
@@ -459,16 +555,7 @@ export class ComputerUseMcpGateway {
               ),
             };
           },
-          callTool: async ({ name, arguments: args, authToken }) => {
-            const threadId = this.resolveThreadId(authToken);
-            this.deps.onToolCall?.({
-              threadId,
-              toolName:
-                name.includes("eco_computer_use") || name.startsWith("mcp__")
-                  ? name
-                  : `mcp__${ECO_COMPUTER_USE_MCP_SERVER}__${name}`,
-              toolInput: args,
-            });
+          callTool: async ({ name, arguments: args }) => {
             await this.ensureUpstream();
             const result = await this.upstream.callTool(name, args);
             return result && typeof result === "object"
@@ -522,21 +609,6 @@ export class ComputerUseMcpGateway {
         if (!name) {
           throw new Error("tool-started requires name");
         }
-        const threadId =
-          typeof body.threadId === "string" && body.threadId.trim()
-            ? body.threadId.trim()
-            : "global";
-        const toolInput =
-          body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
-            ? (body.arguments as Record<string, unknown>)
-            : undefined;
-        this.deps.onToolCall?.({
-          threadId,
-          toolName: name.includes("eco_computer_use") || name.startsWith("mcp__")
-            ? name
-            : `mcp__${ECO_COMPUTER_USE_MCP_SERVER}__${name}`,
-          ...(toolInput ? { toolInput } : {}),
-        });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;

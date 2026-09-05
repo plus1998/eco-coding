@@ -118,6 +118,22 @@ function stripToolLeafName(toolName: string): string {
 }
 
 /**
+ * Broad match for any Computer Use tool name (eco server / upstream CLI naming).
+ */
+export function isEcoComputerUseToolName(toolName: string | undefined): boolean {
+  const name = toolName?.trim().toLowerCase() ?? "";
+  if (!name) return false;
+  return (
+    name.includes("eco_computer_use") ||
+    name.includes("eco-computer-use") ||
+    name.includes("open_computer_use") ||
+    name.includes("open-computer-use") ||
+    name.includes("mcp__eco_computer_use") ||
+    name.includes("mcp__eco-computer-use")
+  );
+}
+
+/**
  * Mutating Computer Use tools gated by actionApprovalMode.
  * list_apps / get_app_state are observation-only and never require approval.
  */

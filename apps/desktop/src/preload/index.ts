@@ -627,14 +627,12 @@ const api = {
     onboardingLaunched: boolean;
     reason?: string;
     output?: string;
+    onboardingError?: string;
   }> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUseDoctor);
   },
   checkComputerUsePermissionStatus(): Promise<{ ok: boolean; missing: string[] }> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUsePermissionStatus);
-  },
-  previewComputerUsePresence(): Promise<{ ok: boolean }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.computerUsePresencePreview);
   },
   getIntegrationAvailability(): Promise<IntegrationAvailabilitySnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.integrationAvailabilityGet);
