@@ -1,4 +1,4 @@
-import { Monitor, ChevronDown } from "lucide-react";
+import { AlertTriangle, CheckCircle, ChevronDown, Info, Monitor } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -14,6 +14,11 @@ interface ComputerUseDoctorResult {
   output?: string;
   /** Diagnostics when the launched onboarding process failed or exited. */
   onboardingError?: string;
+}
+
+interface DoctorStatus {
+  kind: "ok" | "error";
+  text: string;
 }
 
 interface ComputerUseSettingsPanelProps {
@@ -40,7 +45,7 @@ export function ComputerUseSettingsPanel({
   const approvalId = useId();
   const [busy, setBusy] = useState(false);
   const [doctorBusy, setDoctorBusy] = useState(false);
-  const [doctorMessage, setDoctorMessage] = useState<string | undefined>();
+  const [doctorStatus, setDoctorStatus] = useState<DoctorStatus | undefined>();
   const pollTimerRef = useRef<number | undefined>(undefined);
 
   function stopPermissionPolling() {
@@ -63,11 +68,11 @@ export function ComputerUseSettingsPanel({
     try {
       await onSave(next);
       stopPermissionPolling();
-      setDoctorMessage(undefined);
+      setDoctorStatus(undefined);
     } catch (error) {
       // Master switch on while permissions are missing throws with guidance;
       // surface it here (the onboarding window is opened by the main process).
-      setDoctorMessage(error instanceof Error ? error.message : String(error));
+      setDoctorStatus({ kind: "error", text: error instanceof Error ? error.message : String(error) });
     } finally {
       setBusy(false);
     }
@@ -82,34 +87,40 @@ export function ComputerUseSettingsPanel({
     try {
       const result = await onRunDoctor();
       if (result.ok) {
-        setDoctorMessage(t("settings.computerUse.doctorOk"));
+        setDoctorStatus({ kind: "ok", text: t("settings.computerUse.doctorOk") });
         return;
       }
       if (result.onboardingLaunched) {
-        setDoctorMessage(
-          `${t("settings.computerUse.doctorOnboardingHint")} ${t("settings.computerUse.waitingForPermissions")}`,
-        );
+        setDoctorStatus({
+          kind: "error",
+          text: `${t("settings.computerUse.doctorOnboardingHint")} ${t("settings.computerUse.waitingForPermissions")}`,
+        });
         if (onCheckPermissionStatus) {
           pollTimerRef.current = window.setInterval(() => {
             void onCheckPermissionStatus().then((status) => {
               if (status.ok) {
                 stopPermissionPolling();
-                setDoctorMessage(t("settings.computerUse.doctorOk"));
+                setDoctorStatus({ kind: "ok", text: t("settings.computerUse.doctorOk") });
               }
             });
           }, PERMISSION_POLL_INTERVAL_MS);
         }
         return;
       }
-      setDoctorMessage(
-        result.reason ?? result.onboardingError ?? result.output ?? t("settings.computerUse.agentUnknownReason"),
-      );
+      setDoctorStatus({
+        kind: "error",
+        text:
+          result.reason ?? result.onboardingError ?? result.output ?? t("settings.computerUse.agentUnknownReason"),
+      });
     } catch (error) {
-      setDoctorMessage(error instanceof Error ? error.message : String(error));
+      setDoctorStatus({ kind: "error", text: error instanceof Error ? error.message : String(error) });
     } finally {
       setDoctorBusy(false);
     }
   }
+
+  const unavailableText = t("settings.computerUse.statusUnavailable", { reason: unavailableReason });
+  const status = doctorStatus ?? (unavailable ? { kind: "error" as const, text: unavailableText } : undefined);
 
   return (
     <div className="browser-settings">
@@ -117,10 +128,6 @@ export function ComputerUseSettingsPanel({
         <h1>{t("settings.computerUse")}</h1>
         <p className="settings-page-desc">{t("settings.computerUse.pageDesc")}</p>
       </header>
-
-      <p className="browser-settings-error" role="note">
-        {t("settings.computerUse.sharedDesktopWarning")}
-      </p>
 
       <section className="browser-settings-card browser-settings-master" aria-labelledby={switchId}>
         <div className="browser-settings-master-glyph" aria-hidden>
@@ -152,28 +159,36 @@ export function ComputerUseSettingsPanel({
         </label>
       </section>
 
-      {unavailable ? (
-        <p className="browser-settings-error" role="status">
-          {t("settings.computerUse.statusUnavailable", { reason: unavailableReason })}
-        </p>
-      ) : null}
+      <p className="computer-use-note" role="note">
+        <Info size={13} aria-hidden />
+        {t("settings.computerUse.sharedDesktopWarning")}
+      </p>
 
-      {doctorMessage ? (
-        <p className="browser-settings-error" role="status">
-          {doctorMessage}
-        </p>
-      ) : null}
-
-      {onRunDoctor ? (
-        <div className="browser-settings-section" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="settings-secondary-button"
-            disabled={doctorBusy || busy}
-            onClick={() => void runDoctor()}
-          >
-            {doctorBusy ? t("settings.computerUse.doctorBusy") : t("settings.computerUse.runDoctor")}
-          </button>
+      {status || onRunDoctor ? (
+        <div className="computer-use-status">
+          {status ? (
+            <div
+              className={
+                status.kind === "ok"
+                  ? "computer-use-alert computer-use-alert-ok"
+                  : "computer-use-alert computer-use-alert-error"
+              }
+              role="status"
+            >
+              {status.kind === "ok" ? <CheckCircle size={14} aria-hidden /> : <AlertTriangle size={14} aria-hidden />}
+              <p>{status.text}</p>
+            </div>
+          ) : null}
+          {onRunDoctor ? (
+            <button
+              type="button"
+              className="settings-secondary-button"
+              disabled={doctorBusy || busy}
+              onClick={() => void runDoctor()}
+            >
+              {doctorBusy ? t("settings.computerUse.doctorBusy") : t("settings.computerUse.runDoctor")}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
