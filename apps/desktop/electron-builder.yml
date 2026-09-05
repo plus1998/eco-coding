@@ -22,6 +22,8 @@ asarUnpack:
   # pi-mcp-adapter OAuth credential store (external native binding).
   - "**/node_modules/@napi-rs/keyring/**"
   - "**/node_modules/@napi-rs/keyring-*/**"
+  # Win32 Job Object FFI for ACP process-tree cleanup (Zed-aligned).
+  - "**/node_modules/koffi/**"
 
 # Platform agent-browser native binary for CDP-driven Agent tools.
 extraResources:

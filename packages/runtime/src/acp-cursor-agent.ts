@@ -2,17 +2,21 @@ import {
   type ChildProcess,
   execFileSync,
   type SpawnOptions,
-  spawn,
 } from "node:child_process";
 import { existsSync as defaultExistsSync } from "node:fs";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import {
+  disposeAllManagedProcesses,
+  getManagedProcess,
+  type ManagedProcess,
+  type SpawnManagedProcessOptions,
+  resetManagedProcessesForTests,
+  spawnManagedProcess,
+} from "./managed-process.js";
 
 /** Cursor ACP entry — never `--print` / stream-json. */
 export const CURSOR_ACP_ARGS = ["acp"] as const;
-
-/** Root PIDs of Cursor ACP trees spawned by this process (cmd/agent wrapper). */
-const trackedCursorAcpRootPids = new Set<number>();
 
 export type ResolveCursorAgentExecutableOptions = {
   /** Test seam for HOME candidate probing. */
@@ -28,6 +32,11 @@ export type SpawnCursorAcpOptions = {
   cwd?: string;
   /** Test seam — defaults to `node:child_process.spawn`. */
   spawnFn?: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+  /** Test seams for Job / process-group ownership. */
+  managed?: Pick<
+    SpawnManagedProcessOptions,
+    "platform" | "createJob" | "killFn" | "execFileSyncFn" | "posixGraceMs" | "log"
+  >;
 };
 
 const CURSOR_ACP_STDERR_LIMIT = 32 * 1024;
@@ -181,13 +190,8 @@ export type KillProcessTreeOptions = {
 };
 
 /**
- * Kill a process and its descendants.
- *
- * On Windows, `child.kill()` only terminates the direct spawn target (often
- * `cmd.exe` wrapping `agent.cmd`), leaving `powershell` + `node … index.js acp`
- * (and MCP children) orphaned. `taskkill /T /F` tears down the whole tree.
- *
- * Only call this with PIDs Eco itself spawned — never scan-and-kill by command line.
+ * @deprecated Prefer {@link killChildProcessTree} / ManagedProcess.dispose.
+ * Kept for tests that assert taskkill / killpg argument shapes.
  */
 export function killProcessTree(pid: number, options: KillProcessTreeOptions = {}): void {
   if (!Number.isInteger(pid) || pid <= 0) {
@@ -218,41 +222,44 @@ export function killProcessTree(pid: number, options: KillProcessTreeOptions = {
   }
 }
 
-/** Kill the ChildProcess handle and its full Windows/POSIX process tree. */
+/**
+ * Kill an ACP child and its full process tree (Job / process group / taskkill).
+ * Uses the ManagedProcess registered at spawn when present.
+ */
 export function killChildProcessTree(
   child: ChildProcess,
   options: KillProcessTreeOptions = {},
 ): void {
+  const managed = getManagedProcess(child);
+  if (managed) {
+    managed.dispose();
+    return;
+  }
+  // Legacy / test fakes without ManagedProcess registration.
   const pid = child.pid;
   if (typeof pid === "number" && pid > 0) {
     killProcessTree(pid, options);
-    trackedCursorAcpRootPids.delete(pid);
   }
   try {
     if (!child.killed) {
       child.kill("SIGKILL");
     }
   } catch {
-    // Process may already be gone.
+    // process may already be gone
   }
 }
 
 /**
- * Kill every Cursor ACP root this process still tracks (spawn handles).
- * Does not scan the machine for other programs' `agent acp` processes.
+ * Dispose every Cursor ACP tree this process still tracks (app quit).
+ * Does not scan the machine for other programs' agents.
  */
-export function killTrackedCursorAcpProcesses(options: KillProcessTreeOptions = {}): number {
-  const pids = [...trackedCursorAcpRootPids];
-  trackedCursorAcpRootPids.clear();
-  for (const pid of pids) {
-    killProcessTree(pid, options);
-  }
-  return pids.length;
+export function killTrackedCursorAcpProcesses(_options: KillProcessTreeOptions = {}): number {
+  return disposeAllManagedProcesses();
 }
 
-/** Test seam — reset tracked ACP root PIDs between cases. */
+/** Test seam — reset tracked managed ACP processes between cases. */
 export function resetTrackedCursorAcpPidsForTests(): void {
-  trackedCursorAcpRootPids.clear();
+  resetManagedProcessesForTests();
 }
 
 export function spawnCursorAcpProcess(options: SpawnCursorAcpOptions = {}): ChildProcess {
@@ -261,30 +268,41 @@ export function spawnCursorAcpProcess(options: SpawnCursorAcpOptions = {}): Chil
   const executable = resolveCursorAgentExecutable(options.executable, {
     env: { ...process.env, ...(options.env ?? {}) },
   });
-  const spawnFn = options.spawnFn ?? spawn;
   const target = wrapForWindowsShellScript(executable, CURSOR_ACP_ARGS);
-  const child = spawnFn(target.command, target.args, {
+  const managed = spawnManagedProcess({
+    command: target.command,
+    args: target.args,
     ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     env: { ...process.env, ...options.env },
-    // Drain stderr into a bounded, redacted diagnostic buffer. Leaving a pipe
-    // unread can block Cursor; ignoring it hides provider/session failures.
     stdio: ["pipe", "pipe", "pipe"],
     ...(target.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+    ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
+    log:
+      options.managed?.log ??
+      ((line) => {
+        process.stderr.write(`${line}\n`);
+      }),
+    ...(options.managed?.platform !== undefined ? { platform: options.managed.platform } : {}),
+    ...(options.managed?.createJob !== undefined ? { createJob: options.managed.createJob } : {}),
+    ...(options.managed?.killFn ? { killFn: options.managed.killFn } : {}),
+    ...(options.managed?.execFileSyncFn ? { execFileSyncFn: options.managed.execFileSyncFn } : {}),
+    ...(options.managed?.posixGraceMs !== undefined
+      ? { posixGraceMs: options.managed.posixGraceMs }
+      : {}),
   });
+  const child = managed.child;
   captureCursorAcpDiagnostics(child);
   // Spawn failures (e.g. ENOENT when Cursor is not installed) surface as an
   // async `error` event; without at least one listener the Electron main
   // process dies with an uncaught exception. This listener makes the event
   // safe to consume later via cursorAcpSpawnError().
   child.on("error", () => {});
-  const pid = child.pid;
-  if (typeof pid === "number" && pid > 0) {
-    trackedCursorAcpRootPids.add(pid);
-    child.once("exit", () => {
-      trackedCursorAcpRootPids.delete(pid);
-    });
-  }
   return child;
+}
+
+/** Return the ManagedProcess for an ACP child when spawn registered one. */
+export function getCursorAcpManagedProcess(child: ChildProcess): ManagedProcess | undefined {
+  return getManagedProcess(child);
 }
 
 /**

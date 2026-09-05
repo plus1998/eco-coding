@@ -138,6 +138,7 @@ describe("wrapForWindowsShellScript", () => {
 
 describe("spawnCursorAcpProcess", () => {
   afterEach(() => {
+    resetTrackedCursorAcpPidsForTests();
     mock.restore();
   });
 
@@ -158,6 +159,7 @@ describe("spawnCursorAcpProcess", () => {
       executable: "/bin/eco-fake-agent",
       cwd: "/tmp/ws",
       spawnFn,
+      managed: { platform: "linux", createJob: () => null, posixGraceMs: 0 },
     });
 
     expect(child).toBe(fakeChild);
@@ -167,6 +169,7 @@ describe("spawnCursorAcpProcess", () => {
     expect(calls[0]?.args).not.toContain("--print");
     expect(calls[0]?.args.some((a) => a.includes("stream-json"))).toBe(false);
     expect(calls[0]?.options.stdio).toEqual(["pipe", "pipe", "pipe"]);
+    expect(calls[0]?.options.detached).toBe(true);
   });
 
   test("captures bounded redacted stderr and process exit diagnostics", () => {
@@ -180,6 +183,7 @@ describe("spawnCursorAcpProcess", () => {
     const child = spawnCursorAcpProcess({
       executable: "/bin/eco-fake-agent",
       spawnFn,
+      managed: { platform: "linux", createJob: () => null, posixGraceMs: 0 },
     });
     stderr.write(
       'provider failed authorization: Bearer secret-bearer api_key="sk-secret-1234567890" url=https://example.test/?token=url-secret',
@@ -221,6 +225,7 @@ describe("spawnCursorAcpProcess", () => {
     spawnCursorAcpProcess({
       executable: shim,
       spawnFn,
+      managed: { platform: process.platform, createJob: () => null, posixGraceMs: 0 },
     });
 
     expect(calls).toHaveLength(1);
@@ -243,6 +248,7 @@ describe("spawnCursorAcpProcess", () => {
     const child = spawnCursorAcpProcess({
       executable: "agent",
       spawnFn,
+      managed: { platform: "linux", createJob: () => null, posixGraceMs: 0 },
     });
 
     const enoent = Object.assign(new Error("spawn agent ENOENT"), {
@@ -312,7 +318,8 @@ describe("killProcessTree / tracked ACP cleanup", () => {
     expect(killed).toEqual([{ pid: -99, signal: "SIGKILL" }]);
   });
 
-  test("killTrackedCursorAcpProcesses only kills spawn-tracked root PIDs", () => {
+  test("killTrackedCursorAcpProcesses disposes spawn-tracked managed processes", () => {
+    const killed: Array<{ pid: number; signal?: NodeJS.Signals | number }> = [];
     const child = {
       pid: 777,
       killed: false,
@@ -331,17 +338,22 @@ describe("killProcessTree / tracked ACP cleanup", () => {
       stderr: new PassThrough(),
     } as unknown as ChildProcess;
     const spawnFn = mock(() => child);
-    spawnCursorAcpProcess({ spawnFn, executable: "/fake/agent" });
-    const killed: number[] = [];
-    const count = killTrackedCursorAcpProcesses({
-      platform: "linux",
-      killFn: (pid) => {
-        killed.push(pid);
-        return true;
+    spawnCursorAcpProcess({
+      spawnFn,
+      executable: "/fake/agent",
+      managed: {
+        platform: "linux",
+        createJob: () => null,
+        posixGraceMs: 0,
+        killFn: (pid, signal) => {
+          killed.push({ pid, signal });
+          return true;
+        },
       },
     });
+    const count = killTrackedCursorAcpProcesses();
     expect(count).toBe(1);
-    expect(killed).toEqual([-777]);
+    expect(killed).toEqual([{ pid: -777, signal: "SIGKILL" }]);
     expect(killTrackedCursorAcpProcesses()).toBe(0);
   });
 });

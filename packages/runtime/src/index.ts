@@ -324,6 +324,8 @@ export * from "./acp-provider-exhaustion.js";
 export * from "./acp-session-config.js";
 export * from "./acp-session-delete.js";
 export * from "./acp-types.js";
+export * from "./managed-process.js";
+export * from "./windows-job-object.js";
 export {
   formatSubagentMissionMessage,
   isGenericMissionSummary,
