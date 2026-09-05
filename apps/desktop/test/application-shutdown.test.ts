@@ -5,6 +5,7 @@ import {
   collectRunningWorkSummary,
   hasRunningWork,
   isThreadActivelyRunning,
+  shutdownApplicationServices,
 } from "../src/main/application-shutdown-work";
 
 function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): ApplicationShutdownDeps {
@@ -32,6 +33,7 @@ function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): Applicati
     closeImageDisplayGateway: async () => {},
     closeIntegratedWebSearchGateway: async () => {},
     stopGlobalCodexRuntime: async () => {},
+    stopAllAcpRuntimes: () => {},
     stopGlobalEcoGateway: async () => {},
     disposeDesktopUpdateService: () => {},
     clearCodexSubagentRuntimeLimit: () => {},
@@ -110,4 +112,22 @@ test("buildQuitConfirmationDialogOptions includes running counts", () => {
   expect(options.detail).toContain("1 个对话正在压缩上下文");
   expect(options.buttons).toEqual(["仍要退出", "取消"]);
   expect(options.defaultId).toBe(1);
+});
+
+test("shutdownApplicationServices stops ACP runtimes after Codex", async () => {
+  const order: string[] = [];
+  await shutdownApplicationServices(
+    createDeps({
+      stopGlobalCodexRuntime: async () => {
+        order.push("codex");
+      },
+      stopAllAcpRuntimes: () => {
+        order.push("acp");
+      },
+      stopGlobalEcoGateway: async () => {
+        order.push("eco");
+      },
+    }),
+  );
+  expect(order).toEqual(["codex", "acp", "eco"]);
 });

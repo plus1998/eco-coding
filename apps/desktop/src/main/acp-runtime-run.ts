@@ -7,6 +7,7 @@ import {
   type AcpMcpServer,
   type AcpPermissionHandler,
   type AgentEvent,
+  killTrackedCursorAcpProcesses,
 } from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { definedProps } from "@eco/shared";
@@ -351,4 +352,13 @@ export async function startAcpThreadRun(
 
 export function cancelAcpThread(threadId: string): void {
   driver.cancel(threadId);
+}
+
+/**
+ * App quit: cancel active ACP runs and kill only process trees Eco spawned
+ * and still tracks. Does not scan/kill other apps' Cursor ACP processes.
+ */
+export function stopAllAcpRuntimes(): void {
+  driver.cancelAll();
+  killTrackedCursorAcpProcesses();
 }

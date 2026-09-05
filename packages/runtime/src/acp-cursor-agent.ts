@@ -1,10 +1,18 @@
-import { type ChildProcess, execFileSync, type SpawnOptions, spawn } from "node:child_process";
+import {
+  type ChildProcess,
+  execFileSync,
+  type SpawnOptions,
+  spawn,
+} from "node:child_process";
 import { existsSync as defaultExistsSync } from "node:fs";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
 /** Cursor ACP entry — never `--print` / stream-json. */
 export const CURSOR_ACP_ARGS = ["acp"] as const;
+
+/** Root PIDs of Cursor ACP trees spawned by this process (cmd/agent wrapper). */
+const trackedCursorAcpRootPids = new Set<number>();
 
 export type ResolveCursorAgentExecutableOptions = {
   /** Test seam for HOME candidate probing. */
@@ -166,6 +174,87 @@ export function resolveCursorAgentExecutable(
   return "agent";
 }
 
+export type KillProcessTreeOptions = {
+  platform?: NodeJS.Platform;
+  execFileSyncFn?: typeof execFileSync;
+  killFn?: (pid: number, signal?: NodeJS.Signals | number) => boolean;
+};
+
+/**
+ * Kill a process and its descendants.
+ *
+ * On Windows, `child.kill()` only terminates the direct spawn target (often
+ * `cmd.exe` wrapping `agent.cmd`), leaving `powershell` + `node … index.js acp`
+ * (and MCP children) orphaned. `taskkill /T /F` tears down the whole tree.
+ *
+ * Only call this with PIDs Eco itself spawned — never scan-and-kill by command line.
+ */
+export function killProcessTree(pid: number, options: KillProcessTreeOptions = {}): void {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return;
+  }
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    const exec = options.execFileSyncFn ?? execFileSync;
+    try {
+      exec("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+    } catch {
+      // Process may already be gone.
+    }
+    return;
+  }
+  const kill = options.killFn ?? ((target, signal) => process.kill(target, signal));
+  try {
+    kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      kill(pid, "SIGKILL");
+    } catch {
+      // Process may already be gone.
+    }
+  }
+}
+
+/** Kill the ChildProcess handle and its full Windows/POSIX process tree. */
+export function killChildProcessTree(
+  child: ChildProcess,
+  options: KillProcessTreeOptions = {},
+): void {
+  const pid = child.pid;
+  if (typeof pid === "number" && pid > 0) {
+    killProcessTree(pid, options);
+    trackedCursorAcpRootPids.delete(pid);
+  }
+  try {
+    if (!child.killed) {
+      child.kill("SIGKILL");
+    }
+  } catch {
+    // Process may already be gone.
+  }
+}
+
+/**
+ * Kill every Cursor ACP root this process still tracks (spawn handles).
+ * Does not scan the machine for other programs' `agent acp` processes.
+ */
+export function killTrackedCursorAcpProcesses(options: KillProcessTreeOptions = {}): number {
+  const pids = [...trackedCursorAcpRootPids];
+  trackedCursorAcpRootPids.clear();
+  for (const pid of pids) {
+    killProcessTree(pid, options);
+  }
+  return pids.length;
+}
+
+/** Test seam — reset tracked ACP root PIDs between cases. */
+export function resetTrackedCursorAcpPidsForTests(): void {
+  trackedCursorAcpRootPids.clear();
+}
+
 export function spawnCursorAcpProcess(options: SpawnCursorAcpOptions = {}): ChildProcess {
   // options.env is a partial override (e.g. { CURSOR_API_KEY }); merge over
   // process.env so discovery keeps HOME/LOCALAPPDATA/PATH.
@@ -188,6 +277,13 @@ export function spawnCursorAcpProcess(options: SpawnCursorAcpOptions = {}): Chil
   // process dies with an uncaught exception. This listener makes the event
   // safe to consume later via cursorAcpSpawnError().
   child.on("error", () => {});
+  const pid = child.pid;
+  if (typeof pid === "number" && pid > 0) {
+    trackedCursorAcpRootPids.add(pid);
+    child.once("exit", () => {
+      trackedCursorAcpRootPids.delete(pid);
+    });
+  }
   return child;
 }
 

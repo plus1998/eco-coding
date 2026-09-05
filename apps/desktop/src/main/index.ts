@@ -397,6 +397,7 @@ import {
   cancelAcpThread,
   resolveAcpRunPrompt,
   startAcpThreadRun,
+  stopAllAcpRuntimes,
   toAcpThreadStartRunInput,
 } from "./acp-runtime-run";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
@@ -2565,6 +2566,7 @@ installApplicationShutdownHook({
     await integratedWebSearchGateway?.close();
   },
   stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
+  stopAllAcpRuntimes,
   stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
   disposeDesktopUpdateService: () => {
     desktopUpdateService.dispose();

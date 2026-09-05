@@ -2,7 +2,7 @@ import { lstat, rm } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { AcpClient } from "./acp-client.js";
-import { cursorAcpSpawnError, spawnCursorAcpProcess } from "./acp-cursor-agent.js";
+import { cursorAcpSpawnError, killChildProcessTree, spawnCursorAcpProcess } from "./acp-cursor-agent.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 
 export const ACP_SESSION_ID_INVALID = "ACP 会话 id 非法，拒绝删除本地目录。";
@@ -155,13 +155,7 @@ async function defaultTryProtocolDelete(
     return "unsupported";
   } finally {
     peer?.dispose();
-    if (child.exitCode === null && child.signalCode === null) {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // process may already be gone
-      }
-    }
+    killChildProcessTree(child);
   }
 }
 
