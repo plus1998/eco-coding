@@ -3,9 +3,16 @@ import { LoaderCircle, Maximize2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ImageGalleryQueueItem } from "./image-gallery-float-state";
+import { ImageLightbox } from "./image-lightbox";
 
 /** 竖直画廊最多同时展示的层数：当前一张 + 下方两张排队预览。 */
 const GALLERY_LAYER_COUNT = 3;
+
+/** 单张图片加载后的数据：src 用于卡片与弹窗预览，fileName 用于展示图片标题。 */
+interface LoadedImage {
+  src: string;
+  fileName?: string;
+}
 
 function galleryLayerTransform(layer: number): {
   y: number;
@@ -26,13 +33,15 @@ function galleryLayerTransform(layer: number): {
 function GalleryCard({
   item,
   layer,
+  onLoaded,
+  onPreview,
   onAdvance,
-  onOpenDetail,
 }: {
   item: ImageGalleryQueueItem;
   layer: number;
+  onLoaded: (item: ImageGalleryQueueItem, image: LoadedImage) => void;
+  onPreview: (item: ImageGalleryQueueItem) => void;
   onAdvance: (item: ImageGalleryQueueItem) => void;
-  onOpenDetail: (item: ImageGalleryQueueItem) => void;
 }) {
   const { t } = useTranslation();
   const isCurrent = layer === 0;
@@ -65,8 +74,10 @@ function GalleryCard({
           throw new Error(t(`activity.imageDisplay.error.${codeKey}`));
         }
         if (cancelled) return;
+        const url = `data:${result.mimeType};base64,${result.dataBase64}`;
         setFileName(result.fileName);
-        setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
+        setSrc(url);
+        onLoaded(item, { src: url, fileName: result.fileName });
         return;
       }
       const result = await bridge.readImageGenerationArtifact({
@@ -74,14 +85,16 @@ function GalleryCard({
         imageIndex: item.imageIndex ?? 0,
       });
       if (cancelled) return;
-      setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
+      const url = `data:${result.mimeType};base64,${result.dataBase64}`;
+      setSrc(url);
+      onLoaded(item, { src: url });
     })().catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
     });
     return () => {
       cancelled = true;
     };
-  }, [item.kind, item.artifactId, item.imageIndex, t]);
+  }, [item, t, onLoaded]);
 
   const alt =
     item.kind === "display"
@@ -109,9 +122,9 @@ function GalleryCard({
           <button
             type="button"
             className="image-gallery-card-media"
-            onClick={() => onOpenDetail(item)}
-            aria-label={t("imageGallery.openDetail")}
-            title={t("imageGallery.openDetail")}
+            onClick={() => onPreview(item)}
+            aria-label={t("imageGallery.preview")}
+            title={t("imageGallery.preview")}
           >
             <img src={src} alt={alt} draggable={false} />
           </button>
@@ -130,8 +143,8 @@ function GalleryCard({
             <button
               type="button"
               className="image-gallery-card-overlay image-gallery-card-overlay--preview"
-              onClick={() => onOpenDetail(item)}
-              aria-label={t("imageGallery.openDetail")}
+              onClick={src ? () => onPreview(item) : undefined}
+              aria-label={t("imageGallery.preview")}
             >
               <Maximize2 size={20} aria-hidden />
             </button>
@@ -152,37 +165,60 @@ function GalleryCard({
 
 /**
  * 图片画廊悬浮窗：停靠在右侧，竖直方向排队展示展示图片 / 创意绘画工具产出的图片。
- * 纯图片无边框；hover 当前图片时右上角显示关闭图标、居中显示预览图标，点击预览图标直接打开预览。
+ * 纯图片无边框；hover 当前图片时右上角显示关闭图标、居中显示预览图标，点击预览图标直接打开弹窗预览。
  * 关闭当前一张即切换到下一张；队列清空或按 Esc 整体关闭后回到 workspace cards。
  */
 export function ImageGalleryFloat({
   items,
   onAdvance,
   onCloseAll,
-  onOpenDetail,
+  avoidCards = false,
 }: {
   items: readonly ImageGalleryQueueItem[];
   onAdvance: (item: ImageGalleryQueueItem) => void;
   onCloseAll: () => void;
-  onOpenDetail: (item: ImageGalleryQueueItem) => void;
+  avoidCards?: boolean;
 }) {
   const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
+  const [loadedImages, setLoadedImages] = useState<Record<string, LoadedImage>>({});
+  const [previewItem, setPreviewItem] = useState<ImageGalleryQueueItem | null>(null);
+
   const closeCurrent = useCallback((item: ImageGalleryQueueItem) => onAdvance(item), [onAdvance]);
+  const handleLoaded = useCallback((item: ImageGalleryQueueItem, image: LoadedImage) => {
+    setLoadedImages((prev) => (prev[item.key] ? prev : { ...prev, [item.key]: image }));
+  }, []);
+  const handlePreview = useCallback((item: ImageGalleryQueueItem) => {
+    setPreviewItem(item);
+  }, []);
+  const closePreview = useCallback(() => setPreviewItem(null), []);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
+      // 弹窗预览打开时由 ImageLightbox 处理 Esc（只关预览，不关整个画廊）。
+      if (event.key === "Escape" && !previewItem) {
         onCloseAll();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCloseAll]);
+  }, [onCloseAll, previewItem]);
+
+  const previewLoaded = previewItem ? loadedImages[previewItem.key] : undefined;
+  const previewTitle = previewItem
+    ? previewItem.kind === "display"
+      ? (previewLoaded?.fileName ?? t("task.imageDisplay.emptyTitle"))
+      : t("task.image.title")
+    : "";
+  const previewAlt = previewItem
+    ? previewItem.kind === "display"
+      ? t("activity.imageDisplay.previewAlt", { name: previewTitle })
+      : t("task.image.title")
+    : "";
 
   return (
     <motion.div
-      className="image-gallery-float"
+      className={avoidCards ? "image-gallery-float image-gallery-float--avoid-cards" : "image-gallery-float"}
       role="region"
       aria-label={t("imageGallery.title")}
       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, x: 48, scale: 0.98 }}
@@ -196,11 +232,21 @@ export function ImageGalleryFloat({
             key={item.key}
             item={item}
             layer={layer}
+            onLoaded={handleLoaded}
+            onPreview={handlePreview}
             onAdvance={closeCurrent}
-            onOpenDetail={onOpenDetail}
           />
         ))}
       </div>
+      {previewItem && previewLoaded ? (
+        <ImageLightbox
+          src={previewLoaded.src}
+          alt={previewAlt}
+          title={previewTitle}
+          dialogLabel={t("imageGallery.preview")}
+          onClose={closePreview}
+        />
+      ) : null}
     </motion.div>
   );
 }

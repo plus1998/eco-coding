@@ -5283,17 +5283,6 @@ function App() {
     [activeThread?.id, imageDisplayArtifactsByThread, openImageDisplayArtifact],
   );
 
-  const openImageGalleryDetail = useCallback(
-    (item: ImageGalleryQueueItem) => {
-      if (item.kind === "generation") {
-        openImageGenerationArtifact(item.artifactId);
-        return;
-      }
-      openImageDisplayArtifact(item.artifactId);
-    },
-    [openImageGenerationArtifact, openImageDisplayArtifact],
-  );
-
   const openHtmlHostArtifact = useCallback(
     (artifactId: string) => {
       const threadId = activeThread?.id;
@@ -10452,9 +10441,9 @@ function App() {
               <ImageGalleryFloat
                 key="image-gallery-float"
                 items={imageGalleryQueue}
+                avoidCards={Boolean(showWorkspacePanel && workspaceCardsPanelOpen)}
                 onAdvance={advanceImageGallery}
                 onCloseAll={closeImageGallery}
-                onOpenDetail={openImageGalleryDetail}
               />
             ) : null}
           </AnimatePresence>

@@ -34714,6 +34714,25 @@ body,
   z-index: 84;
   width: min(348px, calc(100% - var(--workspace-cards-panel-right, 10px) - 12px));
   -webkit-app-region: no-drag;
+  transition: right 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* 右侧 cards 面板打开时，向左偏移避开它 */
+.image-gallery-float--avoid-cards {
+  right: calc(
+    var(--workspace-cards-panel-right, 10px) +
+    var(--workspace-cards-panel-width, 300px) +
+    14px
+  );
+  width: min(
+    348px,
+    calc(
+      100% -
+      var(--workspace-cards-panel-right, 10px) -
+      var(--workspace-cards-panel-width, 300px) -
+      26px
+    )
+  );
 }
 
 .image-gallery-float-stack {

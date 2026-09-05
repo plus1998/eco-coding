@@ -17,7 +17,6 @@ function renderFloat(items: ImageGalleryQueueItem[]) {
       items,
       onAdvance: noop,
       onCloseAll: noop,
-      onOpenDetail: noop,
     }),
   );
 }
@@ -46,7 +45,7 @@ test("the current card exposes close and preview icons, peek cards are inert", (
   const markup = renderFloat([imageGalleryDisplayItem("art-1"), imageGalleryDisplayItem("art-2")]);
   expect(markup).toContain("image-gallery-card-media--loading");
   expect(markup).toContain('aria-label="关闭这张"');
-  expect(markup).toContain('aria-label="在任务面板中查看"');
+  expect(markup).toContain('aria-label="图片预览"');
   const closeIcons = (markup.match(/image-gallery-card-overlay--close/g) ?? []).length;
   expect(closeIcons).toBe(1);
 });
