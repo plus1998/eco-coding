@@ -19,7 +19,10 @@ import {
 import { buildCodexGatewayModelAlias } from "@eco/shared";
 import { type AnthropicProxyRoute, startAnthropicModelProxy } from "../src/main/anthropic-proxy";
 import { postAuxiliaryBridgeRequest } from "../src/main/bridge-auxiliary-request";
-import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
+import {
+  configureEcoGatewayLifecycle,
+  resetGlobalEcoGatewayForTests,
+} from "../src/main/eco-gateway-lifecycle";
 import {
   buildEcoBridgeCompactInterceptResponse,
   createEcoSdkBridgeHandler,
@@ -48,7 +51,7 @@ function providerSecret(
 }
 
 afterEach(async () => {
-  await stopGlobalEcoGateway().catch(() => undefined);
+  await resetGlobalEcoGatewayForTests().catch(() => undefined);
 });
 
 describe("gateway-pure: 无 Eco 别名 / 必须 provider header", () => {

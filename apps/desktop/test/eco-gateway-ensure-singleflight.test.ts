@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  configureEcoGatewayLifecycle,
+  ensureGlobalEcoGateway,
   EcoGatewayLifecycle,
   formatBridgePortInUseError,
+  resetGlobalEcoGatewayForTests,
   stopGlobalEcoGateway,
 } from "../src/main/eco-gateway-lifecycle";
 
 afterEach(async () => {
-  await stopGlobalEcoGateway().catch(() => undefined);
+  await resetGlobalEcoGatewayForTests().catch(() => undefined);
 });
 
 describe("eco-gateway ensure single-flight", () => {
@@ -55,5 +58,43 @@ describe("eco-gateway ensure single-flight", () => {
     } finally {
       await lifecycle.stop();
     }
+  });
+
+  test("stopGlobalEcoGateway keeps lifecycle so ensure can restart without reconfigure", async () => {
+    const port = 18_760 + Math.floor(Math.random() * 200);
+    configureEcoGatewayLifecycle({
+      gatewayPort: port,
+      listProviders: () => [
+        {
+          id: "p1",
+          name: "P1",
+          enabled: true,
+          baseUrl: "https://api.example.test",
+          apiKey: "sk-test",
+          apiCompat: "anthropic",
+          defaultModel: "m1",
+          models: [{ modelId: "m1" }],
+        },
+      ],
+      onStderr: () => undefined,
+    });
+
+    const first = await ensureGlobalEcoGateway();
+    expect(first).toHaveLength(1);
+    await stopGlobalEcoGateway();
+
+    // Must not throw "lifecycle is not configured" — quit teardown used to clear the singleton.
+    const second = await ensureGlobalEcoGateway();
+    expect(second).toHaveLength(1);
+  });
+
+  test("resetGlobalEcoGatewayForTests clears singleton so ensure fails closed", async () => {
+    configureEcoGatewayLifecycle({
+      gatewayPort: 0,
+      listProviders: () => [],
+      onStderr: () => undefined,
+    });
+    await resetGlobalEcoGatewayForTests();
+    await expect(ensureGlobalEcoGateway()).rejects.toThrow(/lifecycle is not configured/);
   });
 });

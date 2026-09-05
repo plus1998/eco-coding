@@ -8,7 +8,10 @@ import {
   startAnthropicModelProxy,
 } from "../src/main/anthropic-proxy";
 import { globalClaudeBridgeBindingRegistry } from "../src/main/claude-bridge-binding";
-import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
+import {
+  configureEcoGatewayLifecycle,
+  resetGlobalEcoGatewayForTests,
+} from "../src/main/eco-gateway-lifecycle";
 import { handleGatewayRequestLifecycleEvent } from "../src/main/gateway-request-lifecycle";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import {
@@ -21,7 +24,7 @@ import { BUILTIN_VISION_AGENT_ROLE } from "../src/shared/prompt-image-vision";
 
 afterEach(async () => {
   globalClaudeBridgeBindingRegistry.clearAllForTests();
-  await stopGlobalEcoGateway();
+  await resetGlobalEcoGatewayForTests();
 });
 
 function providerSecret(id: string, name: string, baseUrl: string): ProviderConfigSecret {

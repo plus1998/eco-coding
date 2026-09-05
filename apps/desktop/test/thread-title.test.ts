@@ -5,7 +5,10 @@ import {
   GATEWAY_UPSTREAM_KIND_HEADER,
 } from "@eco/gateway";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
-import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
+import {
+  configureEcoGatewayLifecycle,
+  resetGlobalEcoGatewayForTests,
+} from "../src/main/eco-gateway-lifecycle";
 import {
   buildThreadTitleRequestBody,
   buildThreadTitleUserMessage,
@@ -98,7 +101,7 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  await stopGlobalEcoGateway().catch(() => undefined);
+  await resetGlobalEcoGatewayForTests().catch(() => undefined);
 });
 
 test("resolveThreadTitleRoute only accepts the auxiliary route", () => {

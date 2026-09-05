@@ -524,7 +524,17 @@ export async function handleGlobalEcoGatewayRequest(request: Request): Promise<R
   return globalGateway.handleGatewayRequest(request);
 }
 
+/**
+ * Stop the running gateway/bridge servers. Keeps the startup lifecycle binding so
+ * `ensureGlobalEcoGateway()` can restart after a partial quit / macOS dock revive.
+ * Tests that need a fully unset singleton should call `resetGlobalEcoGatewayForTests()`.
+ */
 export async function stopGlobalEcoGateway(): Promise<void> {
+  await globalGateway?.stop();
+}
+
+/** Test seam — clear the singleton after stop so the next case must reconfigure. */
+export async function resetGlobalEcoGatewayForTests(): Promise<void> {
   await globalGateway?.stop();
   globalGateway = undefined;
 }

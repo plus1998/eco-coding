@@ -47,7 +47,7 @@ test("local_heuristic reports heuristic precision without network access", async
 });
 
 test("anthropic_messages counts via Eco Bridge → Gateway → provider", async () => {
-  const { configureEcoGatewayLifecycle, stopGlobalEcoGateway } = await import(
+  const { configureEcoGatewayLifecycle, resetGlobalEcoGatewayForTests } = await import(
     "../src/main/eco-gateway-lifecycle"
   );
   const upstreamRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
@@ -102,7 +102,7 @@ test("anthropic_messages counts via Eco Bridge → Gateway → provider", async 
       },
     ]);
   } finally {
-    await stopGlobalEcoGateway();
+    await resetGlobalEcoGatewayForTests();
     upstream.stop(true);
   }
 });
@@ -233,7 +233,7 @@ test("provider token counter rejects an invalid runtime mode instead of treating
 
 test("Anthropic proxy uses the provider's explicit token count adapter", async () => {
   const { startAnthropicModelProxy } = await import("../src/main/anthropic-proxy");
-  const { configureEcoGatewayLifecycle, stopGlobalEcoGateway } = await import(
+  const { configureEcoGatewayLifecycle, resetGlobalEcoGatewayForTests } = await import(
     "../src/main/eco-gateway-lifecycle"
   );
   const upstreamRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
@@ -298,7 +298,7 @@ test("Anthropic proxy uses the provider's explicit token count adapter", async (
     ]);
   } finally {
     await proxy.close();
-    await stopGlobalEcoGateway();
+    await resetGlobalEcoGatewayForTests();
     upstream.stop(true);
   }
 });

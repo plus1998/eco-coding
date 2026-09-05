@@ -15,7 +15,10 @@ import {
   globalClaudeBridgeBindingRegistry,
   redactClaudeBridgeSecret,
 } from "../src/main/claude-bridge-binding";
-import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
+import {
+  configureEcoGatewayLifecycle,
+  resetGlobalEcoGatewayForTests,
+} from "../src/main/eco-gateway-lifecycle";
 import {
   clearGatewayRequestLifecycleStateForTests,
   handleGatewayRequestLifecycleEvent,
@@ -25,7 +28,7 @@ import type { ProviderConfigSecret } from "../src/main/provider-store";
 afterEach(async () => {
   clearGatewayRequestLifecycleStateForTests();
   globalClaudeBridgeBindingRegistry.clearAllForTests();
-  await stopGlobalEcoGateway();
+  await resetGlobalEcoGatewayForTests();
 });
 
 describe("Claude Bridge concurrent isolation", () => {

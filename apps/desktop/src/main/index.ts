@@ -2469,9 +2469,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // Main-window close already runs full shutdownApplication (stops eco-gateway).
+  // Always quit so macOS does not leave a dock-resident process with globalGateway cleared —
+  // otherwise activate → new window → Codex/Claude hits "lifecycle is not configured".
+  app.quit();
 });
 
 installApplicationShutdownHook({
