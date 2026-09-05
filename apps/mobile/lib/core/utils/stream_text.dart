@@ -90,31 +90,46 @@ String thinkingPreviewLine(String text, {int max = 120}) {
   return '${plain.substring(0, max - 1)}…';
 }
 
-/// Splits Summary carousel stages at explicit newlines and sentence-like
-/// lower-to-upper transitions (for example `outputsRefining`).
+/// Splits Summary carousel stages at explicit newlines and sentence boundaries
+/// (EN/CJK). Does not use camelCase heuristics, which falsely split identifiers
+/// like `iPhone`.
 List<String> splitThinkingCarouselLines(String text) {
   return text
       .split(RegExp(r'\r?\n'))
-      .expand(
-        (line) => line
-            .replaceAllMapped(
-              RegExp(r'([a-z0-9])([A-Z])'),
-              (match) => '${match.group(1)}\n${match.group(2)}',
-            )
-            .split('\n'),
-      )
+      .expand(_splitReasoningCarouselStageLine)
       .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' ').trim())
       .where((line) => line.isNotEmpty)
       .toList();
 }
 
+List<String> _splitReasoningCarouselStageLine(String line) {
+  final trimmed = line.trim();
+  if (trimmed.isEmpty) {
+    return const [];
+  }
+  return trimmed
+      .split(RegExp(r'(?<=[.!?。！？])\s*(?=[A-Z\u4e00-\u9fff])'))
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty)
+      .toList();
+}
+
 /// Reasoning summary label. Keeps natural line breaks for carousel stages and
 /// strips markdown markers like [thinkingPreviewLine] without flattening them.
+/// Adjacent bold stage titles (`**A****B**`) become separate lines.
 /// [maxLines] only bounds pathological inputs; Summary remains ephemeral.
 String reasoningSummaryLabel(String text, {int maxLines = 20}) {
   var plain = text.replaceAll(RegExp(r'```[\s\S]*?```'), ' ');
-  for (final pattern in [
+  plain = plain.replaceAllMapped(
     RegExp(r'`([^`]+)`'),
+    (match) => match.group(1) ?? '',
+  );
+  // Separate glued bold stage titles (`**A****B**`) before stripping markers.
+  plain = plain.replaceAllMapped(
+    RegExp(r'\*\*([^*]+)\*\*(?=\*\*)'),
+    (match) => '${match.group(1)}\n',
+  );
+  for (final pattern in [
     RegExp(r'\*\*([^*]+)\*\*'),
     RegExp(r'\*([^*]+)\*'),
   ]) {
