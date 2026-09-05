@@ -1,4 +1,4 @@
-import { Minus, Plus, RotateCcw, X } from "lucide-react";
+import { FolderOpen, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { i18n } from "./i18n";
@@ -15,12 +15,15 @@ export function ImageLightbox({
   alt,
   title,
   dialogLabel,
+  onOpenFolder,
   onClose,
 }: {
   src: string;
   alt: string;
   title: string;
   dialogLabel: string;
+  /** 可选：图片对应本地文件时提供，用于在文件管理器中显示所在文件夹。 */
+  onOpenFolder?: () => void;
   onClose: () => void;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -133,6 +136,17 @@ export function ImageLightbox({
             >
               <RotateCcw size={15} aria-hidden />
             </button>
+            {onOpenFolder ? (
+              <button
+                type="button"
+                className="run-log-image-view-lightbox-close"
+                onClick={onOpenFolder}
+                title={i18n.t("lightbox.openFolder")}
+                aria-label={i18n.t("lightbox.openFolder")}
+              >
+                <FolderOpen size={16} aria-hidden />
+              </button>
+            ) : null}
             <button
               type="button"
               className="run-log-image-view-lightbox-close"

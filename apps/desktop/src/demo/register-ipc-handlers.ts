@@ -366,6 +366,7 @@ const handlers: Partial<Record<string, DemoHandler>> = {
   [IPC_CHANNELS.workspaceWatchPackageJson]: () => ({ ok: true as const }),
   [IPC_CHANNELS.workspaceOpen]: () => ({ canceled: true }),
   [IPC_CHANNELS.workspaceOpenPath]: () => demoWorkspace,
+  [IPC_CHANNELS.imageRevealInFolder]: () => undefined,
   [IPC_CHANNELS.modelSettingsGet]: () => demoModelSettings,
   [IPC_CHANNELS.settingsDigest]: () => ({ digest: "demo-mode", updatedAt: demoThreads[0]?.updatedAt ?? "" }),
   [IPC_CHANNELS.mcpSettingsGet]: () => demoMcpSettings,

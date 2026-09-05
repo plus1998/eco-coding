@@ -12,6 +12,8 @@ const GALLERY_LAYER_COUNT = 3;
 interface LoadedImage {
   src: string;
   fileName?: string;
+  /** 本地文件路径（有则可打开所在文件夹）。 */
+  path?: string;
 }
 
 function galleryLayerTransform(layer: number): {
@@ -77,7 +79,7 @@ function GalleryCard({
         const url = `data:${result.mimeType};base64,${result.dataBase64}`;
         setFileName(result.fileName);
         setSrc(url);
-        onLoaded(item, { src: url, fileName: result.fileName });
+        onLoaded(item, { src: url, fileName: result.fileName, path: result.path });
         return;
       }
       const result = await bridge.readImageGenerationArtifact({
@@ -87,7 +89,7 @@ function GalleryCard({
       if (cancelled) return;
       const url = `data:${result.mimeType};base64,${result.dataBase64}`;
       setSrc(url);
-      onLoaded(item, { src: url });
+      onLoaded(item, { src: url, path: result.path });
     })().catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
     });
@@ -216,6 +218,16 @@ export function ImageGalleryFloat({
       : t("task.image.title")
     : "";
 
+  const revealPreviewFolder = useCallback(() => {
+    const path = previewLoaded?.path;
+    if (!path) return;
+    const bridge = window.eco;
+    if (!bridge?.revealImageInFolder) return;
+    void bridge.revealImageInFolder({ path }).catch((error) => {
+      console.warn("Failed to open the folder containing the image.", error);
+    });
+  }, [previewLoaded]);
+
   return (
     <motion.div
       className={avoidCards ? "image-gallery-float image-gallery-float--avoid-cards" : "image-gallery-float"}
@@ -244,6 +256,7 @@ export function ImageGalleryFloat({
           alt={previewAlt}
           title={previewTitle}
           dialogLabel={t("imageGallery.preview")}
+          {...(previewLoaded.path ? { onOpenFolder: revealPreviewFolder } : {})}
           onClose={closePreview}
         />
       ) : null}

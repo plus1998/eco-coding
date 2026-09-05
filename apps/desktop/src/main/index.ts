@@ -4961,6 +4961,23 @@ function registerIpcHandlers(): void {
       throw error;
     }
   });
+
+  registerDesktopCommand(IPC_CHANNELS.imageRevealInFolder, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.path !== "string" || !payload.path.trim()) {
+      throw new Error("Image path is required.");
+    }
+    const resolvedPath = path.resolve(payload.path.trim());
+    let fileStat: Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      fileStat = await fs.lstat(resolvedPath);
+    } catch {
+      throw new Error("Image file not found.");
+    }
+    if (!fileStat.isFile()) {
+      throw new Error("Please choose a file, not a folder.");
+    }
+    shell.showItemInFolder(resolvedPath);
+  });
   registerDesktopCommand(IPC_CHANNELS.imageDisplayArtifactsList, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.threadId !== "string") {
       throw new Error("Invalid image display list request.");

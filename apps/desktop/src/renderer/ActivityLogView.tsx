@@ -4495,6 +4495,7 @@ type ImageViewLoadState =
       status: "ready";
       src: string;
       fileName: string;
+      path: string;
     }
   | {
       status: "error";
@@ -4550,6 +4551,7 @@ export function ImageViewBlock({
           status: "ready",
           src: `data:${result.mimeType};base64,${result.dataBase64}`,
           fileName: result.fileName,
+          path: result.path,
         });
       })
       .catch((error: unknown) => {
@@ -4566,6 +4568,14 @@ export function ImageViewBlock({
   }, [imageView.eventId, imageView.path, retryToken]);
 
   const fileName = loadState.status === "ready" ? loadState.fileName : fallbackFileName;
+  const revealInFolder = useCallback(() => {
+    if (loadState.status !== "ready") return;
+    const bridge = window.eco;
+    if (!bridge?.revealImageInFolder) return;
+    void bridge.revealImageInFolder({ path: loadState.path }).catch((error) => {
+      console.warn("Failed to open the folder containing the image.", error);
+    });
+  }, [loadState]);
   const statusLabel =
     lifecycle === "running" ? i18n.t("activity.imageView.viewing") : i18n.t("activity.imageView.viewed");
   const previewAlt = i18n.t("activity.imageView.previewAlt", { name: fileName });
@@ -4630,6 +4640,7 @@ export function ImageViewBlock({
           alt={previewAlt}
           title={fileName}
           dialogLabel={i18n.t("activity.imageView.open", { name: fileName })}
+          onOpenFolder={revealInFolder}
           onClose={closeLightbox}
         />
       ) : null}
@@ -4643,6 +4654,7 @@ type ImageDisplayLoadState =
       status: "ready";
       src: string;
       fileName: string;
+      path: string;
     }
   | {
       status: "error";
@@ -4815,6 +4827,7 @@ export function ImageDisplayBlock({
           status: "ready",
           src: `data:${result.mimeType};base64,${result.dataBase64}`,
           fileName: result.fileName,
+          path: result.path,
         });
       })
       .catch((error: unknown) => {
@@ -4836,6 +4849,14 @@ export function ImageDisplayBlock({
       ? i18n.t("activity.imageDisplay.viewing")
       : i18n.t("activity.imageDisplay.viewed");
   const previewAlt = i18n.t("activity.imageDisplay.previewAlt", { name: fileName });
+  const revealInFolder = useCallback(() => {
+    if (loadState.status !== "ready") return;
+    const bridge = window.eco;
+    if (!bridge?.revealImageInFolder) return;
+    void bridge.revealImageInFolder({ path: loadState.path }).catch((error) => {
+      console.warn("Failed to open the folder containing the image.", error);
+    });
+  }, [loadState]);
 
   return (
     <div className="run-log-image-view-wrap">
@@ -4900,6 +4921,7 @@ export function ImageDisplayBlock({
           alt={previewAlt}
           title={fileName}
           dialogLabel={i18n.t("activity.imageDisplay.open", { name: fileName })}
+          onOpenFolder={revealInFolder}
           onClose={closeLightbox}
         />
       ) : null}

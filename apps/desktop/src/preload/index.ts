@@ -103,6 +103,7 @@ import {
   type ImageDisplayReadResult,
   type ImageViewReadRequest,
   type ImageViewReadResult,
+  type ImageRevealInFolderRequest,
   type IntegrationAvailabilitySnapshot,
   IPC_CHANNELS,
   type IpcChannel,
@@ -667,6 +668,9 @@ const api = {
   },
   readImageView(request: ImageViewReadRequest): Promise<ImageViewReadResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageViewRead, request);
+  },
+  revealImageInFolder(request: ImageRevealInFolderRequest): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageRevealInFolder, request);
   },
   listImageDisplayArtifacts(threadId: string): Promise<ImageDisplayArtifact[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageDisplayArtifactsList, { threadId });

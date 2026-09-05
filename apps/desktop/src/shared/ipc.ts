@@ -275,6 +275,7 @@ export const IPC_CHANNELS = {
   imageGenerationArtifactReveal: "image-generation-artifact:reveal",
   imageGenerationArtifactChanged: "image-generation-artifact:changed",
   imageViewRead: "image-view:read",
+  imageRevealInFolder: "image:reveal-in-folder",
   imageDisplayArtifactsList: "image-display-artifacts:list",
   imageDisplayRead: "image-display:read",
   imageDisplayArtifactChanged: "image-display-artifact:changed",
@@ -451,6 +452,10 @@ export type {
 } from "./image-display";
 
 export interface ImageViewReadRequest {
+  path: string;
+}
+
+export interface ImageRevealInFolderRequest {
   path: string;
 }
 

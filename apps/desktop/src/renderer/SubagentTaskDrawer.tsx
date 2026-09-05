@@ -749,6 +749,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
   const { t } = useTranslation();
   const [src, setSrc] = useState<string>();
   const [fileName, setFileName] = useState<string>();
+  const [filePath, setFilePath] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
@@ -757,6 +758,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
     let cancelled = false;
     setSrc(undefined);
     setFileName(undefined);
+    setFilePath(undefined);
     setLoadError(undefined);
     setLightboxOpen(false);
     if (!window.eco?.readImageDisplay) {
@@ -783,6 +785,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
         }
         setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
         setFileName(result.fileName);
+        setFilePath(result.path);
       })
       .catch((error) => {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
@@ -802,6 +805,14 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
     artifact.bytes > 0 ? t("task.imageDisplay.bytes", { bytes: artifact.bytes }) : undefined,
   ].filter(Boolean);
   const previewAlt = t("activity.imageDisplay.previewAlt", { name: title });
+  const revealInFolder = useCallback(() => {
+    if (!filePath) return;
+    const bridge = window.eco;
+    if (!bridge?.revealImageInFolder) return;
+    void bridge.revealImageInFolder({ path: filePath }).catch((error) => {
+      console.warn("Failed to open the folder containing the image.", error);
+    });
+  }, [filePath]);
 
   return (
     <section className="image-artifact-detail image-artifact-detail--display">
@@ -838,6 +849,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
           alt={previewAlt}
           title={title}
           dialogLabel={t("activity.imageDisplay.open", { name: title })}
+          onOpenFolder={revealInFolder}
           onClose={closeLightbox}
         />
       ) : null}
