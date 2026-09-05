@@ -7,7 +7,7 @@ import type {
   DesktopUpdateProgress,
   DesktopUpdateState,
 } from "../shared/desktop-update";
-import { setApplicationQuitBypassConfirmation } from "./application-shutdown-work";
+import { setApplicationQuitBypassConfirmation } from "./application-quit-bypass";
 import { applyDesktopAutoUpdaterPolicy, formatDesktopUpdateError } from "./desktop-update-policy";
 
 const { autoUpdater } = electronUpdater;
