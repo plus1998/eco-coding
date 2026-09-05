@@ -73,6 +73,7 @@ test("buildLedgerEventSummary preserves the primary event token summary", () => 
     routeRole: "coder",
     billingRole: "coder",
     attributionStatus: "attributed",
+    usageKind: "request_final",
     inputTokens: 1200,
     outputTokens: 300,
     cacheReadTokens: 500,

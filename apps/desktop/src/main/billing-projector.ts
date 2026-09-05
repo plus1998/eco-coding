@@ -20,6 +20,7 @@ import type {
 } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { resolveLedgerSourcePriority } from "./billing-source-priority";
+import { ledgerEventDuplicateKey } from "../shared/ledger-events-display";
 import { readRouteRole } from "./proxy-usage-pending-settlement";
 import type {
   AgentInstanceKind,
@@ -153,6 +154,8 @@ export function projectBillingFromUsageLedger(
   let unresolvedEventCount = 0;
 
   const proxyBillableIndex = indexProxyBillableEvents(input.events);
+  // A billable row observed twice for the same invocation is counted once; see loop.
+  const seenBillableRequestKeys = new Set<string>();
 
   for (const event of input.events) {
     if (event.usageKind === "request_partial") {
@@ -166,6 +169,14 @@ export function projectBillingFromUsageLedger(
     if (shouldSkipDuplicateBillableEvent(event, proxyBillableIndex)) {
       continue;
     }
+    // A billable row observed twice for the same invocation (same source + usage kind +
+    // usage fingerprint — e.g. legacy PI double usage emission) is counted once; the
+    // first observation wins. Distinct models from one SDK result keep separate rows.
+    const duplicateKey = ledgerEventDuplicateKey(event);
+    if (seenBillableRequestKeys.has(duplicateKey)) {
+      continue;
+    }
+    seenBillableRequestKeys.add(duplicateKey);
     const usage = usageFromEvent(event);
     const billing = resolveEventBilling(event, input.resolveRates);
     if (!billing.pricingResolved) {

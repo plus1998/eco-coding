@@ -395,3 +395,62 @@ test("projectBillingFromUsageLedger skips duplicate sdk totals when proxy alread
   expect(projection.snapshot?.totalTokens.input).toBe(5_000);
   expect(projection.snapshot?.byRole?.coder?.inputTokens).toBe(5_000);
 });
+
+test("projectBillingFromUsageLedger counts a duplicate same-source billable row once", () => {
+  const usage = { inputTokens: 3_177, outputTokens: 281, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const makePiEvent = (sourceEventId: string) =>
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_pi_dup",
+      role: "planner",
+      source: "pi",
+      sourceEventId,
+      requestKey: "usage:planner:3177:281:0:0:eco-planner-abc",
+      usage,
+      computedBilling: billingFor(usage),
+      agentId: "planner:attempt_1",
+      modelId: "qwen",
+    });
+  const first = makePiEvent("thr_pi_dup:pi:289:usage");
+  const duplicate = makePiEvent("thr_pi_dup:pi:291:usage");
+
+  const projection = projectBillingFromUsageLedger({ events: [first, duplicate] });
+
+  expect(projection.snapshot?.primarySource).toBe("pi");
+  expect(projection.snapshot?.totalTokens.input).toBe(3_177);
+  expect(projection.snapshot?.totalTokens.output).toBe(281);
+  expect(projection.snapshot?.byRole?.planner?.outputTokens).toBe(281);
+});
+
+test("projectBillingFromUsageLedger keeps distinct calls that happen to share tokens when sources differ", () => {
+  const usage = { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const piEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_mix",
+    role: "planner",
+    source: "pi",
+    sourceEventId: "evt_pi",
+    requestKey: "usage:planner:100:10:0:0:eco-planner-abc",
+    usage,
+    computedBilling: billingFor(usage),
+    agentId: "planner:attempt_1",
+    modelId: "qwen",
+  });
+  const proxyEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_mix",
+    role: "planner",
+    source: "proxy",
+    sourceEventId: "proxy:planner:qwen:resp_1",
+    requestKey: "proxy:planner:qwen:resp_1:100:10:0:0",
+    providerRequestId: "resp_1",
+    usage,
+    computedBilling: billingFor(usage),
+    agentId: "planner:attempt_2",
+    modelId: "qwen",
+  });
+
+  const projection = projectBillingFromUsageLedger({ events: [piEvent, proxyEvent] });
+
+  // Both sources bill; primary is pi, and the distinct proxy row is not dropped.
+  expect(projection.snapshot?.totalTokens.input).toBe(100);
+  expect(projection.snapshot?.sourceBreakdown?.pi?.totalTokens.input).toBe(100);
+  expect(projection.snapshot?.sourceBreakdown?.proxy?.totalTokens.input).toBe(100);
+});

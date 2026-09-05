@@ -179,7 +179,10 @@ export function mapPiSessionEventToAgentEvents(
 
     case "agent_end": {
       // agent_end is loop-boundary only — may retry / continue. Do NOT emit run completion.
-      const events: AgentEvent[] = [
+      // Usage is emitted exactly once per assistant message at message_end (which fires
+      // for every assistant message, including error/aborted ones) — re-emitting from
+      // the agent_end transcript would double-bill every invocation.
+      return [
         ...closeOpenStreams(ctx, seq, "agent_end"),
         createAgentEvent({
           id: `${ctx.threadId}:pi:${seq}:agent_end`,
@@ -192,14 +195,6 @@ export function mapPiSessionEventToAgentEvents(
           },
         }),
       ];
-      const messages = Array.isArray(event.messages) ? event.messages : [];
-      for (const message of messages) {
-        const usageEvent = usageEventFromAssistantMessage(message, ctx, seq);
-        if (usageEvent) {
-          events.push(usageEvent);
-        }
-      }
-      return events;
     }
 
     case "agent_settled": {

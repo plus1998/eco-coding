@@ -239,25 +239,23 @@ test("9. Agent subagent tool surfaces mission and result", () => {
 
 test("10. usage.recorded and run.terminal produce no activity line", () => {
   const ctx = makeCtx();
+  const assistantMessage = {
+    role: "assistant",
+    stopReason: "endTurn",
+    model: "claude-sonnet-4-20250514",
+    usage: { input: 100, output: 20, cacheRead: 50, cacheWrite: 10, cost: { total: 0.01 } },
+    content: [{ type: "text", text: "done" }],
+  };
   const mapped = mapAll(ctx, [
-    {
-      type: "agent_end",
-      willRetry: false,
-      messages: [
-        {
-          role: "assistant",
-          stopReason: "endTurn",
-          model: "claude-sonnet-4-20250514",
-          usage: { input: 100, output: 20, cacheRead: 50, cacheWrite: 10, cost: { total: 0.01 } },
-          content: [{ type: "text", text: "done" }],
-        },
-      ],
-    },
+    // Real PI order: message_end precedes agent_end; usage is emitted exactly once,
+    // at message_end (agent_end must not re-emit it from the transcript).
+    { type: "message_end", message: assistantMessage },
+    { type: "agent_end", willRetry: false, messages: [assistantMessage] },
     { type: "agent_settled" },
   ]);
-  const usage = mapped.find((e) => e.type === "usage.recorded");
-  expect(usage).toBeTruthy();
-  expect(formatAgentEventLine(usage!)).toBeNull();
+  const usageEvents = mapped.filter((e) => e.type === "usage.recorded");
+  expect(usageEvents).toHaveLength(1);
+  expect(formatAgentEventLine(usageEvents[0]!)).toBeNull();
   const settled = mapped.find((e) => e.type === "agent.settled");
   expect(settled).toBeTruthy();
   expect(formatAgentEventLine(settled!)).toBeNull();

@@ -14,6 +14,7 @@ function makeEvent(
     routeRole: "planner",
     billingRole: "planner",
     attributionStatus: "attributed",
+    usageKind: "request_final",
     inputTokens: 1000,
     outputTokens: 100,
     cacheReadTokens: 0,
@@ -34,6 +35,28 @@ test("partitionLedgerEventsForDisplay splits primary proxy from shadow sources",
   expect(primaryEvents.map((event) => event.id)).toEqual(["p1", "p2"]);
   expect(shadowEvents.map((event) => event.id)).toEqual(["s1", "s2"]);
   expect(sumLedgerEventTokens(primaryEvents).total).toBe(8200);
+});
+
+test("partitionLedgerEventsForDisplay collapses duplicate same-source requestKey rows", () => {
+  const events = [
+    makeEvent({ id: "pi_1", source: "pi", requestKey: "usage:planner:3177:281:0:0:eco-planner-abc" }),
+    makeEvent({ id: "pi_2", source: "pi", requestKey: "usage:planner:3177:281:0:0:eco-planner-abc" }),
+    makeEvent({ id: "proxy_1", source: "proxy", requestKey: "proxy:planner:qwen:resp_1:3177:281:0:0" }),
+  ];
+  const { primaryEvents, shadowEvents } = partitionLedgerEventsForDisplay(events, "pi");
+  expect(primaryEvents.map((event) => event.id)).toEqual(["pi_1"]);
+  expect(shadowEvents.map((event) => event.id)).toEqual(["proxy_1"]);
+});
+
+test("partitionLedgerEventsForDisplay keeps observations that differ in source or role", () => {
+  const events = [
+    makeEvent({ id: "pi_1", source: "pi" }),
+    makeEvent({ id: "sdk_1", source: "sdk" }),
+    makeEvent({ id: "pi_coder", source: "pi", role: "coder", routeRole: "coder", billingRole: "coder" }),
+  ];
+  const { primaryEvents, shadowEvents } = partitionLedgerEventsForDisplay(events, "pi");
+  expect(primaryEvents.map((event) => event.id)).toEqual(["pi_1", "pi_coder"]);
+  expect(shadowEvents.map((event) => event.id)).toEqual(["sdk_1"]);
 });
 
 test("resolveLedgerEventBillingRole prefers billingRole over routeRole", () => {

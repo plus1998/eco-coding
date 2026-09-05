@@ -245,6 +245,29 @@ test("mapPiSessionEvent emits usage.recorded from message_end", () => {
   expect((usage?.payload as { source?: string }).source).toBe("pi");
 });
 
+test("mapPiSessionEvent emits usage.recorded exactly once — agent_end must not re-emit it", () => {
+  const ctx = makeCtx();
+  const message = {
+    role: "assistant",
+    model: "eco-alias",
+    content: [{ type: "text", text: "done" }],
+    usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, cost: { total: 0.002 } },
+  };
+  let usageCount = 0;
+  let sawLoopEnded = false;
+  const feed = (event: Parameters<typeof mapPiSessionEventToAgentEvents>[0]) => {
+    for (const out of mapPiSessionEventToAgentEvents(event, ctx)) {
+      if (out.type === "usage.recorded") usageCount += 1;
+      if (out.type === "agent.loop_ended") sawLoopEnded = true;
+    }
+  };
+  feed({ type: "message_start", message: { role: "assistant", content: [] } });
+  feed({ type: "message_end", message });
+  feed({ type: "agent_end", messages: [message] });
+  expect(usageCount).toBe(1);
+  expect(sawLoopEnded).toBe(true);
+});
+
 test("PI feed isolates thinking/text across messages and finalizes streams", () => {
   const ctx = makeCtx();
   const types: string[] = [];
