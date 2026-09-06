@@ -13322,7 +13322,8 @@ function formatContextCompactionMessage(
   if (stage === "started") {
     return trigger === "manual" ? "正在手动压缩上下文" : "正在自动压缩上下文";
   }
-  return trigger === "manual" ? "上下文已手动压缩" : "上下文已自动压缩";
+  const base = trigger === "manual" ? "上下文已手动压缩" : "上下文已自动压缩";
+  return detail ? `${base}（${detail}）` : base;
 }
 
 async function auditThreadPromptCacheBeforeSdkSession(input: {

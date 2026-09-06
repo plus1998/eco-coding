@@ -66,6 +66,11 @@ export function readPiAssistantErrorMessage(event: PiSessionEventLike): string |
   return undefined;
 }
 
+/** PI compaction trigger: manual (/compact) | threshold | overflow. */
+export function readPiCompactionReason(value: unknown): "manual" | "threshold" | "overflow" | undefined {
+  return value === "manual" || value === "threshold" || value === "overflow" ? value : undefined;
+}
+
 function isPiAssistantSuccessMessage(event: PiSessionEventLike): boolean {
   if (event.type !== "message_end" || !isRecord(event.message) || event.message.role !== "assistant") {
     return false;
@@ -207,6 +212,58 @@ export function mapPiSessionEventToAgentEvents(
           ...base,
           type: "agent.settled",
           payload: { source: "pi", sessionId: ctx.sessionId },
+        }),
+      ];
+    }
+
+    case "compaction_start": {
+      // PI native compaction is invisible otherwise; surface the lifecycle for the Feed.
+      const reason = readPiCompactionReason(event.reason);
+      return [
+        createAgentEvent({
+          id: `${ctx.threadId}:pi:${seq}:compaction_start`,
+          ...base,
+          type: "context.compaction.started",
+          payload: {
+            source: "pi",
+            sessionId: ctx.sessionId,
+            ...(reason && { reason }),
+          },
+        }),
+      ];
+    }
+
+    case "compaction_end": {
+      const reason = readPiCompactionReason(event.reason);
+      const result = isRecord(event.result) ? event.result : undefined;
+      const aborted = event.aborted === true;
+      const errorMessage =
+        typeof event.errorMessage === "string" && event.errorMessage.trim()
+          ? event.errorMessage.trim()
+          : undefined;
+      const ok = !aborted && result !== undefined;
+      return [
+        createAgentEvent({
+          id: `${ctx.threadId}:pi:${seq}:compaction_end`,
+          ...base,
+          type: ok ? "context.compaction.completed" : "context.compaction.failed",
+          payload: {
+            source: "pi",
+            sessionId: ctx.sessionId,
+            ...(reason && { reason }),
+            ...(ok && result
+              ? {
+                  ...(typeof result.tokensBefore === "number" && {
+                    tokensBefore: result.tokensBefore,
+                  }),
+                  ...(typeof result.estimatedTokensAfter === "number" && {
+                    estimatedTokensAfter: result.estimatedTokensAfter,
+                  }),
+                }
+              : {
+                  message: errorMessage ?? (aborted ? "Compaction aborted." : "Compaction failed."),
+                }),
+          },
         }),
       ];
     }

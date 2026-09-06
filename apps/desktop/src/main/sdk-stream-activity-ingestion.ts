@@ -1,5 +1,6 @@
 import {
   type AgentEvent,
+  formatContextLimit,
   normalizeSdkSubagentType,
   type RuntimeAgentRole,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
@@ -53,7 +54,16 @@ export interface SdkStreamActivityIngestionDeps {
   emitRequestTerminalEvent: ThreadRunEventLivePersistDeps["emitRequestTerminalEvent"];
   onProjectionUpdated: (threadId: string, options?: { streaming?: boolean }) => void;
   onSubagentTimingUpdated?: (threadId: string) => void;
-  onContextCompactionStatus?: (threadId: string, input: { stage: "started"; trigger: "auto" }) => void;
+  onContextCompactionStatus?: (
+    threadId: string,
+    input: {
+      stage: "started" | "completed" | "failed";
+      trigger: "auto";
+      preTokens?: number;
+      postTokens?: number;
+      detail?: string;
+    },
+  ) => void;
   onLocalStreamUpdate?: (update: SdkLocalStreamUpdate & { observedAt: string }) => void;
   onBrowserToolStarted?: (input: { threadId: string; payload: Record<string, unknown> }) => void;
   buildBashApprovalMetadata?: ThreadRunEventLivePersistDeps["buildBashApprovalMetadata"];
@@ -350,6 +360,10 @@ export function createSdkStreamActivityIngestion(
       payload: event.payload,
     });
 
+    if (isPiCompactionEvent(event)) {
+      deps.onContextCompactionStatus?.(threadId, piCompactionStatusInput(event));
+      return;
+    }
     if (isSdkCompactionStatusEvent(event)) {
       deps.onContextCompactionStatus?.(threadId, { stage: "started", trigger: "auto" });
       return;
@@ -545,6 +559,48 @@ function readStreamAttributedAgentId(
     return undefined;
   }
   return trimmed;
+}
+
+/** PI native compaction lifecycle events (emitted by pi-event-adapter). */
+export function isPiCompactionEvent(event: AgentEventLike): boolean {
+  return (
+    event.type === "context.compaction.started" ||
+    event.type === "context.compaction.completed" ||
+    event.type === "context.compaction.failed"
+  );
+}
+
+export function piCompactionStatusInput(event: AgentEventLike): {
+  stage: "started" | "completed" | "failed";
+  trigger: "auto";
+  preTokens?: number;
+  postTokens?: number;
+  detail?: string;
+} {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const stage =
+    event.type === "context.compaction.started"
+      ? "started"
+      : event.type === "context.compaction.completed"
+        ? "completed"
+        : "failed";
+  const tokensBefore = typeof payload.tokensBefore === "number" ? payload.tokensBefore : undefined;
+  const tokensAfter =
+    typeof payload.estimatedTokensAfter === "number" ? payload.estimatedTokensAfter : undefined;
+  const failedDetail =
+    typeof payload.message === "string" && payload.message ? payload.message : undefined;
+  const delta =
+    stage === "completed" && tokensBefore !== undefined && tokensAfter !== undefined
+      ? `${formatContextLimit(tokensBefore)} → ${formatContextLimit(tokensAfter)}`
+      : undefined;
+  const detail = stage === "failed" ? failedDetail : delta;
+  return {
+    stage,
+    trigger: "auto",
+    ...(tokensBefore !== undefined && { preTokens: tokensBefore }),
+    ...(tokensAfter !== undefined && { postTokens: tokensAfter }),
+    ...(detail && { detail }),
+  };
 }
 
 function isSdkCompactionStatusEvent(event: AgentEventLike): boolean {

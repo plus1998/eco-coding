@@ -53,6 +53,9 @@ export type AgentEventType =
   | "changeset.created"
   | "changeset.applied"
   | "usage.recorded"
+  | "context.compaction.started"
+  | "context.compaction.completed"
+  | "context.compaction.failed"
   | "run.terminal";
 /** Payload for AgentEvent when type is `run.terminal`. */
 export type ClaudeRunTerminal =

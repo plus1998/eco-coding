@@ -193,6 +193,55 @@ test("PI thinking close keeps the same reasoningDisplay as the open stream", () 
   expect((openaiThinkClose?.payload as { reasoningDisplay?: string }).reasoningDisplay).toBe("summary");
 });
 
+test("mapPiSessionEvent surfaces PI compaction lifecycle", () => {
+  const start = mapPiSessionEventToAgentEvents(
+    { type: "compaction_start", reason: "threshold" },
+    makeCtx(),
+  );
+  expect(start).toHaveLength(1);
+  expect(start[0]?.type).toBe("context.compaction.started");
+  expect(start[0]?.payload).toEqual({ source: "pi", sessionId: "sess_1", reason: "threshold" });
+
+  const done = mapPiSessionEventToAgentEvents(
+    {
+      type: "compaction_end",
+      reason: "threshold",
+      aborted: false,
+      result: { tokensBefore: 180_000, estimatedTokensAfter: 42_000 },
+    },
+    makeCtx(),
+  );
+  expect(done).toHaveLength(1);
+  expect(done[0]?.type).toBe("context.compaction.completed");
+  expect(done[0]?.payload).toEqual({
+    source: "pi",
+    sessionId: "sess_1",
+    reason: "threshold",
+    tokensBefore: 180_000,
+    estimatedTokensAfter: 42_000,
+  });
+
+  const failed = mapPiSessionEventToAgentEvents(
+    {
+      type: "compaction_end",
+      reason: "overflow",
+      aborted: true,
+      result: undefined,
+      errorMessage: "summary failed",
+    },
+    makeCtx(),
+  );
+  expect(failed).toHaveLength(1);
+  expect(failed[0]?.type).toBe("context.compaction.failed");
+  expect((failed[0]?.payload as { message?: string }).message).toBe("summary failed");
+
+  const abortedNoMessage = mapPiSessionEventToAgentEvents(
+    { type: "compaction_end", reason: "threshold", aborted: true, result: undefined },
+    makeCtx(),
+  );
+  expect((abortedNoMessage[0]?.payload as { message?: string }).message).toBe("Compaction aborted.");
+});
+
 test("mapPiSessionEvent emits tool_result_error for failed PI tools", () => {
   const ctx = makeCtx();
   mapPiSessionEventToAgentEvents(

@@ -162,6 +162,10 @@ export type AgentEventType =
   | "changeset.created"
   | "changeset.applied"
   | "usage.recorded"
+  /** Context compaction lifecycle (PI native compaction) — mirrors thread-run context.compaction.* events. */
+  | "context.compaction.started"
+  | "context.compaction.completed"
+  | "context.compaction.failed"
   /** Claude/SDK run terminal — independent from usage.recorded billing. */
   | "run.terminal";
 

@@ -678,6 +678,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   // PI owns native compaction. Agent-level retry stays on: in-stream
   // overloaded/5xx never hits Gateway's HTTP fetch retry. Provider retry 0
   // avoids double-retrying the initial upstream fetch.
+  // PI's native defaults (reserve 16K + overflow-recovery retry) are kept.
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true },
     retry: { ...ECO_PI_SESSION_RETRY },
