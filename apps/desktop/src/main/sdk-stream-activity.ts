@@ -691,8 +691,17 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     displayName,
     toolInput,
   );
-  const targets = resolveThreadRunToolTargets(displayName, record.input);
+  const skillName = resolveSdkSkillDisplayName(
+    displayName,
+    isRecord(toolInput) ? toolInput : {},
+  );
+  const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
+  // Skill reads label by skill name; skip file targets so the card stays "读取 <name> 技能".
+  const targets = skillDetail
+    ? {}
+    : resolveThreadRunToolTargets(displayName, record.input);
   const command =
+    skillDetail ??
     readString(record.command) ??
     readString(record.full_command) ??
     readString(record.bash_command) ??
@@ -954,8 +963,18 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
   const toolInput = proxyCall?.args ?? record.input;
   const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
-  const targets = resolveThreadRunToolTargets(displayName, record.input);
+  const skillName = resolveSdkSkillDisplayName(
+    displayName,
+    isRecord(toolInput) ? toolInput : {},
+  );
+  const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
+  // Skill reads (e.g. pi `read` on SKILL.md) label by skill name; skip file targets so
+  // the card does not fall back to "读取 SKILL.md".
+  const targets = skillDetail
+    ? {}
+    : resolveThreadRunToolTargets(displayName, record.input);
   const detail =
+    skillDetail ||
     imageViewCall?.path ||
     (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ||
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
@@ -1051,7 +1070,7 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
   }
   const skillName = resolveSdkSkillDisplayName(toolName, record);
   if (skillName) {
-    return `${skillName} 技能`;
+    return `读取 ${skillName} 技能`;
   }
   if (toolName === "Agent") {
     const label = normalizeSubagentToolDisplayLabel(
@@ -1164,6 +1183,10 @@ function pathBasename(filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || filePath;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readString(value: unknown): string | undefined {

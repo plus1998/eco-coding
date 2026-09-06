@@ -59,9 +59,9 @@ export function resolveSkillDisplayName(toolName: string, input: unknown): strin
 }
 
 export function formatSkillActivityLabel(skillName: string): string {
-  return `读取 · ${skillName} 技能`;
+  return `读取 ${skillName} 技能`;
 }
 
 export function isSkillActivityLabel(label: string): boolean {
-  return /^读取 · .+ 技能$/.test(label.trim());
+  return /^读取 .+ 技能$/.test(label.trim());
 }

@@ -8,6 +8,7 @@ import {
   type SdkGrepToolTarget,
   type SdkReadToolTarget,
 } from "@eco/runtime/tool-target";
+import { isSkillActivityLabel } from "@eco/runtime/skill-display";
 import { isToolProgressStatusText } from "./activity-display";
 
 export type { SdkGrepToolTarget as ThreadRunGrepToolTarget, SdkReadToolTarget as ThreadRunReadToolTarget };
@@ -90,7 +91,7 @@ export function resolveReadToolTargetDisplayFromDetail(
   detail: string | undefined,
 ): ReadToolTargetDisplay | undefined {
   const trimmed = detail?.trim();
-  if (!trimmed || isToolProgressStatusText(trimmed)) {
+  if (!trimmed || isToolProgressStatusText(trimmed) || isSkillActivityLabel(trimmed)) {
     return undefined;
   }
   const lineRangeMatch = trimmed.match(/^(.+?):L(\d+)(?:-(\d+))?$/);

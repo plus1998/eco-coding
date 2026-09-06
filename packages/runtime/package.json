@@ -57,6 +57,7 @@
     "./subagent-availability": "./src/subagent-availability.ts",
     "./subagent-resume": "./src/subagent-resume.ts",
     "./tool-permission-policy": "./src/tool-permission-policy.ts",
-    "./usage": "./src/usage.ts"
+    "./usage": "./src/usage.ts",
+    "./skill-display": "./src/skill-display.ts"
   }
 }

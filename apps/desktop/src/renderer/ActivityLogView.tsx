@@ -66,6 +66,7 @@ import {
   resolveActionKind,
   summarizeActionGroup,
 } from "../shared/feed-action-kind";
+import { isSkillActivityLabel } from "@eco/runtime/skill-display";
 import { isEcoImageDisplayToolName } from "../shared/image-display-tool";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import type {
@@ -1662,6 +1663,12 @@ function formatBlockActionLine(
   block: Extract<ActivityDetailBlock, { kind: "action" }>,
   phase: "running" | "done",
 ): string {
+  // Skill reads carry a self-contained label ("读取 <name> 技能"); do not prepend
+  // the generic read verb again ("读取了 读取 … 技能").
+  const skillLabel = isSkillActivityLabel(block.label.trim()) ? block.label.trim() : undefined;
+  if (skillLabel) {
+    return skillLabel;
+  }
   return formatActionLine(
     {
       resolved: resolveBlockAction(block),

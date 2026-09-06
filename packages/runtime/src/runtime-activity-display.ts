@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentEventType, AgentRole, RuntimeAgentRole } from "../../shared/src";
 import { formatSubagentMissionMessage } from "./agent-mission.js";
 import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
-import { resolveSkillDisplayName } from "./skill-display.js";
+import { formatSkillActivityLabel, resolveSkillDisplayName } from "./skill-display.js";
 import {
   isSubagentRole,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
@@ -442,6 +442,10 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_use" && typeof payload.tool_name === "string") {
+    const skillName = resolveSkillDisplayName(payload.tool_name, payload.input);
+    if (skillName) {
+      return formatSkillActivityLabel(skillName);
+    }
     if (payload.tool_name === "Agent") {
       const mission = formatAgentToolMissionMessage(payload.input);
       if (mission) {
@@ -480,6 +484,10 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
+    const skillName = resolveSkillDisplayName(payload.tool_name, payload.input);
+    if (skillName) {
+      return formatSkillActivityLabel(skillName);
+    }
     const detail = formatToolResultDisplayDetail(payload.tool_name, payload.input, payload.content);
     return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }

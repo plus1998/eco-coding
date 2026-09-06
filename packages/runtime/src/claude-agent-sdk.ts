@@ -58,7 +58,7 @@ import {
   type SdkStreamContext,
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
-import { resolveSkillDisplayName } from "./skill-display";
+import { formatSkillActivityLabel, resolveSkillDisplayName } from "./skill-display";
 import { mergeStreamText } from "./stream-text";
 import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import { SubagentRuntimeLimitController } from "./subagent-runtime-limit.js";
@@ -3843,6 +3843,10 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_use" && typeof payload.tool_name === "string") {
+    const skillName = resolveSkillDisplayName(payload.tool_name, payload.input);
+    if (skillName) {
+      return formatSkillActivityLabel(skillName);
+    }
     if (payload.tool_name === "Agent") {
       const mission = formatAgentToolMissionMessage(payload.input);
       if (mission) {
@@ -3862,6 +3866,10 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
+    const skillName = resolveSkillDisplayName(payload.tool_name, payload.input);
+    if (skillName) {
+      return formatSkillActivityLabel(skillName);
+    }
     const detail = formatToolInputSummary(payload.tool_name, payload.input);
     return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }

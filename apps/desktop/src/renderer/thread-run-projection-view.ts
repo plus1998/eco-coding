@@ -4,6 +4,7 @@ import {
   resolveMissionDisplayText,
 } from "@eco/runtime/agent-mission";
 import { isReadToolName } from "@eco/runtime/tool-target";
+import { isSkillActivityLabel } from "@eco/runtime/skill-display";
 import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import {
   bashApprovalPhaseToLifecycle,
@@ -1996,7 +1997,11 @@ function shouldSuppressFilesystemToolPlaceholder(
     return false;
   }
   if (isReadToolName(metadataTool.name)) {
-    return !block.readTarget;
+    if (block.readTarget) {
+      return false;
+    }
+    // Skill reads carry no file target; the row is labeled by skill name — keep it.
+    return !isSkillActivityLabel(metadataTool.detail ?? "");
   }
   if (metadataTool.name === "Grep") {
     return !block.grepTarget;

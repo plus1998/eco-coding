@@ -912,11 +912,11 @@ test("emits structured SDK tool metadata without parsing display text", () => {
   expect(emitted).toEqual([
     {
       type: "tool.started",
-      message: "Tool: Skill · pdf 技能",
+      message: "读取 pdf 技能",
       role: "tool",
       tool: {
         name: "Skill",
-        detail: "pdf 技能",
+        detail: "读取 pdf 技能",
       },
     },
   ]);
@@ -950,10 +950,50 @@ test("emits Skill detail for alternate SDK skill input keys", () => {
 
   expect(emitted).toEqual([
     {
-      message: "Tool: Skill · frontend-design 技能",
+      message: "读取 frontend-design 技能",
       tool: {
         name: "Skill",
-        detail: "frontend-design 技能",
+        detail: "读取 frontend-design 技能",
+      },
+    },
+  ]);
+});
+
+test("labels pi Read of SKILL.md by skill name, not SKILL.md", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    message: string;
+    tool?: { name: string; detail?: string; readTarget?: unknown; status?: string };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        tool_use_id: "toolu_pi_read",
+        input: { path: "/tmp/eco/skills/apple-design/SKILL.md" },
+      },
+    },
+    (_threadId, _type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({
+        message,
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+  );
+
+  expect(emitted).toEqual([
+    {
+      message: "读取 apple-design 技能",
+      tool: {
+        name: "Read",
+        detail: "读取 apple-design 技能",
+        toolUseId: "toolu_pi_read",
+        status: "started",
       },
     },
   ]);
