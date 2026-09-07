@@ -113,6 +113,7 @@ export interface GitCommitRecord {
   author: string;
   relativeDate: string;
   decorations: string[];
+  tags: string[];
 }
 
 export interface WorkspaceDiffResult {
@@ -389,18 +390,24 @@ export async function getGitWorkingTreeStatus(
   };
 }
 
-function parseGitLogDecorations(raw: string): string[] {
+function parseGitLogDecorations(raw: string): { decorations: string[]; tags: string[] } {
   const trimmed = raw
     .trim()
     .replace(/^\(|\)$/g, "")
     .trim();
   if (!trimmed) {
-    return [];
+    return { decorations: [], tags: [] };
   }
   const labels = new Set<string>();
+  const tags = new Set<string>();
   for (const part of trimmed.split(",")) {
     const item = part.trim();
-    if (!item || item.startsWith("tag:")) {
+    if (!item) {
+      continue;
+    }
+    const tagMatch = item.match(/^tag:\s*(.+)$/);
+    if (tagMatch?.[1]) {
+      tags.add(tagMatch[1].trim());
       continue;
     }
     const headMatch = item.match(/^HEAD\s*->\s*(.+)$/);
@@ -415,19 +422,21 @@ function parseGitLogDecorations(raw: string): string[] {
     }
     labels.add(item);
   }
-  return [...labels];
+  return { decorations: [...labels], tags: [...tags] };
 }
 
 function parseGitLogLine(line: string): GitCommitRecord {
   const [sha = "", shortSha = "", subject = "", author = "", relativeDate = "", decorationsRaw = ""] =
     line.split("\x1f");
+  const { decorations, tags } = parseGitLogDecorations(decorationsRaw);
   return {
     sha,
     shortSha,
     subject,
     author,
     relativeDate,
-    decorations: parseGitLogDecorations(decorationsRaw),
+    decorations,
+    tags,
   };
 }
 

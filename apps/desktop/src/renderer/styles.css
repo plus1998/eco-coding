@@ -14880,6 +14880,11 @@ a.run-log-web-search-detail-result-url:focus-visible {
   font-weight: 600;
 }
 
+.thread-info-workspace-git-graph-tag.is-tag {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
 .thread-info-workspace-git-graph-empty,
 .thread-info-workspace-git-graph-error,
 .thread-info-workspace-git-graph-loading {

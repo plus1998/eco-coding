@@ -904,6 +904,7 @@ export interface GitCommitRecord {
   author: string;
   relativeDate: string;
   decorations: string[];
+  tags: string[];
 }
 
 export type WorkspaceDiffFileStatus = "modified" | "untracked" | "added" | "deleted";

@@ -103,7 +103,9 @@ export function WorkspaceGitCommitGraph({
             <li
               key={commit.sha}
               className="thread-info-workspace-git-graph-item"
-              title={`${commit.subject}\n${commit.author} · ${commit.relativeDate}`}
+              title={`${commit.subject}\n${commit.author} · ${commit.relativeDate}${
+                commit.tags.length > 0 ? `\nTags: ${commit.tags.join(", ")}` : ""
+              }`}
             >
               <span
                 className={
@@ -117,10 +119,18 @@ export function WorkspaceGitCommitGraph({
               </span>
               <span className="thread-info-workspace-git-graph-content">
                 <span className="thread-info-workspace-git-graph-message">{commit.subject}</span>
-                {commit.decorations.length > 0 ? (
+                {commit.decorations.length > 0 || commit.tags.length > 0 ? (
                   <span className="thread-info-workspace-git-graph-tags">
                     {commit.decorations.map((label) => (
                       <span key={`${commit.sha}-${label}`} className="thread-info-workspace-git-graph-tag">
+                        {label}
+                      </span>
+                    ))}
+                    {commit.tags.map((label) => (
+                      <span
+                        key={`${commit.sha}-tag-${label}`}
+                        className="thread-info-workspace-git-graph-tag is-tag"
+                      >
                         {label}
                       </span>
                     ))}
