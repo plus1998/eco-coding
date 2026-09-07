@@ -1392,6 +1392,8 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
 
 function finishActiveRun(threadId: string): void {
   clearThreadCancelling(threadId);
+  // Agent stopped operating this thread — drop the browser presence overlay now.
+  browserHost?.clearAgentPresenceForThread(threadId);
   for (const active of threadLiveRequestRegistry.listActive(threadId)) {
     if (active.emitTimelineActivity) {
       emitRequestTerminalEvent(threadId, {

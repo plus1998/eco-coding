@@ -280,6 +280,28 @@ export class BrowserHost {
     this.noteAgentPresence(browserId);
   }
 
+  /**
+   * Agent run for this thread has ended (completed / failed / cancelled / app quit) —
+   * clear presence overlays immediately instead of waiting out the idle timer.
+   */
+  clearAgentPresenceForThread(threadId: string): void {
+    const scopeId = threadId.trim();
+    if (!scopeId || this.disposed) {
+      return;
+    }
+    const scope = this.scopes.get(scopeId);
+    if (!scope) {
+      return;
+    }
+    const at = Date.now();
+    for (const browser of scope.browsers.values()) {
+      this.clearAgentPresenceIdle(browser.id);
+      this.agentPointerDragging.delete(browser.id);
+      this.agentPointerMoveAt.delete(browser.id);
+      this.emitAgentPresence({ type: "idle", browserId: browser.id, at });
+    }
+  }
+
   private emitAgentPresence(event: BrowserAgentPresenceEvent): void {
     this.deps.broadcastAgentPresence?.(event);
   }
