@@ -157,7 +157,7 @@ export class ImageViewMcpGateway {
         {
           serverName: ECO_IMAGE_VIEW_MCP_SERVER,
           instructions:
-            "Eco local image viewing. Pass an absolute path; returns a structured text report.",
+            "Eco local image viewing. Pass an absolute path; returns a factual text report for the main agent (describe only, no advice).",
           listTools: async () => ({ tools: [imageViewToolDefinition()] }),
           callTool: async ({ name, arguments: args, authToken }) =>
             this.executeToolCall(name, args, authToken),
@@ -253,14 +253,18 @@ function imageViewToolDefinition(): Record<string, unknown> {
   return {
     name: ECO_IMAGE_VIEW_TOOL,
     description:
-      "Analyze a local image file with Eco's vision model and return a structured text report. path must be an absolute filesystem path.",
+      "Describe a local image with Eco's vision sensor and return a factual text report for the main agent. Does not advise or message the user. path must be an absolute filesystem path.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["path"],
       properties: {
         path: { type: "string", minLength: 1, description: "Absolute local image path." },
-        question: { type: "string", description: "Optional question to answer about the image." },
+        question: {
+          type: "string",
+          description:
+            "Optional observation focus (what to look for). Not a chat question; the sensor only describes visible facts.",
+        },
       },
     },
   };

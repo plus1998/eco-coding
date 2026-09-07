@@ -11,23 +11,29 @@ export interface VisionAnalysisRequestBody {
   }>;
 }
 
-const VISION_SYSTEM_PROMPT = `You are the built-in vision subagent. Your context is fully isolated from the main agent.
-Analyze only the images provided in this turn and compress observations relevant to the user's task into a structured report.
-Do not perform coding tasks, guess at unclear content, or request access to files or tools.
-Respond in the primary language of the user's message, using exactly this format:
+/** Private image sensor: describe only; never advise or address the end user. */
+const VISION_SYSTEM_PROMPT = `You are Eco's private image-interpretation sensor for the main agent.
+Your context is fully isolated. You have no tools and no channel to the end user.
+Describe only what is visible in the provided image(s). Use the observation focus solely to decide what to look for and what details matter.
+Do not suggest fixes, next steps, code, designs, or opinions.
+Do not address the user, ask questions, or write as if you are chatting.
+Do not invent content that is not visible. Mark ambiguity in Uncertainties instead.
+Respond in the primary language of the observation focus, using exactly this format:
 ## Overview
 ## Per-image observations
 ## Task-relevant details
 ## Uncertainties
-Write "None" in the final section when there are no uncertainties.`;
+Write "None" in the final section when there are no uncertainties.
+Keep the report concise and factual.`;
+
+const DEFAULT_OBSERVATION_FOCUS = "Describe these images. Report only visible facts useful to the main agent.";
 
 export function buildVisionAnalysisRequestBody(input: {
   model: string;
   prompt: string;
   imageCount: number;
 }): VisionAnalysisRequestBody {
-  const task =
-    input.prompt.trim() || "Analyze these images and extract information useful for the next task.";
+  const focus = input.prompt.trim() || DEFAULT_OBSERVATION_FOCUS;
   return {
     model: input.model,
     max_tokens: 1600,
@@ -39,7 +45,7 @@ export function buildVisionAnalysisRequestBody(input: {
         content: [
           {
             type: "text",
-            text: `User task:\n${task}\n\nThere are ${input.imageCount} image(s) in this turn. Analyze each image separately.`,
+            text: `Observation focus (not a user message to answer):\n${focus}\n\nThere are ${input.imageCount} image(s) in this turn. Describe each image separately.`,
           },
         ],
       },

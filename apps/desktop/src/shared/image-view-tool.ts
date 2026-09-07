@@ -11,7 +11,8 @@ export function buildImageViewPromptAppend(): string {
   return [
     "Built-in local image viewing (Eco) is always available.",
     `To inspect a local image file, use only \`${ECO_IMAGE_VIEW_FULL_TOOL}\` with an absolute path.`,
-    "The tool returns a structured text report, not pixels. Do not attach image bytes to the main conversation.",
+    "The tool returns a factual text report (describe-only sensor), not pixels and not advice. Do not attach image bytes to the main conversation.",
+    "Optional `question` is an observation focus for what to look for, not a chat question for the user.",
     "On Codex, prefer this Eco tool over the native view_image when you need the Eco vision model; the native viewer may still appear.",
   ].join("\n");
 }

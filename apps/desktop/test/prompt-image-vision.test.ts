@@ -16,7 +16,10 @@ describe("prompt image vision isolation", () => {
     expect(body.model).toBe("eco-vision-model");
     expect(body.stream).toBe(false);
     expect(body.max_tokens).toBe(1600);
-    expect(body.system).toContain("You are the built-in vision subagent");
+    expect(body.system).toContain("private image-interpretation sensor");
+    expect(body.system).toContain("Do not suggest fixes");
+    expect(body.system).toContain("Do not address the user");
+    expect(body.messages[0]?.content[0]?.text).toContain("Observation focus");
     expect(body.messages[0]?.content[0]?.text).toContain("There are 2 image(s) in this turn");
     expect(JSON.stringify(body)).not.toContain("base64");
   });

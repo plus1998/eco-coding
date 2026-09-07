@@ -1796,7 +1796,7 @@ app.whenReady().then(async () => {
       return runVisionAnalysis(
         {
           threadId,
-          prompt: question?.trim() || `Analyze the local image at ${imagePath}.`,
+          prompt: question?.trim() || `Describe the local image at ${imagePath}. Report only visible facts.`,
           attachments,
           billingAgentId: agentId,
           emitSubagentLifecycle: false,
