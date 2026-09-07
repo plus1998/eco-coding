@@ -13,6 +13,14 @@ export interface RequestSpanLedgerUsageRow {
   ttftMs?: number;
   /** Gateway-measured first-chunk → stream-end window (ms, new-api generationMs). */
   generationMs?: number;
+  /** Gateway-measured network RTT estimate (ms): upstream start → first headers. */
+  firstHeadersMs?: number;
+  /** Gateway-measured time to first text token delta (ms): upstream start → first content token. */
+  firstTokenMs?: number;
+  /** Provider input tokens (non-cache) — prefill-rate numerator when paired with timing. */
+  inputTokens?: number;
+  /** Provider cache-read tokens — used to derive the non-cache input token count. */
+  cacheReadTokens?: number;
   /** Ledger billing source — used to dedupe pi vs gateway proxy rows for the same invocation. */
   source?: RequestSpanLedgerUsageSource;
 }
@@ -120,6 +128,10 @@ function collapseInvocationRows(rows: readonly RequestSpanLedgerUsageRow[]): Req
   let reasoningTokens = 0;
   let ttftMs = 0;
   let generationMs = 0;
+  let firstHeadersMs = 0;
+  let firstTokenMs = 0;
+  let inputTokens: number | undefined;
+  let cacheReadTokens = 0;
   for (const row of rows) {
     if (row.outputTokens > outputTokens) {
       outputTokens = row.outputTokens;
@@ -136,6 +148,22 @@ function collapseInvocationRows(rows: readonly RequestSpanLedgerUsageRow[]): Req
     if (generation > generationMs) {
       generationMs = generation;
     }
+    const firstHeaders = row.firstHeadersMs ?? 0;
+    if (firstHeaders > firstHeadersMs) {
+      firstHeadersMs = firstHeaders;
+    }
+    const firstToken = row.firstTokenMs ?? 0;
+    if (firstToken > firstTokenMs) {
+      firstTokenMs = firstToken;
+    }
+    if (row.inputTokens !== undefined) {
+      const input = row.inputTokens;
+      inputTokens = inputTokens === undefined ? input : Math.max(inputTokens, input);
+    }
+    const cacheRead = row.cacheReadTokens ?? 0;
+    if (cacheRead > cacheReadTokens) {
+      cacheReadTokens = cacheRead;
+    }
   }
   const base = rows[0];
   if (!base) {
@@ -147,6 +175,10 @@ function collapseInvocationRows(rows: readonly RequestSpanLedgerUsageRow[]): Req
     ...(reasoningTokens > 0 && { reasoningTokens: reasoningTokens }),
     ...(ttftMs > 0 && { ttftMs }),
     ...(generationMs > 0 && { generationMs }),
+    ...(firstHeadersMs > 0 && { firstHeadersMs }),
+    ...(firstTokenMs > 0 && { firstTokenMs }),
+    ...(inputTokens !== undefined && { inputTokens }),
+    ...(cacheReadTokens > 0 && { cacheReadTokens }),
   };
 }
 
@@ -156,6 +188,10 @@ function aggregateMatchedLedgerRows(rows: readonly RequestSpanLedgerUsageRow[]):
   reasoningTokens?: number;
   ttftMs?: number;
   generationMs?: number;
+  firstHeadersMs?: number;
+  firstTokenMs?: number;
+  inputTokens?: number;
+  cacheReadTokens?: number;
 } | undefined {
   if (rows.length === 0) {
     return undefined;
@@ -178,12 +214,20 @@ function aggregateMatchedLedgerRows(rows: readonly RequestSpanLedgerUsageRow[]):
   let reasoningTokens = 0;
   let ttftMs = 0;
   let generationMs = 0;
+  let firstHeadersMs = 0;
+  let firstTokenMs = 0;
+  let inputTokens = 0;
+  let cacheReadTokens = 0;
   for (const group of groups.values()) {
     const collapsed = collapseInvocationRows(group);
     outputTokens += collapsed.outputTokens;
     reasoningTokens += collapsed.reasoningTokens ?? 0;
     ttftMs += collapsed.ttftMs ?? 0;
     generationMs += collapsed.generationMs ?? 0;
+    firstHeadersMs += collapsed.firstHeadersMs ?? 0;
+    firstTokenMs += collapsed.firstTokenMs ?? 0;
+    inputTokens += collapsed.inputTokens ?? 0;
+    cacheReadTokens += collapsed.cacheReadTokens ?? 0;
   }
 
   return {
@@ -191,6 +235,10 @@ function aggregateMatchedLedgerRows(rows: readonly RequestSpanLedgerUsageRow[]):
     ...(reasoningTokens > 0 && { reasoningTokens }),
     ...(ttftMs > 0 && { ttftMs }),
     ...(generationMs > 0 && { generationMs }),
+    ...(firstHeadersMs > 0 && { firstHeadersMs }),
+    ...(firstTokenMs > 0 && { firstTokenMs }),
+    ...(inputTokens > 0 && { inputTokens }),
+    ...(cacheReadTokens > 0 && { cacheReadTokens }),
   };
 }
 
@@ -221,6 +269,15 @@ export function attachOutputTokensToRequestSpans<T extends ThreadRunProjectionRe
       ...(aggregated.ttftMs !== undefined && aggregated.ttftMs > 0 && { ttftMs: aggregated.ttftMs }),
       ...(aggregated.generationMs !== undefined &&
         aggregated.generationMs > 0 && { generationMs: aggregated.generationMs }),
+      ...(aggregated.firstHeadersMs !== undefined &&
+        aggregated.firstHeadersMs > 0 && { firstHeadersMs: aggregated.firstHeadersMs }),
+      ...(aggregated.firstTokenMs !== undefined &&
+        aggregated.firstTokenMs > 0 && { firstTokenMs: aggregated.firstTokenMs }),
+      ...(aggregated.inputTokens !== undefined &&
+        aggregated.inputTokens >= 0 &&
+        { inputTokens: aggregated.inputTokens }),
+      ...(aggregated.cacheReadTokens !== undefined &&
+        aggregated.cacheReadTokens > 0 && { cacheReadTokens: aggregated.cacheReadTokens }),
     };
   });
 }

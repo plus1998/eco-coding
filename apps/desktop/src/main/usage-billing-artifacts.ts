@@ -29,6 +29,8 @@ import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
 import {
+  USAGE_LEDGER_FIRST_HEADERS_MS_METADATA_KEY,
+  USAGE_LEDGER_FIRST_TOKEN_MS_METADATA_KEY,
   USAGE_LEDGER_GENERATION_MS_METADATA_KEY,
   USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY,
   USAGE_LEDGER_TTFT_MS_METADATA_KEY,
@@ -93,6 +95,8 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   providerId?: string;
   ttftMs?: number;
   generationMs?: number;
+  firstHeadersMs?: number;
+  firstTokenMs?: number;
   logicalRequestId?: string;
 }
 
@@ -213,6 +217,10 @@ export async function resolveSingleUsageBillingArtifacts(
           input.ttftMs > 0 && { [USAGE_LEDGER_TTFT_MS_METADATA_KEY]: input.ttftMs }),
         ...(input.generationMs !== undefined &&
           input.generationMs > 0 && { [USAGE_LEDGER_GENERATION_MS_METADATA_KEY]: input.generationMs }),
+        ...(input.firstHeadersMs !== undefined &&
+          input.firstHeadersMs > 0 && { [USAGE_LEDGER_FIRST_HEADERS_MS_METADATA_KEY]: input.firstHeadersMs }),
+        ...(input.firstTokenMs !== undefined &&
+          input.firstTokenMs > 0 && { [USAGE_LEDGER_FIRST_TOKEN_MS_METADATA_KEY]: input.firstTokenMs }),
         ...(input.logicalRequestId?.trim() && {
           [USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY]: input.logicalRequestId.trim(),
         }),

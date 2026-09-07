@@ -75,6 +75,10 @@ export interface GatewayUsageEvent {
   ttftMs?: number;
   /** Gateway-measured first-chunk → stream-end window in ms (new-api generationMs). */
   generationMs?: number;
+  /** Gateway-measured network RTT estimate in ms: upstream start → first headers (optional). */
+  firstHeadersMs?: number;
+  /** Gateway-measured time to first text token delta in ms: upstream start → first content token (optional). */
+  firstTokenMs?: number;
   responseId?: string;
   providerRequestId?: string;
   codexTurnMetadata?: GatewayCodexTurnMetadata;

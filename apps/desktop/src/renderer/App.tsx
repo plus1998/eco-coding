@@ -1053,7 +1053,7 @@ function App() {
     id: string;
     requestId: number;
   }>();
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("preferences");
   const [settingsSearch, setSettingsSearch] = useState("");
   const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
   const [localePreference, setLocalePreference] = useState<AppLocalePreference>(initialLocalePreference);
@@ -7342,6 +7342,11 @@ function App() {
     setSettingsOpen(true);
   }
 
+  function openSettings() {
+    setSettingsSection("preferences");
+    setSettingsOpen(true);
+  }
+
   function openGitSettings() {
     setSettingsSection("git");
     setSettingsOpen(true);
@@ -10219,7 +10224,7 @@ function App() {
           </div>
 
           <div className="sidebar-settings">
-            <button type="button" className="sidebar-settings-action" onClick={openProviderSettings}>
+            <button type="button" className="sidebar-settings-action" onClick={openSettings}>
               <Cog size={18} />
               {t("nav.settings")}
             </button>
@@ -10800,8 +10805,8 @@ function App() {
                   onDefaultBashReviewModeChange={saveDefaultBashReviewMode}
                   showBilling={workflowSettings.showBilling !== false}
                   onShowBillingChange={saveShowBilling}
-                  showTokenSpeed={tokenSpeedPreferences.showTokenSpeed}
-                  onShowTokenSpeedChange={(showTokenSpeed) => setTokenSpeedPreferences({ showTokenSpeed })}
+                  tokenSpeedMode={tokenSpeedPreferences.mode}
+                  onTokenSpeedModeChange={(mode) => setTokenSpeedPreferences({ mode })}
                   thinkingDisplayMode={thinkingDisplayPreferences.mode}
                   onThinkingDisplayModeChange={(mode) => {
                     startTransition(() => {

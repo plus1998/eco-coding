@@ -7,6 +7,7 @@ import {
   isTokenSpeedEligibleSpan,
   isTokenSpeedSpanActive,
   resolveLenientRequestSpan,
+  resolveTokenSpeedSegments,
 } from "../src/renderer/token-speed";
 import {
   DEFAULT_TOKEN_SPEED_PREFERENCES,
@@ -19,16 +20,59 @@ function isoAt(offsetMs: number): string {
   return new Date(T0 + offsetMs).toISOString();
 }
 
-test("token speed preference defaults to disabled", () => {
-  expect(DEFAULT_TOKEN_SPEED_PREFERENCES.showTokenSpeed).toBe(false);
-  expect(normalizeTokenSpeedPreferences(undefined)).toEqual({ showTokenSpeed: false });
-  expect(normalizeTokenSpeedPreferences(null)).toEqual({ showTokenSpeed: false });
-  expect(normalizeTokenSpeedPreferences({ showTokenSpeed: "yes" })).toEqual({
-    showTokenSpeed: false,
+test("token speed preference defaults to hidden and migrates the legacy boolean", () => {
+  expect(DEFAULT_TOKEN_SPEED_PREFERENCES.mode).toBe("hidden");
+  expect(normalizeTokenSpeedPreferences(undefined)).toEqual({ mode: "hidden" });
+  expect(normalizeTokenSpeedPreferences(null)).toEqual({ mode: "hidden" });
+  expect(normalizeTokenSpeedPreferences({ mode: "bogus" })).toEqual({ mode: "hidden" });
+  // Legacy boolean migration
+  expect(normalizeTokenSpeedPreferences({ showTokenSpeed: true })).toEqual({ mode: "detailed" });
+  expect(normalizeTokenSpeedPreferences({ showTokenSpeed: false })).toEqual({ mode: "hidden" });
+  // New mode field wins over legacy when both present
+  expect(normalizeTokenSpeedPreferences({ mode: "throughput", showTokenSpeed: false })).toEqual({
+    mode: "throughput",
   });
-  expect(normalizeTokenSpeedPreferences({ showTokenSpeed: true })).toEqual({
-    showTokenSpeed: true,
-  });
+});
+
+test("display segments follow the selected mode", () => {
+  const stats = {
+    ttftMs: 1_200,
+    totalTps: 46,
+    prefillTps: 7_200,
+    decodeTps: 61,
+    tokenSource: "usage" as const,
+  };
+  expect(resolveTokenSpeedSegments(stats, "hidden").map((s) => s.key)).toEqual([]);
+  expect(resolveTokenSpeedSegments(stats, "throughput").map((s) => s.key)).toEqual(["ttft", "total"]);
+  expect(resolveTokenSpeedSegments(stats, "detailed").map((s) => s.key)).toEqual([
+    "ttft",
+    "total",
+    "prefill",
+    "decode",
+  ]);
+  // Detailed degrades gracefully when prefill/decode are unavailable
+  expect(
+    resolveTokenSpeedSegments({ ttftMs: 1_200, totalTps: 46, tokenSource: "usage" }, "detailed").map(
+      (s) => s.key,
+    ),
+  ).toEqual(["ttft", "total"]);
+  // Waiting prefix appears while open
+  expect(
+    resolveTokenSpeedSegments({ waitingMs: 3_200, tokenSource: "usage" }, "throughput").map((s) => s.key),
+  ).toEqual(["waiting"]);
+});
+
+test("active streaming span publishes live total throughput after 1s", () => {
+  const span = {
+    status: "streaming" as const,
+    startedAt: isoAt(0),
+    firstTokenAt: isoAt(800),
+  };
+  const early = formatTokenSpeedStats(span, "hello world", T0 + 500);
+  expect(early.totalTps).toBeUndefined();
+  const later = formatTokenSpeedStats(span, "hello world this is a longer streamed answer", T0 + 2_000);
+  expect(later.active).toBe(true);
+  expect(later.totalTps).toBeGreaterThan(0);
 });
 
 test("span active detection only covers open request states", () => {
@@ -61,7 +105,7 @@ test("gateway ttftMs and generationMs on span drive closed-span timing", () => {
   expect(stats.tokenSource).toBe("usage");
   expect(stats.ttftMs).toBe(940);
   // new-api style: full completion tokens (546, incl. reasoning) over generationMs.
-  expect(stats.rateTps).toBeCloseTo(546 / 12, 5);
+  expect(stats.decodeTps).toBeCloseTo(546 / 12, 5);
 });
 
 test("waiting span reports elapsed wait and no ttft/rate", () => {
@@ -115,7 +159,7 @@ test("completed span without gateway timing keeps ttft but reports no rate", () 
   expect(stats.ttftMs).toBe(1_200);
   expect(stats.tokenSource).toBe("estimate");
   // No gateway decode window — rate is withheld.
-  expect(stats.rateTps).toBeUndefined();
+  expect(stats.decodeTps).toBeUndefined();
 });
 
 test("gateway generationMs drives closed-span rate from provider usage", () => {
@@ -132,7 +176,7 @@ test("gateway generationMs drives closed-span rate from provider usage", () => {
   const stats = formatTokenSpeedStats(span, text, T0 + 999_999);
   expect(stats.tokenSource).toBe("usage");
   expect(stats.streamedTokens).toBe(100);
-  expect(stats.rateTps).toBeCloseTo(100 / 3, 5);
+  expect(stats.decodeTps).toBeCloseTo(100 / 3, 5);
 });
 
 test("withholds tok/s when gateway generation window is too short to measure", () => {
@@ -147,7 +191,7 @@ test("withholds tok/s when gateway generation window is too short to measure", (
   };
   const stats = formatTokenSpeedStats(span, "x".repeat(2000), T0 + 999_999);
   expect(stats.ttftMs).toBe(1_000);
-  expect(stats.rateTps).toBeUndefined();
+  expect(stats.decodeTps).toBeUndefined();
 });
 
 test("gateway generationMs path uses provider completion tokens for tool-call invocations", () => {
@@ -163,7 +207,7 @@ test("gateway generationMs path uses provider completion tokens for tool-call in
   const visible = "Sure, I'll read that file for you.";
   const stats = formatTokenSpeedStats(span, visible, T0 + 999_999);
   expect(stats.tokenSource).toBe("usage");
-  expect(stats.rateTps).toBeCloseTo(240, 0);
+  expect(stats.decodeTps).toBeCloseTo(240, 0);
 });
 
 test("reasoning tokens count toward the gateway rate (full completion tokens)", () => {
@@ -181,7 +225,7 @@ test("reasoning tokens count toward the gateway rate (full completion tokens)", 
   const stats = formatTokenSpeedStats(span, visible, T0 + 999_999);
   expect(stats.streamedTokens).toBe(500);
   expect(stats.tokenSource).toBe("usage");
-  expect(stats.rateTps).toBeCloseTo(500, 0);
+  expect(stats.decodeTps).toBeCloseTo(500, 0);
 });
 
 test("without reasoning_tokens, completion tokens drive gateway rate", () => {
@@ -197,7 +241,7 @@ test("without reasoning_tokens, completion tokens drive gateway rate", () => {
   const visible = "Hello world"; // ~3 estimated tokens
   const stats = formatTokenSpeedStats(span, visible, T0 + 999_999);
   expect(stats.tokenSource).toBe("usage");
-  expect(stats.rateTps).toBeCloseTo(250, 0);
+  expect(stats.decodeTps).toBeCloseTo(250, 0);
 });
 
 test("attachOutputTokensToRequestSpans joins by providerRequestId and proxy requestKey", () => {
@@ -243,6 +287,64 @@ test("formatters round to sensible precision", () => {
   expect(formatTokenSpeedSeconds(12_400)).toBe("12");
   expect(formatTokenSpeedRate(45.6)).toBe("45.6");
   expect(formatTokenSpeedRate(123.4)).toBe("123");
+});
+
+// Real recorded case (qwen via buffering new-api proxy): headers and the first
+// token arrived together after 25.5s, collapsing the prefill window to ~2ms.
+// Prefill must be withheld; decode/total must stay correct.
+test("buffering proxy (headers ~= first token) withholds prefill, keeps decode", () => {
+  const span = {
+    status: "completed" as const,
+    startedAt: isoAt(0),
+    firstTokenAt: isoAt(25_512),
+    outputTokens: 81,
+    ttftMs: 25_512,
+    generationMs: 1_330,
+    firstHeadersMs: 25_510,
+    firstTokenMs: 25_512,
+    inputTokens: 9_850,
+  };
+  const stats = formatTokenSpeedStats(span, "text");
+  expect(stats.prefillTps).toBeUndefined();
+  expect(stats.netMs).toBe(25_510);
+  // decode window = 1330 - (25512-25512) = 1330
+  expect(stats.decodeTps!).toBeCloseTo((81 * 1000) / 1_330, 1);
+  expect(stats.totalTps!).toBeCloseTo((81 * 1000) / (25_512 + 1_330), 1);
+});
+
+test("late headers in the second half of the wait withhold prefill", () => {
+  const span = {
+    status: "completed" as const,
+    startedAt: isoAt(0),
+    firstTokenAt: isoAt(26_300),
+    outputTokens: 100,
+    ttftMs: 26_300,
+    generationMs: 2_000,
+    firstHeadersMs: 26_000,
+    firstTokenMs: 26_300,
+    inputTokens: 5_000,
+  };
+  const stats = formatTokenSpeedStats(span, "text");
+  // gap is 300ms (>= 100ms) but headers landed late: 26000*2 > 26300
+  expect(stats.prefillTps).toBeUndefined();
+});
+
+test("healthy early-headers timing publishes prefill", () => {
+  const span = {
+    status: "completed" as const,
+    startedAt: isoAt(0),
+    firstTokenAt: isoAt(1_413),
+    outputTokens: 1_166,
+    reasoningTokens: 371,
+    ttftMs: 495,
+    generationMs: 23_163,
+    firstHeadersMs: 494,
+    firstTokenMs: 1_413,
+    inputTokens: 44,
+  };
+  const stats = formatTokenSpeedStats(span, "text");
+  expect(stats.prefillTps!).toBeCloseTo((44 * 1000) / (1_413 - 494), 1);
+  expect(stats.decodeTps).toBeDefined();
 });
 
 test("lenient span resolution prefers the most recent span before the item, matching role first", () => {

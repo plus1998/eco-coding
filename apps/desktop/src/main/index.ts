@@ -867,7 +867,13 @@ import {
 import { createUsageContextService } from "./usage-context-effects";
 import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import { readUsageLedgerGenerationMs, readUsageLedgerLogicalRequestId, readUsageLedgerTtftMs } from "./usage-ledger-cost-metadata";
+import {
+  readUsageLedgerFirstHeadersMs,
+  readUsageLedgerFirstTokenMs,
+  readUsageLedgerGenerationMs,
+  readUsageLedgerLogicalRequestId,
+  readUsageLedgerTtftMs,
+} from "./usage-ledger-cost-metadata";
 import { runVisionAnalysis, type VisionAnalysisHost } from "./vision-analysis";
 import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
 import {
@@ -1989,6 +1995,8 @@ app.whenReady().then(async () => {
             ...(logicalRequestId ? { logicalRequestId } : {}),
             ...(event.ttftMs !== undefined && { ttftMs: event.ttftMs }),
             ...(event.generationMs !== undefined && { generationMs: event.generationMs }),
+            ...(event.firstHeadersMs !== undefined && { firstHeadersMs: event.firstHeadersMs }),
+            ...(event.firstTokenMs !== undefined && { firstTokenMs: event.firstTokenMs }),
             ...(stampedAgentId ? { stampedAgentId } : {}),
             ...(stampedBillingRole ? { stampedBillingRole } : {}),
           });
@@ -11988,6 +11996,8 @@ async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsag
     ...resolved.billingInput,
     ...(event.ttftMs !== undefined && { ttftMs: event.ttftMs }),
     ...(event.generationMs !== undefined && { generationMs: event.generationMs }),
+    ...(event.firstHeadersMs !== undefined && { firstHeadersMs: event.firstHeadersMs }),
+    ...(event.firstTokenMs !== undefined && { firstTokenMs: event.firstTokenMs }),
     logicalRequestId: timingIdsForBilling.logicalRequestId,
   }).then(
     () => undefined,
@@ -12086,6 +12096,8 @@ async function emitProxyUsage(
     ...resolved.billingInput,
     ...(info.ttftMs !== undefined && { ttftMs: info.ttftMs }),
     ...(info.generationMs !== undefined && { generationMs: info.generationMs }),
+    ...(info.firstHeadersMs !== undefined && { firstHeadersMs: info.firstHeadersMs }),
+    ...(info.firstTokenMs !== undefined && { firstTokenMs: info.firstTokenMs }),
   });
   usageLedgerCoordinator.trackUsageUpdate(
     info.threadId,
@@ -13749,6 +13761,8 @@ function usageLedgerRowsForRequestSpanJoin(threadId: string): RequestSpanLedgerU
   return conversationStore.listUsageLedgerEvents(threadId).map((event) => {
     const ttftMs = readUsageLedgerTtftMs(event.metadata);
     const generationMs = readUsageLedgerGenerationMs(event.metadata);
+    const firstHeadersMs = readUsageLedgerFirstHeadersMs(event.metadata);
+    const firstTokenMs = readUsageLedgerFirstTokenMs(event.metadata);
     const logicalRequestId = readUsageLedgerLogicalRequestId(event.metadata);
     return {
       outputTokens: event.outputTokens,
@@ -13760,6 +13774,12 @@ function usageLedgerRowsForRequestSpanJoin(threadId: string): RequestSpanLedgerU
       ...(logicalRequestId && { logicalRequestId }),
       ...(ttftMs !== undefined && { ttftMs }),
       ...(generationMs !== undefined && { generationMs }),
+      ...(firstHeadersMs !== undefined && { firstHeadersMs }),
+      ...(firstTokenMs !== undefined && { firstTokenMs }),
+      ...(event.inputTokens !== undefined &&
+        event.inputTokens >= 0 && { inputTokens: event.inputTokens }),
+      ...(event.cacheReadTokens !== undefined &&
+        event.cacheReadTokens > 0 && { cacheReadTokens: event.cacheReadTokens }),
     };
   });
 }

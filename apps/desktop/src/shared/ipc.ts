@@ -2346,6 +2346,10 @@ export interface ThreadUsageLedgerEventView {
   ttftMs?: number;
   /** Gateway-measured first-chunk → stream-end window (ms, new-api generationMs). */
   generationMs?: number;
+  /** Gateway-measured network RTT estimate (ms): upstream start → first headers. */
+  firstHeadersMs?: number;
+  /** Gateway-measured time to first text token delta (ms): upstream start → first content token. */
+  firstTokenMs?: number;
   /** Feed logical request id — joins multi-invocation rows onto one span. */
   logicalRequestId?: string;
   /** Client-side request span start (fallback timing for rows without gateway timing). */

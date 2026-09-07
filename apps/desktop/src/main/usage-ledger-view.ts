@@ -8,6 +8,8 @@ import {
 import type { UsageAttributionStatus, UsageLedgerEvent, UsageLedgerKind } from "./usage-ledger";
 import {
   readUsageLedgerComputedBilling,
+  readUsageLedgerFirstHeadersMs,
+  readUsageLedgerFirstTokenMs,
   readUsageLedgerGenerationMs,
   readUsageLedgerLogicalRequestId,
   readUsageLedgerTtftMs,
@@ -37,6 +39,10 @@ export interface ThreadUsageLedgerEventView {
   ttftMs?: number;
   /** Gateway-measured first-chunk → stream-end window (ms, new-api generationMs). */
   generationMs?: number;
+  /** Gateway-measured network RTT estimate (ms): upstream start → first headers. */
+  firstHeadersMs?: number;
+  /** Gateway-measured time to first text token delta (ms): upstream start → first content token. */
+  firstTokenMs?: number;
   /** Feed logical request id — joins multi-invocation rows onto one span. */
   logicalRequestId?: string;
   /** Client-side request span start (fallback timing for rows without gateway timing). */
@@ -57,6 +63,8 @@ export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): Thread
   const computedBilling = readUsageLedgerComputedBilling(event.metadata);
   const ttftMs = readUsageLedgerTtftMs(event.metadata);
   const generationMs = readUsageLedgerGenerationMs(event.metadata);
+  const firstHeadersMs = readUsageLedgerFirstHeadersMs(event.metadata);
+  const firstTokenMs = readUsageLedgerFirstTokenMs(event.metadata);
   const logicalRequestId = readUsageLedgerLogicalRequestId(event.metadata);
   return {
     id: event.id,
@@ -81,6 +89,8 @@ export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): Thread
       event.reasoningTokens > 0 && { reasoningTokens: event.reasoningTokens }),
     ...(ttftMs !== undefined && { ttftMs }),
     ...(generationMs !== undefined && { generationMs }),
+    ...(firstHeadersMs !== undefined && { firstHeadersMs }),
+    ...(firstTokenMs !== undefined && { firstTokenMs }),
     ...(logicalRequestId && { logicalRequestId }),
     ...(computedBilling && {
       ecoCostUsd: computedBilling.ecoCostUsd,

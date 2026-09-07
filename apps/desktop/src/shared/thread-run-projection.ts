@@ -125,6 +125,14 @@ export interface ThreadRunProjectionRequestSpan {
    * ledger invocations — tok/s denominator (new-api generationMs).
    */
   generationMs?: number;
+  /** Gateway-measured network RTT estimate (ms): upstream start → first headers. */
+  firstHeadersMs?: number;
+  /** Gateway-measured time to first text token delta (ms): upstream start → first content token. */
+  firstTokenMs?: number;
+  /** Provider input tokens (non-cache) joined from ledger usage, when available. */
+  inputTokens?: number;
+  /** Provider cache-read tokens joined from ledger usage, when available. */
+  cacheReadTokens?: number;
 }
 
 export interface ThreadRunProjectionDiagnostic {

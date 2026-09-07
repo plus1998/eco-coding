@@ -579,6 +579,18 @@ export async function forwardAnthropicMessagesBody(
           return true;
         }
         lifecycle?.tracker.noteFirstChunk();
+        if (
+          anthropicEvent.type === "content_block_delta" &&
+          anthropicEvent.delta &&
+          ((anthropicEvent.delta.type === "text_delta" &&
+            typeof anthropicEvent.delta.text === "string" &&
+            anthropicEvent.delta.text) ||
+            (anthropicEvent.delta.type === "thinking_delta" &&
+              typeof anthropicEvent.delta.thinking === "string" &&
+              anthropicEvent.delta.thinking))
+        ) {
+          lifecycle?.tracker.noteFirstToken();
+        }
         const responsesEvents = anthropicEventToResponsesEvents(anthropicEvent, state);
         trackAnthropicStreamUsage(usageTracker, anthropicEvent);
         writeResponsesEvents(responsesEvents);

@@ -241,3 +241,48 @@ test("resolveLedgerEventTiming returns nothing without any timing source", () =>
     ttftMs: 100,
   });
 });
+
+test("resolveLedgerEventTiming publishes total throughput and strict decode", () => {
+  // ttft 2s, generation 5s, output 100 → total = 100/7s
+  const timing = resolveLedgerEventTiming({
+    outputTokens: 100,
+    inputTokens: 80,
+    ttftMs: 2000,
+    generationMs: 5000,
+    firstHeadersMs: 500,
+    firstTokenMs: 2000,
+  });
+  expect(timing.totalTps).toBeCloseTo((100 * 1000) / 7000, 3);
+  // Strict decode: 5000 - (2000 - 2000) = 5000 (first token coincides with ttft)
+  expect(timing.decodeTps).toBeCloseTo((100 * 1000) / 5000, 3);
+  // Prefill window 500→2000 = 1500ms, reliable
+  expect(timing.prefillTps).toBeCloseTo((80 * 1000) / 1500, 3);
+});
+
+test("strict decode excludes the pre-token wait when firstTokenMs lags ttft", () => {
+  // generation window starts at first chunk (ttft 1000) but the first token
+  // arrives at 3000: strict window = 5000 - (3000 - 1000) = 3000
+  const timing = resolveLedgerEventTiming({
+    outputTokens: 90,
+    ttftMs: 1000,
+    generationMs: 5000,
+    firstTokenMs: 3000,
+  });
+  expect(timing.rateTps).toBeCloseTo((90 * 1000) / 5000, 3);
+  expect(timing.decodeTps).toBeCloseTo((90 * 1000) / 3000, 3);
+  expect(timing.totalTps).toBeCloseTo((90 * 1000) / 6000, 3);
+});
+
+test("buffering-proxy timing (headers ~= first token) withholds prefill but keeps totals", () => {
+  const timing = resolveLedgerEventTiming({
+    outputTokens: 81,
+    inputTokens: 9850,
+    ttftMs: 25512,
+    generationMs: 1330,
+    firstHeadersMs: 25510,
+    firstTokenMs: 25512,
+  });
+  expect(timing.prefillTps).toBeUndefined();
+  expect(timing.totalTps).toBeCloseTo((81 * 1000) / (25512 + 1330), 3);
+  expect(timing.decodeTps).toBeCloseTo((81 * 1000) / 1330, 3);
+});

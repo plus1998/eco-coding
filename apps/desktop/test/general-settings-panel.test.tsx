@@ -21,7 +21,7 @@ test("appearance settings renders theme and typography controls in Chinese", () 
   expect(markup).toContain("UI 字号");
   expect(markup).toContain("代码字体大小");
   expect(markup).not.toContain("语言");
-  expect(markup).not.toContain("Token 速度统计");
+  expect(markup).not.toContain("模型吞吐");
   expect(markup).toContain("14<small>px</small>");
   expect(markup).toContain("12<small>px</small>");
   expect(markup).toContain('aria-label="减小UI 字号"');
@@ -44,7 +44,7 @@ test("appearance settings renders English labels without language section", () =
   expect(markup).not.toContain("Language");
   expect(markup).toContain("UI font size");
   expect(markup).toContain('aria-label="Decrease UI font size"');
-  expect(markup).not.toContain("Token speed stats");
+  expect(markup).not.toContain("Model throughput");
 });
 
 test("preferences panel puts language under the general section", () => {
@@ -94,7 +94,7 @@ test("preferences panel puts language under the general section", () => {
   const billingIdx = markup.indexOf("显示计费");
   const thinkingLabelIdx = markup.indexOf("<strong>思考内容</strong>");
   const cacheIdx = markup.indexOf("Cache break 提示");
-  const tokenIdx = markup.indexOf("Token 速度统计");
+  const tokenIdx = markup.indexOf("模型吞吐");
   expect(generalIdx).toBeGreaterThan(-1);
   expect(notificationsIdx).toBeGreaterThan(generalIdx);
   expect(displayIdx).toBeGreaterThan(notificationsIdx);
@@ -163,23 +163,24 @@ test("preferences panel renders the Composer billing toggle", () => {
       onFollowUpDeliveryModeChange: () => undefined,
       showBilling: false,
       onShowBillingChange: () => undefined,
-      showTokenSpeed: true,
-      onShowTokenSpeedChange: () => undefined,
+      tokenSpeedMode: "throughput",
+      onTokenSpeedModeChange: () => undefined,
     }),
     "zh-CN",
   );
 
   expect(markup).toContain("显示计费");
   expect(markup).toContain("在 Composer 中显示会话累计用量和费用。");
-  expect(markup).toContain("Token 速度统计");
-  expect(markup).toContain(
-    "生成回答时显示响应速度。",
-  );
-  expect(markup).toContain("显示");
+  expect(markup).toContain("模型吞吐");
+  expect(markup).toContain("显示首字时间与总吞吐。");
+  expect(markup).toContain(">隐藏<");
+  expect(markup).toContain(">吞吐<");
+  expect(markup).toContain(">详细<");
+  expect(markup).toMatch(/aria-pressed="true"\s*>吞吐</);
   expect(markup).toMatch(/type="checkbox"[^>]*checked/);
 });
 
-test("general preferences panel renders the token speed toggle unchecked by default", () => {
+test("general preferences panel renders the token speed segmented control, hidden by default", () => {
   const markup = renderLocalized(
     createElement(NotificationPreferencesPanel, {
       settings: {
@@ -199,10 +200,14 @@ test("general preferences panel renders the token speed toggle unchecked by defa
   );
 
   expect(markup).toContain("Display");
-  expect(markup).toContain("Token speed stats");
+  expect(markup).toContain("Model throughput");
   expect(markup).toContain(
-    "Shows response speed while the answer is generated.",
+    "No speed info is shown.",
   );
+  expect(markup).toContain(">Hidden<");
+  expect(markup).toContain(">Throughput<");
+  expect(markup).toContain(">Detailed<");
+  expect(markup).toMatch(/aria-pressed="true"\s*>Hidden/);
   expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
 });
 

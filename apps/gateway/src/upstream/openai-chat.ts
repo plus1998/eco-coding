@@ -357,6 +357,16 @@ export async function forwardOpenAIChat(
           lastChatResponseId = parsed.chunk.id.trim();
         }
         lifecycle?.tracker.noteFirstChunk();
+        const delta = parsed.chunk.choices[0]?.delta;
+        if (
+          delta &&
+          (typeof delta.content === "string" ||
+            typeof delta.reasoning_content === "string" ||
+            typeof delta.reasoning === "string") &&
+          (delta.content ?? delta.reasoning_content ?? delta.reasoning)
+        ) {
+          lifecycle?.tracker.noteFirstToken();
+        }
         if (!usageEmitted && parsed.chunk.usage) {
           const usage = normalizeChatCompletionsUsage(
             parsed.chunk.usage,

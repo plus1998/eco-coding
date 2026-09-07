@@ -41,6 +41,10 @@ export interface SingleUsageBillingRequest {
   ttftMs?: number;
   /** Gateway-measured first-chunk → stream-end window (ms), new-api generationMs. */
   generationMs?: number;
+  /** Gateway-measured network RTT estimate (ms): upstream start → first headers. */
+  firstHeadersMs?: number;
+  /** Gateway-measured time to first text token delta (ms): upstream start → first content token. */
+  firstTokenMs?: number;
   /** Bridge logical request id for joining multi-invocation usage onto one feed span. */
   logicalRequestId?: string;
 }
@@ -104,6 +108,10 @@ export async function resolveSingleUsageBillingOrchestration(
     ...(request.providerId && { providerId: request.providerId }),
     ...(request.ttftMs !== undefined && request.ttftMs > 0 && { ttftMs: request.ttftMs }),
     ...(request.generationMs !== undefined && request.generationMs > 0 && { generationMs: request.generationMs }),
+    ...(request.firstHeadersMs !== undefined &&
+      request.firstHeadersMs > 0 && { firstHeadersMs: request.firstHeadersMs }),
+    ...(request.firstTokenMs !== undefined &&
+      request.firstTokenMs > 0 && { firstTokenMs: request.firstTokenMs }),
     ...(request.logicalRequestId?.trim() && { logicalRequestId: request.logicalRequestId.trim() }),
   });
   const updateContext =

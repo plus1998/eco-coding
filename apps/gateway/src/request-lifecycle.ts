@@ -19,6 +19,7 @@ export class RequestLifecycleTracker {
   private upstreamStartedAtMs: number | null = null;
   private firstHeadersAtMs: number | null = null;
   private firstChunkAtMs: number | null = null;
+  private firstTokenAtMs: number | null = null;
 
   hasLogicalTerminal(): boolean {
     return this.logicalTerminal !== null;
@@ -79,24 +80,49 @@ export class RequestLifecycleTracker {
     }
   }
 
+  /** Record the first SSE event that carries an actual text token delta (content/thinking). */
+  noteFirstToken(atMs = Date.now()): void {
+    if (this.firstTokenAtMs === null) {
+      this.firstTokenAtMs = atMs;
+    }
+  }
+
   /**
    * new-api style: TTFT = upstream start → first response chunk;
    * generationMs = stream end → first response chunk (fallback: total latency when no chunk).
    * Call at stream end / usage settlement with the end timestamp.
    */
-  generationTiming(endAtMs = Date.now()): { ttftMs?: number; generationMs?: number } {
+  generationTiming(endAtMs = Date.now()): {
+    ttftMs?: number;
+    generationMs?: number;
+    firstHeadersMs?: number;
+    firstTokenMs?: number;
+  } {
     const startedAtMs = this.upstreamStartedAtMs;
     if (startedAtMs === null) {
       return {};
     }
     const latencyMs = Math.max(0, endAtMs - startedAtMs);
-    const firstAtMs = this.firstChunkAtMs;
-    if (firstAtMs === null) {
-      return { generationMs: latencyMs };
+    const firstChunkAtMs = this.firstChunkAtMs;
+    const headersAtMs = this.firstHeadersAtMs;
+    const tokenAtMs = this.firstTokenAtMs;
+    const firstHeadersMs = headersAtMs !== null ? Math.max(0, headersAtMs - startedAtMs) : undefined;
+    const firstTokenMs = tokenAtMs !== null ? Math.max(0, tokenAtMs - startedAtMs) : undefined;
+    if (firstChunkAtMs === null) {
+      return {
+        generationMs: latencyMs,
+        ...(firstHeadersMs !== undefined && { firstHeadersMs }),
+        ...(firstTokenMs !== undefined && { firstTokenMs }),
+      };
     }
-    const ttftMs = Math.max(0, firstAtMs - startedAtMs);
-    const generationMs = Math.max(0, endAtMs - firstAtMs);
-    return { ttftMs, generationMs: generationMs > 0 ? generationMs : latencyMs };
+    const ttftMs = Math.max(0, firstChunkAtMs - startedAtMs);
+    const generationMs = Math.max(0, endAtMs - firstChunkAtMs);
+    return {
+      ttftMs,
+      generationMs: generationMs > 0 ? generationMs : latencyMs,
+      ...(firstHeadersMs !== undefined && { firstHeadersMs }),
+      ...(firstTokenMs !== undefined && { firstTokenMs }),
+    };
   }
 
   private _attemptIndex = 0;
@@ -224,8 +250,10 @@ export function tryEmitLogicalCompleted(
     ctx.onLog(
       `request lifecycle complete logical=${ctx.logicalRequestId} upstreamMs=${upstreamMs}` +
         `${ttfbMs !== undefined ? ` ttfbMs=${ttfbMs}` : ""}` +
+        `${tokenTiming.firstHeadersMs !== undefined ? ` firstHeadersMs=${tokenTiming.firstHeadersMs}` : ""}` +
         `${tokenTiming.ttftMs !== undefined ? ` ttftMs=${tokenTiming.ttftMs}` : ""}` +
         `${tokenTiming.generationMs !== undefined ? ` generationMs=${tokenTiming.generationMs}` : ""}` +
+        `${tokenTiming.firstTokenMs !== undefined ? ` firstTokenMs=${tokenTiming.firstTokenMs}` : ""}` +
         `${providerRequestId ? ` provider=${providerRequestId}` : ""}`,
     );
   }

@@ -5,6 +5,10 @@ export const USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY = "computedBilling";
 export const USAGE_LEDGER_TTFT_MS_METADATA_KEY = "ttftMs";
 /** Gateway-measured first-chunk → stream-end window (ms), new-api generationMs. */
 export const USAGE_LEDGER_GENERATION_MS_METADATA_KEY = "generationMs";
+/** Gateway-measured network RTT estimate (ms): upstream start → first headers. */
+export const USAGE_LEDGER_FIRST_HEADERS_MS_METADATA_KEY = "firstHeadersMs";
+/** Gateway-measured time to first text token delta (ms): upstream start → first content token. */
+export const USAGE_LEDGER_FIRST_TOKEN_MS_METADATA_KEY = "firstTokenMs";
 /** Feed / bridge logical request id — joins multi-invocation ledger rows onto one span. */
 export const USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY = "logicalRequestId";
 
@@ -39,6 +43,22 @@ export function readUsageLedgerTtftMs(metadata: Record<string, unknown> | undefi
 export function readUsageLedgerGenerationMs(metadata: Record<string, unknown> | undefined): number | undefined {
   const raw = metadata?.[USAGE_LEDGER_GENERATION_MS_METADATA_KEY];
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return undefined;
+  }
+  return Math.floor(raw);
+}
+
+export function readUsageLedgerFirstHeadersMs(metadata: Record<string, unknown> | undefined): number | undefined {
+  const raw = metadata?.[USAGE_LEDGER_FIRST_HEADERS_MS_METADATA_KEY];
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+    return undefined;
+  }
+  return Math.floor(raw);
+}
+
+export function readUsageLedgerFirstTokenMs(metadata: Record<string, unknown> | undefined): number | undefined {
+  const raw = metadata?.[USAGE_LEDGER_FIRST_TOKEN_MS_METADATA_KEY];
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
     return undefined;
   }
   return Math.floor(raw);

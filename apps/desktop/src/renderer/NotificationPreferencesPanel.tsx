@@ -13,6 +13,10 @@ import {
   THINKING_DISPLAY_MODES,
   type ThinkingDisplayMode,
 } from "./thinking-display-preferences";
+import {
+  TOKEN_SPEED_DISPLAY_MODES,
+  type TokenSpeedDisplayMode,
+} from "./token-speed-preferences";
 
 interface NotificationPreferencesPanelProps {
   settings: NotificationSettingsSnapshot;
@@ -27,8 +31,8 @@ interface NotificationPreferencesPanelProps {
   onDefaultBashReviewModeChange?: (mode: BashReviewMode) => void | Promise<void>;
   showBilling?: boolean;
   onShowBillingChange?: (enabled: boolean) => void | Promise<void>;
-  showTokenSpeed?: boolean;
-  onShowTokenSpeedChange?: (enabled: boolean) => void | Promise<void>;
+  tokenSpeedMode?: TokenSpeedDisplayMode;
+  onTokenSpeedModeChange?: (mode: TokenSpeedDisplayMode) => void | Promise<void>;
   thinkingDisplayMode?: ThinkingDisplayMode;
   onThinkingDisplayModeChange?: (mode: ThinkingDisplayMode) => void | Promise<void>;
 }
@@ -49,8 +53,8 @@ export function NotificationPreferencesPanel({
   onDefaultBashReviewModeChange = () => undefined,
   showBilling = true,
   onShowBillingChange = () => undefined,
-  showTokenSpeed = false,
-  onShowTokenSpeedChange = () => undefined,
+  tokenSpeedMode = "hidden",
+  onTokenSpeedModeChange = () => undefined,
   thinkingDisplayMode = "ephemeral",
   onThinkingDisplayModeChange = () => undefined,
 }: NotificationPreferencesPanelProps) {
@@ -336,22 +340,30 @@ export function NotificationPreferencesPanel({
             <div className="notification-settings-row">
               <span className="settings-row-main" id={tokenSpeedId}>
                 <strong>{t("settings.tokenSpeed")}</strong>
-                <small>{t("settings.tokenSpeedHint")}</small>
+                <small>{t(`settings.tokenSpeed.${tokenSpeedMode}Hint`)}</small>
               </span>
-              <label
-                className="composer-switch notification-settings-switch"
-                title={t(showTokenSpeed ? "composer.enabledNamed" : "composer.disabledNamed", {
-                  name: t("settings.tokenSpeed"),
-                })}
+              <div
+                className="settings-segmented-control token-speed-mode-segmented"
+                role="group"
+                aria-labelledby={tokenSpeedId}
               >
-                <input
-                  type="checkbox"
-                  checked={showTokenSpeed}
-                  aria-labelledby={tokenSpeedId}
-                  onChange={(event) => onShowTokenSpeedChange(event.target.checked)}
-                />
-                <span className="composer-switch-track" aria-hidden />
-              </label>
+                {TOKEN_SPEED_DISPLAY_MODES.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={tokenSpeedMode === mode ? "active" : undefined}
+                    aria-pressed={tokenSpeedMode === mode}
+                    onClick={() => {
+                      if (tokenSpeedMode === mode) {
+                        return;
+                      }
+                      void onTokenSpeedModeChange(mode);
+                    }}
+                  >
+                    {t(`settings.tokenSpeed.${mode}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           </li>
 

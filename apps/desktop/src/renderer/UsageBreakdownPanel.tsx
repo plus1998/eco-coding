@@ -26,7 +26,12 @@ import {
   type RuntimeAgentDisplayNames,
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
-import { formatTokenSpeedRate, formatTokenSpeedSeconds } from "./token-speed";
+import { useTokenSpeedDisplayMode } from "./token-speed-preferences";
+import {
+  formatTokenSpeedPrefill,
+  formatTokenSpeedRate,
+  formatTokenSpeedSeconds,
+} from "./token-speed";
 import { resolveLedgerEventTiming } from "../shared/ledger-event-timing";
 
 type BreakdownView = "agent" | "model" | "events";
@@ -347,14 +352,24 @@ function LedgerEventRow({
     cacheCreationTokens: event.cacheCreationTokens,
   });
   const timing = resolveLedgerEventTiming(event);
-  const timingParts = [
-    timing.ttftMs !== undefined
-      ? i18n.t("activity.tokenSpeed.ttft", { seconds: formatTokenSpeedSeconds(timing.ttftMs) })
-      : undefined,
-    timing.rateTps !== undefined
-      ? i18n.t("activity.tokenSpeed.rate", { rate: formatTokenSpeedRate(timing.rateTps) })
-      : undefined,
-  ].filter(Boolean);
+  const tokenSpeedMode = useTokenSpeedDisplayMode();
+  const timingParts: string[] = [];
+  if (tokenSpeedMode !== "hidden") {
+    if (timing.ttftMs !== undefined) {
+      timingParts.push(i18n.t("activity.tokenSpeed.ttft", { seconds: formatTokenSpeedSeconds(timing.ttftMs) }));
+    }
+    if (timing.totalTps !== undefined) {
+      timingParts.push(i18n.t("activity.tokenSpeed.total", { rate: formatTokenSpeedRate(timing.totalTps) }));
+    }
+    if (tokenSpeedMode === "detailed") {
+      if (timing.prefillTps !== undefined) {
+        timingParts.push(i18n.t("activity.tokenSpeed.prefill", { rate: formatTokenSpeedPrefill(timing.prefillTps) }));
+      }
+      if (timing.decodeTps !== undefined) {
+        timingParts.push(i18n.t("activity.tokenSpeed.decode", { rate: formatTokenSpeedRate(timing.decodeTps) }));
+      }
+    }
+  }
   const observedTime = formatLedgerEventTime(event.observedAt);
   const computedCostAvailable = event.ecoCostUsd !== undefined && event.pricingResolved !== false;
   const primaryCostUsd = computedCostAvailable ? event.ecoCostUsd : event.reportedCostUsd;

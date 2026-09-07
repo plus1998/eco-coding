@@ -440,6 +440,9 @@ function observeResponsesSseBody(input: {
     }
 
     input.lifecycle?.tracker.noteFirstChunk();
+    if (type === "response.reasoning_text.delta" || type === "response.output_text.delta") {
+      input.lifecycle?.tracker.noteFirstToken();
+    }
 
     if (type === "response.output_item.done") {
       const item = (event as { item?: unknown }).item;
