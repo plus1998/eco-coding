@@ -1,6 +1,6 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline";
+import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import { AcpClient } from "./acp-client.js";
 import {
@@ -19,17 +19,24 @@ import {
 import { AcpFsHandler } from "./acp-fs.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
+import { resolveAcpPermissionSelection } from "./acp-permission.js";
 import {
   type AcpPromptImageAttachment,
   agentSupportsImagePrompt,
   buildAcpPromptBlocks,
 } from "./acp-prompt.js";
 import { isAcpUnstartedProviderFailure } from "./acp-provider-exhaustion.js";
-import { isAcpSessionModeId, parseAcpAvailableModels, resolveAcpWireModelId } from "./acp-session-config.js";
+import {
+  isAcpSessionModeId,
+  parseAcpAvailableModels,
+  resolveAcpWireModelId,
+  type AcpAvailableModel,
+} from "./acp-session-config.js";
 import type {
   AcpAskQuestionHandler,
   AcpCreatePlanHandler,
   AcpCreatePlanRequest,
+  AcpInitializeResult,
   AcpPermissionHandler,
   AcpSessionModeId,
 } from "./acp-types.js";
@@ -74,13 +81,32 @@ export type AcpAgentDriverOptions = {
   spawnFn?: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 };
 
-type ActiveRun = {
+/** Per-turn hooks bound while `run()` is in flight; cleared when the turn ends. */
+type AcpLiveTurn = {
+  input: AcpAgentRunInput;
+  sessionRunId: string;
+  mapCtx: AcpEventMapContext;
+  enqueue: (events: AgentEvent[]) => void;
+  openToolCalls: number;
+  suppressSessionUpdates: boolean;
+  planAcceptedThisRun: boolean;
+};
+
+type AcpConnection = {
   child: ChildProcess;
-  peer?: AcpJsonRpcPeer;
+  peer: AcpJsonRpcPeer;
+  client: AcpClient;
+  rl: ReadlineInterface;
+  workspacePath: string;
+  envFingerprint: string;
+  mcpFingerprint: string;
+  initializeResult?: AcpInitializeResult;
+  availableModels: readonly AcpAvailableModel[];
   sessionId?: string;
-  client?: AcpClient;
-  /** Set by `cancel()` / AbortSignal so dispose/abort maps to cancelled, not failed. */
-  cancelRequested?: boolean;
+  busy: boolean;
+  cancelRequested: boolean;
+  turn: AcpLiveTurn | null;
+  disposing: boolean;
 };
 
 function acpFailedTerminalPayload(
@@ -122,11 +148,33 @@ function withCursorProcessDiagnostics(error: unknown, child: ChildProcess): stri
   return details.length > 0 ? `${message} (${details.join("; ")})` : message;
 }
 
+function fingerprintEnv(env: NodeJS.ProcessEnv | undefined): string {
+  if (!env) return "{}";
+  const keys = Object.keys(env).sort();
+  const normalized: Record<string, string> = {};
+  for (const key of keys) {
+    const value = env[key];
+    if (value !== undefined) {
+      normalized[key] = value;
+    }
+  }
+  return JSON.stringify(normalized);
+}
+
+function fingerprintMcp(servers: readonly AcpMcpServer[] | undefined): string {
+  return JSON.stringify(servers ?? []);
+}
+
+function childIsAlive(child: ChildProcess): boolean {
+  return !child.killed && child.exitCode == null && child.signalCode == null;
+}
+
 /**
  * Spawns Cursor `agent acp`, drives AcpClient over stdio, maps to AgentEvent.
+ * Keeps one long-lived process per thread (Zed-style); cancel is soft (session/cancel only).
  */
 export class AcpAgentDriver {
-  private readonly processes = new Map<string, ActiveRun>();
+  private readonly connections = new Map<string, AcpConnection>();
 
   constructor(private readonly options: AcpAgentDriverOptions = {}) {}
 
@@ -145,38 +193,21 @@ export class AcpAgentDriver {
 
     const sessionRunId = randomUUID();
     const sessionMode: AcpSessionModeId = isAcpSessionModeId(input.sessionMode) ? input.sessionMode : "agent";
-    const executable = resolveCursorAgentExecutable(
-      input.executable?.trim() || this.options.executable?.trim(),
-      {
-        env: { ...process.env, ...(this.options.env ?? {}), ...(input.env ?? {}) },
-      },
-    );
-    const env = { ...this.options.env, ...input.env };
-    const child = spawnCursorAcpProcess({
-      executable,
-      cwd: input.workspacePath,
-      ...(Object.keys(env).length > 0 ? { env } : {}),
-      ...(this.options.spawnFn ? { spawnFn: this.options.spawnFn } : {}),
-    });
-    const spawnFailure = cursorAcpSpawnError(child);
-    const active: ActiveRun = { child };
-    this.processes.set(input.threadId, active);
-
     const queue: AgentEvent[] = [];
     let wake: (() => void) | undefined;
     let finished = false;
-    /**
-     * Open client-side tool calls (e.g. subagent Agent/Task). While > 0 the prompt
-     * idle timer must not fire — the run is actively working, not hung.
-     */
-    let openToolCalls = 0;
+    let connection: AcpConnection | undefined;
+    let mapCtx: AcpEventMapContext | undefined;
+
     const trackToolEvent = (event: AgentEvent): void => {
+      const turn = connection?.turn;
+      if (!turn) return;
       if (event.type === "tool.started") {
-        openToolCalls += 1;
+        turn.openToolCalls += 1;
         return;
       }
       if (event.type === "tool.completed" || event.type === "tool.failed") {
-        openToolCalls = Math.max(0, openToolCalls - 1);
+        turn.openToolCalls = Math.max(0, turn.openToolCalls - 1);
       }
     };
     const enqueue = (events: AgentEvent[]) => {
@@ -189,20 +220,27 @@ export class AcpAgentDriver {
       wake = undefined;
     };
 
-    const isCancelled = () => Boolean(active.cancelRequested || input.signal?.aborted);
+    const isCancelled = () =>
+      Boolean(
+        input.signal?.aborted ||
+          connection?.cancelRequested ||
+          this.connections.get(input.threadId)?.cancelRequested,
+      );
 
     const abort = () => {
       void this.cancel(input.threadId);
     };
     input.signal?.addEventListener("abort", abort, { once: true });
 
-    let peer: AcpJsonRpcPeer | undefined;
-    let readlineClosed = false;
-    let unsubscribeUpdate: (() => void) | undefined;
-    let ctx: AcpEventMapContext | undefined;
-
     try {
       const requestedModel = input.model?.trim() || undefined;
+      const executable = resolveCursorAgentExecutable(
+        input.executable?.trim() || this.options.executable?.trim(),
+        {
+          env: { ...process.env, ...(this.options.env ?? {}), ...(input.env ?? {}) },
+        },
+      );
+
       yield createAgentEvent({
         id: `${input.threadId}:acp:${sessionRunId}:agent_start`,
         threadId: input.threadId,
@@ -218,35 +256,14 @@ export class AcpAgentDriver {
         },
       });
 
-      if (!child.stdin || !child.stdout) {
-        throw new Error("ACP process requires piped stdin/stdout");
+      connection = await this.ensureConnection(input, executable);
+      if (connection.busy) {
+        throw new Error("ACP connection already has an in-flight prompt for this thread");
       }
+      connection.busy = true;
+      connection.cancelRequested = false;
 
-      const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
-      peer = new AcpJsonRpcPeer({
-        write: (line) => {
-          child.stdin!.write(line);
-        },
-        onLine: (cb) => {
-          rl.on("line", cb);
-        },
-      });
-      active.peer = peer;
-      // While a tool call is open (e.g. subagent running), the prompt is active —
-      // suppress idle timeout so long-running subagents are not killed as "hung".
-      peer.setToolActiveSignal(() => openToolCalls > 0);
-      const closeRl = () => {
-        if (readlineClosed) return;
-        readlineClosed = true;
-        rl.close();
-      };
-      child.once("exit", () => {
-        peer?.dispose();
-        closeRl();
-      });
-
-      let planAcceptedThisRun = false;
-      ctx = {
+      mapCtx = {
         threadId: input.threadId,
         agentId: sessionRunId,
         sessionRunId,
@@ -255,160 +272,18 @@ export class AcpAgentDriver {
         turnProgress: { tools: false, thoughts: false },
         openSubagents: new Map(),
       };
-      const mapCtx = ctx;
-
-      const onCreatePlan: AcpCreatePlanHandler = async (request) => {
-        enqueue([
-          createAgentEvent({
-            id: `${input.threadId}:acp:${sessionRunId}:plan_ready:${request.toolCallId}`,
-            threadId: input.threadId,
-            agentId: sessionRunId,
-            role: "planner",
-            type: "plan.ready",
-            payload: buildAcpPlanReadyPayload(request, input),
-          }),
-        ]);
-        if (Array.isArray(request.todos) && request.todos.length > 0) {
-          enqueue(
-            mapAcpCursorUpdateTodos(
-              { toolCallId: request.toolCallId, todos: request.todos, merge: false },
-              mapCtx,
-            ),
-          );
-        }
-        if (!input.onCreatePlan) {
-          return {
-            outcome: "rejected" as const,
-            reason: "Eco ACP host has no create_plan handler (plan approval not wired)",
-          };
-        }
-        // Blocking contract: park until Eco UI resolves — do not end the run early.
-        const outcome = await input.onCreatePlan(request);
-        if (outcome.outcome === "accepted" && active.client && active.sessionId) {
-          try {
-            await active.client.setMode({ sessionId: active.sessionId, modeId: "agent" });
-            planAcceptedThisRun = true;
-          } catch (error) {
-            enqueue([
-              createAgentEvent({
-                id: `${input.threadId}:acp:${sessionRunId}:mode_after_plan`,
-                threadId: input.threadId,
-                agentId: sessionRunId,
-                role: "planner",
-                type: "terminal.output",
-                payload: {
-                  source: "acp",
-                  liveType: "acp.set_mode_after_plan_failed",
-                  error: error instanceof Error ? error.message : String(error),
-                },
-              }),
-            ]);
-          }
-        }
-        return outcome;
+      connection.turn = {
+        input,
+        sessionRunId,
+        mapCtx,
+        enqueue,
+        openToolCalls: 0,
+        suppressSessionUpdates: false,
+        planAcceptedThisRun: false,
       };
 
-      const client = new AcpClient({
-        peer,
-        clientInfo: { name: "eco", version: "0.0.0" },
-        onCreatePlan,
-        ...(input.onAskQuestion ? { onAskQuestion: input.onAskQuestion } : {}),
-        ...(input.onRequestPermission ? { onRequestPermission: input.onRequestPermission } : {}),
-        fsHandler: new AcpFsHandler(input.workspacePath),
-        onTask: (request) => {
-          const events = mapAcpCursorTask(request, mapCtx);
-          enqueue(events);
-          const agentStarted = events.find((event) => event.type === "agent.started");
-          const agentId = typeof agentStarted?.agentId === "string" ? agentStarted.agentId : undefined;
-          return {
-            outcome: "completed" as const,
-            ...(agentId ? { agentId } : {}),
-            ...(request.durationMs !== undefined ? { durationMs: request.durationMs } : {}),
-          };
-        },
-        onUpdateTodos: (request) => {
-          enqueue(mapAcpCursorUpdateTodos(request, mapCtx));
-          return { outcome: "accepted", todos: request.todos };
-        },
-        onGenerateImage: (request) => {
-          enqueue([
-            createAgentEvent({
-              id: `${input.threadId}:acp:${sessionRunId}:generate_image:${request.toolCallId}`,
-              threadId: input.threadId,
-              agentId: sessionRunId,
-              role: "planner",
-              type: "terminal.output",
-              payload: {
-                source: "acp",
-                liveType: "acp.generate_image",
-                toolCallId: request.toolCallId,
-                ...(request.description ? { description: request.description } : {}),
-                ...(request.filePath ? { filePath: request.filePath } : {}),
-                ...(request.referenceImagePaths ? { referenceImagePaths: request.referenceImagePaths } : {}),
-              },
-            }),
-          ]);
-          return {
-            outcome: "rejected",
-            reason: "Eco ACP host has no generate_image handler",
-          };
-        },
-      });
-      active.client = client;
-
-      let suppressSessionUpdates = false;
-      unsubscribeUpdate = client.onSessionUpdate((params) => {
-        if (suppressSessionUpdates) return;
-        enqueue(mapAcpSessionUpdate(params, mapCtx));
-      });
-
-      let initializeResult: Awaited<ReturnType<typeof client.initialize>> | undefined;
-      const handshake = (async () => {
-        try {
-          initializeResult = await client.initialize();
-          client.confInitialized();
-        } catch (error) {
-          throw acpStageError("initialize", error);
-        }
-      })();
-      await Promise.race([handshake, spawnFailure]);
-      if (!initializeResult) {
-        throw acpStageError("initialize", "returned no result");
-      }
-
-      let sessionId: string;
-      let availableModels = parseAcpAvailableModels(undefined);
-      const mcpServers = input.mcpServers ?? [];
-      if (input.resumeSessionId?.trim()) {
-        sessionId = input.resumeSessionId.trim();
-        suppressSessionUpdates = true;
-        try {
-          const loaded = await client.loadSession({
-            sessionId,
-            cwd: input.workspacePath,
-            mcpServers,
-          });
-          // Measured: session/load returns models/modes like session/new.
-          availableModels = parseAcpAvailableModels(loaded);
-        } catch (error) {
-          throw acpStageError("session/load", error);
-        } finally {
-          suppressSessionUpdates = false;
-        }
-      } else {
-        let created: Awaited<ReturnType<typeof client.newSession>>;
-        try {
-          created = await client.newSession({
-            cwd: input.workspacePath,
-            mcpServers,
-          });
-        } catch (error) {
-          throw acpStageError("session/new", error);
-        }
-        sessionId = created.sessionId;
-        availableModels = parseAcpAvailableModels(created);
-      }
-      active.sessionId = sessionId;
+      const sessionId = await this.ensureSession(connection, input);
+      const availableModels = connection.availableModels;
 
       yield createAgentEvent({
         id: `${input.threadId}:acp:${sessionRunId}:session`,
@@ -427,34 +302,36 @@ export class AcpAgentDriver {
       if (requestedModel) {
         try {
           const wireModelId = resolveAcpWireModelId(requestedModel, availableModels);
-          await client.setModel({ sessionId, modelId: wireModelId });
+          await connection.client.setModel({ sessionId, modelId: wireModelId });
         } catch (error) {
           throw acpStageError("session/set_model", error);
         }
       }
       try {
-        await client.setMode({ sessionId, modeId: sessionMode });
+        await connection.client.setMode({ sessionId, modeId: sessionMode });
       } catch (error) {
         throw acpStageError("session/set_mode", error);
       }
 
       const promptWork = (async () => {
+        const active = connection!;
+        const turn = active.turn!;
         try {
           const prompt = buildAcpPromptBlocks({
             prompt: input.prompt,
-            imageSupported: agentSupportsImagePrompt(initializeResult),
+            imageSupported: agentSupportsImagePrompt(active.initializeResult ?? {}),
             ...(input.attachments?.length ? { attachments: input.attachments } : {}),
           });
-          const result = await client.prompt({
+          const result = await active.client.prompt({
             sessionId,
             prompt,
           });
-          enqueue(mapAcpSessionUpdate(result, mapCtx));
+          enqueue(mapAcpSessionUpdate(result, turn.mapCtx));
 
           // Cursor ACP: accept alone often ends the planning turn with no execution (HAPI #1097).
           // Same-session continue is the standard client handoff — not a Pi/Codex-style new run.
-          if (planAcceptedThisRun && !isCancelled()) {
-            planAcceptedThisRun = false;
+          if (turn.planAcceptedThisRun && !isCancelled()) {
+            turn.planAcceptedThisRun = false;
             const continueText = input.planContinuePrompt?.trim() || ACP_PLAN_CONTINUE_PROMPT;
             enqueue([
               createAgentEvent({
@@ -471,15 +348,15 @@ export class AcpAgentDriver {
               }),
             ]);
             try {
-              await client.setMode({ sessionId, modeId: "agent" });
-              const continueResult = await client.prompt({
+              await active.client.setMode({ sessionId, modeId: "agent" });
+              const continueResult = await active.client.prompt({
                 sessionId,
                 prompt: buildAcpPromptBlocks({
                   prompt: continueText,
-                  imageSupported: agentSupportsImagePrompt(initializeResult),
+                  imageSupported: agentSupportsImagePrompt(active.initializeResult ?? {}),
                 }),
               });
-              enqueue(mapAcpSessionUpdate(continueResult, mapCtx));
+              enqueue(mapAcpSessionUpdate(continueResult, turn.mapCtx));
             } catch (continueError) {
               if (isCancelled()) {
                 enqueue([
@@ -502,7 +379,7 @@ export class AcpAgentDriver {
                     type: "run.terminal",
                     payload: acpFailedTerminalPayload(
                       continueError instanceof Error ? continueError.message : String(continueError),
-                      mapCtx,
+                      turn.mapCtx,
                     ),
                   }),
                 ]);
@@ -533,7 +410,10 @@ export class AcpAgentDriver {
                 agentId: sessionRunId,
                 role: "planner",
                 type: "run.terminal",
-                payload: acpFailedTerminalPayload(withCursorProcessDiagnostics(promptError, child), mapCtx),
+                payload: acpFailedTerminalPayload(
+                  withCursorProcessDiagnostics(promptError, active.child),
+                  turn.mapCtx,
+                ),
               }),
             ]);
           }
@@ -555,9 +435,10 @@ export class AcpAgentDriver {
       }
 
       await promptWork;
-      closeRl();
     } catch (error) {
       const cancelled = isCancelled();
+      // ensureConnection may have registered the connection before throwing on soft-cancel.
+      connection ??= this.connections.get(input.threadId);
       yield createAgentEvent({
         id: `${input.threadId}:acp:${sessionRunId}:terminal`,
         threadId: input.threadId,
@@ -566,53 +447,393 @@ export class AcpAgentDriver {
         type: "run.terminal",
         payload: cancelled
           ? { status: "cancelled", reason: "cancelled by user" }
-          : acpFailedTerminalPayload(withCursorProcessDiagnostics(error, child), ctx),
+          : acpFailedTerminalPayload(
+              connection
+                ? withCursorProcessDiagnostics(error, connection.child)
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+              mapCtx,
+            ),
       });
-    } finally {
-      unsubscribeUpdate?.();
-      peer?.dispose();
-      input.signal?.removeEventListener("abort", abort);
-      try {
-        child.stdin?.end();
-      } catch {
-        // stdin may already be closed
+      // Fatal handshake / session errors: drop the connection so the next run can respawn.
+      if (!cancelled && connection) {
+        this.dispose(input.threadId);
+        connection = undefined;
       }
-      // Windows: kill the full cmd→powershell→node(+MCP) tree, not just cmd.exe.
-      killChildProcessTree(child);
-      this.processes.delete(input.threadId);
+    } finally {
+      input.signal?.removeEventListener("abort", abort);
+      if (connection && this.connections.get(input.threadId) === connection) {
+        connection.turn = null;
+        connection.busy = false;
+      }
     }
   }
 
+  /**
+   * Soft-cancel the in-flight prompt (session/cancel). Keeps the process alive for reuse.
+   * Also rejects pending JSON-RPC requests so Eco can finish the turn as cancelled without
+   * waiting on a hung agent (Zed-style cancel + local abort of the prompt await).
+   */
   cancel(threadId: string): boolean {
-    const active = this.processes.get(threadId);
-    if (!active) return false;
-    active.cancelRequested = true;
-    if (active.sessionId && active.client) {
+    const connection = this.connections.get(threadId);
+    if (!connection) return false;
+    connection.cancelRequested = true;
+    if (connection.sessionId) {
       try {
-        void active.client.cancel({ sessionId: active.sessionId });
+        void connection.client.cancel({ sessionId: connection.sessionId });
       } catch {
-        // best-effort ACP cancel before kill
+        // best-effort ACP cancel
       }
     }
-    active.peer?.dispose();
     try {
-      killChildProcessTree(active.child);
+      connection.peer.rejectPending(new Error("ACP turn cancelled"));
     } catch {
-      return false;
+      // best-effort
     }
     return true;
   }
 
-  /** Cancel every active ACP run and tear down process trees (app quit). */
+  /** Soft-cancel every in-flight turn without killing processes. */
   cancelAll(): number {
-    const threadIds = [...this.processes.keys()];
     let cancelled = 0;
-    for (const threadId of threadIds) {
+    for (const threadId of this.connections.keys()) {
       if (this.cancel(threadId)) {
         cancelled += 1;
       }
     }
     return cancelled;
+  }
+
+  /** Tear down the long-lived process for a thread (delete thread / fatal / fingerprint miss). */
+  dispose(threadId: string): boolean {
+    const connection = this.connections.get(threadId);
+    if (!connection) return false;
+    connection.disposing = true;
+    connection.cancelRequested = true;
+    connection.turn = null;
+    connection.busy = false;
+    try {
+      connection.peer.dispose();
+    } catch {
+      // peer may already be disposed on child exit
+    }
+    try {
+      connection.rl.close();
+    } catch {
+      // readline may already be closed
+    }
+    try {
+      killChildProcessTree(connection.child);
+    } catch {
+      // best-effort
+    }
+    this.connections.delete(threadId);
+    return true;
+  }
+
+  /** Dispose every tracked ACP connection (app quit). */
+  disposeAll(): number {
+    const threadIds = [...this.connections.keys()];
+    let disposed = 0;
+    for (const threadId of threadIds) {
+      if (this.dispose(threadId)) {
+        disposed += 1;
+      }
+    }
+    return disposed;
+  }
+
+  private async ensureConnection(input: AcpAgentRunInput, executable: string): Promise<AcpConnection> {
+    const env = { ...this.options.env, ...input.env };
+    const envFingerprint = fingerprintEnv(env);
+    const mcpFingerprint = fingerprintMcp(input.mcpServers);
+    const existing = this.connections.get(input.threadId);
+    if (
+      existing &&
+      !existing.disposing &&
+      childIsAlive(existing.child) &&
+      existing.workspacePath === input.workspacePath &&
+      existing.envFingerprint === envFingerprint &&
+      existing.mcpFingerprint === mcpFingerprint
+    ) {
+      return existing;
+    }
+    if (existing) {
+      this.dispose(input.threadId);
+    }
+
+    const child = spawnCursorAcpProcess({
+      executable,
+      cwd: input.workspacePath,
+      ...(Object.keys(env).length > 0 ? { env } : {}),
+      ...(this.options.spawnFn ? { spawnFn: this.options.spawnFn } : {}),
+    });
+    const spawnFailure = cursorAcpSpawnError(child);
+    if (!child.stdin || !child.stdout) {
+      killChildProcessTree(child);
+      throw new Error("ACP process requires piped stdin/stdout");
+    }
+
+    const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    const peer = new AcpJsonRpcPeer({
+      write: (line) => {
+        child.stdin!.write(line);
+      },
+      onLine: (cb) => {
+        rl.on("line", cb);
+      },
+    });
+
+    // Placeholder filled after construction so turn handlers close over the live connection.
+    const connectionHolder: { current: AcpConnection | null } = { current: null };
+
+    const client = new AcpClient({
+      peer,
+      clientInfo: { name: "eco", version: "0.0.0" },
+      onCreatePlan: async (request) => {
+        const conn = connectionHolder.current;
+        const turn = conn?.turn;
+        if (!turn) {
+          return {
+            outcome: "rejected" as const,
+            reason: "Eco ACP host has no active turn for create_plan",
+          };
+        }
+        turn.enqueue([
+          createAgentEvent({
+            id: `${turn.input.threadId}:acp:${turn.sessionRunId}:plan_ready:${request.toolCallId}`,
+            threadId: turn.input.threadId,
+            agentId: turn.sessionRunId,
+            role: "planner",
+            type: "plan.ready",
+            payload: buildAcpPlanReadyPayload(request, turn.input),
+          }),
+        ]);
+        if (Array.isArray(request.todos) && request.todos.length > 0) {
+          turn.enqueue(
+            mapAcpCursorUpdateTodos(
+              { toolCallId: request.toolCallId, todos: request.todos, merge: false },
+              turn.mapCtx,
+            ),
+          );
+        }
+        if (!turn.input.onCreatePlan) {
+          return {
+            outcome: "rejected" as const,
+            reason: "Eco ACP host has no create_plan handler (plan approval not wired)",
+          };
+        }
+        const outcome = await turn.input.onCreatePlan(request);
+        if (outcome.outcome === "accepted" && conn?.sessionId) {
+          try {
+            await conn.client.setMode({ sessionId: conn.sessionId, modeId: "agent" });
+            turn.planAcceptedThisRun = true;
+          } catch (error) {
+            turn.enqueue([
+              createAgentEvent({
+                id: `${turn.input.threadId}:acp:${turn.sessionRunId}:mode_after_plan`,
+                threadId: turn.input.threadId,
+                agentId: turn.sessionRunId,
+                role: "planner",
+                type: "terminal.output",
+                payload: {
+                  source: "acp",
+                  liveType: "acp.set_mode_after_plan_failed",
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              }),
+            ]);
+          }
+        }
+        return outcome;
+      },
+      onAskQuestion: async (request) => {
+        const turn = connectionHolder.current?.turn;
+        if (!turn?.input.onAskQuestion) {
+          return { outcome: "skipped" as const, reason: "Eco ACP host has no ask_question handler" };
+        }
+        return turn.input.onAskQuestion(request);
+      },
+      onRequestPermission: async (request) => {
+        const turn = connectionHolder.current?.turn;
+        if (turn?.input.onRequestPermission) {
+          return turn.input.onRequestPermission(request);
+        }
+        const selected = resolveAcpPermissionSelection(request.options, "allow");
+        if (selected) return selected;
+        throw new Error("ACP session/request_permission had no selectable option");
+      },
+      fsHandler: new AcpFsHandler(input.workspacePath),
+      onTask: (request) => {
+        const turn = connectionHolder.current?.turn;
+        if (!turn) {
+          return {
+            outcome: "completed" as const,
+            ...(request.agentId ? { agentId: request.agentId } : {}),
+            ...(request.durationMs !== undefined ? { durationMs: request.durationMs } : {}),
+          };
+        }
+        const events = mapAcpCursorTask(request, turn.mapCtx);
+        turn.enqueue(events);
+        const agentStarted = events.find((event) => event.type === "agent.started");
+        const agentId = typeof agentStarted?.agentId === "string" ? agentStarted.agentId : undefined;
+        return {
+          outcome: "completed" as const,
+          ...(agentId ? { agentId } : {}),
+          ...(request.durationMs !== undefined ? { durationMs: request.durationMs } : {}),
+        };
+      },
+      onUpdateTodos: (request) => {
+        const turn = connectionHolder.current?.turn;
+        if (turn) {
+          turn.enqueue(mapAcpCursorUpdateTodos(request, turn.mapCtx));
+        }
+        return { outcome: "accepted" as const, todos: request.todos };
+      },
+      onGenerateImage: (request) => {
+        const turn = connectionHolder.current?.turn;
+        if (turn) {
+          turn.enqueue([
+            createAgentEvent({
+              id: `${turn.input.threadId}:acp:${turn.sessionRunId}:generate_image:${request.toolCallId}`,
+              threadId: turn.input.threadId,
+              agentId: turn.sessionRunId,
+              role: "planner",
+              type: "terminal.output",
+              payload: {
+                source: "acp",
+                liveType: "acp.generate_image",
+                toolCallId: request.toolCallId,
+                ...(request.description ? { description: request.description } : {}),
+                ...(request.filePath ? { filePath: request.filePath } : {}),
+                ...(request.referenceImagePaths ? { referenceImagePaths: request.referenceImagePaths } : {}),
+              },
+            }),
+          ]);
+        }
+        return {
+          outcome: "rejected" as const,
+          reason: "Eco ACP host has no generate_image handler",
+        };
+      },
+    });
+
+    peer.setToolActiveSignal(() => (connectionHolder.current?.turn?.openToolCalls ?? 0) > 0);
+
+    client.onSessionUpdate((params) => {
+      const turn = connectionHolder.current?.turn;
+      if (!turn || turn.suppressSessionUpdates) return;
+      turn.enqueue(mapAcpSessionUpdate(params, turn.mapCtx));
+    });
+
+    // Register before handshake so cancel/abort during initialize can soft-cancel.
+    const connection: AcpConnection = {
+      child,
+      peer,
+      client,
+      rl,
+      workspacePath: input.workspacePath,
+      envFingerprint,
+      mcpFingerprint,
+      availableModels: parseAcpAvailableModels(undefined),
+      busy: false,
+      cancelRequested: false,
+      turn: null,
+      disposing: false,
+    };
+    connectionHolder.current = connection;
+    this.connections.set(input.threadId, connection);
+
+    child.once("exit", () => {
+      if (connection.disposing) return;
+      try {
+        peer.dispose();
+      } catch {
+        // ignore
+      }
+      try {
+        rl.close();
+      } catch {
+        // ignore
+      }
+      if (this.connections.get(input.threadId) === connection) {
+        this.connections.delete(input.threadId);
+      }
+    });
+
+    let initializeResult: AcpInitializeResult | undefined;
+    const handshake = (async () => {
+      try {
+        initializeResult = await client.initialize();
+        client.confInitialized();
+      } catch (error) {
+        throw acpStageError("initialize", error);
+      }
+    })();
+    try {
+      await Promise.race([handshake, spawnFailure]);
+    } catch (error) {
+      if (connection.cancelRequested || input.signal?.aborted) {
+        throw error;
+      }
+      this.dispose(input.threadId);
+      throw error;
+    }
+    if (!initializeResult) {
+      if (connection.cancelRequested || input.signal?.aborted) {
+        throw new Error("ACP turn cancelled");
+      }
+      this.dispose(input.threadId);
+      throw acpStageError("initialize", "returned no result");
+    }
+    if (connection.cancelRequested || input.signal?.aborted) {
+      // Soft-cancel during handshake: keep process for reuse, surface cancelled to run().
+      throw new Error("ACP turn cancelled");
+    }
+    connection.initializeResult = initializeResult;
+
+    return connection;
+  }
+
+  private async ensureSession(connection: AcpConnection, input: AcpAgentRunInput): Promise<string> {
+    const resumeId = input.resumeSessionId?.trim();
+    const mcpServers = input.mcpServers ?? [];
+    const turn = connection.turn;
+
+    if (connection.sessionId && (!resumeId || resumeId === connection.sessionId)) {
+      return connection.sessionId;
+    }
+
+    if (resumeId) {
+      if (turn) turn.suppressSessionUpdates = true;
+      try {
+        const loaded = await connection.client.loadSession({
+          sessionId: resumeId,
+          cwd: input.workspacePath,
+          mcpServers,
+        });
+        connection.availableModels = parseAcpAvailableModels(loaded);
+        connection.sessionId = resumeId;
+        return resumeId;
+      } catch (error) {
+        throw acpStageError("session/load", error);
+      } finally {
+        if (turn) turn.suppressSessionUpdates = false;
+      }
+    }
+
+    try {
+      const created = await connection.client.newSession({
+        cwd: input.workspacePath,
+        mcpServers,
+      });
+      connection.availableModels = parseAcpAvailableModels(created);
+      connection.sessionId = created.sessionId;
+      return created.sessionId;
+    } catch (error) {
+      throw acpStageError("session/new", error);
+    }
   }
 }
 

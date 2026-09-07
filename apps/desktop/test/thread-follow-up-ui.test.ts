@@ -77,9 +77,9 @@ test("formatThreadFollowUpPreview localizes image and empty defaults", async () 
   expect(formatThreadFollowUpPreview(followUp("empty", { prompt: "" }))).toBe("Empty follow-up message");
 });
 
-test("ACP follow-up UI stays queue-only: no escalate, no steer shortcut", () => {
-  expect(coreSupportsFollowUpEscalate("acp")).toBe(false);
+test("ACP follow-up UI allows escalate; steer delivery mode is preserved", () => {
+  expect(coreSupportsFollowUpEscalate("acp")).toBe(true);
   expect(coreSupportsFollowUpEscalate("claude")).toBe(true);
-  expect(resolveFollowUpDeliveryModeForCore("acp", "steer")).toBe("queue");
+  expect(resolveFollowUpDeliveryModeForCore("acp", "steer")).toBe("steer");
   expect(resolveFollowUpDeliveryModeForCore("codex", "steer")).toBe("steer");
 });

@@ -57,9 +57,12 @@ async function answerSetMode(
   fake: ReturnType<typeof createFakeAcpChild>,
   sessionId: string,
   modeId = "agent",
+  afterCount = 0,
 ) {
-  await waitFor(() => fake.parseWritten().some((m) => m.method === "session/set_mode"));
-  const modeReq = fake.parseWritten().find((m) => m.method === "session/set_mode")!;
+  await waitFor(
+    () => fake.parseWritten().filter((m) => m.method === "session/set_mode").length > afterCount,
+  );
+  const modeReq = fake.parseWritten().filter((m) => m.method === "session/set_mode").at(-1)!;
   expect(modeReq.params).toEqual({ sessionId, modeId });
   fake.emitLine({ jsonrpc: "2.0", id: modeReq.id, result: {} });
 }
@@ -490,7 +493,7 @@ describe("AcpAgentDriver", () => {
     await eventsPromise;
   });
 
-  test("cancel kills the spawned process and yields run.terminal cancelled", async () => {
+  test("cancel soft-cancels without killing; dispose tears down the process", async () => {
     const fake = createFakeAcpChild();
     const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
     const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
@@ -510,7 +513,7 @@ describe("AcpAgentDriver", () => {
 
     await waitFor(() => fake.parseWritten().length > 0);
     expect(driver.cancel("thr_cancel")).toBe(true);
-    expect(fake.child.killed).toBe(true);
+    expect(fake.child.killed).toBe(false);
     const events = await eventsPromise;
     const terminal = events.find((e) => e.type === "run.terminal");
     expect(terminal?.payload).toEqual({
@@ -518,6 +521,8 @@ describe("AcpAgentDriver", () => {
       reason: "cancelled by user",
     });
     expect(JSON.stringify(events)).not.toContain("AcpJsonRpcPeer disposed");
+    expect(driver.dispose("thr_cancel")).toBe(true);
+    expect(fake.child.killed).toBe(true);
   });
 
   test("AbortSignal abort yields run.terminal cancelled", async () => {
@@ -1019,6 +1024,212 @@ describe("AcpAgentDriver", () => {
       prompt: "Find auth handlers",
     });
     expect(events.some((e) => e.type === "tool.started")).toBe(true);
+  });
+
+  test("reuses the same process across turns without re-initialize or session/new", async () => {
+    const fake = createFakeAcpChild();
+    const spawnFn = mock(() => fake.child);
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn });
+
+    async function runPrompt(prompt: string, resumeSessionId?: string) {
+      const eventsPromise = (async () => {
+        const out = [];
+        for await (const event of driver.run({
+          threadId: "thr_reuse",
+          prompt,
+          workspacePath: "/tmp/ws",
+          acpAgentId: "cursor",
+          ...(resumeSessionId ? { resumeSessionId } : {}),
+        })) {
+          out.push(event);
+        }
+        return out;
+      })();
+      return eventsPromise;
+    }
+
+    const first = runPrompt("one");
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-reuse" } });
+    await answerSetMode(fake, "sess-reuse");
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const prompt1 = fake.parseWritten().filter((m) => m.method === "session/prompt").at(-1)!;
+    fake.emitLine({ jsonrpc: "2.0", id: prompt1.id, result: { stopReason: "end_turn" } });
+    const firstEvents = await first;
+    expect(firstEvents.some((e) => e.type === "run.terminal")).toBe(true);
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    expect(fake.child.killed).toBe(false);
+
+    const beforeSecond = fake.parseWritten().length;
+    const setModeBefore = fake.parseWritten().filter((m) => m.method === "session/set_mode").length;
+    const second = runPrompt("two", "sess-reuse");
+    await waitFor(() => fake.parseWritten().length > beforeSecond);
+    await answerSetMode(fake, "sess-reuse", "agent", setModeBefore);
+    await waitFor(
+      () => fake.parseWritten().filter((m) => m.method === "session/prompt").length >= 2,
+    );
+    const prompt2 = fake.parseWritten().filter((m) => m.method === "session/prompt").at(-1)!;
+    expect(prompt2.params).toEqual({
+      sessionId: "sess-reuse",
+      prompt: [{ type: "text", text: "two" }],
+    });
+    fake.emitLine({ jsonrpc: "2.0", id: prompt2.id, result: { stopReason: "end_turn" } });
+    await second;
+
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    expect(fake.parseWritten().filter((m) => m.method === "initialize")).toHaveLength(1);
+    expect(fake.parseWritten().filter((m) => m.method === "session/new")).toHaveLength(1);
+    expect(fake.parseWritten().filter((m) => m.method === "session/load")).toHaveLength(0);
+    expect(fake.child.killed).toBe(false);
+  });
+
+  test("cancel then next run reuses the same child and only sends a new prompt", async () => {
+    const fake = createFakeAcpChild();
+    const spawnFn = mock(() => fake.child);
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn });
+
+    const first = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_cancel_reuse",
+        prompt: "busy",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: fake.parseWritten().find((m) => m.method === "initialize")!.id,
+      result: INIT_RESULT,
+    });
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: fake.parseWritten().find((m) => m.method === "session/new")!.id,
+      result: { sessionId: "sess-cr" },
+    });
+    await answerSetMode(fake, "sess-cr");
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    expect(driver.cancel("thr_cancel_reuse")).toBe(true);
+    expect(fake.child.killed).toBe(false);
+    await first;
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+
+    const setModeBefore = fake.parseWritten().filter((m) => m.method === "session/set_mode").length;
+    const second = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_cancel_reuse",
+        prompt: "after-cancel",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-cr",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+    await answerSetMode(fake, "sess-cr", "agent", setModeBefore);
+    await waitFor(
+      () => fake.parseWritten().filter((m) => m.method === "session/prompt").length >= 2,
+    );
+    const prompt2 = fake.parseWritten().filter((m) => m.method === "session/prompt").at(-1)!;
+    expect(prompt2.params).toMatchObject({
+      sessionId: "sess-cr",
+      prompt: [{ type: "text", text: "after-cancel" }],
+    });
+    fake.emitLine({ jsonrpc: "2.0", id: prompt2.id, result: { stopReason: "end_turn" } });
+    await second;
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    expect(fake.parseWritten().filter((m) => m.method === "initialize")).toHaveLength(1);
+  });
+
+  test("dispose then run respawns a new process", async () => {
+    const fake1 = createFakeAcpChild();
+    const fake2 = createFakeAcpChild();
+    let spawnCount = 0;
+    const spawnFn = mock(() => {
+      spawnCount += 1;
+      return spawnCount === 1 ? fake1.child : fake2.child;
+    });
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn });
+
+    const first = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_dispose",
+        prompt: "a",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+    await waitFor(() => fake1.parseWritten().some((m) => m.method === "initialize"));
+    fake1.emitLine({
+      jsonrpc: "2.0",
+      id: fake1.parseWritten().find((m) => m.method === "initialize")!.id,
+      result: INIT_RESULT,
+    });
+    await waitFor(() => fake1.parseWritten().some((m) => m.method === "session/new"));
+    fake1.emitLine({
+      jsonrpc: "2.0",
+      id: fake1.parseWritten().find((m) => m.method === "session/new")!.id,
+      result: { sessionId: "sess-d1" },
+    });
+    await answerSetMode(fake1, "sess-d1");
+    await waitFor(() => fake1.parseWritten().some((m) => m.method === "session/prompt"));
+    const p1 = fake1.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake1.emitLine({ jsonrpc: "2.0", id: p1.id, result: { stopReason: "end_turn" } });
+    await first;
+
+    expect(driver.dispose("thr_dispose")).toBe(true);
+    expect(fake1.child.killed).toBe(true);
+
+    const second = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_dispose",
+        prompt: "b",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-d1",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+    await waitFor(() => fake2.parseWritten().some((m) => m.method === "initialize"));
+    fake2.emitLine({
+      jsonrpc: "2.0",
+      id: fake2.parseWritten().find((m) => m.method === "initialize")!.id,
+      result: INIT_RESULT,
+    });
+    await waitFor(() => fake2.parseWritten().some((m) => m.method === "session/load"));
+    fake2.emitLine({
+      jsonrpc: "2.0",
+      id: fake2.parseWritten().find((m) => m.method === "session/load")!.id,
+      result: { sessionId: "sess-d1" },
+    });
+    await answerSetMode(fake2, "sess-d1");
+    await waitFor(() => fake2.parseWritten().some((m) => m.method === "session/prompt"));
+    const p2 = fake2.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake2.emitLine({ jsonrpc: "2.0", id: p2.id, result: { stopReason: "end_turn" } });
+    await second;
+    expect(spawnFn).toHaveBeenCalledTimes(2);
   });
 });
 

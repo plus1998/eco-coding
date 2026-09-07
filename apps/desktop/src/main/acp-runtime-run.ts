@@ -354,11 +354,16 @@ export function cancelAcpThread(threadId: string): void {
   driver.cancel(threadId);
 }
 
+/** Tear down the long-lived ACP process for a thread (delete thread / fingerprint miss). */
+export function disposeAcpThread(threadId: string): void {
+  driver.dispose(threadId);
+}
+
 /**
- * App quit: cancel active ACP runs and kill only process trees Eco spawned
- * and still tracks. Does not scan/kill other apps' Cursor ACP processes.
+ * App quit: dispose every Eco-tracked ACP connection and kill leftover managed trees.
+ * Does not scan/kill other apps' Cursor ACP processes.
  */
 export function stopAllAcpRuntimes(): void {
-  driver.cancelAll();
+  driver.disposeAll();
   killTrackedCursorAcpProcesses();
 }

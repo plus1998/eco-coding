@@ -199,12 +199,20 @@ export class AcpJsonRpcPeer {
     this.disposed = true;
     this.inboundInFlight = 0;
     const error = new Error("AcpJsonRpcPeer disposed");
+    this.rejectPending(error);
+    this.notificationHandlers.clear();
+  }
+
+  /**
+   * Reject in-flight requests without disposing the peer (soft cancel / turn abort).
+   * Keeps the stdio connection alive for reuse.
+   */
+  rejectPending(error: Error): void {
     for (const [id, pending] of this.pending.entries()) {
       this.clearPendingTimer(pending);
       this.pending.delete(id);
       pending.reject(error);
     }
-    this.notificationHandlers.clear();
   }
 
   private armTimeout(

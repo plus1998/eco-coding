@@ -355,9 +355,8 @@ import {
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
 import {
-  assertAcpFollowUpEscalateAllowed,
   coreSupportsMidTurnFollowUp,
-  resolveAcpFollowUpEnqueuePlan,
+  coreUsesInterruptForSteer,
 } from "../shared/thread-follow-up-core";
 import {
   buildThreadFollowUpDisplayPrompt,
@@ -398,6 +397,7 @@ import {
 } from "./acp-plan-progress";
 import {
   cancelAcpThread,
+  disposeAcpThread,
   resolveAcpRunPrompt,
   startAcpThreadRun,
   stopAllAcpRuntimes,
@@ -6258,13 +6258,13 @@ function registerIpcHandlers(): void {
     if (contextMonitor.isCompactInFlight(thread.id)) {
       throw new Error("上下文正在压缩中，请稍候。");
     }
-    const enqueuePlan = resolveAcpFollowUpEnqueuePlan({
-      coreKind: thread.coreKind,
-      attachmentCount: request.attachments?.length ?? 0,
-    });
-    const forceQueue = enqueuePlan.kind === "force_queue";
+    const deliveryMode =
+      request.followUpDeliveryMode ?? workflowSettingsStore.get().followUpDeliveryMode ?? "steer";
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
-    const preferInterrupt = !forceQueue && request.priority === "escalated";
+    // ACP has no mid-turn: steer means interrupt + resume. Escalated priority always interrupts.
+    const preferInterrupt =
+      request.priority === "escalated" ||
+      (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer");
     const followUpPendingActivityLineId = `follow-up:${randomUUID()}`;
     const persistedAttachments = request.attachments?.length
       ? await promptImageFileStore.persistMessageAttachments(
@@ -6277,17 +6277,14 @@ function registerIpcHandlers(): void {
       threadId: thread.id,
       prompt: request.prompt,
       ...(persistedAttachments?.length ? { attachments: persistedAttachments } : {}),
-      ...(!forceQueue && request.priority ? { priority: request.priority } : {}),
+      ...(preferInterrupt
+        ? { priority: "escalated" }
+        : request.priority
+          ? { priority: request.priority }
+          : {}),
       deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
       ...metadata,
     });
-
-    if (forceQueue) {
-      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
-      return buildThreadFollowUpMutationResult(
-        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
-      );
-    }
 
     if (preferInterrupt) {
       const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
@@ -6304,8 +6301,6 @@ function registerIpcHandlers(): void {
       return buildThreadFollowUpMutationResult(current);
     }
 
-    const deliveryMode =
-      request.followUpDeliveryMode ?? workflowSettingsStore.get().followUpDeliveryMode ?? "steer";
     if (deliveryMode === "queue") {
       // Only surface the queue panel when we intentionally keep the row queued.
       emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
@@ -6329,7 +6324,6 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread was not found.");
     }
-    assertAcpFollowUpEscalateAllowed(thread.coreKind);
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
     }
@@ -6845,6 +6839,10 @@ async function requestEscalatedFollowUpInterrupt(
   thread: ThreadSummary,
   followUp: ThreadPendingFollowUp,
 ): Promise<ThreadPendingFollowUp> {
+  // Match manual cancel: ACP needs session/cancel + process teardown, not only AbortSignal.
+  if (thread.coreKind === "acp") {
+    cancelAcpThread(thread.id);
+  }
   if (activeRunRuntimeState.abortRun(thread.id, "follow-up escalated")) {
     pendingEscalatedFollowUpDrain.add(thread.id);
     updateThread(thread.id, {
@@ -10785,6 +10783,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   htmlHostGateway.disposeThread(threadId);
   computerUseGateway.disposeThread(threadId);
   integratedWebSearchGateway.disposeThread(threadId);
+  disposeAcpThread(threadId);
   const acpSessionId = acpSessionIdToDelete(conversationStore.getThreadCoreSession(threadId));
   if (acpSessionId) {
     const env = acpCursorSpawnEnv();

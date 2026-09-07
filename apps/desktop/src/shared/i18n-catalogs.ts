@@ -286,7 +286,7 @@ export const i18nCatalogs = {
       "settings.cacheBreakTipsHint": "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
       "settings.followUpDelivery": "跟进处理方式",
       "settings.followUpDeliveryHint":
-        "Agent 运行中发送后续消息时，默认加入队列或调整当前回合方向。按 ⌘↩ 可对单条消息执行相反操作。",
+        "Agent 运行中发送后续消息时，默认加入队列或引导当前回合（Claude/Codex 为 mid-turn 注入；Cursor ACP 为打断后重发）。按 ⌘↩ 可对单条消息执行相反操作。",
       "settings.followUpDelivery.queue": "加入队列",
       "settings.followUpDelivery.steer": "调整方向",
       "settings.defaultBashReviewMode": "默认审批模式",
@@ -2065,8 +2065,6 @@ export const i18nCatalogs = {
         "ACP 续跑失败：无法加载既有会话（session/load）{{detail}}。请开新会话，勿假装已续跑成功。",
       "native.acpCannotResumeWithoutSessionId":
         "ACP 续跑失败：会话已有 agent 输出但本地会话 ID 丢失，无法安全续跑。请开新会话，勿假装已续跑成功。",
-      "native.acpFollowUpEscalateUnsupported":
-        "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
       "native.acpImageCapabilityMissing": "Cursor ACP 未声明图片输入能力，无法发送附件。",
       "native.acpImageAttachmentInvalid": "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。",
       "native.acpSessionIdInvalid": "ACP 会话 id 非法，拒绝删除本地目录。",
@@ -2410,7 +2408,7 @@ export const i18nCatalogs = {
         "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
       "settings.followUpDelivery": "Follow-up handling",
       "settings.followUpDeliveryHint":
-        "While the agent is running, queue follow-ups or steer the current turn. Press ⌘↩ to do the opposite for one message.",
+        "While the agent is running, queue follow-ups or steer the current turn (mid-turn inject for Claude/Codex; interrupt-and-resend for Cursor ACP). Press ⌘↩ to do the opposite for one message.",
       "settings.followUpDelivery.queue": "Queue",
       "settings.followUpDelivery.steer": "Steer",
       "settings.defaultBashReviewMode": "Default approval mode",
@@ -4267,8 +4265,6 @@ export const i18nCatalogs = {
         "ACP continuation failed: could not load the existing session (session/load){{detail}}. Start a new thread; do not treat this as a successful resume.",
       "native.acpCannotResumeWithoutSessionId":
         "ACP continuation failed: this thread already has agent output but the saved session id is missing; cannot resume safely. Start a new thread; do not treat this as a successful resume.",
-      "native.acpFollowUpEscalateUnsupported":
-        "Cursor ACP cannot interrupt the current turn to insert a follow-up; the message will send after this turn ends.",
       "native.acpImageCapabilityMissing":
         "Cursor ACP did not advertise image prompt support; attachments cannot be sent.",
       "native.acpImageAttachmentInvalid":
@@ -4513,9 +4509,6 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   }
   if (message === "排队的后续消息缺少可发送内容。") {
     return "native.error.followUpContentMissing";
-  }
-  if (message === "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。") {
-    return "native.acpFollowUpEscalateUnsupported";
   }
   if (message === "Cursor ACP 未声明图片输入能力，无法发送附件。") {
     return "native.acpImageCapabilityMissing";
