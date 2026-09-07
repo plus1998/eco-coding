@@ -31,6 +31,8 @@ export interface RunThreadRequestWithLifecycleInput {
   runOnce: (context: RunAttemptContext) => Promise<RequestAttemptResult>;
   lifecycle: ThreadRunAttemptLifecycle;
   settlements: ThreadRunAttemptSettlementQueue;
+  /** 0-based retry index for this attempt (0 = first attempt). */
+  retryIndex?: number;
 }
 
 export function runThreadRequestWithLifecycle(
@@ -40,7 +42,7 @@ export function runThreadRequestWithLifecycle(
     const attempt = input.lifecycle.startRunAttempt({
       threadId: input.threadId,
       phase: input.phase,
-      retryIndex: 0,
+      retryIndex: input.retryIndex ?? 0,
     });
     const context: RunAttemptContext = {
       threadId: input.threadId,

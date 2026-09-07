@@ -7,6 +7,7 @@ import {
   type AcpMcpServer,
   type AcpPermissionHandler,
   type AgentEvent,
+  isAcpProviderExhaustionMessage,
   killTrackedCursorAcpProcesses,
 } from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
@@ -45,6 +46,7 @@ export interface AcpRuntimeOrchestrationDeps {
     phase: "execution" | "ask" | "planning" | "continuation",
     signal: AbortSignal,
     run: () => Promise<RequestAttemptResult>,
+    retryIndex?: number,
   ) => Promise<RequestAttemptResult>;
   consumeEvents: (input: {
     events: AsyncIterable<AgentEvent>;
@@ -93,6 +95,16 @@ export interface AcpRuntimeOrchestrationDeps {
     recordedUserActivityLineId?: string;
     continuation?: boolean;
   }) => Promise<void>;
+  /**
+   * User-visible notice before an automatic retry of an unstarted ACP
+   * retriable failure (e.g. Cursor HTTP/2 keepalive ping timeout).
+   */
+  notifyAcprAutoRetry?: (input: {
+    threadId: string;
+    attempt: number;
+    maxAttempts: number;
+    reason: string;
+  }) => void;
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
@@ -102,7 +114,48 @@ export interface AcpRuntimeOrchestrationDeps {
   threadHasPriorAgentOutput: (threadId: string) => boolean;
 }
 
-const driver = new AcpAgentDriver();
+let activeDriver = new AcpAgentDriver();
+
+/** Test seam — swap the module-level ACP driver (pass null to restore a fresh one). */
+export function setAcpAgentDriverForTests(next: AcpAgentDriver | null): void {
+  activeDriver = next ?? new AcpAgentDriver();
+}
+
+/** Max automatic retries after an unstarted Cursor ACP retriable failure. */
+export const MAX_ACP_AUTORETRIES = 2;
+
+/** Total attempts allowed for one ACP run when auto-retry applies. */
+export const ACP_MAX_ATTEMPTS = MAX_ACP_AUTORETRIES + 1;
+
+/**
+ * Auto-retry gate for unstarted Cursor ACP retriable failures.
+ *
+ * Retry only when the turn produced no tools/thoughts (no side effects), the
+ * failure is a transient upstream RetriableError envelope, and the run was not
+ * cancelled (e.g. a user steer = cancel + resume took over). Retries reuse the
+ * same long-lived process and Cursor session — callers must never dispose or
+ * cancel the driver here.
+ */
+export function resolveAcprAutoRetry(input: {
+  result: RequestAttemptResult;
+  attempt: number;
+  maxAttempts: number;
+  aborted: boolean;
+}): boolean {
+  if (input.aborted) {
+    return false;
+  }
+  if (input.result.ok || input.result.aborted || input.result.incomplete) {
+    return false;
+  }
+  if (input.result.unstarted !== true) {
+    return false;
+  }
+  if (!isAcpProviderExhaustionMessage(input.result.reason)) {
+    return false;
+  }
+  return input.attempt < input.maxAttempts;
+}
 
 export type AcpResumeDecision =
   | { kind: "fresh" }
@@ -196,6 +249,14 @@ export async function startAcpThreadRun(
   input: AcpThreadStartRunInput,
   deps: AcpRuntimeOrchestrationDeps,
 ): Promise<void> {
+  return startAcpThreadRunWithDriver(input, deps, activeDriver);
+}
+
+export async function startAcpThreadRunWithDriver(
+  input: AcpThreadStartRunInput,
+  deps: AcpRuntimeOrchestrationDeps,
+  acpDriver: AcpAgentDriver,
+): Promise<void> {
   deps.requireThreadCore(input.thread, "acp", "start an ACP run");
   const acpAgentId = resolveAcpThreadAgentId(input.thread);
   const controller = new AbortController();
@@ -252,9 +313,9 @@ export async function startAcpThreadRun(
       threadId: input.thread.id,
       workspacePath: input.workspace.path,
     });
-    const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
+    const runOnce = () =>
       deps.consumeEvents({
-        events: driver.run({
+        events: acpDriver.run({
           threadId: input.thread.id,
           prompt: input.prompt,
           workspacePath: input.workspace.path,
@@ -276,8 +337,45 @@ export async function startAcpThreadRun(
         threadId: input.thread.id,
         worktreePath: input.workspace.path,
         signal: controller.signal,
-      }),
-    );
+      });
+
+    // Auto-retry loop: unstarted RetriableError failures re-send the same
+    // prompt on the same long-lived process/session (no dispose/cancel).
+    let result: RequestAttemptResult;
+    let attemptsUsed = 0;
+    for (;;) {
+      attemptsUsed += 1;
+      result = await deps.runThreadRequestOnce(
+        input.thread.id,
+        phase,
+        controller.signal,
+        () => runOnce(),
+        attemptsUsed - 1,
+      );
+      if (result.ok) {
+        break;
+      }
+      if (
+        !resolveAcprAutoRetry({
+          result,
+          attempt: attemptsUsed,
+          maxAttempts: ACP_MAX_ATTEMPTS,
+          aborted: controller.signal.aborted,
+        })
+      ) {
+        break;
+      }
+      deps.notifyAcprAutoRetry?.({
+        threadId: input.thread.id,
+        attempt: attemptsUsed,
+        maxAttempts: ACP_MAX_ATTEMPTS,
+        reason: result.reason,
+      });
+      // A steer/cancel landing in the retry gap hands control to the new run.
+      if (controller.signal.aborted) {
+        break;
+      }
+    }
     consumeSettled = true;
     const hasPendingPlan = deps.hasStoredPendingPlan(input.thread.id);
     const decision = resolveAcpThreadRunDecision({ mode, result, hasPendingPlan });
@@ -351,12 +449,12 @@ export async function startAcpThreadRun(
 }
 
 export function cancelAcpThread(threadId: string): void {
-  driver.cancel(threadId);
+  activeDriver.cancel(threadId);
 }
 
 /** Tear down the long-lived ACP process for a thread (delete thread / fingerprint miss). */
 export function disposeAcpThread(threadId: string): void {
-  driver.dispose(threadId);
+  activeDriver.dispose(threadId);
 }
 
 /**
@@ -364,6 +462,6 @@ export function disposeAcpThread(threadId: string): void {
  * Does not scan/kill other apps' Cursor ACP processes.
  */
 export function stopAllAcpRuntimes(): void {
-  driver.disposeAll();
+  activeDriver.disposeAll();
   killTrackedCursorAcpProcesses();
 }

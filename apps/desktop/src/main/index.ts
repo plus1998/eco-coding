@@ -6723,6 +6723,7 @@ function runThreadRequestOnce(
   phase: RunAttemptPhase,
   signal: AbortSignal | undefined,
   runOnce: (context: RunAttemptContext) => Promise<RequestAttemptResult>,
+  retryIndex = 0,
 ): Promise<RequestAttemptResult> {
   return runThreadRequestWithLifecycle({
     threadId,
@@ -6730,6 +6731,7 @@ function runThreadRequestOnce(
     runOnce,
     lifecycle: agentLifecycle,
     settlements: usageLedgerCoordinator,
+    retryIndex,
     ...(signal && { signal }),
   });
 }
@@ -7262,8 +7264,23 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
     resolveSessionMode,
     startActiveRun,
     createSessionPlan,
-    runThreadRequestOnce: (threadId, phase, signal, run) =>
-      runThreadRequestOnce(threadId, phase, signal, () => run()),
+    runThreadRequestOnce: (threadId, phase, signal, run, retryIndex) =>
+      runThreadRequestOnce(threadId, phase, signal, () => run(), retryIndex),
+    notifyAcprAutoRetry: ({ threadId, attempt, maxAttempts }) => {
+      emitThreadEvent(
+        threadId,
+        "thread.event",
+        `上游连接中断，正在自动重试（${attempt}/${maxAttempts - 1}）…`,
+        "system",
+        false,
+        {
+          metadata: {
+            activityOrigin: "sdk.upstream_error",
+            acpAutoRetry: { attempt, maxAttempts },
+          },
+        },
+      );
+    },
     consumeEvents: ({ events, threadId, worktreePath, signal }) =>
       consumeSdkRunEvents({
         events,
