@@ -7399,6 +7399,8 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
           if (!thread) return "always";
           return ensureThreadRuntimeConfig(thread).runtimeConfig?.bashReviewMode ?? "always";
         },
+        getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
+        getComputerUseActionApprovalMode: () => computerUseSettingsStore.get().actionApprovalMode,
         getCwd: () =>
           activeRunRuntimeState.worktreePlan(threadId)?.worktreePath ||
           conversationStore.getThread(threadId)?.sdkCwd ||

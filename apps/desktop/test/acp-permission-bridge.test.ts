@@ -4,6 +4,8 @@ import {
   createAcpPermissionHandler,
   mapAcpPermissionToBashApprovalRequest,
   mapBashResolutionToAcpPermission,
+  shouldAutoAllowAcpEcoBrowserTool,
+  shouldAutoAllowAcpEcoComputerUseTool,
 } from "../src/main/acp-permission-bridge";
 import type { BashApprovalRequest } from "../src/shared/ipc";
 
@@ -19,6 +21,32 @@ const EXECUTE_REQUEST: AcpPermissionRequest = {
     { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
     { optionId: "allow-always", name: "Allow always", kind: "allow_always" },
     { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+  ],
+};
+
+const BROWSER_EVAL_REQUEST: AcpPermissionRequest = {
+  toolCall: {
+    toolCallId: "call_browser_eval",
+    kind: "other",
+    title: "eco_agent_browser-agent_browser_eval: agent_browser_eval",
+    rawInput: { script: "1+1" },
+  },
+  options: [
+    { optionId: "allow-once", kind: "allow_once" },
+    { optionId: "reject-once", kind: "reject_once" },
+  ],
+};
+
+const BROWSER_OPEN_REQUEST: AcpPermissionRequest = {
+  toolCall: {
+    toolCallId: "call_browser_open",
+    kind: "other",
+    title: "eco_agent_browser-agent_browser_open: agent_browser_open",
+    rawInput: { url: "https://example.com" },
+  },
+  options: [
+    { optionId: "allow-once", kind: "allow_once" },
+    { optionId: "reject-once", kind: "reject_once" },
   ],
 };
 
@@ -267,4 +295,112 @@ test("switch_mode is auto-allowed; web search still parks in Eco always", async 
   });
   expect(parked).toHaveLength(1);
   expect(parked[0]?.kind).toBe("network");
+});
+
+test("shouldAutoAllowAcpEcoBrowserTool mirrors settings always_allow / always_ask", () => {
+  expect(
+    shouldAutoAllowAcpEcoBrowserTool({
+      toolName: "eco_agent_browser-agent_browser_eval: agent_browser_eval",
+      openApprovalMode: "always_allow",
+    }),
+  ).toBe(true);
+  expect(
+    shouldAutoAllowAcpEcoBrowserTool({
+      toolName: "eco_agent_browser-agent_browser_open: agent_browser_open",
+      openApprovalMode: "always_ask",
+    }),
+  ).toBe(false);
+  expect(
+    shouldAutoAllowAcpEcoBrowserTool({
+      toolName: "eco_agent_browser-agent_browser_eval: agent_browser_eval",
+      openApprovalMode: "always_ask",
+    }),
+  ).toBe(true);
+  expect(
+    shouldAutoAllowAcpEcoComputerUseTool({
+      toolName: "eco_computer_use-click: click",
+      actionApprovalMode: "always_allow",
+    }),
+  ).toBe(true);
+});
+
+test("browser always_allow skips auxiliary review under ACP auto mode", async () => {
+  const parked: BashApprovalRequest[] = [];
+  const reviewed: Array<{ toolName: string }> = [];
+  const handler = createAcpPermissionHandler("thr_1", {
+    getBashReviewMode: () => "auto",
+    getBrowserOpenApprovalMode: () => "always_allow",
+    getCwd: () => "/tmp/ws",
+    getWorkspacePath: () => "/tmp/ws",
+    getPlannerAgentId: () => "planner_1",
+    getRememberPrefixes: () => [],
+    evaluateConfirmation: () => {
+      throw new Error("browser tools should not hit bash policy");
+    },
+    reviewApproval: async (_request, tool) => {
+      reviewed.push({ toolName: tool.toolName });
+      return {
+        action: "human_required",
+        rationale: "辅助模型审批失败或返回了无效 JSON，已按失败关闭策略转人工审批。",
+        policyMatches: ["review_failed_closed"],
+      };
+    },
+    registerPending: async (_threadId, request) => {
+      parked.push(request);
+      return { decision: "approved" };
+    },
+    rememberPrefix: () => {},
+    emit: () => {},
+  });
+
+  await expect(handler(BROWSER_EVAL_REQUEST)).resolves.toEqual({
+    outcome: { outcome: "selected", optionId: "allow-once" },
+  });
+  expect(reviewed).toEqual([]);
+  expect(parked).toEqual([]);
+});
+
+test("browser always_ask still reviews open tools under ACP auto mode", async () => {
+  const parked: BashApprovalRequest[] = [];
+  const reviewed: Array<{ toolName: string }> = [];
+  const handler = createAcpPermissionHandler("thr_1", {
+    getBashReviewMode: () => "auto",
+    getBrowserOpenApprovalMode: () => "always_ask",
+    getCwd: () => "/tmp/ws",
+    getWorkspacePath: () => "/tmp/ws",
+    getPlannerAgentId: () => "planner_1",
+    getRememberPrefixes: () => [],
+    evaluateConfirmation: () => {
+      throw new Error("open tools should go to review, not bash policy");
+    },
+    reviewApproval: async (_request, tool) => {
+      reviewed.push({ toolName: tool.toolName });
+      return {
+        action: "human_required",
+        rationale: "need a person",
+        policyMatches: [],
+      };
+    },
+    registerPending: async (_threadId, request) => {
+      parked.push(request);
+      return { decision: "approved" };
+    },
+    rememberPrefix: () => {},
+    emit: () => {},
+  });
+
+  await expect(handler(BROWSER_OPEN_REQUEST)).resolves.toEqual({
+    outcome: { outcome: "selected", optionId: "allow-once" },
+  });
+  expect(reviewed).toHaveLength(1);
+  expect(parked).toHaveLength(1);
+
+  // Non-open tools remain auto-allowed even under always_ask.
+  reviewed.length = 0;
+  parked.length = 0;
+  await expect(handler(BROWSER_EVAL_REQUEST)).resolves.toEqual({
+    outcome: { outcome: "selected", optionId: "allow-once" },
+  });
+  expect(reviewed).toEqual([]);
+  expect(parked).toEqual([]);
 });

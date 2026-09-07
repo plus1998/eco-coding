@@ -11,6 +11,17 @@ import {
   resolveAcpPermissionSelection,
   shouldHostAutoAllowAcpPermission,
 } from "@eco/runtime";
+import {
+  type BrowserOpenApprovalMode,
+  isEcoAgentBrowserToolName,
+  requiresBrowserOpenApproval,
+} from "../shared/browser";
+import {
+  type ComputerUseActionApprovalMode,
+  ECO_COMPUTER_USE_ACTION_TOOLS,
+  isEcoComputerUseToolName,
+  requiresComputerUseActionApproval,
+} from "../shared/computer-use";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import type { BashApprovalResolution } from "./bash-approval-bridge";
 import type { EcoApprovalReviewResult } from "./eco-approval-reviewer";
@@ -24,6 +35,16 @@ export type AcpPermissionBridgeEmitType =
 
 export interface AcpPermissionBridgeDeps {
   getBashReviewMode: () => string | undefined;
+  /**
+   * Built-in browser open approval (settings). When always_allow, eco browser MCP
+   * tools skip auxiliary review / human park — same policy as Codex elicitation.
+   */
+  getBrowserOpenApprovalMode?: () => BrowserOpenApprovalMode;
+  /**
+   * Computer Use action approval (settings). When always_allow, eco computer-use
+   * MCP tools skip auxiliary review / human park.
+   */
+  getComputerUseActionApprovalMode?: () => ComputerUseActionApprovalMode;
   getCwd: () => string;
   getWorkspacePath: () => string;
   getPlannerAgentId: () => string | undefined;
@@ -37,6 +58,56 @@ export interface AcpPermissionBridgeDeps {
   rememberPrefix: (threadId: string, command: string) => void;
   emit: (type: AcpPermissionBridgeEmitType, message: string, request: BashApprovalRequest) => void;
   log?: (phase: string, payload: Record<string, unknown>) => void;
+}
+
+/**
+ * Whether ACP should auto-allow an eco_agent_browser tool without bash/aux review.
+ * Mirrors Codex MCP elicitation: always_allow → all tools; always_ask → non-open only.
+ */
+export function shouldAutoAllowAcpEcoBrowserTool(input: {
+  toolName: string;
+  openApprovalMode: BrowserOpenApprovalMode;
+}): boolean {
+  if (!isEcoAgentBrowserToolName(input.toolName)) {
+    return false;
+  }
+  if (input.openApprovalMode === "always_allow") {
+    return true;
+  }
+  return !requiresBrowserOpenApproval(input.toolName);
+}
+
+/**
+ * Whether ACP should auto-allow an eco_computer_use tool without bash/aux review.
+ * Mirrors Codex: always_allow → all; always_ask → read tools only.
+ */
+export function shouldAutoAllowAcpEcoComputerUseTool(input: {
+  toolName: string;
+  actionApprovalMode: ComputerUseActionApprovalMode;
+}): boolean {
+  if (!isEcoComputerUseToolName(input.toolName)) {
+    return false;
+  }
+  if (input.actionApprovalMode === "always_allow") {
+    return true;
+  }
+  if (requiresComputerUseActionApproval(input.toolName)) {
+    return false;
+  }
+  // ACP titles look like `eco_computer_use-click: click` (not mcp__…__leaf).
+  const lower = input.toolName.trim().toLowerCase();
+  for (const action of ECO_COMPUTER_USE_ACTION_TOOLS) {
+    if (
+      lower.includes(`__${action}`) ||
+      lower.includes(`-${action}`) ||
+      lower.includes(`_${action}`) ||
+      lower.includes(`: ${action}`) ||
+      lower.endsWith(`:${action}`)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function mapAcpPermissionToBashApprovalRequest(input: {
@@ -116,6 +187,38 @@ export function createAcpPermissionHandler(
       toolCallId: request.toolCall.toolCallId,
     });
     if (shouldHostAutoAllowAcpPermission({ bashReviewMode, request })) {
+      return resolveAcpPermissionAutoAllow({
+        options: request.options,
+        toolCall: request.toolCall,
+      });
+    }
+
+    // Integration settings (browser / computer-use) outrank session bashReviewMode
+    // for their own MCP tools — otherwise "始终允许" is ignored under Cursor ACP + 替我审批.
+    const openApprovalMode = deps.getBrowserOpenApprovalMode?.() ?? "always_allow";
+    if (shouldAutoAllowAcpEcoBrowserTool({ toolName, openApprovalMode })) {
+      deps.log?.("acp-permission-browser-auto-allow", {
+        threadId,
+        toolName,
+        openApprovalMode,
+      });
+      return resolveAcpPermissionAutoAllow({
+        options: request.options,
+        toolCall: request.toolCall,
+      });
+    }
+    const computerUseActionMode = deps.getComputerUseActionApprovalMode?.() ?? "always_ask";
+    if (
+      shouldAutoAllowAcpEcoComputerUseTool({
+        toolName,
+        actionApprovalMode: computerUseActionMode,
+      })
+    ) {
+      deps.log?.("acp-permission-computer-use-auto-allow", {
+        threadId,
+        toolName,
+        actionApprovalMode: computerUseActionMode,
+      });
       return resolveAcpPermissionAutoAllow({
         options: request.options,
         toolCall: request.toolCall,
