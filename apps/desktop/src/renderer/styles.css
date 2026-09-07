@@ -34556,7 +34556,7 @@ body,
   background: var(--popover-hover, rgba(255, 255, 255, 0.08));
 }
 
-/* ===== Image gallery float：图片展示 / 创意绘画工具产出的图片画廊悬浮窗（停靠右侧，纯图片无边框） ===== */
+/* ===== Image gallery float：图片展示 / 创意绘画工具产出的图片画廊悬浮窗（渲染在 Feed 列内，避开右侧面板与 cards） ===== */
 
 .image-gallery-float {
   position: absolute;

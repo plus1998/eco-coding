@@ -10292,6 +10292,19 @@ function App() {
               .filter(Boolean)
               .join(" ")}
           >
+            <AnimatePresence>
+              {imageGalleryOpen && imageGalleryQueue.length > 0 ? (
+                <SuspensePanel>
+                  <LazyImageGalleryFloat
+                    key="image-gallery-float"
+                    items={imageGalleryQueue}
+                    avoidCards={Boolean(showWorkspacePanel && workspaceCardsPanelOpen)}
+                    onAdvance={advanceImageGallery}
+                    onCloseAll={closeImageGallery}
+                  />
+                </SuspensePanel>
+              ) : null}
+            </AnimatePresence>
             <div
               className={[
                 "codex-main-scroll",
@@ -10654,19 +10667,6 @@ function App() {
             ) : null}
           </div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
-          <AnimatePresence>
-            {imageGalleryOpen && imageGalleryQueue.length > 0 ? (
-                            <SuspensePanel>
-<LazyImageGalleryFloat
-                key="image-gallery-float"
-                items={imageGalleryQueue}
-                avoidCards={Boolean(showWorkspacePanel && workspaceCardsPanelOpen)}
-                onAdvance={advanceImageGallery}
-                onCloseAll={closeImageGallery}
-              />
-              </SuspensePanel>
-            ) : null}
-          </AnimatePresence>
           <SuspensePanel>
             <LazyBrowserWebviewLayer />
           </SuspensePanel>
