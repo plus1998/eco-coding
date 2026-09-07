@@ -10382,7 +10382,13 @@ async function handleRunCancelled(
 ): Promise<void> {
   // User stop lands on idle (not drainable). Pause remaining queued follow-ups so they
   // do not silently sit forever, and so Resume/引导 stays an explicit next step.
-  autoPauseFollowUpQueueWhenQueuedRemain(threadId);
+  // Skip for escalated follow-up interrupts: the triggering message is still in
+  // "queued" state here and is force-drained right after — auto-pausing would
+  // flash "排队发送已暂停" and then send the message anyway, and the paused
+  // state would linger for the rest of the queue.
+  if (!pendingEscalatedFollowUpDrain.has(threadId)) {
+    autoPauseFollowUpQueueWhenQueuedRemain(threadId);
+  }
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
   await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps(), message);
 }

@@ -1200,10 +1200,12 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
       }),
     }),
   );
-  // Final tip stays until a later hard event supersedes it.
+  // Final tip stays until a later hard event supersedes it — live tip lives in active-tail.
   expect(tipOnlyHtml).toContain("定位入口");
+  expect(tipOnlyHtml).toContain("run-log-active-tail");
   expect(tipOnlyHtml).toContain('class="run-log-thinking streaming empty"');
   expect(tipOnlyHtml).toContain("run-log-shimmer-text");
+  expect(tipOnlyHtml.match(/run-log-thinking streaming empty/g)?.length).toBe(1);
 
   const streamingHtml = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -1242,11 +1244,13 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
       }),
     }),
   );
-  // Tool supersedes stage-1; only live tip stage-2 remains.
+  // Tool supersedes stage-1; only live tip stage-2 remains (in active-tail).
   expect(streamingHtml).not.toContain("定位入口");
   expect(streamingHtml).toContain("检查测试");
+  expect(streamingHtml).toContain("run-log-active-tail");
   expect(streamingHtml).toContain('class="run-log-thinking streaming empty"');
   expect(streamingHtml).toContain("run-log-shimmer-text");
+  expect(streamingHtml.match(/run-log-thinking streaming empty/g)?.length).toBe(1);
   // The latest reasoning summary reuses the running tool slot instead of
   // rendering a second row underneath it.
   expect(streamingHtml).not.toContain("正在运行");
@@ -1282,6 +1286,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   expect(replacedHtml).not.toContain("第一阶段");
   expect(replacedHtml).toContain("第二阶段");
   expect(replacedHtml.match(/run-log-thinking streaming empty/g)?.length).toBe(1);
+  expect(replacedHtml).toContain("run-log-active-tail");
 
   const completedHtml = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -1315,6 +1320,48 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   // Tool after summary clears the tip; durable tool row remains.
   expect(completedHtml).not.toContain("已完成阶段");
   expect(completedHtml).toContain("运行了命令");
+});
+
+test("ActivityLogView keeps empty waiting and reasoning summary mutually exclusive in one active-tail", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "request-started",
+            sequence: 1,
+            eventType: "request.started",
+            requestId: "req-summary-wait",
+            text: "",
+          }),
+          item({
+            id: "stage-tip",
+            sequence: 2,
+            eventType: "thinking.delta",
+            role: "thinking",
+            requestId: "req-summary-wait",
+            streamKey: "rs_tip",
+            text: "定位入口",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+        ],
+        requestSpans: [
+          requestSpan({
+            requestId: "req-summary-wait",
+            status: "streaming",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("定位入口");
+  expect(html).toContain("run-log-active-tail");
+  expect(html.match(/run-log-thinking streaming empty/g)?.length).toBe(1);
+  // Tip replaced empty「正在思考」in the same slot — do not keep both labels.
+  expect(html).not.toContain("正在思考");
+  expect(html.match(/定位入口/g)?.length).toBe(1);
 });
 
 test("splitThinkingCarouselLines prefers newlines and sentence boundaries over camelCase", () => {

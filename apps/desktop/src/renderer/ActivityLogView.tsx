@@ -603,10 +603,18 @@ function ProjectionActivityLogView({
   const runningContextCompactionVisible = viewModel.mainFeedEntries.some((entry) =>
     isRunningContextCompactionFeedEntry(entry),
   );
+  // While the conversation is live, Summary tip shares the active-tail slot with
+  // empty "正在思考" — never render both as sibling WaitingThinkingBlocks.
+  const liveReasoningStageLabel = conversationActive
+    ? resolveLiveReasoningStageLabel(viewModel.mainFeedEntries)
+    : undefined;
+  const deferReasoningStageTip =
+    conversationActive && !runningToolVisible && !runningContextCompactionVisible;
   const waitingThinkingVisible =
     !runningToolVisible &&
     !runningContextCompactionVisible &&
-    (showInitialWaiting ||
+    (Boolean(liveReasoningStageLabel) ||
+      showInitialWaiting ||
       viewModel.mainFeedEntries.some((entry) => {
         if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
           return false;
@@ -688,6 +696,7 @@ function ProjectionActivityLogView({
   const sharedSectionProps = {
     requestSpansById,
     finalSummaryItemIds,
+    deferReasoningStageTip,
     ...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId }),
     ...(selectedSubagentAgentId && { selectedSubagentAgentId }),
     ...(onOpenSubagent && { onOpenSubagent }),
@@ -770,7 +779,11 @@ function ProjectionActivityLogView({
             ))
           )}
           {conversationActive ? (
-            <RunLogActiveTail waiting={waitingThinkingVisible} stopping={Boolean(thread?.cancelling)} />
+            <RunLogActiveTail
+              waiting={waitingThinkingVisible}
+              stopping={Boolean(thread?.cancelling)}
+              {...(liveReasoningStageLabel ? { label: liveReasoningStageLabel } : {})}
+            />
           ) : null}
         </div>
       </ActivityFeedLayoutContext.Provider>
@@ -782,6 +795,8 @@ type ProjectionFeedEntrySharedProps = {
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   finalSummaryItemIds: ReadonlySet<string>;
   stickyFinalSummaryItemId?: string;
+  /** Defer reasoning-stage tip rows into the feed active-tail (live conversation). */
+  deferReasoningStageTip?: boolean;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
@@ -808,16 +823,21 @@ function ProjectionTurnFeedSection({
   section: Extract<ThreadRunTurnFeedSection, { kind: "turn" }>;
 }) {
   const requestSpansById = entryProps.requestSpansById;
+  const deferReasoningStageTip = Boolean(entryProps.deferReasoningStageTip);
   const detailLoaded = section.processEntries.some(
     (entry) =>
       (entry.kind === "timeline" || entry.kind === "agent-echo") && entry.item.contentLoaded === true,
   );
-  // Empty "正在思考" is deferred to the feed active-tail. If the process would only
-  // render those rows as null, mark process empty so the divider does not open a
-  // hollow padding gap sitting above the tail waiting line.
+  // Empty "正在思考" / live Summary tip are deferred to the feed active-tail. If the
+  // process would only render those rows as null, mark process empty so the divider
+  // does not open a hollow padding gap sitting above the tail waiting line.
   const processEmpty = !section.processEntries.some((entry) => {
     if (entry.kind === "timeline" || entry.kind === "agent-echo") {
-      return !isWaitingThinkingItem(entry.item, requestSpansById);
+      return !isDeferredThinkingStatusItem(
+        entry.item,
+        requestSpansById,
+        deferReasoningStageTip,
+      );
     }
     return true;
   });
@@ -1158,6 +1178,7 @@ function ProjectionMainFeedEntry({
   requestSpansById,
   finalSummaryItemIds,
   stickyFinalSummaryItemId,
+  deferReasoningStageTip = false,
   selectedSubagentAgentId,
   onOpenSubagent,
   onOpenImageGenerationTool,
@@ -1179,6 +1200,7 @@ function ProjectionMainFeedEntry({
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   finalSummaryItemIds: ReadonlySet<string>;
   stickyFinalSummaryItemId?: string;
+  deferReasoningStageTip?: boolean;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
@@ -1203,6 +1225,7 @@ function ProjectionMainFeedEntry({
         item={entry.item}
         requestSpansById={requestSpansById}
         deferWaitingIndicator
+        deferReasoningStageTip={deferReasoningStageTip}
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
         pacing={paceTargetKey ? entry.key === paceTargetKey : true}
@@ -1246,6 +1269,9 @@ function ProjectionMainFeedEntry({
         {...(agentThemes && { agentThemes })}
       />,
     );
+  }
+  if (deferReasoningStageTip && isReasoningStageItem(entry.item)) {
+    return null;
   }
   return wrapRunLogFeedEntry(
     <ProjectionAgentEchoEntry
@@ -2688,6 +2714,7 @@ function ProjectionTimelineEntry({
   historyRevision,
   compact = false,
   deferWaitingIndicator = false,
+  deferReasoningStageTip = false,
   forceActionDetailsExpanded = false,
   actionLabelOverride,
   showMessageMeta = false,
@@ -2708,6 +2735,7 @@ function ProjectionTimelineEntry({
   historyRevision?: number;
   compact?: boolean;
   deferWaitingIndicator?: boolean;
+  deferReasoningStageTip?: boolean;
   forceActionDetailsExpanded?: boolean;
   actionLabelOverride?: string;
   showMessageMeta?: boolean;
@@ -2717,7 +2745,10 @@ function ProjectionTimelineEntry({
   onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
 }) {
-  if (deferWaitingIndicator && isWaitingThinkingItem(item, requestSpansById)) {
+  if (
+    deferWaitingIndicator &&
+    isDeferredThinkingStatusItem(item, requestSpansById, deferReasoningStageTip)
+  ) {
     return null;
   }
   if (isProjectionUserPromptItem(item)) {
@@ -3470,6 +3501,43 @@ function isWaitingThinkingItem(
   );
 }
 
+function isReasoningStageItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return projectionItemToDetailBlock(item)?.kind === "reasoning-stage";
+}
+
+/** Empty waiting + (optionally) live Summary tip — deferred into the active-tail. */
+function isDeferredThinkingStatusItem(
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionRequestSpan>,
+  deferReasoningStageTip: boolean,
+): boolean {
+  if (isWaitingThinkingItem(item, requestSpansById)) {
+    return true;
+  }
+  return deferReasoningStageTip && isReasoningStageItem(item);
+}
+
+/** Latest visible reasoning-stage tip label on the main feed (collapse already keeps one tip). */
+function resolveLiveReasoningStageLabel(
+  entries: readonly ThreadRunProjectionMainFeedEntry[],
+): string | undefined {
+  let label: string | undefined;
+  for (const entry of entries) {
+    if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+      continue;
+    }
+    const block = projectionItemToDetailBlock(entry.item);
+    if (block?.kind !== "reasoning-stage") {
+      continue;
+    }
+    const trimmed = block.label.trim();
+    if (trimmed) {
+      label = trimmed;
+    }
+  }
+  return label;
+}
+
 function isRunningActionItem(item: ThreadRunProjectionTimelineItem): boolean {
   const block = projectionItemToDetailBlock(item);
   return block?.kind === "action" && block.lifecycle === "running";
@@ -3504,11 +3572,26 @@ function RunLogConversationTail() {
   );
 }
 
-function RunLogActiveTail({ waiting, stopping = false }: { waiting: boolean; stopping?: boolean }) {
+function RunLogActiveTail({
+  waiting,
+  stopping = false,
+  label,
+}: {
+  waiting: boolean;
+  stopping?: boolean;
+  /** Live Summary tip label; when waiting without tip, defaults to「正在思考」. */
+  label?: string;
+}) {
+  // Single WaitingThinkingBlock instance: stopping > tip label > default「正在思考」.
+  const statusLabel = stopping
+    ? i18n.t("activity.stopping")
+    : label?.trim()
+      ? label.trim()
+      : undefined;
   return (
     <div className="run-log-feed-entry run-log-feed-entry--tight run-log-active-tail">
       {waiting ? (
-        <WaitingThinkingBlock active {...(stopping ? { label: i18n.t("activity.stopping") } : {})} />
+        <WaitingThinkingBlock active {...(statusLabel ? { label: statusLabel } : {})} />
       ) : (
         <RunLogConversationTail />
       )}
