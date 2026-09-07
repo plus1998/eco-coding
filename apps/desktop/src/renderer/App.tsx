@@ -2673,6 +2673,14 @@ function App() {
       hotThreadIds,
     });
 
+    if (typeof window.eco?.reportThreadProjectionFocus === "function") {
+      void window.eco.reportThreadProjectionFocus({
+        ...(selectedThreadId ? { selectedThreadId } : {}),
+        ...(feedThreadId ? { feedThreadId } : {}),
+        recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
+      });
+    }
+
     for (const threadId of [...projectionEvictTimersRef.current.keys()]) {
       if (protectedIds.has(threadId)) {
         cancelProjectionCacheEviction(threadId);
@@ -5824,7 +5832,28 @@ function App() {
     [distanceFromActivityFeedBottom, syncActivityFeedScrollJump],
   );
 
+  const cancelActivityFeedLayoutScroll = useCallback(() => {
+    if (activityFeedLayoutScrollTimerRef.current) {
+      clearTimeout(activityFeedLayoutScrollTimerRef.current);
+      activityFeedLayoutScrollTimerRef.current = null;
+    }
+  }, []);
+
+  const markActivityFeedUserDetached = useCallback(
+    (direction: ActivityFeedUserScrollDirection = "up") => {
+      userDetachedFromBottomRef.current = true;
+      activityFeedUserScrollDirectionRef.current = direction;
+      // Stop stick-to-bottom timers so virtualization remounts cannot snap back mid-gesture.
+      cancelActivityFeedLayoutScroll();
+      forceActivityFeedScrollUntilRef.current = 0;
+    },
+    [cancelActivityFeedLayoutScroll],
+  );
+
   const scheduleActivityFeedLayoutScroll = useCallback(() => {
+    if (userDetachedFromBottomRef.current) {
+      return;
+    }
     const now = Date.now();
     const elapsed = now - lastActivityFeedLayoutScrollAtRef.current;
     if (elapsed >= ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS) {
@@ -5838,6 +5867,9 @@ function App() {
     }
     activityFeedLayoutScrollTimerRef.current = setTimeout(() => {
       activityFeedLayoutScrollTimerRef.current = null;
+      if (userDetachedFromBottomRef.current) {
+        return;
+      }
       lastActivityFeedLayoutScrollAtRef.current = Date.now();
       scrollActivityFeedToEnd();
       requestAnimationFrame(() => scrollActivityFeedToEnd());
@@ -5845,14 +5877,14 @@ function App() {
   }, [scrollActivityFeedToEnd]);
 
   const flushActivityFeedLayoutScroll = useCallback(() => {
-    if (activityFeedLayoutScrollTimerRef.current) {
-      clearTimeout(activityFeedLayoutScrollTimerRef.current);
-      activityFeedLayoutScrollTimerRef.current = null;
+    cancelActivityFeedLayoutScroll();
+    if (userDetachedFromBottomRef.current) {
+      return;
     }
     lastActivityFeedLayoutScrollAtRef.current = Date.now();
     scrollActivityFeedToEnd();
     requestAnimationFrame(() => scrollActivityFeedToEnd());
-  }, [scrollActivityFeedToEnd]);
+  }, [cancelActivityFeedLayoutScroll, scrollActivityFeedToEnd]);
 
   useEffect(
     () => () => {
@@ -5968,8 +6000,7 @@ function App() {
     if (!container) {
       return;
     }
-    userDetachedFromBottomRef.current = true;
-    activityFeedUserScrollDirectionRef.current = "up";
+    markActivityFeedUserDetached("up");
     programmaticActivityFeedScrollRef.current = true;
     container.scrollTo({ top: 0, behavior: "smooth" });
     activityFeedScrollTopRef.current = 0;
@@ -5981,7 +6012,7 @@ function App() {
         }
       });
     });
-  }, [syncActivityFeedScrollJump]);
+  }, [markActivityFeedUserDetached, syncActivityFeedScrollJump]);
 
   const handleActivityFeedScrollJump = useCallback(() => {
     if (activityFeedScrollJump === "top") {
@@ -5993,6 +6024,13 @@ function App() {
 
   const handleActivityPlannerLayoutChange = useCallback(
     (options?: { immediate?: boolean }) => {
+      if (userDetachedFromBottomRef.current) {
+        const container = activityMessagesRef.current;
+        if (container) {
+          clampActivityFeedOverscroll(container);
+        }
+        return;
+      }
       if (options?.immediate) {
         const container = activityMessagesRef.current;
         if (container) {
@@ -6120,8 +6158,7 @@ function App() {
           // scrolling up. Marking detached here would permanently stop auto-follow.
           activityFeedUserScrollDirectionRef.current = null;
         } else {
-          userDetachedFromBottomRef.current = true;
-          activityFeedUserScrollDirectionRef.current = "up";
+          markActivityFeedUserDetached("up");
         }
       } else if (scrollTop > activityFeedScrollTopRef.current + ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
         activityFeedUserScrollDirectionRef.current = "down";
@@ -6144,6 +6181,8 @@ function App() {
       if (event.deltaY >= 0) {
         return;
       }
+      // Detach before virtualization ResizeObserver can snap stick-to-bottom mid-gesture.
+      markActivityFeedUserDetached("up");
       syncActivityFeedBoot(container);
     };
     container.addEventListener("scroll", onScroll, { passive: true });
@@ -6158,6 +6197,7 @@ function App() {
   }, [
     activeThread?.id,
     distanceFromActivityFeedBottom,
+    markActivityFeedUserDetached,
     syncActivityFeedBoot,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
@@ -6175,24 +6215,28 @@ function App() {
     let lastContentHeight = content.getBoundingClientRect().height;
     const observer = new ResizeObserver(() => {
       const nextContentHeight = content.getBoundingClientRect().height;
-      const shrank = nextContentHeight < lastContentHeight - 1;
+      const heightDelta = nextContentHeight - lastContentHeight;
       lastContentHeight = nextContentHeight;
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
       clampActivityFeedOverscroll(container);
       syncActivityFeedBoot(container);
-      const stuckAboveBottom =
-        !userDetachedFromBottomRef.current && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
       if (userDetachedFromBottomRef.current) {
         syncActivityUserMessageNavigator(container);
         return;
       }
-      if (stuckAboveBottom || shrank) {
+      // Virtualization remounts change .run-log height while the user is mid scroll-up,
+      // often before detach is committed. Never treat "far from bottom" as stick recovery
+      // here — that path snapped the viewport back and caused jitter.
+      if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
         scrollActivityFeedToEnd();
         requestAnimationFrame(() => scrollActivityFeedToEnd());
         requestAnimationFrame(() => syncActivityUserMessageNavigator(container));
         return;
       }
-      scheduleActivityFeedLayoutScroll();
+      // Content grew while we were slightly outside the stick zone (stream append) — follow.
+      if (heightDelta > 1 && distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX * 2) {
+        scheduleActivityFeedLayoutScroll();
+      }
       syncActivityUserMessageNavigator(container);
     });
     observer.observe(content);

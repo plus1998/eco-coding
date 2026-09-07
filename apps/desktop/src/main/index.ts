@@ -264,6 +264,7 @@ import {
   type ThreadModelUsageEntry,
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
+  type ThreadProjectionFocusReport,
   type ThreadRetryFromMessageRequest,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
@@ -821,6 +822,9 @@ import {
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
+import {
+  ThreadProjectionMemoryCoordinator,
+} from "./thread-projection-memory";
 import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
 import {
   runThreadRequestWithRuntimeProxy,
@@ -1217,6 +1221,7 @@ let threadCacheHitMonitor: ThreadCacheHitMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
 let codexFileCheckpointStore: CodexFileCheckpointStore;
+let threadProjectionMemory: ThreadProjectionMemoryCoordinator;
 
 interface ThreadCoreStartRunInput {
   thread: ThreadSummary;
@@ -1687,6 +1692,11 @@ app.whenReady().then(async () => {
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   conversationStore.onThreadRunEventAppended(maintainThreadFeedSkeletonFromEvent);
+  threadProjectionMemory = new ThreadProjectionMemoryCoordinator({
+    getHotThreadIds: () => conversationStore.listHotProjectionThreadIds(),
+    listRetainedThreadIds: () => conversationStore.listProjectionEventCacheThreadIds(),
+    releaseThread: (threadId) => releaseIdleThreadProjectionMemory(threadId),
+  });
   promptImageFileStore = new PromptImageFileStore(app.getPath("userData"));
   conversationStore.setPromptImageFileStore(promptImageFileStore);
   const compactedLegacyStreamEvents = conversationStore.compactLegacyThreadRunStreamEvents();
@@ -4159,6 +4169,7 @@ function registerIpcHandlers(): void {
     if (!request.threadId) {
       return undefined;
     }
+    threadProjectionMemory.noteThreadTouched(request.threadId);
     await hydrateClaudeUserMessageEditState(request.threadId);
     if (request.mode === "feed") {
       return loadThreadFeedProjectionForClient(request.threadId, request);
@@ -4170,6 +4181,11 @@ function registerIpcHandlers(): void {
       return undefined;
     }
     return projection;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadProjectionFocusReport, async (payload: unknown) => {
+    threadProjectionMemory.reportFocus(parseThreadProjectionFocusReport(payload));
+    return { ok: true as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadRunProjectionDetailGet, async (payload: unknown) => {
@@ -10790,9 +10806,11 @@ function isSdkSessionAlreadyMissing(error: unknown): boolean {
 }
 
 function clearThreadRuntimeMemory(threadId: string): void {
+  threadProjectionMemory?.forgetThread(threadId);
   activeRunBillingState.clearRun(threadId);
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
+  contextMonitor?.clearThread(threadId);
   threadPromptCacheMonitor.clearThread(threadId);
   threadPromptCacheEpisodeMonitor.clearThread(threadId);
   threadCacheHitMonitor.clearThread(threadId);
@@ -10801,6 +10819,7 @@ function clearThreadRuntimeMemory(threadId: string): void {
   clearThreadSubagentLaunchRegistry(threadId);
   subagentDelegationLinkersByThread.delete(threadId);
   sdkStreamActivityIngestion.clearDelegationLinker(threadId);
+  conversationStore.releaseThreadProjectionWorkingMemory(threadId);
   const timer = runProjectionEmitTimers.get(threadId);
   if (timer) {
     clearTimeout(timer);
@@ -10808,6 +10827,37 @@ function clearThreadRuntimeMemory(threadId: string): void {
   }
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+}
+
+function releaseIdleThreadProjectionMemory(threadId: string): void {
+  conversationStore.releaseThreadProjectionWorkingMemory(threadId);
+  lastFeedProjectionSignatures.delete(threadId);
+  lastFeedProjectionTimelineSequences.delete(threadId);
+  // Soft release only — keep SQLite feed skeletons and history revisions so reselect is cheap.
+  threadUsageAccumulator.clear(threadId);
+  contextScheduler.clearThread(threadId);
+  contextMonitor?.clearThread(threadId);
+}
+
+function parseThreadProjectionFocusReport(payload: unknown): ThreadProjectionFocusReport {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+  const record = payload as Record<string, unknown>;
+  const selectedThreadId =
+    typeof record.selectedThreadId === "string" ? record.selectedThreadId.trim() : undefined;
+  const feedThreadId = typeof record.feedThreadId === "string" ? record.feedThreadId.trim() : undefined;
+  const recentlyViewedThreadIds = Array.isArray(record.recentlyViewedThreadIds)
+    ? record.recentlyViewedThreadIds
+        .filter((id): id is string => typeof id === "string")
+        .map((id) => id.trim())
+        .filter(Boolean)
+    : undefined;
+  return {
+    ...(selectedThreadId ? { selectedThreadId } : {}),
+    ...(feedThreadId ? { feedThreadId } : {}),
+    ...(recentlyViewedThreadIds ? { recentlyViewedThreadIds } : {}),
+  };
 }
 
 function bumpThreadRunProjectionHistoryRevision(threadId: string): number {
@@ -12705,6 +12755,7 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
+  threadProjectionMemory?.reconcile();
   const followUpQueuePaused = autoPauseFollowUpQueueForErrorStatus(threadId, patch.status);
   const pendingPlan =
     patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
@@ -13972,6 +14023,7 @@ function scheduleThreadRunProjectionUpdated(threadId: string, options?: { stream
 }
 
 function emitThreadRunProjectionUpdated(threadId: string): void {
+  threadProjectionMemory?.noteThreadTouched(threadId);
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
   let cached = conversationStore.getThreadFeedSkeleton(threadId);

@@ -190,6 +190,7 @@ import {
   type ThreadFollowUpReorderRequest,
   type ThreadFollowUpUpdateRequest,
   type ThreadPendingPlan,
+  type ThreadProjectionFocusReport,
   type ThreadRetryFromMessageRequest,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
@@ -1137,6 +1138,9 @@ const api = {
     request: ThreadRunProjectionDetailRequest,
   ): Promise<ThreadRunProjectionDetailResult | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionDetailGet, request);
+  },
+  reportThreadProjectionFocus(report: ThreadProjectionFocusReport): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadProjectionFocusReport, report);
   },
   listSubagentSessions(threadId: string): Promise<ThreadSubagentSessionTiming[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentSessionsList, threadId);

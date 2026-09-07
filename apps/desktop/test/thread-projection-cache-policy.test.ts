@@ -4,7 +4,7 @@ import {
   listEvictableProjectionThreadIds,
   rememberRecentlyViewedThread,
   removeRecordKeys,
-} from "../src/renderer/thread-projection-cache-policy";
+} from "../src/shared/thread-projection-cache-policy";
 
 describe("thread-projection-cache-policy", () => {
   it("tracks recent views with current first and capped length", () => {

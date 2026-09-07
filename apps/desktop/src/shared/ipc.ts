@@ -96,6 +96,7 @@ export const IPC_CHANNELS = {
   threadRetryFromMessage: "thread:retry-from-message",
   threadRunProjectionGet: "thread:run-projection-get",
   threadRunProjectionDetailGet: "thread:run-projection-detail-get",
+  threadProjectionFocusReport: "thread:projection-focus-report",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
   threadDelete: "thread:delete",
@@ -1560,6 +1561,13 @@ export interface ThreadContinueRequest {
 
 export interface ThreadContinueResult {
   thread: ThreadSummary;
+}
+
+/** Renderer → Main: which threads should keep projection working memory warm. */
+export interface ThreadProjectionFocusReport {
+  selectedThreadId?: string;
+  feedThreadId?: string;
+  recentlyViewedThreadIds?: string[];
 }
 
 export type ThreadUserMessageEditReasonCode =

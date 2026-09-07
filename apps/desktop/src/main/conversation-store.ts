@@ -508,8 +508,10 @@ const threadOwnedTables = [
   "thread_feed_skeleton",
 ] as const;
 
-const MAX_PROJECTION_EVENT_CACHE_ENTRIES = 8;
+const MAX_PROJECTION_EVENT_CACHE_ENTRIES = 16;
 const MAX_HOT_THREAD_RUN_EVENT_CACHE_ENTRIES = 256;
+/** Sentinel maxEvents value meaning the cache holds the unbounded projection event list. */
+const FULL_PROJECTION_EVENT_CACHE_MAX = 0;
 
 interface ProjectionEventCacheEntry {
   maxEvents: number;
@@ -4558,12 +4560,11 @@ export class ConversationStore {
       typeof maxEvents === "number" && Number.isFinite(maxEvents)
         ? Math.max(1, Math.floor(maxEvents))
         : undefined;
-    if (boundedMaxEvents !== undefined) {
-      const cached = this.projectionEventCache.get(threadId);
-      if (cached?.maxEvents === boundedMaxEvents) {
-        this.touchProjectionEventCache(threadId, cached);
-        return cached.events;
-      }
+    const cacheMaxEvents = boundedMaxEvents ?? FULL_PROJECTION_EVENT_CACHE_MAX;
+    const cached = this.projectionEventCache.get(threadId);
+    if (cached?.maxEvents === cacheMaxEvents) {
+      this.touchProjectionEventCache(threadId, cached);
+      return cached.events;
     }
     const projectionQuery = `WITH latest_streams AS (
        SELECT event_type, stream_key, request_id, run_attempt_id, MAX(sequence) AS sequence
@@ -4599,10 +4600,31 @@ export class ConversationStore {
         ...(boundedMaxEvents ? [threadId, threadId, boundedMaxEvents] : [threadId, threadId]),
       ) as unknown as ThreadRunEventRow[];
     const events = rows.map(rowToThreadRunEvent);
-    if (boundedMaxEvents !== undefined) {
-      this.rememberProjectionEvents(threadId, boundedMaxEvents, events);
-    }
+    this.rememberProjectionEvents(threadId, cacheMaxEvents, events);
     return events;
+  }
+
+  listProjectionEventCacheThreadIds(): string[] {
+    return [...this.projectionEventCache.keys()];
+  }
+
+  /**
+   * Drop in-memory projection working set for a thread.
+   * Does not delete SQLite feed skeletons or run events.
+   */
+  releaseThreadProjectionWorkingMemory(threadId: string): void {
+    const id = threadId.trim();
+    if (!id) {
+      return;
+    }
+    this.projectionEventCache.delete(id);
+    this.nextThreadRunEventSequences.delete(id);
+    const prefix = `${id}\0`;
+    for (const cacheKey of this.hotThreadRunEventCache.keys()) {
+      if (cacheKey.startsWith(prefix)) {
+        this.hotThreadRunEventCache.delete(cacheKey);
+      }
+    }
   }
 
   /** Removes legacy cumulative stream prefixes now that stream rows are updated in place. */
@@ -4937,6 +4959,19 @@ export class ConversationStore {
       .all() as unknown as ThreadRow[];
 
     return rows.map(rowToThread);
+  }
+
+  /** Thread ids that must keep projection working memory warm while active. */
+  listHotProjectionThreadIds(): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id
+         FROM threads
+         WHERE status IN ('queued', 'running', 'awaiting_plan')
+         ORDER BY updated_at DESC`,
+      )
+      .all() as Array<{ id: string }>;
+    return rows.map((row) => row.id);
   }
 
   listInitialThreads(limitPerWorkspace = 5): ThreadListInitialResult {
