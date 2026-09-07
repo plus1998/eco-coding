@@ -7,7 +7,7 @@ import {
   fileToDisplayHunks,
   flattenDisplayLines,
 } from "./diff-display-lines";
-import { highlightDiffDisplayLines, resolveShikiLanguage } from "./diff-shiki-highlight";
+import { highlightDiffDisplayLines, releaseDiffHighlighter, retainDiffHighlighter, resolveShikiLanguage } from "./diff-shiki-highlight";
 import { MaterialFileIcon } from "./MaterialFileIcon";
 import {
   countDiffFileStats,
@@ -75,6 +75,13 @@ const DiffLinesView = memo(function DiffLinesView({
     }
     return starts;
   }, [hunks]);
+
+  useEffect(() => {
+    retainDiffHighlighter();
+    return () => {
+      releaseDiffHighlighter();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;

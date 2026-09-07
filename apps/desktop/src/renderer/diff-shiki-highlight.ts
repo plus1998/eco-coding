@@ -60,6 +60,9 @@ function themeForApp(theme: "light" | "dark"): "github-light" | "github-dark" {
 }
 
 let highlighterPromise: Promise<Highlighter> | null = null;
+let highlighterRetainCount = 0;
+let highlighterReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+const SHIKI_RELEASE_DELAY_MS = 30_000;
 
 export function getDiffHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
@@ -69,6 +72,38 @@ export function getDiffHighlighter(): Promise<Highlighter> {
     });
   }
   return highlighterPromise;
+}
+
+export function retainDiffHighlighter(): void {
+  highlighterRetainCount += 1;
+  if (highlighterReleaseTimer) {
+    clearTimeout(highlighterReleaseTimer);
+    highlighterReleaseTimer = undefined;
+  }
+}
+
+/** Dispose the shared highlighter after the last diff viewer unmounts. */
+export function releaseDiffHighlighter(): void {
+  highlighterRetainCount = Math.max(0, highlighterRetainCount - 1);
+  if (highlighterRetainCount > 0) {
+    return;
+  }
+  if (highlighterReleaseTimer) {
+    clearTimeout(highlighterReleaseTimer);
+  }
+  highlighterReleaseTimer = setTimeout(() => {
+    highlighterReleaseTimer = undefined;
+    if (highlighterRetainCount > 0 || !highlighterPromise) {
+      return;
+    }
+    const pending = highlighterPromise;
+    highlighterPromise = null;
+    void pending
+      .then((highlighter) => {
+        highlighter.dispose();
+      })
+      .catch(() => undefined);
+  }, SHIKI_RELEASE_DELAY_MS);
 }
 
 function escapeHtml(value: string): string {

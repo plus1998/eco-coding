@@ -1,8 +1,9 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { LoaderCircle, Maximize2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ImageGalleryQueueItem } from "./image-gallery-float-state";
+import { createImageObjectUrlFromBase64, revokeImageObjectUrl, revokeImageObjectUrls } from "./image-object-url";
 import { ImageLightbox } from "./image-lightbox";
 
 /** 竖直画廊最多同时展示的层数：当前一张 + 下方两张排队预览。 */
@@ -53,6 +54,8 @@ function GalleryCard({
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | undefined;
+    let handedOff = false;
     setSrc(undefined);
     setFileName(undefined);
     setError(undefined);
@@ -76,10 +79,16 @@ function GalleryCard({
           throw new Error(t(`activity.imageDisplay.error.${codeKey}`));
         }
         if (cancelled) return;
-        const url = `data:${result.mimeType};base64,${result.dataBase64}`;
+        const url = createImageObjectUrlFromBase64(result.mimeType, result.dataBase64);
+        if (cancelled) {
+          revokeImageObjectUrl(url);
+          return;
+        }
+        objectUrl = url;
         setFileName(result.fileName);
-        setSrc(url);
-        onLoaded(item, { src: url, fileName: result.fileName, path: result.path });
+        setSrc(objectUrl);
+        handedOff = true;
+        onLoaded(item, { src: objectUrl, fileName: result.fileName, path: result.path });
         return;
       }
       const result = await bridge.readImageGenerationArtifact({
@@ -87,14 +96,23 @@ function GalleryCard({
         imageIndex: item.imageIndex ?? 0,
       });
       if (cancelled) return;
-      const url = `data:${result.mimeType};base64,${result.dataBase64}`;
-      setSrc(url);
-      onLoaded(item, { src: url, path: result.path });
+      const url = createImageObjectUrlFromBase64(result.mimeType, result.dataBase64);
+      if (cancelled) {
+        revokeImageObjectUrl(url);
+        return;
+      }
+      objectUrl = url;
+      setSrc(objectUrl);
+      handedOff = true;
+      onLoaded(item, { src: objectUrl, path: result.path });
     })().catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
     });
     return () => {
       cancelled = true;
+      if (!handedOff) {
+        revokeImageObjectUrl(objectUrl);
+      }
     };
   }, [item, t, onLoaded]);
 
@@ -184,16 +202,50 @@ export function ImageGalleryFloat({
   const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
   const [loadedImages, setLoadedImages] = useState<Record<string, LoadedImage>>({});
+  const loadedImagesRef = useRef(loadedImages);
+  loadedImagesRef.current = loadedImages;
   const [previewItem, setPreviewItem] = useState<ImageGalleryQueueItem | null>(null);
 
   const closeCurrent = useCallback((item: ImageGalleryQueueItem) => onAdvance(item), [onAdvance]);
   const handleLoaded = useCallback((item: ImageGalleryQueueItem, image: LoadedImage) => {
-    setLoadedImages((prev) => (prev[item.key] ? prev : { ...prev, [item.key]: image }));
+    setLoadedImages((prev) => {
+      const existing = prev[item.key];
+      if (existing?.src === image.src) {
+        return prev;
+      }
+      if (existing) {
+        revokeImageObjectUrl(existing.src);
+      }
+      return { ...prev, [item.key]: image };
+    });
   }, []);
   const handlePreview = useCallback((item: ImageGalleryQueueItem) => {
     setPreviewItem(item);
   }, []);
   const closePreview = useCallback(() => setPreviewItem(null), []);
+
+  useEffect(() => {
+    const liveKeys = new Set(items.map((item) => item.key));
+    setLoadedImages((prev) => {
+      let changed = false;
+      const next: Record<string, LoadedImage> = {};
+      for (const [key, image] of Object.entries(prev)) {
+        if (liveKeys.has(key)) {
+          next[key] = image;
+        } else {
+          revokeImageObjectUrl(image.src);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items]);
+
+  useEffect(() => {
+    return () => {
+      revokeImageObjectUrls(Object.values(loadedImagesRef.current).map((image) => image.src));
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {

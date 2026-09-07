@@ -249,6 +249,13 @@ async function loadMermaid(): Promise<MermaidApi> {
   return mermaidPromise;
 }
 
+/** Drop the cached mermaid module after feed leave so idle heaps can shrink. */
+export function releaseMermaidModule(): void {
+  mermaidPromise = null;
+  initializedTheme = null;
+  cleanupOrphanedMermaidRenderArtifacts();
+}
+
 export async function ensureMermaid(theme: MermaidAppTheme): Promise<MermaidApi> {
   const mermaid = await loadMermaid();
   if (initializedTheme !== theme) {

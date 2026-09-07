@@ -38,6 +38,7 @@ import { BrowserPanel } from "./BrowserPanel";
 import { useBrowserTaskInstances } from "./browser-state-store";
 import { i18n } from "./i18n";
 import { ImageLightbox } from "./image-lightbox";
+import { createImageObjectUrlFromBase64, revokeImageObjectUrl, revokeImageObjectUrls } from "./image-object-url";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -657,6 +658,7 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
 
   useEffect(() => {
     let cancelled = false;
+    const objectUrls: string[] = [];
     setImages([]);
     setLoadError(undefined);
     setRevealError(undefined);
@@ -667,14 +669,24 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
       ),
     )
       .then((results) => {
-        if (!cancelled)
-          setImages(results.map((result) => `data:${result.mimeType};base64,${result.dataBase64}`));
+        for (const result of results) {
+          const url = createImageObjectUrlFromBase64(result.mimeType, result.dataBase64);
+          if (cancelled) {
+            revokeImageObjectUrl(url);
+            continue;
+          }
+          objectUrls.push(url);
+        }
+        if (!cancelled) {
+          setImages([...objectUrls]);
+        }
       })
       .catch((error) => {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
       });
     return () => {
       cancelled = true;
+      revokeImageObjectUrls(objectUrls);
     };
   }, [artifact.id, artifact.images.length]);
 
@@ -758,6 +770,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | undefined;
     setSrc(undefined);
     setFileName(undefined);
     setFilePath(undefined);
@@ -785,7 +798,13 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
           setLoadError(t(`activity.imageDisplay.error.${codeKey}`));
           return;
         }
-        setSrc(`data:${result.mimeType};base64,${result.dataBase64}`);
+        objectUrl = createImageObjectUrlFromBase64(result.mimeType, result.dataBase64);
+        if (cancelled) {
+          revokeImageObjectUrl(objectUrl);
+          objectUrl = undefined;
+          return;
+        }
+        setSrc(objectUrl);
         setFileName(result.fileName);
         setFilePath(result.path);
       })
@@ -794,6 +813,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
       });
     return () => {
       cancelled = true;
+      revokeImageObjectUrl(objectUrl);
     };
   }, [artifact.id, t]);
 

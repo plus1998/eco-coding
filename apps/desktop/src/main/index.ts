@@ -13769,6 +13769,9 @@ function hydrateFeedProjectionRequestSpans(
 }
 
 function rebuildThreadFeedSkeletonRecord(threadId: string): ThreadFeedSkeletonRecord | undefined {
+  // Always read events from SQLite when rebuilding — never reuse a possibly wiped
+  // unbounded projection cache entry (maxEvents=0 sentinel).
+  conversationStore.releaseThreadProjectionWorkingMemory(threadId);
   const projection = buildCurrentThreadRunProjection(threadId);
   if (!projection) {
     return undefined;
@@ -13837,8 +13840,16 @@ function loadThreadFeedProjectionForClient(
   if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
     // Stale ACP skeletons can stay "fresh" while orphan agent-scoped rows were
     // never tracked — force a full rebuild so historical content reappears.
-    if (shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot)) {
+    // Empty timelines with a positive event cursor are also poisoned (e.g. full
+    // projection cache wiped by maxEvents=0 slice) and must not stay "fresh".
+    if (
+      shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
+      shouldRebuildFeedSkeletonForEmptyTimeline(cached.snapshot, maxEventSequence)
+    ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
+      // Drop in-memory projection event cache too — it may be the empty array that
+      // produced this poisoned skeleton (FULL_PROJECTION_EVENT_CACHE_MAX slice bug).
+      conversationStore.releaseThreadProjectionWorkingMemory(threadId);
       cached = undefined;
     }
   }
@@ -13906,6 +13917,20 @@ function shouldRebuildFeedSkeletonForOrphanAgentEvents(
         item.eventType === "tool.completed"),
   );
   return !mainHasAssistant;
+}
+
+/** Poisoned skeleton: event cursor advanced but timeline was wiped (empty finals/prompts). */
+function shouldRebuildFeedSkeletonForEmptyTimeline(
+  snapshot: ThreadRunProjectionSnapshot,
+  maxEventSequence: number,
+): boolean {
+  if (snapshot.timeline.length > 0) {
+    return false;
+  }
+  if (!(maxEventSequence > 0 || snapshot.attempts.length > 0 || snapshot.sourceEventCount > 0)) {
+    return false;
+  }
+  return true;
 }
 
 function buildCurrentThreadRunProjection(

@@ -108,6 +108,8 @@ import {
 import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } from "./browser-link";
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
+import { createImageObjectUrlFromBase64, revokeImageObjectUrl } from "./image-object-url";
+import { releaseMermaidModule } from "./prosemirror/mermaid-block";
 import { resolveFeedPaceTargetKey } from "./feed-pace-target";
 import {
   FEED_VIRTUALIZE_MIN_SECTIONS,
@@ -458,6 +460,11 @@ function ProjectionFeedLoading() {
 
 export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogViewProps) {
   useTranslation();
+  useEffect(() => {
+    return () => {
+      releaseMermaidModule();
+    };
+  }, []);
   const projection = props.projection;
   if (!projection?.sourceEventCount) {
     if (props.thread?.prompt && !isThreadStoppedForFinalSummary(props.thread.status)) {
@@ -4588,6 +4595,7 @@ export function ImageViewBlock({
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | undefined;
     setLoadState({ status: "loading" });
     setDetailsOpen(false);
     setLightboxOpen(false);
@@ -4608,9 +4616,15 @@ export function ImageViewBlock({
           setLoadState({ status: "error", code: result.code });
           return;
         }
+        const url = createImageObjectUrlFromBase64(result.mimeType, result.dataBase64);
+        if (cancelled) {
+          revokeImageObjectUrl(url);
+          return;
+        }
+        objectUrl = url;
         setLoadState({
           status: "ready",
-          src: `data:${result.mimeType};base64,${result.dataBase64}`,
+          src: objectUrl,
           fileName: result.fileName,
           path: result.path,
         });
@@ -4625,6 +4639,7 @@ export function ImageViewBlock({
       });
     return () => {
       cancelled = true;
+      revokeImageObjectUrl(objectUrl);
     };
   }, [imageView.eventId, imageView.path, retryToken]);
 
@@ -4863,6 +4878,7 @@ export function ImageDisplayBlock({
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | undefined;
     setLoadState({ status: "loading" });
     setLightboxOpen(false);
     const api = window.eco;
@@ -4882,9 +4898,15 @@ export function ImageDisplayBlock({
           setLoadState({ status: "error", code: result.code });
           return;
         }
+        const url = createImageObjectUrlFromBase64(result.mimeType, result.dataBase64);
+        if (cancelled) {
+          revokeImageObjectUrl(url);
+          return;
+        }
+        objectUrl = url;
         setLoadState({
           status: "ready",
-          src: `data:${result.mimeType};base64,${result.dataBase64}`,
+          src: objectUrl,
           fileName: result.fileName,
           path: result.path,
         });
@@ -4899,6 +4921,7 @@ export function ImageDisplayBlock({
       });
     return () => {
       cancelled = true;
+      revokeImageObjectUrl(objectUrl);
     };
   }, [imageDisplay.artifactId, imageDisplay.eventId, retryToken]);
 

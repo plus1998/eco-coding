@@ -21,6 +21,10 @@ export interface TerminalDimensions {
 }
 
 let sharedGhostty: Promise<GhosttyRuntime> | undefined;
+let ghosttyRetainCount = 0;
+let ghosttyReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+
+const GHOSTTY_RELEASE_DELAY_MS = 30_000;
 
 function loadGhosttyRuntime(): Promise<GhosttyRuntime> {
   if (!sharedGhostty) {
@@ -32,6 +36,35 @@ function loadGhosttyRuntime(): Promise<GhosttyRuntime> {
       });
   }
   return sharedGhostty;
+}
+
+/** Keep the shared WASM runtime warm while any GhosttyTerminal is mounted. */
+export function retainGhosttyRuntime(): void {
+  ghosttyRetainCount += 1;
+  if (ghosttyReleaseTimer) {
+    clearTimeout(ghosttyReleaseTimer);
+    ghosttyReleaseTimer = undefined;
+  }
+}
+
+/**
+ * Drop the shared runtime after the last terminal unmounts (delayed) so reopen
+ * is still fast, but idle sessions can release the WASM heap.
+ */
+export function releaseGhosttyRuntime(): void {
+  ghosttyRetainCount = Math.max(0, ghosttyRetainCount - 1);
+  if (ghosttyRetainCount > 0) {
+    return;
+  }
+  if (ghosttyReleaseTimer) {
+    clearTimeout(ghosttyReleaseTimer);
+  }
+  ghosttyReleaseTimer = setTimeout(() => {
+    ghosttyReleaseTimer = undefined;
+    if (ghosttyRetainCount === 0) {
+      sharedGhostty = undefined;
+    }
+  }, GHOSTTY_RELEASE_DELAY_MS);
 }
 
 function readCssVar(name: string, fallback: string): string {
@@ -200,6 +233,7 @@ export function GhosttyTerminal({
       return undefined;
     }
 
+    retainGhosttyRuntime();
     let disposed = false;
     let resizeTimer: number | undefined;
     let fitFrame: number | undefined;
@@ -381,6 +415,7 @@ export function GhosttyTerminal({
       termRef.current?.dispose();
       termRef.current = undefined;
       fitRef.current = undefined;
+      releaseGhosttyRuntime();
     };
   }, []);
 

@@ -5637,8 +5637,12 @@ export class ConversationStore {
     });
     events.push(event);
     events.sort(compareThreadRunEvents);
+    // maxEvents === 0 is the unbounded full-projection sentinel (FULL_PROJECTION_EVENT_CACHE_MAX).
+    // `slice(length - 0)` would empty the cache and poison later skeleton rebuilds.
     const boundedEvents =
-      events.length > cached.maxEvents ? events.slice(events.length - cached.maxEvents) : events;
+      cached.maxEvents > 0 && events.length > cached.maxEvents
+        ? events.slice(events.length - cached.maxEvents)
+        : events;
     this.touchProjectionEventCache(event.threadId, {
       maxEvents: cached.maxEvents,
       events: boundedEvents,

@@ -293,6 +293,45 @@ test.skipIf(!sqliteAvailable)("bounded projection reads are cached and updated i
   ]);
 });
 
+test.skipIf(!sqliteAvailable)(
+  "unbounded projection cache (maxEvents=0) keeps growing instead of wiping on append",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-full-cache-"));
+    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    store.saveThread(makeThread());
+    store.appendThreadRunEvent(
+      makeEvent({
+        id: "final_a",
+        eventType: "message.final",
+        streamState: "finalized",
+        streamKey: "block:message:0",
+        message: "早期确认",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    );
+
+    const first = store.listThreadRunEventsForProjection("thr_run_events");
+    expect(first.map((event) => event.id)).toEqual(["final_a"]);
+    expect(store.listThreadRunEventsForProjection("thr_run_events")).toBe(first);
+
+    store.appendThreadRunEvent(
+      makeEvent({
+        id: "final_b",
+        eventType: "message.final",
+        streamState: "finalized",
+        streamKey: "block:message:90",
+        message: "真正的最终输出",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+    );
+
+    const after = store.listThreadRunEventsForProjection("thr_run_events");
+    expect(after).not.toBe(first);
+    expect(after.map((event) => event.id)).toEqual(["final_a", "final_b"]);
+    expect(after.map((event) => event.message)).toEqual(["早期确认", "真正的最终输出"]);
+  },
+);
+
 test.skipIf(!sqliteAvailable)("conversation store enables WAL mode", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-wal-"));
   const dbPath = path.join(dir, "eco.sqlite");

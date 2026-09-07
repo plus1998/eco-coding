@@ -1,4 +1,5 @@
 import type { PromptImageAttachment } from "../shared/ipc";
+import { createImageObjectUrlFromBase64, createImageObjectUrlFromBytes, revokeImageObjectUrl } from "./image-object-url";
 
 export const COMPOSER_MAX_IMAGES = 5;
 export const COMPOSER_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -38,7 +39,7 @@ export async function readImageFileAsAttachment(file: File): Promise<ComposerIma
     id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     mediaType: file.type,
     data,
-    previewUrl: `data:${file.type};base64,${data}`,
+    previewUrl: createImageObjectUrlFromBytes(file.type, buffer),
   };
 }
 
@@ -75,9 +76,24 @@ export function fromPromptImageAttachments(
       mediaType: attachment.mediaType,
       ...(path ? { path } : {}),
       ...(data ? { data } : {}),
-      previewUrl: data ? `data:${attachment.mediaType};base64,${data}` : "",
+      previewUrl: data ? createImageObjectUrlFromBase64(attachment.mediaType, data) : "",
     };
   });
+}
+
+export function revokeComposerAttachmentPreview(attachment: ComposerImageAttachment | null | undefined): void {
+  revokeImageObjectUrl(attachment?.previewUrl);
+}
+
+export function revokeComposerAttachmentPreviews(
+  attachments: readonly ComposerImageAttachment[] | null | undefined,
+): void {
+  if (!attachments) {
+    return;
+  }
+  for (const attachment of attachments) {
+    revokeComposerAttachmentPreview(attachment);
+  }
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {

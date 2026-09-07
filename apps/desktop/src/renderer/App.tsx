@@ -261,6 +261,8 @@ import {
   type ComposerImageAttachment,
   fromPromptImageAttachments,
   readImageFileAsAttachment,
+  revokeComposerAttachmentPreview,
+  revokeComposerAttachmentPreviews,
   toPromptImageAttachments,
 } from "./composer-attachments";
 import {
@@ -2663,6 +2665,16 @@ function App() {
       );
     }
 
+    if (typeof window.eco?.reportThreadProjectionFocus === "function") {
+      void window.eco.reportThreadProjectionFocus({
+        ...(selectedThreadId ? { selectedThreadId } : {}),
+        ...(feedThreadId ? { feedThreadId } : {}),
+        recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
+      });
+    }
+  }, [feedThreadId, selectedThreadId]);
+
+  useEffect(() => {
     const hotThreadIds = threads
       .filter((thread) => isProjectionCacheHotThreadStatus(thread.status))
       .map((thread) => thread.id);
@@ -2672,14 +2684,6 @@ function App() {
       recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
       hotThreadIds,
     });
-
-    if (typeof window.eco?.reportThreadProjectionFocus === "function") {
-      void window.eco.reportThreadProjectionFocus({
-        ...(selectedThreadId ? { selectedThreadId } : {}),
-        ...(feedThreadId ? { feedThreadId } : {}),
-        recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
-      });
-    }
 
     for (const threadId of [...projectionEvictTimersRef.current.keys()]) {
       if (protectedIds.has(threadId)) {
@@ -6891,6 +6895,7 @@ function App() {
           promptCacheBaselineByThreadRef.current[activeThread.id] = acceptedRuntimeConfig;
           setPromptCacheBaselineVersion((v) => v + 1);
         }
+        revokeComposerAttachmentPreviews(restoreAttachments);
       } catch (caught) {
         setPrompt(restorePrompt);
         setComposerAttachments(restoreAttachments);
@@ -6977,6 +6982,7 @@ function App() {
         setPromptCacheBaselineVersion((v) => v + 1);
         requestActivityFeedForceScroll();
       }
+      revokeComposerAttachmentPreviews(restoreAttachments);
     } catch (caught) {
       setPrompt(restorePrompt);
       setComposerAttachments(restoreAttachments);
@@ -8920,6 +8926,7 @@ function App() {
     setEditingFollowUpId(undefined);
     setPrompt("");
     setComposerRewindTarget(undefined);
+    revokeComposerAttachmentPreviews(composerAttachmentsRef.current);
     setComposerAttachments([]);
     setComposerImageNotice(undefined);
     setError(undefined);
@@ -8992,6 +8999,9 @@ function App() {
   function removeComposerAttachment(id: string) {
     setComposerAttachments((current) => {
       const target = current.find((attachment) => attachment.id === id);
+      if (target) {
+        revokeComposerAttachmentPreview(target);
+      }
       const path = target?.path?.trim();
       if (path && typeof window.eco?.releasePromptImages === "function") {
         void window.eco.releasePromptImages({ paths: [path] }).catch((caught) => {
