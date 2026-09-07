@@ -3600,7 +3600,7 @@ test("createHeldPromptStream push rejects empty text", async () => {
   stream.close();
 });
 
-test("ClaudeAgentSdkDriver closes the held prompt on teardown after the SDK iterator completes", async () => {
+test("ClaudeAgentSdkDriver closes the held prompt after result so the run can finish", async () => {
   let promptSettled = false;
 
   const driver = new ClaudeAgentSdkDriver({
@@ -3610,7 +3610,7 @@ test("ClaudeAgentSdkDriver closes the held prompt on teardown after the SDK iter
       query: ({ prompt }) => {
         void (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // Drain the mailbox until teardown closes it.
+            // Drain the mailbox until the result path closes it.
           }
           promptSettled = true;
         })();
@@ -3628,6 +3628,9 @@ test("ClaudeAgentSdkDriver closes the held prompt on teardown after the SDK iter
               session_id: "sess-hold-open",
               uuid: "result-hold-open",
             };
+            while (!promptSettled) {
+              await new Promise((resolve) => setTimeout(resolve, 1));
+            }
           },
           streamInput: async () => {
             throw new Error("query.streamInput must not be called");
@@ -3906,7 +3909,7 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
   expect(openHandle?.phase).toBe("closed");
 });
 
-test("ClaudeAgentSdkDriver finishes when SDK output ends before prompt teardown closes the mailbox", async () => {
+test("ClaudeAgentSdkDriver finishes when SDK output ends only after prompt close", async () => {
   let promptDone = false;
   let queryClosed = false;
 
@@ -3915,9 +3918,9 @@ test("ClaudeAgentSdkDriver finishes when SDK output ends before prompt teardown 
     baseUrl: "http://127.0.0.1:36037",
     loadSdk: async () => ({
       query: ({ prompt }) => {
-        void (async () => {
+        const promptDoneWork = (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // Simulate SDK streamInput draining the shared mailbox on teardown.
+            // Simulate SDK streamInput draining the shared mailbox.
           }
           promptDone = true;
         })();
@@ -3935,6 +3938,7 @@ test("ClaudeAgentSdkDriver finishes when SDK output ends before prompt teardown 
               session_id: "sess-close-after-result",
               uuid: "result-close-after-result",
             };
+            await promptDoneWork;
           },
           close: () => {
             queryClosed = true;
@@ -3959,7 +3963,7 @@ test("ClaudeAgentSdkDriver finishes when SDK output ends before prompt teardown 
   expect(queryClosed).toBe(true);
 });
 
-test("ClaudeAgentSdkDriver keeps the control channel open after result and subagent stop until teardown", async () => {
+test("ClaudeAgentSdkDriver keeps the control channel for an active subagent after result", async () => {
   let promptDone = false;
   let subagentStarted = false;
   let subagentStopped = false;
@@ -3981,9 +3985,9 @@ test("ClaudeAgentSdkDriver keeps the control channel open after result and subag
     hookContext: { subagentSessions },
     loadSdk: async () => ({
       query: ({ prompt }) => {
-        void (async () => {
+        const promptDoneWork = (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // Keep the simulated SDK input consumer alive until teardown close.
+            // Keep the simulated SDK input consumer alive until close.
           }
           promptDone = true;
         })();
@@ -4004,7 +4008,7 @@ test("ClaudeAgentSdkDriver keeps the control channel open after result and subag
             };
             expect(promptDone).toBe(false);
             subagentSessions.onStop({ agentId: "agent_1", agentType: "coder" });
-            expect(promptDone).toBe(false);
+            await promptDoneWork;
           },
         };
       },
@@ -4092,12 +4096,16 @@ test("ClaudeAgentSdkDriver canUseTool AskUserQuestion after subagents stop and i
               },
               { toolUseID: "call_ask_after_subagent" },
             );
+            expect(promptDone).toBe(false);
             yield {
               type: "result",
               subtype: "success",
               session_id: "sess-ask-after-subagent",
               uuid: "result-final",
             };
+            while (!promptDone) {
+              await new Promise((resolve) => setTimeout(resolve, 1));
+            }
           },
           streamInput: async () => {
             throw new Error("query.streamInput must not be called");

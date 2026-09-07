@@ -200,6 +200,13 @@ export const CLAUDE_QUERY_CONTROL_DEADLINE_MS = 2_000;
 export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
 
 /**
+ * Grace before closing the held prompt after an SDK `result`.
+ * Must cover the gap where an interim `result` is followed by more `canUseTool`
+ * (e.g. AskUserQuestion) on the same Query before the next iterator frame.
+ */
+export const CLAUDE_HELD_PROMPT_CLOSE_GRACE_MS = 75;
+
+/**
  * Build a single-message AsyncIterable for official streaming input mode.
  * Rewind uses this with an empty prompt. Thread ask/agent path uses `createHeldPromptStream`.
  *
@@ -214,11 +221,18 @@ export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
  * first `result`, which permanently breaks later `can_use_tool` (often surfaced as
  * `toolDenialKind: "cancelled"` / J3H "user doesn't want to take this action").
  * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.232 changelog has
- * no equivalent. Hold the whole mailbox (`createHeldPromptStream`) until teardown;
- * never call `query.streamInput` from Eco. Do not close the mailbox on SDK `result`
- * or subagent `onStop` — a `result` frame is one turn slice, not the whole run
- * (e.g. AskUserQuestion may follow after subagents stop). Mid-turn one-shot
- * streamInput is not fine.
+ * no equivalent.
+ *
+ * Eco uses one held mailbox (`createHeldPromptStream`) and never calls
+ * `query.streamInput`. Because `prompt` is an AsyncIterable, the SDK treats the
+ * Query as multi-turn (`isSingleUserTurn=false`) and will **not** endInput on
+ * `result` — so if Eco never closes the mailbox, the Eco-run / thread stays
+ * `running` forever after the assistant looks finished (UI case 1).
+ *
+ * Close policy: after a `result`, schedule mailbox close once there are no active
+ * subagents, no in-flight `canUseTool`, and no unmatched mid-turn user push.
+ * Cancel/reschedule when those conditions flip. Teardown close remains the
+ * abort/error fallback. Mid-turn one-shot `streamInput` is not fine.
  * `toStreamingUserPrompt` (with optional `holdOpenUntil`) is only for rewind-style
  * one-shot prompts that need to stay open on a single message.
  * ---
@@ -1186,6 +1200,28 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
         });
     const sessionCwd = resolveClaudeSessionCwd(input);
+    // Late-bound: schedule/cancel are assigned after the held prompt + handle exist.
+    const heldPromptCloseGate = {
+      resultSeen: false,
+      activeSubagentCount: 0,
+      inflightCanUseTool: 0,
+      unmatchedUserTurns: (): boolean => false,
+      cancel: (): void => {},
+      schedule: (): void => {},
+    };
+    const rawCanUseTool = this.options.toolPermissionHandler
+      ? createCanUseTool(this.options.toolPermissionHandler, {
+          planModeToolPolicy,
+          ...(approvedExitPlanToolUseId ? { approvedExitPlanToolUseId } : {}),
+          ...(phase.planningPhase && this.options.hookContext?.awaitPlanApproval
+            ? { awaitPlanApproval: this.options.hookContext.awaitPlanApproval }
+            : {}),
+          ...(onExitPlanMode ? { onExitPlanMode } : {}),
+          ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
+          workspacePath: input.workspacePath,
+          ...(phase.planningPhase ? { getPhaseTranscript: () => phaseTranscriptBox.text } : {}),
+        })
+      : undefined;
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
       model: mainModel,
@@ -1201,19 +1237,25 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ...(phase.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       allowedTools,
       ...(sdkDisallowedTools.length > 0 ? { disallowedTools: sdkDisallowedTools } : {}),
-      ...(this.options.toolPermissionHandler
+      ...(rawCanUseTool
         ? {
-            canUseTool: createCanUseTool(this.options.toolPermissionHandler, {
-              planModeToolPolicy,
-              ...(approvedExitPlanToolUseId ? { approvedExitPlanToolUseId } : {}),
-              ...(phase.planningPhase && this.options.hookContext?.awaitPlanApproval
-                ? { awaitPlanApproval: this.options.hookContext.awaitPlanApproval }
-                : {}),
-              ...(onExitPlanMode ? { onExitPlanMode } : {}),
-              ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
-              workspacePath: input.workspacePath,
-              ...(phase.planningPhase ? { getPhaseTranscript: () => phaseTranscriptBox.text } : {}),
-            }),
+            canUseTool: async (
+              toolName: string,
+              toolInput: Record<string, unknown>,
+              toolOptions: Record<string, unknown>,
+            ) => {
+              heldPromptCloseGate.inflightCanUseTool += 1;
+              heldPromptCloseGate.cancel();
+              try {
+                return await rawCanUseTool(toolName, toolInput, toolOptions);
+              } finally {
+                heldPromptCloseGate.inflightCanUseTool = Math.max(
+                  0,
+                  heldPromptCloseGate.inflightCanUseTool - 1,
+                );
+                heldPromptCloseGate.schedule();
+              }
+            },
           }
         : {}),
       systemPrompt,
@@ -1339,7 +1381,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       };
     }
     // WORKAROUND: one held prompt mailbox for the whole Eco query (see createHeldPromptStream).
-    // Hold until teardown close(); never mid-turn query.streamInput.
+    // Keep open across interim results while subagents / canUseTool still need the channel;
+    // schedule close after a settled result so the multi-turn Query can endInput and idle.
     const promptStream = createHeldPromptStream(phase.prompt);
     const query = sdk.query({
       prompt: promptStream,
@@ -1366,6 +1409,66 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         // Port closeIngress must not block prompt/query teardown.
       }
     };
+
+    let promptCloseStarted = false;
+    let closeTimer: ReturnType<typeof setTimeout> | undefined;
+    heldPromptCloseGate.cancel = () => {
+      if (closeTimer !== undefined) {
+        clearTimeout(closeTimer);
+        closeTimer = undefined;
+      }
+    };
+    heldPromptCloseGate.schedule = () => {
+      heldPromptCloseGate.cancel();
+      if (
+        promptCloseStarted ||
+        !heldPromptCloseGate.resultSeen ||
+        heldPromptCloseGate.activeSubagentCount > 0 ||
+        heldPromptCloseGate.inflightCanUseTool > 0 ||
+        heldPromptCloseGate.unmatchedUserTurns()
+      ) {
+        return;
+      }
+      closeTimer = setTimeout(() => {
+        closeTimer = undefined;
+        if (
+          promptCloseStarted ||
+          !heldPromptCloseGate.resultSeen ||
+          heldPromptCloseGate.activeSubagentCount > 0 ||
+          heldPromptCloseGate.inflightCanUseTool > 0 ||
+          heldPromptCloseGate.unmatchedUserTurns()
+        ) {
+          return;
+        }
+        promptCloseStarted = true;
+        void (async () => {
+          await notifyClosing();
+          if (handle.phase === "open") {
+            handle.phase = "closing";
+          }
+          promptStream.close();
+        })();
+      }, CLAUDE_HELD_PROMPT_CLOSE_GRACE_MS);
+    };
+
+    const subagentSessions = this.options.hookContext?.subagentSessions;
+    if (subagentSessions) {
+      const priorOnStart = subagentSessions.onStart;
+      subagentSessions.onStart = (subagentInput) => {
+        heldPromptCloseGate.activeSubagentCount += 1;
+        heldPromptCloseGate.cancel();
+        priorOnStart?.(subagentInput);
+      };
+      const priorOnStop = subagentSessions.onStop;
+      subagentSessions.onStop = (subagentInput) => {
+        heldPromptCloseGate.activeSubagentCount = Math.max(
+          0,
+          heldPromptCloseGate.activeSubagentCount - 1,
+        );
+        priorOnStop?.(subagentInput);
+        heldPromptCloseGate.schedule();
+      };
+    }
 
     const ensureInterrupt = (): Promise<SdkInterruptReceipt | undefined> => {
       if (!handle.interruptWork) {
@@ -1394,10 +1497,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // A prior turn's result must not satisfy a later accepted input that never got a result.
     let acceptedUserTurns = 1;
     let completedResultTurns = 0;
+    heldPromptCloseGate.unmatchedUserTurns = () => acceptedUserTurns > completedResultTurns;
     const pushUserMessage = handle.pushUserMessage.bind(handle);
     handle.pushUserMessage = async (text, pushOptions) => {
       await pushUserMessage(text, pushOptions);
       acceptedUserTurns += 1;
+      // A new user turn is in flight — keep the mailbox open until its result.
+      heldPromptCloseGate.cancel();
     };
     const iterator = query[Symbol.asyncIterator]();
     let pendingIteratorNext: Promise<IteratorResult<unknown>> | undefined;
@@ -1500,6 +1606,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         if (input.signal.aborted) {
           break;
         }
+
+        // Streaming prompt ⇒ SDK multi-turn Query (no endInput on result). After a
+        // matched result, schedule mailbox close so the Eco-run can converge to idle;
+        // canUseTool / subagents / unmatched mid-turn push cancel or delay that close.
+        if (isRecord(message) && message.type === "result") {
+          heldPromptCloseGate.resultSeen = true;
+          heldPromptCloseGate.schedule();
+        }
       }
 
       const unmatchedUserTurns = acceptedUserTurns > completedResultTurns;
@@ -1534,6 +1648,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }
     } finally {
       input.signal.removeEventListener("abort", onAbort);
+      heldPromptCloseGate.cancel();
       await notifyClosing();
       promptStream.close();
       const teardown = await teardownClaudeQueryHandle(handle, {
