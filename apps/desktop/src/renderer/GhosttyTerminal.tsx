@@ -439,24 +439,55 @@ export function GhosttyTerminal({
       void eco.writeTerminalInput({ sessionId, data }).catch(() => undefined);
     });
 
+    // Batch writes onto animation frames so rapid IPC output lands as fewer
+    // Ghostty paints (pairs with main-process coalesce).
+    let writeBuffer = "";
+    let writeFrame: number | undefined;
+    const flushWriteBuffer = () => {
+      writeFrame = undefined;
+      if (!writeBuffer) {
+        return;
+      }
+      const chunk = writeBuffer;
+      writeBuffer = "";
+      terminal.write(chunk);
+    };
+    const queueWrite = (data: string) => {
+      writeBuffer += data;
+      if (writeFrame !== undefined) {
+        return;
+      }
+      writeFrame = window.requestAnimationFrame(flushWriteBuffer);
+    };
+
     const unsubscribe = eco.onTerminalEvent((event: TerminalStreamEvent) => {
       if (event.sessionId !== sessionId) {
         return;
       }
       if (event.type === "output") {
-        terminal.write(event.data);
+        queueWrite(event.data);
         return;
       }
       if (event.type === "error") {
+        flushWriteBuffer();
         terminal.writeln(`\r\n\x1b[31m${event.message}\x1b[0m`);
         return;
       }
       if (event.type === "exit") {
+        flushWriteBuffer();
         onExitRef.current?.(event.exitCode);
       }
     });
 
     return () => {
+      if (writeFrame !== undefined) {
+        window.cancelAnimationFrame(writeFrame);
+        writeFrame = undefined;
+      }
+      if (writeBuffer) {
+        terminal.write(writeBuffer);
+        writeBuffer = "";
+      }
       onData.dispose();
       unsubscribe();
     };

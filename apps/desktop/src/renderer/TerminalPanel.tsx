@@ -66,6 +66,7 @@ export function TerminalPanel({
   const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
   const [autoCloseByTabId, setAutoCloseByTabId] = useState<Record<string, TerminalAutoCloseState>>({});
   const autoCloseStartedSessionsRef = useRef(new Set<string>());
+  const spawningTabIdsRef = useRef(new Set<string>());
   const sessionsByTabIdRef = useRef(sessionsByTabId);
   const stateRef = useRef(state);
   sessionsByTabIdRef.current = sessionsByTabId;
@@ -121,9 +122,16 @@ export function TerminalPanel({
         return cached;
       }
 
-      if (!dimensions) {
+      if (!dimensions || dimensions.cols <= 0 || dimensions.rows <= 0) {
         return undefined;
       }
+
+      // Fit-before-spawn: only one in-flight create per tab (avoids double PTY on
+      // rapid dimension callbacks before the session id is cached).
+      if (spawningTabIdsRef.current.has(tabId)) {
+        return undefined;
+      }
+      spawningTabIdsRef.current.add(tabId);
 
       setBusyTabIds((current) => ({ ...current, [tabId]: true }));
       setErrorsByTabId((current) => {
@@ -146,6 +154,7 @@ export function TerminalPanel({
         setErrorsByTabId((current) => ({ ...current, [tabId]: message }));
         return undefined;
       } finally {
+        spawningTabIdsRef.current.delete(tabId);
         setBusyTabIds((current) => {
           const next = { ...current };
           delete next[tabId];

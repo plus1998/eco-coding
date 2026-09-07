@@ -11,14 +11,29 @@ import {
 
 export type TerminalEventEmitter = (event: TerminalStreamEvent) => void;
 
+export interface InteractiveTerminalManagerOptions {
+  /**
+   * Merge PTY `onData` chunks into fewer `output` events.
+   * `0` disables batching (emit immediately). Default `32` (1Panel-style ~60ms
+   * softened for local IPC so interactive typing still feels snappy).
+   */
+  outputCoalesceMs?: number;
+}
+
 interface ActiveTerminalSession {
   sessionId: string;
   workspacePath: string;
   pty: IPty;
 }
 
+interface PendingOutput {
+  chunks: string[];
+  timer: ReturnType<typeof setTimeout> | undefined;
+}
+
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
+const DEFAULT_OUTPUT_COALESCE_MS = 32;
 
 function resolveInteractiveShell(): { executable: string; args: string[] } {
   if (process.platform === "win32") {
@@ -37,10 +52,32 @@ function resolveInteractiveShell(): { executable: string; args: string[] } {
   return { executable: shell, args: [] };
 }
 
+function resolvePtySize(size?: { cols: number; rows: number }): { cols: number; rows: number } {
+  const cols = size?.cols;
+  const rows = size?.rows;
+  return {
+    cols:
+      cols !== undefined && Number.isFinite(cols) && cols > 0 ? Math.floor(cols) : DEFAULT_COLS,
+    rows:
+      rows !== undefined && Number.isFinite(rows) && rows > 0 ? Math.floor(rows) : DEFAULT_ROWS,
+  };
+}
+
 export class InteractiveTerminalManager {
   private readonly sessions = new Map<string, ActiveTerminalSession>();
+  private readonly pendingOutput = new Map<string, PendingOutput>();
+  private readonly outputCoalesceMs: number;
 
-  constructor(private readonly emit: TerminalEventEmitter) {}
+  constructor(
+    private readonly emit: TerminalEventEmitter,
+    options?: InteractiveTerminalManagerOptions,
+  ) {
+    const coalesceMs = options?.outputCoalesceMs;
+    this.outputCoalesceMs =
+      coalesceMs !== undefined && Number.isFinite(coalesceMs) && coalesceMs >= 0
+        ? Math.floor(coalesceMs)
+        : DEFAULT_OUTPUT_COALESCE_MS;
+  }
 
   spawn(workspacePath: string, size?: { cols: number; rows: number }): { sessionId: string } {
     const { executable, args } = resolveInteractiveShell();
@@ -94,8 +131,7 @@ export class InteractiveTerminalManager {
     }
 
     const sessionId = randomUUID();
-    const cols = size?.cols ?? DEFAULT_COLS;
-    const rows = size?.rows ?? DEFAULT_ROWS;
+    const { cols, rows } = resolvePtySize(size);
     const env = envOverrides ? { ...toSpawnEnv(), ...envOverrides } : toSpawnEnv();
 
     let ptyProcess: IPty;
@@ -119,14 +155,16 @@ export class InteractiveTerminalManager {
       if (!this.sessions.has(sessionId)) {
         return;
       }
-      this.emit({ type: "output", sessionId, data });
+      this.queueOutput(sessionId, data);
     });
 
     ptyProcess.onExit(({ exitCode, signal }) => {
       if (!this.sessions.has(sessionId)) {
+        this.discardPendingOutput(sessionId);
         return;
       }
       this.sessions.delete(sessionId);
+      this.flushOutput(sessionId);
       this.emit({
         type: "exit",
         sessionId,
@@ -162,8 +200,10 @@ export class InteractiveTerminalManager {
     if (!session) {
       return false;
     }
+    this.flushOutput(sessionId);
     session.pty.kill();
     this.sessions.delete(sessionId);
+    this.discardPendingOutput(sessionId);
     return true;
   }
 
@@ -189,5 +229,52 @@ export class InteractiveTerminalManager {
 
   private getSession(sessionId: string): ActiveTerminalSession | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  private queueOutput(sessionId: string, data: string): void {
+    if (this.outputCoalesceMs <= 0) {
+      this.emit({ type: "output", sessionId, data });
+      return;
+    }
+
+    let pending = this.pendingOutput.get(sessionId);
+    if (!pending) {
+      pending = { chunks: [], timer: undefined };
+      this.pendingOutput.set(sessionId, pending);
+    }
+    pending.chunks.push(data);
+    if (pending.timer !== undefined) {
+      return;
+    }
+    pending.timer = setTimeout(() => {
+      this.flushOutput(sessionId);
+    }, this.outputCoalesceMs);
+  }
+
+  private flushOutput(sessionId: string): void {
+    const pending = this.pendingOutput.get(sessionId);
+    if (!pending) {
+      return;
+    }
+    if (pending.timer !== undefined) {
+      clearTimeout(pending.timer);
+      pending.timer = undefined;
+    }
+    this.pendingOutput.delete(sessionId);
+    if (pending.chunks.length === 0) {
+      return;
+    }
+    this.emit({ type: "output", sessionId, data: pending.chunks.join("") });
+  }
+
+  private discardPendingOutput(sessionId: string): void {
+    const pending = this.pendingOutput.get(sessionId);
+    if (!pending) {
+      return;
+    }
+    if (pending.timer !== undefined) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingOutput.delete(sessionId);
   }
 }
