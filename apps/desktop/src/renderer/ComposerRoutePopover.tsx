@@ -423,6 +423,8 @@ function ComposerRouteCompositionControls({
             placeholder={t("composer.route.notConfigured")}
             invalid={mainAgentInvalid}
             invalidLabel={mainAgentInvalidLabel}
+            searchable
+            searchPlaceholder={t("composer.fieldSelect.searchMainAgent")}
             onChange={(value) => void onSelectMainAgentConfig(value)}
           >
             {mainAgentConfigs.map((config) => (

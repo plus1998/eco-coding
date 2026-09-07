@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CircleAlert } from "lucide-react";
+import { Check, ChevronDown, CircleAlert, Search, X } from "lucide-react";
 import {
   Children,
   type CSSProperties,
@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { clampComposerFloatingLeft, composerFloatingAvailableWidth } from "./composer-floating";
 
 interface ComposerFieldSelectProps {
@@ -27,6 +28,10 @@ interface ComposerFieldSelectProps {
   /** Highlight the trigger in red with a warning icon. */
   invalid?: boolean | undefined;
   invalidLabel?: string | undefined;
+  /** Show a search box at the top of the menu that filters options by label. */
+  searchable?: boolean | undefined;
+  /** Placeholder for the search box. */
+  searchPlaceholder?: string | undefined;
   children: ReactNode;
 }
 
@@ -71,6 +76,8 @@ const TRIGGER_MIN_WIDTH = 160;
 const PANEL_WIDTH = 260;
 const ROW_HEIGHT = 32;
 const HEADER_HEIGHT = 0;
+/** Search box (30px) plus its 6px top/bottom margins. */
+const SEARCH_HEADER_HEIGHT = 42;
 
 /**
  * Custom dropdown picker for simple value lists (main agent config, prompt,
@@ -87,17 +94,32 @@ export function ComposerFieldSelect({
   title,
   invalid,
   invalidLabel,
+  searchable = false,
+  searchPlaceholder,
   children,
 }: ComposerFieldSelectProps) {
+  const { t } = useTranslation();
   const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  /** Which element owns keyboard focus: the search box or an option row. */
+  const [focusMode, setFocusMode] = useState<"search" | "item">("item");
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
 
   const options = useMemo(() => optionNodes(children), [children]);
+  const needle = query.trim().toLowerCase();
+  const visibleOptions = useMemo(
+    () =>
+      searchable && needle
+        ? options.filter((option) => option.label.toLowerCase().includes(needle))
+        : options,
+    [options, needle, searchable],
+  );
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : undefined;
   const showPlaceholderLabel = showPlaceholder && !selectedOption && Boolean(placeholder);
@@ -117,7 +139,8 @@ export function ComposerFieldSelect({
     const left = clampComposerFloatingLeft(rect.left, width, margin);
     const spaceAbove = rect.top - margin;
     const spaceBelow = window.innerHeight - rect.bottom - margin;
-    const estimatedHeight = HEADER_HEIGHT + options.length * ROW_HEIGHT + 12;
+    const headerHeight = searchable ? SEARCH_HEADER_HEIGHT : HEADER_HEIGHT;
+    const estimatedHeight = headerHeight + options.length * ROW_HEIGHT + 12;
     const minHeight = 88;
     const placeAbove = spaceAbove >= minHeight && spaceAbove >= spaceBelow;
     const availableSpace = Math.max(60, Math.floor(placeAbove ? spaceAbove : spaceBelow));
@@ -130,23 +153,30 @@ export function ComposerFieldSelect({
       zIndex: 10002,
       ...(placeAbove ? { bottom: window.innerHeight - rect.top + 8 } : { top: rect.bottom + 8 }),
     });
-  }, [options.length]);
+  }, [options.length, searchable]);
 
-  const closePanel = useCallback((restoreFocus: boolean) => {
-    setOpen(false);
-    if (restoreFocus) {
-      requestAnimationFrame(() => triggerRef.current?.focus());
-    }
-  }, []);
+  const closePanel = useCallback(
+    (restoreFocus: boolean) => {
+      setOpen(false);
+      setQuery("");
+      setFocusMode("item");
+      if (restoreFocus) {
+        requestAnimationFrame(() => triggerRef.current?.focus());
+      }
+    },
+    [],
+  );
 
   const openPanel = useCallback(() => {
     if (disabled || !hasOptions) {
       return;
     }
+    setQuery("");
     setFocusedIndex(Math.max(0, selectedIndex));
+    setFocusMode(searchable ? "search" : "item");
     updatePanelPosition();
     setOpen(true);
-  }, [disabled, hasOptions, selectedIndex, updatePanelPosition]);
+  }, [disabled, hasOptions, selectedIndex, searchable, updatePanelPosition]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -168,9 +198,25 @@ export function ComposerFieldSelect({
     if (!open) {
       return;
     }
-    const frame = requestAnimationFrame(() => buttonRefs.current[focusedIndex]?.focus());
+    const frame = requestAnimationFrame(() => {
+      if (focusMode === "search" && searchable) {
+        searchInputRef.current?.focus();
+        return;
+      }
+      buttonRefs.current[focusedIndex]?.focus();
+    });
     return () => cancelAnimationFrame(frame);
-  }, [focusedIndex, open]);
+  }, [focusMode, focusedIndex, open, searchable]);
+
+  // Clamp the focused row when the search query shrinks the list.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    if (focusedIndex >= visibleOptions.length) {
+      setFocusedIndex(Math.max(0, visibleOptions.length - 1));
+    }
+  }, [focusedIndex, open, visibleOptions.length]);
 
   useEffect(() => {
     if (!open) {
@@ -186,6 +232,12 @@ export function ComposerFieldSelect({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
+        // First Escape with a non-empty query clears the filter, mirroring ModelCascadeSelect.
+        if (searchable && query.trim()) {
+          setQuery("");
+          requestAnimationFrame(() => searchInputRef.current?.focus());
+          return;
+        }
         closePanel(true);
       } else if (event.key === "Tab") {
         closePanel(false);
@@ -197,14 +249,15 @@ export function ComposerFieldSelect({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [closePanel, open]);
+  }, [closePanel, open, query, searchable]);
 
   function focusAt(index: number) {
-    if (options.length === 0) {
+    if (visibleOptions.length === 0) {
       return;
     }
-    const nextIndex = clamp(index, 0, options.length - 1);
+    const nextIndex = clamp(index, 0, visibleOptions.length - 1);
     setFocusedIndex(nextIndex);
+    setFocusMode("item");
     requestAnimationFrame(() => buttonRefs.current[nextIndex]?.focus());
   }
 
@@ -213,22 +266,35 @@ export function ComposerFieldSelect({
     closePanel(true);
   }
 
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusAt(0);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const only = visibleOptions.length === 1 ? visibleOptions[0] : undefined;
+      if (only) {
+        commit(only);
+      }
+    }
+  }
+
   function handleItemKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      focusAt(index === options.length - 1 ? 0 : index + 1);
+      focusAt(index === visibleOptions.length - 1 ? 0 : index + 1);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      focusAt(index === 0 ? options.length - 1 : index - 1);
+      focusAt(index === 0 ? visibleOptions.length - 1 : index - 1);
     } else if (event.key === "Home") {
       event.preventDefault();
       focusAt(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      focusAt(options.length - 1);
+      focusAt(visibleOptions.length - 1);
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      const option = options[index];
+      const option = visibleOptions[index];
       if (option) {
         commit(option);
       }
@@ -246,8 +312,36 @@ export function ComposerFieldSelect({
         aria-label={triggerLabel || undefined}
         style={panelStyle}
       >
+        {searchable ? (
+          <label className="model-cascade-search">
+            <Search size={14} aria-hidden />
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={query}
+              placeholder={searchPlaceholder ?? t("composer.fieldSelect.search")}
+              aria-label={searchPlaceholder ?? t("composer.fieldSelect.search")}
+              disabled={disabled}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={handleSearchKeyDown}
+            />
+            {query ? (
+              <button
+                type="button"
+                className="model-cascade-search-clear"
+                aria-label={t("common.close")}
+                onClick={() => {
+                  setQuery("");
+                  searchInputRef.current?.focus();
+                }}
+              >
+                <X size={12} aria-hidden />
+              </button>
+            ) : null}
+          </label>
+        ) : null}
         <ul className="composer-field-select-menu-list" role="none">
-          {options.map((option, index) => {
+          {visibleOptions.map((option, index) => {
             const selected = option.value === value;
             return (
               <li key={option.value} role="none">
@@ -276,6 +370,9 @@ export function ComposerFieldSelect({
             );
           })}
         </ul>
+        {searchable && needle && visibleOptions.length === 0 ? (
+          <p className="model-cascade-status">{t("composer.fieldSelect.noMatch")}</p>
+        ) : null}
       </div>,
       document.body,
     );
