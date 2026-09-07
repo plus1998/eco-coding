@@ -19035,6 +19035,35 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 
 /* Lazy panel chunk placeholder (settings / terminal / task drawer). */
+.run-log--virtualized {
+  position: relative;
+}
+
+.run-log-virtual-anchor {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.run-log-virtual-spacer {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.run-log-virtual-row {
+  min-width: 0;
+}
+
+.run-log-virtual-header:empty {
+  display: none;
+}
+
 .panel-chunk-fallback {
   min-height: 48px;
 }

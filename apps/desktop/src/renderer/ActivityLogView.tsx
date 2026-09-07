@@ -109,6 +109,13 @@ import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } fr
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
 import { resolveFeedPaceTargetKey } from "./feed-pace-target";
+import {
+  FEED_VIRTUALIZE_MIN_SECTIONS,
+  FeedVirtualSectionWindow,
+  FeedVirtualUserMessageSentinels,
+  listUserMessageAnchorsFromSections,
+  useFeedSectionVirtualizer,
+} from "./feed-virtual-sections";
 import { i18n } from "./i18n";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { ImageLightbox } from "./image-lightbox";
@@ -629,75 +636,114 @@ function ProjectionActivityLogView({
 
   usePlannerLayoutChangeEffect(layoutSignature, onPlannerLayoutChange);
 
+  const runLogRef = useRef<HTMLDivElement>(null);
+  const feedHeaderRef = useRef<HTMLDivElement>(null);
+  const virtualizeEnabled = feedSections.length >= FEED_VIRTUALIZE_MIN_SECTIONS;
+  const {
+    enabled: feedVirtualized,
+    virtualItems,
+    totalSize,
+    scrollMargin,
+    measureElement,
+    resolveSectionTopPx,
+  } = useFeedSectionVirtualizer({
+    sections: feedSections,
+    enabled: virtualizeEnabled,
+    runLogRef,
+    headerRef: feedHeaderRef,
+  });
+  const userMessageAnchors = useMemo(
+    () => listUserMessageAnchorsFromSections(feedSections),
+    [feedSections],
+  );
+  const mountedSectionIndexes = useMemo(
+    () => new Set(virtualItems.map((item) => item.index)),
+    [virtualItems],
+  );
+
+  const sharedSectionProps = {
+    requestSpansById,
+    finalSummaryItemIds,
+    ...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId }),
+    ...(selectedSubagentAgentId && { selectedSubagentAgentId }),
+    ...(onOpenSubagent && { onOpenSubagent }),
+    ...(onOpenImageGenerationTool && { onOpenImageGenerationTool }),
+    ...(onOpenImageDisplayTool && { onOpenImageDisplayTool }),
+    ...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact }),
+    ...(agentDisplayNames && { agentDisplayNames }),
+    ...(agentThemes && { agentThemes }),
+    ...(onRestorePrompt && { onRestorePrompt }),
+    ...(onLoadUserMessageEdit && { onLoadUserMessageEdit }),
+    ...(onRewriteUserMessage && { onRewriteUserMessage }),
+    ...(onRetryFailedRequest && { onRetryFailedRequest }),
+    retryTargets,
+    allowUserMessageRewrite,
+    historyRevision: projection.historyRevision ?? 0,
+    ...(paceTargetKey && { paceTargetKey }),
+    ...(onLoadProjectionDetail && { onLoadProjectionDetail }),
+  } as const;
+
+  const renderFeedSection = (index: number) => {
+    const section = feedSections[index];
+    if (!section) {
+      return null;
+    }
+    if (section.kind === "turn") {
+      return (
+        <ProjectionTurnFeedSection
+          section={section}
+          {...sharedSectionProps}
+          stopping={Boolean(thread?.cancelling)}
+        />
+      );
+    }
+    return <ProjectionMainFeedEntry entry={section.entry} {...sharedSectionProps} />;
+  };
+
   return (
     <RequestSpansContext.Provider value={projection.requestSpans}>
       <ActivityFeedLayoutContext.Provider value={onPlannerLayoutChange}>
-        <div className="run-log">
-          {showThreadPrompt && thread?.prompt
-            ? wrapRunLogFeedEntry(
-                <UserPromptBlock
-                  text={thread.prompt}
-                  anchorId={`thread:${thread.id}`}
-                  createdAt={thread.createdAt}
-                  {...(onRestorePrompt && { onRestorePrompt })}
-                  {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
-                  {...(onRewriteUserMessage && { onRewriteUserMessage })}
-                  allowUserMessageRewrite={allowUserMessageRewrite}
-                  historyRevision={projection.historyRevision ?? 0}
-                />,
-              )
-            : null}
-          {feedSections.map((section) =>
-            section.kind === "turn" ? (
-              <ProjectionTurnFeedSection
-                key={section.key}
-                section={section}
-                requestSpansById={requestSpansById}
-                finalSummaryItemIds={finalSummaryItemIds}
-                {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
-                {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
-                {...(onOpenSubagent && { onOpenSubagent })}
-                {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
-                {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
-                {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
-                {...(agentDisplayNames && { agentDisplayNames })}
-                {...(agentThemes && { agentThemes })}
-                {...(onRestorePrompt && { onRestorePrompt })}
-                {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
-                {...(onRewriteUserMessage && { onRewriteUserMessage })}
-                {...(onRetryFailedRequest && { onRetryFailedRequest })}
-                retryTargets={retryTargets}
-                allowUserMessageRewrite={allowUserMessageRewrite}
-                historyRevision={projection.historyRevision ?? 0}
-                stopping={Boolean(thread?.cancelling)}
-                {...(paceTargetKey && { paceTargetKey })}
-                {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+        <div
+          ref={runLogRef}
+          className={["run-log", feedVirtualized ? "run-log--virtualized" : ""].filter(Boolean).join(" ")}
+        >
+          <div ref={feedHeaderRef} className="run-log-virtual-header">
+            {showThreadPrompt && thread?.prompt
+              ? wrapRunLogFeedEntry(
+                  <UserPromptBlock
+                    text={thread.prompt}
+                    anchorId={`thread:${thread.id}`}
+                    createdAt={thread.createdAt}
+                    {...(onRestorePrompt && { onRestorePrompt })}
+                    {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+                    {...(onRewriteUserMessage && { onRewriteUserMessage })}
+                    allowUserMessageRewrite={allowUserMessageRewrite}
+                    historyRevision={projection.historyRevision ?? 0}
+                  />,
+                )
+              : null}
+          </div>
+          {feedVirtualized ? (
+            <>
+              <FeedVirtualUserMessageSentinels
+                anchors={userMessageAnchors}
+                mountedSectionIndexes={mountedSectionIndexes}
+                resolveSectionTopPx={resolveSectionTopPx}
               />
-            ) : (
-              <ProjectionMainFeedEntry
-                key={section.key}
-                entry={section.entry}
-                requestSpansById={requestSpansById}
-                finalSummaryItemIds={finalSummaryItemIds}
-                {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
-                {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
-                {...(onOpenSubagent && { onOpenSubagent })}
-                {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
-                {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
-                {...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact })}
-                {...(agentDisplayNames && { agentDisplayNames })}
-                {...(agentThemes && { agentThemes })}
-                {...(onRestorePrompt && { onRestorePrompt })}
-                {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
-                {...(onRewriteUserMessage && { onRewriteUserMessage })}
-                {...(onRetryFailedRequest && { onRetryFailedRequest })}
-                retryTargets={retryTargets}
-                allowUserMessageRewrite={allowUserMessageRewrite}
-                historyRevision={projection.historyRevision ?? 0}
-                {...(paceTargetKey && { paceTargetKey })}
-                {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+              <FeedVirtualSectionWindow
+                totalSize={totalSize}
+                scrollMargin={scrollMargin}
+                virtualItems={virtualItems}
+                measureElement={measureElement}
+                renderSection={renderFeedSection}
               />
-            ),
+            </>
+          ) : (
+            feedSections.map((section, index) => (
+              <div key={section.key} className="run-log-virtual-row">
+                {renderFeedSection(index)}
+              </div>
+            ))
           )}
           {conversationActive ? (
             <RunLogActiveTail waiting={waitingThinkingVisible} stopping={Boolean(thread?.cancelling)} />

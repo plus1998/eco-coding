@@ -282,6 +282,7 @@ import {
   parseSlashQuery,
 } from "./composer-skills";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
+import { dispatchFeedScrollToAnchor } from "./feed-virtual-sections";
 import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
 import {
   LazyActivityLogView,
@@ -5621,32 +5622,53 @@ function App() {
       if (!container) {
         return;
       }
-      const anchors = Array.from(container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"));
-      const target = anchors.find((anchor) => anchor.dataset.userMessageAnchorId === anchorId);
-      if (!target) {
+      const scrollToMountedAnchor = () => {
+        const anchors = Array.from(container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"));
+        const target = anchors.find((anchor) => anchor.dataset.userMessageAnchorId === anchorId);
+        if (!target) {
+          return false;
+        }
+        if (activityUserMessageJumpTimerRef.current) {
+          clearTimeout(activityUserMessageJumpTimerRef.current);
+        }
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const targetTop = Math.max(0, container.scrollTop + targetRect.top - containerRect.top - 18);
+        userDetachedFromBottomRef.current = true;
+        activityFeedUserScrollDirectionRef.current = targetTop < container.scrollTop ? "up" : "down";
+        programmaticActivityFeedScrollRef.current = true;
+        updateActiveActivityUserMessageNavId(anchorId);
+        container.scrollTo({ top: targetTop, behavior: "smooth" });
+        activityUserMessageJumpTimerRef.current = setTimeout(() => {
+          activityUserMessageJumpTimerRef.current = null;
+          programmaticActivityFeedScrollRef.current = false;
+          if (activityMessagesRef.current !== container) {
+            return;
+          }
+          activityFeedScrollTopRef.current = container.scrollTop;
+          syncActivityFeedScrollJump(container);
+          syncActivityUserMessageNavigator(container);
+        }, 360);
+        return true;
+      };
+      if (scrollToMountedAnchor()) {
         return;
       }
-      if (activityUserMessageJumpTimerRef.current) {
-        clearTimeout(activityUserMessageJumpTimerRef.current);
+      // Virtualized rows may be unmounted — ask the feed to bring the section into range first.
+      if (!dispatchFeedScrollToAnchor(container, anchorId)) {
+        return;
       }
-      const containerRect = container.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const targetTop = Math.max(0, container.scrollTop + targetRect.top - containerRect.top - 18);
       userDetachedFromBottomRef.current = true;
-      activityFeedUserScrollDirectionRef.current = targetTop < container.scrollTop ? "up" : "down";
-      programmaticActivityFeedScrollRef.current = true;
       updateActiveActivityUserMessageNavId(anchorId);
-      container.scrollTo({ top: targetTop, behavior: "smooth" });
-      activityUserMessageJumpTimerRef.current = setTimeout(() => {
-        activityUserMessageJumpTimerRef.current = null;
-        programmaticActivityFeedScrollRef.current = false;
+      window.setTimeout(() => {
         if (activityMessagesRef.current !== container) {
           return;
         }
-        activityFeedScrollTopRef.current = container.scrollTop;
-        syncActivityFeedScrollJump(container);
-        syncActivityUserMessageNavigator(container);
-      }, 360);
+        if (!scrollToMountedAnchor()) {
+          syncActivityFeedScrollJump(container);
+          syncActivityUserMessageNavigator(container);
+        }
+      }, 48);
     },
     [syncActivityFeedScrollJump, syncActivityUserMessageNavigator, updateActiveActivityUserMessageNavId],
   );

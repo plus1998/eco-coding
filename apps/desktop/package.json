@@ -55,6 +55,7 @@
     "@openai/codex": "0.150.1",
     "@qwen-code/open-computer-use": "0.2.3",
     "@supabase/supabase-js": "^2.112.3",
+    "@tanstack/react-virtual": "^3.13.12",
     "@uiw/react-codemirror": "^4.25.11",
     "agent-browser": "0.33.2",
     "electron-updater": "6.8.9",
