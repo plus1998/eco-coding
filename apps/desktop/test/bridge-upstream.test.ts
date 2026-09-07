@@ -443,7 +443,8 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
   });
   expect(input[1]).toMatchObject({
     type: "reasoning",
-    summary: [{ type: "summary_text", text: "Need the file contents" }],
+    summary: [],
+    content: [{ type: "reasoning_text", text: "Need the file contents" }],
   });
   expect(input[3]).toMatchObject({
     type: "function_call",

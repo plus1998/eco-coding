@@ -204,7 +204,10 @@ describe("roundtrip", () => {
     const reasoningItems = (responsesReq.input as Record<string, unknown>[]).filter(
       (item) => item.type === "reasoning",
     );
-    expect(reasoningItems[0]?.summary).toEqual([{ type: "summary_text", text: "private summary" }]);
+    expect(reasoningItems[0]).toMatchObject({
+      summary: [],
+      content: [{ type: "reasoning_text", text: "private summary" }],
+    });
     expect(reasoningItems[1]?.encrypted_content).toBe("ciphertext");
   });
 

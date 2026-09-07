@@ -111,7 +111,8 @@ describe("Anthropic stream to Responses lifecycle", () => {
     const reasoningDone = events.find(
       (event) => event.type === "response.output_item.done" && event.item?.type === "reasoning",
     );
-    expect(reasoningDone?.item?.summary).toEqual([{ type: "summary_text", text: "Check the tool." }]);
+    expect(reasoningDone?.item?.summary).toEqual([]);
+    expect(reasoningDone?.item?.content).toEqual([{ type: "reasoning_text", text: "Check the tool." }]);
 
     const messageDone = events.find(
       (event) => event.type === "response.output_item.done" && event.item?.type === "message",

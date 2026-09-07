@@ -140,7 +140,8 @@ describe("LiteLLM parity: Anthropic Messages -> Responses input", () => {
       {
         type: "reasoning",
         id: "rs_0",
-        summary: [{ type: "summary_text", text: "Let me reason step by step." }],
+        summary: [],
+        content: [{ type: "reasoning_text", text: "Let me reason step by step." }],
       },
     ]);
   });
@@ -455,7 +456,8 @@ describe("LiteLLM parity: Chat Completions <-> Responses", () => {
 
     expect(responses.output?.[0]).toMatchObject({
       type: "reasoning",
-      summary: [{ type: "summary_text", text: "private reasoning" }],
+      summary: [],
+      content: [{ type: "reasoning_text", text: "private reasoning" }],
     });
     expect(responsesToAnthropic(responses, "gpt-5.2").content[0]).toEqual({
       type: "thinking",

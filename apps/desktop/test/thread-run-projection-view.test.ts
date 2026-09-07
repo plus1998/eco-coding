@@ -354,6 +354,72 @@ test("projectionItemToDetailBlock maps reasoningDisplay summary to reasoning-sta
   });
 });
 
+test("ephemeral thinkingDisplayMode presents raw thinking like summary tips", () => {
+  const tipOnly = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 1,
+      timeline: [
+        item({
+          id: "raw-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          streamKey: "raw_1",
+          text: "先定位入口",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { reasoningDisplay: "raw" },
+        }),
+      ],
+    }),
+    undefined,
+    { thinkingDisplayMode: "ephemeral" },
+  );
+  expect(tipOnly.mainFeedEntries).toHaveLength(1);
+  const tip = tipOnly.mainFeedEntries[0];
+  expect(tip?.kind).toBe("timeline");
+  if (tip?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(tip.item)).toMatchObject({
+      kind: "reasoning-stage",
+      label: "先定位入口",
+      streaming: true,
+    });
+  }
+
+  const superseded = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 2,
+      timeline: [
+        item({
+          id: "raw-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          streamKey: "raw_1",
+          text: "先定位入口",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { reasoningDisplay: "raw" },
+        }),
+        item({
+          id: "msg-1",
+          eventType: "message.final",
+          role: "assistant",
+          text: "结论",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+    undefined,
+    { thinkingDisplayMode: "ephemeral" },
+  );
+  const blocks = superseded.mainFeedEntries
+    .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
+    .map((entry) => projectionItemToDetailBlock(entry.item)?.kind);
+  expect(blocks).toEqual(["narrative"]);
+  expect(blocks).not.toContain("reasoning-stage");
+  expect(blocks).not.toContain("thinking");
+});
+
 test("buildThreadRunProjectionViewModel reuses a running tool slot for the latest reasoning summary", () => {
   const beforeTool = buildThreadRunProjectionViewModel(
     projection({

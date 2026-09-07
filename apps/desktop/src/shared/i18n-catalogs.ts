@@ -294,12 +294,14 @@ export const i18nCatalogs = {
       "settings.defaultBashReviewMode.allowAllConfirm":
         "开启「完全访问」后，新会话将尽量自动放行对互联网和本机文件的操作，且不再逐条请求你批准。确定继续？",
       "settings.tokenSpeed": "Token 速度统计",
-      "settings.tokenSpeedHint":
-        "生成时显示首字延迟；请求结束后显示解码速度（tok/s）。有用量时用上游 token 数；Cursor ACP 等无用量路径为本地估算。",
+      "settings.tokenSpeedHint": "生成回答时显示响应速度。",
       "settings.thinkingContentDefault": "思考内容",
-      "settings.thinkingContentDefaultHint": "已完成的思考内容默认折叠或展开。流式输出时始终展开。",
+      "settings.thinkingContentDefault.ephemeral": "阅后即焚",
+      "settings.thinkingContentDefault.ephemeralHint": "生成时显示，完成后自动隐藏。",
       "settings.thinkingContentDefault.collapsed": "折叠",
+      "settings.thinkingContentDefault.collapsedHint": "完成后默认收起，可随时展开。",
       "settings.thinkingContentDefault.expanded": "展开",
+      "settings.thinkingContentDefault.expandedHint": "完成后默认展开，可随时收起。",
       "settings.fonts": "字体",
       "settings.fontsSubtitle": "分别调整界面文字与等宽代码内容。",
       "settings.uiFontSize": "UI 字号",
@@ -2413,13 +2415,17 @@ export const i18nCatalogs = {
       "settings.defaultBashReviewMode.allowAllConfirm":
         "Full access lets new sessions auto-allow internet and local-file actions without asking you each time. Continue?",
       "settings.tokenSpeed": "Token speed stats",
-      "settings.tokenSpeedHint":
-        "Show time-to-first-token while streaming; decode speed (tok/s) after the request finishes. Uses provider tokens when available; local estimates for paths without usage (e.g. Cursor ACP).",
+      "settings.tokenSpeedHint": "Shows response speed while the answer is generated.",
       "settings.thinkingContentDefault": "Thinking content",
-      "settings.thinkingContentDefaultHint":
-        "Default collapsed or expanded for completed thinking. Always expanded while streaming.",
+      "settings.thinkingContentDefault.ephemeral": "Ephemeral",
+      "settings.thinkingContentDefault.ephemeralHint":
+        "Visible while generating; hidden after it finishes.",
       "settings.thinkingContentDefault.collapsed": "Collapsed",
+      "settings.thinkingContentDefault.collapsedHint":
+        "Collapsed by default after finishing; expand anytime.",
       "settings.thinkingContentDefault.expanded": "Expanded",
+      "settings.thinkingContentDefault.expandedHint":
+        "Expanded by default after finishing; collapse anytime.",
       "settings.fonts": "Fonts",
       "settings.fontsSubtitle": "Adjust interface and monospaced code text separately.",
       "settings.uiFontSize": "UI font size",

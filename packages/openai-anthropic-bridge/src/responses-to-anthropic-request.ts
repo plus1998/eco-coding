@@ -10,6 +10,10 @@ import {
   isCustomToolChatName,
 } from "./codex-tool-context.js";
 import { bytesTrimSpace, jsonMarshal, jsonParse } from "./json.js";
+import {
+  classifyResponsesReasoningItem,
+  selectDisplayReasoningText,
+} from "./reasoning-classify.js";
 import type {
   AnthropicContentBlock,
   AnthropicImageSource,
@@ -291,14 +295,17 @@ function appendSystemText(current: unknown | undefined, text: string): unknown {
 
 function responsesReasoningInputToAnthropicBlocks(item: ResponsesInputItem): AnthropicContentBlock[] {
   const blocks: AnthropicContentBlock[] = [];
-  const summaryText = (item.summary ?? [])
-    .filter((summary) => summary.type === "summary_text" && summary.text !== "")
-    .map((summary) => summary.text)
-    .join("\n\n");
-  if (summaryText !== "") {
+  const classified = classifyResponsesReasoningItem({
+    id: item.id,
+    summary: Array.isArray(item.summary) ? item.summary : [],
+    content: Array.isArray(item.content) ? (item.content as ResponsesContentPart[]) : undefined,
+    encrypted_content: item.encrypted_content,
+  });
+  const display = selectDisplayReasoningText(classified);
+  if (display !== "") {
     blocks.push({
       type: "thinking",
-      thinking: summaryText,
+      thinking: display,
     });
   }
   if (item.encrypted_content !== undefined && item.encrypted_content !== "") {

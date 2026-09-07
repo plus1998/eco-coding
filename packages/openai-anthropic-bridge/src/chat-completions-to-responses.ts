@@ -4,12 +4,15 @@ import {
   minMaxOutputTokens,
 } from "./anthropic-to-responses.js";
 import { jsonMarshal, jsonParse } from "./json.js";
+import {
+  classifyChatMessageReasoning,
+  classifiedToResponsesReasoningFields,
+} from "./reasoning-classify.js";
 import type {
   ChatCompletionsRequest,
   ChatContentPart,
   ChatFunction,
   ChatMessage,
-  ChatReasoningItem,
   ChatTool,
   ResponsesContentPart,
   ResponsesInputItem,
@@ -147,14 +150,7 @@ function chatUserToResponses(m: ChatMessage): ResponsesInputItem[] {
 
 function chatAssistantToResponses(m: ChatMessage): ResponsesInputItem[] {
   const items: ResponsesInputItem[] = [];
-
-  const reasoningItems = chatReasoningItemsToResponses(m);
-  items.push(...reasoningItems);
-
-  const contentReasoning = extractReasoningTextFromAssistantContent(m.content);
-  if (contentReasoning !== "" && reasoningItems.length === 0) {
-    items.push(makeReasoningInputItem(contentReasoning, items.length));
-  }
+  items.push(...chatMessageToResponsesReasoningItems(m, items.length));
 
   let content = "";
   if (m.content !== undefined) {
@@ -424,96 +420,28 @@ function chatSystemInstruction(m: ChatMessage): string {
   }
 }
 
-function chatReasoningItemsToResponses(m: ChatMessage): ResponsesInputItem[] {
-  const items: ResponsesInputItem[] = [];
-  for (const item of m.reasoning_items ?? []) {
-    const converted = chatReasoningItemToResponsesInput(item, items.length);
-    if (converted !== undefined) {
-      items.push(converted);
-    }
-  }
-  if (items.length > 0) {
-    return items;
-  }
-  const text = chatMessageReasoningText(m);
-  if (text === "") {
+function chatMessageToResponsesReasoningItems(m: ChatMessage, startIndex: number): ResponsesInputItem[] {
+  const classified = classifyChatMessageReasoning(m);
+  const fields = classifiedToResponsesReasoningFields(classified);
+  if (
+    fields.summary.length === 0 &&
+    fields.content.length === 0 &&
+    fields.encrypted_content === undefined
+  ) {
     return [];
   }
-  return [makeReasoningInputItem(text, 0)];
-}
-
-function chatReasoningItemToResponsesInput(
-  item: ChatReasoningItem,
-  index: number,
-): ResponsesInputItem | undefined {
   const out: ResponsesInputItem = {
     type: "reasoning",
-    id: item.id ?? `rs_${index}`,
-    summary: item.summary ?? [],
+    id: m.reasoning_items?.[0]?.id ?? `rs_${startIndex}`,
+    summary: fields.summary,
   };
-  if (item.encrypted_content !== undefined && item.encrypted_content !== "") {
-    out.encrypted_content = item.encrypted_content;
+  if (fields.content.length > 0) {
+    out.content = fields.content;
   }
-  if ((out.summary?.length ?? 0) === 0 && out.encrypted_content === undefined) {
-    return undefined;
+  if (fields.encrypted_content !== undefined) {
+    out.encrypted_content = fields.encrypted_content;
   }
-  return out;
-}
-
-function chatMessageReasoningText(m: ChatMessage): string {
-  if ((m.reasoning_content ?? "").trim() !== "") {
-    return m.reasoning_content!.trim();
-  }
-  if ((m.reasoning ?? "").trim() !== "") {
-    return m.reasoning!.trim();
-  }
-  const parts: string[] = [];
-  for (const detail of m.reasoning_details ?? []) {
-    const text = detail.text?.trim() ?? "";
-    if (text !== "") {
-      parts.push(text);
-    }
-  }
-  return parts.join("\n\n");
-}
-
-function makeReasoningInputItem(text: string, index: number): ResponsesInputItem {
-  return {
-    type: "reasoning",
-    id: `rs_${index}`,
-    summary: [{ type: "summary_text", text }],
-  };
-}
-
-function extractReasoningTextFromAssistantContent(raw: unknown): string {
-  if (raw === undefined || raw === null) {
-    return "";
-  }
-  const serialized = typeof raw === "string" ? raw : jsonMarshal(raw);
-  try {
-    const parsed = jsonParse(serialized);
-    if (!Array.isArray(parsed)) {
-      return "";
-    }
-    const parts = parsed as Record<string, unknown>[];
-    const out: string[] = [];
-    for (const p of parts) {
-      const typ = typeof p.type === "string" ? p.type : "";
-      if (typ !== "thinking" && typ !== "reasoning") {
-        continue;
-      }
-      const thinking = typeof p.thinking === "string" ? p.thinking : "";
-      const text = typeof p.text === "string" ? p.text : "";
-      if (thinking !== "") {
-        out.push(thinking);
-      } else if (text !== "") {
-        out.push(text);
-      }
-    }
-    return out.join("\n\n");
-  } catch {
-    return "";
-  }
+  return [out];
 }
 
 function normalizeChatToolChoiceForResponses(raw: unknown): unknown {

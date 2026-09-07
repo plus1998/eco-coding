@@ -36,6 +36,10 @@ import {
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
+  thinkingModeUsesEphemeralTip,
+  type ThinkingDisplayMode,
+} from "./thinking-display-preferences";
+import {
   isReconnectActivityOrigin,
   isRedundantApiFailureBlockedMessage,
   isRequestFailureFeedNoiseOrigin,
@@ -136,10 +140,17 @@ export function buildThreadRunProjectionViewModel(
     agentDisplayNames?: RuntimeAgentDisplayNames | undefined;
     /** When false, prompt-cache / cache-break tips are omitted from the feed UI. Default true. */
     includePromptCacheTips?: boolean | undefined;
+    /**
+     * When `ephemeral`, raw thinking is presented like OpenAI reasoning summary tips
+     * (reasoning-stage + collapse until superseded). Collapsed/expanded keep thinking cards.
+     * Omit to leave raw thinking as cards (tests / callers that do not pass UI prefs).
+     */
+    thinkingDisplayMode?: ThinkingDisplayMode | undefined;
   } = {},
 ): ThreadRunProjectionViewModel {
   void options.agentDisplayNames;
   const includePromptCacheTips = options.includePromptCacheTips !== false;
+  const thinkingDisplayMode = options.thinkingDisplayMode;
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
   const requestSpansById = buildDisplayRequestSpansById(projection);
@@ -150,6 +161,7 @@ export function buildThreadRunProjectionViewModel(
         agent.timeline,
         requestSpansById,
         includePromptCacheTips,
+        thinkingDisplayMode,
       );
       const displayAgent: ThreadRunProjectionAgent = { ...agent, timeline: displayTimeline };
       const statusText = resolveProjectionAgentStatusText(displayAgent);
@@ -172,6 +184,7 @@ export function buildThreadRunProjectionViewModel(
     subagentCards,
     requestSpansById,
     includePromptCacheTips,
+    thinkingDisplayMode,
   );
   return {
     showThreadPrompt,
@@ -254,9 +267,10 @@ function buildProjectionMainFeedEntries(
   subagentCards: readonly ThreadRunProjectionSubagentCard[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
   includePromptCacheTips = true,
+  thinkingDisplayMode?: ThinkingDisplayMode,
 ): ThreadRunProjectionMainFeedEntry[] {
   const displayMainTimeline = filterAbsorbedSubagentDelegations(
-    filterMainTimelineForFeed(mainTimeline, requestSpansById, includePromptCacheTips),
+    filterMainTimelineForFeed(mainTimeline, requestSpansById, includePromptCacheTips, thinkingDisplayMode),
     subagentCards,
     requestSpansById,
   );
@@ -532,11 +546,13 @@ function filterMainTimelineForFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
   includePromptCacheTips = true,
+  thinkingDisplayMode?: ThinkingDisplayMode,
 ): ThreadRunProjectionTimelineItem[] {
   const displayTimeline = filterProjectionTimelineForDetailFeed(
     timeline,
     requestSpansById,
     includePromptCacheTips,
+    thinkingDisplayMode,
   );
   const requestFiltered = displayTimeline.filter(
     (item) => item.scope !== "agent" && !isMainTimelineNoiseItem(item, displayTimeline),
@@ -682,15 +698,19 @@ function filterProjectionTimelineForDetailFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
   includePromptCacheTips = true,
+  thinkingDisplayMode?: ThinkingDisplayMode,
 ): ThreadRunProjectionTimelineItem[] {
+  const built = buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
+    (item) =>
+      !isEmptyTerminalThinkingItem(item) &&
+      (includePromptCacheTips || !isPromptCacheTimelineEventType(item.eventType)),
+  );
+  // 阅后即焚 → tip path; 折叠/展开 → keep raw thinking as cards.
+  const forCollapse = thinkingModeUsesEphemeralTip(thinkingDisplayMode)
+    ? presentThinkingAsEphemeralSummaryTips(built)
+    : built;
   const displayTimeline = collapseEphemeralReasoningSummaryTimeline(
-    collapsePromptCacheTimelineItems(
-      buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
-        (item) =>
-          !isEmptyTerminalThinkingItem(item) &&
-          (includePromptCacheTips || !isPromptCacheTimelineEventType(item.eventType)),
-      ),
-    ),
+    collapsePromptCacheTimelineItems(forCollapse),
   );
   const requestsWithStreamRows = new Set(
     displayTimeline
@@ -996,6 +1016,34 @@ function isReasoningSummarySupersedingItem(item: ThreadRunProjectionTimelineItem
     return true;
   }
   return false;
+}
+
+/**
+ * Display-only fork onto the tip path (effect 1): stamp raw/untagged thinking
+ * as `reasoningDisplay: "summary"` so `reasoning-stage` +
+ * `collapseEphemeralReasoningSummaryTimeline` apply. Does not mutate persisted activity.
+ */
+export function presentThinkingAsEphemeralSummaryTips(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  return timeline.map((item) => {
+    if (item.eventType !== "thinking.delta" && item.eventType !== "thinking.final") {
+      return item;
+    }
+    if (!item.text.trim()) {
+      return item;
+    }
+    if (readReasoningDisplay(item.metadata) === "summary") {
+      return item;
+    }
+    return {
+      ...item,
+      metadata: {
+        ...(item.metadata ?? {}),
+        reasoningDisplay: "summary",
+      },
+    };
+  });
 }
 
 /**

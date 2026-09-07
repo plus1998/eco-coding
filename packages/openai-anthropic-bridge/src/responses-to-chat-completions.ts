@@ -1,9 +1,15 @@
 import { jsonMarshal } from "./json.js";
+import {
+  classifiedToChatReasoningDetails,
+  classifyResponsesReasoningItem,
+  selectChatFlatReasoningText,
+} from "./reasoning-classify.js";
 import type {
   ChatCompletionsChunk,
   ChatCompletionsResponse,
   ChatDelta,
   ChatMessage,
+  ChatReasoningDetail,
   ChatReasoningItem,
   ChatTokenDetails,
   ChatToolCall,
@@ -38,6 +44,7 @@ export function responsesToChatCompletions(resp: ResponsesResponse, model: strin
   let contentText = "";
   let reasoningText = "";
   const reasoningItems: ChatReasoningItem[] = [];
+  const reasoningDetails: ChatReasoningDetail[] = [];
   const toolCalls: ChatToolCall[] = [];
 
   for (const item of resp.output ?? []) {
@@ -59,19 +66,25 @@ export function responsesToChatCompletions(resp: ResponsesResponse, model: strin
           },
         });
         break;
-      case "reasoning":
+      case "reasoning": {
+        const classified = classifyResponsesReasoningItem(item);
         reasoningItems.push({
           type: "reasoning",
           id: item.id,
           encrypted_content: item.encrypted_content,
           summary: item.summary ?? [],
+          ...(item.content !== undefined && item.content.length > 0 ? { content: item.content } : {}),
         });
-        for (const s of item.summary ?? []) {
-          if (s.type === "summary_text" && s.text !== "") {
-            reasoningText += s.text;
-          }
+        const flat = selectChatFlatReasoningText(classified);
+        if (flat !== "") {
+          reasoningText += flat;
+        }
+        const details = classifiedToChatReasoningDetails(classified);
+        if (details.length > 0) {
+          reasoningDetails.push(...details);
         }
         break;
+      }
       case "web_search_call":
         break;
     }
@@ -86,6 +99,9 @@ export function responsesToChatCompletions(resp: ResponsesResponse, model: strin
   }
   if (reasoningText !== "") {
     msg.reasoning_content = reasoningText;
+  }
+  if (reasoningDetails.length > 0) {
+    msg.reasoning_details = reasoningDetails;
   }
   if (reasoningItems.length > 0) {
     msg.reasoning_items = reasoningItems;
@@ -180,7 +196,10 @@ export function responsesEventToChatChunks(
       return resToChatHandleFuncArgsDelta(evt, state);
     case "response.reasoning_summary_text.delta":
       return resToChatHandleReasoningDelta(evt, state);
+    case "response.reasoning_text.delta":
+      return resToChatHandleReasoningDelta(evt, state);
     case "response.reasoning_summary_text.done":
+    case "response.reasoning_text.done":
       return [];
     case "response.completed":
     case "response.done":
@@ -480,7 +499,8 @@ interface BufferedFuncCall {
 
 export class BufferedResponseAccumulator {
   private text = "";
-  private reasoning = "";
+  private summaryReasoning = "";
+  private rawReasoning = "";
   private funcCalls: BufferedFuncCall[] = [];
   private outputIndexToFuncIdx = new Map<number, number>();
 
@@ -515,23 +535,39 @@ export class BufferedResponseAccumulator {
         break;
       case "response.reasoning_summary_text.delta":
         if (event.delta !== "") {
-          this.reasoning += event.delta;
+          this.summaryReasoning += event.delta;
+        }
+        break;
+      case "response.reasoning_text.delta":
+        if (event.delta !== "") {
+          this.rawReasoning += event.delta;
         }
         break;
     }
   }
 
   hasContent(): boolean {
-    return this.text.length > 0 || this.funcCalls.length > 0 || this.reasoning.length > 0;
+    return (
+      this.text.length > 0 ||
+      this.funcCalls.length > 0 ||
+      this.summaryReasoning.length > 0 ||
+      this.rawReasoning.length > 0
+    );
   }
 
   buildOutput(): ResponsesOutput[] {
     const out: ResponsesOutput[] = [];
 
-    if (this.reasoning.length > 0) {
+    if (this.summaryReasoning.length > 0 || this.rawReasoning.length > 0) {
       out.push({
         type: "reasoning",
-        summary: [{ type: "summary_text", text: this.reasoning }],
+        summary:
+          this.summaryReasoning.length > 0
+            ? [{ type: "summary_text", text: this.summaryReasoning }]
+            : [],
+        ...(this.rawReasoning.length > 0
+          ? { content: [{ type: "reasoning_text", text: this.rawReasoning }] }
+          : {}),
       });
     }
 

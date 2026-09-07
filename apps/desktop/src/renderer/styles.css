@@ -9710,7 +9710,9 @@ button.default-agent-option:focus-visible {
   overflow-x: clip;
 }
 
-.run-log > .run-log-feed-entry:first-child:has(.run-log-user-prompt) {
+.run-log > .run-log-feed-entry:first-child:has(.run-log-user-prompt),
+.run-log > .run-log-virtual-header > .run-log-feed-entry:has(.run-log-user-prompt),
+.run-log > .run-log-virtual-row:first-of-type > .run-log-feed-entry:has(.run-log-user-prompt) {
   padding-top: 12px;
 }
 
@@ -25247,7 +25249,15 @@ html:not([data-platform="darwin"])
 }
 
 .codex-main:not(.codex-main-landing) .run-log-turn + .run-log-turn,
-.codex-main:not(.codex-main-landing) .run-log-turn-final + .run-log-turn {
+.codex-main:not(.codex-main-landing)
+  .run-log-virtual-row:has(.run-log-turn)
+  + .run-log-virtual-row:has(.run-log-turn)
+  > .run-log-turn,
+.codex-main:not(.codex-main-landing) .run-log-turn-final + .run-log-turn,
+.codex-main:not(.codex-main-landing)
+  .run-log-virtual-row:has(.run-log-turn-final)
+  + .run-log-virtual-row:has(.run-log-turn)
+  > .run-log-turn {
   margin-top: 28px;
 }
 
@@ -25372,18 +25382,33 @@ html:not([data-platform="darwin"])
   min-width: 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry + .run-log-feed-entry {
+.codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry)
+  + .run-log-virtual-row:has(> .run-log-feed-entry)
+  > .run-log-feed-entry {
   margin-top: var(--codex-feed-gap-block);
 }
 
-.codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-feed-entry {
+.codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn)
+  + .run-log-virtual-row:has(> .run-log-feed-entry)
+  > .run-log-feed-entry {
   margin-top: var(--codex-feed-gap-block);
 }
 
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry:has(.run-log-mission)
-  + .run-log-feed-entry:has(.subagent-run-row-wrap) {
+  + .run-log-feed-entry:has(.subagent-run-row-wrap),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry:has(.run-log-mission))
+  + .run-log-virtual-row:has(> .run-log-feed-entry:has(.subagent-run-row-wrap))
+  > .run-log-feed-entry {
   margin-top: 4px;
 }
 
@@ -25401,12 +25426,27 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry--tight + .run-log-feed-entry--tight,
 .codex-main:not(.codex-main-landing)
   .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry--tight)
+  + .run-log-virtual-row:has(> .run-log-feed-entry--tight)
+  > .run-log-feed-entry--tight,
+.codex-main:not(.codex-main-landing)
+  .run-log
   > .run-log-feed-entry--tight
   + .run-log-feed-entry:not(.run-log-feed-entry--tight),
 .codex-main:not(.codex-main-landing)
   .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry--tight)
+  + .run-log-virtual-row:has(> .run-log-feed-entry:not(.run-log-feed-entry--tight))
+  > .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
   > .run-log-feed-entry:not(.run-log-feed-entry--tight)
-  + .run-log-feed-entry--tight {
+  + .run-log-feed-entry--tight,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry:not(.run-log-feed-entry--tight))
+  + .run-log-virtual-row:has(> .run-log-feed-entry--tight)
+  > .run-log-feed-entry--tight {
   margin-top: var(--codex-feed-gap-step);
 }
 
@@ -25450,31 +25490,74 @@ html:not([data-platform="darwin"])
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry:has(.subagent-run-row-wrap))
+  + .run-log-virtual-row:has(> .run-log-feed-entry)
+  > .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
   > .run-log-feed-entry
   + .run-log-feed-entry:has(.subagent-run-row-wrap),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry)
+  + .run-log-virtual-row:has(> .run-log-feed-entry:has(.subagent-run-row-wrap))
+  > .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry:has(.run-log-thinking)
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry:has(.run-log-thinking))
+  + .run-log-virtual-row:has(> .run-log-feed-entry)
+  > .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
   > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-thinking) {
+  + .run-log-feed-entry:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry)
+  + .run-log-virtual-row:has(> .run-log-feed-entry:has(.run-log-thinking))
+  > .run-log-feed-entry {
   margin-top: 20px;
 }
 
-.codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail {
+/*
+ * Active tail (「正在思考」/「...」) stays a direct .run-log child.
+ * Feed sections sit in .run-log-virtual-row; virtualized lists may insert a spacer
+ * between the last row and the tail.
+ */
+.codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn)
+  + .run-log-active-tail,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn)
+  + .run-log-virtual-spacer
+  + .run-log-active-tail {
   margin-top: var(--codex-feed-gap-step);
 }
 
 /*
- * Empty "正在思�? is deferred to the active-tail after the turn.
- * Under an empty process (only the 处睆�?divider shows), match process-inner's
+ * Empty "正在思考" is deferred to the active-tail after the turn.
+ * Under an empty process (only the 处理中 divider shows), match process-inner's
  * padding-top so thinking starts at the same y as other process content.
  * After a process that already has tools/content, keep feed-step spacing.
  */
 .codex-main:not(.codex-main-landing) .run-log
   > .run-log-turn:has(.run-log-turn-process-inner.is-empty)
+  + .run-log-active-tail:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn:has(.run-log-turn-process-inner.is-empty))
+  + .run-log-active-tail:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn:has(.run-log-turn-process-inner.is-empty))
+  + .run-log-virtual-spacer
   + .run-log-active-tail:has(.run-log-thinking) {
   margin-top: 12px;
 }
@@ -25482,6 +25565,15 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty))
+  + .run-log-active-tail:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty)))
+  + .run-log-active-tail:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty)))
+  + .run-log-virtual-spacer
   + .run-log-active-tail:has(.run-log-thinking) {
   margin-top: 20px;
 }
@@ -25489,8 +25581,34 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry
+  + .run-log-active-tail:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry)
+  + .run-log-active-tail:has(.run-log-thinking),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry)
+  + .run-log-virtual-spacer
   + .run-log-active-tail:has(.run-log-thinking) {
   margin-top: 12px;
+}
+
+/* Tip / thinking row above the conversation "..." tail (same step as tight+tight). */
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry--tight
+  + .run-log-active-tail:has(.run-log-conversation-tail),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry--tight)
+  + .run-log-active-tail:has(.run-log-conversation-tail),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(> .run-log-feed-entry--tight)
+  + .run-log-virtual-spacer
+  + .run-log-active-tail:has(.run-log-conversation-tail) {
+  margin-top: var(--codex-feed-gap-step);
 }
 
 /* First process row under the divider is already padded by process-inner �?do not stack. */

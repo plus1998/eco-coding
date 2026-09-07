@@ -13,6 +13,10 @@ import {
   lookupChatName,
 } from "./codex-tool-context.js";
 import { bytesTrimSpace, jsonMarshal, jsonParse } from "./json.js";
+import {
+  classifyChatMessageReasoning,
+  classifiedToResponsesReasoningFields,
+} from "./reasoning-classify.js";
 import type {
   ChatCompletionsChunk,
   ChatCompletionsRequest,
@@ -343,37 +347,46 @@ function appendAssistantToolCall(
 
 function responsesInputReasoningItemToChat(item: Record<string, string>): ChatReasoningItem | undefined {
   const summary: ResponsesSummary[] = [];
-  const summaryRaw = bytesTrimSpace(item.summary ?? "");
-  if (summaryRaw !== "" && summaryRaw !== "null") {
+  const content: ResponsesContentPart[] = [];
+  const collectParts = (raw: string | undefined, into: Array<{ type: string; text: string }>, defaultType: string) => {
+    const summaryRaw = bytesTrimSpace(raw ?? "");
+    if (summaryRaw === "" || summaryRaw === "null") {
+      return;
+    }
     try {
       const parsed = jsonParse(summaryRaw) as unknown[];
       if (Array.isArray(parsed)) {
         for (const part of parsed) {
           if (part !== null && typeof part === "object" && !Array.isArray(part)) {
-            const summaryPart = part as ResponsesSummary;
-            if (summaryPart.text !== undefined && summaryPart.text !== "") {
-              summary.push({
-                type: summaryPart.type ?? "summary_text",
-                text: summaryPart.text,
+            const typed = part as { type?: string; text?: string };
+            if (typed.text !== undefined && typed.text !== "") {
+              into.push({
+                type: typed.type ?? defaultType,
+                text: typed.text,
               });
             }
           }
         }
       }
     } catch {
-      /* not a summary array */
+      /* not an array */
     }
-  }
+  };
+  collectParts(item.summary, summary, "summary_text");
+  collectParts(item.content, content, "reasoning_text");
 
   const encryptedContent = rawString(item.encrypted_content);
   const id = rawString(item.id);
-  if (summary.length === 0 && encryptedContent === "") {
+  if (summary.length === 0 && content.length === 0 && encryptedContent === "") {
     return undefined;
   }
   const out: ChatReasoningItem = {
     type: "reasoning",
     summary,
   };
+  if (content.length > 0) {
+    out.content = content;
+  }
   if (id !== "") {
     out.id = id;
   }
@@ -497,8 +510,9 @@ function contentToRawString(raw: unknown): string {
 }
 
 function extractResponsesReasoningText(item: Record<string, string>): string {
-  const parts: string[] = [];
-  const collect = (raw: string | undefined) => {
+  const summaryParts: string[] = [];
+  const rawParts: string[] = [];
+  const collect = (raw: string | undefined, into: string[]) => {
     const trimmed = bytesTrimSpace(raw ?? "");
     if (trimmed === "" || trimmed === "null") {
       return;
@@ -515,7 +529,7 @@ function extractResponsesReasoningText(item: Record<string, string>): string {
                 : null;
           const t = part !== null ? rawString(part.text) : "";
           if (t !== "") {
-            parts.push(t);
+            into.push(t);
           }
         }
         return;
@@ -525,14 +539,16 @@ function extractResponsesReasoningText(item: Record<string, string>): string {
     }
     const t = rawString(trimmed);
     if (t !== "") {
-      parts.push(t);
+      into.push(t);
     }
   };
-  collect(item.summary);
-  if (parts.length === 0) {
-    collect(item.content);
+  collect(item.summary, summaryParts);
+  collect(item.content, rawParts);
+  // Chat flat field prefers raw for DeepSeek-style tool roundtrips.
+  if (rawParts.length > 0) {
+    return rawParts.join("\n");
   }
-  return parts.join("\n");
+  return summaryParts.join("\n");
 }
 
 function chatCompletionsBridgeRole(role: string): string {
@@ -862,45 +878,27 @@ function classifyChatFinishReason(finishReason: unknown): ChatFinishClassificati
   };
 }
 
-function chatMessageReasoningText(message: ChatMessage): string {
-  if ((message.reasoning_content ?? "").trim() !== "") {
-    return message.reasoning_content!.trim();
-  }
-  if ((message.reasoning ?? "").trim() !== "") {
-    return message.reasoning!.trim();
-  }
-  const parts: string[] = [];
-  for (const detail of message.reasoning_details ?? []) {
-    const text = detail.text?.trim() ?? "";
-    if (text !== "") {
-      parts.push(text);
-    }
-  }
-  return parts.join("\n\n");
-}
-
 function chatMessageToResponsesOutput(
   message: ChatMessage,
   toolContext: CodexToolContext,
 ): ResponsesOutput[] {
   const outputs: ResponsesOutput[] = [];
-  const reasoningItems = chatReasoningItemsToResponsesOutput(message);
-  if (reasoningItems.length > 0) {
-    outputs.push(...reasoningItems);
-  } else {
-    const reasoningText = chatMessageReasoningText(message);
-    if (reasoningText !== "") {
-      outputs.push({
-        type: "reasoning",
-        id: generateItemId(),
-        summary: [
-          {
-            type: "summary_text",
-            text: reasoningText,
-          } satisfies ResponsesSummary,
-        ],
-      });
-    }
+  const classified = classifyChatMessageReasoning(message);
+  const fields = classifiedToResponsesReasoningFields(classified);
+  if (
+    fields.summary.length > 0 ||
+    fields.content.length > 0 ||
+    fields.encrypted_content !== undefined
+  ) {
+    outputs.push({
+      type: "reasoning",
+      id: message.reasoning_items?.[0]?.id ?? generateItemId(),
+      summary: fields.summary,
+      ...(fields.content.length > 0 ? { content: fields.content } : {}),
+      ...(fields.encrypted_content !== undefined
+        ? { encrypted_content: fields.encrypted_content }
+        : {}),
+    });
   }
 
   const text = chatMessageContentText(message.content);
@@ -924,23 +922,6 @@ function chatMessageToResponsesOutput(
   }
 
   return outputs;
-}
-
-function chatReasoningItemsToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
-  const out: ResponsesOutput[] = [];
-  for (const item of message.reasoning_items ?? []) {
-    const summary = item.summary ?? [];
-    if (summary.length === 0 && (item.encrypted_content ?? "") === "") {
-      continue;
-    }
-    out.push({
-      type: "reasoning",
-      id: item.id ?? generateItemId(),
-      encrypted_content: item.encrypted_content,
-      summary,
-    });
-  }
-  return out;
 }
 
 function chatToolCallToResponsesOutput(
@@ -1171,9 +1152,9 @@ export function chatCompletionsChunkToResponsesEvents(
       events.push(...ensureChatReasoningItem(state));
       state.reasoning += reasoning;
       events.push(
-        chatToResponsesEvent(state, "response.reasoning_summary_text.delta", {
+        chatToResponsesEvent(state, "response.reasoning_text.delta", {
           output_index: state.reasoningIndex,
-          summary_index: 0,
+          content_index: 0,
           delta: reasoning,
           item_id: state.reasoningItemId,
         }),
@@ -1409,13 +1390,9 @@ function ensureChatReasoningItem(state: ChatCompletionsToResponsesStreamState): 
         type: "reasoning",
         id: state.reasoningItemId,
         status: "in_progress",
+        summary: [],
+        content: [],
       },
-    }),
-    chatToResponsesEvent(state, "response.reasoning_summary_part.added", {
-      output_index: state.reasoningIndex,
-      summary_index: 0,
-      item_id: state.reasoningItemId,
-      part: { type: "summary_text" },
     }),
   ];
 }
@@ -1428,17 +1405,11 @@ function closeChatReasoningItem(state: ChatCompletionsToResponsesStreamState): R
   state.reasoningDone = true;
   const reasoning = state.reasoning;
   return [
-    chatToResponsesEvent(state, "response.reasoning_summary_text.done", {
+    chatToResponsesEvent(state, "response.reasoning_text.done", {
       output_index: state.reasoningIndex,
-      summary_index: 0,
+      content_index: 0,
       text: reasoning,
       item_id: state.reasoningItemId,
-    }),
-    chatToResponsesEvent(state, "response.reasoning_summary_part.done", {
-      output_index: state.reasoningIndex,
-      summary_index: 0,
-      item_id: state.reasoningItemId,
-      part: { type: "summary_text", text: reasoning },
     }),
     chatToResponsesEvent(state, "response.output_item.done", {
       output_index: state.reasoningIndex,
@@ -1446,7 +1417,8 @@ function closeChatReasoningItem(state: ChatCompletionsToResponsesStreamState): R
         type: "reasoning",
         id: state.reasoningItemId,
         status: "completed",
-        summary: [{ type: "summary_text", text: reasoning }],
+        summary: [],
+        content: reasoning !== "" ? [{ type: "reasoning_text", text: reasoning }] : [],
       },
     }),
   ];
@@ -1547,7 +1519,8 @@ function chatStreamOutput(state: ChatCompletionsToResponsesStreamState): Respons
     outputs.push({
       type: "reasoning",
       id: generateItemId(),
-      summary: [{ type: "summary_text", text: state.reasoning }],
+      summary: [],
+      content: [{ type: "reasoning_text", text: state.reasoning }],
     });
   }
   if (state.messageItemId !== "" || state.toolCalls.size === 0) {

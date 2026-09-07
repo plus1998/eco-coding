@@ -49,7 +49,8 @@ export function anthropicToResponsesResponse(
           outputs.push({
             type: "reasoning",
             id: block.id ?? generateItemId(),
-            summary: [{ type: "summary_text", text: block.thinking ?? "" }],
+            summary: [],
+            content: [{ type: "reasoning_text", text: block.thinking ?? "" }],
           });
         }
         break;
@@ -174,7 +175,7 @@ export interface AnthropicEventToResponsesState {
   currentItemType: string;
   currentEncryptedContent: string;
   currentText: string;
-  currentReasoningSummary: string;
+  currentReasoningText: string;
   contentIndex: number;
   currentCallId: string;
   currentName: string;
@@ -205,7 +206,7 @@ export function newAnthropicEventToResponsesState(
     currentItemType: "",
     currentEncryptedContent: "",
     currentText: "",
-    currentReasoningSummary: "",
+    currentReasoningText: "",
     contentIndex: 0,
     currentCallId: "",
     currentName: "",
@@ -303,7 +304,7 @@ function anthToResHandleContentBlockStart(
       state.currentItemId = generateItemId();
       state.currentItemType = "reasoning";
       state.currentEncryptedContent = "";
-      state.currentReasoningSummary = evt.content_block.thinking ?? "";
+      state.currentReasoningText = evt.content_block.thinking ?? "";
       state.contentIndex = 0;
 
       events.push(
@@ -312,6 +313,8 @@ function anthToResHandleContentBlockStart(
           item: {
             type: "reasoning",
             id: state.currentItemId,
+            summary: [],
+            content: [],
           },
         }),
       );
@@ -321,7 +324,7 @@ function anthToResHandleContentBlockStart(
       state.currentItemId = generateItemId();
       state.currentItemType = "reasoning";
       state.currentEncryptedContent = evt.content_block.data ?? "";
-      state.currentReasoningSummary = "";
+      state.currentReasoningText = "";
       state.contentIndex = 0;
 
       events.push(
@@ -427,11 +430,11 @@ function anthToResHandleContentBlockDelta(
       if (evt.delta.thinking === "") {
         return [];
       }
-      state.currentReasoningSummary += evt.delta.thinking ?? "";
+      state.currentReasoningText += evt.delta.thinking ?? "";
       return [
-        makeResponsesEvent(state, "response.reasoning_summary_text.delta", {
+        makeResponsesEvent(state, "response.reasoning_text.delta", {
           output_index: state.outputIndex,
-          summary_index: 0,
+          content_index: 0,
           delta: evt.delta.thinking,
           item_id: state.currentItemId,
         }),
@@ -467,11 +470,11 @@ function anthToResHandleContentBlockStop(state: AnthropicEventToResponsesState):
   switch (state.currentItemType) {
     case "reasoning": {
       const events: ResponsesStreamEvent[] = [
-        makeResponsesEvent(state, "response.reasoning_summary_text.done", {
+        makeResponsesEvent(state, "response.reasoning_text.done", {
           output_index: state.outputIndex,
-          summary_index: 0,
+          content_index: 0,
           item_id: state.currentItemId,
-          text: state.currentReasoningSummary,
+          text: state.currentReasoningText,
         }),
       ];
       events.push(...closeCurrentResponsesItem(state));
@@ -568,7 +571,7 @@ function closeCurrentResponsesItem(state: AnthropicEventToResponsesState): Respo
   const itemId = state.currentItemId;
   const encryptedContent = state.currentEncryptedContent;
   const text = state.currentText;
-  const reasoningSummary = state.currentReasoningSummary;
+  const reasoningText = state.currentReasoningText;
   const callId = state.currentCallId;
   const name = state.currentName;
   const namespace = state.currentNamespace;
@@ -579,7 +582,7 @@ function closeCurrentResponsesItem(state: AnthropicEventToResponsesState): Respo
   state.currentItemId = "";
   state.currentEncryptedContent = "";
   state.currentText = "";
-  state.currentReasoningSummary = "";
+  state.currentReasoningText = "";
   state.currentCallId = "";
   state.currentName = "";
   state.currentResponsesName = "";
@@ -595,19 +598,21 @@ function closeCurrentResponsesItem(state: AnthropicEventToResponsesState): Respo
         type: itemType,
         id: itemId,
         role: itemType === "message" ? "assistant" : undefined,
-        content: itemType === "message" ? [{ type: "output_text", text }] : undefined,
+        content:
+          itemType === "message"
+            ? [{ type: "output_text", text }]
+            : itemType === "reasoning" && reasoningText !== ""
+              ? [{ type: "reasoning_text", text: reasoningText }]
+              : itemType === "reasoning"
+                ? []
+                : undefined,
         call_id: itemType === "function_call" || itemType === "custom_tool_call" ? callId : undefined,
         name: itemType === "function_call" || itemType === "custom_tool_call" ? name : undefined,
         ...(itemType === "function_call" && namespace ? { namespace } : {}),
         arguments: itemType === "function_call" ? args : undefined,
         input: itemType === "custom_tool_call" ? args : undefined,
         encrypted_content: itemType === "reasoning" && encryptedContent !== "" ? encryptedContent : undefined,
-        summary:
-          itemType === "reasoning" && reasoningSummary !== ""
-            ? [{ type: "summary_text", text: reasoningSummary }]
-            : itemType === "reasoning"
-              ? []
-              : undefined,
+        summary: itemType === "reasoning" ? [] : undefined,
         status: "completed",
       },
     }),

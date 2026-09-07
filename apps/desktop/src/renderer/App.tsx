@@ -1165,6 +1165,7 @@ function App() {
               t("bash.review.auto"),
               t("bash.review.allowAll"),
               t("settings.thinkingContentDefault"),
+              t("settings.thinkingContentDefault.ephemeral"),
               t("settings.thinkingContentDefault.collapsed"),
               t("settings.thinkingContentDefault.expanded"),
               t("settings.notifications"),
@@ -4779,6 +4780,7 @@ function App() {
             {
               agentDisplayNames: activeRuntimeAgentDisplayNames,
               includePromptCacheTips: promptCacheTipPreferences.enabled,
+              thinkingDisplayMode: thinkingDisplayPreferences.mode,
             },
           )
         : undefined,
@@ -4789,6 +4791,7 @@ function App() {
       activeThread?.prompt,
       displayProjection,
       promptCacheTipPreferences.enabled,
+      thinkingDisplayPreferences.mode,
     ],
   );
   const activeSubagentCards = useMemo(
@@ -10451,6 +10454,7 @@ function App() {
                                   onOpenImageGenerationTool={openImageGenerationTool}
                                   onOpenImageDisplayTool={openImageDisplayTool}
                                   onOpenImageDisplayArtifact={openImageDisplayArtifact}
+                                  thinkingDisplayMode={thinkingDisplayPreferences.mode}
                                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                                   {...(subagentTimings && { subagentTimings })}
                                   {...(subagentMetrics && { subagentMetrics })}
@@ -10798,10 +10802,10 @@ function App() {
                   onShowBillingChange={saveShowBilling}
                   showTokenSpeed={tokenSpeedPreferences.showTokenSpeed}
                   onShowTokenSpeedChange={(showTokenSpeed) => setTokenSpeedPreferences({ showTokenSpeed })}
-                  thinkingContentDefaultExpanded={thinkingDisplayPreferences.thinkingContentDefaultExpanded}
-                  onThinkingContentDefaultExpandedChange={(thinkingContentDefaultExpanded) => {
+                  thinkingDisplayMode={thinkingDisplayPreferences.mode}
+                  onThinkingDisplayModeChange={(mode) => {
                     startTransition(() => {
-                      setThinkingDisplayPreferences({ thinkingContentDefaultExpanded });
+                      setThinkingDisplayPreferences({ mode });
                     });
                   }}
                 />

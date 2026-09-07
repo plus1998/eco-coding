@@ -370,13 +370,20 @@ export interface ChatReasoningItem {
   id?: string | undefined;
   encrypted_content?: string | undefined;
   summary?: ResponsesSummary[] | undefined;
+  /** Raw reasoning body (Responses `content` / `reasoning_text`). */
+  content?: ResponsesContentPart[] | undefined;
 }
 
 export interface ChatReasoningDetail {
+  /** OpenRouter-style: reasoning.summary | reasoning.text | reasoning.encrypted */
   type?: string | undefined;
   text?: string | undefined;
+  summary?: string | undefined;
+  data?: string | undefined;
+  signature?: string | undefined;
   format?: string | undefined;
   index?: number | undefined;
+  id?: string | undefined;
 }
 
 export interface ChatContentPart {

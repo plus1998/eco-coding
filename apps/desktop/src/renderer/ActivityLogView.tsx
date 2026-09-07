@@ -43,7 +43,6 @@ import {
   type KeyboardEvent,
   memo,
   type ReactNode,
-  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -138,8 +137,9 @@ import {
 } from "./thinking-block-expand";
 import {
   readStoredThinkingDisplayPreferences,
-  THINKING_DISPLAY_CHANGE_EVENT,
-  type ThinkingDisplayPreferences,
+  thinkingModeDefaultExpanded,
+  thinkingModeUsesEphemeralTip,
+  type ThinkingDisplayMode,
 } from "./thinking-display-preferences";
 import {
   buildThreadRunProjectionViewModel,
@@ -150,6 +150,7 @@ import {
   isProjectionRequestActive,
   isProjectionSubagentPromptItem,
   isProjectionUserPromptItem,
+  presentThinkingAsEphemeralSummaryTips,
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
   resolveProjectionAgentStatusText,
@@ -444,6 +445,7 @@ interface ActivityLogViewProps {
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
   onLoadProjectionDetail?: ProjectionDetailLoader;
+  thinkingDisplayMode?: ThinkingDisplayMode;
 }
 
 function ProjectionFeedLoading() {
@@ -507,6 +509,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       })}
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
       {...(props.onLoadProjectionDetail && { onLoadProjectionDetail: props.onLoadProjectionDetail })}
+      {...(props.thinkingDisplayMode && { thinkingDisplayMode: props.thinkingDisplayMode })}
     />
   );
 });
@@ -528,6 +531,7 @@ function ProjectionActivityLogView({
   onOpenImageGenerationTool,
   onOpenImageDisplayTool,
   onOpenImageDisplayArtifact,
+  thinkingDisplayMode,
 }: {
   projection: ThreadRunProjectionSnapshot;
   precomputedViewModel?: ThreadRunProjectionViewModel;
@@ -545,20 +549,33 @@ function ProjectionActivityLogView({
   onRewriteUserMessage?: RewriteUserMessageHandler;
   onRetryFailedRequest?: RetryFailedRequestHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
+  thinkingDisplayMode?: ThinkingDisplayMode;
 }) {
   const requestSpansById = useMemo(
     () => new Map(projection.requestSpans.map((span) => [span.requestId, span])),
     [projection.requestSpans],
   );
+  const resolvedThinkingDisplayMode =
+    thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
   const viewModel = useMemo(
     () =>
       precomputedViewModel ??
       buildThreadRunProjectionViewModel(
         projection,
         thread ? { id: thread.id, prompt: thread.prompt } : undefined,
-        { agentDisplayNames },
+        {
+          agentDisplayNames,
+          thinkingDisplayMode: resolvedThinkingDisplayMode,
+        },
       ),
-    [agentDisplayNames, precomputedViewModel, projection, thread?.id, thread?.prompt],
+    [
+      agentDisplayNames,
+      precomputedViewModel,
+      projection,
+      resolvedThinkingDisplayMode,
+      thread?.id,
+      thread?.prompt,
+    ],
   );
   const showThreadPrompt = viewModel.showThreadPrompt;
   const feedSections = useMemo(
@@ -2348,6 +2365,7 @@ interface ProjectionSubagentDetailFeedProps {
   images?: readonly PromptImagePreview[];
   requestSpansById: ProjectionRequestSpansById;
   threadActive: boolean;
+  thinkingDisplayMode?: ThinkingDisplayMode;
 }
 
 function projectionSubagentDetailAgentSignature(agent: ThreadRunProjectionAgent): string {
@@ -2380,6 +2398,7 @@ function areProjectionSubagentDetailFeedPropsEqual(
 ): boolean {
   return (
     prev.missionText === next.missionText &&
+    prev.thinkingDisplayMode === next.thinkingDisplayMode &&
     promptImagePreviewSignature(prev.images) === promptImagePreviewSignature(next.images) &&
     projectionSubagentDetailTimelineRequestSpanSignature(prev.agent.timeline, prev.requestSpansById) ===
       projectionSubagentDetailTimelineRequestSpanSignature(next.agent.timeline, next.requestSpansById) &&
@@ -2393,6 +2412,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   images,
   requestSpansById,
   threadActive,
+  thinkingDisplayMode,
 }: ProjectionSubagentDetailFeedProps) {
   void threadActive;
   const feedRef = useRef<HTMLDivElement>(null);
@@ -2404,14 +2424,20 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
+  const resolvedThinkingDisplayMode =
+    thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
   const visibleTimeline = useMemo(() => {
+    const prepared = filterSubagentDetailTimelineNoise(agent.timeline);
+    const forCollapse = thinkingModeUsesEphemeralTip(resolvedThinkingDisplayMode)
+      ? presentThinkingAsEphemeralSummaryTips(prepared)
+      : prepared;
     const filtered = collapseEphemeralReasoningSummaryTimeline(
       collapseProjectionTimelineStreamsForDetail(
-        collapseProjectionToolLifecycleItemsForDetail(filterSubagentDetailTimelineNoise(agent.timeline)),
+        collapseProjectionToolLifecycleItemsForDetail(forCollapse),
       ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay)),
     );
     return collapseConsecutiveThinkingTimelineItems(filtered);
-  }, [agent.timeline, missionDisplay]);
+  }, [agent.timeline, missionDisplay, resolvedThinkingDisplayMode]);
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, visibleTimeline);
   const turns = useMemo(() => buildSubagentDetailTurns(detailFeedEntries, agent), [agent, detailFeedEntries]);
   const latestTimelineItem = visibleTimeline.at(-1);
@@ -3511,9 +3537,12 @@ function ThinkingBlock({
   const hasBody = text.trim().length > 0;
   const [revealing, setRevealing] = useState(false);
   const activelyStreaming = Boolean(streaming) || revealing;
-  const [defaultExpanded, setDefaultExpanded] = useState(
-    () => readStoredThinkingDisplayPreferences().thinkingContentDefaultExpanded,
+  // Card path only (collapsed/expanded). Ephemeral never reaches here — projection
+  // maps those rows to reasoning-stage tips first.
+  const [displayMode] = useState<ThinkingDisplayMode>(
+    () => readStoredThinkingDisplayPreferences().mode,
   );
+  const defaultExpanded = thinkingModeDefaultExpanded(displayMode);
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const [settling, setSettling] = useState(false);
   const wasActiveRef = useRef(activelyStreaming);
@@ -3553,17 +3582,6 @@ function ThinkingBlock({
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
-  }, []);
-
-  useEffect(() => {
-    const update = (event: Event) => {
-      const detail = (event as CustomEvent<ThinkingDisplayPreferences>).detail;
-      startTransition(() => {
-        setDefaultExpanded(Boolean(detail?.thinkingContentDefaultExpanded));
-      });
-    };
-    window.addEventListener(THINKING_DISPLAY_CHANGE_EVENT, update);
-    return () => window.removeEventListener(THINKING_DISPLAY_CHANGE_EVENT, update);
   }, []);
 
   useLayoutEffect(() => {

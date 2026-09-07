@@ -803,10 +803,13 @@ test("ActivityLogView keeps block spacing between a completed turn and the next 
   );
 
   expect(html).toMatch(
-    /<section class="run-log-turn is-completed is-collapsed"[\s\S]*<\/section><div class="run-log-feed-entry"><article class="run-log-user-prompt"/,
+    /<div class="run-log-virtual-row"><section class="run-log-turn is-completed is-collapsed"[\s\S]*<\/section><\/div><div class="run-log-virtual-row"><div class="run-log-feed-entry"><article class="run-log-user-prompt"/,
   );
   expect(styles).toMatch(
-    /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-turn \+ \.run-log-feed-entry\s*\{\s*margin-top:\s*var\(--codex-feed-gap-block\);/s,
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-turn \+ \.run-log-feed-entry\s*,/s,
+  );
+  expect(styles).toMatch(
+    /\.run-log\s*>\s*\.run-log-virtual-row:has\(>\s*\.run-log-turn\)\s*\+\s*\.run-log-virtual-row:has\(>\s*\.run-log-feed-entry\)\s*>\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*var\(--codex-feed-gap-block\);/,
   );
   expect(styles).toMatch(
     /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-tool-group\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*calc\(20px - var\(--codex-feed-gap-step\)\);/,
@@ -816,6 +819,9 @@ test("ActivityLogView keeps block spacing between a completed turn and the next 
   );
   expect(styles).toMatch(
     /\.run-log\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*20px;/,
+  );
+  expect(styles).toMatch(
+    /\.run-log-virtual-row:has\(>\s*\.run-log-feed-entry--tight\)\s*\+\s*\.run-log-active-tail:has\(\.run-log-conversation-tail\)[\s\S]*?margin-top:\s*var\(--codex-feed-gap-step\);/,
   );
 });
 
@@ -855,6 +861,7 @@ test("ActivityLogView keeps a running attempt process expanded without final out
 test("ActivityLogView collapses completed thinking behind a deep-thinking summary", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
+      thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "completed",
         timeline: [
@@ -895,6 +902,7 @@ test("ActivityLogView collapses completed thinking behind a deep-thinking summar
 test("ActivityLogView appends turn-style duration to completed thinking summary", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
+      thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "completed",
         timeline: [
@@ -923,6 +931,7 @@ test("ActivityLogView appends live duration while thinking streams", () => {
   const startedAt = new Date(Date.now() - 4_500).toISOString();
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
+      thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "running",
         timeline: [
@@ -952,6 +961,7 @@ test("ActivityLogView appends live duration while thinking streams", () => {
 test("ActivityLogView expands streaming thinking with live body text", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
+      thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "running",
         timeline: [
@@ -983,6 +993,7 @@ test("ActivityLogView expands streaming thinking with live body text", () => {
 test("ActivityLogView collapses multiple completed thinking items by default", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
+      thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "completed",
         timeline: [
@@ -1495,6 +1506,7 @@ test("ProjectionSubagentDetailFeed collapses a thinking delta prefix into its fi
       missionText: "检查工具输出",
       requestSpansById: new Map(),
       threadActive: true,
+      thinkingDisplayMode: "collapsed",
     }),
   );
 

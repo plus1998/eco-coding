@@ -84,7 +84,7 @@ test("preferences panel puts language under the general section", () => {
   expect(markup).toContain("替我审批");
   expect(markup).toContain("完全访问");
   expect(markup).toContain("思考内容");
-  expect(markup).toContain("已完成的思考内容默认折叠或展开。流式输出时始终展开。");
+  expect(markup).toContain("生成时显示，完成后自动隐藏。");
   expect(markup).toContain(">折叠<");
   expect(markup).toContain(">展开<");
 
@@ -139,7 +139,7 @@ test("preferences panel renders cache break tips in English", () => {
   expect(markup).toContain("Full access");
   expect(markup).toContain("Thinking content");
   expect(markup).toContain(
-    "Default collapsed or expanded for completed thinking. Always expanded while streaming.",
+    "Visible while generating; hidden after it finishes.",
   );
   expect(markup).toContain(">Collapsed<");
   expect(markup).toContain(">Expanded<");
@@ -173,7 +173,7 @@ test("preferences panel renders the Composer billing toggle", () => {
   expect(markup).toContain("在 Composer 中显示会话累计用量和费用。");
   expect(markup).toContain("Token 速度统计");
   expect(markup).toContain(
-    "生成时显示首字延迟；请求结束后显示解码速度（tok/s）。有用量时用上游 token 数；Cursor ACP 等无用量路径为本地估算。",
+    "生成回答时显示响应速度。",
   );
   expect(markup).toContain("显示");
   expect(markup).toMatch(/type="checkbox"[^>]*checked/);
@@ -201,11 +201,36 @@ test("general preferences panel renders the token speed toggle unchecked by defa
   expect(markup).toContain("Display");
   expect(markup).toContain("Token speed stats");
   expect(markup).toContain(
-    "Show time-to-first-token while streaming; decode speed (tok/s) after the request finishes. Uses provider tokens when available; local estimates for paths without usage (e.g. Cursor ACP).",
+    "Shows response speed while the answer is generated.",
   );
   expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
 });
 
+test("thinking content hint follows the selected display mode", () => {
+  const renderWithMode = (mode: "ephemeral" | "collapsed" | "expanded") =>
+    renderLocalized(
+      createElement(NotificationPreferencesPanel, {
+        settings: {
+          turnCompletion: "unfocused",
+          permissionEnabled: true,
+          questionEnabled: true,
+        },
+        onSave: async () => undefined,
+        localePreference: "system",
+        onLocalePreferenceChange: () => undefined,
+        cacheBreakTipsEnabled: false,
+        onCacheBreakTipsEnabledChange: () => undefined,
+        followUpDeliveryMode: "queue",
+        onFollowUpDeliveryModeChange: () => undefined,
+        thinkingDisplayMode: mode,
+        onThinkingDisplayModeChange: () => undefined,
+      }),
+      "zh-CN",
+    );
+  expect(renderWithMode("ephemeral")).toContain("生成时显示，完成后自动隐藏。");
+  expect(renderWithMode("collapsed")).toContain("完成后默认收起，可随时展开。");
+  expect(renderWithMode("expanded")).toContain("完成后默认展开，可随时收起。");
+});
 test("settings sidebar uses the configurable UI font size", () => {
   const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
 

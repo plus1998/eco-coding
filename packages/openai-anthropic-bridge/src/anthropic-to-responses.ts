@@ -533,12 +533,12 @@ function anthropicThinkingBlockToResponsesItem(
     summary: [],
   };
   if (block.type === "thinking" && block.thinking !== undefined && block.thinking !== "") {
-    item.summary = [{ type: "summary_text", text: block.thinking }];
+    item.content = [{ type: "reasoning_text", text: block.thinking }];
   }
   if (block.type === "redacted_thinking" && block.data !== undefined && block.data !== "") {
     item.encrypted_content = block.data;
   }
-  if ((item.summary?.length ?? 0) === 0 && item.encrypted_content === undefined) {
+  if ((item.content?.length ?? 0) === 0 && item.encrypted_content === undefined) {
     return undefined;
   }
   return item;

@@ -78,8 +78,21 @@ export {
   jsonMarshal,
   jsonParse,
 } from "./json.js";
-// Wire / SSE
-export { responsesStreamEventToJSON } from "./responses-stream-event-wire.js";
+export {
+  REASONING_FIELD_CATALOG,
+  type ClassifiedReasoning,
+  type ClassifiedReasoningPart,
+  type ReasoningChannel,
+  classifyChatMessageReasoning,
+  classifyReasoningDetailType,
+  classifyResponsesReasoningItem,
+  classifiedToChatReasoningDetails,
+  classifiedToResponsesReasoningFields,
+  joinReasoningTexts,
+  makeResponsesReasoningItemFromTexts,
+  selectChatFlatReasoningText,
+  selectDisplayReasoningText,
+} from "./reasoning-classify.js";
 export {
   anthropicUsageFromResponsesUsage,
   finalizeResponsesAnthropicStream,

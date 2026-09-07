@@ -9,6 +9,10 @@ import {
   TURN_COMPLETION_NOTIFY_MODES,
   type TurnCompletionNotifyMode,
 } from "../shared/notification-settings";
+import {
+  THINKING_DISPLAY_MODES,
+  type ThinkingDisplayMode,
+} from "./thinking-display-preferences";
 
 interface NotificationPreferencesPanelProps {
   settings: NotificationSettingsSnapshot;
@@ -25,8 +29,8 @@ interface NotificationPreferencesPanelProps {
   onShowBillingChange?: (enabled: boolean) => void | Promise<void>;
   showTokenSpeed?: boolean;
   onShowTokenSpeedChange?: (enabled: boolean) => void | Promise<void>;
-  thinkingContentDefaultExpanded?: boolean;
-  onThinkingContentDefaultExpandedChange?: (expanded: boolean) => void | Promise<void>;
+  thinkingDisplayMode?: ThinkingDisplayMode;
+  onThinkingDisplayModeChange?: (mode: ThinkingDisplayMode) => void | Promise<void>;
 }
 
 const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
@@ -47,8 +51,8 @@ export function NotificationPreferencesPanel({
   onShowBillingChange = () => undefined,
   showTokenSpeed = false,
   onShowTokenSpeedChange = () => undefined,
-  thinkingContentDefaultExpanded = false,
-  onThinkingContentDefaultExpandedChange = () => undefined,
+  thinkingDisplayMode = "ephemeral",
+  onThinkingDisplayModeChange = () => undefined,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
@@ -58,7 +62,7 @@ export function NotificationPreferencesPanel({
   const defaultBashReviewId = useId();
   const billingVisibilityId = useId();
   const tokenSpeedId = useId();
-  const thinkingContentDefaultId = useId();
+  const thinkingDisplayModeId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
@@ -353,41 +357,31 @@ export function NotificationPreferencesPanel({
 
           <li>
             <div className="notification-settings-row">
-              <span className="settings-row-main" id={thinkingContentDefaultId}>
+              <span className="settings-row-main" id={thinkingDisplayModeId}>
                 <strong>{t("settings.thinkingContentDefault")}</strong>
-                <small>{t("settings.thinkingContentDefaultHint")}</small>
+                <small>{t(`settings.thinkingContentDefault.${thinkingDisplayMode}Hint`)}</small>
               </span>
               <div
                 className="settings-segmented-control thinking-content-default-segmented"
                 role="group"
-                aria-labelledby={thinkingContentDefaultId}
+                aria-labelledby={thinkingDisplayModeId}
               >
-                <button
-                  type="button"
-                  className={!thinkingContentDefaultExpanded ? "active" : undefined}
-                  aria-pressed={!thinkingContentDefaultExpanded}
-                  onClick={() => {
-                    if (!thinkingContentDefaultExpanded) {
-                      return;
-                    }
-                    void onThinkingContentDefaultExpandedChange(false);
-                  }}
-                >
-                  {t("settings.thinkingContentDefault.collapsed")}
-                </button>
-                <button
-                  type="button"
-                  className={thinkingContentDefaultExpanded ? "active" : undefined}
-                  aria-pressed={thinkingContentDefaultExpanded}
-                  onClick={() => {
-                    if (thinkingContentDefaultExpanded) {
-                      return;
-                    }
-                    void onThinkingContentDefaultExpandedChange(true);
-                  }}
-                >
-                  {t("settings.thinkingContentDefault.expanded")}
-                </button>
+                {THINKING_DISPLAY_MODES.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={thinkingDisplayMode === mode ? "active" : undefined}
+                    aria-pressed={thinkingDisplayMode === mode}
+                    onClick={() => {
+                      if (thinkingDisplayMode === mode) {
+                        return;
+                      }
+                      void onThinkingDisplayModeChange(mode);
+                    }}
+                  >
+                    {t(`settings.thinkingContentDefault.${mode}`)}
+                  </button>
+                ))}
               </div>
             </div>
           </li>

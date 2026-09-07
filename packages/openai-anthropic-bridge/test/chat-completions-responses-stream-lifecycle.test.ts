@@ -107,7 +107,7 @@ describe("chat completions stream → responses lifecycle (sub2api parity)", () 
       if (e.type === "response.output_item.added" && e.item?.type) {
         open.set(e.output_index ?? 0, e.item.type);
       }
-      if (e.type === "response.reasoning_summary_text.delta") {
+      if (e.type === "response.reasoning_text.delta") {
         expect(open.get(e.output_index ?? 0)).toBe("reasoning");
       }
       if (e.type === "response.output_text.delta") {
