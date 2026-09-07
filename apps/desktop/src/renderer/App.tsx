@@ -411,6 +411,14 @@ import {
 } from "./thread-follow-up-ui";
 import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
 import {
+  collectProtectedProjectionThreadIds,
+  isProjectionCacheHotThreadStatus,
+  listEvictableProjectionThreadIds,
+  PROJECTION_CACHE_EVICT_DELAY_MS,
+  rememberRecentlyViewedThread,
+  removeRecordKeys,
+} from "./thread-projection-cache-policy";
+import {
   buildThreadRunProjectionViewModel,
   isProjectionUserPromptItem,
   isThreadAutoCompactSuspended,
@@ -1431,7 +1439,13 @@ function App() {
   const [runProjectionByThread, setRunProjectionByThread] = useState<
     Record<string, ThreadRunProjectionSnapshot>
   >({});
+  const runProjectionByThreadRef = useRef(runProjectionByThread);
+  runProjectionByThreadRef.current = runProjectionByThread;
   const pendingRewriteHistoryRevisionByThreadRef = useRef(new Map<string, number>());
+  const recentlyViewedThreadIdsRef = useRef<string[]>([]);
+  const projectionEvictTimersRef = useRef(new Map<string, number>());
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
   const applyThreadRunProjectionUpdate = useCallback(
     (
       threadId: string,
@@ -1634,6 +1648,10 @@ function App() {
   const [imageDisplayArtifactsByThread, setImageDisplayArtifactsByThread] = useState<
     Record<string, ImageDisplayArtifact[]>
   >({});
+  const imageArtifactsByThreadRef = useRef(imageArtifactsByThread);
+  imageArtifactsByThreadRef.current = imageArtifactsByThread;
+  const imageDisplayArtifactsByThreadRef = useRef(imageDisplayArtifactsByThread);
+  imageDisplayArtifactsByThreadRef.current = imageDisplayArtifactsByThread;
   const [imageGalleryQueue, setImageGalleryQueue] = useState<ImageGalleryQueueItem[]>([]);
   const [imageGalleryOpen, setImageGalleryOpen] = useState(false);
   /** 已入队过的画廊项（按 key 去重，保证每次工具调用只触发一次悬浮窗）。 */
@@ -1666,6 +1684,8 @@ function App() {
   const [htmlHostArtifactsByThread, setHtmlHostArtifactsByThread] = useState<
     Record<string, HtmlHostArtifact[]>
   >({});
+  const htmlHostArtifactsByThreadRef = useRef(htmlHostArtifactsByThread);
+  htmlHostArtifactsByThreadRef.current = htmlHostArtifactsByThread;
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
@@ -2606,6 +2626,104 @@ function App() {
       cancelled = true;
     };
   }, [selectedThreadId, selectedThreadStatus]);
+
+  const cancelProjectionCacheEviction = useCallback((threadId: string) => {
+    const timer = projectionEvictTimersRef.current.get(threadId);
+    if (timer === undefined) {
+      return;
+    }
+    window.clearTimeout(timer);
+    projectionEvictTimersRef.current.delete(threadId);
+  }, []);
+
+  const evictInactiveThreadProjectionCaches = useCallback((threadId: string) => {
+    cancelProjectionCacheEviction(threadId);
+    clearLocalStreamUpdates(threadId);
+    pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
+    activityFeedRevealedThreadIdsRef.current.delete(threadId);
+    setRunProjectionByThread((current) => removeRecordKeys(current, [threadId]));
+    setFeedProjectionSettledByThread((current) => removeRecordKeys(current, [threadId]));
+    setSubagentTimingsByThread((current) => removeRecordKeys(current, [threadId]));
+    setSubagentMetricsByThread((current) => removeRecordKeys(current, [threadId]));
+    setUsageByThread((current) => removeRecordKeys(current, [threadId]));
+    setBillingByThread((current) => removeRecordKeys(current, [threadId]));
+    setContextByThread((current) => removeRecordKeys(current, [threadId]));
+    setModelByThread((current) => removeRecordKeys(current, [threadId]));
+    setTodosByThread((current) => removeRecordKeys(current, [threadId]));
+    setImageArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
+    setImageDisplayArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
+    setHtmlHostArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
+  }, [cancelProjectionCacheEviction]);
+
+  useEffect(() => {
+    if (selectedThreadId) {
+      recentlyViewedThreadIdsRef.current = rememberRecentlyViewedThread(
+        recentlyViewedThreadIdsRef.current,
+        selectedThreadId,
+      );
+    }
+
+    const hotThreadIds = threads
+      .filter((thread) => isProjectionCacheHotThreadStatus(thread.status))
+      .map((thread) => thread.id);
+    const protectedIds = collectProtectedProjectionThreadIds({
+      selectedThreadId,
+      feedThreadId,
+      recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
+      hotThreadIds,
+    });
+
+    for (const threadId of [...projectionEvictTimersRef.current.keys()]) {
+      if (protectedIds.has(threadId)) {
+        cancelProjectionCacheEviction(threadId);
+      }
+    }
+
+    const cachedThreadIds = [
+      ...Object.keys(runProjectionByThreadRef.current),
+      ...Object.keys(imageArtifactsByThreadRef.current),
+      ...Object.keys(imageDisplayArtifactsByThreadRef.current),
+      ...Object.keys(htmlHostArtifactsByThreadRef.current),
+    ];
+
+    for (const threadId of listEvictableProjectionThreadIds(cachedThreadIds, protectedIds)) {
+      if (projectionEvictTimersRef.current.has(threadId)) {
+        continue;
+      }
+      const timer = window.setTimeout(() => {
+        projectionEvictTimersRef.current.delete(threadId);
+        const hotNow = threadsRef.current
+          .filter((thread) => isProjectionCacheHotThreadStatus(thread.status))
+          .map((thread) => thread.id);
+        const protectedNow = collectProtectedProjectionThreadIds({
+          selectedThreadId: selectedThreadIdRef.current,
+          feedThreadId: feedThreadIdRef.current,
+          recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
+          hotThreadIds: hotNow,
+        });
+        if (protectedNow.has(threadId)) {
+          return;
+        }
+        evictInactiveThreadProjectionCaches(threadId);
+      }, PROJECTION_CACHE_EVICT_DELAY_MS);
+      projectionEvictTimersRef.current.set(threadId, timer);
+    }
+  }, [
+    cancelProjectionCacheEviction,
+    evictInactiveThreadProjectionCaches,
+    feedThreadId,
+    selectedThreadId,
+    threads,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of projectionEvictTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      projectionEvictTimersRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(recentProjectsStorageKey);
@@ -8641,6 +8759,7 @@ function App() {
   }
 
   function clearThreadClientState(threadId: string) {
+    cancelProjectionCacheEviction(threadId);
     clearLocalStreamUpdates(threadId);
     removeComposerDraft(`thread:${threadId}`);
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
