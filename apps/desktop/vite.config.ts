@@ -97,6 +97,20 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       external: ["@anthropic-ai/claude-agent-sdk", "electron"],
+      output: {
+        manualChunks(id) {
+          if (id.includes("/src/renderer/ActivityLogView")) {
+            return "activity-log-view";
+          }
+          if (
+            id.includes("/src/renderer/TerminalPanel") ||
+            id.includes("/src/renderer/GhosttyTerminal") ||
+            id.includes("node_modules/ghostty-web")
+          ) {
+            return "terminal-panel";
+          }
+        },
+      },
     },
   },
   server: {

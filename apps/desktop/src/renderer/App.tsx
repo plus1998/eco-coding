@@ -205,11 +205,9 @@ import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
 import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
-import { ActivityLogView } from "./ActivityLogView";
 import type { PendingMainAgentConfigCreateSeed } from "./AgentCompositionResourcesSection";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
-import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import {
   type ActivityWorkspaceLayoutMode,
   activityUserMessageNavListMaxHeightPx,
@@ -234,12 +232,8 @@ import {
 import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
-import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
-import { ComputerUseSettingsPanel } from "./ComputerUseSettingsPanel";
-import { BrowserWebviewLayer } from "./BrowserWebviewLayer";
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { browserStateStore, useBrowserInstanceIds } from "./browser-state-store";
-import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
@@ -261,7 +255,6 @@ import { ComposerSkillsControl } from "./ComposerSkillsControl";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
 import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
-import { ContextWindowSettingsPanel } from "./ContextWindowSettingsPanel";
 import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
 import {
   COMPOSER_MAX_IMAGES,
@@ -288,14 +281,32 @@ import {
   filterSkillsForSlash,
   parseSlashQuery,
 } from "./composer-skills";
-import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
-import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
-import { GitSettingsPanel } from "./GitSettingsPanel";
-import { ImageGalleryFloat } from "./ImageGalleryFloat";
-import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
-import { IntegratedWebSearchSettingsPanel } from "./IntegratedWebSearchSettingsPanel";
 import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
+import {
+  LazyActivityLogView,
+  LazyAsrSettingsPanel,
+  LazyBrowserSettingsPanel,
+  LazyBrowserWebviewLayer,
+  LazyCenterServerSettingsPanel,
+  LazyComputerUseSettingsPanel,
+  LazyContextWindowSettingsPanel,
+  LazyDefaultAgentSettingsPanel,
+  LazyGeneralSettingsPanel,
+  LazyGitSettingsPanel,
+  LazyImageGalleryFloat,
+  LazyImageGenerationSettingsPanel,
+  LazyIntegratedWebSearchSettingsPanel,
+  LazyMcpSettingsPanel,
+  LazyModelsSettingsPanel,
+  LazyNotificationPreferencesPanel,
+  LazyPersonalizationSettingsPanel,
+  LazySkillsSettingsPanel,
+  LazyStorageSettingsPanel,
+  LazySubagentTaskDrawer,
+  LazyTerminalPanel,
+  SuspensePanel,
+} from "./lazy-app-panels";
 import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
   advanceImageGalleryQueue,
@@ -312,9 +323,7 @@ import {
   takeLocalStreamUpdates,
   useLocalStreamProjection,
 } from "./local-stream-projection";
-import { McpSettingsPanel } from "./McpSettingsPanel";
-import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
-import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
+import type { ModelsSettingsTab } from "./ModelsSettingsPanel";
 import {
   diagnoseOrchestrationSnapshotReadiness,
   invalidOrchestrationFieldsFromIssues,
@@ -322,7 +331,6 @@ import {
   orchestrationIssueDetailKey,
 } from "./orchestration-readiness";
 import { PackageScriptsDialog } from "./PackageScriptsDialog";
-import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ProjectSidebarTree } from "./ProjectSidebarTree";
 import { waitForOverlayDismiss } from "./package-script-ui";
@@ -348,22 +356,9 @@ import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
 import { SidebarSearchDialog } from "./SidebarSearchDialog";
 import { SidebarSettingsUpdateControl } from "./SidebarSettingsUpdateControl";
-import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
-import { StorageSettingsPanel } from "./StorageSettingsPanel";
-import {
-  SubagentTaskDrawer,
-  TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
-  TASK_PANEL_FILE_VIEWER_TAB_ID,
-  TASK_PANEL_FILES_TAB_ID,
-  TASK_PANEL_HOME_TAB_ID,
-  TASK_PANEL_PLAN_TAB_ID,
-  TASK_PANEL_REVIEW_TAB_ID,
-  TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
-  type TaskPanelActiveTab,
-} from "./SubagentTaskDrawer";
 import { buildSidebarAttentionItems } from "./sidebar-attention-items";
-import { TerminalPanel, type TerminalSessionPresentation } from "./TerminalPanel";
+import type { TerminalSessionPresentation } from "./TerminalPanel";
 import { ThreadIdleCacheWarning } from "./ThreadIdleCacheWarning";
 import { loadTaskPanelReviewDiff } from "./task-panel-review-loader";
 import {
@@ -373,6 +368,16 @@ import {
   type TaskPanelSessionUiState,
 } from "./task-panel-session-ui-state";
 import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
+import {
+  TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
+  TASK_PANEL_FILE_VIEWER_TAB_ID,
+  TASK_PANEL_FILES_TAB_ID,
+  TASK_PANEL_HOME_TAB_ID,
+  TASK_PANEL_PLAN_TAB_ID,
+  TASK_PANEL_REVIEW_TAB_ID,
+  TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
+  type TaskPanelActiveTab,
+} from "./task-panel-tabs";
 import {
   createProjectTerminalState,
   DEFAULT_TERMINAL_HEIGHT,
@@ -9094,7 +9099,8 @@ function App() {
           onPointerCancel={handleTaskPanelResizePointerEnd}
           onKeyDown={handleTaskPanelResizeKeyDown}
         />
-        <SubagentTaskDrawer
+                <SuspensePanel>
+<LazySubagentTaskDrawer
           open={taskPanelLayoutOpen}
           surfaceActive={taskPanelOpen && !taskPanelExiting}
           fullscreen={taskPanelFullscreenOpen}
@@ -9196,6 +9202,7 @@ function App() {
             return result;
           }}
         />
+        </SuspensePanel>
       </motion.aside>
     ) : null;
   const syncTopbarMode = useCallback(() => {
@@ -10224,7 +10231,8 @@ function App() {
                               aria-busy={!activityFeedBootReady}
                             >
                               {activityFeedBootReady ? (
-                                <ActivityLogView
+                                                                <SuspensePanel>
+<LazyActivityLogView
                                   {...(activeThread && { thread: activeThread })}
                                   {...(displayProjection && { projection: displayProjection })}
                                   {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
@@ -10256,6 +10264,7 @@ function App() {
                                       context: contextByThread[activeThread.id],
                                     })}
                                 />
+                                </SuspensePanel>
                               ) : null}
                               <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
                             </div>
@@ -10298,7 +10307,8 @@ function App() {
                       className="codex-terminal-project-slot"
                       hidden={!isCurrentProject}
                     >
-                      <TerminalPanel
+                                            <SuspensePanel>
+<LazyTerminalPanel
                         workspacePath={workspacePath}
                         workspaceLabel={workspaceLabel}
                         state={terminalState}
@@ -10311,6 +10321,7 @@ function App() {
                           onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
                         })}
                       />
+                      </SuspensePanel>
                     </div>
                   );
                 })}
@@ -10441,16 +10452,20 @@ function App() {
           {taskPanelLayoutOpen ? taskPanelNode : null}
           <AnimatePresence>
             {imageGalleryOpen && imageGalleryQueue.length > 0 ? (
-              <ImageGalleryFloat
+                            <SuspensePanel>
+<LazyImageGalleryFloat
                 key="image-gallery-float"
                 items={imageGalleryQueue}
                 avoidCards={Boolean(showWorkspacePanel && workspaceCardsPanelOpen)}
                 onAdvance={advanceImageGallery}
                 onCloseAll={closeImageGallery}
               />
+              </SuspensePanel>
             ) : null}
           </AnimatePresence>
-          <BrowserWebviewLayer />
+          <SuspensePanel>
+            <LazyBrowserWebviewLayer />
+          </SuspensePanel>
           {showPanelChromeGroupB ? panelControlButtons : null}
           {!showLanding && !activityFeedBootReady ? (
             <div
@@ -10571,8 +10586,9 @@ function App() {
 
           <div className="settings-main">
             <div className="settings-content">
+            <SuspensePanel>
               {settingsSection === "preferences" && (
-                <NotificationPreferencesPanel
+                <LazyNotificationPreferencesPanel
                   settings={notificationSettings}
                   onSave={saveNotificationSettingsSnapshot}
                   localePreference={localePreference}
@@ -10597,7 +10613,7 @@ function App() {
               )}
 
               {settingsSection === "general" && (
-                <GeneralSettingsPanel
+                <LazyGeneralSettingsPanel
                   theme={appTheme}
                   onThemeChange={setAppTheme}
                   typography={typographyPreferences}
@@ -10606,7 +10622,7 @@ function App() {
               )}
 
               {settingsSection === "personalization" && (
-                <PersonalizationSettingsPanel
+                <LazyPersonalizationSettingsPanel
                   settings={personalizationSettings}
                   onSave={savePersonalizationSettingsSnapshot}
                   centerServerSyncVisible={centerServerSyncVisible}
@@ -10614,24 +10630,30 @@ function App() {
                 />
               )}
 
-              {settingsSection === "storage" && <StorageSettingsPanel />}
+              {settingsSection === "storage" && <LazyStorageSettingsPanel />}
 
               {settingsSection === "browser" && (
-                <BrowserSettingsPanel settings={browserSettings} onSave={saveBrowserSettingsSnapshot} />
+                <LazyBrowserSettingsPanel settings={browserSettings} onSave={saveBrowserSettingsSnapshot} />
               )}
 
-              {settingsSection === "computerUse" && (
-                <ComputerUseSettingsPanel
-                  settings={computerUseSettings}
-                  availability={integrationAvailability.integrations.find((item) => item.id === "computerUse")}
-                  onSave={saveComputerUseSettingsSnapshot}
-                  onRunDoctor={runComputerUseDoctor}
-                  onCheckPermissionStatus={checkComputerUsePermissionStatus}
-                />
-              )}
+              {settingsSection === "computerUse" &&
+                (() => {
+                  const computerUseAvailability = integrationAvailability.integrations.find(
+                    (item) => item.id === "computerUse",
+                  );
+                  return (
+                    <LazyComputerUseSettingsPanel
+                      settings={computerUseSettings}
+                      {...(computerUseAvailability ? { availability: computerUseAvailability } : {})}
+                      onSave={saveComputerUseSettingsSnapshot}
+                      onRunDoctor={runComputerUseDoctor}
+                      onCheckPermissionStatus={checkComputerUsePermissionStatus}
+                    />
+                  );
+                })()}
 
               {settingsSection === "imageGeneration" && (
-                <ImageGenerationSettingsPanel
+                <LazyImageGenerationSettingsPanel
                   settings={imageGenerationSettings}
                   onChange={(snapshot) => {
                     setImageGenerationSettings(snapshot);
@@ -10644,7 +10666,7 @@ function App() {
               )}
 
               {settingsSection === "skills" && (
-                <SkillsSettingsPanel
+                <LazySkillsSettingsPanel
                   {...(skillsSnapshot && { snapshot: skillsSnapshot })}
                   loading={isLoadingSkills}
                   onRefresh={() => void refreshSkillsList()}
@@ -10656,7 +10678,7 @@ function App() {
               )}
 
               {settingsSection === "defaultAgent" && (
-                <DefaultAgentSettingsPanel
+                <LazyDefaultAgentSettingsPanel
                   defaultCoreKind={workflowSettings.defaultCoreKind ?? "claude"}
                   codexAvailable={coreAvailability?.codex.available !== false}
                   {...(coreAvailability?.codex.reason && {
@@ -10704,7 +10726,7 @@ function App() {
               )}
 
               {settingsSection === "contextWindow" && (
-                <ContextWindowSettingsPanel
+                <LazyContextWindowSettingsPanel
                   contextWindowLimitTokens={workflowSettings.contextWindowLimitTokens}
                   maxOutputLimitTokens={workflowSettings.maxOutputLimitTokens}
                   onChangeContextWindow={saveContextWindowLimit}
@@ -10713,7 +10735,7 @@ function App() {
               )}
 
               {settingsSection === "mcp" && (
-                <McpSettingsPanel
+                <LazyMcpSettingsPanel
                   servers={mcpSettings.servers}
                   busy={isSavingSettings}
                   onSave={saveMcpServer}
@@ -10723,7 +10745,7 @@ function App() {
               )}
 
               {settingsSection === "centerServer" && (
-                <CenterServerSettingsPanel
+                <LazyCenterServerSettingsPanel
                   snapshot={centerServerSettings}
                   busy={isSavingSettings}
                   onSave={saveCenterServerSettings}
@@ -10750,7 +10772,7 @@ function App() {
               )}
 
               {settingsSection === "asr" && (
-                <AsrSettingsPanel
+                <LazyAsrSettingsPanel
                   snapshot={asrProfiles}
                   busy={asrBusy}
                   {...(asrSettingsLoadError !== undefined ? { loadError: asrSettingsLoadError } : {})}
@@ -10765,7 +10787,7 @@ function App() {
 
               {settingsSection === "integratedWebSearch" &&
                 (integratedWebSearchSettings ? (
-                  <IntegratedWebSearchSettingsPanel
+                  <LazyIntegratedWebSearchSettingsPanel
                     settings={integratedWebSearchSettings}
                     busy={isSavingIntegratedWebSearchSettings}
                     onSave={(next) => void saveIntegratedWebSearchSettings(next)}
@@ -10778,7 +10800,7 @@ function App() {
 
               {settingsSection === "providers" &&
                 (proxyBridgeSettings ? (
-                  <ModelsSettingsPanel
+                  <LazyModelsSettingsPanel
                     settings={settings}
                     proxyBridgeSettings={proxyBridgeSettings}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
@@ -10800,7 +10822,7 @@ function App() {
 
               {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
                 (proxyBridgeSettings ? (
-                  <ModelsSettingsPanel
+                  <LazyModelsSettingsPanel
                     settings={settings}
                     proxyBridgeSettings={proxyBridgeSettings}
                     mcpServers={mcpSettings.servers}
@@ -10848,13 +10870,14 @@ function App() {
                 ))}
 
               {settingsSection === "git" && (
-                <GitSettingsPanel
+                <LazyGitSettingsPanel
                   settings={gitSettings}
                   onSave={saveGitSettingsSnapshot}
                   centerServerSyncVisible={centerServerSyncVisible}
                   onSyncDomain={syncCenterServerConfigDomain}
                 />
               )}
+            </SuspensePanel>
             </div>
           </div>
         </div>

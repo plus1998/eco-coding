@@ -19014,7 +19014,13 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   -webkit-app-region: drag;
 }
 
+/* Lazy panel chunk placeholder (settings / terminal / task drawer). */
+.panel-chunk-fallback {
+  min-height: 48px;
+}
+
 .settings-content {
+
   box-sizing: border-box;
   width: min(680px, 100%);
   max-width: 680px;
