@@ -11641,6 +11641,26 @@ button.default-agent-option:focus-visible {
   color: currentColor;
 }
 
+.token-speed-segments {
+  display: inline;
+}
+
+.token-speed-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  vertical-align: -0.12em;
+}
+
+.token-speed-segment-icon {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.token-speed-segment-sep {
+  display: inline;
+}
+
 .work-session-label .run-log-request-timing {
   display: block;
   margin-left: 0;
@@ -16135,6 +16155,11 @@ a.run-log-web-search-detail-result-url:focus-visible {
   font-size: 9.5px;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
+}
+
+.usage-breakdown-event-timing .token-speed-segment-icon {
+  width: 9px;
+  height: 9px;
 }
 
 .usage-breakdown-event-time {

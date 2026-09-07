@@ -886,6 +886,7 @@ import {
   createWorkflowSettingsStore,
   isWorkflowSettingsSnapshot,
   normalizeWorkflowSettingsSnapshot,
+  resolveAcpCursorApiKeyForSave,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
 import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-browser";
@@ -4803,6 +4804,15 @@ function registerIpcHandlers(): void {
     // is allowed whenever the CLI probe succeeds (checked below for default=acp).
     const gated: typeof normalized = { ...normalized };
     delete gated.acpAgentsEnabled;
+    // The Cursor ACP API key is a device-local secret that partial-update callers
+    // (e.g. the mobile `workflow-settings:save`) omit. Preserve it unless the payload
+    // explicitly sets (a value) or clears (a blank string) it.
+    const resolvedCursorKey = resolveAcpCursorApiKeyForSave(payload, previous.acpCursorApiKey);
+    if (resolvedCursorKey === undefined) {
+      delete gated.acpCursorApiKey;
+    } else {
+      gated.acpCursorApiKey = resolvedCursorKey;
+    }
 
     if (gated.defaultCoreKind === "acp") {
       const probe = await probeAcpCursorForMain();

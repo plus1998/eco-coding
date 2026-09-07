@@ -27,11 +27,11 @@ import {
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
 import { useTokenSpeedDisplayMode } from "./token-speed-preferences";
+import { resolveTokenSpeedSegments } from "./token-speed";
 import {
-  formatTokenSpeedPrefill,
-  formatTokenSpeedRate,
-  formatTokenSpeedSeconds,
-} from "./token-speed";
+  formatTokenSpeedSegmentPlain,
+  TokenSpeedSegmentsView,
+} from "./TokenSpeedSegments";
 import { resolveLedgerEventTiming } from "../shared/ledger-event-timing";
 
 type BreakdownView = "agent" | "model" | "events";
@@ -353,23 +353,20 @@ function LedgerEventRow({
   });
   const timing = resolveLedgerEventTiming(event);
   const tokenSpeedMode = useTokenSpeedDisplayMode();
-  const timingParts: string[] = [];
-  if (tokenSpeedMode !== "hidden") {
-    if (timing.ttftMs !== undefined) {
-      timingParts.push(i18n.t("activity.tokenSpeed.ttft", { seconds: formatTokenSpeedSeconds(timing.ttftMs) }));
-    }
-    if (timing.totalTps !== undefined) {
-      timingParts.push(i18n.t("activity.tokenSpeed.total", { rate: formatTokenSpeedRate(timing.totalTps) }));
-    }
-    if (tokenSpeedMode === "detailed") {
-      if (timing.prefillTps !== undefined) {
-        timingParts.push(i18n.t("activity.tokenSpeed.prefill", { rate: formatTokenSpeedPrefill(timing.prefillTps) }));
-      }
-      if (timing.decodeTps !== undefined) {
-        timingParts.push(i18n.t("activity.tokenSpeed.decode", { rate: formatTokenSpeedRate(timing.decodeTps) }));
-      }
-    }
-  }
+  const timingSegments = resolveTokenSpeedSegments(
+    {
+      ...(timing.ttftMs !== undefined ? { ttftMs: timing.ttftMs } : {}),
+      ...(timing.totalTps !== undefined ? { totalTps: timing.totalTps } : {}),
+      ...(timing.prefillTps !== undefined ? { prefillTps: timing.prefillTps } : {}),
+      ...(timing.decodeTps !== undefined ? { decodeTps: timing.decodeTps } : {}),
+      tokenSource: "usage",
+    },
+    tokenSpeedMode,
+  );
+  const timingPlain =
+    timingSegments.length > 0
+      ? timingSegments.map(formatTokenSpeedSegmentPlain).join(" · ")
+      : undefined;
   const observedTime = formatLedgerEventTime(event.observedAt);
   const computedCostAvailable = event.ecoCostUsd !== undefined && event.pricingResolved !== false;
   const primaryCostUsd = computedCostAvailable ? event.ecoCostUsd : event.reportedCostUsd;
@@ -383,7 +380,7 @@ function LedgerEventRow({
     attributionLabel || undefined,
     event.attributionReason,
     showSource ? event.source : undefined,
-    timingParts.length > 0 ? timingParts.join(" · ") : undefined,
+    timingPlain,
   ].filter(Boolean);
 
   return (
@@ -465,9 +462,12 @@ function LedgerEventRow({
         <span className="usage-breakdown-event-token-detail" title={i18n.t("billing.tokenTitle")}>
           {tokenBadge}
         </span>
-        {timingParts.length > 0 ? (
-          <span className="usage-breakdown-event-timing" title={i18n.t("usage.eventTimingTitle")}>
-            {timingParts.join(" · ")}
+        {timingSegments.length > 0 ? (
+          <span
+            className="usage-breakdown-event-timing"
+            title={timingPlain ?? i18n.t("usage.eventTimingTitle")}
+          >
+            <TokenSpeedSegmentsView segments={timingSegments} />
           </span>
         ) : null}
       </span>

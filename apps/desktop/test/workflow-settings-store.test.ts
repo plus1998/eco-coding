@@ -6,6 +6,7 @@ import {
   createWorkflowSettingsStore,
   isWorkflowSettingsSnapshot,
   normalizeWorkflowSettingsSnapshot,
+  resolveAcpCursorApiKeyForSave,
 } from "../src/main/workflow-settings-store";
 
 const sqliteAvailable = await (async () => {
@@ -224,6 +225,20 @@ test("workflow settings preserve ACP Cursor API key (trimmed, bounded) and clear
   ).toBeUndefined();
 });
 
+test("workflow-settings:save partial payload preserves stored Cursor API key; explicit blank clears", () => {
+  const previousKey = "ck-abc";
+  // Omitted (the mobile `workflow-settings:save` payload shape) → keep existing.
+  expect(resolveAcpCursorApiKeyForSave({ sessionMode: "agent" }, previousKey)).toBe("ck-abc");
+  // null / undefined field → keep existing.
+  expect(resolveAcpCursorApiKeyForSave({ acpCursorApiKey: null }, previousKey)).toBe("ck-abc");
+  // Explicit value → set (trimmed).
+  expect(resolveAcpCursorApiKeyForSave({ acpCursorApiKey: "  ck-new " }, undefined)).toBe("ck-new");
+  // Explicit blank string → clear (the desktop "clear key" control sends "").
+  expect(resolveAcpCursorApiKeyForSave({ acpCursorApiKey: "" }, previousKey)).toBeUndefined();
+  // Nothing stored and omitted → stays undefined.
+  expect(resolveAcpCursorApiKeyForSave({ sessionMode: "agent" }, undefined)).toBeUndefined();
+});
+
 test.skipIf(!sqliteAvailable)("persists ACP Cursor API key round-trip and clears on blank", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-acp-apikey-"));
   const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
@@ -236,6 +251,37 @@ test.skipIf(!sqliteAvailable)("persists ACP Cursor API key round-trip and clears
   const cleared = store.save({ ...withKey, acpCursorApiKey: "" });
   expect(cleared.acpCursorApiKey).toBeUndefined();
 });
+
+test.skipIf(!sqliteAvailable)(
+  "mobile-style partial workflow save preserves stored Cursor API key (regression)",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-mobile-partial-"));
+    const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
+    store.save({ sessionMode: "agent", defaultCoreKind: "acp", acpCursorApiKey: "ck-pc" });
+
+    // Mobile partial payload: has NO acpCursorApiKey field (the phone never carries it),
+    // e.g. persistAuxiliaryModelWorkflowDefault / _saveDefaultCoreKind.
+    const mobilePayload = { sessionMode: "agent", defaultCoreKind: "claude", showBilling: true };
+    const normalized = normalizeWorkflowSettingsSnapshot(mobilePayload);
+
+    // Without the fix, saving the key-less snapshot wipes the stored key.
+    store.save({ ...normalized });
+    expect(store.get().acpCursorApiKey).toBeUndefined();
+
+    // Re-seed the key, then apply the handler's resolution (preserve on omission).
+    store.save({ sessionMode: "agent", defaultCoreKind: "acp", acpCursorApiKey: "ck-pc" });
+    const previous = store.get();
+    const gated: typeof normalized = { ...normalized };
+    const resolvedKey = resolveAcpCursorApiKeyForSave(mobilePayload, previous.acpCursorApiKey);
+    if (resolvedKey === undefined) {
+      delete gated.acpCursorApiKey;
+    } else {
+      gated.acpCursorApiKey = resolvedKey;
+    }
+    store.save(gated);
+    expect(store.get().acpCursorApiKey).toBe("ck-pc");
+  },
+);
 
 test("workflow settings reject non-object acpAgentsEnabled", () => {
   expect(

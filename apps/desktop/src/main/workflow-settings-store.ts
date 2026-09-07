@@ -767,6 +767,25 @@ function normalizeAcpCursorApiKey(value: unknown): string | undefined {
   return trimmed && trimmed.length <= 512 ? trimmed : undefined;
 }
 
+/**
+ * Resolve the effective Cursor ACP API key for a workflow-settings save.
+ *
+ * The key is a device-local secret. Partial-update callers (notably the mobile
+ * `workflow-settings:save`) omit the field entirely because they never carry the
+ * raw key; omission must mean "no change" so a key set on this device is not
+ * silently deleted. Only an explicit string sets (non-blank) or clears (blank) it.
+ */
+export function resolveAcpCursorApiKeyForSave(
+  payload: { acpCursorApiKey?: unknown },
+  previousKey: string | undefined,
+): string | undefined {
+  const explicit = payload.acpCursorApiKey;
+  if (typeof explicit !== "string") {
+    return previousKey;
+  }
+  return normalizeAcpCursorApiKey(explicit);
+}
+
 export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSettingsSnapshot {
   if (!value || typeof value !== "object") {
     return false;

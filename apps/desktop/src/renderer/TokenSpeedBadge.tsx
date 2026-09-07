@@ -12,6 +12,7 @@ import {
   isTokenSpeedSpanActive,
   resolveLenientRequestSpan,
 } from "./token-speed";
+import { formatTokenSpeedSegmentPlain } from "./TokenSpeedSegments";
 
 /** Provided by `ActivityLogView` so the badge can fall back to a lenient span match. */
 export const RequestSpansContext = createContext<readonly ThreadRunProjectionRequestSpan[]>([]);
@@ -52,25 +53,7 @@ export function TokenSpeedBadge({ requestSpan, item, streamedText }: TokenSpeedB
     return null;
   }
 
-  const label = segments
-    .map((segment) => {
-      switch (segment.key) {
-        case "waiting":
-          return i18n.t("activity.tokenSpeed.waiting", { seconds: segment.seconds });
-        case "ttft":
-          return i18n.t("activity.tokenSpeed.ttft", { seconds: segment.seconds });
-        case "total":
-          return i18n.t("activity.tokenSpeed.total", { rate: segment.rate });
-        case "prefill":
-          return i18n.t("activity.tokenSpeed.prefill", { rate: segment.rate });
-        case "decode":
-          return i18n.t(
-            segment.estimated ? "activity.tokenSpeed.decodeEstimated" : "activity.tokenSpeed.decode",
-            { rate: segment.rate },
-          );
-      }
-    })
-    .join(" · ");
+  const label = segments.map(formatTokenSpeedSegmentPlain).join(" · ");
 
   const hintKey =
     stats.tokenSource === "usage" ? "activity.tokenSpeed.usageHint" : "activity.tokenSpeed.estimatedHint";
