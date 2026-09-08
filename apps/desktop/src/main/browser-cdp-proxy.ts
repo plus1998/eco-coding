@@ -13,6 +13,36 @@ const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 export { FORBIDDEN_CDP_PORT };
 
+type GuestSendInputEvent = Parameters<WebContents["sendInputEvent"]>[0];
+
+/** True only for Electron `<webview>` guests — never the Eco main BrowserWindow. */
+export function isBrowserGuestWebContents(
+  webContents: Pick<WebContents, "isDestroyed" | "getType">,
+): boolean {
+  if (webContents.isDestroyed()) {
+    return false;
+  }
+  return webContents.getType() === "webview";
+}
+
+/**
+ * Hard isolation: browser CDP / automation must never drive the Eco main window.
+ * Only `<webview>` guest WebContents are allowed.
+ */
+export function assertBrowserGuestWebContents(
+  webContents: Pick<WebContents, "isDestroyed" | "getType">,
+): void {
+  if (webContents.isDestroyed()) {
+    throw new Error("Guest webContents destroyed");
+  }
+  const type = webContents.getType();
+  if (type !== "webview") {
+    throw new Error(
+      `Refusing CDP on non-guest webContents (type=${type}); Eco main window must not handle browser automation`,
+    );
+  }
+}
+
 export interface BrowserCdpProxy {
   port: number;
   close: () => Promise<void>;
@@ -48,8 +78,13 @@ export interface MultiBrowserCdpProxyOptions {
     /** Present for Input.dispatchMouseEvent when x/y parse. */
     mouse?: { x: number; y: number; type: string; buttons?: number };
   }) => void;
-  /** Blur embedder / move OS keyboard focus before guest synthetic keyboard input. */
+  /** Blur embedder / move OS keyboard focus before guest synthetic input. */
   onPrepareGuestKeyboardInput?: (target: BrowserCdpTarget) => void | Promise<void>;
+  /**
+   * Extra deny-list (e.g. main BrowserWindow webContents). Applied in addition to
+   * {@link assertBrowserGuestWebContents}.
+   */
+  isForbiddenWebContents?: (webContents: WebContents) => boolean;
 }
 
 interface DebuggerLike {
@@ -66,11 +101,38 @@ function getDebugger(webContents: WebContents): DebuggerLike {
 }
 
 function ensureDebuggerAttached(wc: WebContents): DebuggerLike {
+  assertBrowserGuestWebContents(wc);
   const dbg = getDebugger(wc);
   if (!dbg.isAttached()) {
     dbg.attach("1.3");
   }
   return dbg;
+}
+
+function liveGuestTargets(
+  options: MultiBrowserCdpProxyOptions,
+): BrowserCdpTarget[] {
+  return options.getTargets().filter((t) => {
+    if (!t.webContents || t.webContents.isDestroyed()) {
+      return false;
+    }
+    if (!isBrowserGuestWebContents(t.webContents)) {
+      return false;
+    }
+    if (options.isForbiddenWebContents?.(t.webContents)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function assertTargetAllowed(options: MultiBrowserCdpProxyOptions, target: BrowserCdpTarget): void {
+  assertBrowserGuestWebContents(target.webContents);
+  if (options.isForbiddenWebContents?.(target.webContents)) {
+    throw new Error(
+      `Refusing CDP on forbidden webContents (id=${target.webContents.id}); Eco main window must not handle browser automation`,
+    );
+  }
 }
 
 function readFrames(buffer: Buffer, onFrame: (payload: Buffer, opcode: number) => void): Buffer {
@@ -214,7 +276,7 @@ export async function startMultiBrowserCdpProxy(
   >();
 
   const syncDebuggerListeners = () => {
-    const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+    const targets = liveGuestTargets(options);
     const liveIds = new Set(targets.map((t) => t.id));
     for (const [id, entry] of debuggerListeners) {
       if (!liveIds.has(id)) {
@@ -232,6 +294,7 @@ export async function startMultiBrowserCdpProxy(
         continue;
       }
       try {
+        assertTargetAllowed(options, target);
         const dbg = ensureDebuggerAttached(target.webContents);
         const listener = (_event: unknown, method: string, params: unknown) => {
           const message = JSON.stringify({
@@ -283,9 +346,7 @@ export async function startMultiBrowserCdpProxy(
     if (!id) {
       return;
     }
-    const target = options
-      .getTargets()
-      .find((t) => t.id === id && t.webContents && !t.webContents.isDestroyed());
+    const target = liveGuestTargets(options).find((t) => t.id === id);
     if (!target) {
       return;
     }
@@ -301,9 +362,7 @@ export async function startMultiBrowserCdpProxy(
     if (!id) {
       return;
     }
-    const target = options
-      .getTargets()
-      .find((t) => t.id === id && t.webContents && !t.webContents.isDestroyed());
+    const target = liveGuestTargets(options).find((t) => t.id === id);
     if (!target) {
       return;
     }
@@ -391,7 +450,7 @@ async function handleHttp(
   const host = req.headers.host ?? "127.0.0.1";
   const url = new URL(req.url ?? "/", `http://${host}`);
   const port = Number((req.socket.address() as AddressInfo | null)?.port ?? 0);
-  const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+  const targets = liveGuestTargets(options);
   const first = targets[0];
   const wsUrl = first
     ? `ws://127.0.0.1:${port}/devtools/page/${first.id}`
@@ -440,9 +499,7 @@ function clearsPendingDomFocus(method: string): boolean {
 }
 
 function focusGuestWebContents(wc: WebContents): void {
-  if (wc.isDestroyed()) {
-    throw new Error("Guest webContents destroyed");
-  }
+  assertBrowserGuestWebContents(wc);
   try {
     wc.focus();
   } catch (error) {
@@ -580,19 +637,163 @@ async function guestInsertTextViaRuntime(dbg: DebuggerLike, text: string): Promi
 }
 
 function guestDispatchKeyViaSendInputEvent(wc: WebContents, params: Record<string, unknown>): void {
+  assertBrowserGuestWebContents(wc);
   const mapped = mapCdpKeyEventToSendInput(params);
   if (!mapped) {
     throw new Error(`Unsupported CDP key event: ${JSON.stringify(params)}`);
   }
+  wc.sendInputEvent(mapped as GuestSendInputEvent);
+}
+
+function mapCdpMouseButton(params: Record<string, unknown>): "left" | "middle" | "right" {
+  const button = params.button;
+  if (button === "middle" || button === 1) {
+    return "middle";
+  }
+  if (button === "right" || button === 2) {
+    return "right";
+  }
+  return "left";
+}
+
+export function mapCdpMouseEventToSendInput(params: Record<string, unknown>): GuestSendInputEvent | null {
+  const eventType = params.type;
+  const x = Number(params.x);
+  const y = Number(params.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+  const modifiers = modifiersFromCdp(params);
+  const mods = modifiers.length > 0 ? { modifiers } : {};
+  const button = mapCdpMouseButton(params);
+  const clickCountRaw = Number(params.clickCount ?? 1);
+  const clickCount = Number.isFinite(clickCountRaw) && clickCountRaw > 0 ? clickCountRaw : 1;
+
+  if (eventType === "mousePressed") {
+    return { type: "mouseDown", x, y, button, clickCount, ...mods };
+  }
+  if (eventType === "mouseReleased") {
+    return { type: "mouseUp", x, y, button, clickCount, ...mods };
+  }
+  if (eventType === "mouseMoved") {
+    return { type: "mouseMove", x, y, ...mods };
+  }
+  if (eventType === "mouseWheel") {
+    const deltaX = Number(params.deltaX ?? 0);
+    const deltaY = Number(params.deltaY ?? 0);
+    return {
+      type: "mouseWheel",
+      x,
+      y,
+      deltaX: Number.isFinite(deltaX) ? deltaX : 0,
+      deltaY: Number.isFinite(deltaY) ? deltaY : 0,
+      ...mods,
+    };
+  }
+  return null;
+}
+
+function guestDispatchMouseViaSendInputEvent(wc: WebContents, params: Record<string, unknown>): void {
+  assertBrowserGuestWebContents(wc);
+  const mapped = mapCdpMouseEventToSendInput(params);
+  if (!mapped) {
+    throw new Error(`Unsupported CDP mouse event: ${JSON.stringify(params)}`);
+  }
   wc.sendInputEvent(mapped);
 }
 
+/** Map first touch point to mouse events so touch never goes through embedder-routed CDP Input. */
+function guestDispatchTouchViaSendInputEvent(wc: WebContents, params: Record<string, unknown>): void {
+  assertBrowserGuestWebContents(wc);
+  const touchType = params.type;
+  const points = Array.isArray(params.touchPoints) ? params.touchPoints : [];
+  const first = points[0] as Record<string, unknown> | undefined;
+  const x = Number(first?.x ?? params.x);
+  const y = Number(first?.y ?? params.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error(`Unsupported CDP touch event: ${JSON.stringify(params)}`);
+  }
+  if (touchType === "touchStart") {
+    wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    return;
+  }
+  if (touchType === "touchMove") {
+    wc.sendInputEvent({ type: "mouseMove", x, y });
+    return;
+  }
+  if (touchType === "touchEnd" || touchType === "touchCancel") {
+    wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    return;
+  }
+  throw new Error(`Unsupported CDP touch event type: ${String(touchType)}`);
+}
+
 /**
- * Electron routes CDP Input.* at browser-process keyboard focus, which can leak to the
- * embedder (Composer) even when commands are sent on the guest debugger. Route synthetic
- * keyboard input through guest webContents + DOM-targeted insertion instead.
+ * Electron `<webview>`: raw `debugger.sendCommand("Page.reload")` can reload the embedder
+ * BrowserWindow instead of the guest (upstream draft electron#51075). Prefer WebContents APIs.
  */
-async function forwardGuestKeyboardInput(
+export function applyGuestPageReload(
+  webContents: Pick<WebContents, "reload" | "reloadIgnoringCache" | "isDestroyed" | "getType">,
+  params: Record<string, unknown> = {},
+): Record<string, never> {
+  assertBrowserGuestWebContents(webContents);
+  if (params.ignoreCache === true) {
+    webContents.reloadIgnoringCache();
+  } else {
+    webContents.reload();
+  }
+  return {};
+}
+
+export async function applyGuestPageNavigate(
+  webContents: Pick<WebContents, "loadURL" | "isDestroyed" | "getType">,
+  params: Record<string, unknown> = {},
+): Promise<Record<string, never>> {
+  assertBrowserGuestWebContents(webContents);
+  const url = typeof params.url === "string" ? params.url.trim() : "";
+  if (!url) {
+    throw new Error("Page.navigate requires url");
+  }
+  await webContents.loadURL(url);
+  return {};
+}
+
+export function applyGuestPageNavigateToHistoryEntry(
+  webContents: Pick<WebContents, "isDestroyed" | "getType"> & {
+    navigationHistory?: { goToIndex?: (index: number) => void };
+    goToIndex?: (index: number) => void;
+  },
+  params: Record<string, unknown> = {},
+): Record<string, never> {
+  assertBrowserGuestWebContents(webContents);
+  const entryId = Number(params.entryId);
+  if (!Number.isFinite(entryId) || entryId < 0) {
+    throw new Error("Page.navigateToHistoryEntry requires entryId");
+  }
+  if (typeof webContents.navigationHistory?.goToIndex === "function") {
+    webContents.navigationHistory.goToIndex(entryId);
+  } else if (typeof webContents.goToIndex === "function") {
+    webContents.goToIndex(entryId);
+  } else {
+    throw new Error("Guest navigationHistory.goToIndex is unavailable");
+  }
+  return {};
+}
+
+export function applyGuestPageBringToFront(
+  webContents: Pick<WebContents, "focus" | "isDestroyed" | "getType">,
+): Record<string, never> {
+  assertBrowserGuestWebContents(webContents);
+  webContents.focus();
+  return {};
+}
+
+/**
+ * Electron routes CDP Input.* at browser-process focus, which can leak to the embedder
+ * (Composer / main window) even when commands are sent on the guest debugger.
+ * Route all synthetic Input through guest webContents APIs instead.
+ */
+async function forwardGuestInput(
   target: BrowserCdpTarget,
   dbg: DebuggerLike,
   method: string,
@@ -601,6 +802,7 @@ async function forwardGuestKeyboardInput(
   key: string,
   options: MultiBrowserCdpProxyOptions,
 ): Promise<unknown> {
+  assertTargetAllowed(options, target);
   await prepareGuestKeyboardTarget(target, dbg, clientState, key, options, method);
 
   if (method === "Input.insertText") {
@@ -616,7 +818,21 @@ async function forwardGuestKeyboardInput(
     return {};
   }
 
-  throw new Error(`Unexpected keyboard method: ${method}`);
+  if (method === "Input.dispatchMouseEvent") {
+    guestDispatchMouseViaSendInputEvent(target.webContents, params);
+    clearPendingDomFocus(clientState, key);
+    return {};
+  }
+
+  if (method === "Input.dispatchTouchEvent") {
+    guestDispatchTouchViaSendInputEvent(target.webContents, params);
+    clearPendingDomFocus(clientState, key);
+    return {};
+  }
+
+  // Remaining Input.* still must hit the guest debugger only (never main window).
+  clearPendingDomFocus(clientState, key);
+  return dbg.sendCommand(method, params);
 }
 
 function resolveTarget(
@@ -624,7 +840,7 @@ function resolveTarget(
   targetId?: string,
   sessionId?: string,
 ): BrowserCdpTarget | undefined {
-  const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+  const targets = liveGuestTargets(options);
   if (targetId) {
     return targets.find((t) => t.id === targetId);
   }
@@ -644,7 +860,7 @@ async function tryHandleTargetDomain(
   _notifyTargetCreated: (targetId: string) => void,
 ): Promise<{ handled: true; result: unknown } | { handled: false }> {
   if (method === "Target.getTargets") {
-    const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+    const targets = liveGuestTargets(options);
     return {
       handled: true,
       result: { targetInfos: targets.map((t) => pageTargetInfo(t)) },
@@ -660,7 +876,7 @@ async function tryHandleTargetDomain(
   }
   if (method === "Target.setDiscoverTargets") {
     if (params?.discover !== false) {
-      for (const target of options.getTargets()) {
+      for (const target of liveGuestTargets(options)) {
         if (target.webContents && !target.webContents.isDestroyed()) {
           writeJsonFrame(socket, {
             method: "Target.targetCreated",
@@ -694,9 +910,7 @@ async function tryHandleTargetDomain(
     if (targetId && options.onCloseTarget) {
       await options.onCloseTarget(targetId);
       // Only notify clients if Eco actually removed the target (UI × / dispose).
-      const stillThere = options
-        .getTargets()
-        .some((t) => t.id === targetId && t.webContents && !t.webContents.isDestroyed());
+      const stillThere = liveGuestTargets(options).some((t) => t.id === targetId);
       if (!stillThere) {
         notifyTargetDestroyed(targetId);
       }
@@ -709,6 +923,7 @@ async function tryHandleTargetDomain(
     }
     const url = typeof params?.url === "string" ? params.url : undefined;
     const created = await options.onCreateTarget(url);
+    assertTargetAllowed(options, created);
     syncDebuggerListeners();
     options.onClientActivity?.({
       kind: "cdp-method",
@@ -881,11 +1096,30 @@ async function handleClientMessage(
       if (!target) {
         throw new Error("No browser target available in this session CDP");
       }
-      const dbg = ensureDebuggerAttached(target.webContents);
+      assertTargetAllowed(options, target);
       const key = sessionKey(clientSessionId, target);
 
-      if (method === "DOM.focus") {
+      if (
+        method === "Page.reload" ||
+        method === "Page.navigate" ||
+        method === "Page.navigateToHistoryEntry" ||
+        method === "Page.bringToFront"
+      ) {
+        if (clearsPendingDomFocus(method)) {
+          clearPendingDomFocus(clientState, key);
+        }
+        if (method === "Page.reload") {
+          result = applyGuestPageReload(target.webContents, params);
+        } else if (method === "Page.navigate") {
+          result = await applyGuestPageNavigate(target.webContents, params);
+        } else if (method === "Page.navigateToHistoryEntry") {
+          result = applyGuestPageNavigateToHistoryEntry(target.webContents, params);
+        } else {
+          result = applyGuestPageBringToFront(target.webContents);
+        }
+      } else if (method === "DOM.focus") {
         // Store synchronously before await so a pipelined Input.insertText in the same tick still finds it.
+        const dbg = ensureDebuggerAttached(target.webContents);
         clientState.pendingDomFocusBySession.set(key, { ...params });
         try {
           result = await dbg.sendCommand(method, params);
@@ -893,8 +1127,9 @@ async function handleClientMessage(
           clearPendingDomFocus(clientState, key);
           throw error;
         }
-      } else if (method === "Input.insertText" || method === "Input.dispatchKeyEvent") {
-        result = await forwardGuestKeyboardInput(
+      } else if (method.startsWith("Input.")) {
+        const dbg = ensureDebuggerAttached(target.webContents);
+        result = await forwardGuestInput(
           target,
           dbg,
           method,
@@ -903,12 +1138,16 @@ async function handleClientMessage(
           key,
           options,
         );
+        const mouse =
+          method === "Input.dispatchMouseEvent" ? parseBrowserAgentPresenceMouse(params) : null;
         options.onClientActivity?.({
           kind: "cdp-method",
           method,
           targetId: target.id,
+          ...(mouse ? { mouse } : {}),
         });
       } else {
+        const dbg = ensureDebuggerAttached(target.webContents);
         if (clearsPendingDomFocus(method)) {
           clearPendingDomFocus(clientState, key);
         }
@@ -918,21 +1157,19 @@ async function handleClientMessage(
       if (
         method === "Page.navigate" ||
         method === "Page.navigateToHistoryEntry" ||
-        method === "Page.reload"
+        method === "Page.reload" ||
+        method === "Page.bringToFront"
       ) {
         options.onClientActivity?.({
           kind: "cdp-method",
           method,
           targetId: target.id,
         });
-      } else if (isBrowserAgentPresenceCdpMethod(method)) {
-        const mouse =
-          method === "Input.dispatchMouseEvent" ? parseBrowserAgentPresenceMouse(params) : null;
+      } else if (isBrowserAgentPresenceCdpMethod(method) && !method.startsWith("Input.")) {
         options.onClientActivity?.({
           kind: "cdp-method",
           method,
           targetId: target.id,
-          ...(mouse ? { mouse } : {}),
         });
       }
     }

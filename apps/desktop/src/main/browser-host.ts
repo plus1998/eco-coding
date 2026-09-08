@@ -36,7 +36,7 @@ import type { McpSdkConfig } from "../shared/mcp";
 import type { AgentBrowserMcpToolResult } from "./agent-browser-cli-bridge";
 import { resolveAgentBrowserTabIndex } from "./agent-browser-cli-bridge";
 import { resolveAgentBrowserBinary } from "./agent-browser-resolve";
-import { type BrowserCdpProxy, type BrowserCdpTarget, startMultiBrowserCdpProxy } from "./browser-cdp-proxy";
+import { type BrowserCdpProxy, type BrowserCdpTarget, assertBrowserGuestWebContents, startMultiBrowserCdpProxy } from "./browser-cdp-proxy";
 import { writeBrowserHtmlPreviewTempFile } from "./browser-html-preview";
 import { BrowserMcpGateway, mergeEcoBrowserSdkConfig } from "./browser-mcp-gateway";
 import {
@@ -361,6 +361,7 @@ export class BrowserHost {
     if (guest.isDestroyed()) {
       throw new Error("Guest WebContents is destroyed.");
     }
+    assertBrowserGuestWebContents(guest);
     const isSameGuest = browser.registeredGuestWebContentsId === guest.id;
     if (isSameGuest) {
       this.emit();
@@ -1186,6 +1187,10 @@ export class BrowserHost {
         },
         onPrepareGuestKeyboardInput: async () => {
           await this.blurMainRendererForGuestKeyboardInput();
+        },
+        isForbiddenWebContents: (wc) => {
+          const win = this.deps.getMainWindow();
+          return Boolean(win && !win.isDestroyed() && win.webContents.id === wc.id);
         },
       });
       scope.cdp = proxy;
