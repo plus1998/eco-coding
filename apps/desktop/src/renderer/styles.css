@@ -23852,6 +23852,124 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   opacity: 0.6;
 }
 
+.model-spec-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-spec-preset-select {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.model-spec-preset-select:focus {
+  outline: none;
+  border-color: color-mix(in srgb, #6b8afd 55%, var(--border-subtle) 45%);
+}
+
+.model-spec-preset-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-spec-preset-edit-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-main);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 100ms ease-out, color 100ms ease-out, border-color 100ms ease-out;
+}
+
+.model-spec-preset-edit-icon-btn:hover {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.model-spec-preset-edit-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.model-spec-preset-edit-icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.model-spec-preset-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-spec-preset-edit-row .model-spec-field-input {
+  flex: 1;
+  min-width: 60px;
+}
+
+.model-spec-preset-edit-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 100ms ease-out, color 100ms ease-out;
+}
+
+.model-spec-preset-edit-btn:hover {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+}
+
+.model-spec-preset-edit-btn-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.model-spec-preset-edit-btn-save:hover {
+  opacity: 0.9;
+}
+
+.model-spec-field-caption-custom {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-spec-preset-btn,
+  .model-spec-preset-edit-icon-btn,
+  .model-spec-preset-edit-btn {
+    transition: none;
+  }
+
 .model-spec-segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

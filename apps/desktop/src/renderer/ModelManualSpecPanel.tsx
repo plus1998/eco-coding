@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelsDevMapping, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import { multiplyUnitRate } from "../shared/manual-spec-pricing";
@@ -103,6 +103,168 @@ function NumericField({
   );
 }
 
+const CONTEXT_PRESETS = [131_072, 262_144, 524_288, 1_048_576];
+const OUTPUT_PRESETS = [8_192, 16_384, 32_768, 65_536, 131_072, 262_144];
+
+function formatTokenPresetLabel(value: number): string {
+  if (value >= 1_048_576 && value % 1_048_576 === 0) {
+    return `${value / 1_048_576}M`;
+  }
+  return `${value / 1024}K`;
+}
+
+function parseTokenInput(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const lower = trimmed.toLowerCase();
+  let multiplier = 1;
+  let numericPart = lower;
+  if (lower.endsWith("k")) {
+    multiplier = 1024;
+    numericPart = lower.slice(0, -1);
+  } else if (lower.endsWith("m")) {
+    multiplier = 1048576;
+    numericPart = lower.slice(0, -1);
+  }
+  const parsed = Number(numericPart);
+  if (Number.isNaN(parsed)) return undefined;
+  return Math.round(parsed * multiplier);
+}
+
+function TokenPresetField({
+  label,
+  value,
+  presets,
+  placeholder,
+  caption,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  presets: readonly number[];
+  placeholder?: string;
+  caption?: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const currentValue = parseTokenInput(value);
+  const isPreset = presets.some((p) => p === currentValue);
+
+  function startEditing() {
+    setDraft(value);
+    setEditing(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setDraft("");
+  }
+
+  function saveEditing() {
+    onChange(draft);
+    setEditing(false);
+    setDraft("");
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      saveEditing();
+    } else if (event.key === "Escape") {
+      cancelEditing();
+    }
+  }
+
+  if (editing) {
+    return (
+      <label className="model-spec-field">
+        <span className="model-spec-field-label">{label}</span>
+        <div className="model-spec-preset-edit-row">
+          <input
+            ref={inputRef}
+            className="model-spec-field-input"
+            type="text"
+            inputMode="numeric"
+            placeholder={placeholder}
+            value={draft}
+            disabled={disabled}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <button
+            type="button"
+            className="model-spec-preset-edit-btn model-spec-preset-edit-btn-save"
+            onClick={saveEditing}
+            disabled={disabled}
+          >
+            保存
+          </button>
+          <button
+            type="button"
+            className="model-spec-preset-edit-btn"
+            onClick={cancelEditing}
+            disabled={disabled}
+          >
+            取消
+          </button>
+        </div>
+        {caption ? <span className="model-spec-field-caption">{caption}</span> : null}
+      </label>
+    );
+  }
+
+  return (
+    <label className="model-spec-field">
+      <span className="model-spec-field-label">{label}</span>
+      <div className="model-spec-preset-row">
+        <select
+          className="model-spec-preset-select"
+          value={isPreset ? String(currentValue) : ""}
+          disabled={disabled}
+          onChange={(event) => {
+            const selected = event.target.value;
+            if (selected) {
+              onChange(selected);
+            }
+          }}
+        >
+          <option value="">选择...</option>
+          {presets.map((preset) => (
+            <option key={preset} value={preset}>
+              {formatTokenPresetLabel(preset)}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="model-spec-preset-edit-icon-btn"
+          onClick={startEditing}
+          disabled={disabled}
+          aria-label={`编辑${label}`}
+          title={`手动输入${label}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+      </div>
+      {caption ? <span className="model-spec-field-caption">{caption}</span> : null}
+      {value && !isPreset ? (
+        <span className="model-spec-field-caption model-spec-field-caption-custom">自定义：{value}</span>
+      ) : null}
+    </label>
+  );
+}
+
 export function ModelManualSpecPanel({
   value,
   autoCapability,
@@ -170,17 +332,19 @@ export function ModelManualSpecPanel({
       <section className="model-spec-form-section">
         <h4 className="model-spec-form-section-title">{t("modelSpec.contextAndOutput")}</h4>
         <div className="model-spec-form-grid">
-          <NumericField
+          <TokenPresetField
             label={t("modelSpec.contextLimit")}
             value={value.contextTokens}
+            presets={CONTEXT_PRESETS}
             placeholder={autoContextHint ?? "tokens"}
             {...(autoContextHint ? { caption: t("modelSpec.catalogHint", { hint: autoContextHint }) } : {})}
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(contextTokens) => onChange({ contextTokens })}
           />
-          <NumericField
+          <TokenPresetField
             label={t("modelSpec.maxOutput")}
             value={value.maxOutputTokens}
+            presets={OUTPUT_PRESETS}
             placeholder={autoOutputHint ?? "tokens"}
             {...(autoOutputHint ? { caption: t("modelSpec.catalogHint", { hint: autoOutputHint }) } : {})}
             {...(disabled !== undefined ? { disabled } : {})}
