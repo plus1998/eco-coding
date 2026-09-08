@@ -23969,6 +23969,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   .model-spec-preset-edit-btn {
     transition: none;
   }
+}
 
 .model-spec-segmented {
   display: grid;
