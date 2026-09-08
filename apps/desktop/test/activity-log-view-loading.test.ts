@@ -1502,6 +1502,8 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   );
 
   expect(html).toContain("subagent-conversation-prompt");
+  expect(html).toContain("run-log subagent-conversation-log-content");
+  expect(html).toContain("run-log-feed-entry");
   expect(html).toContain("run-log-user-prompt-bubble");
   expect(html).toContain("run-log-user-prompt-body-wrap");
   expect(html).toContain("run-log-user-prompt-images");

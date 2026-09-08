@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import {
   type ClipboardEvent,
+  Fragment,
   type KeyboardEvent,
   memo,
   type ReactNode,
@@ -2178,7 +2179,15 @@ const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetail
   entry: SubagentDetailFeedEntry;
   requestSpansById: ProjectionRequestSpansById;
 }) {
-  return <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />;
+  // Same feed-entry wrapper / spacing path as the main agent; only hide role chrome
+  // because this surface is already scoped to one subagent.
+  return (
+    <ProjectionTimelineEntry
+      item={entry.item}
+      requestSpansById={requestSpansById}
+      hideSubagentIdentity
+    />
+  );
 }, areProjectionSubagentDetailFeedEntryPropsEqual);
 
 function ProjectionSubagentTurn({
@@ -2208,7 +2217,12 @@ function ProjectionSubagentTurn({
         <>
           {turn.entries.map((entry) =>
             entry.kind === "tool-group" ? (
-              <ProjectionToolGroupEntry key={entry.key} entry={entry} requestSpansById={requestSpansById} />
+              <Fragment key={entry.key}>
+                {wrapRunLogFeedEntry(
+                  <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />,
+                  { tight: true },
+                )}
+              </Fragment>
             ) : (
               <ProjectionSubagentDetailFeedEntry
                 key={entry.key}
@@ -2217,7 +2231,9 @@ function ProjectionSubagentTurn({
               />
             ),
           )}
-          {turn.running && turn.entries.length === 0 ? <WaitingThinkingBlock active /> : null}
+          {turn.running && turn.entries.length === 0
+            ? wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
+            : null}
         </>
       }
       {...(turn.finalResult && {
@@ -2561,24 +2577,30 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   return (
     <div className="subagent-task-detail-feed subagent-conversation">
       <div ref={feedRef} className="subagent-conversation-log">
-        <div className="subagent-conversation-log-content">
-          {missionDisplay ? (
-            <UserPromptBlock
-              text={missionDisplay}
-              className="subagent-conversation-prompt"
-              {...(images && { images })}
-            />
-          ) : null}
+        <div className="run-log subagent-conversation-log-content">
+          {missionDisplay
+            ? wrapRunLogFeedEntry(
+                <UserPromptBlock
+                  text={missionDisplay}
+                  className="subagent-conversation-prompt"
+                  {...(images && { images })}
+                />,
+              )
+            : null}
           {turns.length > 0 ? (
             turns.map((turn) => (
               <ProjectionSubagentTurn key={turn.key} turn={turn} requestSpansById={requestSpansById} />
             ))
           ) : running ? (
-            <WaitingThinkingBlock active />
+            wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
           ) : (
             <p className="subagent-task-detail-empty">{i18n.t("activity.noDetails")}</p>
           )}
-          {running ? <RunLogConversationTail /> : null}
+          {running ? (
+            <div className="run-log-feed-entry run-log-feed-entry--tight run-log-active-tail">
+              <RunLogConversationTail />
+            </div>
+          ) : null}
         </div>
       </div>
       <ProjectionSubagentRunInstanceStrip agent={agent} />
@@ -2714,6 +2736,7 @@ function ProjectionTimelineEntry({
   allowUserMessageRewrite = false,
   historyRevision,
   compact = false,
+  hideSubagentIdentity = false,
   deferWaitingIndicator = false,
   deferReasoningStageTip = false,
   forceActionDetailsExpanded = false,
@@ -2735,6 +2758,8 @@ function ProjectionTimelineEntry({
   allowUserMessageRewrite?: boolean;
   historyRevision?: number;
   compact?: boolean;
+  /** Hide role badges without skipping the shared `.run-log-feed-entry` spacing wrapper. */
+  hideSubagentIdentity?: boolean;
   deferWaitingIndicator?: boolean;
   deferReasoningStageTip?: boolean;
   forceActionDetailsExpanded?: boolean;
@@ -2746,6 +2771,7 @@ function ProjectionTimelineEntry({
   onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
 }) {
+  const omitIdentity = compact || hideSubagentIdentity;
   if (
     deferWaitingIndicator &&
     isDeferredThinkingStatusItem(item, requestSpansById, deferReasoningStageTip)
@@ -2753,7 +2779,7 @@ function ProjectionTimelineEntry({
     return null;
   }
   if (isProjectionUserPromptItem(item)) {
-    if (compact) {
+    if (omitIdentity) {
       return null;
     }
     const rewindTarget = readProjectionRewindTarget(item);
@@ -2806,7 +2832,7 @@ function ProjectionTimelineEntry({
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         pacing={pacing}
         {...(block.subagent && { subagent: block.subagent })}
-        omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
+        omitSubagentBadge={omitIdentity || isAgentDisplayRole(block.subagent)}
         compact={compact}
         {...(requestSpan && { requestSpan })}
         item={item}
@@ -2862,7 +2888,7 @@ function ProjectionTimelineEntry({
       block={block}
       requestActive={requestActive}
       createdAt={item.at}
-      hideSubagentIdentity={compact}
+      hideSubagentIdentity={omitIdentity}
       forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(actionLabelOverride && { actionLabelOverride })}
       {...(requestSpan && { requestSpan })}

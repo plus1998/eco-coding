@@ -30886,7 +30886,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
 
 .subagent-conversation .run-log-user-prompt {
   flex: 0 0 auto;
-  margin: 0 0 16px;
+  margin: 0;
 }
 
 .subagent-conversation .run-log-user-prompt-content {
@@ -30936,10 +30936,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
 }
 
 .subagent-conversation-log-content {
-  display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .subagent-conversation .subagent-run-instance-strip {
@@ -31131,12 +31128,6 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   color: var(--terminal-fg);
   font-size: 14px;
   line-height: 1.62;
-}
-
-.subagent-task-detail-feed .run-log-action,
-.subagent-task-detail-feed .run-log-thinking,
-.subagent-task-detail-feed .run-log-narrative {
-  margin-top: 0;
 }
 
 .subagent-task-detail-empty,
