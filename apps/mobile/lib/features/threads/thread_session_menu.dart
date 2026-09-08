@@ -100,9 +100,7 @@ class ThreadSessionMenuButton extends ConsumerWidget {
     _ThreadSessionMenuEntry(
       value: 'auto_read',
       icon: autoReadEnabled ? EcoIcons.speaking : EcoIcons.volume2,
-      label: autoReadEnabled
-          ? l10n.threadDisableAutoRead
-          : l10n.threadEnableAutoRead,
+      label: l10n.threadAutoRead,
       enabled: true,
     ),
   ];

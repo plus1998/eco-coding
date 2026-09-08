@@ -345,9 +345,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadNew => 'New session';
 
   @override
-  String get threadRegenerateTitle => 'Regenerate title';
-
-  @override
   String get threadMore => 'More';
 
   @override
@@ -1689,10 +1686,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadTasks => 'Task progress';
 
   @override
-  String get threadEnableAutoRead => 'Enable auto read-aloud';
-
-  @override
-  String get threadDisableAutoRead => 'Disable auto read-aloud';
+  String get threadAutoRead => 'Auto read-aloud';
 
   @override
   String get threadPlan => 'Plan';

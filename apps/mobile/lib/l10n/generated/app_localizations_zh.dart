@@ -298,9 +298,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNew => '新建会话';
 
   @override
-  String get threadRegenerateTitle => '重新生成标题';
-
-  @override
   String get threadMore => '更多';
 
   @override
@@ -1605,10 +1602,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadTasks => '任务进度';
 
   @override
-  String get threadEnableAutoRead => '开启自动朗读';
-
-  @override
-  String get threadDisableAutoRead => '关闭自动朗读';
+  String get threadAutoRead => '自动朗读';
 
   @override
   String get threadPlan => '计划';

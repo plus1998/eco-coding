@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/app_error.dart';
-import '../../core/models/eco_types.dart' hide workspaceDisplayName;
 import '../../core/models/git_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
@@ -229,7 +228,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           followUps: state.followUps,
           billing: state.billing,
           contextSnapshot: state.contextSnapshot,
-          titleGenerating: state.titleGenerating,
           composerRestore: state.composerRestore,
           projectionReady: isProjectionFeedReady(state.runProjection),
           projectionSettled: state.projectionSettled,
@@ -403,8 +401,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         projectName: projectName,
         runtimeConfig: runtimeConfig,
         isRunning: isRunning,
-        titleGenerating: session.titleGenerating,
-        coreKind: thread?.coreKind,
         gitStatus: gitStatus,
       ),
       body: ThreadSessionConversationLayout(

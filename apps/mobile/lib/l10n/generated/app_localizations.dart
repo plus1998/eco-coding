@@ -632,12 +632,6 @@ abstract class AppLocalizations {
   /// **'New session'**
   String get threadNew;
 
-  /// No description provided for @threadRegenerateTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Regenerate title'**
-  String get threadRegenerateTitle;
-
   /// No description provided for @threadMore.
   ///
   /// In en, this message translates to:
@@ -2912,17 +2906,11 @@ abstract class AppLocalizations {
   /// **'Task progress'**
   String get threadTasks;
 
-  /// No description provided for @threadEnableAutoRead.
+  /// No description provided for @threadAutoRead.
   ///
   /// In en, this message translates to:
-  /// **'Enable auto read-aloud'**
-  String get threadEnableAutoRead;
-
-  /// No description provided for @threadDisableAutoRead.
-  ///
-  /// In en, this message translates to:
-  /// **'Disable auto read-aloud'**
-  String get threadDisableAutoRead;
+  /// **'Auto read-aloud'**
+  String get threadAutoRead;
 
   /// No description provided for @threadPlan.
   ///
