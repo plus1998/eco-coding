@@ -29,14 +29,10 @@ const require = createRequire(import.meta.url);
 const CONTROL_SECRET_HEADER = "X-Eco-Computer-Use-Control-Secret";
 
 function tryElectronDesktopApis(): {
-  desktopCapturer?: { getSources: (opts: { types: string[] }) => Promise<unknown> };
-  shell?: { openExternal: (url: string) => Promise<void> };
   systemPreferences?: { getMediaAccessStatus: (mediaType: string) => string };
 } | undefined {
   try {
     return require("electron") as {
-      desktopCapturer?: { getSources: (opts: { types: string[] }) => Promise<unknown> };
-      shell?: { openExternal: (url: string) => Promise<void> };
       systemPreferences?: { getMediaAccessStatus: (mediaType: string) => string };
     };
   } catch {
@@ -55,34 +51,6 @@ export function getEcoScreenRecordingStatus(): "granted" | "missing" | "unknown"
     return "missing";
   }
   return "unknown";
-}
-
-/**
- * Register Eco Coding in the Screen Recording list and open the privacy pane.
- * Nested Open Computer Use.app cannot hold Screen Recording for Eco-spawned MCP.
- */
-export async function ensureEcoScreenRecordingPrompt(): Promise<void> {
-  const electron = tryElectronDesktopApis();
-  if (!electron || process.platform !== "darwin") {
-    return;
-  }
-  try {
-    await electron.desktopCapturer?.getSources?.({ types: ["screen"] });
-  } catch {
-    // Prompt / registration best-effort.
-  }
-  const urls = [
-    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
-    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-  ];
-  for (const url of urls) {
-    try {
-      await electron.shell?.openExternal?.(url);
-      break;
-    } catch {
-      // try fallback
-    }
-  }
 }
 
 export interface ComputerUseMcpInjection {
@@ -331,7 +299,8 @@ let onboardingError: string | undefined;
  *
  * The binary stays alive until the user grants the permissions or closes the
  * window, so do not await its exit. The onboarding window itself guides the user
- * into the right System Settings panes.
+ * into the right System Settings panes — do not also deep-link Screen Recording
+ * from Eco (that stole focus and looked like "check only opened recording").
  *
  * Prefer `open -n -a <Open Computer Use.app>` so LaunchServices owns the
  * process: spawning the Mach-O as Eco's child attributes Screen Recording TCC
@@ -387,8 +356,6 @@ export function launchOpenComputerUseOnboarding(
     });
     child.unref();
     onboardingChild = child;
-    // Fire-and-forget: register Eco in Screen Recording + open the privacy pane.
-    void ensureEcoScreenRecordingPrompt();
     return { launched: true };
   } catch (error) {
     return {
