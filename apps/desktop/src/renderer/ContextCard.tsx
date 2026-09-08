@@ -39,11 +39,11 @@ function formatContextK(value: number): string {
   if (value < 1000) {
     return String(value);
   }
-  if (value < 1_000_000) {
-    const rounded = value / 1000;
+  if (value < 1_048_576) {
+    const rounded = value / 1024;
     return rounded >= 100 ? `${Math.round(rounded)}K` : `${rounded.toFixed(1)}K`;
   }
-  return `${(value / 1_000_000).toFixed(1)}M`;
+  return `${(value / 1_048_576).toFixed(1)}M`;
 }
 
 function occupancyTone(pct: number): "ok" | "warn" | "critical" {

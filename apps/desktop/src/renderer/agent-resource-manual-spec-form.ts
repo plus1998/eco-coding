@@ -348,11 +348,11 @@ export function formatTokenCountHint(value?: number): string | undefined {
   if (value === undefined || value <= 0) {
     return undefined;
   }
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_048_576 && value % 1_048_576 === 0) {
+    return `${value / 1_048_576}M`;
   }
-  if (value >= 1_000) {
-    return `${Math.round(value / 1000)}K`;
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)}K`;
   }
   return String(value);
 }

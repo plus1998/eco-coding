@@ -306,10 +306,10 @@ export function formatTokenSpeedRate(tps: number): string {
   return tps >= 100 ? Math.round(tps).toString() : tps.toFixed(1);
 }
 
-/** Prefill values can be large (fast KV reads) — use a K-suffix above 1000. */
+/** Prefill values can be large (fast KV reads) — use a K-suffix above 1024 (K = 1024 tokens). */
 export function formatTokenSpeedPrefill(tps: number): string {
-  if (tps >= 1000) {
-    return `${(tps / 1000).toFixed(1)}K`;
+  if (tps >= 1024) {
+    return `${(tps / 1024).toFixed(1)}K`;
   }
   return formatTokenSpeedRate(tps);
 }

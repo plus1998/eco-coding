@@ -12,11 +12,11 @@ import {
 } from "./agent-resource-manual-spec-form";
 
 function formatTokenCount(value: number): string {
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_048_576) {
+    return `${(value / 1_048_576).toFixed(1)}M`;
   }
   if (value >= 1_000) {
-    return `${Math.round(value / 1000)}K`;
+    return `${Math.round(value / 1024)}K`;
   }
   return String(value);
 }

@@ -94,11 +94,11 @@ function sumEventTokens(events: readonly UsageLedgerEvent[]): number {
 }
 
 function formatTokenCount(total: number): string {
-  if (total >= 1_000_000) {
-    return `${(total / 1_000_000).toFixed(1)}M`;
+  if (total >= 1_048_576) {
+    return `${(total / 1_048_576).toFixed(1)}M`;
   }
   if (total >= 1_000) {
-    return `${Math.round(total / 1_000)}k`;
+    return `${Math.round(total / 1024)}k`;
   }
   return String(total);
 }
