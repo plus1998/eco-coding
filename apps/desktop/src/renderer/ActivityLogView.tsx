@@ -705,9 +705,10 @@ function ProjectionActivityLogView({
     ...(onOpenImageDisplayArtifact && { onOpenImageDisplayArtifact }),
     ...(agentDisplayNames && { agentDisplayNames }),
     ...(agentThemes && { agentThemes }),
-    ...(onRestorePrompt && { onRestorePrompt }),
-    ...(onLoadUserMessageEdit && { onLoadUserMessageEdit }),
-    ...(onRewriteUserMessage && { onRewriteUserMessage }),
+    // ACP/Pi have no history rewrite; omit restore+edit handlers so Reply/Pencil icons stay hidden.
+    ...(onRestorePrompt && allowUserMessageRewrite && { onRestorePrompt }),
+    ...(onLoadUserMessageEdit && allowUserMessageRewrite && { onLoadUserMessageEdit }),
+    ...(onRewriteUserMessage && allowUserMessageRewrite && { onRewriteUserMessage }),
     ...(onRetryFailedRequest && { onRetryFailedRequest }),
     retryTargets,
     allowUserMessageRewrite,
@@ -4394,7 +4395,8 @@ function UserPromptBlock({
         align="end"
         copyText={text}
         {...(createdAt && { createdAt })}
-        {...(onRestorePrompt &&
+        {...(allowUserMessageRewrite &&
+          onRestorePrompt &&
           rewindTarget &&
           !canEdit && {
             restorePrompt: {
