@@ -10,12 +10,10 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/device_display.dart';
-import '../../core/utils/thread_title.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart'
     show AdaptiveToolbarIcon, sessionToolbarButtonGap, sessionToolbarButtonSize;
 import '../../core/widgets/progressive_blur.dart';
 import '../projects/project_providers.dart';
-import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
 const threadSessionToolbarHeight = 54.0;
@@ -157,8 +155,6 @@ PreferredSizeWidget buildThreadSessionAppBar(
   String? projectName,
   required ThreadRuntimeConfigInput runtimeConfig,
   required bool isRunning,
-  bool titleGenerating = false,
-  String? coreKind,
   GitWorkingTreeStatus? gitStatus,
   bool showNewThreadAction = true,
 }) {
@@ -202,55 +198,15 @@ PreferredSizeWidget buildThreadSessionAppBar(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.15,
-                                  ),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              height: 1.15,
                             ),
-                          ),
-                          if (threadId != null &&
-                              canRegenerateThreadTitle(
-                                title,
-                                titleGenerating: titleGenerating,
-                                coreKind: coreKind,
-                              )) ...[
-                            const SizedBox(width: 2),
-                            IconButton(
-                              tooltip: context.l10n.threadRegenerateTitle,
-                              icon: Icon(
-                                EcoIcons.refresh,
-                                size: 16,
-                                color: ecoColors(context).textMuted,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 28,
-                                minHeight: 28,
-                              ),
-                              onPressed: () async {
-                                  final rpc = ref.read(desktopRpcProvider);
-                                  if (rpc == null) return;
-                                  try {
-                                    await rpc.regenerateThreadTitle(threadId);
-                                  } catch (error) {
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('$error')),
-                                    );
-                                  }
-                                },
-                            ),
-                          ],
-                        ],
                       ),
                       if (subtitle.isNotEmpty)
                         GestureDetector(
