@@ -106,9 +106,10 @@ test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
   expect(shouldDrainThreadFollowUps("failed")).toBe(true);
   expect(shouldDrainThreadFollowUps("blocked")).toBe(true);
   expect(shouldDrainThreadFollowUps("awaiting_plan")).toBe(true);
+  // idle: Resume after user stop must be able to drain; stop path auto-pauses first.
+  expect(shouldDrainThreadFollowUps("idle")).toBe(true);
   expect(shouldDrainThreadFollowUps("running")).toBe(false);
   expect(shouldDrainThreadFollowUps("queued")).toBe(false);
-  expect(shouldDrainThreadFollowUps("idle")).toBe(false);
 });
 
 test("buildThreadFollowUpDisplayPrompt only includes the first delivered message", () => {

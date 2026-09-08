@@ -10448,8 +10448,8 @@ async function handleRunCancelled(
   worktreePlan: WorktreePlan,
   message?: string,
 ): Promise<void> {
-  // User stop lands on idle (not drainable). Pause remaining queued follow-ups so they
-  // do not silently sit forever, and so Resume/引导 stays an explicit next step.
+  // User stop lands on idle (which is drainable). Pause remaining queued follow-ups
+  // so cancel cleanup does not silently send them; Resume/继续 is the explicit next step.
   // Skip for escalated follow-up interrupts: the triggering message is still in
   // "queued" state here and is force-drained right after — auto-pausing would
   // flash "排队发送已暂停" and then send the message anyway, and the paused

@@ -1,6 +1,14 @@
 import type { PromptImageAttachment, ThreadPendingFollowUp, ThreadStatus } from "./ipc";
 
-const DRAINABLE_FOLLOW_UP_STATUSES = ["completed", "failed", "blocked", "awaiting_plan"] as const;
+// `idle` is drainable so queue Resume after a user stop can send. Stop itself must
+// auto-pause first; otherwise cancel cleanup would silently drain remaining follow-ups.
+const DRAINABLE_FOLLOW_UP_STATUSES = [
+  "completed",
+  "failed",
+  "blocked",
+  "awaiting_plan",
+  "idle",
+] as const;
 
 export function shouldDrainThreadFollowUps(status: ThreadStatus): boolean {
   return (DRAINABLE_FOLLOW_UP_STATUSES as readonly string[]).includes(status);
