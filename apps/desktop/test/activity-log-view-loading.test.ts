@@ -26,6 +26,7 @@ import type {
 import { renderLocalized } from "./i18n-test";
 
 const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
+const themes = readFileSync(new URL("../src/renderer/themes.css", import.meta.url), "utf8");
 
 let previousLanguage = "zh-CN";
 
@@ -430,8 +431,8 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
   );
 
   // Waiting indicator is deferred to the active-tail; process stays empty under the
-  // 处理中 divider so padding does not stack above "正在思考". Active-tail uses the
-  // same --codex-feed-gap-process as in-process siblings.
+  // 处理中 divider so padding does not stack above "正在思考". Active-tail and
+  // in-process siblings share --codex-feed-gap-process (see feed spacing contract).
   expect(beforeRequest).toContain("run-log-turn-process-inner is-empty");
   expect(afterRequest).toContain("run-log-turn-process-inner is-empty");
   expect(beforeRequest).toContain("run-log-active-tail");
@@ -811,15 +812,39 @@ test("ActivityLogView keeps block spacing between a completed turn and the next 
   expect(styles).toMatch(
     /\.run-log\s*>\s*\.run-log-virtual-row:has\(>\s*\.run-log-turn\)\s*\+\s*\.run-log-virtual-row:has\(>\s*\.run-log-feed-entry\)\s*>\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*var\(--codex-feed-gap-block\);/,
   );
-  expect(styles).toMatch(
-    /\.codex-main:not\(\.codex-main-landing\) \.run-log-turn-process-inner\s*\{[\s\S]*?gap:\s*var\(--codex-feed-gap-process\);/,
-  );
+});
+
+/**
+ * Stable Feed rhythm (9d0bc14a): one process gap for tools / thinking / narrative /
+ * imageView inside「处理中」, plus the same token for active-tail and top-level
+ * process-like siblings. Do not swap process-inner back to --codex-feed-gap-step.
+ */
+test("run-log feed spacing contract keeps process rhythm on --codex-feed-gap-process", () => {
+  expect(themes.match(/--codex-feed-gap-block:\s*14px;/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  expect(themes.match(/--codex-feed-gap-step:\s*6px;/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  expect(themes.match(/--codex-feed-gap-process:\s*20px;/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
   expect(styles).toMatch(/--codex-feed-gap-process:\s*20px;/);
+
+  const processInnerBody = styles.match(
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log-turn-process-inner\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  expect(processInnerBody).toBeTruthy();
+  expect(processInnerBody).toMatch(/^\s*gap:\s*var\(--codex-feed-gap-process\);/m);
+  expect(processInnerBody).toMatch(/^\s*padding-top:\s*var\(--codex-feed-gap-process\);/m);
+  expect(processInnerBody).not.toMatch(/gap:\s*var\(--codex-feed-gap-step\)/);
+  expect(processInnerBody).not.toMatch(/padding-top:\s*var\(--codex-feed-gap-step\)/);
+
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log-turn-final\s*\{[\s\S]*?margin-top:\s*var\(--codex-feed-gap-process\);/,
+  );
   expect(styles).toMatch(
     /\.run-log\s*>\s*\.run-log-feed-entry:is\([\s\S]*?:has\(\.run-log-thinking\)[\s\S]*?\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*var\(--codex-feed-gap-process\);/,
   );
   expect(styles).toMatch(
     /\.run-log\s*>\s*\.run-log-active-tail[\s\S]*?margin-top:\s*var\(--codex-feed-gap-process\);/,
+  );
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-feed-entry--tight \+ \.run-log-feed-entry--tight[\s\S]*?margin-top:\s*var\(--codex-feed-gap-step\);/,
   );
   expect(styles).toMatch(
     /\.codex-main:not\(\.codex-main-landing\) \.run-log-prompt-cache-notice,\s*\.codex-main:not\(\.codex-main-landing\) \.run-log-prompt-cache-timeline\s*\{[\s\S]*?margin-block:\s*0;/,
