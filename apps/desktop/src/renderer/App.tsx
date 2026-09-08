@@ -1957,7 +1957,9 @@ function App() {
           ...current,
           [threadId]: applyLocalStreamUpdatesToProjection(
             existing,
-            updates.map((update) => ({ ...update, streaming: true })),
+            // Promote as settled finals so empty/partial streams do not linger as
+            // forever-streaming「正在思考」/ narrative deltas after the turn ends.
+            updates.map((update) => ({ ...update, streaming: false })),
           ),
         };
       });

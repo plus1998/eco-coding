@@ -4,6 +4,7 @@ import {
   buildProjectionDisplayTimelineItems,
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
+  collapseProjectionTimelineStreamsForDetail,
   isProjectionRequestActive,
   isProjectionSubagentPromptItem,
   isProjectionUserPromptItem,
@@ -6580,4 +6581,141 @@ test("stream collapse does not merge across mid-turn user_prompt with reused str
     return [];
   });
   expect(narrativeTexts).toEqual(["先答", "插话后答"]);
+});
+
+test("buildProjectionDisplayTimelineItems drops empty thinking.delta placeholders", () => {
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "think-empty",
+        sequence: 1,
+        eventType: "thinking.delta",
+        role: "thinking",
+        streamKey: "think",
+        text: "",
+      }),
+      item({
+        id: "msg",
+        sequence: 2,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: "msg",
+        text: "done",
+      }),
+    ],
+    new Map(),
+  );
+  expect(rows.map((row) => row.id)).toEqual(["msg"]);
+});
+
+test("buildProjectionDisplayTimelineItems collapses mid-turn exact duplicate assistant narratives", () => {
+  const text =
+    "I'll start by checking the project directory and launching the HTTP server, then verify it and open the browser.";
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "m1",
+        sequence: 1,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: ":block:text:1",
+        text,
+        runAttemptId: "att_1",
+      }),
+      item({
+        id: "m2",
+        sequence: 2,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: ":block:text:2",
+        text,
+        runAttemptId: "att_1",
+      }),
+    ],
+    new Map(),
+  );
+  expect(rows.map((row) => row.id)).toEqual(["m2"]);
+});
+
+test("buildProjectionDisplayTimelineItems collapses prefix-growth narratives between tools", () => {
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "short",
+        sequence: 1,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: ":block:text:1",
+        text: "I'll start by checking the project directory and launching the HTTP server, then verify it and open",
+        runAttemptId: "att_1",
+      }),
+      item({
+        id: "full",
+        sequence: 2,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: ":block:text:2",
+        text: "I'll start by checking the project directory and launching the HTTP server, then verify it and open the browser.",
+        runAttemptId: "att_1",
+      }),
+      item({
+        id: "tool",
+        sequence: 3,
+        eventType: "tool.completed",
+        role: "planner",
+        streamKey: "shell",
+        text: "ls",
+        runAttemptId: "att_1",
+        metadata: {
+          tool: {
+            name: "Shell",
+            toolUseId: "c1",
+          },
+        },
+      }),
+      item({
+        id: "after",
+        sequence: 4,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: ":block:text:3",
+        text: "The project directory exists with an `index.html`. Let me start the HTTP server in the background.",
+        runAttemptId: "att_1",
+      }),
+      item({
+        id: "after-dup",
+        sequence: 5,
+        eventType: "message.final",
+        role: "planner",
+        streamKey: ":block:text:4",
+        text: "The project directory exists with an `index.html`. Let me start the HTTP server in the background.",
+        runAttemptId: "att_1",
+      }),
+    ],
+    new Map(),
+  );
+  expect(rows.map((row) => row.id)).toEqual(["full", "tool", "after-dup"]);
+});
+
+test("collapseProjectionTimelineStreamsForDetail keeps only the latest same-streamKey final", () => {
+  const collapsed = collapseProjectionTimelineStreamsForDetail([
+    item({
+      id: "a",
+      sequence: 1,
+      eventType: "message.final",
+      role: "planner",
+      streamKey: "same",
+      text: "hello",
+    }),
+    item({
+      id: "b",
+      sequence: 2,
+      eventType: "message.final",
+      role: "planner",
+      streamKey: "same",
+      text: "hello world",
+    }),
+  ]);
+  expect(collapsed.map((row) => row.id)).toEqual(["b"]);
+  expect(collapsed[0]?.text).toBe("hello world");
 });

@@ -139,19 +139,15 @@ import {
 import {
   readStoredThinkingDisplayPreferences,
   thinkingModeDefaultExpanded,
-  thinkingModeUsesEphemeralTip,
   type ThinkingDisplayMode,
 } from "./thinking-display-preferences";
 import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
-  collapseEphemeralReasoningSummaryTimeline,
-  collapseProjectionTimelineStreamsForDetail,
-  collapseProjectionToolLifecycleItemsForDetail,
+  filterProjectionTimelineForDetailFeed,
   isProjectionRequestActive,
   isProjectionSubagentPromptItem,
   isProjectionUserPromptItem,
-  presentThinkingAsEphemeralSummaryTips,
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
   resolveProjectionAgentStatusText,
@@ -2470,17 +2466,17 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   const resolvedThinkingDisplayMode =
     thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
   const visibleTimeline = useMemo(() => {
+    // Same display collapse core as the main feed; only subagent-specific noise /
+    // mission suppression / consecutive-thinking join stay as surface adapters.
     const prepared = filterSubagentDetailTimelineNoise(agent.timeline);
-    const forCollapse = thinkingModeUsesEphemeralTip(resolvedThinkingDisplayMode)
-      ? presentThinkingAsEphemeralSummaryTips(prepared)
-      : prepared;
-    const filtered = collapseEphemeralReasoningSummaryTimeline(
-      collapseProjectionTimelineStreamsForDetail(
-        collapseProjectionToolLifecycleItemsForDetail(forCollapse),
-      ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay)),
-    );
-    return collapseConsecutiveThinkingTimelineItems(filtered);
-  }, [agent.timeline, missionDisplay, resolvedThinkingDisplayMode]);
+    const collapsed = filterProjectionTimelineForDetailFeed(
+      prepared,
+      requestSpansById,
+      true,
+      resolvedThinkingDisplayMode,
+    ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay));
+    return collapseConsecutiveThinkingTimelineItems(collapsed);
+  }, [agent.timeline, missionDisplay, requestSpansById, resolvedThinkingDisplayMode]);
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, visibleTimeline);
   const turns = useMemo(() => buildSubagentDetailTurns(detailFeedEntries, agent), [agent, detailFeedEntries]);
   const latestTimelineItem = visibleTimeline.at(-1);
@@ -2938,8 +2934,13 @@ function shouldSuppressSubagentCardTimelineItem(
 function filterSubagentDetailTimelineNoise(
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem[] {
+  // Empty thinking.delta used to linger as inline「正在思考」after tools moved on.
   const filtered = timeline.filter(
-    (item) => !(item.eventType === "thinking.final" && item.text.trim().length === 0),
+    (item) =>
+      !(
+        (item.eventType === "thinking.final" || item.eventType === "thinking.delta") &&
+        item.text.trim().length === 0
+      ),
   );
   const ordered: ThreadRunProjectionTimelineItem[] = [];
   for (let index = 0; index < filtered.length; index += 1) {
@@ -3462,13 +3463,19 @@ function ScrollingThinkingText({ text }: { text: string }) {
     if (lines.length <= 1) {
       return;
     }
+    let index = 0;
+    const lastIndex = lines.length - 1;
     const timer = setInterval(() => {
-      setActiveLine((current) => (current + 1) % lines.length);
+      index += 1;
+      setActiveLine(index);
+      if (index >= lastIndex) {
+        clearInterval(timer);
+      }
     }, 2600);
     return () => clearInterval(timer);
   }, [linesKey]);
 
-  const activeIndex = lines.length > 0 ? activeLine % lines.length : 0;
+  const activeIndex = lines.length > 0 ? Math.min(activeLine, lines.length - 1) : 0;
   const activeText = lines[activeIndex] ?? i18n.t("activity.thinking");
 
   return (

@@ -79,6 +79,44 @@ test("overlays the latest local text onto a persisted stream item without duplic
   expect(result.timeline[0]?.text).toBe("逐字输出");
 });
 
+test("settled local overlay (streaming false) writes message.final / thinking.final", () => {
+  const message = applyLocalStreamUpdatesToProjection(projection(), [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:message:0",
+      text: "已完成",
+      role: "planner",
+      channel: "message",
+      streaming: false,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+  expect(message.timeline[0]).toMatchObject({
+    eventType: "message.final",
+    text: "已完成",
+  });
+
+  const thinking = applyLocalStreamUpdatesToProjection(projection(), [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:thinking:0",
+      text: "收尾",
+      role: "thinking",
+      channel: "thinking",
+      streaming: false,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+  expect(thinking.timeline[0]).toMatchObject({
+    eventType: "thinking.final",
+    text: "收尾",
+  });
+  expect(projectionItemToDetailBlock(thinking.timeline[0]!)).toMatchObject({
+    kind: "thinking",
+    streaming: false,
+  });
+});
+
 test("local thinking overlay with summary stamp maps to reasoning-stage without a collapsible thinking block", () => {
   const result = applyLocalStreamUpdatesToProjection(projection(), [
     {

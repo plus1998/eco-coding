@@ -695,7 +695,7 @@ function isProjectionToolFailureDuplicateMessage(
   return false;
 }
 
-function filterProjectionTimelineForDetailFeed(
+export function filterProjectionTimelineForDetailFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
   includePromptCacheTips = true,
@@ -704,6 +704,9 @@ function filterProjectionTimelineForDetailFeed(
   const built = buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
     (item) =>
       !isEmptyTerminalThinkingItem(item) &&
+      // Mission envelopes belong on the card/header, not as echoed speech in agent timelines.
+      // (Previously dropped as a side effect of owner-key stream collapse on agent scope.)
+      !isSubagentMissionEnvelope(item.text) &&
       (includePromptCacheTips || !isPromptCacheTimelineEventType(item.eventType)),
   );
   // 阅后即焚 → tip path; 折叠/展开 → keep raw thinking as cards.
@@ -779,45 +782,20 @@ function filterProjectionTimelineForDetailFeed(
 }
 
 /**
- * Full-history detail payloads contain both live deltas and their terminal row.
- * Collapse only explicit streams that actually contain a delta; final-only rows
- * are separate conversation entries and must remain visible.
+ * Stream/tool collapse shared with the main feed path.
+ * Prefer {@link filterProjectionTimelineForDetailFeed} for full display prep
+ * (request placeholders, thinking mode, prompt-cache tips).
  */
 export function collapseProjectionTimelineStreamsForDetail(
   timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById: ReadonlyMap<
+    string,
+    ThreadRunProjectionSnapshot["requestSpans"][number]
+  > = new Map(),
 ): ThreadRunProjectionTimelineItem[] {
-  const latestByStream = new Map<string, { latest: ThreadRunProjectionTimelineItem; hasDelta: boolean }>();
-  for (const item of timeline) {
-    const key = explicitProjectionDetailStreamKey(item, timeline);
-    if (!key) {
-      continue;
-    }
-    const current = latestByStream.get(key);
-    const isDelta = item.eventType === "message.delta" || item.eventType === "thinking.delta";
-    if (!current) {
-      latestByStream.set(key, { latest: item, hasDelta: isDelta });
-      continue;
-    }
-    latestByStream.set(key, {
-      latest:
-        compareTimelineItems(current.latest, item) <= 0
-          ? mergeStreamDisplayTimelineItem(current.latest, item, timeline)
-          : current.latest,
-      hasDelta: current.hasDelta || isDelta,
-    });
-  }
-
-  return timeline.flatMap((item) => {
-    const key = explicitProjectionDetailStreamKey(item, timeline);
-    if (!key) {
-      return [item];
-    }
-    const stream = latestByStream.get(key);
-    if (!stream?.hasDelta) {
-      return [item];
-    }
-    return stream.latest.id === item.id ? [stream.latest] : [];
-  });
+  return buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
+    (item) => !isEmptyTerminalThinkingItem(item),
+  );
 }
 
 /** Combines adjacent displayed thinking blocks while keeping the first item stable. */
@@ -949,30 +927,13 @@ function mergeConsecutiveThinkingMetadata(
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
-function explicitProjectionDetailStreamKey(
-  item: ThreadRunProjectionTimelineItem,
-  timeline: readonly ThreadRunProjectionTimelineItem[] = [],
-): string | undefined {
-  if (!isStreamingRequestDisplayItem(item)) {
-    return undefined;
-  }
-  const streamKey = item.streamKey?.trim();
-  if (!streamKey) {
-    return undefined;
-  }
-  const channel =
-    item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
-  const requestId = item.requestId?.trim();
-  if (requestId) {
-    return [channel, item.agentId ?? "", requestId, streamKey].join(":");
-  }
-  const attemptId = item.runAttemptId?.trim() || "";
-  const afterUser = resolvePrecedingUserPromptSequence(item, timeline);
-  return [channel, item.agentId ?? "", attemptId, streamKey, `afterUser:${afterUser}`].join(":");
-}
-
 function isEmptyTerminalThinkingItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return item.eventType === "thinking.final" && item.text.trim().length === 0;
+  if (item.eventType !== "thinking.delta" && item.eventType !== "thinking.final") {
+    return false;
+  }
+  // Empty thinking.delta rows used to linger as inline「正在思考」after tools moved on.
+  // Waiting UI comes from active-tail / request.started instead.
+  return item.text.trim().length === 0;
 }
 
 /** OpenAI/Codex reasoning summary (not Claude raw thinking / raw CoT). */
@@ -1521,11 +1482,125 @@ export function buildProjectionDisplayTimelineItems(
       continue;
     }
     const settled = settleTerminalStreamDisplayItem(displayItem, requestSpansById);
-    if (settled) {
+    if (settled && !isEmptyTerminalThinkingItem(settled)) {
       displayItems.push(settled);
     }
   }
-  return displayItems;
+  return collapseRedundantMessageDisplayItems(displayItems);
+}
+
+/**
+ * Drop echoed assistant speech that slipped past stream-key collapse:
+ * - exact duplicate text in the same attempt (even across tools)
+ * - strict prefix growth of the same speech act (no tool / user between)
+ */
+export function collapseRedundantMessageDisplayItems(
+  items: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const messageIndexes: number[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item && isMessageSpeechDisplayItem(item) && item.text.trim()) {
+      messageIndexes.push(index);
+    }
+  }
+  if (messageIndexes.length < 2) {
+    return [...items];
+  }
+
+  const drop = new Set<number>();
+  for (let leftPos = 0; leftPos < messageIndexes.length; leftPos += 1) {
+    const leftIndex = messageIndexes[leftPos];
+    if (leftIndex === undefined || drop.has(leftIndex)) {
+      continue;
+    }
+    const earlier = items[leftIndex];
+    if (!earlier) {
+      continue;
+    }
+    const earlierText = earlier.text.trim();
+    for (let rightPos = leftPos + 1; rightPos < messageIndexes.length; rightPos += 1) {
+      const rightIndex = messageIndexes[rightPos];
+      if (rightIndex === undefined || drop.has(rightIndex)) {
+        continue;
+      }
+      const later = items[rightIndex];
+      if (!later || !sameMessageCollapseScope(earlier, later)) {
+        continue;
+      }
+      if (hasUserPromptBetween(items, earlier, later)) {
+        continue;
+      }
+      const laterText = later.text.trim();
+      if (laterText === earlierText) {
+        drop.add(leftIndex);
+        break;
+      }
+      if (hasToolBoundaryBetween(items, earlier, later)) {
+        continue;
+      }
+      if (laterText.startsWith(earlierText) && laterText.length > earlierText.length) {
+        drop.add(leftIndex);
+        break;
+      }
+      if (earlierText.startsWith(laterText) && earlierText.length > laterText.length) {
+        drop.add(rightIndex);
+      }
+    }
+  }
+
+  if (drop.size === 0) {
+    return [...items];
+  }
+  return items.filter((_, index) => !drop.has(index));
+}
+
+function isMessageSpeechDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return item.eventType === "message.delta" || item.eventType === "message.final";
+}
+
+function sameMessageCollapseScope(
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): boolean {
+  if (normalizeThinkingContext(left.agentId) !== normalizeThinkingContext(right.agentId)) {
+    return false;
+  }
+  if (normalizeThinkingContext(left.runAttemptId) !== normalizeThinkingContext(right.runAttemptId)) {
+    return false;
+  }
+  const leftRequest = left.requestId?.trim();
+  const rightRequest = right.requestId?.trim();
+  if (leftRequest && rightRequest && leftRequest !== rightRequest) {
+    return false;
+  }
+  return true;
+}
+
+function hasToolBoundaryBetween(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  current: ThreadRunProjectionTimelineItem,
+  item: ThreadRunProjectionTimelineItem,
+): boolean {
+  const currentIndex = timeline.findIndex((entry) => entry.id === current.id);
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  if (currentIndex < 0 || itemIndex < 0 || itemIndex <= currentIndex) {
+    return false;
+  }
+  for (let index = currentIndex + 1; index < itemIndex; index += 1) {
+    const entry = timeline[index];
+    if (!entry) {
+      continue;
+    }
+    if (
+      entry.eventType === "tool.started" ||
+      entry.eventType === "tool.completed" ||
+      entry.eventType === "tool.failed"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 interface ReconnectCollapseMetadata {
@@ -2519,6 +2594,11 @@ function projectionStreamDisplayKey(
   ) {
     return undefined;
   }
+  // Subagent user prompts are turn boundaries in the detail feed — never fold them
+  // into the agent message stream (shared requestId / owner would otherwise merge them).
+  if (isProjectionSubagentPromptItem(item)) {
+    return undefined;
+  }
   const origin = resolveThreadActivityOrigin(item);
   if (isRequestFailureFeedNoiseOrigin(origin) || isUpstreamErrorPhaseOrigin(origin)) {
     return undefined;
@@ -2533,6 +2613,15 @@ function projectionStreamDisplayKey(
   );
   if (streamKey && (hasExplicitStreamBlockKey || hasExplicitLogicalItemKey)) {
     return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId, timeline);
+  }
+  // Agent detail history often omits streamKeys between speech acts. Main-feed
+  // owner/request collapse is for live planner streaming; without an explicit
+  // stream identity, keep agent rows discrete (matches prior detail-only collapse).
+  if (item.scope === "agent") {
+    if (streamKey) {
+      return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId, timeline);
+    }
+    return undefined;
   }
   if (requestId && requestSpansById) {
     const span = requestSpansById.get(requestId);
@@ -2765,26 +2854,6 @@ function compareProjectionToolDisplayItems(
     return richnessDiff;
   }
   return compareTimelineItems(left, right);
-}
-
-export function collapseProjectionToolLifecycleItemsForDetail(
-  timeline: readonly ThreadRunProjectionTimelineItem[],
-): ThreadRunProjectionTimelineItem[] {
-  const latestByLifecycleKey = new Map<string, ThreadRunProjectionTimelineItem>();
-  for (const item of timeline) {
-    const key = projectionToolLifecycleKey(item);
-    if (!key) {
-      continue;
-    }
-    const current = latestByLifecycleKey.get(key);
-    if (!current || compareProjectionLifecycleDisplayItems(item, current) > 0) {
-      latestByLifecycleKey.set(key, item);
-    }
-  }
-  return timeline.filter((item) => {
-    const key = projectionToolLifecycleKey(item);
-    return !key || latestByLifecycleKey.get(key)?.id === item.id;
-  });
 }
 
 function projectionToolDisplayRichness(item: ThreadRunProjectionTimelineItem): number {

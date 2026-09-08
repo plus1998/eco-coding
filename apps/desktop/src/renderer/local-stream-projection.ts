@@ -183,7 +183,14 @@ function overlayTimeline(
       break;
     }
   }
-  const eventType = update.channel === "thinking" ? "thinking.delta" : "message.delta";
+  const eventType =
+    update.channel === "thinking"
+      ? update.streaming
+        ? "thinking.delta"
+        : "thinking.final"
+      : update.streaming
+        ? "message.delta"
+        : "message.final";
   const reasoningDisplay = readOverlayReasoningDisplay(update);
   if (matchIndex >= 0) {
     const current = timeline[matchIndex];

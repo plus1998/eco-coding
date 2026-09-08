@@ -11336,7 +11336,7 @@ button.default-agent-option:focus-visible {
   letter-spacing: 0.02em;
 }
 
-/* Reasoning summary tip: keep one line visible and rotate newline-delimited stages upward. */
+/* Reasoning summary tip: keep one line visible; play newline-delimited stages once, then hold. */
 .run-log-thinking-label .run-log-shimmer-text {
   min-width: 0;
   white-space: nowrap;
