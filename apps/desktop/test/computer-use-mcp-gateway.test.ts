@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 import fs from "node:fs";
-import { ComputerUseMcpGateway } from "../src/main/computer-use-mcp-gateway";
+import path from "node:path";
+import {
+  assessLinuxComputerUseSession,
+  ComputerUseMcpGateway,
+  launchOpenComputerUseOnboarding,
+  openComputerUseUsesMacOsPrivacyGate,
+  probeOpenComputerUsePermissionStatus,
+} from "../src/main/computer-use-mcp-gateway";
 
 test("eco-computer-use-mcp-stdio packaging script still exists for debug", () => {
   const packagingStdio = ComputerUseMcpGateway.packagingStdioScriptPath();
@@ -8,6 +15,46 @@ test("eco-computer-use-mcp-stdio packaging script still exists for debug", () =>
   const src = fs.readFileSync(packagingStdio, "utf8");
   expect(src).toContain("/v1/tool-started");
   expect(src).toContain("ECO_OPEN_COMPUTER_USE_BINARY");
+});
+
+test("openComputerUseUsesMacOsPrivacyGate is darwin-only", () => {
+  expect(openComputerUseUsesMacOsPrivacyGate("darwin")).toBe(true);
+  expect(openComputerUseUsesMacOsPrivacyGate("win32")).toBe(false);
+  expect(openComputerUseUsesMacOsPrivacyGate("linux")).toBe(false);
+});
+
+test("assessLinuxComputerUseSession requires display or XDG_RUNTIME_DIR", () => {
+  expect(assessLinuxComputerUseSession({}).ok).toBe(false);
+  expect(assessLinuxComputerUseSession({}).missing).toContain("desktopSession");
+  expect(assessLinuxComputerUseSession({ DISPLAY: ":0" }).ok).toBe(true);
+  expect(assessLinuxComputerUseSession({ WAYLAND_DISPLAY: "wayland-0" }).ok).toBe(true);
+  expect(assessLinuxComputerUseSession({ XDG_RUNTIME_DIR: "/run/user/1000" }).ok).toBe(true);
+});
+
+test("launchOpenComputerUseOnboarding refuses non-macOS hosts", () => {
+  if (process.platform === "darwin") {
+    return;
+  }
+  const result = launchOpenComputerUseOnboarding("/nonexistent/open-computer-use");
+  expect(result.launched).toBe(false);
+  expect(result.reason).toMatch(/macOS|授权窗口/);
+});
+
+test("probeOpenComputerUsePermissionStatus uses doctor notes on Windows", async () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+  const binaryPath = path.join(
+    process.cwd(),
+    "node_modules/@qwen-code/open-computer-use/dist/windows/amd64/open-computer-use.exe",
+  );
+  if (!fs.existsSync(binaryPath)) {
+    return;
+  }
+  const probe = await probeOpenComputerUsePermissionStatus(binaryPath);
+  expect(probe.ok).toBe(true);
+  expect(probe.missing).toEqual([]);
+  expect(probe.output ?? "").toMatch(/UI Automation|Windows runtime/i);
 });
 
 test("resolveInjection uses shared HTTP MCP (no per-session Electron stdio)", async () => {

@@ -99,7 +99,7 @@ export interface ComputerUseMcpInjection {
 export interface ComputerUseFeatureAvailability {
   available: boolean;
   reason?: string;
-  /** Raw doctor stdout/stderr when probed (macOS). */
+  /** Raw doctor / permission-status stdout when probed. */
   doctorOutput?: string;
 }
 
@@ -107,13 +107,51 @@ export type ComputerUseSettingsGetter = () => ComputerUseSettingsSnapshot;
 
 const PERMISSION_STATUS_TIMEOUT_MS = 15_000;
 
+const MACOS_PRIVACY_ONBOARDING_REASON =
+  "系统权限未就绪：请给「Open Computer Use」开辅助功能，给「Eco Coding」开录屏（不要授权包内嵌套的 helper）。";
+
 export interface OpenComputerUsePermissionProbe {
   ok: boolean;
-  /** Missing permission keys: "accessibility" | "screenRecording". */
+  /**
+   * Missing gates:
+   * - macOS: "accessibility" | "screenRecording"
+   * - Linux: "desktopSession" when no graphical session env is visible
+   */
   missing: string[];
   reason?: string;
-  /** Raw command output (permission summary). */
+  /** Raw command output (permission / doctor summary). */
   output?: string;
+}
+
+/** macOS alone has TCC Accessibility / Screen Recording + GUI onboarding. */
+export function openComputerUseUsesMacOsPrivacyGate(
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === "darwin";
+}
+
+/**
+ * Linux needs a signed-in graphical session for AT-SPI2.
+ * We only detect session env here — doctor does not prove AT-SPI is installed/working.
+ */
+export function assessLinuxComputerUseSession(
+  env: NodeJS.ProcessEnv = process.env,
+): OpenComputerUsePermissionProbe {
+  const display = env.DISPLAY?.trim() || env.WAYLAND_DISPLAY?.trim();
+  const runtimeDir = env.XDG_RUNTIME_DIR?.trim();
+  if (!display && !runtimeDir) {
+    return {
+      ok: false,
+      missing: ["desktopSession"],
+      reason:
+        "未检测到 Linux 图形桌面会话（缺少 DISPLAY/WAYLAND_DISPLAY 与 XDG_RUNTIME_DIR）。请在已登录桌面中运行 Eco，并确保 AT-SPI2 可用；不支持无桌面的服务会话。",
+    };
+  }
+  return {
+    ok: true,
+    missing: [],
+    output: `linuxSession display=${display ? "yes" : "no"} xdgRuntimeDir=${runtimeDir ? "yes" : "no"}`,
+  };
 }
 
 function runBinaryCommand(
@@ -166,17 +204,47 @@ function runBinaryCommand(
 }
 
 /**
- * Fast permission check via `permission-status`.
- * Unlike `doctor`, this command never launches the onboarding window and always
- * exits 0, so it is safe to poll while the user is granting permissions.
- *
- * On macOS, Screen Recording for Eco-spawned MCP is attributed to Eco Coding
- * (responsible process). Merge Eco's media-access status into screenRecording so
- * granting only the nested helper cannot false-pass / false-fail the gate.
+ * Windows/Linux `doctor` only prints runtime notes (no TCC GUI). Await exit;
+ * exit 0 means the native runtime started and reported its notes.
  */
-export async function probeOpenComputerUsePermissionStatus(
+async function probeOpenComputerUseDoctorNotes(
   binaryPath: string,
-  timeoutMs: number = PERMISSION_STATUS_TIMEOUT_MS,
+  timeoutMs: number,
+  platformLabel: string,
+): Promise<OpenComputerUsePermissionProbe> {
+  const result = await runBinaryCommand(binaryPath, ["doctor"], timeoutMs);
+  const output = result.output;
+  if (result.error) {
+    return {
+      ok: false,
+      missing: [],
+      reason: `无法启动 open-computer-use doctor（${platformLabel}）：${result.error}`,
+    };
+  }
+  if (result.timedOut) {
+    return {
+      ok: false,
+      missing: [],
+      reason: `open-computer-use doctor timed out（${platformLabel}）`,
+      output,
+    };
+  }
+  if (result.code !== 0) {
+    return {
+      ok: false,
+      missing: [],
+      reason:
+        output ||
+        `open-computer-use doctor 失败（${platformLabel}，退出码 ${result.code ?? "unknown"}）`,
+      output,
+    };
+  }
+  return { ok: true, missing: [], output: output || `${platformLabel} doctor ok` };
+}
+
+async function probeDarwinPermissionStatus(
+  binaryPath: string,
+  timeoutMs: number,
 ): Promise<OpenComputerUsePermissionProbe> {
   const result = await runBinaryCommand(binaryPath, ["permission-status"], timeoutMs);
   const output = result.output;
@@ -204,13 +272,11 @@ export async function probeOpenComputerUsePermissionStatus(
   }
 
   let mergedOutput = output;
-  if (process.platform === "darwin") {
-    const ecoScreen = getEcoScreenRecordingStatus();
-    if (ecoScreen !== "unknown") {
-      // MCP stdio child → Eco is responsible for Screen Recording.
-      screenRecording = ecoScreen === "granted" ? "granted" : "missing";
-      mergedOutput = `${output}; ecoScreenRecording=${ecoScreen}`;
-    }
+  const ecoScreen = getEcoScreenRecordingStatus();
+  if (ecoScreen !== "unknown") {
+    // MCP stdio child → Eco is responsible for Screen Recording.
+    screenRecording = ecoScreen === "granted" ? "granted" : "missing";
+    mergedOutput = `${output}; ecoScreenRecording=${ecoScreen}`;
   }
 
   const missing: string[] = [];
@@ -219,40 +285,82 @@ export async function probeOpenComputerUsePermissionStatus(
   return { ok: missing.length === 0, missing, output: mergedOutput };
 }
 
+/**
+ * Platform-aware readiness probe.
+ *
+ * - macOS: `permission-status` (+ Eco Screen Recording merge). Safe to poll; no GUI.
+ * - Windows: no Accessibility/Screen Recording TCC; `doctor` notes + interactive desktop.
+ * - Linux: graphical session env + `doctor` notes (AT-SPI2). Does not prove AT-SPI works.
+ */
+export async function probeOpenComputerUsePermissionStatus(
+  binaryPath: string,
+  timeoutMs: number = PERMISSION_STATUS_TIMEOUT_MS,
+): Promise<OpenComputerUsePermissionProbe> {
+  if (process.platform === "darwin") {
+    return probeDarwinPermissionStatus(binaryPath, timeoutMs);
+  }
+  if (process.platform === "win32") {
+    return probeOpenComputerUseDoctorNotes(binaryPath, timeoutMs, "Windows");
+  }
+  if (process.platform === "linux") {
+    const session = assessLinuxComputerUseSession();
+    if (!session.ok) {
+      return session;
+    }
+    const doctor = await probeOpenComputerUseDoctorNotes(binaryPath, timeoutMs, "Linux");
+    if (!doctor.ok) {
+      return doctor;
+    }
+    const parts = [session.output, doctor.output].filter(Boolean);
+    return { ok: true, missing: [], output: parts.join("; ") };
+  }
+  return {
+    ok: false,
+    missing: [],
+    reason: `电脑操控暂不支持平台 ${process.platform}`,
+  };
+}
+
 let onboardingChild: ChildProcess | undefined;
 let onboardingError: string | undefined;
 
 /**
  * Launch the package's built-in permission onboarding window
- * ("Enable Open Computer Use"). The binary stays alive until the user grants the
- * permissions or closes the window, so do not await its exit. The onboarding
- * window itself guides the user into the right System Settings panes, so we
- * never open `x-apple.systempreferences` URLs manually.
+ * ("Enable Open Computer Use"). macOS only — Windows/Linux `doctor` prints notes
+ * and exits; it is not a TCC onboarding UI.
  *
- * On macOS prefer `open -n -a <Open Computer Use.app>` so LaunchServices owns
- * the process: spawning the Mach-O as Eco's child attributes Screen Recording
- * TCC to Eco Coding instead of the helper.
+ * The binary stays alive until the user grants the permissions or closes the
+ * window, so do not await its exit. The onboarding window itself guides the user
+ * into the right System Settings panes.
+ *
+ * Prefer `open -n -a <Open Computer Use.app>` so LaunchServices owns the
+ * process: spawning the Mach-O as Eco's child attributes Screen Recording TCC
+ * to Eco Coding instead of the helper.
  */
 export function launchOpenComputerUseOnboarding(
   binaryPath: string,
   appBundlePath?: string,
 ): { launched: boolean; reason?: string } {
+  if (!openComputerUseUsesMacOsPrivacyGate()) {
+    return {
+      launched: false,
+      reason: "当前平台无 macOS 辅助功能/录屏授权窗口；请使用 doctor 运行时检查。",
+    };
+  }
   stopOpenComputerUseOnboarding();
   onboardingError = undefined;
   try {
     const bundle =
       appBundlePath?.trim() || openComputerUseAppBundleFromBinary(binaryPath);
-    const child =
-      process.platform === "darwin" && bundle
-        ? spawn("open", ["-n", "-a", bundle, "--args", "doctor"], {
-            stdio: ["ignore", "ignore", "pipe"],
-            detached: true,
-          })
-        : spawn(binaryPath, ["doctor"], {
-            stdio: ["ignore", "ignore", "pipe"],
-            detached: true,
-            windowsHide: true,
-          });
+    const child = bundle
+      ? spawn("open", ["-n", "-a", bundle, "--args", "doctor"], {
+          stdio: ["ignore", "ignore", "pipe"],
+          detached: true,
+        })
+      : spawn(binaryPath, ["doctor"], {
+          stdio: ["ignore", "ignore", "pipe"],
+          detached: true,
+        });
     let stderr = "";
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -270,7 +378,7 @@ export function launchOpenComputerUseOnboarding(
       onboardingChild = undefined;
       const tail = stderr.trim().slice(-500);
       // `open` exits immediately after handing off to LaunchServices (code 0).
-      if (process.platform === "darwin" && bundle) {
+      if (bundle) {
         return;
       }
       if (code !== 0 && tail) {
@@ -418,13 +526,21 @@ export class ComputerUseMcpGateway {
     }
     const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
     if (!probe.ok) {
-      const launch = launchOpenComputerUseOnboarding(resolved.binaryPath, resolved.appBundlePath);
+      if (openComputerUseUsesMacOsPrivacyGate()) {
+        const launch = launchOpenComputerUseOnboarding(resolved.binaryPath, resolved.appBundlePath);
+        return {
+          available: false,
+          reason: launch.launched
+            ? MACOS_PRIVACY_ONBOARDING_REASON
+            : (probe.reason ?? "系统权限未就绪"),
+          onboardingLaunched: launch.launched,
+          ...(probe.output ? { doctorOutput: probe.output } : {}),
+        };
+      }
       return {
         available: false,
-        reason: launch.launched
-          ? "系统权限未就绪：请给「Open Computer Use」开辅助功能，给「Eco Coding」开录屏（不要授权包内嵌套的 helper）。"
-          : (probe.reason ?? "系统权限未就绪"),
-        onboardingLaunched: launch.launched,
+        reason: probe.reason ?? "电脑操控运行时未就绪",
+        onboardingLaunched: false,
         ...(probe.output ? { doctorOutput: probe.output } : {}),
       };
     }

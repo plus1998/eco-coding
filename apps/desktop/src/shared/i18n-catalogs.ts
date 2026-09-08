@@ -402,6 +402,10 @@ export const i18nCatalogs = {
       "settings.computerUse.doctorBusy": "正在检查…",
       "settings.computerUse.doctorOnboardingHint":
         "系统权限未就绪。请在「Open Computer Use」窗口完成辅助功能授权；录屏请打开「Eco Coding」（不是包内的 Open Computer Use）。未签名本地包每次重装后需重新授权录屏。",
+      "settings.computerUse.doctorHintWindows":
+        "Windows 无需辅助功能/录屏授权。请在已登录的交互式桌面会话中运行 Eco（不要作为服务运行）；电脑操控通过 UI Automation 工作。",
+      "settings.computerUse.doctorHintLinux":
+        "Linux 无需 macOS 式隐私授权。请在已登录的图形桌面中运行 Eco，并确保 AT-SPI2 可用（需 DISPLAY/WAYLAND_DISPLAY 或 XDG_RUNTIME_DIR）。",
       "settings.computerUse.waitingForPermissions": "等待授权中，完成授权后会自动变为通过。",
       "settings.integrations": "集成",
       "settings.integrations.desc":
@@ -2544,6 +2548,10 @@ export const i18nCatalogs = {
       "settings.computerUse.doctorBusy": "Checking…",
       "settings.computerUse.doctorOnboardingHint":
         "System permissions are not ready. Grant Accessibility to Open Computer Use in its onboarding window; grant Screen Recording to Eco Coding (not the nested helper). Unsigned local builds need Screen Recording re-granted after each reinstall.",
+      "settings.computerUse.doctorHintWindows":
+        "Windows has no Accessibility/Screen Recording privacy gate. Run Eco in a signed-in interactive desktop session (not as a service); Computer Use relies on UI Automation.",
+      "settings.computerUse.doctorHintLinux":
+        "Linux has no macOS-style privacy prompts. Run Eco in a signed-in graphical desktop with AT-SPI2 available (needs DISPLAY/WAYLAND_DISPLAY or XDG_RUNTIME_DIR).",
       "settings.computerUse.waitingForPermissions":
         "Waiting for you to finish granting… the status updates automatically.",
       "settings.integrations": "Integrations",

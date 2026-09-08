@@ -33,6 +33,12 @@ const PERMISSION_POLL_INTERVAL_MS = 3_000;
 
 const ACTION_APPROVAL_OPTIONS: ComputerUseActionApprovalMode[] = ["always_ask", "always_allow"];
 
+function computerUseDoctorHintKey(platform: string | undefined): string {
+  if (platform === "win32") return "settings.computerUse.doctorHintWindows";
+  if (platform === "linux") return "settings.computerUse.doctorHintLinux";
+  return "settings.computerUse.doctorOnboardingHint";
+}
+
 export function ComputerUseSettingsPanel({
   settings,
   availability,
@@ -47,6 +53,7 @@ export function ComputerUseSettingsPanel({
   const [doctorBusy, setDoctorBusy] = useState(false);
   const [doctorStatus, setDoctorStatus] = useState<DoctorStatus | undefined>();
   const pollTimerRef = useRef<number | undefined>(undefined);
+  const hostPlatform = typeof window !== "undefined" ? window.eco?.platform : undefined;
 
   function stopPermissionPolling() {
     if (pollTimerRef.current !== undefined) {
@@ -110,7 +117,10 @@ export function ComputerUseSettingsPanel({
       setDoctorStatus({
         kind: "error",
         text:
-          result.reason ?? result.onboardingError ?? result.output ?? t("settings.computerUse.agentUnknownReason"),
+          result.reason ??
+          result.onboardingError ??
+          result.output ??
+          t(computerUseDoctorHintKey(hostPlatform)),
       });
     } catch (error) {
       setDoctorStatus({ kind: "error", text: error instanceof Error ? error.message : String(error) });

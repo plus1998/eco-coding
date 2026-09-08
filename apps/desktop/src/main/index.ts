@@ -4914,14 +4914,25 @@ function registerIpcHandlers(): void {
     if (!resolved.available || !resolved.binaryPath) {
       return { ok: false, onboardingLaunched: false, reason: resolved.reason ?? "open-computer-use 不可用" };
     }
-    const { probeOpenComputerUsePermissionStatus, launchOpenComputerUseOnboarding, getOpenComputerUseOnboardingError } = await import(
-      "./computer-use-mcp-gateway"
-    );
+    const {
+      probeOpenComputerUsePermissionStatus,
+      launchOpenComputerUseOnboarding,
+      getOpenComputerUseOnboardingError,
+      openComputerUseUsesMacOsPrivacyGate,
+    } = await import("./computer-use-mcp-gateway");
     const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
     if (probe.ok) {
       return {
         ok: true,
         onboardingLaunched: false,
+        ...(probe.output ? { output: probe.output } : {}),
+      };
+    }
+    if (!openComputerUseUsesMacOsPrivacyGate()) {
+      return {
+        ok: false,
+        onboardingLaunched: false,
+        reason: probe.reason ?? "电脑操控运行时未就绪",
         ...(probe.output ? { output: probe.output } : {}),
       };
     }
