@@ -389,7 +389,8 @@ function handleTurnCompleted(ctx: AdapterContext, params: Record<string, unknown
   const turnRoute = ctx.turnRouteRegistry?.consume(codexThreadId, turnId);
   const appServerTokenUsage = turnRoute?.appServerTokenUsage;
   const errorMessage = readCodexTurnErrorMessage(params);
-  const failed = status === "failed" || status === "interrupted";
+  const interrupted = status === "interrupted";
+  const failed = status === "failed";
   const attribution = ctx.resolveThreadAttribution?.(codexThreadId);
 
   // V2: child subagent completion is `turn/completed` on the child thread — not
@@ -403,20 +404,20 @@ function handleTurnCompleted(ctx: AdapterContext, params: Record<string, unknown
       resolveChosenOrchestrationRole(ctx, record?.agentRole),
     );
     if (parentCodexThreadId && parentCodexThreadId !== codexThreadId) {
-      const interrupted = status === "interrupted" || status === "failed";
+      const abandoned = interrupted || failed;
       emitAgentLifecycle(ctx, {
-        eventType: interrupted ? "agent.abandoned" : "agent.stopped",
+        eventType: abandoned ? "agent.abandoned" : "agent.stopped",
         codexThreadId: parentCodexThreadId,
         turnId,
         agentId: codexThreadId,
         ...(record?.spawnCallId && { parentToolUseId: record.spawnCallId }),
         role: lifecycleRole,
-        message: interrupted
+        message: abandoned
           ? `Subagent ${lifecycleRole} interrupted`
           : `Subagent ${lifecycleRole} completed`,
         metadata: {
           codexMethod: "turn/completed",
-          liveType: interrupted ? "agent.abandoned" : "agent.stopped",
+          liveType: abandoned ? "agent.abandoned" : "agent.stopped",
           codexThreadId,
           turnId,
           status,
@@ -429,11 +430,18 @@ function handleTurnCompleted(ctx: AdapterContext, params: Record<string, unknown
     return;
   }
 
+  // User interrupt is cancel, not an upstream connection failure — the turn
+  // heading already says "you stopped"; do not emit a red api.error banner.
+  const eventType = interrupted
+    ? "run.attempt.cancelled"
+    : failed
+      ? "run.attempt.failed"
+      : "run.attempt.completed";
   emit(ctx, {
-    eventType: failed ? "run.attempt.failed" : "run.attempt.completed",
+    eventType,
     codexThreadId,
     turnId,
-    message: failed ? (errorMessage ?? `Turn ${status}`) : `Turn ${status}`,
+    message: failed || interrupted ? (errorMessage ?? `Turn ${status}`) : `Turn ${status}`,
     streamState: "finalized",
     metadata: {
       codexMethod: "turn/completed",

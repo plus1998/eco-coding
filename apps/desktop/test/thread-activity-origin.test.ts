@@ -4,6 +4,7 @@ import {
   isRedundantApiFailureBlockedMessage,
   isRequestFailureFeedNoiseOrigin,
   isUpstreamErrorPhaseOrigin,
+  isUserInterruptedTurnFailure,
   resolveReconnectPhaseDisplay,
   resolveThreadActivityOrigin,
   shouldClearReconnectTimelineItem,
@@ -88,4 +89,35 @@ test("shouldClearReconnectTimelineItem treats successful agent output as recover
       metadata: { activityOrigin: "sdk.upstream_error" },
     }),
   ).toBe(false);
+});
+
+test("isUserInterruptedTurnFailure recognizes Codex interrupt rows", () => {
+  expect(
+    isUserInterruptedTurnFailure({
+      eventType: "api.error",
+      text: "Codex turn interrupted",
+      metadata: { liveType: "thread.api_error", status: "interrupted" },
+    }),
+  ).toBe(true);
+  expect(
+    isUserInterruptedTurnFailure({
+      eventType: "api.error",
+      text: "Codex turn interrupted",
+      metadata: { liveType: "thread.api_error" },
+    }),
+  ).toBe(true);
+  expect(
+    isUserInterruptedTurnFailure({
+      eventType: "api.error",
+      text: "【连接失败】HTTP 502：upstream unavailable",
+      metadata: { liveType: "thread.api_error", apiError: { statusCode: 502, message: "upstream" } },
+    }),
+  ).toBe(false);
+  expect(
+    resolveReconnectPhaseDisplay({
+      text: "Codex turn interrupted",
+      metadata: { liveType: "thread.api_error", status: "interrupted" },
+      apiError: { message: "Codex turn interrupted" },
+    }),
+  ).toBeNull();
 });

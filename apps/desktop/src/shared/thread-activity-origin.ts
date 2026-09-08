@@ -115,11 +115,51 @@ export function isProxyConnectionFailureOrigin(origin: ThreadActivityOrigin | un
   return origin === "proxy.connection_error";
 }
 
+/**
+ * User-stopped Codex turns used to emit `api.error` with status/message
+ * "interrupted". That is cancel semantics, not a connection failure — hide the
+ * red banner (turn heading already covers "you stopped").
+ */
+export function isUserInterruptedTurnFailure(input: {
+  eventType?: string;
+  text?: string;
+  metadata?: Record<string, unknown> | undefined;
+  apiError?: { message?: string } | undefined;
+}): boolean {
+  const looksLikeFailureRow =
+    input.eventType === "api.error" ||
+    resolveThreadActivityOrigin(input) === "proxy.connection_error" ||
+    Boolean(input.apiError) ||
+    Boolean(input.metadata?.apiError);
+  if (!looksLikeFailureRow) {
+    return false;
+  }
+  const status = input.metadata?.status;
+  if (status === "interrupted") {
+    return true;
+  }
+  const candidates = [
+    input.text,
+    input.apiError?.message,
+    typeof input.metadata?.errorMessage === "string" ? input.metadata.errorMessage : undefined,
+    typeof (input.metadata?.apiError as { message?: unknown } | undefined)?.message === "string"
+      ? (input.metadata?.apiError as { message: string }).message
+      : undefined,
+  ];
+  return candidates.some((value) => {
+    const trimmed = value?.trim();
+    return Boolean(trimmed && /^Codex turn interrupted$/i.test(trimmed));
+  });
+}
+
 export function resolveReconnectPhaseDisplay(input: {
   text: string;
   metadata?: Record<string, unknown> | undefined;
-  apiError?: { statusCode?: number } | undefined;
+  apiError?: { statusCode?: number; message?: string } | undefined;
 }): ParsedReconnectActivity | null {
+  if (isUserInterruptedTurnFailure(input)) {
+    return null;
+  }
   const origin = resolveThreadActivityOrigin(input);
   if (origin === "proxy.connection_error") {
     if (input.apiError?.statusCode !== undefined) {

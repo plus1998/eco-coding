@@ -5,7 +5,10 @@ import type {
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
 import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
-import { buildSkeletonFeedProjection } from "../shared/thread-run-projection-skeleton";
+import {
+  buildSkeletonFeedProjection,
+  isSkeletonUserPromptItem,
+} from "../shared/thread-run-projection-skeleton";
 
 export {
   FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
@@ -49,7 +52,12 @@ export function trimTimelineItemForFeed(
     item.eventType === "thinking.final";
   // Active assistant deltas still need cumulative text for the live renderer;
   // thinking rows are collapsed in the Feed and only need a skeleton preview.
-  const keepFullText = item.eventType === "message.final" || item.eventType === "message.delta";
+  // User prompts are primary dialogue content — truncating them made "展开全文"
+  // scroll to a hard 1_200-char cut with no hydrate path (unlike thinking).
+  const keepFullText =
+    item.eventType === "message.final" ||
+    item.eventType === "message.delta" ||
+    isSkeletonUserPromptItem(item);
   const { text, truncated } = keepFullText
     ? { text: item.text, truncated: false }
     : truncateText(item.text, FEED_PROJECTION_MAX_TEXT_CHARS);

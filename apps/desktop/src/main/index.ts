@@ -371,7 +371,10 @@ import {
   supportsOneClickRequestRetry,
   usesRewindOnRequestRetry,
 } from "../shared/thread-request-retry";
-import { excludeAgentScopedFeedTimelineItems } from "../shared/thread-run-projection-skeleton";
+import {
+  excludeAgentScopedFeedTimelineItems,
+  isSkeletonUserPromptItem,
+} from "../shared/thread-run-projection-skeleton";
 import {
   projectThreadRunToolMetadata,
   projectThreadRunToolMetadataForFeed,
@@ -13959,7 +13962,8 @@ function loadThreadFeedProjectionForClient(
     // projection cache wiped by maxEvents=0 slice) and must not stay "fresh".
     if (
       shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
-      shouldRebuildFeedSkeletonForEmptyTimeline(cached.snapshot, maxEventSequence)
+      shouldRebuildFeedSkeletonForEmptyTimeline(cached.snapshot, maxEventSequence) ||
+      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       // Drop in-memory projection event cache too — it may be the empty array that
@@ -14046,6 +14050,18 @@ function shouldRebuildFeedSkeletonForEmptyTimeline(
     return false;
   }
   return true;
+}
+
+/**
+ * Older Feed trims capped user prompts at 1_200 chars with textTruncated and no
+ * hydrate path. Force rebuild so long prompts reappear after the keep-full fix.
+ */
+function shouldRebuildFeedSkeletonForTruncatedUserPrompts(
+  snapshot: ThreadRunProjectionSnapshot,
+): boolean {
+  return snapshot.timeline.some(
+    (item) => isSkeletonUserPromptItem(item) && item.metadata?.textTruncated === true,
+  );
 }
 
 function buildCurrentThreadRunProjection(
@@ -14168,7 +14184,10 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
   let cached = conversationStore.getThreadFeedSkeleton(threadId);
   if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
-    if (shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot)) {
+    if (
+      shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
+      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot)
+    ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       cached = undefined;
     }

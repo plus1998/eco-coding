@@ -43,7 +43,12 @@ async function tryCdpCapture(
   fromSurface: boolean,
 ): Promise<number> {
   const dbg = ensureDebugger(webContents);
-  await dbg.sendCommand("Page.bringToFront").catch(() => {});
+  // Prefer WebContents.focus — raw CDP Page.bringToFront can mis-target embedder on <webview>.
+  try {
+    webContents.focus();
+  } catch {
+    // ignore
+  }
   const params: Record<string, unknown> = {
     format: "png",
     fromSurface,
@@ -69,6 +74,22 @@ async function tryCdpCapture(
   return buffer.length;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function tryCapturePage(webContents: WebContents, outputPath: string): Promise<number> {
   const image = await webContents.capturePage(undefined, {
     stayHidden: true,
@@ -82,6 +103,8 @@ async function tryCapturePage(webContents: WebContents, outputPath: string): Pro
   return png.length;
 }
 
+const SCREENSHOT_TIER_TIMEOUT_MS = 12_000;
+
 export async function captureGuestScreenshot(
   webContents: WebContents,
   outputPath: string,
@@ -89,6 +112,11 @@ export async function captureGuestScreenshot(
 ): Promise<string> {
   if (webContents.isDestroyed()) {
     throw new Error("Guest WebContents is destroyed");
+  }
+  if (typeof webContents.getType === "function" && webContents.getType() !== "webview") {
+    throw new Error(
+      `Refusing screenshot on non-guest webContents (type=${webContents.getType()}); Eco main window must not handle browser automation`,
+    );
   }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
@@ -110,7 +138,7 @@ export async function captureGuestScreenshot(
   let lastError: unknown;
   for (const tier of tiers) {
     try {
-      const bytes = await tier.run();
+      await withTimeout(tier.run(), SCREENSHOT_TIER_TIMEOUT_MS, tier.name);
       return outputPath;
     } catch (error) {
       lastError = error;

@@ -204,6 +204,28 @@ test("trimProjectionForFeed keeps a long thinking skeleton and marks deferred co
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBe(true);
 });
 
+test("trimProjectionForFeed preserves complete user prompt text", () => {
+  const longText = "u".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
+  const projection = createProjection("short", { longDelegation: false });
+  projection.timeline = [
+    {
+      id: "user_prompt",
+      sequence: 1,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      text: longText,
+      at: "2026-01-01T00:00:00.000Z",
+      metadata: { liveType: "thread.user_prompt" },
+    },
+  ];
+
+  const trimmed = trimProjectionForFeed(projection);
+  expect(trimmed.timeline[0]?.text).toBe(longText);
+  expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
+  expect(trimmed.timeline[0]?.contentAvailable).toBeUndefined();
+});
+
 test("trimProjectionForFeed keeps the full skeleton instead of paging the main timeline", () => {
   const items = Array.from({ length: FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS + 50 }, (_, index) => ({
     id: `evt_${index}`,

@@ -594,6 +594,24 @@ test("dispatch emits api.error when turn/completed status is failed", () => {
   });
 });
 
+test("dispatch cancels without api.error when turn/completed status is interrupted", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("turn/completed", {
+      threadId: CODEX_THREAD,
+      turn: {
+        id: "turn_interrupt_001",
+        items: [],
+        status: "interrupted",
+      },
+    });
+  });
+
+  expect(events.map((event) => event.eventType)).toEqual(["run.attempt.cancelled"]);
+  expect(events[0]?.message).toBe("Turn interrupted");
+  expect(events[0]?.metadata?.status).toBe("interrupted");
+});
+
 for (const status of ["completed", "failed", "interrupted"] as const) {
   test(`turn/completed status ${status} always clears its registered route`, () => {
     const registry = new CodexTurnRouteRegistry();

@@ -32567,146 +32567,108 @@ body,
 }
 
 /*
- * Colored "breathing" presence, tuned to be clearly visible while staying
- * cheap: static paint only, animations touch opacity + transform
- * (compositor work), never blurs, hue rotation, or gradient angles.
+ * 柔和霓虹内蔓延效果
+ * 底层：挖空的流光外部实体边框
+ * 表层：独立呼吸层（负责向内壁中心蔓延晕染）
  */
 
-/* Soft edge veil: keeps the page center clear, tints the rim. */
+/* 1. 底层：挖空的流光外部实体边框 */
 .browser-panel-overlay-host.is-agent-active::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(110% 42% at 50% -6%, color-mix(in srgb, #7c5cff 40%, transparent), transparent 70%),
-    radial-gradient(110% 42% at 50% 106%, color-mix(in srgb, #5ce1ff 34%, transparent), transparent 70%),
-    radial-gradient(42% 110% at -6% 50%, color-mix(in srgb, #ff5cc8 32%, transparent), transparent 70%),
-    radial-gradient(42% 110% at 106% 50%, color-mix(in srgb, #5cff9a 28%, transparent), transparent 70%);
-  opacity: 0.3;
-  animation: browser-agent-veil-breathe 4.8s ease-in-out infinite;
+  border-radius: clamp(10px, 1.6vw, 16px);
+  padding: 3px;
+  /* 流动的霓虹渐变底色 */
+  background: linear-gradient(45deg, #ff007f, #00f3ff, #9d00ff, #ff007f);
+  background-size: 300% 300%;
+  /* 高级双重遮罩挖空技术，确保卡片中间纯透明 */
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  /* 渐变色滚动动画 */
+  animation: browser-agent-color-flow 8s linear infinite;
 }
 
-/*
- * Colored ring: static gradient; opacity + a tiny scale expand breathe.
- * Rhythm: inhale ~2s, brief hold, slow exhale ~2.4s — reads as breathing.
- */
+/* 2. 表层：独立呼吸层（负责向内壁中心蔓延晕染） */
 .browser-agent-light-strip {
   position: absolute;
-  inset: 4px;
+  inset: 3px;
   z-index: 1;
   pointer-events: none;
-  padding: 3px;
-  border-radius: clamp(10px, 1.6vw, 16px);
-  background: linear-gradient(
-    135deg,
-    #5ce1ff 0%,
-    #8b6cff 30%,
-    #ff5cc8 58%,
-    #ffd15c 82%,
-    #5cff9a 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  opacity: 0.35;
-  filter: drop-shadow(0 0 20px color-mix(in srgb, #8b6cff 60%, transparent));
-  animation: browser-agent-frame-breathe 4.8s ease-in-out infinite;
+  border-radius: clamp(7px, 1.2vw, 13px);
+  /* 空气感滤镜：帮助浅色显光，让呼吸变明显 */
+  background: rgba(15, 23, 42, 0.04);
+  /* 动态向内蔓延呼吸 */
+  animation: browser-agent-spread-breathe 3.5s ease-in-out infinite;
 }
 
-/* Soft central glow: static radial gradient, animates opacity + scale only. */
+@keyframes browser-agent-color-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 动态向内蔓延呼吸 */
+@keyframes browser-agent-spread-breathe {
+  0%,
+  100% {
+    /* 吸气时：流光深度蔓延（35px模糊），涌向中心 */
+    box-shadow:
+      inset 0 0 35px rgba(255, 0, 127, 0.45),
+      inset 0 0 35px rgba(0, 243, 255, 0.45);
+  }
+  50% {
+    /* 呼气时：流光收敛退回边缘 */
+    box-shadow:
+      inset 0 0 5px rgba(255, 0, 127, 0.2),
+      inset 0 0 5px rgba(0, 243, 255, 0.2);
+  }
+}
+
+/* 隐藏中心光晕 */
 .browser-agent-halo {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 72%;
-  height: 88%;
-  z-index: 0;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    color-mix(in srgb, #8b6cff 42%, transparent),
-    color-mix(in srgb, #5ce1ff 16%, transparent) 55%,
-    transparent 78%
-  );
-  opacity: 0.14;
-  animation: browser-agent-halo-breathe 4.8s ease-in-out -0.5s infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes browser-agent-veil-breathe {
-  0%,
-  100% {
-    opacity: 0.1;
-  }
-  40%,
-  55% {
-    opacity: 0.65;
-  }
-}
-
-@keyframes browser-agent-frame-breathe {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: scale(1);
-  }
-  40%,
-  55% {
-    opacity: 1;
-    transform: scale(1.006);
-  }
-}
-
-@keyframes browser-agent-halo-breathe {
-  0%,
-  100% {
-    opacity: 0.12;
-    transform: translate(-50%, -50%) scale(0.9);
-  }
-  40%,
-  55% {
-    opacity: 0.6;
-    transform: translate(-50%, -50%) scale(1.12);
-  }
+  display: none;
 }
 
 /* One-shot soft breath on each Agent action (class toggled per action). */
 .browser-panel-overlay-host.is-breath-pulse::before {
-  animation: browser-agent-veil-pulse 0.9s ease-out 1;
+  animation:
+    browser-agent-color-flow 8s linear infinite,
+    browser-agent-soft-breathe 4s ease-in-out infinite,
+    browser-agent-veil-pulse 0.9s ease-out 1;
 }
 
 .browser-panel-overlay-host.is-breath-pulse .browser-agent-light-strip {
-  /* Pulse listed last so it wins over the ambient breathe while running. */
   animation:
-    browser-agent-frame-breathe 4.8s ease-in-out infinite,
+    browser-agent-frame-breathe 4s ease-in-out infinite,
     browser-agent-frame-pulse 0.9s ease-out 1;
 }
 
 .browser-panel-overlay-host.is-breath-pulse .browser-agent-halo {
   animation:
-    browser-agent-halo-breathe 4.8s ease-in-out -0.5s infinite,
+    browser-agent-halo-breathe 4s ease-in-out -0.5s infinite,
     browser-agent-halo-pulse 0.9s ease-out 1;
 }
 
 @keyframes browser-agent-veil-pulse {
   0% {
-    opacity: 0.22;
+    opacity: 0.85;
   }
   30% {
-    opacity: 0.72;
+    opacity: 1;
   }
   100% {
-    opacity: 0.3;
+    opacity: 0.85;
   }
 }
 
 @keyframes browser-agent-frame-pulse {
   0% {
-    opacity: 0.35;
+    opacity: 0.6;
     transform: scale(1);
   }
   35% {
@@ -32714,7 +32676,7 @@ body,
     transform: scale(1.01);
   }
   100% {
-    opacity: 0.3;
+    opacity: 0.6;
     transform: scale(1);
   }
 }

@@ -5,6 +5,7 @@ import {
   isReconnectActivityOrigin,
   isRedundantApiFailureBlockedMessage,
   isUpstreamErrorPhaseOrigin,
+  isUserInterruptedTurnFailure,
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
 import {
@@ -52,6 +53,9 @@ export function readUserPromptRetryIdentity(
 
 export function isRetryableRequestFailureItem(item: ThreadRunProjectionTimelineItem): boolean {
   if (item.scope === "agent") {
+    return false;
+  }
+  if (isUserInterruptedTurnFailure({ eventType: item.eventType, text: item.text, metadata: item.metadata })) {
     return false;
   }
   const origin = resolveThreadActivityOrigin(item);

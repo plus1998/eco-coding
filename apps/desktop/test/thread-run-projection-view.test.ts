@@ -4084,6 +4084,24 @@ test("projectionItemToDetailBlock maps reconnect activity to collapsible phase",
   expect(detail).not.toHaveProperty("reconnectDetail");
 });
 
+test("projectionItemToDetailBlock hides Codex turn interrupted api.error banners", () => {
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "interrupt-1",
+        eventType: "api.error",
+        scope: "main",
+        text: "Codex turn interrupted",
+        metadata: {
+          liveType: "thread.api_error",
+          status: "interrupted",
+          apiError: { message: "Codex turn interrupted" },
+        },
+      }),
+    ),
+  ).toBeUndefined();
+});
+
 test("buildProjectionDisplayTimelineItems keeps only the latest reconnect status", () => {
   const timeline = [
     item({

@@ -45,6 +45,7 @@ import {
   isRequestFailureFeedNoiseOrigin,
   isTimelineItemSupersededByRecovery,
   isUpstreamErrorPhaseOrigin,
+  isUserInterruptedTurnFailure,
   resolveReconnectPhaseDisplay,
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
@@ -1349,6 +1350,9 @@ function isProjectionUsageNoiseText(text: string): boolean {
 }
 
 function isRequestFailureFeedNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (isUserInterruptedTurnFailure({ eventType: item.eventType, text: item.text, metadata: item.metadata })) {
+    return true;
+  }
   const origin = resolveThreadActivityOrigin(item);
   if (isRequestFailureFeedNoiseOrigin(origin)) {
     return true;
@@ -2950,6 +2954,9 @@ export function projectionItemToDetailBlock(
   item: ThreadRunProjectionTimelineItem,
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
+  if (isUserInterruptedTurnFailure({ eventType: item.eventType, text, metadata: item.metadata })) {
+    return undefined;
+  }
   const reconnect = resolveReconnectPhaseDisplay({
     text,
     metadata: item.metadata,

@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
+import { mapAgentBrowserToolToCliArgs } from "../src/main/agent-browser-cli-bridge";
+import { AGENT_BROWSER_CORE_TOOL_NAMES } from "../src/main/agent-browser-core-tools";
 import {
   applyGuestPageBringToFront,
   applyGuestPageNavigate,
   applyGuestPageNavigateToHistoryEntry,
   applyGuestPageReload,
   assertBrowserGuestWebContents,
+  inputTypeSupportsSelection,
   isBrowserGuestWebContents,
   mapCdpMouseEventToSendInput,
 } from "../src/main/browser-cdp-proxy";
@@ -17,6 +20,15 @@ function guestWc(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+test("inputTypeSupportsSelection excludes email/number/time", () => {
+  expect(inputTypeSupportsSelection("text")).toBe(true);
+  expect(inputTypeSupportsSelection("tel")).toBe(true);
+  expect(inputTypeSupportsSelection("email")).toBe(false);
+  expect(inputTypeSupportsSelection("number")).toBe(false);
+  expect(inputTypeSupportsSelection("time")).toBe(false);
+  expect(inputTypeSupportsSelection("date")).toBe(false);
+});
 
 test("isBrowserGuestWebContents only accepts webview", () => {
   expect(isBrowserGuestWebContents(guestWc())).toBe(true);
@@ -142,4 +154,13 @@ test("mapCdpMouseEventToSendInput maps pressed/moved/wheel", () => {
     deltaX: 0,
     deltaY: -100,
   });
+});
+
+test("agent_browser_get_text is in core catalog and CLI map", () => {
+  expect(AGENT_BROWSER_CORE_TOOL_NAMES).toContain("agent_browser_get_text");
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_get_text", { ref: "@e1" })).toEqual([
+    "text",
+    "@e1",
+  ]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_get_text", {})).toEqual(["text"]);
 });

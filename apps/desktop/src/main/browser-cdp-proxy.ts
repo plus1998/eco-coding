@@ -596,23 +596,86 @@ async function prepareGuestKeyboardTarget(
   await replayPendingDomFocus(dbg, clientState, key, context);
 }
 
+/**
+ * Chromium only supports selection APIs on text-like inputs.
+ * email / number / time / date / etc. throw InvalidStateError on selectionStart/setSelectionRange.
+ */
+export function inputTypeSupportsSelection(type: string | undefined): boolean {
+  const normalized = (type ?? "text").trim().toLowerCase() || "text";
+  return (
+    normalized === "text" ||
+    normalized === "search" ||
+    normalized === "tel" ||
+    normalized === "url" ||
+    normalized === "password"
+  );
+}
+
 async function guestInsertTextViaRuntime(dbg: DebuggerLike, text: string): Promise<void> {
   const evalResult = (await dbg.sendCommand("Runtime.evaluate", {
     expression: `(function(text){
       const el = document.activeElement;
       if (!el) return { ok: false, reason: "no activeElement" };
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-        const start = el.selectionStart ?? el.value.length;
-        const end = el.selectionEnd ?? el.value.length;
-        const before = el.value.slice(0, start);
-        const after = el.value.slice(end);
-        el.value = before + text + after;
-        const pos = start + text.length;
-        el.setSelectionRange(pos, pos);
+
+      const fire = () => {
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+
+      const setNativeValue = (node, value) => {
+        const proto =
+          node instanceof HTMLTextAreaElement
+            ? HTMLTextAreaElement.prototype
+            : HTMLInputElement.prototype;
+        const desc = Object.getOwnPropertyDescriptor(proto, "value");
+        if (desc && desc.set) {
+          desc.set.call(node, value);
+        } else {
+          node.value = value;
+        }
+      };
+
+      if (el instanceof HTMLTextAreaElement) {
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        const next = el.value.slice(0, start) + text + el.value.slice(end);
+        setNativeValue(el, next);
+        const pos = start + text.length;
+        try { el.setSelectionRange(pos, pos); } catch (_) {}
+        fire();
         return { ok: true, value: el.value };
       }
+
+      if (el instanceof HTMLInputElement) {
+        const type = (el.type || "text").toLowerCase();
+        const selectionOk = ${JSON.stringify([
+          "text",
+          "search",
+          "tel",
+          "url",
+          "password",
+        ])}.includes(type);
+        if (selectionOk) {
+          let start = el.value.length;
+          let end = el.value.length;
+          try {
+            start = el.selectionStart ?? el.value.length;
+            end = el.selectionEnd ?? el.value.length;
+          } catch (_) {}
+          const next = el.value.slice(0, start) + text + el.value.slice(end);
+          setNativeValue(el, next);
+          const pos = start + text.length;
+          try { el.setSelectionRange(pos, pos); } catch (_) {}
+          fire();
+          return { ok: true, value: el.value, type };
+        }
+        // email / number / time / date / … — no selection APIs.
+        // Always set the provided text (fill/type send the full value via insertText).
+        setNativeValue(el, text);
+        fire();
+        return { ok: true, value: el.value, type };
+      }
+
       if (el.isContentEditable) {
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0) {
@@ -626,11 +689,11 @@ async function guestInsertTextViaRuntime(dbg: DebuggerLike, text: string): Promi
         el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
         return { ok: true };
       }
-      return { ok: false, reason: "unsupported activeElement" };
+      return { ok: false, reason: "unsupported activeElement:" + (el.tagName || "?") };
     })(${JSON.stringify(text)})`,
     returnByValue: true,
-  })) as { result?: { value?: { ok?: boolean; reason?: string } } };
-  const value = evalResult?.result?.value;
+  })) as { result?: { value?: { ok?: boolean; reason?: string }; exceptionDetails?: unknown } };
+      const value = evalResult?.result?.value;
   if (!value?.ok) {
     throw new Error(`Guest insertText failed: ${value?.reason ?? "unknown"}`);
   }

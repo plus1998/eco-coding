@@ -4,6 +4,7 @@ import {
   isReconnectActivityOrigin,
   isRedundantApiFailureBlockedMessage,
   isUpstreamErrorPhaseOrigin,
+  isUserInterruptedTurnFailure,
   resolveThreadActivityOrigin,
 } from "./thread-activity-origin";
 
@@ -24,6 +25,9 @@ const AGENT_ROLES = new Set([
  */
 export function isCodexRetryIgnorableFailureItem(item: ThreadRunProjectionTimelineItem): boolean {
   if (item.scope === "agent") {
+    return false;
+  }
+  if (isUserInterruptedTurnFailure({ eventType: item.eventType, text: item.text, metadata: item.metadata })) {
     return false;
   }
   const origin = resolveThreadActivityOrigin(item);
