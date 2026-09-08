@@ -3,10 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   assessLinuxComputerUseSession,
+  buildOpenComputerUseDoctorOpenArgs,
   ComputerUseMcpGateway,
+  describeMacOsComputerUsePermissionGap,
   launchOpenComputerUseOnboarding,
   openComputerUseUsesMacOsPrivacyGate,
   probeOpenComputerUsePermissionStatus,
+  resolveEcoScreenRecordingAppLabel,
 } from "../src/main/computer-use-mcp-gateway";
 
 test("eco-computer-use-mcp-stdio packaging script still exists for debug", () => {
@@ -21,6 +24,25 @@ test("openComputerUseUsesMacOsPrivacyGate is darwin-only", () => {
   expect(openComputerUseUsesMacOsPrivacyGate("darwin")).toBe(true);
   expect(openComputerUseUsesMacOsPrivacyGate("win32")).toBe(false);
   expect(openComputerUseUsesMacOsPrivacyGate("linux")).toBe(false);
+});
+
+test("buildOpenComputerUseDoctorOpenArgs uses path form not -a", () => {
+  const args = buildOpenComputerUseDoctorOpenArgs(
+    "/tmp/Open Computer Use.app",
+  );
+  expect(args).toEqual(["-n", "/tmp/Open Computer Use.app", "--args", "doctor"]);
+  expect(args).not.toContain("-a");
+});
+
+test("resolveEcoScreenRecordingAppLabel packaged stays Eco Coding", () => {
+  expect(resolveEcoScreenRecordingAppLabel(true)).toBe("Eco Coding");
+});
+
+test("describeMacOsComputerUsePermissionGap uses provided screen host label", () => {
+  const text = describeMacOsComputerUsePermissionGap(["screenRecording"], "Terminal");
+  expect(text).toContain("Terminal");
+  expect(text).not.toContain("Electron");
+  expect(text).not.toContain("辅助功能");
 });
 
 test("assessLinuxComputerUseSession requires display or XDG_RUNTIME_DIR", () => {

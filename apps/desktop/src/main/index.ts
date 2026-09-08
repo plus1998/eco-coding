@@ -467,6 +467,7 @@ import {
   normalizeBrowserSettingsSnapshot,
 } from "./browser-settings-store";
 import { ComputerUseMcpGateway } from "./computer-use-mcp-gateway";
+import { detectScreenRecordingAppLabel } from "./computer-use-screen-host-native";
 import {
   type ComputerUseSettingsStore,
   createComputerUseSettingsStore,
@@ -3378,6 +3379,10 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
+  ipcMain.on(IPC_CHANNELS.appScreenRecordingAppLabel, (event) => {
+    event.returnValue = detectScreenRecordingAppLabel(app.isPackaged);
+  });
+
   registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
     const themeSource = normalizeAppThemeSource(payload);
     nativeTheme.themeSource = themeSource;
@@ -4919,8 +4924,7 @@ function registerIpcHandlers(): void {
     }
     const {
       probeOpenComputerUsePermissionStatus,
-      launchOpenComputerUseOnboarding,
-      getOpenComputerUseOnboardingError,
+      remediateMacOsComputerUsePermissions,
       openComputerUseUsesMacOsPrivacyGate,
     } = await import("./computer-use-mcp-gateway");
     const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
@@ -4939,15 +4943,19 @@ function registerIpcHandlers(): void {
         ...(probe.output ? { output: probe.output } : {}),
       };
     }
-    const launch = launchOpenComputerUseOnboarding(resolved.binaryPath, resolved.appBundlePath);
-    const onboardingError = getOpenComputerUseOnboardingError();
+    const remediation = await remediateMacOsComputerUsePermissions(
+      resolved.binaryPath,
+      resolved.appBundlePath,
+      probe.missing,
+    );
     return {
       ok: false,
-      onboardingLaunched: launch.launched,
-      reason: launch.launched
-        ? undefined
-        : (probe.reason ?? "系统权限未就绪"),
-      ...(onboardingError ? { onboardingError } : {}),
+      onboardingLaunched: remediation.onboardingLaunched,
+      screenPromptOpened: remediation.screenPromptOpened,
+      screenRecordingAppLabel: remediation.screenRecordingAppLabel,
+      reason: remediation.reason,
+      missing: probe.missing,
+      ...(remediation.onboardingError ? { onboardingError: remediation.onboardingError } : {}),
       ...(probe.output ? { output: probe.output } : {}),
     };
   });

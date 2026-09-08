@@ -5,15 +5,20 @@ import type {
   ComputerUseActionApprovalMode,
   ComputerUseSettingsSnapshot,
 } from "../shared/computer-use";
+import { PACKAGED_SCREEN_RECORDING_APP_LABEL } from "../shared/computer-use-screen-host";
 
 interface ComputerUseDoctorResult {
   ok: boolean;
-  /** True when the package's onboarding window was launched (macOS permission missing). */
+  /** True when the package's onboarding window was launched (macOS accessibility missing). */
   onboardingLaunched: boolean;
+  /** True when Eco opened Screen Recording prefs (host screen TCC missing). */
+  screenPromptOpened?: boolean;
+  screenRecordingAppLabel?: string;
   reason?: string;
   output?: string;
   /** Diagnostics when the launched onboarding process failed or exited. */
   onboardingError?: string;
+  missing?: string[];
 }
 
 interface DoctorStatus {
@@ -33,10 +38,44 @@ const PERMISSION_POLL_INTERVAL_MS = 3_000;
 
 const ACTION_APPROVAL_OPTIONS: ComputerUseActionApprovalMode[] = ["always_ask", "always_allow"];
 
-function computerUseDoctorHintKey(platform: string | undefined): string {
-  if (platform === "win32") return "settings.computerUse.doctorHintWindows";
-  if (platform === "linux") return "settings.computerUse.doctorHintLinux";
-  return "settings.computerUse.doctorOnboardingHint";
+function resolveScreenRecordingAppLabel(explicit?: string): string {
+  if (explicit?.trim()) {
+    return explicit.trim();
+  }
+  const fromPreload =
+    typeof window !== "undefined" ? window.eco?.screenRecordingAppLabel?.trim() : undefined;
+  if (fromPreload) {
+    return fromPreload;
+  }
+  return typeof window !== "undefined" && window.eco?.isPackaged === true
+    ? PACKAGED_SCREEN_RECORDING_APP_LABEL
+    : "Electron";
+}
+
+function computerUseDoctorHint(
+  t: (key: string, options?: Record<string, string>) => string,
+  options: {
+    platform: string | undefined;
+    missing?: string[];
+    screenApp: string;
+  },
+): string {
+  if (options.platform === "win32") return t("settings.computerUse.doctorHintWindows");
+  if (options.platform === "linux") return t("settings.computerUse.doctorHintLinux");
+  const missing = options.missing ?? [];
+  const screenApp = options.screenApp;
+  const needsAccessibility = missing.includes("accessibility");
+  const needsScreen = missing.includes("screenRecording");
+  if (needsAccessibility && needsScreen) {
+    return t("settings.computerUse.doctorHintBoth", { screenApp });
+  }
+  if (needsAccessibility) {
+    return t("settings.computerUse.doctorHintAccessibility");
+  }
+  if (needsScreen) {
+    return t("settings.computerUse.doctorHintScreen", { screenApp });
+  }
+  return t("settings.computerUse.doctorOnboardingHint", { screenApp });
 }
 
 export function ComputerUseSettingsPanel({
@@ -54,6 +93,7 @@ export function ComputerUseSettingsPanel({
   const [doctorStatus, setDoctorStatus] = useState<DoctorStatus | undefined>();
   const pollTimerRef = useRef<number | undefined>(undefined);
   const hostPlatform = typeof window !== "undefined" ? window.eco?.platform : undefined;
+  const screenApp = resolveScreenRecordingAppLabel();
 
   function stopPermissionPolling() {
     if (pollTimerRef.current !== undefined) {
@@ -97,10 +137,17 @@ export function ComputerUseSettingsPanel({
         setDoctorStatus({ kind: "ok", text: t("settings.computerUse.doctorOk") });
         return;
       }
-      if (result.onboardingLaunched) {
+      const hintScreenApp = resolveScreenRecordingAppLabel(result.screenRecordingAppLabel);
+      const hint = computerUseDoctorHint(t, {
+        platform: hostPlatform,
+        missing: result.missing,
+        screenApp: hintScreenApp,
+      });
+      const remediating = result.onboardingLaunched || Boolean(result.screenPromptOpened);
+      if (remediating) {
         setDoctorStatus({
           kind: "error",
-          text: `${t("settings.computerUse.doctorOnboardingHint")} ${t("settings.computerUse.waitingForPermissions")}`,
+          text: `${hint} ${t("settings.computerUse.waitingForPermissions")}`,
         });
         if (onCheckPermissionStatus) {
           pollTimerRef.current = window.setInterval(() => {
@@ -116,11 +163,7 @@ export function ComputerUseSettingsPanel({
       }
       setDoctorStatus({
         kind: "error",
-        text:
-          result.reason ??
-          result.onboardingError ??
-          result.output ??
-          t(computerUseDoctorHintKey(hostPlatform)),
+        text: result.onboardingError ? `${hint} ${result.onboardingError}` : hint,
       });
     } catch (error) {
       setDoctorStatus({ kind: "error", text: error instanceof Error ? error.message : String(error) });
@@ -242,6 +285,13 @@ export function ComputerUseSettingsPanel({
             </li>
           </ul>
         </section>
+      ) : null}
+
+      {hostPlatform === "darwin" ? (
+        <p className="computer-use-note" role="note">
+          <Info size={13} aria-hidden />
+          {t("settings.computerUse.screenRecordingHostNote", { screenApp })}
+        </p>
       ) : null}
     </div>
   );

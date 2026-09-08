@@ -400,8 +400,16 @@ export const i18nCatalogs = {
       "settings.computerUse.runDoctor": "检查系统权限",
       "settings.computerUse.doctorOk": "系统权限检查通过",
       "settings.computerUse.doctorBusy": "正在检查…",
+      "settings.computerUse.doctorHintAccessibility":
+        "系统权限未就绪：请在「Open Computer Use」完成辅助功能授权。",
+      "settings.computerUse.doctorHintScreen":
+        "系统权限未就绪：录屏请打开「{{screenApp}}」（不是 Open Computer Use）。",
+      "settings.computerUse.doctorHintBoth":
+        "系统权限未就绪：辅助功能请给「Open Computer Use」；录屏请打开「{{screenApp}}」。",
       "settings.computerUse.doctorOnboardingHint":
-        "系统权限未就绪。请在「Open Computer Use」窗口完成辅助功能授权；录屏请打开「Eco Coding」（不是包内的 Open Computer Use）。未签名本地包每次重装后需重新授权录屏。",
+        "系统权限未就绪。辅助功能请给「Open Computer Use」；录屏请打开「{{screenApp}}」。未签名本地包每次重装后需重新授权录屏。",
+      "settings.computerUse.screenRecordingHostNote":
+        "当前环境录屏权限对应「{{screenApp}}」。",
       "settings.computerUse.doctorHintWindows":
         "Windows 无需辅助功能/录屏授权。请在已登录的交互式桌面会话中运行 Eco（不要作为服务运行）；电脑操控通过 UI Automation 工作。",
       "settings.computerUse.doctorHintLinux":
@@ -2546,8 +2554,16 @@ export const i18nCatalogs = {
       "settings.computerUse.runDoctor": "Check system permissions",
       "settings.computerUse.doctorOk": "System permission check passed",
       "settings.computerUse.doctorBusy": "Checking…",
+      "settings.computerUse.doctorHintAccessibility":
+        "System permissions are not ready. Grant Accessibility to Open Computer Use.",
+      "settings.computerUse.doctorHintScreen":
+        "System permissions are not ready. Grant Screen Recording to “{{screenApp}}” (not Open Computer Use).",
+      "settings.computerUse.doctorHintBoth":
+        "System permissions are not ready. Grant Accessibility to Open Computer Use; grant Screen Recording to “{{screenApp}}”.",
       "settings.computerUse.doctorOnboardingHint":
-        "System permissions are not ready. Grant Accessibility to Open Computer Use in its onboarding window; grant Screen Recording to Eco Coding (not the nested helper). Unsigned local builds need Screen Recording re-granted after each reinstall.",
+        "System permissions are not ready. Grant Accessibility to Open Computer Use; grant Screen Recording to “{{screenApp}}”. Unsigned local builds need Screen Recording re-granted after each reinstall.",
+      "settings.computerUse.screenRecordingHostNote":
+        "In this environment, Screen Recording must be granted to “{{screenApp}}”.",
       "settings.computerUse.doctorHintWindows":
         "Windows has no Accessibility/Screen Recording privacy gate. Run Eco in a signed-in interactive desktop session (not as a service); Computer Use relies on UI Automation.",
       "settings.computerUse.doctorHintLinux":

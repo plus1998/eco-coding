@@ -238,8 +238,38 @@ function resolveWindowsBackdropVersion(): "win10" | "win11" | undefined {
   return version === "win10" || version === "win11" ? version : undefined;
 }
 
+import {
+  mapTermProgramToScreenHost,
+  PACKAGED_SCREEN_RECORDING_APP_LABEL,
+} from "../shared/computer-use-screen-host";
+
+/** Sandboxed preload cannot use `electron.app` — infer packaging from process. */
+function resolvePreloadIsPackaged(): boolean {
+  return process.defaultApp !== true;
+}
+
+const preloadIsPackaged = resolvePreloadIsPackaged();
+
+function resolvePreloadScreenRecordingAppLabel(): string {
+  try {
+    const label = ipcRenderer.sendSync(IPC_CHANNELS.appScreenRecordingAppLabel);
+    if (typeof label === "string" && label.trim()) {
+      return label.trim();
+    }
+  } catch {
+    // Main may not have registered yet in odd boot races; fall through.
+  }
+  if (preloadIsPackaged) {
+    return PACKAGED_SCREEN_RECORDING_APP_LABEL;
+  }
+  return mapTermProgramToScreenHost(process.env.TERM_PROGRAM) ?? "Electron";
+}
+
 const api = {
   platform: process.platform,
+  isPackaged: preloadIsPackaged,
+  /** System Settings → Screen Recording toggle target for this process. */
+  screenRecordingAppLabel: resolvePreloadScreenRecordingAppLabel(),
   windowsBackdropVersion: resolveWindowsBackdropVersion(),
   channels: IPC_CHANNELS,
   invoke(channel: IpcChannel, payload?: InvokePayload): Promise<unknown> {
@@ -627,9 +657,12 @@ const api = {
   runComputerUseDoctor(): Promise<{
     ok: boolean;
     onboardingLaunched: boolean;
+    screenPromptOpened?: boolean;
+    screenRecordingAppLabel?: string;
     reason?: string;
     output?: string;
     onboardingError?: string;
+    missing?: string[];
   }> {
     return ipcRenderer.invoke(IPC_CHANNELS.computerUseDoctor);
   },

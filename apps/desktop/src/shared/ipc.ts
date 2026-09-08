@@ -20,6 +20,7 @@ import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 export const IPC_CHANNELS = {
   appMenuCommand: "app:menu-command",
   appRendererReady: "app:renderer-ready",
+  appScreenRecordingAppLabel: "app:screen-recording-app-label",
   appSetThemeSource: "app:set-theme-source",
   appSetWindowTitlebarMode: "app:set-window-titlebar-mode",
   appSetLocale: "app:set-locale",

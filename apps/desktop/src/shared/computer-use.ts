@@ -1,6 +1,11 @@
 /** Built-in Eco Computer Use MCP server name (must stay sanitizable for MCP tool prefixes). */
 export const ECO_COMPUTER_USE_MCP_SERVER = "eco_computer_use";
 
+export {
+  PACKAGED_SCREEN_RECORDING_APP_LABEL,
+  resolveScreenRecordingAppLabel,
+} from "./computer-use-screen-host";
+
 export const ECO_COMPUTER_USE_ALLOWED_TOOL = `mcp__${ECO_COMPUTER_USE_MCP_SERVER}__*`;
 
 /** Upstream open-computer-use MCP tools (9). */

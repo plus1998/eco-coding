@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import http from "node:http";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ import type { McpSdkConfig } from "../shared/mcp";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
 import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { detectScreenRecordingAppLabel } from "./computer-use-screen-host-native";
 import { openComputerUseAppBundleFromBinary } from "./open-computer-use-install";
 import {
   resolveOpenComputerUseBinary,
@@ -29,10 +30,16 @@ const require = createRequire(import.meta.url);
 const CONTROL_SECRET_HEADER = "X-Eco-Computer-Use-Control-Secret";
 
 function tryElectronDesktopApis(): {
+  app?: { isPackaged?: boolean };
+  desktopCapturer?: { getSources: (opts: { types: string[] }) => Promise<unknown> };
+  shell?: { openExternal: (url: string) => Promise<void> };
   systemPreferences?: { getMediaAccessStatus: (mediaType: string) => string };
 } | undefined {
   try {
     return require("electron") as {
+      app?: { isPackaged?: boolean };
+      desktopCapturer?: { getSources: (opts: { types: string[] }) => Promise<unknown> };
+      shell?: { openExternal: (url: string) => Promise<void> };
       systemPreferences?: { getMediaAccessStatus: (mediaType: string) => string };
     };
   } catch {
@@ -40,7 +47,14 @@ function tryElectronDesktopApis(): {
   }
 }
 
-/** Screen Recording for MCP is attributed to Eco (stdio parent), not the helper. */
+/** Screen Recording TCC list name for the current Eco host process. */
+export function resolveEcoScreenRecordingAppLabel(
+  packaged: boolean = tryElectronDesktopApis()?.app?.isPackaged === true,
+): string {
+  return detectScreenRecordingAppLabel(packaged);
+}
+
+/** Screen Recording for MCP is attributed to Eco's responsible host, not the helper. */
 export function getEcoScreenRecordingStatus(): "granted" | "missing" | "unknown" {
   const electron = tryElectronDesktopApis();
   const status = electron?.systemPreferences?.getMediaAccessStatus?.("screen");
@@ -51,6 +65,58 @@ export function getEcoScreenRecordingStatus(): "granted" | "missing" | "unknown"
     return "missing";
   }
   return "unknown";
+}
+
+/**
+ * Register the current host in Screen Recording and open that privacy pane.
+ * Needed when only the host's screen TCC is missing — OCU `doctor` will not show UI
+ * if Open Computer Use.app already has its own grants.
+ */
+export async function ensureEcoScreenRecordingPrompt(): Promise<void> {
+  const electron = tryElectronDesktopApis();
+  if (!electron || process.platform !== "darwin") {
+    return;
+  }
+  try {
+    await electron.desktopCapturer?.getSources?.({ types: ["screen"] });
+  } catch {
+    // Prompt / registration best-effort.
+  }
+  const urls = [
+    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  ];
+  for (const url of urls) {
+    try {
+      await electron.shell?.openExternal?.(url);
+      break;
+    } catch {
+      // try fallback
+    }
+  }
+}
+
+/** `open -n <abs.app> --args doctor` — path form; `-a` rejects relative / unregistered names. */
+export function buildOpenComputerUseDoctorOpenArgs(appBundlePath: string): string[] {
+  return ["-n", path.resolve(appBundlePath), "--args", "doctor"];
+}
+
+export function describeMacOsComputerUsePermissionGap(
+  missing: string[],
+  screenApp: string = resolveEcoScreenRecordingAppLabel(),
+): string {
+  const needsAccessibility = missing.includes("accessibility");
+  const needsScreen = missing.includes("screenRecording");
+  if (needsAccessibility && needsScreen) {
+    return `系统权限未就绪：请在「Open Computer Use」完成辅助功能授权；录屏请打开「${screenApp}」。`;
+  }
+  if (needsAccessibility) {
+    return "系统权限未就绪：请在「Open Computer Use」完成辅助功能授权。";
+  }
+  if (needsScreen) {
+    return `系统权限未就绪：录屏请打开「${screenApp}」（不是 Open Computer Use）。`;
+  }
+  return "系统权限未就绪。";
 }
 
 export interface ComputerUseMcpInjection {
@@ -74,9 +140,6 @@ export interface ComputerUseFeatureAvailability {
 export type ComputerUseSettingsGetter = () => ComputerUseSettingsSnapshot;
 
 const PERMISSION_STATUS_TIMEOUT_MS = 15_000;
-
-const MACOS_PRIVACY_ONBOARDING_REASON =
-  "系统权限未就绪：请给「Open Computer Use」开辅助功能，给「Eco Coding」开录屏（不要授权包内嵌套的 helper）。";
 
 export interface OpenComputerUsePermissionProbe {
   ok: boolean;
@@ -292,19 +355,25 @@ export async function probeOpenComputerUsePermissionStatus(
 let onboardingChild: ChildProcess | undefined;
 let onboardingError: string | undefined;
 
+export interface MacOsComputerUseRemediation {
+  onboardingLaunched: boolean;
+  screenPromptOpened: boolean;
+  reason: string;
+  screenRecordingAppLabel: string;
+  onboardingError?: string;
+}
+
 /**
  * Launch the package's built-in permission onboarding window
  * ("Enable Open Computer Use"). macOS only — Windows/Linux `doctor` prints notes
  * and exits; it is not a TCC onboarding UI.
  *
- * The binary stays alive until the user grants the permissions or closes the
- * window, so do not await its exit. The onboarding window itself guides the user
- * into the right System Settings panes — do not also deep-link Screen Recording
- * from Eco (that stole focus and looked like "check only opened recording").
+ * OCU `doctor` only opens the GUI when *its own* Accessibility / Screen Recording
+ * are missing. If Eco/Electron Screen Recording alone is missing, doctor exits
+ * immediately with no window — use {@link ensureEcoScreenRecordingPrompt} instead.
  *
- * Prefer `open -n -a <Open Computer Use.app>` so LaunchServices owns the
- * process: spawning the Mach-O as Eco's child attributes Screen Recording TCC
- * to Eco Coding instead of the helper.
+ * Prefer `open -n <Open Computer Use.app> --args doctor` (path form, not `-a`) so
+ * LaunchServices owns the process.
  */
 export function launchOpenComputerUseOnboarding(
   binaryPath: string,
@@ -321,15 +390,27 @@ export function launchOpenComputerUseOnboarding(
   try {
     const bundle =
       appBundlePath?.trim() || openComputerUseAppBundleFromBinary(binaryPath);
-    const child = bundle
-      ? spawn("open", ["-n", "-a", bundle, "--args", "doctor"], {
-          stdio: ["ignore", "ignore", "pipe"],
-          detached: true,
-        })
-      : spawn(binaryPath, ["doctor"], {
-          stdio: ["ignore", "ignore", "pipe"],
-          detached: true,
-        });
+    if (bundle) {
+      const result = spawnSync("open", buildOpenComputerUseDoctorOpenArgs(bundle), {
+        encoding: "utf8",
+      });
+      if (result.error) {
+        onboardingError = `无法启动授权窗口：${result.error.message}`;
+        return { launched: false, reason: onboardingError };
+      }
+      if (result.status !== 0) {
+        const detail = [result.stderr, result.stdout].map((s) => s?.trim()).filter(Boolean).join(" ")
+          || `open 退出码 ${result.status ?? "unknown"}`;
+        onboardingError = `无法打开 Open Computer Use：${detail}`;
+        return { launched: false, reason: onboardingError };
+      }
+      return { launched: true };
+    }
+
+    const child = spawn(binaryPath, ["doctor"], {
+      stdio: ["ignore", "ignore", "pipe"],
+      detached: true,
+    });
     let stderr = "";
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -346,10 +427,6 @@ export function launchOpenComputerUseOnboarding(
       }
       onboardingChild = undefined;
       const tail = stderr.trim().slice(-500);
-      // `open` exits immediately after handing off to LaunchServices (code 0).
-      if (bundle) {
-        return;
-      }
       if (code !== 0 && tail) {
         onboardingError = `授权窗口已退出（退出码 ${code}）：${tail}`;
       }
@@ -363,6 +440,55 @@ export function launchOpenComputerUseOnboarding(
       reason: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * macOS remediation after a failed permission probe.
+ * - accessibility → Open Computer Use doctor window (only pops when OCU itself lacks grants)
+ * - screenRecording alone → Screen Recording prefs for Eco/Electron (doctor exits with no UI)
+ * - both → doctor window only (avoid Screen prefs stealing focus); reason still covers录屏
+ */
+export async function remediateMacOsComputerUsePermissions(
+  binaryPath: string,
+  appBundlePath: string | undefined,
+  missing: string[],
+): Promise<MacOsComputerUseRemediation> {
+  const screenRecordingAppLabel = resolveEcoScreenRecordingAppLabel();
+  const reason = describeMacOsComputerUsePermissionGap(missing, screenRecordingAppLabel);
+  const needsAccessibility = missing.includes("accessibility");
+  const needsScreen = missing.includes("screenRecording");
+
+  let onboardingLaunched = false;
+  let screenPromptOpened = false;
+  let launchError: string | undefined;
+
+  if (needsAccessibility) {
+    const launch = launchOpenComputerUseOnboarding(binaryPath, appBundlePath);
+    onboardingLaunched = launch.launched;
+    if (!launch.launched) {
+      launchError = launch.reason ?? getOpenComputerUseOnboardingError();
+    }
+  } else if (needsScreen) {
+    // Doctor will not show a window when OCU already has Accessibility + its own screen grant.
+    await ensureEcoScreenRecordingPrompt();
+    screenPromptOpened = true;
+  } else {
+    // Neither gate recognized — still try doctor so the user gets *some* UI.
+    const launch = launchOpenComputerUseOnboarding(binaryPath, appBundlePath);
+    onboardingLaunched = launch.launched;
+    if (!launch.launched) {
+      launchError = launch.reason ?? getOpenComputerUseOnboardingError();
+    }
+  }
+
+  const onboardingError = launchError ?? getOpenComputerUseOnboardingError();
+  return {
+    onboardingLaunched,
+    screenPromptOpened,
+    screenRecordingAppLabel,
+    reason: onboardingError ? `${reason} ${onboardingError}` : reason,
+    ...(onboardingError ? { onboardingError } : {}),
+  };
 }
 
 export function getOpenComputerUseOnboardingError(): string | undefined {
@@ -486,7 +612,12 @@ export class ComputerUseMcpGateway {
   }
 
   /** Full gate used when turning the master switch on (includes permission check). */
-  async checkFeatureAvailable(): Promise<ComputerUseFeatureAvailability & { onboardingLaunched?: boolean }> {
+  async checkFeatureAvailable(): Promise<
+    ComputerUseFeatureAvailability & {
+      onboardingLaunched?: boolean;
+      screenPromptOpened?: boolean;
+    }
+  > {
     const resolved = this.resolveBinary();
     if (!resolved.available || !resolved.binaryPath) {
       return { available: false, reason: resolved.reason ?? "open-computer-use 不可用" };
@@ -494,13 +625,16 @@ export class ComputerUseMcpGateway {
     const probe = await probeOpenComputerUsePermissionStatus(resolved.binaryPath);
     if (!probe.ok) {
       if (openComputerUseUsesMacOsPrivacyGate()) {
-        const launch = launchOpenComputerUseOnboarding(resolved.binaryPath, resolved.appBundlePath);
+        const remediation = await remediateMacOsComputerUsePermissions(
+          resolved.binaryPath,
+          resolved.appBundlePath,
+          probe.missing,
+        );
         return {
           available: false,
-          reason: launch.launched
-            ? MACOS_PRIVACY_ONBOARDING_REASON
-            : (probe.reason ?? "系统权限未就绪"),
-          onboardingLaunched: launch.launched,
+          reason: remediation.reason,
+          onboardingLaunched: remediation.onboardingLaunched,
+          screenPromptOpened: remediation.screenPromptOpened,
           ...(probe.output ? { doctorOutput: probe.output } : {}),
         };
       }
