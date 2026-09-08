@@ -74,6 +74,7 @@ import {
   nativeTheme,
   net,
   powerMonitor,
+  powerSaveBlocker,
   safeStorage,
   session,
   shell,
@@ -420,6 +421,11 @@ import {
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
 import { attachMainWindowQuitGuard, installApplicationShutdownHook } from "./application-shutdown";
+import {
+  type ApplicationShutdownDeps,
+  collectRunningWorkSummary,
+  hasRunningWork,
+} from "./application-shutdown-work";
 import { transcribeAsr } from "./asr-client";
 import { type AsrSecretCodec, type AsrSettingsStore, createAsrSettingsStore } from "./asr-settings-store";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
@@ -702,6 +708,7 @@ import { connectSshBookmark, type SshConnectSecrets } from "./ssh-connect";
 import { runStorageCleanup } from "./storage-cleanup";
 import { buildStorageUsageSnapshot } from "./storage-inventory";
 import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
+import { SystemSleepBlocker } from "./system-sleep-blocker";
 import {
   clearThreadSubagentLaunchRegistry,
   getThreadSubagentLaunchRegistry,
@@ -1002,11 +1009,30 @@ function broadcastPackageScriptTerminalLaunch(payload: {
   });
 }
 let backgroundTerminalTaskRegistry: BackgroundTerminalTaskRegistry;
+const systemSleepBlocker = new SystemSleepBlocker(powerSaveBlocker);
+let applicationShutdownDeps: ApplicationShutdownDeps | undefined;
+
+function syncSystemSleepBlocker(): void {
+  if (!applicationShutdownDeps) {
+    return;
+  }
+  try {
+    systemSleepBlocker.sync(hasRunningWork(collectRunningWorkSummary(applicationShutdownDeps)));
+  } catch (error) {
+    process.stderr.write(
+      `[eco] system sleep blocker sync failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  }
+}
+
 const interactiveTerminalManager = new InteractiveTerminalManager((event) => {
   backgroundTerminalTaskRegistry?.handleTerminalEvent(event);
   desktopEventCenter.publishTerminalEvent(event);
 });
-backgroundTerminalTaskRegistry = new BackgroundTerminalTaskRegistry(interactiveTerminalManager);
+backgroundTerminalTaskRegistry = new BackgroundTerminalTaskRegistry(
+  interactiveTerminalManager,
+  syncSystemSleepBlocker,
+);
 const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
   desktopEventCenter.publishPackageJsonChanged(workspacePath);
 });
@@ -1389,6 +1415,7 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
   activeRunRuntimeState.startRun(threadId, run);
   activeRunBillingState.startRun(threadId);
   getThreadSubagentConcurrencyGate(threadId).clear();
+  syncSystemSleepBlocker();
 }
 
 function finishActiveRun(threadId: string): void {
@@ -1415,6 +1442,7 @@ function finishActiveRun(threadId: string): void {
   clearRequestStartedPersisted(threadId);
   threadLiveRequestRegistry.clearThread(threadId);
   proxyBillingStampRegistry.clearThread(threadId);
+  syncSystemSleepBlocker();
 }
 
 function getThreadSubagentConcurrencyGate(threadId: string): SubagentConcurrencyGate {
@@ -2452,7 +2480,17 @@ app.whenReady().then(async () => {
     emitContext: emitThreadContextUpdated,
   });
   contextLifecycle = createContextLifecycleService({
-    monitor: contextMonitor,
+    monitor: {
+      markCompactCompleted: (threadId, postTokens) => {
+        const snapshot = contextMonitor.markCompactCompleted(threadId, postTokens);
+        syncSystemSleepBlocker();
+        return snapshot;
+      },
+      noteCompactionObserved: (threadId) => {
+        contextMonitor.noteCompactionObserved(threadId);
+        syncSystemSleepBlocker();
+      },
+    },
     emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
     applySdkContextUsageBreakdown: (threadId, payload) => {
       contextScheduler.applySdkContextUsageBreakdown(threadId, payload);
@@ -2469,6 +2507,7 @@ app.whenReady().then(async () => {
   initializeSdkStreamActivityPipeline();
   loadThreadMetricsFromStore();
   recoverOrphanedRunningThreads();
+  syncSystemSleepBlocker();
   currentWorkspace = await ensureHomeProject();
   initializeGitAutoFetcher();
   registerIpcHandlers();
@@ -2520,95 +2559,100 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-installApplicationShutdownHook({
-  locale: currentAppLocale,
-  listThreads: () => conversationStore.listThreads(),
-  hasActiveRun: (threadId) => activeRunRuntimeState.hasRun(threadId),
-  isCompactInFlight: (threadId) => contextMonitor?.isCompactInFlight(threadId) ?? false,
-  countRunningBackgroundTasks: () => backgroundTerminalTaskRegistry.countRunning(),
-  cancelThreadRuntime: async (coreKind, threadId) => {
-    await threadRuntimeCoordinator.cancel(coreKind, threadId);
-  },
-  abortActiveRun: (threadId, reason) => activeRunRuntimeState.abortRun(threadId, reason),
-  finishActiveRun,
-  cancelClarifications: cancelClarificationsForThread,
-  cancelBashApprovals: cancelBashApprovalsForThread,
-  cancelPlanApprovals: cancelPlanApprovalsForThreadKeepPending,
-  settleRecoveredLifecycleRecords,
-  getPendingPlan: (threadId) => conversationStore.getPendingPlan(threadId),
-  updateThreadOnQuit: (threadId, patch) => {
-    updateThread(threadId, patch);
-  },
-  emitThreadQuitEvent: (threadId, type, message) => {
-    if (type === "thread.awaiting_plan") {
-      const pendingPlan = conversationStore.getPendingPlan(threadId);
-      emitThreadEvent(threadId, type, message, "system", false, {
-        plan: pendingPlan
-          ? {
-              userPrompt: pendingPlan.userPrompt,
-              analysis: pendingPlan.analysis,
-              plan: pendingPlan.plan,
-            }
-          : undefined,
-      });
-      return;
-    }
-    emitThreadEvent(threadId, type, message, "system");
-  },
-  stopAllBackgroundTasks: () => {
-    backgroundTerminalTaskRegistry.stopAllRunning();
-  },
-  killAllInteractiveTerminals: () => {
-    interactiveTerminalManager.killAll();
-  },
-  disposeBrowserHost: () => {
-    browserHost?.dispose();
-    void computerUseGateway?.close();
-  },
-  closeImageGenerationGateway: async () => {
-    await imageGenerationGateway?.close();
-  },
-  closeImageViewGateway: async () => {
-    await imageViewGateway?.close();
-  },
-  closeImageDisplayGateway: async () => {
-    await imageDisplayGateway?.close();
-    await htmlHostGateway?.close();
-  },
-  closeIntegratedWebSearchGateway: async () => {
-    await integratedWebSearchGateway?.close();
-  },
-  stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
-  stopAllAcpRuntimes,
-  stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
-  disposeDesktopUpdateService: () => {
-    desktopUpdateService.dispose();
-  },
-  clearCodexSubagentRuntimeLimit: () => {
-    codexSubagentRuntimeLimit.clear();
-  },
-  flushAllThreadMetrics: () => {
-    flushAllThreadMetrics();
-  },
-  disposeCodexGatewayUsagePending: () => {
-    codexGatewayUsagePending.dispose();
-  },
-  clearCodexGatewayUsageDeduplicator: () => {
-    codexGatewayUsageDeduplicator.clear();
-  },
-  disposeGitAutoFetcher: () => {
-    gitAutoFetcher?.dispose();
-  },
-  disposeCenterServerClient: () => {
-    centerServerClient?.dispose();
-  },
-  parentWindow: () => BrowserWindow.getAllWindows()[0],
-  logError: (error) => {
-    process.stderr.write(
-      `[eco] application shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-  },
-});
+installApplicationShutdownHook(
+  (applicationShutdownDeps = {
+    locale: currentAppLocale,
+    listThreads: () => conversationStore.listThreads(),
+    hasActiveRun: (threadId) => activeRunRuntimeState.hasRun(threadId),
+    isCompactInFlight: (threadId) => contextMonitor?.isCompactInFlight(threadId) ?? false,
+    countRunningBackgroundTasks: () => backgroundTerminalTaskRegistry.countRunning(),
+    cancelThreadRuntime: async (coreKind, threadId) => {
+      await threadRuntimeCoordinator.cancel(coreKind, threadId);
+    },
+    abortActiveRun: (threadId, reason) => activeRunRuntimeState.abortRun(threadId, reason),
+    finishActiveRun,
+    cancelClarifications: cancelClarificationsForThread,
+    cancelBashApprovals: cancelBashApprovalsForThread,
+    cancelPlanApprovals: cancelPlanApprovalsForThreadKeepPending,
+    settleRecoveredLifecycleRecords,
+    getPendingPlan: (threadId) => conversationStore.getPendingPlan(threadId),
+    updateThreadOnQuit: (threadId, patch) => {
+      updateThread(threadId, patch);
+    },
+    emitThreadQuitEvent: (threadId, type, message) => {
+      if (type === "thread.awaiting_plan") {
+        const pendingPlan = conversationStore.getPendingPlan(threadId);
+        emitThreadEvent(threadId, type, message, "system", false, {
+          plan: pendingPlan
+            ? {
+                userPrompt: pendingPlan.userPrompt,
+                analysis: pendingPlan.analysis,
+                plan: pendingPlan.plan,
+              }
+            : undefined,
+        });
+        return;
+      }
+      emitThreadEvent(threadId, type, message, "system");
+    },
+    stopAllBackgroundTasks: () => {
+      backgroundTerminalTaskRegistry.stopAllRunning();
+    },
+    killAllInteractiveTerminals: () => {
+      interactiveTerminalManager.killAll();
+    },
+    disposeBrowserHost: () => {
+      browserHost?.dispose();
+      void computerUseGateway?.close();
+    },
+    closeImageGenerationGateway: async () => {
+      await imageGenerationGateway?.close();
+    },
+    closeImageViewGateway: async () => {
+      await imageViewGateway?.close();
+    },
+    closeImageDisplayGateway: async () => {
+      await imageDisplayGateway?.close();
+      await htmlHostGateway?.close();
+    },
+    closeIntegratedWebSearchGateway: async () => {
+      await integratedWebSearchGateway?.close();
+    },
+    stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
+    stopAllAcpRuntimes,
+    stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
+    disposeDesktopUpdateService: () => {
+      desktopUpdateService.dispose();
+    },
+    disposeSystemSleepBlocker: () => {
+      systemSleepBlocker.dispose();
+    },
+    clearCodexSubagentRuntimeLimit: () => {
+      codexSubagentRuntimeLimit.clear();
+    },
+    flushAllThreadMetrics: () => {
+      flushAllThreadMetrics();
+    },
+    disposeCodexGatewayUsagePending: () => {
+      codexGatewayUsagePending.dispose();
+    },
+    clearCodexGatewayUsageDeduplicator: () => {
+      codexGatewayUsageDeduplicator.clear();
+    },
+    disposeGitAutoFetcher: () => {
+      gitAutoFetcher?.dispose();
+    },
+    disposeCenterServerClient: () => {
+      centerServerClient?.dispose();
+    },
+    parentWindow: () => BrowserWindow.getAllWindows()[0],
+    logError: (error) => {
+      process.stderr.write(
+        `[eco] application shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    },
+  }),
+);
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
   return {
@@ -12818,6 +12862,7 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
       ...(typeof followUpQueuePaused === "boolean" ? { followUpQueuePaused } : {}),
     },
   );
+  syncSystemSleepBlocker();
 }
 
 /**
@@ -12851,6 +12896,9 @@ function patchThreadSummary(threadId: string, patch: Pick<ThreadSummary, "messag
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
   autoPauseFollowUpQueueForErrorStatus(threadId, patch.status);
+  // Status can leave running/queued here (e.g. markThreadInterrupted → blocked)
+  // without going through updateThread; keep the sleep blocker in sync.
+  syncSystemSleepBlocker();
 }
 
 /** Auto-pause queued follow-ups when the session errors; returns current paused flag when known. */

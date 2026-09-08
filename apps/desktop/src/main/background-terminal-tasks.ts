@@ -50,7 +50,10 @@ function toTaskSummary(task: BackgroundTerminalTask): BackgroundTerminalTask {
 export class BackgroundTerminalTaskRegistry {
   private readonly tasks = new Map<string, BackgroundTerminalTask>();
 
-  constructor(private readonly terminalManager: InteractiveTerminalManager) {}
+  constructor(
+    private readonly terminalManager: InteractiveTerminalManager,
+    private readonly onRunningChanged?: () => void,
+  ) {}
 
   start(request: BackgroundTerminalStartRequest): BackgroundTerminalTask {
     const workspacePath = path.resolve(request.workspacePath.trim());
@@ -68,6 +71,7 @@ export class BackgroundTerminalTaskRegistry {
       ...(threadId && { threadId }),
     };
     this.tasks.set(task.taskId, task);
+    this.onRunningChanged?.();
     return { ...task };
   }
 
@@ -102,6 +106,7 @@ export class BackgroundTerminalTaskRegistry {
       endedAt: current.endedAt ?? nowIso(),
     };
     this.tasks.set(taskId, next);
+    this.onRunningChanged?.();
     return { stopped: killed, task: { ...next } };
   }
 
@@ -153,5 +158,6 @@ export class BackgroundTerminalTaskRegistry {
             endedAt: nowIso(),
           };
     this.tasks.set(next.taskId, next);
+    this.onRunningChanged?.();
   }
 }

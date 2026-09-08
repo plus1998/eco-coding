@@ -36,6 +36,7 @@ function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): Applicati
     stopAllAcpRuntimes: () => {},
     stopGlobalEcoGateway: async () => {},
     disposeDesktopUpdateService: () => {},
+    disposeSystemSleepBlocker: () => {},
     clearCodexSubagentRuntimeLimit: () => {},
     flushAllThreadMetrics: () => {},
     disposeCodexGatewayUsagePending: () => {},
@@ -118,6 +119,9 @@ test("shutdownApplicationServices stops ACP runtimes after Codex", async () => {
   const order: string[] = [];
   await shutdownApplicationServices(
     createDeps({
+      disposeSystemSleepBlocker: () => {
+        order.push("sleep");
+      },
       stopGlobalCodexRuntime: async () => {
         order.push("codex");
       },
@@ -129,5 +133,5 @@ test("shutdownApplicationServices stops ACP runtimes after Codex", async () => {
       },
     }),
   );
-  expect(order).toEqual(["codex", "acp", "eco"]);
+  expect(order).toEqual(["sleep", "codex", "acp", "eco"]);
 });

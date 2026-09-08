@@ -26,6 +26,7 @@ import '../../core/utils/prompt_image_attachment.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
+import '../../core/platform/session_wake_lock.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../approvals/approval_sheets.dart';
@@ -133,23 +134,32 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_isLanding) return;
     if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshFollowUps());
-      final notifier = ref.read(
-        threadSessionProvider(widget.threadId).notifier,
-      );
-      unawaited(notifier.refreshComposerRestore());
-      unawaited(notifier.recoverProjection());
-      final workspacePath =
-          ref
-              .read(threadSessionProvider(widget.threadId))
-              .thread
-              ?.workspacePath ??
-          '';
-      if (workspacePath.isNotEmpty) {
-        refreshWorkspaceChanges(ref, workspacePath);
+      if (!_isLanding) {
+        unawaited(_refreshFollowUps());
+        final notifier = ref.read(
+          threadSessionProvider(widget.threadId).notifier,
+        );
+        unawaited(notifier.refreshComposerRestore());
+        unawaited(notifier.recoverProjection());
+        final workspacePath =
+            ref
+                .read(threadSessionProvider(widget.threadId))
+                .thread
+                ?.workspacePath ??
+            '';
+        if (workspacePath.isNotEmpty) {
+          refreshWorkspaceChanges(ref, workspacePath);
+        }
       }
+      _syncSessionWakeLock();
+      return;
+    }
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      unawaited(sessionWakeLock.disable());
     }
   }
 
@@ -163,12 +173,14 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       _editingFollowUpId = null;
     }
     unawaited(ref.read(ecoTtsServiceProvider).stop());
+    unawaited(sessionWakeLock.disable());
     super.deactivate();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(sessionWakeLock.disable());
     _promptController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -179,9 +191,29 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     return thread.status == 'running' || thread.status == 'queued';
   }
 
+  bool _shouldKeepScreenAwake(ThreadSummary? thread) {
+    // Landing send (_starting) must also keep the screen on until handoff.
+    return _starting || (!_isLanding && _isRunning(thread));
+  }
+
+  void _syncSessionWakeLock([ThreadSummary? thread]) {
+    final current =
+        thread ??
+        (_isLanding
+            ? null
+            : ref.read(threadSessionProvider(widget.threadId)).thread);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    final foreground =
+        lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    unawaited(
+      sessionWakeLock.sync(foreground && _shouldKeepScreenAwake(current)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLanding) {
+      _syncSessionWakeLock(null);
       return _buildLanding(context);
     }
 
@@ -230,6 +262,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       workspacePillLoadingProvider(workspacePath),
     );
     final isRunning = _isRunning(thread);
+    _syncSessionWakeLock(thread);
     final stopping = _stopBusy || (thread?.cancelling == true);
     final sessionContentBooting = isSessionContentBooting(
       hasError: session.error != null,
