@@ -430,8 +430,8 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
   );
 
   // Waiting indicator is deferred to the active-tail; process stays empty under the
-  // 处理中 divider so padding does not stack above "正在思考". Spacing stays stable
-  // before and after request.started via the empty-process + active-tail rule.
+  // 处理中 divider so padding does not stack above "正在思考". Active-tail uses the
+  // same --codex-feed-gap-process as in-process siblings.
   expect(beforeRequest).toContain("run-log-turn-process-inner is-empty");
   expect(afterRequest).toContain("run-log-turn-process-inner is-empty");
   expect(beforeRequest).toContain("run-log-active-tail");
@@ -812,16 +812,20 @@ test("ActivityLogView keeps block spacing between a completed turn and the next 
     /\.run-log\s*>\s*\.run-log-virtual-row:has\(>\s*\.run-log-turn\)\s*\+\s*\.run-log-virtual-row:has\(>\s*\.run-log-feed-entry\)\s*>\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*var\(--codex-feed-gap-block\);/,
   );
   expect(styles).toMatch(
-    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-tool-group\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*calc\(20px - var\(--codex-feed-gap-step\)\);/,
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log-turn-process-inner\s*\{[\s\S]*?gap:\s*var\(--codex-feed-gap-process\);/,
+  );
+  expect(styles).toMatch(/--codex-feed-gap-process:\s*20px;/);
+  expect(styles).toMatch(
+    /\.run-log\s*>\s*\.run-log-feed-entry:is\([\s\S]*?:has\(\.run-log-thinking\)[\s\S]*?\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*var\(--codex-feed-gap-process\);/,
   );
   expect(styles).toMatch(
-    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*calc\(20px - var\(--codex-feed-gap-step\)\);/,
+    /\.run-log\s*>\s*\.run-log-active-tail[\s\S]*?margin-top:\s*var\(--codex-feed-gap-process\);/,
   );
   expect(styles).toMatch(
-    /\.run-log\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*20px;/,
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log-prompt-cache-notice,\s*\.codex-main:not\(\.codex-main-landing\) \.run-log-prompt-cache-timeline\s*\{[\s\S]*?margin-block:\s*0;/,
   );
-  expect(styles).toMatch(
-    /\.run-log-virtual-row:has\(>\s*\.run-log-feed-entry--tight\)\s*\+\s*\.run-log-active-tail:has\(\.run-log-conversation-tail\)[\s\S]*?margin-top:\s*var\(--codex-feed-gap-step\);/,
+  expect(styles).not.toMatch(
+    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-context-action\)\s*\{[\s\S]*?margin-block:\s*14px;/,
   );
 });
 

@@ -9713,7 +9713,7 @@ button.default-agent-option:focus-visible {
 .run-log > .run-log-feed-entry:first-child:has(.run-log-user-prompt),
 .run-log > .run-log-virtual-header > .run-log-feed-entry:has(.run-log-user-prompt),
 .run-log > .run-log-virtual-row:first-of-type > .run-log-feed-entry:has(.run-log-user-prompt) {
-  padding-top: 12px;
+  padding-top: 20px;
 }
 
 .run-log-progress {
@@ -10007,7 +10007,8 @@ button.default-agent-option:focus-visible {
 
 .run-log-user-prompt-body {
   margin: 0;
-  padding: 12px 16px;
+  /* Top needs more air than sides: first line sits under a 16px radius. */
+  padding: 16px 16px 14px;
   border-radius: 16px 16px 4px 16px;
   background: var(--run-log-user-prompt-bg);
   color: var(--run-log-user-prompt-fg);
@@ -11563,7 +11564,8 @@ button.default-agent-option:focus-visible {
 
 .run-log-thinking.is-expanded .run-log-thinking-details {
   grid-template-rows: 1fr;
-  margin-top: 8px;
+  /* Match process-row rhythm so expanded 思考内容 is not glued under the header. */
+  margin-top: 12px;
   opacity: 1;
 }
 
@@ -25045,6 +25047,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 .codex-main:not(.codex-main-landing) {
   position: relative;
   --codex-feed-font-size: var(--ui-font-size);
+  --codex-feed-gap-process: 20px;
   background: var(--codex-log-bg);
   color: var(--codex-log-text);
 }
@@ -25377,9 +25380,15 @@ html:not([data-platform="darwin"])
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: var(--codex-feed-gap-step);
+  /*
+   * One gap for every process sibling. imageView / htmlHost stay ungrouped
+   * (own preview row) but must use the same rhythm as tool-group / thinking /
+   * narrative — do not reintroduce :has()-only margin compensation.
+   */
+  gap: var(--codex-feed-gap-process);
   overflow: hidden;
-  padding-top: 12px;
+  /* Same as sibling gap so the first row under「处理中」matches tool↔tool. */
+  padding-top: var(--codex-feed-gap-process);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-turn-process-inner.is-empty {
@@ -25391,11 +25400,11 @@ html:not([data-platform="darwin"])
 }
 
 .codex-main:not(.codex-main-landing) .run-log-turn-final {
-  margin-top: 14px;
+  margin-top: var(--codex-feed-gap-process);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-turn.is-expanded .run-log-turn-final {
-  margin-top: 18px;
+  margin-top: var(--codex-feed-gap-process);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -25480,168 +25489,85 @@ html:not([data-platform="darwin"])
   margin-top: var(--codex-feed-gap-step);
 }
 
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry:has(.run-log-context-action) {
-  margin-block: 14px;
-}
-
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry:has(.run-log-tool-group)
-  + .run-log-feed-entry,
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-tool-group),
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry:has(.run-log-thinking)
-  + .run-log-feed-entry,
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry:has(.subagent-run-row-wrap)
-  + .run-log-feed-entry,
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
-  > .run-log-feed-entry
-  + .run-log-feed-entry:has(.subagent-run-row-wrap) {
-  /* Parent flex gap already contributes --codex-feed-gap-step; net visual spacing = 20px. */
-  margin-top: calc(20px - var(--codex-feed-gap-step));
-}
-
+/*
+ * Process-like rows at the top of .run-log (outside process-inner) share the
+ * same 20px rhythm. Overrides tight↔tight step (6px) for tool-group / imageView /
+ * htmlHost / thinking / narrative / subagent cards.
+ */
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-feed-entry:has(.subagent-run-row-wrap)
+  > .run-log-feed-entry:is(
+    :has(.run-log-tool-group),
+    :has(.run-log-image-view),
+    :has(.run-log-html-host),
+    :has(.run-log-thinking),
+    :has(.run-log-narrative),
+    :has(.subagent-run-row-wrap)
+  )
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry:has(.subagent-run-row-wrap))
+  > .run-log-feed-entry
+  + .run-log-feed-entry:is(
+    :has(.run-log-tool-group),
+    :has(.run-log-image-view),
+    :has(.run-log-html-host),
+    :has(.run-log-thinking),
+    :has(.run-log-narrative),
+    :has(.subagent-run-row-wrap)
+  ),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-virtual-row:has(
+    > .run-log-feed-entry:is(
+      :has(.run-log-tool-group),
+      :has(.run-log-image-view),
+      :has(.run-log-html-host),
+      :has(.run-log-thinking),
+      :has(.run-log-narrative),
+      :has(.subagent-run-row-wrap)
+    )
+  )
   + .run-log-virtual-row:has(> .run-log-feed-entry)
   > .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-feed-entry
-  + .run-log-feed-entry:has(.subagent-run-row-wrap),
-.codex-main:not(.codex-main-landing)
-  .run-log
   > .run-log-virtual-row:has(> .run-log-feed-entry)
-  + .run-log-virtual-row:has(> .run-log-feed-entry:has(.subagent-run-row-wrap))
-  > .run-log-feed-entry,
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-feed-entry:has(.run-log-thinking)
-  + .run-log-feed-entry,
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry:has(.run-log-thinking))
-  + .run-log-virtual-row:has(> .run-log-feed-entry)
-  > .run-log-feed-entry,
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry)
-  + .run-log-virtual-row:has(> .run-log-feed-entry:has(.run-log-thinking))
+  + .run-log-virtual-row:has(
+    > .run-log-feed-entry:is(
+      :has(.run-log-tool-group),
+      :has(.run-log-image-view),
+      :has(.run-log-html-host),
+      :has(.run-log-thinking),
+      :has(.run-log-narrative),
+      :has(.subagent-run-row-wrap)
+    )
+  )
   > .run-log-feed-entry {
-  margin-top: 20px;
+  margin-top: var(--codex-feed-gap-process);
 }
 
 /*
- * Active tail (「正在思考」/「...」) stays a direct .run-log child.
- * Feed sections sit in .run-log-virtual-row; virtualized lists may insert a spacer
- * between the last row and the tail.
+ * Active tail (「正在思考」/「...」) is a direct .run-log child after the last
+ * virtual row / turn. Always continue the process rhythm — never step/12px
+ * special cases (those made 命令→正在思考 look glued while tool↔narrative stayed open).
  */
+.codex-main:not(.codex-main-landing) .run-log > .run-log-active-tail,
 .codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail,
+.codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry + .run-log-active-tail,
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-virtual-row:has(> .run-log-turn)
+  > .run-log-virtual-row
   + .run-log-active-tail,
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-virtual-row:has(> .run-log-turn)
+  > .run-log-virtual-row
   + .run-log-virtual-spacer
   + .run-log-active-tail {
-  margin-top: var(--codex-feed-gap-step);
+  margin-top: var(--codex-feed-gap-process);
 }
 
-/*
- * Empty "正在思考" is deferred to the active-tail after the turn.
- * Under an empty process (only the 处理中 divider shows), match process-inner's
- * padding-top so thinking starts at the same y as other process content.
- * After a process that already has tools/content, keep feed-step spacing.
- */
-.codex-main:not(.codex-main-landing) .run-log
-  > .run-log-turn:has(.run-log-turn-process-inner.is-empty)
-  + .run-log-active-tail:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-turn:has(.run-log-turn-process-inner.is-empty))
-  + .run-log-active-tail:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-turn:has(.run-log-turn-process-inner.is-empty))
-  + .run-log-virtual-spacer
-  + .run-log-active-tail:has(.run-log-thinking) {
-  margin-top: 12px;
-}
-
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty))
-  + .run-log-active-tail:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty)))
-  + .run-log-active-tail:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty)))
-  + .run-log-virtual-spacer
-  + .run-log-active-tail:has(.run-log-thinking) {
-  margin-top: 20px;
-}
-
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-feed-entry
-  + .run-log-active-tail:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry)
-  + .run-log-active-tail:has(.run-log-thinking),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry)
-  + .run-log-virtual-spacer
-  + .run-log-active-tail:has(.run-log-thinking) {
-  margin-top: 12px;
-}
-
-/* Tip / thinking row above the conversation "..." tail (same step as tight+tight). */
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-feed-entry--tight
-  + .run-log-active-tail:has(.run-log-conversation-tail),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry--tight)
-  + .run-log-active-tail:has(.run-log-conversation-tail),
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-virtual-row:has(> .run-log-feed-entry--tight)
-  + .run-log-virtual-spacer
-  + .run-log-active-tail:has(.run-log-conversation-tail) {
-  margin-top: var(--codex-feed-gap-step);
-}
-
-/* First process row under the divider is already padded by process-inner �?do not stack. */
+/* First process row under the divider is already padded by process-inner — do not stack. */
 .codex-main:not(.codex-main-landing) .run-log-turn-process-inner
   > .run-log-feed-entry:first-child:has(.run-log-thinking) {
   margin-top: 0;
@@ -25901,6 +25827,16 @@ html:not([data-platform="darwin"])
   line-height: 1.55;
 }
 
+/* Base notice/timeline still carry 12px/14px margins; zero them so process gap owns rhythm. */
+.codex-main:not(.codex-main-landing) .run-log-prompt-cache-notice,
+.codex-main:not(.codex-main-landing) .run-log-prompt-cache-timeline {
+  margin-block: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-context-action {
+  margin: 0;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-action {
   gap: 8px;
   align-items: center;
@@ -26143,10 +26079,6 @@ html:not([data-platform="darwin"])
     var(--codex-log-muted) 62%,
     var(--codex-log-muted) 100%
   );
-}
-
-.codex-main:not(.codex-main-landing) .subagent-run-row-wrap {
-  margin: 4px 0 12px;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row {
@@ -30894,7 +30826,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
 }
 
 .subagent-conversation .run-log-user-prompt-body {
-  padding: 12px 15px;
+  padding: 16px 15px 14px;
   border-radius: 16px 16px 5px 16px;
   background: color-mix(in srgb, var(--terminal-fg) 10%, transparent);
   color: var(--terminal-fg);

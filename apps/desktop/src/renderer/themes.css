@@ -84,6 +84,8 @@
   --codex-log-heading: #9a9a9a;
   --codex-feed-gap-block: 14px;
   --codex-feed-gap-step: 6px;
+  /* Uniform rhythm inside a turn process (tools / imageView / thinking / narrative). */
+  --codex-feed-gap-process: 20px;
   --popover-bg: rgba(38, 38, 38, 0.88);
   --popover-border: rgba(255, 255, 255, 0.1);
   --popover-text: #f5f5f5;
@@ -280,6 +282,8 @@
   --codex-log-heading: #6e6e73;
   --codex-feed-gap-block: 14px;
   --codex-feed-gap-step: 6px;
+  /* Uniform rhythm inside a turn process (tools / imageView / thinking / narrative). */
+  --codex-feed-gap-process: 20px;
   --popover-bg: rgba(255, 255, 255, 0.86);
   --popover-border: rgba(0, 0, 0, 0.08);
   --popover-text: #1d1d1f;
