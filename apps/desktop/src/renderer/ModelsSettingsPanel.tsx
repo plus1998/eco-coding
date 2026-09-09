@@ -962,6 +962,9 @@ export function ModelsSettingsPanel({
         <ProviderEditorModal
           form={providerForm}
           setForm={setProviderForm}
+          hasExistingApiKey={
+            providerOptions.find((provider) => provider.id === providerForm.id)?.hasApiKey ?? false
+          }
           models={modalCache?.models ?? []}
           modelsLoading={loadingForProvider(modalProviderId)}
           modelsError={modalCache?.error}
@@ -991,6 +994,7 @@ export function ModelsSettingsPanel({
 function ProviderEditorModal({
   form,
   setForm,
+  hasExistingApiKey,
   models,
   modelsLoading,
   modelsError,
@@ -1007,6 +1011,7 @@ function ProviderEditorModal({
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
+  hasExistingApiKey: boolean;
   models: UpstreamModelOption[];
   modelsLoading: boolean;
   modelsError?: string | undefined;
@@ -1256,8 +1261,12 @@ function ProviderEditorModal({
                   className="mcp-field-input"
                   type="password"
                   value={form.apiKey ?? ""}
+                  placeholder={hasExistingApiKey ? "••••••" : undefined}
                   onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
                 />
+                {hasExistingApiKey && !(form.apiKey ?? "").trim() ? (
+                  <span className="mcp-field-hint">{t("settings.models.provider.keepKey")}</span>
+                ) : null}
               </label>
             </section>
 
