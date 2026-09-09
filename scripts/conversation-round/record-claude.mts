@@ -1,7 +1,8 @@
 /**
  * Record a live Claude Agent SDK conversation round via LongCat Anthropic surface.
  *
- *   LONGCAT_API_KEY=... bun scripts/conversation-round/record-claude.mts
+ *   LONGCAT_API_KEY=... bun run round -- conversation record --core=claude
+ *   (or: bun scripts/conversation-round/record-claude.mts)
  *
  * LongCat routes Anthropic Messages at:
  *   https://api.longcat.chat/anthropic/v1/messages

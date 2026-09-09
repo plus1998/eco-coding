@@ -1,7 +1,8 @@
 /**
  * Record a live LongCat conversation round and build offline replay artifacts.
  *
- *   LONGCAT_API_KEY=... bun scripts/conversation-round/record.mjs
+ *   LONGCAT_API_KEY=... bun run round -- conversation record
+ *   (or: bun scripts/conversation-round/record.mjs)
  *
  * Options (env):
  *   LONGCAT_API_KEY / ECO_CODEX_SMOKE_API_KEY
@@ -83,7 +84,7 @@ console.log(
       ok: latest.ok === true,
       runId: latest.runId,
       fixtureDir: targetDir,
-      replay: "bun scripts/conversation-round/replay.mjs",
+      replay: "bun run round -- conversation replay",
       test: "bun test apps/desktop/test/conversation-round-replay.test.ts",
     },
     null,

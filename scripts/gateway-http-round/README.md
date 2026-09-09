@@ -40,16 +40,16 @@ export GATEWAY_RECORD_RESPONSES_KEY=sk-...
 export GATEWAY_RECORD_PACKY_ANTHROPIC_KEY=sk-...
 export GATEWAY_RECORD_LONGCAT_CHAT_KEY=ak_...
 
-bun run gateway-http-round:record:all
+bun run round -- gateway record
 # or: bun scripts/gateway-http-round/record-client-round.mts
 ```
 
 Options:
 
 ```bash
-bun scripts/gateway-http-round/record-client-round.mts --client=codex --profile=packy_responses
-bun scripts/gateway-http-round/record-client-round.mts --client=claude --profile=longcat_responses
-bun scripts/gateway-http-round/record-client-round.mts --client=pi --profile=longcat_chat
+bun run round -- gateway record --client=codex --profile=packy_responses
+bun run round -- gateway record --client=claude --profile=longcat_responses
+bun run round -- gateway record --client=pi --profile=longcat_chat
 ```
 
 Artifacts:
@@ -80,14 +80,14 @@ scripts/gateway-http-round/fixtures/<runId>/
 ### Upstream (raw HTTP, bypass gateway)
 
 ```bash
-bun scripts/gateway-http-round/record-upstream.mts
-bun scripts/gateway-http-round/record-upstream.mts --profile=packy_anthropic
+bun run round -- gateway record --layer=upstream
+bun run round -- gateway record --layer=upstream --profile=packy_anthropic
 ```
 
 ### Gateway handler (synthetic fetch client)
 
 ```bash
-bun scripts/gateway-http-round/record-gateway.mts
+bun run round -- gateway record --layer=gateway
 ```
 
 Scenarios: `text_non_stream`, `text_stream` only.
@@ -95,7 +95,7 @@ Scenarios: `text_non_stream`, `text_stream` only.
 ## Replay tests
 
 ```bash
-bun run gateway-http-round:replay
+bun run round -- gateway replay
 ```
 
 Feed replay tests rebuild the Feed projection from recorded `rpc-log.jsonl` (Codex) or `agent-events.jsonl` (Claude/PI) and assert scenario coverage.
@@ -106,21 +106,21 @@ Replay recorded cells in the Demo UI — sidebar lists each cell as a thread; Fe
 
 ```bash
 # all discovered 3×3 cells
-bun run dev:feed-replay-demo
+bun run round -- gateway demo
 
 # single cell (protocol aliases — no need to remember packy/longcat)
-bun run dev:feed-replay-demo -- claude:responses
-bun run dev:feed-replay-demo -- pi/messages
-bun run dev:feed-replay-demo -- codex:chat_completions
+bun run round -- gateway demo claude:responses
+bun run round -- gateway demo pi/messages
+bun run round -- gateway demo codex:chat_completions
 
 # all 3 protocols for one client
-bun run dev:feed-replay-demo -- claude:responses/messages/chat_completions
+bun run round -- gateway demo claude:responses/messages/chat_completions
 
 # selector help
-bun run dev:feed-replay-demo -- help
+bun run round -- gateway demo help
 
 # restrict fixture run
-ECO_DEMO_FEED_REPLAY_FIXTURE=2026-09-01T07-40-15Z-claude-pi-round bun run dev:feed-replay-demo
+ECO_DEMO_FEED_REPLAY_FIXTURE=2026-09-01T07-40-15Z-claude-pi-round bun run round -- gateway demo
 ```
 
 Env:
@@ -140,4 +140,4 @@ ECO_GATEWAY_HTTP_ROUND_FIXTURE_GATEWAY=scripts/gateway-http-round/fixtures/<runI
 - **Luna Responses** (`GATEWAY_RECORD_RESPONSES_KEY` → `https://gpt.pomener.ru`) is shared by Codex, Claude, and PI in the 3×3 matrix.
 - Profiles without env keys are skipped (not failed) when using `--profile=all`.
 - Secrets are **never** written to fixtures (redacted). Store keys only in env.
-- `record-codex-via-gateway.mts` is a thin alias for `--client=codex --profile=packy_responses`.
+- Prefer `bun run round -- gateway record --client=codex --profile=packy_responses` (legacy `record-codex-via-gateway.mts` is the same).

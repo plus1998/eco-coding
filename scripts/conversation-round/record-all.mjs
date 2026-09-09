@@ -1,7 +1,8 @@
 /**
  * Record Codex + PI + Claude conversation-round fixtures in one pass.
  *
- *   LONGCAT_API_KEY=... bun scripts/conversation-round/record-all.mjs
+ *   LONGCAT_API_KEY=... bun run round -- conversation record --core=all
+ *   (or: bun scripts/conversation-round/record-all.mjs)
  *
  * Options:
  *   --codex-only | --pi-only | --claude-only

@@ -1,7 +1,8 @@
 /**
  * Record the full gateway client-round matrix (10 explicit cells in RECORDING_CELL_SPECS).
  *
- *   bun scripts/gateway-http-round/record-all.mts
+ *   bun run round -- gateway record
+ *   (or: bun scripts/gateway-http-round/record-all.mts)
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

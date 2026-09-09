@@ -1,11 +1,11 @@
 /**
  * Launch demo mode with gateway client-round feed replay.
  *
- *   bun run dev:feed-replay-demo
- *   bun run dev:feed-replay-demo -- claude:responses
- *   bun run dev:feed-replay-demo -- claude:responses/messages/chat_completions
- *   bun run dev:feed-replay-demo -- help
- *   ECO_DEMO_FEED_REPLAY=matrix bun run dev:feed-replay-demo
+ *   bun run round -- gateway demo
+ *   bun run round -- gateway demo claude:responses
+ *   bun run round -- gateway demo claude:responses/messages/chat_completions
+ *   bun run round -- gateway demo help
+ *   ECO_DEMO_FEED_REPLAY=matrix bun run round -- gateway demo
  */
 import { spawn } from "node:child_process";
 import path from "node:path";

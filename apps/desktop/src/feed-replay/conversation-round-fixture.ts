@@ -68,7 +68,7 @@ export function resolveConversationRoundFixtureDir(configured?: string): string 
   }
 
   throw new Error(
-    "No conversation round fixture found. Run: LONGCAT_API_KEY=... bun scripts/conversation-round/record.mjs",
+    "No conversation round fixture found. Run: LONGCAT_API_KEY=... bun run round -- conversation record",
   );
 }
 

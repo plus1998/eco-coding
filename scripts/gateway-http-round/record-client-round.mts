@@ -5,7 +5,9 @@
  *   export GATEWAY_RECORD_RESPONSES_KEY=...   # Luna Responses @ gpt.pomener.ru
  *   export GATEWAY_RECORD_PACKY_ANTHROPIC_KEY=...
  *   export GATEWAY_RECORD_LONGCAT_CHAT_KEY=...
- *   bun scripts/gateway-http-round/record-client-round.mts
+ *   bun run round -- gateway record
+ *   bun run round -- gateway record --client=codex --profile=packy_responses
+ *   (or: bun scripts/gateway-http-round/record-client-round.mts)
  *
  * Options:
  *   --client=codex|claude|pi|all     default all

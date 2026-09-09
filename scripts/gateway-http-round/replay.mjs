@@ -1,9 +1,9 @@
 /**
  * Offline replay for gateway client-round fixtures.
  *
- *   bun scripts/gateway-http-round/replay.mjs
- *   bun scripts/gateway-http-round/replay.mjs --cell=pi:longcat_chat
- *   bun scripts/gateway-http-round/replay.mjs --feed-only
+ *   bun run round -- gateway replay
+ *   bun run round -- gateway replay --cell=pi:longcat_chat
+ *   bun run round -- gateway replay --feed-only
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";

@@ -100,7 +100,7 @@ export function resolveClientRoundFixtureRoot(configured?: string): string {
     }
   }
 
-  throw new Error("No gateway client-round fixture found. Run: bun run gateway-http-round:record:all");
+  throw new Error("No gateway client-round fixture found. Run: bun run round -- gateway record");
 }
 
 function loadCellFromDir(
@@ -226,7 +226,7 @@ export function loadGatewayClientRoundCell(input: {
   const key = cellKey(input.client, input.profileId);
   const cell = cells.get(key);
   if (!cell) {
-    throw new Error(`No recorded cell for ${key}. Run gateway-http-round:record:all`);
+    throw new Error(`No recorded cell for ${key}. Run: bun run round -- gateway record`);
   }
   return cell;
 }

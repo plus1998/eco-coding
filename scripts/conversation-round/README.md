@@ -9,6 +9,15 @@ End-to-end offline replay for one full agent turn (Codex / PI / Claude):
 
 ## Record (live)
 
+Unified CLI (preferred):
+
+```bash
+LONGCAT_API_KEY=... bun run round -- conversation record              # Codex (default)
+LONGCAT_API_KEY=... bun run round -- conversation record --core=pi
+LONGCAT_API_KEY=... bun run round -- conversation record --core=claude
+LONGCAT_API_KEY=... bun run round -- conversation record --core=all
+```
+
 ### Codex (LongCat Responses API)
 
 ```bash
@@ -70,11 +79,11 @@ scripts/conversation-round/fixtures/<runId>-claude/   # Claude
 ## Replay (offline)
 
 ```bash
-bun scripts/conversation-round/replay.mjs
-bun scripts/conversation-round/replay.mjs --fixture=<runId>
-bun scripts/conversation-round/replay.mjs --core=pi
-bun scripts/conversation-round/replay.mjs --core=claude
-bun scripts/conversation-round/replay.mjs --core=all
+bun run round -- conversation replay
+bun run round -- conversation replay --fixture=<runId>
+bun run round -- conversation replay --core=pi
+bun run round -- conversation replay --core=claude
+bun run round -- conversation replay --core=all
 ```
 
 Runs:

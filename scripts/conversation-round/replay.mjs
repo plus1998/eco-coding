@@ -1,10 +1,10 @@
 /**
  * Offline replay for recorded conversation round fixtures.
  *
- *   bun scripts/conversation-round/replay.mjs
- *   bun scripts/conversation-round/replay.mjs --fixture=<runId>
- *   bun scripts/conversation-round/replay.mjs --core=codex|pi|claude|all
- *   bun scripts/conversation-round/replay.mjs --strict
+ *   bun run round -- conversation replay
+ *   bun run round -- conversation replay --fixture=<runId>
+ *   bun run round -- conversation replay --core=codex|pi|claude|all
+ *   bun run round -- conversation replay --strict
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -50,7 +50,7 @@ function resolveFixtureDir(arg) {
     }
   }
   throw new Error(
-    "No Codex fixture found. Run: LONGCAT_API_KEY=... bun scripts/conversation-round/record.mjs",
+    "No Codex fixture found. Run: LONGCAT_API_KEY=... bun run round -- conversation record",
   );
 }
 
