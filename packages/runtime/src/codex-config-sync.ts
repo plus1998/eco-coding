@@ -63,6 +63,11 @@ export interface CodexMcpServerForConfigSync {
    * Written as `tool_timeout_sec` when set.
    */
   toolTimeoutSec?: number;
+  /**
+   * Per-tool model-facing output budget (Codex 0.152+ `output_token_limit`).
+   * Keys are bare tool names (no `mcp__server__` prefix).
+   */
+  toolOutputTokenLimits?: Record<string, number>;
 }
 
 export interface SyncCodexConfigFromEcoProvidersInput {
@@ -180,6 +185,8 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
     lines.push("multi_agent = true", "hooks = true", "", "[agents]", "max_threads = 16", "max_depth = 1");
   }
   lines.push("");
+  // Codex 0.152+ disables update_plan by default; Eco Plan→Todo requires it.
+  lines.push("[tools.update_plan]", "enabled = true", "");
 
   const streamIdleTimeoutMs = resolveCodexStreamIdleTimeoutMs();
   for (const provider of enabledProviders) {
@@ -196,7 +203,7 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
     );
   }
 
-  for (const server of uniqueMcpServers(input.mcpServers ?? [])) {
+  for (const server of uniqueMcpServers(input.mcpServers ?? []).map(withDefaultCodexMcpToolOutputTokenLimits)) {
     lines.push(...buildCodexMcpServerTomlLines(server));
   }
 
@@ -362,7 +369,87 @@ export function buildCodexMcpServerTomlLines(server: CodexMcpServerForConfigSync
     lines.push("");
   }
 
+  const toolLimits = server.toolOutputTokenLimits ?? {};
+  for (const [toolName, limit] of Object.entries(toolLimits)) {
+    const trimmedTool = toolName.trim();
+    if (!trimmedTool || !Number.isFinite(limit) || limit <= 0) {
+      continue;
+    }
+    lines.push(
+      `[mcp_servers.${name}.tools.${tomlBareKey(trimmedTool)}]`,
+      `output_token_limit = ${Math.ceil(limit)}`,
+      "",
+    );
+  }
+
   return lines;
+}
+
+/** TOML bare keys for tool names; quote when not a simple identifier. */
+function tomlBareKey(key: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
+    return key;
+  }
+  return tomlString(key);
+}
+
+/**
+ * Default per-tool model-facing budgets for Eco-hosted MCP servers (Codex 0.152+).
+ * Conservative for status tools; higher for snapshots / vision reports.
+ */
+export function defaultCodexMcpToolOutputTokenLimits(
+  serverName: string,
+): Record<string, number> | undefined {
+  switch (serverName.trim()) {
+    case "eco_agent_browser":
+      return {
+        snapshot: 8_000,
+        screenshot: 2_000,
+        get_text: 6_000,
+        get_title: 512,
+        get_url: 512,
+        read: 8_000,
+        eval: 4_000,
+      };
+    case "eco_computer_use":
+      return {
+        get_app_state: 8_000,
+        list_apps: 2_000,
+        click: 1_024,
+        type_text: 1_024,
+        press_key: 1_024,
+        scroll: 1_024,
+        drag: 1_024,
+        set_value: 1_024,
+        perform_secondary_action: 2_000,
+      };
+    case "eco_image_view":
+      return { view_image: 6_000 };
+    case "eco_image_display":
+      return { display_image: 1_024 };
+    case "eco_image_generation":
+      return { create_image: 2_000 };
+    case "eco_html_host":
+      return { publish_html: 2_000 };
+    case "eco_web_search":
+      return { web_search: 4_000 };
+    default:
+      return undefined;
+  }
+}
+
+/** Attach Eco defaults when the caller did not set per-tool limits. */
+export function withDefaultCodexMcpToolOutputTokenLimits(
+  server: CodexMcpServerForConfigSync,
+): CodexMcpServerForConfigSync {
+  if (server.toolOutputTokenLimits && Object.keys(server.toolOutputTokenLimits).length > 0) {
+    return server;
+  }
+  const defaults = defaultCodexMcpToolOutputTokenLimits(server.name);
+  if (!defaults) {
+    return server;
+  }
+  return { ...server, toolOutputTokenLimits: defaults };
 }
 
 function uniqueAgentRoles(roles: readonly CodexAgentRoleForConfigSync[]): CodexAgentRoleForConfigSync[] {

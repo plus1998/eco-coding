@@ -3,6 +3,7 @@
  * Run: bun scripts/codex-rpc-smoke.mjs
  */
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +13,61 @@ import { forkCodexThread } from "../packages/runtime/src/codex-fork.ts";
 import { listCodexSkills } from "../packages/runtime/src/codex-skills-list.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const codexExecutable = path.join(root, "apps/desktop/node_modules/.bin/codex");
+const requireFromDesktop = createRequire(path.join(root, "apps/desktop/package.json"));
+
+function resolveCodexExecutable() {
+  const candidates = [
+    path.join(root, "apps/desktop/node_modules/.bin/codex"),
+    path.join(root, "apps/desktop/node_modules/.bin/codex.cmd"),
+    path.join(root, "node_modules/.bin/codex"),
+    path.join(root, "node_modules/.bin/codex.cmd"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Bun does not always materialize .bin shims; resolve the platform vendor binary.
+  const platformPackage =
+    process.platform === "win32"
+      ? process.arch === "arm64"
+        ? "@openai/codex-win32-arm64"
+        : "@openai/codex-win32-x64"
+      : process.platform === "darwin"
+        ? process.arch === "arm64"
+          ? "@openai/codex-darwin-arm64"
+          : "@openai/codex-darwin-x64"
+        : process.arch === "arm64"
+          ? "@openai/codex-linux-arm64"
+          : "@openai/codex-linux-x64";
+  const packageJsonPath = requireFromDesktop.resolve(`${platformPackage}/package.json`);
+  const triple =
+    process.platform === "win32"
+      ? process.arch === "arm64"
+        ? "aarch64-pc-windows-msvc"
+        : "x86_64-pc-windows-msvc"
+      : process.platform === "darwin"
+        ? process.arch === "arm64"
+          ? "aarch64-apple-darwin"
+          : "x86_64-apple-darwin"
+        : process.arch === "arm64"
+          ? "aarch64-unknown-linux-musl"
+          : "x86_64-unknown-linux-musl";
+  const vendorBinary = path.join(
+    path.dirname(packageJsonPath),
+    "vendor",
+    triple,
+    "bin",
+    process.platform === "win32" ? "codex.exe" : "codex",
+  );
+  if (!fs.existsSync(vendorBinary)) {
+    throw new Error(`Codex executable not found at ${vendorBinary}`);
+  }
+  return vendorBinary;
+}
+
+const codexExecutable = resolveCodexExecutable();
 const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "eco-codex-rpc-"));
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "eco-codex-ws-"));
 const observed = { methods: new Set(), itemTypes: new Set(), serverRequests: [] };
@@ -39,6 +94,9 @@ fs.writeFileSync(
     "[features]",
     "remote_plugin = false",
     "plugins = false",
+    "",
+    "[tools.update_plan]",
+    "enabled = true",
     "",
     "[model_providers.stub]",
     'name = "Local stub"',
@@ -120,6 +178,21 @@ try {
     config: { model: "gpt-5.1-codex-mini" },
   });
   pass("thread/start", started.thread.id);
+
+  // Codex 0.151+ may index zero-turn threads without a rollout (#42099).
+  // Resume before the first turn must fail clearly (not hang / not invent state).
+  try {
+    await client.request("thread/resume", { threadId: started.thread.id });
+    // Some builds still allow in-process resume without disk rollout; treat as soft signal.
+    pass("thread/resume zero-turn (in-process)", "accepted");
+  } catch (e) {
+    const detail = String(e);
+    if (/no rollout found/i.test(detail)) {
+      pass("thread/resume zero-turn missing rollout", detail);
+    } else {
+      fail("thread/resume zero-turn", detail);
+    }
+  }
 
   const turnDone = waitFor(client, "turn/completed", started.thread.id);
   const turn = await client.request("turn/start", {

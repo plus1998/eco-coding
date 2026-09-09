@@ -28,7 +28,10 @@ const pending = new Map<string, PendingClarification>();
 export function registerPendingClarification(
   threadId: string,
   toolUseId: string,
-  parsed: { questions: ClarificationRequest["questions"] },
+  parsed: {
+    questions: ClarificationRequest["questions"];
+    delivery?: ClarificationRequest["delivery"];
+  },
 ): Promise<ClarificationAnswers> {
   if (pending.has(toolUseId)) {
     return Promise.reject(new Error(`Clarification ${toolUseId} is already pending.`));
@@ -46,6 +49,7 @@ export function registerPendingClarification(
       toolUseId,
       threadId,
       questions: parsed.questions,
+      ...(parsed.delivery ? { delivery: parsed.delivery } : {}),
     },
     promise,
     resolve: resolveAnswers,

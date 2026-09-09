@@ -181,7 +181,34 @@ export async function resumeCodexThread(
       requireColdCodexThreadForConfigReload(params.threadId, snapshot.kind);
     }
   }
-  return client.request<CodexThreadResumeResult>(CODEX_RESUME_METHOD, params);
+  try {
+    return await client.request<CodexThreadResumeResult>(CODEX_RESUME_METHOD, params);
+  } catch (error) {
+    throw mapCodexResumeFailure(params.threadId, error);
+  }
+}
+
+/**
+ * Codex 0.151+ indexes zero-turn threads without a rollout file (#42099).
+ * Surface that as CodexResumeNotAvailable instead of a raw RPC error.
+ */
+export function isCodexZeroTurnRolloutMissingError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /no rollout found for thread id/i.test(message);
+}
+
+export function mapCodexResumeFailure(threadId: string, error: unknown): Error {
+  if (isCodexZeroTurnRolloutMissingError(error)) {
+    return new CodexResumeNotAvailable(
+      `Codex resume failed because thread '${threadId}' has no durable rollout (often a zero-turn thread after thread/start).`,
+      {
+        nextAction:
+          "Clear the stale eco↔codex mapping, start a fresh Codex thread with thread/start, run at least one turn, then retry resume.",
+        cause: error,
+      },
+    );
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 /**

@@ -2409,6 +2409,38 @@ app.whenReady().then(async () => {
         clientUserMessageId: `approval-feedback:${toolUseId}`,
       });
     },
+    injectAsyncClarificationAnswers: async ({ ecoThreadId, codexThreadId, turnId, toolUseId, text }) => {
+      const phase = codexMidTurnPorts.getPhase(ecoThreadId);
+      if (phase === "accepting") {
+        const pushed = await codexMidTurnPorts.tryPushUserText(ecoThreadId, text, {
+          clientUserMessageId: `async-clarification:${toolUseId}`,
+        });
+        if (!pushed.ok) {
+          throw new Error(`Codex async clarification was not delivered: ${pushed.reason}`);
+        }
+        return;
+      }
+      const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+      if (!client) {
+        throw new Error("Codex async clarification cannot be delivered because Codex is not running.");
+      }
+      // Turn may still be active without an Eco mid-turn port (or already past accepting).
+      // Prefer steer; if the turn is gone, surface the gap instead of silently dropping answers.
+      try {
+        await steerCodexTurn(client, {
+          threadId: codexThreadId,
+          turnId,
+          input: [{ type: "text", text }],
+          clientUserMessageId: `async-clarification:${toolUseId}`,
+        });
+      } catch (error) {
+        throw new Error(
+          `Codex async clarification inject failed (turn may have completed before the user answered): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    },
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
     emitThreadLive: (event) => {

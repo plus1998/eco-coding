@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { buildCodexGatewayModelAlias, type CodexGatewayApiCompat } from "../../shared/src";
 import { resolveCodexHomeDir } from "./codex-config-sync.js";
+import {
+  assertCodexGatedModelApiCompat,
+  isCodexGatedOptionalModelId,
+} from "./codex-gated-models.js";
 import { DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT, resolveEffectiveContextLimit } from "./models-dev-limits.js";
 
 export const ECO_MODEL_CATALOG_FILE_NAME = "eco-model-catalog.json";
@@ -332,6 +336,9 @@ export function buildEcoCodexModelCatalogDocument(
     }
     seenAliases.add(alias);
     const { template, known } = selectNativeTemplateForModel(nativeModels, route.modelId, freeformTemplate);
+    if (isCodexGatedOptionalModelId(route.modelId)) {
+      assertCodexGatedModelApiCompat({ modelId: route.modelId, apiCompat: route.apiCompat });
+    }
     models.push(
       applyGlobalCatalogContextWindowLimit(
         buildAliasCatalogEntry(alias, route, template, known),

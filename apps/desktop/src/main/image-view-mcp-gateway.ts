@@ -238,7 +238,14 @@ export class ImageViewMcpGateway {
       ...(question ? { question } : fallbackPrompt ? { question: fallbackPrompt } : {}),
       ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
     });
-    return { content: [{ type: "text", text: report }] };
+    const { maybeSpillMcpTextContent } = await import("./mcp-tool-result-spill.js");
+    const spilled = await maybeSpillMcpTextContent({
+      text: report,
+      serverName: ECO_IMAGE_VIEW_MCP_SERVER,
+      toolName: ECO_IMAGE_VIEW_TOOL,
+      threadId: claim.threadId,
+    });
+    return { content: [{ type: "text", text: spilled.text }] };
   }
 }
 

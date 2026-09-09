@@ -1863,6 +1863,11 @@ export interface ClarificationRequest {
   toolUseId: string;
   threadId: string;
   questions: ClarificationQuestion[];
+  /**
+   * Codex 0.153+ async user input: turn continues while Eco shows the panel.
+   * Omitted / "sync" = blocking `item/tool/requestUserInput`.
+   */
+  delivery?: "sync" | "async";
 }
 
 /** selections[i] = chosen option labels for question i */

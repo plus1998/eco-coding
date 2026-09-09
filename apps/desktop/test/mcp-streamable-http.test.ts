@@ -140,7 +140,7 @@ test("Codex handshake: notifications/initialized returns 202 empty; GET is 405",
       params: {
         protocolVersion: "2025-03-26",
         capabilities: {},
-        clientInfo: { name: "codex_test", version: "0.150.1" },
+        clientInfo: { name: "codex_test", version: "0.153.4" },
       },
     }),
   });

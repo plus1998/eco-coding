@@ -3,12 +3,68 @@ import { submitClarification } from "../src/main/clarification-bridge";
 import {
   CODEX_MCP_SERVER_ELICITATION_REQUEST,
   CODEX_TOOL_REQUEST_USER_INPUT,
+  CODEX_TOOL_REQUEST_USER_INPUT_ASYNC,
   type CodexApprovalBridgeDeps,
   handleCodexServerRequest,
   parseMcpToolRunElicitationMessage,
   shouldAutoAcceptEcoBrowserToolElicitation,
 } from "../src/main/codex-approval-bridge";
 import type { ThreadLiveEvent } from "../src/shared/ipc";
+
+test("Codex async clarification returns accepted without waiting for answers", async () => {
+  const events: ThreadLiveEvent[] = [];
+  const injected: string[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-async",
+    getThread: () => ({ prompt: "实现功能", workspacePath: "/workspace" }),
+    getWorktreePath: () => undefined,
+    getPlannerAgentId: () => "planner-1",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    injectAsyncClarificationAnswers: async ({ text }) => {
+      injected.push(text);
+    },
+  };
+
+  const responsePromise = handleCodexServerRequest(deps, CODEX_TOOL_REQUEST_USER_INPUT_ASYNC, {
+    threadId: "codex-thread-async",
+    turnId: "turn-async",
+    itemId: "question-async",
+    questions: [
+      {
+        id: "choice",
+        header: "选择",
+        question: "选哪个？",
+        options: [
+          { label: "A", description: "选项 A" },
+          { label: "B", description: "选项 B" },
+        ],
+      },
+    ],
+  });
+
+  const response = await responsePromise;
+  expect(response).toEqual({ accepted: true });
+  expect(events.some((event) => event.type === "clarification.requested")).toBe(true);
+  expect(events.find((event) => event.type === "clarification.requested")?.clarification?.delivery).toBe(
+    "async",
+  );
+  expect(injected).toEqual([]);
+
+  expect(
+    submitClarification("question-async", {
+      toolUseId: "question-async",
+      selections: [["A"]],
+    }),
+  ).toBe(true);
+
+  await Bun.sleep(20);
+  expect(events.some((event) => event.type === "clarification.answered")).toBe(true);
+  expect(injected.length).toBe(1);
+  expect(injected[0]).toContain("Async clarification answers");
+});
 
 test("Codex clarification publishes the answered summary and exits the waiting status", async () => {
   const events: ThreadLiveEvent[] = [];
