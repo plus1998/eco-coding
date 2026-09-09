@@ -31341,40 +31341,6 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   color: var(--terminal-fg);
 }
 
-.task-plan-detail-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-sidebar) 70%, transparent);
-}
-
-.task-plan-detail-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  color: var(--terminal-fg);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.task-plan-detail-kicker svg {
-  color: color-mix(in srgb, var(--accent) 78%, var(--terminal-muted));
-}
-
-.task-plan-detail-path {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--terminal-muted);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .task-plan-detail-body {
   flex: 1 1 auto;
   min-height: 0;

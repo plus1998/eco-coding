@@ -613,28 +613,12 @@ export function BackgroundTerminalTasksPanel({
 
 function PlanDetailPanel({ plan }: { plan: ThreadPendingPlan }) {
   const { t } = useTranslation();
-  const planPath = plan.planFilePath?.trim();
-  const userPrompt = plan.userPrompt.trim();
   const analysis = plan.analysis.trim();
 
   return (
     <section className="task-plan-detail" aria-label={t("task.fullPlan")}>
-      <header className="task-plan-detail-header">
-        <span className="task-plan-detail-kicker">
-          <FileText size={14} aria-hidden />
-          {t("task.implementationPlan")}
-        </span>
-        {planPath ? <span className="task-plan-detail-path">{planPath}</span> : null}
-      </header>
       <div className="task-plan-detail-body">
-        {userPrompt ? (
-          <section className="task-plan-detail-section">
-            <h3>{t("task.userGoal")}</h3>
-            <p>{userPrompt}</p>
-          </section>
-        ) : null}
         <section className="task-plan-detail-section">
-          <h3>{t("task.plan")}</h3>
           <div className="task-plan-detail-markdown">
             <MarkdownContent text={plan.plan} />
           </div>
