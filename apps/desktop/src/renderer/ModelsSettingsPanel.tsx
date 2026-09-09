@@ -45,7 +45,7 @@ import {
   AgentCompositionResourcesSection,
   type PendingMainAgentConfigCreateSeed,
 } from "./AgentCompositionResourcesSection";
-import { ApiCompatToggle } from "./ApiCompatToggle";
+import { EndpointCompatSelect, type EndpointCompatOption } from "./EndpointCompatSelect";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
@@ -69,7 +69,6 @@ import {
   getProviderPresetById,
   getProviderPresetEndpointVariants,
   MAINSTREAM_PROVIDER_PRESETS,
-  togglePresetEndpointVariant,
 } from "./provider-presets";
 import { ProviderPresetTabs } from "./ProviderPresetTabs";
 import { SettingsSyncControl } from "./SettingsSyncControl";
@@ -1070,7 +1069,15 @@ function ProviderEditorModal({
 
   const selectedPreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
   const selectedPresetVariants = selectedPreset ? getProviderPresetEndpointVariants(selectedPreset) : [];
-  const apiCompatToggleDisabled = busy || (selectedPreset !== undefined && selectedPresetVariants.length <= 1);
+  const endpointOptions: EndpointCompatOption[] =
+    selectedPreset && selectedPresetVariants.length > 0
+      ? selectedPresetVariants
+      : [
+          { apiCompat: "anthropic", requestPath: "/anthropic" },
+          { apiCompat: "openai_responses", requestPath: "/openai" },
+          { apiCompat: "openai_chat_completions", requestPath: "/" },
+        ];
+  const endpointDisabled = busy || endpointOptions.length <= 1;
 
   function handleApiCompatChange(nextApiCompat: NonNullable<ProviderConfigInput["apiCompat"]>) {
     if (selectedPreset) {
@@ -1199,25 +1206,13 @@ function ProviderEditorModal({
 
               <div className="mcp-field models-provider-endpoint-row">
                 <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
-                <div className="models-provider-endpoint-inline">
-                  <ApiCompatToggle
-                    value={apiCompat}
+                <div className="models-provider-endpoint-stack">
+                  <EndpointCompatSelect
+                    options={endpointOptions}
+                    activeApiCompat={apiCompat}
                     onChange={handleApiCompatChange}
-                    getNextCompat={
-                      selectedPreset && selectedPresetVariants.length > 1
-                        ? (current) =>
-                            togglePresetEndpointVariant(selectedPreset, {
-                              apiCompat: current,
-                              requestPath: form.requestPath,
-                              version: form.version,
-                            }).apiCompat
-                        : undefined
-                    }
-                    disabled={apiCompatToggleDisabled}
+                    disabled={endpointDisabled}
                   />
-                  <span className="models-route-title-sep" aria-hidden>
-                    ·
-                  </span>
                   <input
                     className="mcp-field-input models-provider-request-path-input"
                     value={form.requestPath ?? ""}
