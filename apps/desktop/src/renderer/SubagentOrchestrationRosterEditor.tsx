@@ -76,6 +76,8 @@ export function SubagentOrchestrationRosterEditor({
                 : t("settings.models.editor.rosterSelectPlaceholder")
             }
             title={t("settings.models.editor.rosterSelectAria")}
+            searchable={addableTemplates.length > 0}
+            searchPlaceholder={t("composer.fieldSelect.searchSubagent")}
             onChange={setPendingTemplateId}
           >
             {addableTemplates.map((template) => (

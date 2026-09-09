@@ -812,6 +812,8 @@ export function ModelsSettingsPanel({
                     disabled={busy || settings.mainAgentConfigs.length === 0}
                     showPlaceholder
                     placeholder={t("composer.route.notConfigured")}
+                    searchable
+                    searchPlaceholder={t("composer.fieldSelect.searchMainAgent")}
                     invalid={
                       Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
                       !settings.mainAgentConfigs.some(
@@ -923,6 +925,8 @@ export function ModelsSettingsPanel({
                         : defaultOrchestrationDraft.subagents.orchestrationId
                     }
                     disabled={busy}
+                    searchable
+                    searchPlaceholder={t("composer.fieldSelect.searchSubagent")}
                     onChange={(value) =>
                       updateDefaultOrchestrationDraft({
                         subagents:

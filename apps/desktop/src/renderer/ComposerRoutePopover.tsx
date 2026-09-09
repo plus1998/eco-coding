@@ -170,9 +170,9 @@ export function ComposerRoutePopover({
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        // A portaled model cascade panel owns its own Escape handling.
+        // Portaled nested menus own their own Escape handling (clear search / close menu).
         const target = event.target as HTMLElement | null;
-        if (target?.closest?.(".model-cascade-panel")) {
+        if (target?.closest?.(".model-cascade-panel, .composer-field-select-menu")) {
           return;
         }
         onClose();
@@ -508,6 +508,8 @@ function ComposerRouteCompositionControls({
               disabled={disabled}
               invalid={subagentOrchestrationInvalid}
               invalidLabel={subagentInvalidLabel}
+              searchable
+              searchPlaceholder={t("composer.fieldSelect.searchSubagent")}
               onChange={(value) => {
                 if (!value) {
                   return;
