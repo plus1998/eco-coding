@@ -400,6 +400,7 @@ import {
   isAcpUpdateTodosPayload,
 } from "./acp-plan-progress";
 import {
+  acpThreadHasInFlightTurn,
   cancelAcpThread,
   disposeAcpThread,
   resolveAcpRunPrompt,
@@ -776,7 +777,10 @@ import {
   persistThreadMetrics,
   restoreThreadMetricsFromStore,
 } from "./thread-metrics-runtime";
-import { resolveOrphanedThreadRecoveryAction } from "./thread-orphan-recovery";
+import {
+  resolveOrphanedThreadRecoveryAction,
+  shouldClearGhostAcpActiveRun,
+} from "./thread-orphan-recovery";
 import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
 import { buildThreadPendingPlanView, buildThreadPlanLivePayload } from "./thread-pending-plan-view";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
@@ -9163,6 +9167,7 @@ interface StartThreadContinuationInput {
 }
 
 async function startThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
+  healOrphanedThreadBeforeContinuation(input.threadId);
   const thread = conversationStore.getThread(input.threadId);
   if (!thread) {
     throw new Error("Thread was not found.");
@@ -9797,12 +9802,83 @@ function recordThreadRouteFingerprint(threadId: string, routes: readonly Runtime
   conversationStore.saveRouteFingerprint(threadId, computeRouteFingerprint(roleRoutesFromRuntime(routes)));
 }
 
+/**
+ * Mid-session heal for disconnect / ghost ActiveRun wedges.
+ * Safe to call before continue/retry: clears ACP ghost runs, then applies the same
+ * orphan status recovery used after crash (running→idle / pending plan→awaiting_plan).
+ */
+function healOrphanedThreadBeforeContinuation(threadId: string): void {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return;
+  }
+  const hasPendingPlan = Boolean(conversationStore.getPendingPlan(threadId));
+  if (
+    shouldClearGhostAcpActiveRun({
+      coreKind: thread.coreKind,
+      status: thread.status,
+      hasActiveRun: activeRunRuntimeState.hasRun(threadId),
+      acpTurnInFlight: acpThreadHasInFlightTurn(threadId),
+      hasPendingPlan,
+      hasPendingPlanBridge: Boolean(getPendingPlanApprovalForThread(threadId)),
+    })
+  ) {
+    process.stderr.write(
+      `[eco] clearing ghost ACP active run (${threadId}): status=${thread.status} no in-flight turn\n`,
+    );
+    cancelAcpThread(threadId);
+    activeRunRuntimeState.abortRun(threadId, "orphaned acp active run");
+    finishActiveRun(threadId);
+  }
+
+  if (activeRunRuntimeState.hasRun(threadId)) {
+    return;
+  }
+
+  const recoveryAction = resolveOrphanedThreadRecoveryAction({
+    status: conversationStore.getThread(threadId)?.status ?? thread.status,
+    hasActiveRun: false,
+    hasPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
+  });
+  if (recoveryAction === "awaiting_plan") {
+    restoreThreadAwaitingPlanAfterRecovery(threadId);
+    return;
+  }
+  if (recoveryAction !== "idle") {
+    return;
+  }
+  updateThread(threadId, {
+    status: "idle",
+    message: "",
+  });
+  emitThreadEvent(threadId, "thread.idle", "已从异常中断恢复。", "system");
+}
+
 /** After a crash, SQLite may still say running while no runtime run is active. */
 function recoverOrphanedRunningThreads(): void {
   for (const thread of conversationStore.listThreads()) {
     if (!activeRunRuntimeState.hasRun(thread.id)) {
       settleRecoveredLifecycleRecords(thread.id, "failed");
       settleRecoveredStreamingPushFollowUps(thread.id);
+    }
+  }
+  for (const thread of conversationStore.listThreads()) {
+    if (
+      shouldClearGhostAcpActiveRun({
+        coreKind: thread.coreKind,
+        status: thread.status,
+        hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
+        acpTurnInFlight: acpThreadHasInFlightTurn(thread.id),
+        hasPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
+        hasPendingPlanBridge: Boolean(getPendingPlanApprovalForThread(thread.id)),
+      })
+    ) {
+      process.stderr.write(
+        `[eco] startup: clearing ghost ACP active run (${thread.id})\n`,
+      );
+      cancelAcpThread(thread.id);
+      activeRunRuntimeState.abortRun(thread.id, "orphaned acp active run");
+      finishActiveRun(thread.id);
     }
   }
   for (const thread of conversationStore.listThreads()) {
@@ -10178,6 +10254,7 @@ async function retryThreadFromFailedRequest(input: {
   expectedHistoryRevision: number;
   runtimeConfig?: ThreadRuntimeConfigInput;
 }): Promise<ThreadContinueResult> {
+  healOrphanedThreadBeforeContinuation(input.threadId);
   const thread = conversationStore.getThread(input.threadId);
   if (!thread) {
     throw new Error("Thread was not found.");
