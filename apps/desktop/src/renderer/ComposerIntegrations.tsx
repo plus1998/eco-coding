@@ -51,13 +51,13 @@ function IntegrationRows({ availability, enabledSettings, canEdit, saving, onTog
                 className="composer-mcp-row-transport"
                 title={
                   item.available
-                    ? (item.activeProfileName ?? t("common.enabled"))
-                    : (item.reason ?? t("common.disabled"))
+                    ? (item.activeProfileName ?? t("composer.integrations.available"))
+                    : (item.reason ?? t("composer.integrations.unavailable"))
                 }
               >
                 {item.available
-                  ? (item.activeProfileName ?? t("common.enabled"))
-                  : (item.reason ?? t("common.disabled"))}
+                  ? (item.activeProfileName ?? t("composer.integrations.available"))
+                  : t("composer.integrations.unavailable")}
               </span>
             </div>
             <label className="composer-switch" title={label}>
