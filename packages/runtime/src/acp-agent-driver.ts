@@ -470,6 +470,12 @@ export class AcpAgentDriver {
     }
   }
 
+  /** True when this thread has a live connection with an in-flight prompt turn. */
+  hasInFlightTurn(threadId: string): boolean {
+    const connection = this.connections.get(threadId);
+    return Boolean(connection?.busy && connection.turn);
+  }
+
   /**
    * Soft-cancel the in-flight prompt (session/cancel). Keeps the process alive for reuse.
    * Also rejects pending JSON-RPC requests so Eco can finish the turn as cancelled without

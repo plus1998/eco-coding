@@ -452,6 +452,11 @@ export function cancelAcpThread(threadId: string): void {
   activeDriver.cancel(threadId);
 }
 
+/** Whether the ACP driver currently has an in-flight prompt turn for this thread. */
+export function acpThreadHasInFlightTurn(threadId: string): boolean {
+  return activeDriver.hasInFlightTurn(threadId);
+}
+
 /** Tear down the long-lived ACP process for a thread (delete thread / fingerprint miss). */
 export function disposeAcpThread(threadId: string): void {
   activeDriver.dispose(threadId);
