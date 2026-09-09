@@ -679,6 +679,10 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   // overloaded/5xx never hits Gateway's HTTP fetch retry. Provider retry 0
   // avoids double-retrying the initial upstream fetch.
   // PI's native defaults (reserve 16K + overflow-recovery retry) are kept.
+  // Do not set settings.defaultTools: Eco passes an explicit `tools` allowlist
+  // (mode + MCP + Agent + web_search + finalize_plan). PI 0.84.2+ defaultTools
+  // would only fight that ownership. Windows `powershell` is intentionally
+  // omitted until Eco has a PS read-only policy (Ask/Plan).
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true },
     retry: { ...ECO_PI_SESSION_RETRY },

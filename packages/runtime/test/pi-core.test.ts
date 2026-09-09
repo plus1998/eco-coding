@@ -268,7 +268,7 @@ test("mapPiSessionEvent emits tool_result_error for failed PI tools", () => {
     type: "tool.failed",
     payload: {
       type: "tool_result_error",
-      tool_name: "edit",
+      tool_name: "Edit",
       tool_use_id: "tc_edit",
       message: "Found 2 occurrences of the text",
     },
@@ -571,6 +571,25 @@ test("buildEcoPiModel enables PI reasoning only when route thinkingEffort is on"
       },
     }).reasoning,
   ).toBe(true);
+});
+
+test("buildEcoPiModel does not enable supportsMidConvoEffort (Gateway is not faithful Anthropic)", () => {
+  const model = buildEcoPiModel({
+    bridgeBaseUrl: "http://127.0.0.1:18765",
+    bridgeModelId: "claude-alias",
+    apiCompat: "anthropic",
+    route: {
+      role: "planner",
+      providerId: "anthropic",
+      modelId: "claude-opus-4",
+      primary: { modelId: "claude-opus-4" },
+      fallbacks: [],
+      thinkingEffort: "high",
+    },
+  });
+  expect(model.reasoning).toBe(true);
+  expect(model.compat?.supportsMidConvoEffort).toBeUndefined();
+  expect(model.compat).toBeUndefined();
 });
 
 test("buildEcoPiModel opts in xhigh/max so PI does not clamp max thinking to high", () => {
