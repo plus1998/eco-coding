@@ -6456,6 +6456,28 @@ function App() {
     }
   }
 
+  async function resyncThreadSummaryAfterWaitForRun(threadId: string): Promise<void> {
+    if (!window.eco) {
+      return;
+    }
+    try {
+      const [summary, threads] = await Promise.all([
+        typeof window.eco.getThread === "function" ? window.eco.getThread(threadId) : Promise.resolve(undefined),
+        typeof window.eco.listThreads === "function" ? window.eco.listThreads() : Promise.resolve(undefined),
+      ]);
+      if (threads) {
+        setThreads(threads);
+      } else if (summary) {
+        setThreads((current) =>
+          current.map((thread) => (thread.id === summary.id ? summary : thread)),
+        );
+      }
+      await refreshThreadState(threadId);
+    } catch {
+      // Best-effort resync so Stop becomes available when renderer/main status drifted.
+    }
+  }
+
   async function refreshThreadState(threadId: string) {
     if (!window.eco) {
       return;
@@ -6992,6 +7014,9 @@ function App() {
       setPrompt(restorePrompt);
       setComposerAttachments(restoreAttachments);
       setError(errorMessage(caught));
+      if (isWaitForRunError(caught) && activeThread) {
+        void resyncThreadSummaryAfterWaitForRun(activeThread.id);
+      }
     } finally {
       setIsStarting(false);
     }
@@ -7733,6 +7758,9 @@ function App() {
           await refreshThreadState(result.thread.id);
         } catch (caught) {
           setError(errorMessage(caught));
+          if (isWaitForRunError(caught)) {
+            void resyncThreadSummaryAfterWaitForRun(activeThread.id);
+          }
         } finally {
           setIsStarting(false);
         }
@@ -11337,6 +11365,15 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isWaitForRunError(error: unknown): boolean {
+  const message = errorMessage(error);
+  return (
+    message.includes("Wait for the current run to finish") ||
+    message.includes("请等待当前运行结束后再继续") ||
+    message.includes("请等待当前运行结束后再修改配置")
+  );
 }
 
 function removeRecordKey<T>(record: Record<string, T>, key: string): Record<string, T> {
