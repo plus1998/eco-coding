@@ -21,9 +21,10 @@ function expectContainsAll(source: string, expected: string[]) {
 test("installed Claude Agent SDK exposes the streaming input control surface Eco needs for V2", () => {
   const packageJson = JSON.parse(readSdkFile("package.json")) as Record<string, unknown>;
   const sdkTypes = readSdkFile("sdk.d.ts");
+  const sdkRuntime = readSdkFile("sdk.mjs");
 
   expect(packageJson.name).toBe("@anthropic-ai/claude-agent-sdk");
-  expect(packageJson.version).toBe("0.3.223");
+  expect(packageJson.version).toBe("0.3.266");
   expect(typeof packageJson.claudeCodeVersion).toBe("string");
   expectContainsAll(sdkTypes, [
     "prompt: string | AsyncIterable<SDKUserMessage>",
@@ -45,7 +46,17 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
     "includePartialMessages?: boolean;",
     "total_cost_usd",
     "modelUsage",
+    "perTaskStopAffordance",
+    "permissionPrompts",
+    "pluginDelivery",
+    "queued_turn_count",
+    "user_message_uuid",
+    "thinkingTokens",
+    "costBasis",
+    "getContextUsage",
   ]);
+  // TS d.ts still types interrupt as no-arg; runtime accepts { cancelQueued: true } → wire cancel_queued.
+  expectContainsAll(sdkRuntime, ["cancelQueued", "cancel_queued"]);
 });
 
 test("bridge surface is alpha remote-control glue, not Eco's default V2 runtime path", () => {

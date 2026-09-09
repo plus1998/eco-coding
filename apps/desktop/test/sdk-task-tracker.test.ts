@@ -129,6 +129,54 @@ test("subagent task_started fallback marks matching checklist item running", () 
   expect(store.getTodos()[0]?.status).toBe("running");
 });
 
+test("ambient task_started and task_progress skip busy updates; ambient notification still completes", () => {
+  const { store } = createTracker([
+    {
+      id: "thr_1:task:0",
+      threadId: "thr_1",
+      title: "Background chore",
+      detail: "Background chore",
+      status: "pending",
+      position: 0,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
+  const tracker = createSdkTaskTracker("thr_1", store, () => {});
+
+  tracker.handleTaskProgress({
+    sdkKind: "task_started",
+    task_id: "ambient_1",
+    description: "Background chore",
+    subagent_type: "coder",
+  } satisfies SdkTodoUpdatedPayload);
+  expect(store.getTodos()[0]?.status).toBe("running");
+
+  tracker.handleTaskProgress({
+    sdkKind: "task_started",
+    task_id: "ambient_new",
+    description: "Other ambient",
+    subagent_type: "coder",
+    ambient: true,
+  } satisfies SdkTodoUpdatedPayload);
+  expect(store.getTodos()).toHaveLength(1);
+
+  tracker.handleTaskProgress({
+    sdkKind: "task_progress",
+    task_id: "ambient_1",
+    summary: "still working",
+    ambient: true,
+  } satisfies SdkTodoUpdatedPayload);
+  expect(store.getTodos()[0]?.detail).toBe("Background chore");
+
+  tracker.handleTaskProgress({
+    sdkKind: "task_notification",
+    task_id: "ambient_1",
+    status: "completed",
+    ambient: true,
+  } satisfies SdkTodoUpdatedPayload);
+  expect(store.getTodos()[0]?.status).toBe("completed");
+});
+
 test("SubagentStart and SubagentStop update todo status", () => {
   const { store, hooks } = createTracker([
     {

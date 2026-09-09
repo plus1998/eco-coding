@@ -206,6 +206,15 @@ export function slimStreamEventMessage(message: Record<string, unknown>): Record
   const parentToolUseId = typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
   const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
+  const userMessageUuid =
+    typeof message.user_message_uuid === "string" && message.user_message_uuid.trim()
+      ? message.user_message_uuid.trim()
+      : undefined;
+  const userMessageUuids = Array.isArray(message.user_message_uuids)
+    ? message.user_message_uuids
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim())
+    : undefined;
   const event = isRecord(message.event) ? message.event : null;
   if (!event) {
     return {
@@ -213,6 +222,8 @@ export function slimStreamEventMessage(message: Record<string, unknown>): Record
       ...(parentToolUseId && { parent_tool_use_id: parentToolUseId }),
       ...(subagentType && { subagent_type: subagentType }),
       ...(agentType && { agent_type: agentType }),
+      ...(userMessageUuid && { user_message_uuid: userMessageUuid }),
+      ...(userMessageUuids && userMessageUuids.length > 0 && { user_message_uuids: userMessageUuids }),
     };
   }
   return {
@@ -221,6 +232,8 @@ export function slimStreamEventMessage(message: Record<string, unknown>): Record
     ...(parentToolUseId && { parent_tool_use_id: parentToolUseId }),
     ...(subagentType && { subagent_type: subagentType }),
     ...(agentType && { agent_type: agentType }),
+    ...(userMessageUuid && { user_message_uuid: userMessageUuid }),
+    ...(userMessageUuids && userMessageUuids.length > 0 && { user_message_uuids: userMessageUuids }),
   };
 }
 

@@ -2383,6 +2383,42 @@ export class ConversationStore {
   }
 
   /**
+   * Mark a reserved/applied streaming push as cancelled by interrupt(cancelQueued).
+   * Unlike delivery-unknown, these will not run — safe to treat as terminal cancel.
+   */
+  markThreadFollowUpInterruptCancelled(
+    threadId: string,
+    followUpId: string,
+    error: string,
+  ): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing || existing.deliveryMode !== "streaming_push") {
+      return undefined;
+    }
+    if (existing.status !== "applied" && existing.status !== "delivered" && existing.status !== "queued") {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE thread_pending_followups
+         SET status = 'cancelled',
+             error = ?,
+             updated_at = ?
+         WHERE thread_id = ?
+           AND id = ?
+           AND delivery_mode = 'streaming_push'
+           AND status IN ('queued', 'delivered', 'applied')`,
+      )
+      .run(error, now, threadId, followUpId);
+    if (result.changes === 0) {
+      return undefined;
+    }
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  /**
    * Mark a reserved/applied streaming push as delivery unknown. Unknown delivery
    * must never silently return to the queue because the remote may have accepted it.
    */

@@ -9702,20 +9702,55 @@ async function tryDeliverFollowUpViaMidTurn(
 /**
  * `still_queued` messages survive interrupt and may start immediately. Closing the
  * Query after the receipt makes their final outcome unknowable, so never resend them.
+ * `cancelled` (from interrupt cancelQueued) will not run — mark them cancelled, not unknown.
  */
-function reconcileInterruptedStreamingPushFollowUps(threadId: string, stillQueued: readonly string[]): void {
+function reconcileInterruptedStreamingPushFollowUps(
+  threadId: string,
+  stillQueued: readonly string[],
+  cancelled: readonly string[] = [],
+): void {
   const knownIds = recentStreamingPushFollowUpIds.get(threadId);
   if (!knownIds || knownIds.size === 0) {
-    if (stillQueued.length > 0) {
+    if (stillQueued.length > 0 || cancelled.length > 0) {
       logEcoDiag("follow_up.still_queued_unmapped", {
         threadId: shortThreadId(threadId),
         stillQueued: stillQueued.slice(0, 20),
+        cancelled: cancelled.slice(0, 20),
       });
     }
     return;
   }
+  const cancelledSet = new Set(cancelled.map((id) => id.trim()).filter(Boolean));
+  for (const uuid of cancelledSet) {
+    if (!knownIds.has(uuid)) {
+      logEcoDiag("follow_up.cancelled_unmapped", {
+        threadId: shortThreadId(threadId),
+        uuid,
+        reason: "interrupt cancelled uuid is not a known Eco streaming_push follow-up id",
+      });
+      continue;
+    }
+    const cancelledFollowUp = conversationStore.markThreadFollowUpInterruptCancelled(
+      threadId,
+      uuid,
+      "Cancelled by interrupt (cancelQueued).",
+    );
+    if (cancelledFollowUp) {
+      emitThreadEvent(
+        threadId,
+        "thread.follow_up.cancelled",
+        "中断已取消排队中的 mid-turn 消息。",
+        "system",
+        false,
+        { followUp: cancelledFollowUp },
+      );
+    }
+  }
   const still = new Set(stillQueued.map((id) => id.trim()).filter(Boolean));
   for (const uuid of still) {
+    if (cancelledSet.has(uuid)) {
+      continue;
+    }
     if (!knownIds.has(uuid)) {
       logEcoDiag("follow_up.delivery_unknown", {
         threadId: shortThreadId(threadId),
@@ -10762,7 +10797,7 @@ function createSdkDriver(
         await claudeMidTurnPorts.closeIngress(threadId);
       },
       onClosed: (_handle, detail) => {
-        reconcileInterruptedStreamingPushFollowUps(threadId, detail.stillQueued);
+        reconcileInterruptedStreamingPushFollowUps(threadId, detail.stillQueued, detail.cancelled);
         claudeMidTurnPorts.close(threadId);
         recentStreamingPushFollowUpIds.delete(threadId);
       },

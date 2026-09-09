@@ -127,13 +127,13 @@ export interface SdkInterruptReceipt {
 /** Query handle returned by `sdk.query` (streaming control surface). */
 export type SdkQueryHandle = AsyncIterable<unknown> & {
   close?: () => void;
-  interrupt?: () => Promise<SdkInterruptReceipt | undefined>;
+  interrupt?: (options?: { cancelQueued?: boolean }) => Promise<SdkInterruptReceipt | undefined>;
   streamInput?: (stream: AsyncIterable<SdkUserMessage>) => Promise<void>;
   stopTask?: (taskId: string) => Promise<void>;
   setPermissionMode?: (
     mode: "dontAsk" | "default" | "acceptEdits" | "plan" | "bypassPermissions",
   ) => Promise<void> | void;
-  getContextUsage?: () => Promise<Record<string, unknown>>;
+  getContextUsage?: (opts?: { detail?: "summary" | "full" }) => Promise<Record<string, unknown>>;
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
 
@@ -181,11 +181,15 @@ export function isClaudeStreamInputDeliveryUnknown(error: unknown): boolean {
 export interface ClaudeQueryLifecycleHooks {
   onOpen?: (handle: ClaudeQueryHandle) => void | Promise<void>;
   onClosing?: (handle: ClaudeQueryHandle) => void | Promise<void>;
-  onClosed?: (handle: ClaudeQueryHandle, detail: { stillQueued: string[] }) => void | Promise<void>;
+  onClosed?: (
+    handle: ClaudeQueryHandle,
+    detail: { stillQueued: string[]; cancelled: string[] },
+  ) => void | Promise<void>;
 }
 
 export interface ClaudeQueryTeardownResult {
   stillQueued: string[];
+  cancelled: string[];
   closed: boolean;
   interrupted: boolean;
 }
@@ -220,8 +224,8 @@ export const CLAUDE_HELD_PROMPT_CLOSE_GRACE_MS = 75;
  * SDK `streamInput()` calls `transport.endInput()` after the iterable ends and the
  * first `result`, which permanently breaks later `can_use_tool` (often surfaced as
  * `toolDenialKind: "cancelled"` / J3H "user doesn't want to take this action").
- * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.232 changelog has
- * no equivalent.
+ * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.266 changelog has
+ * no equivalent. Still required as of 0.3.266.
  *
  * Eco uses one held mailbox (`createHeldPromptStream`) and never calls
  * `query.streamInput`. Because `prompt` is an AsyncIterable, the SDK treats the
@@ -756,6 +760,24 @@ export interface ClaudeAgentSdkDriverOptions {
   anthropicAuthMode?: "api-key" | "bearer";
   /** Live Query lifecycle for desktop mid-turn port (does not change product queue defaults alone). */
   queryLifecycle?: ClaudeQueryLifecycleHooks;
+  /**
+   * When true (default), expose per-task stop affordance to the CLI.
+   * Maps to SDK query option `perTaskStopAffordance`.
+   */
+  perTaskStopAffordance?: boolean;
+  /**
+   * Host vs none permission prompts. When unset, Eco still forces `none` for
+   * `dontAsk` phases (ask / compact / rewind-style).
+   */
+  permissionPrompts?: "host" | "none";
+  /**
+   * When aborting, pass `cancelQueued: true` to `query.interrupt` (default true).
+   */
+  cancelQueuedOnInterrupt?: boolean;
+  /**
+   * How plugins are delivered to the CLI process. Default `initialize`.
+   */
+  pluginDelivery?: "argv" | "initialize";
 }
 
 export interface SdkToolPermissionRequest {
@@ -937,12 +959,37 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         throw new Error("SDK rewindFiles is not available (enable file checkpointing and update the SDK).");
       }
       const result = await query.rewindFiles(userMessageId);
-      if (isRecord(result) && result.canRewind === false) {
-        const reason =
-          typeof result.reason === "string" && result.reason.trim()
-            ? result.reason.trim()
-            : "SDK reported that the checkpoint cannot be rewound.";
-        throw new Error(reason);
+      if (isRecord(result)) {
+        if (result.canRewind === false) {
+          const reason =
+            typeof result.reason === "string" && result.reason.trim()
+              ? result.reason.trim()
+              : "SDK reported that the checkpoint cannot be rewound.";
+          throw new Error(reason);
+        }
+        if (result.ok === false || result.success === false) {
+          const reason =
+            typeof result.reason === "string" && result.reason.trim()
+              ? result.reason.trim()
+              : typeof result.error === "string" && result.error.trim()
+                ? result.error.trim()
+                : "SDK rewindFiles reported failure.";
+          throw new Error(reason);
+        }
+        if (typeof result.error === "string" && result.error.trim()) {
+          throw new Error(result.error.trim());
+        }
+        const skippedLinks =
+          typeof result.skippedLinks === "number"
+            ? result.skippedLinks
+            : typeof result.skipped_links === "number"
+              ? result.skipped_links
+              : 0;
+        if (skippedLinks > 0) {
+          throw new Error(
+            `SDK rewindFiles skipped ${skippedLinks} path(s); some files were not restored.`,
+          );
+        }
       }
     } finally {
       query.close?.();
@@ -1206,6 +1253,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       activeSubagentCount: 0,
       inflightCanUseTool: 0,
       unmatchedUserTurns: (): boolean => false,
+      pendingQueuedTurns: (): boolean => false,
       cancel: (): void => {},
       schedule: (): void => {},
     };
@@ -1294,6 +1342,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }),
       settings: {},
     };
+
+    queryOptions.pluginDelivery = this.options.pluginDelivery ?? "initialize";
+    queryOptions.perTaskStopAffordance = this.options.perTaskStopAffordance ?? true;
+    if (phase.permissionMode === "dontAsk" || this.options.permissionPrompts === "none") {
+      queryOptions.permissionPrompts = "none";
+    } else if (this.options.permissionPrompts !== undefined) {
+      queryOptions.permissionPrompts = this.options.permissionPrompts;
+    }
 
     applyClaudeJsonlSessionPersistence(queryOptions);
     applyResumeToQueryOptions(queryOptions, input.resume);
@@ -1425,7 +1481,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         !heldPromptCloseGate.resultSeen ||
         heldPromptCloseGate.activeSubagentCount > 0 ||
         heldPromptCloseGate.inflightCanUseTool > 0 ||
-        heldPromptCloseGate.unmatchedUserTurns()
+        heldPromptCloseGate.unmatchedUserTurns() ||
+        heldPromptCloseGate.pendingQueuedTurns()
       ) {
         return;
       }
@@ -1436,7 +1493,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           !heldPromptCloseGate.resultSeen ||
           heldPromptCloseGate.activeSubagentCount > 0 ||
           heldPromptCloseGate.inflightCanUseTool > 0 ||
-          heldPromptCloseGate.unmatchedUserTurns()
+          heldPromptCloseGate.unmatchedUserTurns() ||
+          heldPromptCloseGate.pendingQueuedTurns()
         ) {
           return;
         }
@@ -1472,8 +1530,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     const ensureInterrupt = (): Promise<SdkInterruptReceipt | undefined> => {
       if (!handle.interruptWork) {
-        handle.interruptWork = interruptOrCloseSdkQuery(query, (probePhase, detail) =>
-          this.options.onContextProbe?.(probePhase, detail),
+        handle.interruptWork = interruptOrCloseSdkQuery(
+          query,
+          (probePhase, detail) => this.options.onContextProbe?.(probePhase, detail),
+          { cancelQueued: this.options.cancelQueuedOnInterrupt ?? true },
         );
       }
       return handle.interruptWork;
@@ -1497,7 +1557,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // A prior turn's result must not satisfy a later accepted input that never got a result.
     let acceptedUserTurns = 1;
     let completedResultTurns = 0;
+    let pendingQueuedTurns = 0;
     heldPromptCloseGate.unmatchedUserTurns = () => acceptedUserTurns > completedResultTurns;
+    heldPromptCloseGate.pendingQueuedTurns = () => pendingQueuedTurns > 0;
     const pushUserMessage = handle.pushUserMessage.bind(handle);
     handle.pushUserMessage = async (text, pushOptions) => {
       await pushUserMessage(text, pushOptions);
@@ -1574,6 +1636,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
         if (isRecord(message) && message.type === "result") {
           completedResultTurns += 1;
+          const queuedTurnCount =
+            typeof message.queued_turn_count === "number" && Number.isFinite(message.queued_turn_count)
+              ? Math.max(0, Math.floor(message.queued_turn_count))
+              : typeof message.queuedTurnCount === "number" && Number.isFinite(message.queuedTurnCount)
+                ? Math.max(0, Math.floor(message.queuedTurnCount))
+                : 0;
+          pendingQueuedTurns = queuedTurnCount;
         }
 
         this.options.onSdkMessage?.(message);
@@ -1609,14 +1678,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
         // Streaming prompt ⇒ SDK multi-turn Query (no endInput on result). After a
         // matched result, schedule mailbox close so the Eco-run can converge to idle;
-        // canUseTool / subagents / unmatched mid-turn push cancel or delay that close.
+        // canUseTool / subagents / unmatched mid-turn push / remaining queued turns
+        // cancel or delay that close.
         if (isRecord(message) && message.type === "result") {
           heldPromptCloseGate.resultSeen = true;
           heldPromptCloseGate.schedule();
         }
       }
 
-      const unmatchedUserTurns = acceptedUserTurns > completedResultTurns;
+      const unmatchedUserTurns = acceptedUserTurns > completedResultTurns || pendingQueuedTurns > 0;
       if (unmatchedUserTurns || completedResultTurns === 0) {
         if (input.signal.aborted) {
           yield createAgentEvent({
@@ -1639,9 +1709,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             type: "run.terminal",
             payload: {
               status: "incomplete",
-              reason: unmatchedUserTurns
-                ? "Claude run ended while a user turn was still awaiting a result."
-                : "Claude run ended without a terminal result.",
+              reason: pendingQueuedTurns > 0
+                ? "Claude run ended while queued turns were still pending."
+                : unmatchedUserTurns
+                  ? "Claude run ended while a user turn was still awaiting a result."
+                  : "Claude run ended without a terminal result.",
             } satisfies ClaudeRunTerminal,
           });
         }
@@ -1657,12 +1729,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         shouldInterrupt: input.signal.aborted,
         interruptDeadlineMs: this.options.queryControlDeadlineMs ?? CLAUDE_QUERY_CONTROL_DEADLINE_MS,
         drainDeadlineMs: this.options.queryControlDeadlineMs ?? CLAUDE_QUERY_DRAIN_DEADLINE_MS,
+        cancelQueued: this.options.cancelQueuedOnInterrupt ?? true,
         onProbe: (probePhase, detail) => this.options.onContextProbe?.(probePhase, detail),
         clearSubagentLimits: () => subagentRuntimeLimit.clear(),
       });
       try {
         await this.options.queryLifecycle?.onClosed?.(handle, {
           stillQueued: teardown.stillQueued,
+          cancelled: teardown.cancelled,
         });
       } catch {
         // Reconcile hooks must not suppress post-run cleanup callers.
@@ -1685,7 +1759,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       return [];
     }
     try {
-      const usage = await query.getContextUsage();
+      const usage = await query.getContextUsage({ detail: "summary" });
       this.options.onContextProbe?.("getContextUsage", {
         usage: usage as unknown as Record<string, unknown>,
         timing: "on_result",
@@ -2178,23 +2252,28 @@ export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, 
 export async function interruptOrCloseSdkQuery(
   query: SdkQueryHandle,
   onProbe?: (phase: string, detail: Record<string, unknown>) => void,
+  options?: { cancelQueued?: boolean },
 ): Promise<SdkInterruptReceipt | undefined> {
   if (typeof query.interrupt !== "function") {
     query.close?.();
     onProbe?.("interrupt", {
       receipt: null,
       still_queued: [],
+      cancelled: [],
       closed_without_interrupt: true,
     });
     return undefined;
   }
 
   try {
-    const receipt = await query.interrupt();
+    const cancelQueued = options?.cancelQueued ?? true;
+    const receipt = await query.interrupt({ cancelQueued });
     const stillQueued = isRecord(receipt) ? readStringArray(receipt.still_queued) : [];
+    const cancelled = isRecord(receipt) ? readStringArray(receipt.cancelled) : [];
     onProbe?.("interrupt", {
       receipt: receipt ?? null,
       still_queued: stillQueued,
+      cancelled,
     });
     return receipt;
   } catch (error) {
@@ -2305,17 +2384,19 @@ export async function teardownClaudeQueryHandle(
     shouldInterrupt: boolean;
     interruptDeadlineMs?: number;
     drainDeadlineMs?: number;
+    cancelQueued?: boolean;
     onProbe?: (phase: string, detail: Record<string, unknown>) => void;
     clearSubagentLimits?: () => void;
   },
 ): Promise<ClaudeQueryTeardownResult> {
   if (handle.phase === "closed") {
     options.clearSubagentLimits?.();
-    return { stillQueued: [], closed: true, interrupted: options.shouldInterrupt };
+    return { stillQueued: [], cancelled: [], closed: true, interrupted: options.shouldInterrupt };
   }
   handle.phase = "closing";
   const started = Date.now();
   let stillQueued: string[] = [];
+  let cancelled: string[] = [];
   let closed = false;
   let interruptMs = 0;
   let interruptTimedOut = false;
@@ -2337,7 +2418,9 @@ export async function teardownClaudeQueryHandle(
     if (options.shouldInterrupt) {
       const interruptStarted = Date.now();
       if (!handle.interruptWork) {
-        handle.interruptWork = interruptOrCloseSdkQuery(handle.query, options.onProbe);
+        handle.interruptWork = interruptOrCloseSdkQuery(handle.query, options.onProbe, {
+          cancelQueued: options.cancelQueued ?? true,
+        });
       }
       const interruptResult = await settleWithin(
         handle.interruptWork,
@@ -2346,6 +2429,7 @@ export async function teardownClaudeQueryHandle(
       if (interruptResult.kind === "settled") {
         const receipt = interruptResult.value;
         stillQueued = isRecord(receipt) ? readStringArray(receipt.still_queued) : [];
+        cancelled = isRecord(receipt) ? readStringArray(receipt.cancelled) : [];
       } else if (interruptResult.kind === "timeout") {
         interruptTimedOut = true;
         options.onProbe?.("interrupt_timeout", {
@@ -2380,6 +2464,7 @@ export async function teardownClaudeQueryHandle(
       interrupt_timed_out: interruptTimedOut,
       closed,
       still_queued: stillQueued,
+      cancelled,
       drain_frames: drain?.frames ?? 0,
       drain_timed_out: drain?.timedOut ?? false,
       elapsed_ms: Date.now() - started,
@@ -2388,6 +2473,7 @@ export async function teardownClaudeQueryHandle(
   }
   return {
     stillQueued,
+    cancelled,
     closed,
     interrupted: options.shouldInterrupt,
   };
@@ -2702,6 +2788,17 @@ export interface SdkTodoUpdatedPayload {
   summary?: string;
   status?: "completed" | "failed" | "stopped";
   output_file?: string;
+  ambient?: boolean;
+  is_backgrounded?: boolean;
+  spawn_depth?: number;
+  resource_links?: Array<{
+    uri: string;
+    name: string;
+    title?: string;
+    description?: string;
+    mimeType?: string;
+    size?: number;
+  }>;
   usage?: {
     total_tokens: number;
     tool_uses: number;
@@ -2768,6 +2865,27 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   if (typeof message.output_file === "string" && message.output_file.trim()) {
     payload.output_file = message.output_file.trim();
   }
+  if (message.ambient === true) {
+    payload.ambient = true;
+  }
+  if (message.is_backgrounded === true || message.isBackgrounded === true) {
+    payload.is_backgrounded = true;
+  }
+  const spawnDepth =
+    typeof message.spawn_depth === "number"
+      ? message.spawn_depth
+      : typeof message.spawnDepth === "number"
+        ? message.spawnDepth
+        : undefined;
+  if (typeof spawnDepth === "number" && Number.isFinite(spawnDepth)) {
+    payload.spawn_depth = spawnDepth;
+  }
+  const resourceLinks = parseSdkResourceLinks(
+    message.resource_links ?? message.resourceLinks,
+  );
+  if (resourceLinks) {
+    payload.resource_links = resourceLinks;
+  }
   if (isRecord(message.usage)) {
     const totalTokens = message.usage.total_tokens;
     const toolUses = message.usage.tool_uses;
@@ -2804,6 +2922,62 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   }
 
   return payload;
+}
+
+function parseSdkResourceLinks(
+  value: unknown,
+): SdkTodoUpdatedPayload["resource_links"] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const links: NonNullable<SdkTodoUpdatedPayload["resource_links"]> = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const uri = typeof item.uri === "string" ? item.uri.trim() : "";
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!uri || !name) {
+      continue;
+    }
+    const link: NonNullable<SdkTodoUpdatedPayload["resource_links"]>[number] = { uri, name };
+    if (typeof item.title === "string" && item.title.trim()) {
+      link.title = item.title.trim();
+    }
+    if (typeof item.description === "string" && item.description.trim()) {
+      link.description = item.description.trim();
+    }
+    const mimeType =
+      typeof item.mimeType === "string"
+        ? item.mimeType
+        : typeof item.mime_type === "string"
+          ? item.mime_type
+          : undefined;
+    if (mimeType?.trim()) {
+      link.mimeType = mimeType.trim();
+    }
+    if (typeof item.size === "number" && Number.isFinite(item.size)) {
+      link.size = item.size;
+    }
+    links.push(link);
+  }
+  return links.length > 0 ? links : undefined;
+}
+
+function readUserMessageUuidFields(message: Record<string, unknown>): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  if (typeof message.user_message_uuid === "string" && message.user_message_uuid.trim()) {
+    fields.user_message_uuid = message.user_message_uuid.trim();
+  }
+  if (Array.isArray(message.user_message_uuids)) {
+    const uuids = message.user_message_uuids
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .map((entry) => entry.trim());
+    if (uuids.length > 0) {
+      fields.user_message_uuids = uuids;
+    }
+  }
+  return fields;
 }
 
 function mapTaskSystemMessageToEvents(
@@ -2983,6 +3157,13 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "result") {
+    const uuidFields = readUserMessageUuidFields(message);
+    const queuedTurnCount =
+      typeof message.queued_turn_count === "number" && Number.isFinite(message.queued_turn_count)
+        ? message.queued_turn_count
+        : typeof message.queuedTurnCount === "number" && Number.isFinite(message.queuedTurnCount)
+          ? message.queuedTurnCount
+          : undefined;
     const resultPayload: Record<string, unknown> = {
       type: "result",
       totalCostUsd: message.total_cost_usd,
@@ -2997,6 +3178,8 @@ export function mapSdkMessageToEvents(
       ...(typeof message.api_error_status === "number" && { api_error_status: message.api_error_status }),
       ...(Array.isArray(message.errors) && { errors: message.errors }),
       ...(typeof message.result === "string" && { result: message.result }),
+      ...uuidFields,
+      ...(queuedTurnCount !== undefined && { queued_turn_count: queuedTurnCount }),
     };
     // Result messages summarize the main session; never attribute them to a stale subagent context.
     const attributed = applySubagentUsageAttribution(
@@ -3030,7 +3213,12 @@ export function mapSdkMessageToEvents(
     if (message.subtype === "thinking_tokens") {
       return [];
     }
-    if (message.subtype === "task_progress" || message.subtype === "task_notification") {
+    if (
+      message.subtype === "task_started" ||
+      message.subtype === "task_updated" ||
+      message.subtype === "task_progress" ||
+      message.subtype === "task_notification"
+    ) {
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid, streamCtx);
     }
     if (
@@ -3114,6 +3302,11 @@ function mapUserToolResultEvents(
     agentOutput?.status === "completed" &&
     typeof agentOutput.agentId === "string" &&
     agentOutput.agentId.trim();
+  const resourceLinks = parseSdkResourceLinks(
+    (agentOutput && (agentOutput.resourceLinks ?? agentOutput.resource_links)) ??
+      message.resourceLinks ??
+      message.resource_links,
+  );
   const events: AgentEvent[] = [];
   for (const [index, block] of message.message.content.entries()) {
     if (!isRecord(block) || block.type !== "tool_result") {
@@ -3143,6 +3336,7 @@ function mapUserToolResultEvents(
                 ...(descriptor?.input && { input: descriptor.input }),
                 message: output || "Tool execution failed.",
                 ...(nonExecutionKind ? { non_execution_kind: nonExecutionKind } : {}),
+                ...(resourceLinks && { resource_links: resourceLinks }),
               }
             : {
                 type: "tool_result",
@@ -3150,6 +3344,7 @@ function mapUserToolResultEvents(
                 ...(toolUseId && { tool_use_id: toolUseId }),
                 ...(descriptor?.input && { input: descriptor.input }),
                 ...(output && { output }),
+                ...(resourceLinks && { resource_links: resourceLinks }),
               },
           messageParentToolUseId,
         },
@@ -3305,6 +3500,7 @@ function mapAssistantMessageToEvents(
     typeof message.request_id === "string" && message.request_id.trim()
       ? message.request_id.trim()
       : undefined;
+  const uuidFields = readUserMessageUuidFields(message);
 
   if (nestedMessage && isRecord(nestedMessage.usage)) {
     const assistantPayload: Record<string, unknown> = {
@@ -3315,6 +3511,7 @@ function mapAssistantMessageToEvents(
       ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
       // ECO logical request identity from Gateway `request-id` → SDKAssistantMessage.request_id.
       ...(sdkRequestId && { request_id: sdkRequestId }),
+      ...uuidFields,
     };
     const attributed = applySubagentUsageAttribution(
       { role: contentRole, sessionId, payload: assistantPayload, messageParentToolUseId },
@@ -3365,6 +3562,7 @@ function mapAssistantMessageToEvents(
               stream_block_key: streamBlockKey,
               ...(messageId && { messageId }),
               ...(sdkRequestId && { request_id: sdkRequestId }),
+              ...uuidFields,
               ...(typeof message.parent_tool_use_id === "string" && {
                 parent_tool_use_id: message.parent_tool_use_id,
               }),
@@ -3401,6 +3599,7 @@ function mapAssistantMessageToEvents(
               stream_block_key: streamBlockKey,
               ...(messageId && { messageId }),
               ...(sdkRequestId && { request_id: sdkRequestId }),
+              ...uuidFields,
               ...(typeof message.parent_tool_use_id === "string" && {
                 parent_tool_use_id: message.parent_tool_use_id,
               }),
@@ -3720,6 +3919,9 @@ export function formatAgentEventLine(event: Pick<AgentEvent, "type" | "payload" 
   if (event.type === "usage.recorded" || event.type === "todo.updated") {
     if (event.type === "todo.updated" && isSdkTodoUpdatedPayload(event.payload)) {
       const sdkPayload = event.payload;
+      if (sdkPayload.ambient === true) {
+        return null;
+      }
       if (sdkPayload.sdkKind === "task_updated") {
         const status = sdkPayload.patch?.status;
         return status ? `Task ${status}` : null;

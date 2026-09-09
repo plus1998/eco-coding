@@ -2006,6 +2006,8 @@ export interface ThreadModelUsageEntry {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd?: number;
+  thinkingTokens?: number;
+  costBasis?: "list" | "managed" | "unknown";
 }
 
 export type BillingUsageSource = "proxy" | "sdk" | "codex" | "pi";

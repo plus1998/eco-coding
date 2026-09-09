@@ -40,7 +40,7 @@
     "readme:screenshots:preview": "bunx vite --config readme-screenshots/vite.config.ts --host 127.0.0.1 --port 5199"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.223",
+    "@anthropic-ai/claude-agent-sdk": "0.3.266",
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/state": "^6.7.1",
@@ -82,10 +82,10 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.223",
-    "@anthropic-ai/claude-agent-sdk-darwin-x64": "0.3.223",
-    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.223",
-    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.223",
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.266",
+    "@anthropic-ai/claude-agent-sdk-darwin-x64": "0.3.266",
+    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.266",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.266",
     "@openai/codex-darwin-arm64": "npm:@openai/codex@0.150.1-darwin-arm64",
     "@openai/codex-darwin-x64": "npm:@openai/codex@0.150.1-darwin-x64",
     "@openai/codex-linux-arm64": "npm:@openai/codex@0.150.1-linux-arm64",

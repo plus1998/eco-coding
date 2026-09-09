@@ -31,8 +31,11 @@ export const FINALIZE_PLAN_ALLOWED_TOOL = `mcp__${FINALIZE_PLAN_MCP_SERVER_NAME}
 
 export async function createFinalizePlanMcpServer(
   onSubmit: (submission: FinalizePlanSubmission) => void,
+  options?: {
+    loadSdk?: () => Promise<typeof import("@anthropic-ai/claude-agent-sdk")>;
+  },
 ): Promise<unknown> {
-  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  const sdk = options?.loadSdk ? await options.loadSdk() : await import("@anthropic-ai/claude-agent-sdk");
   const zod = await import("zod");
   const { tool, createSdkMcpServer } = sdk;
   const { z } = zod;
@@ -79,5 +82,6 @@ export async function createFinalizePlanMcpServer(
     name: FINALIZE_PLAN_MCP_SERVER_NAME,
     version: "1.0.0",
     tools: [finalizePlanTool],
+    timeout: 60_000,
   });
 }
