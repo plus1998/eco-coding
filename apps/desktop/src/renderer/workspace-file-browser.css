@@ -455,6 +455,123 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  position: relative;
+}
+
+.workspace-file-browser__mode-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--wfb-border);
+  background: var(--bg-main, transparent);
+}
+
+.workspace-file-browser__mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--wfb-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.workspace-file-browser__mode-btn:hover {
+  background: var(--nav-hover);
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-browser__mode-btn.is-active {
+  background: var(--nav-active);
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-browser__mode-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-file-browser__markdown-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 32px;
+  background: var(--bg-main, transparent);
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
+}
+
+.workspace-file-browser__markdown-preview .markdown-content {
+  max-width: 800px;
+  margin: 0 auto;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-browser__markdown-preview .markdown-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.workspace-file-browser__markdown-preview .markdown-content pre {
+  background: color-mix(in srgb, var(--bg-main) 92%, #333);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.workspace-file-browser__markdown-preview .markdown-content code {
+  font-family: var(--code-font-family, monospace);
+  font-size: 13px;
+}
+
+/* HTML 节点样式 */
+.workspace-file-browser__markdown-preview .markdown-html-block {
+  margin: 16px 0;
+}
+
+.workspace-file-browser__markdown-preview .markdown-html-block details {
+  border: 1px solid var(--wfb-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg-main) 96%, #f3f3f3);
+}
+
+.workspace-file-browser__markdown-preview .markdown-html-block summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-browser__markdown-preview .markdown-html-block summary:hover {
+  color: var(--accent);
+}
+
+.workspace-file-browser__svg-preview {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background: var(--bg-main, transparent);
+}
+
+.workspace-file-browser__svg-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
 }
 
 .workspace-file-browser__message {

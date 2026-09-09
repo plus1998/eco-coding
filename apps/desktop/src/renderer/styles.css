@@ -11816,6 +11816,25 @@ button.default-agent-option:focus-visible {
   width: 100%;
 }
 
+.markdown-content .markdown-html-block {
+  margin: 0.75em 0;
+}
+
+.markdown-content .markdown-html-block details {
+  border: 1px solid var(--markdown-border, color-mix(in srgb, currentColor 16%, transparent));
+  border-radius: 8px;
+  padding: 0.65em 0.85em;
+}
+
+.markdown-content .markdown-html-block summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.markdown-content .markdown-html-inline {
+  display: inline;
+}
+
 /*
  * ProseMirror inserts <br class="ProseMirror-trailingBreak"> at the end of textblocks
  * so the caret has a place to land. Feed is read-only �?it only adds empty line height.
