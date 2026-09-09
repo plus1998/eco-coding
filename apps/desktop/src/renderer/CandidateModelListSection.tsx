@@ -105,7 +105,10 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
     const [candidates, setCandidates] = useState<CandidateModelView[]>([]);
     const [loading, setLoading] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [pickerTab, setPickerTab] = useState<"list" | "manual">("list");
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [editingModelId, setEditingModelId] = useState<string>("");
+    const [editingDisplayName, setEditingDisplayName] = useState<string>("");
     const [editingForm, setEditingForm] = useState<ManualSpecFormFields>(emptyManualSpecForm());
     const [editingMapping, setEditingMapping] = useState<ModelsDevMapping | undefined>(undefined);
     const [editingAutoCapability, setEditingAutoCapability] = useState<RouteCapabilityHint | undefined>(
@@ -159,6 +162,21 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       }
     };
 
+    const handleManualAdd = async (modelId: string, displayName?: string) => {
+      if (!providerId || !modelId.trim()) return;
+      try {
+        await window.eco!.saveCandidateModel({
+          providerId,
+          modelId: modelId.trim(),
+          ...(displayName ? { displayName: displayName.trim() } : {}),
+        });
+        await loadCandidates();
+        setPickerOpen(false);
+      } catch (error) {
+        console.error("Failed to add candidate model:", error);
+      }
+    };
+
     const handleDelete = async (id: string) => {
       try {
         await window.eco!.deleteCandidateModel(id);
@@ -200,6 +218,8 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       const targetId = candidate.id;
       editingIdRef.current = targetId;
       setEditingId(targetId);
+      setEditingModelId(candidate.modelId);
+      setEditingDisplayName(candidate.displayName ?? "");
       setEditingMapping(candidate.modelsDevMapping);
       setEditingForm(prefillManualSpecFormFromCandidate(candidate));
       setEditingAutoCapability(undefined);
@@ -221,13 +241,16 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       if (!editingId || !providerId) return;
       const candidate = candidates.find((c) => c.id === editingId);
       if (!candidate) return;
+      const trimmedModelId = editingModelId.trim();
+      if (!trimmedModelId) return;
       const input: CandidateModelInput = {
         id: editingId,
         providerId,
-        modelId: candidate.modelId,
+        modelId: trimmedModelId,
         sortOrder: candidate.sortOrder,
       };
-      if (candidate.displayName) input.displayName = candidate.displayName;
+      const trimmedDisplayName = editingDisplayName.trim();
+      if (trimmedDisplayName) input.displayName = trimmedDisplayName;
       if (editingMapping) input.modelsDevMapping = editingMapping;
       const manualSpecResult = tryFormToManualSpec(editingForm);
       if (manualSpecResult) input.manualSpec = manualSpecResult;
@@ -235,7 +258,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       await loadCandidates();
       setEditingId(null);
       editingIdRef.current = null;
-    }, [candidates, editingForm, editingId, editingMapping, loadCandidates, providerId]);
+    }, [candidates, editingForm, editingId, editingMapping, editingModelId, editingDisplayName, loadCandidates, providerId]);
 
     useImperativeHandle(
       ref,
@@ -332,6 +355,29 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                         </div>
                       </div>
                       <div className="candidate-model-edit-fields">
+                        <section className="candidate-model-edit-section">
+                          <div className="candidate-model-edit-id-fields">
+                            <label className="candidate-model-edit-field">
+                              <span className="candidate-model-edit-field-label">Model ID</span>
+                              <input
+                                className="mcp-field-input candidate-model-edit-input"
+                                value={editingModelId}
+                                disabled={busy}
+                                onChange={(e) => setEditingModelId(e.target.value)}
+                              />
+                            </label>
+                            <label className="candidate-model-edit-field">
+                              <span className="candidate-model-edit-field-label">{t("candidateModels.displayName")}</span>
+                              <input
+                                className="mcp-field-input candidate-model-edit-input"
+                                value={editingDisplayName}
+                                placeholder={editingModelId}
+                                disabled={busy}
+                                onChange={(e) => setEditingDisplayName(e.target.value)}
+                              />
+                            </label>
+                          </div>
+                        </section>
                         <section className="candidate-model-edit-section">
                           <h4 className="candidate-model-edit-section-title">
                             {t("modelSpec.modelsDevMapping")}
@@ -505,8 +551,14 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
           <CandidateModelPickerModal
             models={availableModels}
             loading={modelsLoading}
-            onClose={() => setPickerOpen(false)}
+            tab={pickerTab}
+            onTabChange={setPickerTab}
+            onClose={() => {
+              setPickerOpen(false);
+              setPickerTab("list");
+            }}
             onConfirm={handleAddModels}
+            onManualAdd={handleManualAdd}
             onRefreshModels={onRefreshModels}
           />
         )}
@@ -518,22 +570,36 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
 interface CandidateModelPickerModalProps {
   models: UpstreamModelOption[];
   loading: boolean;
+  tab: "list" | "manual";
+  onTabChange: (tab: "list" | "manual") => void;
   onClose: () => void;
   onConfirm: (selectedModelIds: string[]) => void;
+  onManualAdd: (modelId: string, displayName?: string) => void;
   onRefreshModels: () => void;
 }
 
 function CandidateModelPickerModal({
   models,
   loading,
+  tab,
+  onTabChange,
   onClose,
   onConfirm,
+  onManualAdd,
   onRefreshModels,
 }: CandidateModelPickerModalProps) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
+  const [manualModelId, setManualModelId] = useState("");
+  const [manualDisplayName, setManualDisplayName] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const handleManualSubmit = () => {
+    const id = manualModelId.trim();
+    if (!id) return;
+    onManualAdd(id, manualDisplayName.trim() || undefined);
+  };
 
   const filteredModels = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -593,72 +659,119 @@ function CandidateModelPickerModal({
           </button>
         </header>
         <div className="candidate-picker-body">
-          <div className="candidate-picker-toolbar">
-            <button type="button" className="settings-secondary-button" onClick={selectAll}>
-              {t("candidateModels.selectAll")}
-            </button>
-            <button type="button" className="settings-secondary-button" onClick={clearSelection}>
-              {t("candidateModels.clearSelection")}
+          <div className="candidate-picker-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              className={`candidate-picker-tab${tab === "list" ? " is-active" : ""}`}
+              onClick={() => onTabChange("list")}
+            >
+              {t("candidateModels.tabList")}
             </button>
             <button
               type="button"
-              className="settings-secondary-button"
-              disabled={loading}
-              onClick={onRefreshModels}
+              role="tab"
+              className={`candidate-picker-tab${tab === "manual" ? " is-active" : ""}`}
+              onClick={() => onTabChange("manual")}
             >
-              <RefreshCw size={14} className={loading ? "model-refresh-spin" : undefined} />
-              {t("candidateModels.refreshList")}
+              {t("candidateModels.tabManual")}
             </button>
-            <span className="candidate-picker-count">
-              {t("candidateModels.selectedCount", {
-                selected: selected.size,
-                total: models.length,
-              })}
-            </span>
           </div>
-          <label className="candidate-picker-search">
-            <Search size={14} aria-hidden />
-            <input
-              ref={searchInputRef}
-              type="search"
-              value={searchQuery}
-              placeholder={t("candidateModels.searchPlaceholder")}
-              aria-label={t("candidateModels.searchPlaceholder")}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-            {searchQuery ? (
-              <button
-                type="button"
-                className="candidate-picker-search-clear"
-                aria-label={t("common.close")}
-                onClick={() => {
-                  setSearchQuery("");
-                  searchInputRef.current?.focus();
-                }}
-              >
-                <X size={12} aria-hidden />
-              </button>
-            ) : null}
-          </label>
-          {loading && models.length === 0 ? (
-            <p className="candidate-picker-loading">{t("candidateModels.loading")}</p>
-          ) : models.length === 0 ? (
-            <p className="candidate-picker-empty">{t("candidateModels.noneAvailable")}</p>
-          ) : filteredModels.length === 0 ? (
-            <p className="candidate-picker-empty">{t("modelCascade.noMatch")}</p>
-          ) : (
-            <div className="candidate-picker-list">
-              {filteredModels.map((model) => (
-                <label key={model.id} className="candidate-picker-item">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(model.id)}
-                    onChange={() => toggleSelection(model.id)}
-                  />
-                  <span className="candidate-picker-item-label">{model.displayName || model.id}</span>
-                </label>
-              ))}
+
+          {tab === "manual" ? (
+            <div className="candidate-picker-manual-form">
+              <label className="candidate-picker-manual-field">
+                <span className="candidate-picker-manual-label">Model ID</span>
+                <input
+                  className="mcp-field-input"
+                  value={manualModelId}
+                  placeholder={t("candidateModels.manualModelIdPlaceholder")}
+                  autoFocus
+                  onChange={(e) => setManualModelId(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleManualSubmit()}
+                />
+              </label>
+              <label className="candidate-picker-manual-field">
+                <span className="candidate-picker-manual-label">{t("candidateModels.displayName")}</span>
+                <input
+                  className="mcp-field-input"
+                  value={manualDisplayName}
+                  placeholder={t("candidateModels.manualDisplayNamePlaceholder")}
+                  onChange={(e) => setManualDisplayName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleManualSubmit()}
+                />
+              </label>
             </div>
+          ) : (
+            <>
+              <div className="candidate-picker-toolbar">
+                <button type="button" className="settings-secondary-button" onClick={selectAll}>
+                  {t("candidateModels.selectAll")}
+                </button>
+                <button type="button" className="settings-secondary-button" onClick={clearSelection}>
+                  {t("candidateModels.clearSelection")}
+                </button>
+                <button
+                  type="button"
+                  className="settings-secondary-button"
+                  disabled={loading}
+                  onClick={onRefreshModels}
+                >
+                  <RefreshCw size={14} className={loading ? "model-refresh-spin" : undefined} />
+                  {t("candidateModels.refreshList")}
+                </button>
+                <span className="candidate-picker-count">
+                  {t("candidateModels.selectedCount", {
+                    selected: selected.size,
+                    total: models.length,
+                  })}
+                </span>
+              </div>
+              <label className="candidate-picker-search">
+                <Search size={14} aria-hidden />
+                <input
+                  ref={searchInputRef}
+                  type="search"
+                  value={searchQuery}
+                  placeholder={t("candidateModels.searchPlaceholder")}
+                  aria-label={t("candidateModels.searchPlaceholder")}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    className="candidate-picker-search-clear"
+                    aria-label={t("common.close")}
+                    onClick={() => {
+                      setSearchQuery("");
+                      searchInputRef.current?.focus();
+                    }}
+                  >
+                    <X size={12} aria-hidden />
+                  </button>
+                ) : null}
+              </label>
+              {loading && models.length === 0 ? (
+                <p className="candidate-picker-loading">{t("candidateModels.loading")}</p>
+              ) : models.length === 0 ? (
+                <p className="candidate-picker-empty">{t("candidateModels.noneAvailable")}</p>
+              ) : filteredModels.length === 0 ? (
+                <p className="candidate-picker-empty">{t("modelCascade.noMatch")}</p>
+              ) : (
+                <div className="candidate-picker-list">
+                  {filteredModels.map((model) => (
+                    <label key={model.id} className="candidate-picker-item">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(model.id)}
+                        onChange={() => toggleSelection(model.id)}
+                      />
+                      <span className="candidate-picker-item-label">{model.displayName || model.id}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
         <footer className="settings-modal-footer settings-modal-footer-split">
@@ -667,16 +780,27 @@ function CandidateModelPickerModal({
             <button type="button" className="settings-modal-cancel" onClick={onClose}>
               {t("common.cancel")}
             </button>
-            <button
-              type="button"
-              className="mcp-save-button"
-              disabled={selected.size === 0}
-              onClick={() => onConfirm([...selected])}
-            >
-              {t("candidateModels.addCount", {
-                count: selected.size > 0 ? `(${selected.size})` : "",
-              })}
-            </button>
+            {tab === "list" ? (
+              <button
+                type="button"
+                className="mcp-save-button"
+                disabled={selected.size === 0}
+                onClick={() => onConfirm([...selected])}
+              >
+                {t("candidateModels.addCount", {
+                  count: selected.size > 0 ? `(${selected.size})` : "",
+                })}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="mcp-save-button"
+                disabled={!manualModelId.trim()}
+                onClick={handleManualSubmit}
+              >
+                {t("candidateModels.manualAdd")}
+              </button>
+            )}
           </div>
         </footer>
       </div>
