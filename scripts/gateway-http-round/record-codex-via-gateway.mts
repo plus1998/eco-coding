@@ -1,5 +1,5 @@
 /**
- * @deprecated Use record-client-round.mts --client=codex --profile=packy_responses
+ * @deprecated Use: bun run round -- gateway record --client=codex --profile=packy_responses
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";

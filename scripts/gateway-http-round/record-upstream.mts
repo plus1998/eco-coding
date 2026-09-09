@@ -4,9 +4,9 @@
  *   GATEWAY_RECORD_PACKY_RESPONSES_KEY=... \
  *   GATEWAY_RECORD_PACKY_ANTHROPIC_KEY=... \
  *   GATEWAY_RECORD_LONGCAT_CHAT_KEY=... \
- *   bun scripts/gateway-http-round/record-upstream.mjs
- *
- *   bun scripts/gateway-http-round/record-upstream.mjs --profile=packy_anthropic
+ *   bun run round -- gateway record --layer=upstream
+ *   bun run round -- gateway record --layer=upstream --profile=packy_anthropic
+ *   (or: bun scripts/gateway-http-round/record-upstream.mts)
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";

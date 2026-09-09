@@ -1,7 +1,8 @@
 /**
  * Record a live PI (π) conversation round against LongCat 2.0.
  *
- *   LONGCAT_API_KEY=... bun scripts/conversation-round/record-pi.mts
+ *   LONGCAT_API_KEY=... bun run round -- conversation record --core=pi
+ *   (or: bun scripts/conversation-round/record-pi.mts)
  *
  * Writes:
  *   scripts/conversation-round/fixtures/<runId>-pi/

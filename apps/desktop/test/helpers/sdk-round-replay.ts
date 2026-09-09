@@ -82,11 +82,7 @@ export function resolveSdkRoundFixtureDir(core: SdkRoundCore, configured?: strin
   }
 
   throw new Error(
-    `No ${core} SDK round fixture found. Run: ${
-      core === "pi"
-        ? "LONGCAT_API_KEY=... bun scripts/conversation-round/record-pi.mts"
-        : "LONGCAT_API_KEY=... bun scripts/conversation-round/record-claude.mts"
-    }`,
+    `No ${core} SDK round fixture found. Run: LONGCAT_API_KEY=... bun run round -- conversation record --core=${core}`,
   );
 }
 

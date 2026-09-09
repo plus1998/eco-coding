@@ -3,7 +3,8 @@
  * Upstream traffic is captured via a logging fetchImpl; client req/resp are stored too.
  *
  *   GATEWAY_RECORD_* env keys (see profiles.mjs) \
- *   bun scripts/gateway-http-round/record-gateway.mjs
+ *   bun run round -- gateway record --layer=gateway
+ *   (or: bun scripts/gateway-http-round/record-gateway.mts)
  */
 import fs from "node:fs";
 import path from "node:path";
