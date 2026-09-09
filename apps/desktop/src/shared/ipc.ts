@@ -473,7 +473,7 @@ export type ImageViewReadResult =
   | {
       ok: true;
       dataBase64: string;
-      mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+      mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml" | "image/x-icon" | "image/bmp";
       path: string;
       fileName: string;
       bytes: number;

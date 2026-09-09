@@ -27,7 +27,7 @@ const DISPLAY_ERRORS: Record<string, string> = {
   invalid_mime: "mimeType 必须是 image/*。",
   not_found: "图片展示产物不存在。",
   too_large: "图片超过 20 MB，无法在 Feed 中预览。",
-  unsupported_type: "文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。",
+  unsupported_type: "文件内容不是受支持的 PNG、JPEG、GIF、WebP、SVG、ICO 或 BMP 图片。",
   load_failed: "读取或下载图片失败。",
 };
 

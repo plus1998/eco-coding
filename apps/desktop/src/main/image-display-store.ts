@@ -297,6 +297,12 @@ function extensionForMimeType(mimeType: string): string {
       return ".gif";
     case "image/webp":
       return ".webp";
+    case "image/svg+xml":
+      return ".svg";
+    case "image/x-icon":
+      return ".ico";
+    case "image/bmp":
+      return ".bmp";
     default:
       return ".png";
   }

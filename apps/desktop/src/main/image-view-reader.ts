@@ -20,7 +20,7 @@ export class ImageViewReadError extends Error {
 
 export interface ImageViewFileData {
   dataBase64: string;
-  mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+  mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml" | "image/x-icon" | "image/bmp";
   path: string;
   fileName: string;
   bytes: number;
@@ -94,6 +94,19 @@ export function detectSupportedImageMimeType(bytes: Buffer): ImageViewFileData["
   ) {
     return "image/webp";
   }
+  // ICO detection: starts with 00 00 01 00
+  if (bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x01 && bytes[3] === 0x00) {
+    return "image/x-icon";
+  }
+  // BMP detection: starts with "BM"
+  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) {
+    return "image/bmp";
+  }
+  // SVG detection: check for XML declaration or SVG tag
+  const head = bytes.subarray(0, 1024).toString("utf8").trim();
+  if (head.startsWith("<?xml") || head.startsWith("<svg") || head.includes("<svg")) {
+    return "image/svg+xml";
+  }
   return undefined;
 }
 
@@ -132,6 +145,15 @@ function readImageDimensions(
   }
   if (mimeType === "image/webp") {
     return readWebpDimensions(bytes);
+  }
+  if (mimeType === "image/x-icon") {
+    return readIcoDimensions(bytes);
+  }
+  if (mimeType === "image/bmp") {
+    return readBmpDimensions(bytes);
+  }
+  if (mimeType === "image/svg+xml") {
+    return readSvgDimensions(bytes);
   }
   return undefined;
 }
@@ -188,6 +210,52 @@ function readWebpDimensions(bytes: Buffer): { width: number; height: number } | 
     return validDimensions(width, height);
   }
   return undefined;
+}
+
+function readIcoDimensions(bytes: Buffer): { width: number; height: number } | undefined {
+  // ICO header: 6 bytes (reserved 2, type 2, count 2)
+  // Then directory entries: 16 bytes each
+  // Entry structure: width(1), height(1), colorCount(1), reserved(1), planes(2), bitCount(2), bytesInRes(4), imageOffset(4)
+  if (bytes.length < 6) return undefined;
+  const count = bytes.readUInt16LE(4);
+  if (count === 0 || bytes.length < 22) return undefined;
+  // First image entry starts at offset 6
+  const width = bytes[6]; // 0 means 256
+  const height = bytes[7]; // 0 means 256
+  return validDimensions(width === 0 ? 256 : width, height === 0 ? 256 : height);
+}
+
+function readBmpDimensions(bytes: Buffer): { width: number; height: number } | undefined {
+  // BMP header: 'BM' + file size(4) + reserved(4) + offset(4) + header size(4) + width(4) + height(4)
+  if (bytes.length < 30) return undefined;
+  const width = bytes.readInt32LE(18);
+  const height = Math.abs(bytes.readInt32LE(22)); // Can be negative for top-down
+  return validDimensions(width, height);
+}
+
+function readSvgDimensions(bytes: Buffer): { width: number; height: number } | undefined {
+  const content = bytes.toString("utf8");
+  // Try to parse width and height from SVG attributes
+  // Format: width="100" height="200" or width="100px" height="200px"
+  const widthMatch = content.match(/width=["']([^"']+)["']/);
+  const heightMatch = content.match(/height=["']([^"']+)["']/);
+  if (widthMatch && heightMatch) {
+    const width = parseFloat(widthMatch[1]);
+    const height = parseFloat(heightMatch[1]);
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      return validDimensions(Math.round(width), Math.round(height));
+    }
+  }
+  // Try viewBox: viewBox="0 0 100 200"
+  const viewBoxMatch = content.match(/viewBox=["']([^"']+)["']/);
+  if (viewBoxMatch) {
+    const parts = viewBoxMatch[1].split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && Number.isFinite(parts[2]) && Number.isFinite(parts[3])) {
+      return validDimensions(Math.round(parts[2]), Math.round(parts[3]));
+    }
+  }
+  // Default dimensions for SVG if not specified
+  return { width: 100, height: 100 };
 }
 
 function readUInt24LE(bytes: Buffer, offset: number): number {
