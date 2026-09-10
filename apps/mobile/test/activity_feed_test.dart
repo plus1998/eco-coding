@@ -2374,6 +2374,81 @@ void main() {
     },
   );
 
+  testWidgets(
+    'running conversation keeps copy on user prompts but hides it on agent output',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              scrollController: controller,
+              shrinkWrap: true,
+              // 会话进行中：只有 agent 侧输出延迟挂 meta。
+              showMessageCopyAndTime: false,
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'user-1',
+                  kind: ActivityFeedKind.user,
+                  text: '帮我把复制按钮加回来',
+                ),
+                ActivityFeedEntry(
+                  id: 'turn-1',
+                  kind: ActivityFeedKind.turn,
+                  text: '',
+                  running: true,
+                  finalOutput: ActivityFeedEntry(
+                    id: 'final-1',
+                    kind: ActivityFeedKind.assistant,
+                    text: '正在处理',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // 用户消息始终可复制；agent 侧流式输出仍不挂复制，所以全场只有一个复制按钮。
+      expect(find.byIcon(EcoIcons.copy), findsOneWidget);
+
+      // 只保留进行中的 agent 回合时，仍不出现复制按钮。
+      final agentController = ScrollController();
+      addTearDown(agentController.dispose);
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              scrollController: agentController,
+              shrinkWrap: true,
+              showMessageCopyAndTime: false,
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'turn-1',
+                  kind: ActivityFeedKind.turn,
+                  text: '',
+                  running: true,
+                  finalOutput: ActivityFeedEntry(
+                    id: 'final-1',
+                    kind: ActivityFeedKind.assistant,
+                    text: '正在处理',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('正在处理'), findsOneWidget);
+      expect(find.byIcon(EcoIcons.copy), findsNothing);
+    },
+  );
+
   testWidgets('manually cancelled turn shows who stopped it and elapsed time', (
     tester,
   ) async {

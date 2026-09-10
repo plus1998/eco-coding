@@ -1379,7 +1379,6 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           onLoadUserMessageEdit: onLoadUserMessageEdit,
           onRewriteUserMessage: onRewriteUserMessage,
           initiallyExpanded: expandUserPrompts,
-          showCopyAndTime: showMessageCopyAndTime,
         );
       case ActivityFeedKind.clarificationAnswer:
         return _ClarificationAnswerTile(text: entry.text);
@@ -1841,7 +1840,6 @@ class _UserPromptTile extends StatefulWidget {
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
     this.initiallyExpanded = false,
-    this.showCopyAndTime = true,
   });
 
   final String text;
@@ -1851,7 +1849,6 @@ class _UserPromptTile extends StatefulWidget {
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool initiallyExpanded;
-  final bool showCopyAndTime;
 
   @override
   State<_UserPromptTile> createState() => _UserPromptTileState();
@@ -2318,9 +2315,10 @@ class _UserPromptTileState extends State<_UserPromptTile> {
             constraints: BoxConstraints(maxWidth: maxBubbleWidth),
             child: bubble,
           ),
+          // 用户消息不随会话进行状态隐藏操作：编辑与复制始终可见（仅要求文本非空），
+          // 只有 agent 侧输出才用 showMessageCopyAndTime 延迟挂载以避免 streaming 抖动。
           if (!_editing &&
-              ((_canEdit) ||
-                  (widget.showCopyAndTime && widget.text.trim().isNotEmpty)))
+              (_canEdit || widget.text.trim().isNotEmpty))
             Padding(
               // Keep space below copy/edit actions so the next agent turn does
               // not sit flush against the icon row (desktop uses ~20px block gap).
@@ -2339,11 +2337,9 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                       tooltip: context.l10n.activityEditing,
                       style: activityFeedMessageActionStyle(context),
                     ),
-                  if (_canEdit &&
-                      widget.showCopyAndTime &&
-                      widget.text.trim().isNotEmpty)
+                  if (_canEdit && widget.text.trim().isNotEmpty)
                     const SizedBox(width: activityFeedMessageActionGap),
-                  if (widget.showCopyAndTime && widget.text.trim().isNotEmpty)
+                  if (widget.text.trim().isNotEmpty)
                     ActivityFeedCopyButton(
                       onPressed: _copyMessage,
                     ),
