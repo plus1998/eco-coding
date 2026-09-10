@@ -379,6 +379,7 @@ import {
 import {
   excludeAgentScopedFeedTimelineItems,
   isSkeletonUserPromptItem,
+  selectSkeletonTimelineItems,
 } from "../shared/thread-run-projection-skeleton";
 import {
   projectThreadRunToolMetadata,
@@ -754,10 +755,15 @@ import {
   hasFeedSkeletonAttemptBecameTerminal,
   isFeedSkeletonTerminalEventType,
   patchThreadFeedSkeletonFromEvent,
+  reconcileFeedSkeletonTrackedItems,
   shouldPatchAgentTimelineForFeedSkeleton,
-  shouldRebuildFeedSkeletonForMissingRunningNarratives,
-  shouldTrackEventForFeedSkeletonPatch,
 } from "./thread-feed-skeleton-patch";
+import {
+  shouldRebuildFeedSkeletonForEmptyTimeline,
+  shouldRebuildFeedSkeletonForOrphanAgentEvents,
+  shouldRebuildFeedSkeletonForTruncatedUserPrompts,
+} from "./thread-feed-skeleton-detectors";
+import { isFeedMainTimelineEvent } from "./thread-feed-timeline-items";
 import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
 import {
   hydrateThreadFeedSkeletonSnapshot,
@@ -14372,7 +14378,11 @@ function rebuildThreadFeedSkeletonRecord(threadId: string): ThreadFeedSkeletonRe
     return undefined;
   }
   const feedProjection = trimProjectionForFeed(projection);
-  const record = createThreadFeedSkeletonRecord(feedProjection, buildFeedSkeletonPatchContext(threadId));
+  const record = createThreadFeedSkeletonRecord(
+    feedProjection,
+    buildFeedSkeletonPatchContext(threadId),
+    conversationStore.listThreadRunEventsForProjection(threadId),
+  );
   persistThreadFeedSkeletonRecord(record);
   return record;
 }
@@ -14401,7 +14411,7 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
     existing !== undefined &&
     hasFeedSkeletonAttemptBecameTerminal(existing.snapshot.attempts, context.attempts);
   const structureChanging =
-    shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
+    isFeedMainTimelineEvent(event) ||
     shouldPatchAgentTimelineForFeedSkeleton(event) ||
     isFeedSkeletonTerminalEventType(event.eventType) ||
     attemptBecameTerminal ||
@@ -14436,6 +14446,37 @@ function rebuildThreadFeedSkeleton(threadId: string): ThreadRunProjectionSnapsho
   return rebuildThreadFeedSkeletonRecord(threadId)?.snapshot;
 }
 
+/**
+ * Runs the rebuild safety nets for a cached skeleton. Reads the event log once for all of
+ * them (the orphan and empty-timeline checks both need it).
+ */
+function shouldRebuildCachedThreadFeedSkeleton(
+  threadId: string,
+  snapshot: ThreadRunProjectionSnapshot,
+  maxEventSequence: number,
+): boolean {
+  const events = conversationStore.listThreadRunEventsForProjection(threadId);
+  return (
+    shouldRebuildFeedSkeletonForOrphanAgentEvents({
+      events,
+      timeline: snapshot.timeline,
+      knownAgentIds: [
+        ...conversationStore.listAgentInstances(threadId).map((agent) => agent.agentId),
+        ...snapshot.agents.map((agent) => agent.agentId),
+      ],
+    }) ||
+    shouldRebuildFeedSkeletonForEmptyTimeline(
+      {
+        timeline: snapshot.timeline,
+        sourceEventCount: snapshot.sourceEventCount,
+        hasFeedVisibleEvent: events.some(isFeedMainTimelineEvent),
+      },
+      maxEventSequence,
+    ) ||
+    shouldRebuildFeedSkeletonForTruncatedUserPrompts(snapshot.timeline)
+  );
+}
+
 function loadThreadFeedProjectionForClient(
   threadId: string,
   request: ReturnType<typeof parseThreadRunProjectionGetRequest>,
@@ -14449,10 +14490,7 @@ function loadThreadFeedProjectionForClient(
     // Empty timelines with a positive event cursor are also poisoned (e.g. full
     // projection cache wiped by maxEvents=0 slice) and must not stay "fresh".
     if (
-      shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
-      shouldRebuildFeedSkeletonForEmptyTimeline(cached.snapshot, maxEventSequence) ||
-      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot) ||
-      shouldRebuildFeedSkeletonForCollapsedRunningNarratives(threadId, cached.snapshot)
+      shouldRebuildCachedThreadFeedSkeleton(threadId, cached.snapshot, maxEventSequence)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       // Drop in-memory projection event cache too — it may be the empty array that
@@ -14474,105 +14512,6 @@ function loadThreadFeedProjectionForClient(
     buildThreadFeedSkeletonHydrationContext(),
   );
   return filterFeedProjectionForClient(hydrated, request);
-}
-
-/**
- * Cursor ACP root events historically landed as `scope: agent` with a per-run UUID
- * that has no agent instance. Incremental Feed patches dropped them; detect that
- * hole so reload rebuilds from the full projection (orphan → main).
- */
-function shouldRebuildFeedSkeletonForOrphanAgentEvents(
-  threadId: string,
-  snapshot: ThreadRunProjectionSnapshot,
-): boolean {
-  const knownAgentIds = new Set([
-    ...conversationStore.listAgentInstances(threadId).map((agent) => agent.agentId),
-    ...snapshot.agents.map((agent) => agent.agentId),
-  ]);
-  const events = conversationStore.listThreadRunEventsForProjection(threadId);
-  let orphanAssistant = false;
-  for (const event of events) {
-    if (event.scope !== "agent") {
-      continue;
-    }
-    const agentId = event.agentId?.trim();
-    if (!agentId || knownAgentIds.has(agentId)) {
-      continue;
-    }
-    if (
-      event.eventType === "message.final" ||
-      event.eventType === "message.delta" ||
-      event.eventType === "thinking.final" ||
-      event.eventType === "thinking.delta" ||
-      event.eventType === "tool.started" ||
-      event.eventType === "tool.completed"
-    ) {
-      orphanAssistant = true;
-      break;
-    }
-  }
-  if (!orphanAssistant) {
-    return false;
-  }
-  const mainHasAssistant = snapshot.timeline.some(
-    (item) =>
-      item.scope !== "agent" &&
-      (item.eventType === "message.final" ||
-        item.eventType === "message.delta" ||
-        item.eventType === "thinking.final" ||
-        item.eventType === "thinking.delta" ||
-        item.eventType === "tool.started" ||
-        item.eventType === "tool.completed"),
-  );
-  return !mainHasAssistant;
-}
-
-/** Poisoned skeleton: event cursor advanced but timeline was wiped (empty finals/prompts). */
-function shouldRebuildFeedSkeletonForEmptyTimeline(
-  snapshot: ThreadRunProjectionSnapshot,
-  maxEventSequence: number,
-): boolean {
-  if (snapshot.timeline.length > 0) {
-    return false;
-  }
-  if (!(maxEventSequence > 0 || snapshot.attempts.length > 0 || snapshot.sourceEventCount > 0)) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * Older Feed trims capped user prompts at 1_200 chars with textTruncated and no
- * hydrate path. Force rebuild so long prompts reappear after the keep-full fix.
- */
-function shouldRebuildFeedSkeletonForTruncatedUserPrompts(
-  snapshot: ThreadRunProjectionSnapshot,
-): boolean {
-  return snapshot.timeline.some(
-    (item) => isSkeletonUserPromptItem(item) && item.metadata?.textTruncated === true,
-  );
-}
-
-/**
- * Incremental Feed patches used to collapse the whole segment on every
- * message.final while the attempt was still running, dropping earlier assistant
- * bodies between tools. Detect that hole so reload/live emit rebuilds from events.
- *
- * The predicate itself lives in thread-feed-skeleton-patch.ts (tested); this wrapper
- * only avoids reading the event log for threads with no running attempt.
- */
-function shouldRebuildFeedSkeletonForCollapsedRunningNarratives(
-  threadId: string,
-  snapshot: ThreadRunProjectionSnapshot,
-): boolean {
-  if (!snapshot.attempts.some((attempt) => attempt.status === "running")) {
-    return false;
-  }
-  return shouldRebuildFeedSkeletonForMissingRunningNarratives({
-    attempts: snapshot.attempts,
-    timeline: snapshot.timeline,
-    events: conversationStore.listThreadRunEventsForProjection(threadId),
-  });
 }
 
 function buildCurrentThreadRunProjection(
@@ -14705,12 +14644,24 @@ function syncThreadFeedSkeletonAttemptsFromStore(threadId: string): void {
   if (attemptsUnchanged && threadStatusUnchanged) {
     return;
   }
+  // Re-derive the Feed from the tracked items under the new attempt states instead of
+  // trusting the previously selected timeline: a run that finished without its own event
+  // (finishRunAttempt) must compact its trail right away, with no event log read.
+  const patchState = existing.patchState;
+  const trackedItems = patchState
+    ? reconcileFeedSkeletonTrackedItems(
+        excludeAgentScopedFeedTimelineItems(patchState.trackedItems),
+        hydrated.attempts,
+      )
+    : undefined;
   persistThreadFeedSkeletonRecord({
     ...existing,
     snapshot: {
       ...existing.snapshot,
       attempts: hydrated.attempts,
-      timeline: hydrated.timeline,
+      timeline: trackedItems
+        ? selectSkeletonTimelineItems(trackedItems, hydrated.attempts).map((item) => ({ ...item }))
+        : hydrated.timeline,
       thread: {
         ...existing.snapshot.thread,
         status: hydrated.thread.status,
@@ -14720,6 +14671,7 @@ function syncThreadFeedSkeletonAttemptsFromStore(threadId: string): void {
         }),
       },
     },
+    ...(patchState && trackedItems && { patchState: { ...patchState, trackedItems } }),
   });
 }
 
@@ -14733,9 +14685,7 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   let cached = conversationStore.getThreadFeedSkeleton(threadId);
   if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
     if (
-      shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
-      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot) ||
-      shouldRebuildFeedSkeletonForCollapsedRunningNarratives(threadId, cached.snapshot)
+      shouldRebuildCachedThreadFeedSkeleton(threadId, cached.snapshot, maxEventSequence)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       cached = undefined;

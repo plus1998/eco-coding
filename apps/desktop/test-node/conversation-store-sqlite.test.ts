@@ -8,6 +8,7 @@ import { createAgentOrchestrationStore } from "../src/main/agent-orchestration-s
 import { createConversationStore } from "../src/main/conversation-store";
 import { createProjectMcpSettingsStore } from "../src/main/project-mcp-settings-store";
 import { createProjectSkillsSettingsStore } from "../src/main/project-skills-settings-store";
+import { FEED_SKELETON_RULES_VERSION } from "../src/main/thread-feed-skeleton-store";
 import type { ThreadSummary } from "../src/shared/ipc";
 
 async function createTestDirectory(t: test.TestContext, prefix: string): Promise<string> {
@@ -1577,6 +1578,8 @@ test("Node SQLite persists thread feed skeleton snapshots", async (t) => {
     snapshot,
     patchState: {
       trackedItems: snapshot.timeline,
+      finalizedSdkBlocks: [],
+      rulesVersion: FEED_SKELETON_RULES_VERSION,
     },
   });
 
@@ -1586,6 +1589,32 @@ test("Node SQLite persists thread feed skeleton snapshots", async (t) => {
   assert.equal(loaded?.maxEventSequence, 1);
   assert.equal(loaded?.snapshot.timeline[0]?.text, "hello");
   assert.equal(loaded?.patchState?.trackedItems.length, 1);
+  assert.equal(loaded?.patchState?.rulesVersion, FEED_SKELETON_RULES_VERSION);
+
+  // Patch state written by an older rules version must not be trusted: the caller then
+  // rebuilds from events instead of patching with incompatible semantics.
+  store.saveThreadFeedSkeleton(threadId, {
+    historyRevision: 0,
+    maxEventSequence: 1,
+    snapshot,
+    patchState: {
+      trackedItems: snapshot.timeline,
+      finalizedSdkBlocks: [],
+      rulesVersion: FEED_SKELETON_RULES_VERSION - 1,
+    },
+  });
+  assert.equal(store.getThreadFeedSkeleton(threadId)?.patchState, undefined);
+
+  store.saveThreadFeedSkeleton(threadId, {
+    historyRevision: 0,
+    maxEventSequence: 1,
+    snapshot,
+    patchState: {
+      trackedItems: snapshot.timeline,
+      finalizedSdkBlocks: [],
+      rulesVersion: FEED_SKELETON_RULES_VERSION,
+    },
+  });
 
   store.touchThreadFeedSkeletonSequence(threadId, 4);
   const touched = store.getThreadFeedSkeleton(threadId);

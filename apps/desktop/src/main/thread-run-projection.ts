@@ -16,6 +16,7 @@ import type {
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
+import { dedupeSettledSdkMessageBlocks } from "./thread-run-message-blocks";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
 const subagentRoleSet = new Set<string>(SUBAGENT_ROLES);
@@ -55,7 +56,7 @@ export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): 
     const sequenceDiff = left.sequence - right.sequence;
     return sequenceDiff !== 0 ? sequenceDiff : left.observedAt.localeCompare(right.observedAt);
   });
-  const events = dedupeFinalizedSdkMessageBlocks(sortedEvents);
+  const events = dedupeSettledSdkMessageBlocks(sortedEvents);
   const attempts = input.attempts
     .map(mapAttempt)
     .sort(
@@ -270,45 +271,6 @@ export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): 
     diagnostics,
     sourceEventCount: input.events.length,
   };
-}
-
-function dedupeFinalizedSdkMessageBlocks(events: readonly ThreadRunEvent[]): ThreadRunEvent[] {
-  const finalized = new Set<string>();
-  return events.filter((event) => {
-    const key = sdkMessageBlockIdentity(event);
-    if (!key) {
-      return true;
-    }
-    if (finalized.has(key)) {
-      return false;
-    }
-    if (
-      event.eventType === "message.final" ||
-      event.eventType === "thinking.final" ||
-      event.streamState === "finalized"
-    ) {
-      finalized.add(key);
-    }
-    return true;
-  });
-}
-
-function sdkMessageBlockIdentity(event: ThreadRunEvent): string | undefined {
-  if (
-    event.eventType !== "message.delta" &&
-    event.eventType !== "message.final" &&
-    event.eventType !== "thinking.delta" &&
-    event.eventType !== "thinking.final"
-  ) {
-    return undefined;
-  }
-  const sdkMessageId = event.metadata?.sdkMessageId;
-  if (typeof sdkMessageId !== "string" || !sdkMessageId.trim()) {
-    return undefined;
-  }
-  const channel = event.eventType.startsWith("thinking.") ? "thinking" : "message";
-  const owner = event.agentId?.trim() || event.parentToolUseId?.trim() || event.role?.trim() || "main";
-  return `${owner}:${channel}:${sdkMessageId.trim()}`;
 }
 
 function mapAttempt(attempt: RunAttemptRecord): ThreadRunProjectionAttempt {

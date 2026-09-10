@@ -12,6 +12,7 @@ import {
 } from "@eco/runtime";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
+import { isCollapsibleStreamEvent, sameStreamIdentity } from "./thread-run-message-blocks";
 import type {
   CoderTodoItem,
   CoderTodoStatus,
@@ -54,7 +55,11 @@ import type {
   SubagentSessionStatus,
   ThreadSubagentSessionRecord,
 } from "./subagent-session-types.js";
-import type { FeedSkeletonPatchState, ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
+import {
+  FEED_SKELETON_RULES_VERSION,
+  type FeedSkeletonPatchState,
+  type ThreadFeedSkeletonRecord,
+} from "./thread-feed-skeleton-store";
 import { shouldAdvanceThreadRunEventSequence } from "./thread-run-event-sequence";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 import {
@@ -4543,8 +4548,7 @@ export class ConversationStore {
       return;
     }
     const now = new Date().toISOString();
-    const auxiliaryJson =
-      input.patchState && input.patchState.trackedItems.length > 0 ? JSON.stringify(input.patchState) : null;
+    const auxiliaryJson = input.patchState ? JSON.stringify(input.patchState) : null;
     this.db
       .prepare(
         `INSERT INTO thread_feed_skeleton (
@@ -5624,7 +5628,7 @@ export class ConversationStore {
   }
 
   private rememberHotThreadRunEvent(event: ThreadRunEvent): void {
-    if (!isCollapsibleProjectionStreamEvent(event)) {
+    if (!isCollapsibleStreamEvent(event)) {
       return;
     }
     const cacheKey = threadRunEventCacheKey(event.threadId, event.id);
@@ -5666,9 +5670,9 @@ export class ConversationStore {
         return false;
       }
       return !(
-        isCollapsibleProjectionStreamEvent(event) &&
-        isCollapsibleProjectionStreamEvent(candidate) &&
-        sameProjectionStreamIdentity(candidate, event)
+        isCollapsibleStreamEvent(event) &&
+        isCollapsibleStreamEvent(candidate) &&
+        sameStreamIdentity(candidate, event)
       );
     });
     events.push(event);
@@ -5703,12 +5707,27 @@ function parseFeedSkeletonPatchState(raw: string | null | undefined): FeedSkelet
     return undefined;
   }
   try {
-    const parsed = JSON.parse(raw) as { trackedItems?: unknown };
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.trackedItems)) {
+    const parsed = JSON.parse(raw) as {
+      trackedItems?: unknown;
+      finalizedSdkBlocks?: unknown;
+      rulesVersion?: unknown;
+    };
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.trackedItems) ||
+      parsed.rulesVersion !== FEED_SKELETON_RULES_VERSION
+    ) {
+      // Unknown/older rules: drop the patch state so the caller rebuilds from events
+      // instead of patching a tracked set produced by different semantics.
       return undefined;
     }
     return {
       trackedItems: parsed.trackedItems as FeedSkeletonPatchState["trackedItems"],
+      finalizedSdkBlocks: Array.isArray(parsed.finalizedSdkBlocks)
+        ? (parsed.finalizedSdkBlocks as FeedSkeletonPatchState["finalizedSdkBlocks"])
+        : [],
+      rulesVersion: FEED_SKELETON_RULES_VERSION,
     };
   } catch {
     return undefined;
@@ -5717,21 +5736,6 @@ function parseFeedSkeletonPatchState(raw: string | null | undefined): FeedSkelet
 
 function threadRunEventCacheKey(threadId: string, eventId: string): string {
   return `${threadId}\0${eventId}`;
-}
-
-function isCollapsibleProjectionStreamEvent(event: ThreadRunEvent): boolean {
-  return (
-    (event.eventType === "message.delta" || event.eventType === "thinking.delta") && Boolean(event.streamKey)
-  );
-}
-
-function sameProjectionStreamIdentity(left: ThreadRunEvent, right: ThreadRunEvent): boolean {
-  return (
-    left.eventType === right.eventType &&
-    left.streamKey === right.streamKey &&
-    left.requestId === right.requestId &&
-    left.runAttemptId === right.runAttemptId
-  );
 }
 
 function compareThreadRunEvents(left: ThreadRunEvent, right: ThreadRunEvent): number {

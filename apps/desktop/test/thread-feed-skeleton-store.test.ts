@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  FEED_SKELETON_RULES_VERSION,
   hydrateThreadFeedSkeletonSnapshot,
   isThreadFeedSkeletonFresh,
   resolveFeedSkeletonPatchAgents,
@@ -40,15 +41,31 @@ const baseSnapshot = (): ThreadRunProjectionSnapshot => ({
 });
 
 describe("thread feed skeleton store", () => {
-  test("isThreadFeedSkeletonFresh matches revision and sequence", () => {
+  test("isThreadFeedSkeletonFresh matches revision, sequence and rules version", () => {
+    const patchState = {
+      trackedItems: [],
+      finalizedSdkBlocks: [],
+      rulesVersion: FEED_SKELETON_RULES_VERSION,
+    };
     const record = {
       historyRevision: 2,
       maxEventSequence: 42,
       snapshot: baseSnapshot(),
+      patchState,
     };
     expect(isThreadFeedSkeletonFresh(record, 2, 42)).toBe(true);
     expect(isThreadFeedSkeletonFresh(record, 1, 42)).toBe(false);
     expect(isThreadFeedSkeletonFresh(record, 2, 41)).toBe(false);
+    // A skeleton without a current-version patch state cannot be patched with the current
+    // rules (older build, or parsed from an older auxiliary_json) so it must be rebuilt.
+    expect(isThreadFeedSkeletonFresh({ ...record, patchState: undefined }, 2, 42)).toBe(false);
+    expect(
+      isThreadFeedSkeletonFresh(
+        { ...record, patchState: { ...patchState, rulesVersion: FEED_SKELETON_RULES_VERSION - 1 } },
+        2,
+        42,
+      ),
+    ).toBe(false);
   });
 
   test("hydrateThreadFeedSkeletonSnapshot refreshes running attempt to terminal", () => {

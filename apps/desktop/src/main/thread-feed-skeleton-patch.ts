@@ -6,21 +6,23 @@ import type {
 } from "../shared/thread-run-projection";
 import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
 import {
-  buildFeedSkeletonSegmentKey,
   compareFeedSkeletonTimelineItems,
-  createFeedSkeletonAttemptResolver,
+  createFeedSkeletonRunningAttemptMatcher,
   excludeAgentScopedFeedTimelineItems,
-  isFeedSkeletonItemOnRunningAttempt,
   isLiveFeedSkeletonAgent,
-  isSkeletonTurnFinalItem,
   isSkeletonUserPromptItem,
-  listFeedSkeletonUserBoundaries,
   selectSkeletonTimelineItems,
 } from "../shared/thread-run-projection-skeleton";
-import type { FeedSkeletonPatchState, ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
+import {
+  FEED_SKELETON_RULES_VERSION,
+  type FeedSkeletonPatchState,
+  type ThreadFeedSkeletonRecord,
+} from "./thread-feed-skeleton-store";
 import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
 import { eventToTimelineItem } from "./thread-run-projection";
 import { trimTimelineItemForFeed } from "./thread-run-projection-feed";
+import { collectSettledSdkMessageBlocks } from "./thread-run-message-blocks";
+import { stageFeedTimelineEvent, type FeedTimelineStageState } from "./thread-feed-timeline-items";
 
 export interface FeedSkeletonPatchContext {
   attempts: readonly ThreadRunProjectionAttempt[];
@@ -61,69 +63,30 @@ export function hasFeedSkeletonAttemptBecameTerminal(
   return false;
 }
 
-export function createFeedSkeletonPatchState(snapshot: ThreadRunProjectionSnapshot): FeedSkeletonPatchState {
+export function createFeedSkeletonPatchState(
+  snapshot: ThreadRunProjectionSnapshot,
+  events: readonly ThreadRunEvent[] = [],
+): FeedSkeletonPatchState {
   return {
     trackedItems: snapshot.timeline.map((item) => ({ ...item })),
+    // Seed from the event log the snapshot was projected from: a replayed duplicate block
+    // must stay dropped, exactly as the full projection would drop it.
+    finalizedSdkBlocks: collectSettledSdkMessageBlocks(events),
+    rulesVersion: FEED_SKELETON_RULES_VERSION,
   };
 }
 
 export function createThreadFeedSkeletonRecord(
   snapshot: ThreadRunProjectionSnapshot,
   context: FeedSkeletonPatchContext,
+  events: readonly ThreadRunEvent[] = [],
 ): ThreadFeedSkeletonRecord {
   return {
     historyRevision: context.historyRevision,
     maxEventSequence: context.maxEventSequence,
     snapshot,
-    patchState: createFeedSkeletonPatchState(snapshot),
+    patchState: createFeedSkeletonPatchState(snapshot, events),
   };
-}
-
-export function shouldTrackEventForFeedSkeletonPatch(
-  event: ThreadRunEvent,
-  attempts: readonly ThreadRunProjectionAttempt[],
-): boolean {
-  if (isMetricsOnlyThreadRunEvent(event)) {
-    return false;
-  }
-  if (isFeedSkeletonTerminalEventType(event.eventType)) {
-    return false;
-  }
-  if (event.eventType.startsWith("agent.")) {
-    return false;
-  }
-  if (event.eventType.startsWith("run.attempt.")) {
-    return false;
-  }
-  if (event.eventType.startsWith("request.")) {
-    return false;
-  }
-  if (event.scope === "agent") {
-    return false;
-  }
-
-  const item = eventToTimelineItem(event);
-  if (isSkeletonUserPromptItem(item)) {
-    return true;
-  }
-
-  const attemptId = event.runAttemptId?.trim();
-  const attempt = attemptId ? attempts.find((candidate) => candidate.attemptId === attemptId) : undefined;
-  if (attempt?.status === "running") {
-    return true;
-  }
-
-  if (event.eventType === "message.final") {
-    const role = event.role?.trim();
-    if (role === "user" || role === "tool" || role === "thinking") {
-      return false;
-    }
-    return event.message.trim().length > 0;
-  }
-  if (event.eventType === "api.error" || event.eventType === "tool.failed") {
-    return true;
-  }
-  return false;
 }
 
 export function shouldPatchAgentTimelineForFeedSkeleton(event: ThreadRunEvent): boolean {
@@ -149,84 +112,89 @@ export function patchThreadFeedSkeletonFromEvent(
   }
 
   const attempts = [...context.attempts];
-  let agents = mergeSkeletonAgentsForPatch(record.snapshot.agents, context.agents);
-  let trackedItems = excludeAgentScopedFeedTimelineItems(
-    record.patchState.trackedItems.map((item) => ({ ...item })),
-  );
-  let structureChanged = trackedItems.length !== record.patchState.trackedItems.length;
-
+  const agents = mergeSkeletonAgentsForPatch(record.snapshot.agents, context.agents);
   const attemptBecameTerminal = hasFeedSkeletonAttemptBecameTerminal(record.snapshot.attempts, attempts);
 
-  if (shouldTrackEventForFeedSkeletonPatch(event, attempts)) {
-    const item = trimTimelineItemForFeed(eventToTimelineItem(event));
-    trackedItems = upsertTrackedItem(trackedItems, item);
-    if (isSkeletonTurnFinalItem(item) && !isFeedSkeletonItemOnRunningAttempt(item, attempts)) {
-      // Live turns must keep every process row (selectSkeletonTimelineItems keeps
-      // the full running-attempt trail). Collapsing here dropped earlier
-      // message.final bodies when the model spoke multiple times between tools
-      // (e.g. thr_1789062621587: 7 finals in events, 1 left in Feed skeleton).
-      trackedItems = collapseSegmentProcessItems(trackedItems, item, attempts);
+  // Tracked items are the source of truth: append the event, never prune here. Bounding
+  // happens below through the selection rule, so the incremental path cannot drop content
+  // the full rebuild (buildThreadRunProjection -> trimProjectionForFeed) would keep.
+  const trackedState: FeedTimelineStageState = {
+    items: excludeAgentScopedFeedTimelineItems(record.patchState.trackedItems),
+    finalizedSdkBlocks: record.patchState.finalizedSdkBlocks,
+  };
+  const staged = stageFeedTimelineEvent(trackedState, event);
+  let structureChanged =
+    staged !== trackedState || trackedState.items.length !== record.patchState.trackedItems.length;
+  let nextAgents = agents;
+
+  if (!structureChanged && shouldPatchAgentTimelineForFeedSkeleton(event)) {
+    const patchedAgents = upsertAgentScopedItemOntoSkeletonAgents(agents, event);
+    if (patchedAgents !== agents) {
+      nextAgents = patchedAgents;
+      structureChanged = true;
     }
+  }
+
+  // A terminal transition (its own event, or an attempt status flip observed from the
+  // store) changes what the selection keeps, so re-derive even without new items.
+  if (!structureChanged && (isFeedSkeletonTerminalEventType(event.eventType) || attemptBecameTerminal)) {
     structureChanged = true;
-  } else if (isFeedSkeletonTerminalEventType(event.eventType) || attemptBecameTerminal) {
-    trackedItems = reconcileTrackedItemsAfterAttemptChange(trackedItems, attempts);
-    structureChanged = true;
-  } else {
-    if (shouldPatchAgentTimelineForFeedSkeleton(event)) {
-      const nextAgents = upsertAgentScopedItemOntoSkeletonAgents(agents, event);
-      if (nextAgents !== agents) {
-        agents = nextAgents;
-        structureChanged = true;
-      }
-    }
-    if (!structureChanged && !isMetricsOnlyThreadRunEvent(event)) {
-      return record.maxEventSequence === context.maxEventSequence
-        ? record
-        : {
-            ...record,
-            maxEventSequence: context.maxEventSequence,
-          };
-    }
   }
 
   if (!structureChanged) {
-    return {
-      ...record,
-      maxEventSequence: context.maxEventSequence,
-    };
+    return record.maxEventSequence === context.maxEventSequence
+      ? record
+      : {
+          ...record,
+          maxEventSequence: context.maxEventSequence,
+        };
   }
 
-  const skeletonTimeline = selectSkeletonTimelineItems(trackedItems, attempts).map((item) => ({
-    ...item,
-  }));
-  trackedItems = reconcileTrackedItemsAfterAttemptChange(
-    mergeTrackedItemsWithSkeleton(trackedItems, skeletonTimeline),
-    attempts,
-  );
+  // One selection pass feeds both the wire timeline and the tracked set bound.
+  const timeline = selectSkeletonTimelineItems(staged.items, attempts).map((item) => ({ ...item }));
+  return {
+    historyRevision: context.historyRevision,
+    maxEventSequence: context.maxEventSequence,
+    snapshot: buildPatchedFeedSkeletonSnapshot(record, {
+      attempts,
+      agents: nextAgents,
+      timeline,
+      historyRevision: context.historyRevision,
+      maxEventSequence: context.maxEventSequence,
+    }),
+    patchState: {
+      trackedItems: reconcileFeedSkeletonTrackedItems(staged.items, attempts),
+      finalizedSdkBlocks: [...staged.finalizedSdkBlocks],
+      rulesVersion: FEED_SKELETON_RULES_VERSION,
+    },
+  };
+}
 
-  const nextSnapshot: ThreadRunProjectionSnapshot = {
+function buildPatchedFeedSkeletonSnapshot(
+  record: ThreadFeedSkeletonRecord,
+  input: {
+    attempts: readonly ThreadRunProjectionAttempt[];
+    agents: readonly ThreadRunProjectionAgent[];
+    timeline: readonly ThreadRunProjectionTimelineItem[];
+    historyRevision: number;
+    maxEventSequence: number;
+  },
+): ThreadRunProjectionSnapshot {
+  const currentAttemptId =
+    input.attempts.find((attempt) => attempt.status === "running")?.attemptId ??
+    input.attempts.at(-1)?.attemptId;
+  return {
     ...record.snapshot,
     thread: {
       ...record.snapshot.thread,
       generatedAt: new Date().toISOString(),
-      ...((): { currentAttemptId?: string } => {
-        const currentAttemptId =
-          attempts.find((attempt) => attempt.status === "running")?.attemptId ?? attempts.at(-1)?.attemptId;
-        return currentAttemptId ? { currentAttemptId } : {};
-      })(),
+      ...(currentAttemptId ? { currentAttemptId } : {}),
     },
-    attempts: [...attempts],
-    agents,
-    timeline: skeletonTimeline,
-    sourceEventCount: Math.max(record.snapshot.sourceEventCount, context.maxEventSequence),
-    historyRevision: context.historyRevision,
-  };
-
-  return {
-    historyRevision: context.historyRevision,
-    maxEventSequence: context.maxEventSequence,
-    snapshot: nextSnapshot,
-    patchState: { trackedItems },
+    attempts: [...input.attempts],
+    agents: [...input.agents],
+    timeline: [...input.timeline],
+    sourceEventCount: Math.max(record.snapshot.sourceEventCount, input.maxEventSequence),
+    historyRevision: input.historyRevision,
   };
 }
 
@@ -282,6 +250,15 @@ function latestSkeletonAgentActivity(
   return undefined;
 }
 
+function upsertTimelineItem(
+  items: readonly ThreadRunProjectionTimelineItem[],
+  next: ThreadRunProjectionTimelineItem,
+): ThreadRunProjectionTimelineItem[] {
+  const merged = new Map(items.map((item) => [item.id, item]));
+  merged.set(next.id, next);
+  return [...merged.values()].sort(compareFeedSkeletonTimelineItems);
+}
+
 function upsertAgentScopedItemOntoSkeletonAgents(
   agents: readonly ThreadRunProjectionAgent[],
   event: ThreadRunEvent,
@@ -299,7 +276,7 @@ function upsertAgentScopedItemOntoSkeletonAgents(
     return agents as ThreadRunProjectionAgent[];
   }
   const item = trimTimelineItemForFeed(eventToTimelineItem(event));
-  const timeline = upsertTrackedItem(agent.timeline, item);
+  const timeline = upsertTimelineItem(agent.timeline, item);
   const capped =
     timeline.length > FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS
       ? timeline.slice(-FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS)
@@ -313,139 +290,17 @@ function upsertAgentScopedItemOntoSkeletonAgents(
   return agents.map((candidate, candidateIndex) => (candidateIndex === index ? nextAgent : candidate));
 }
 
-function upsertTrackedItem(
-  items: ThreadRunProjectionTimelineItem[],
-  next: ThreadRunProjectionTimelineItem,
-): ThreadRunProjectionTimelineItem[] {
-  const merged = new Map(items.map((item) => [item.id, item]));
-  merged.set(next.id, next);
-  return [...merged.values()].sort(compareFeedSkeletonTimelineItems);
-}
-
-function collapseSegmentProcessItems(
-  items: readonly ThreadRunProjectionTimelineItem[],
-  finalItem: ThreadRunProjectionTimelineItem,
-  attempts: readonly ThreadRunProjectionAttempt[],
-): ThreadRunProjectionTimelineItem[] {
-  const boundaries = listFeedSkeletonUserBoundaries(items);
-  const resolveAttempt = createFeedSkeletonAttemptResolver(attempts);
-  const segmentKey = buildFeedSkeletonSegmentKey(finalItem, attempts, boundaries, resolveAttempt);
-  const kept = items.filter((item) => {
-    if (isSkeletonUserPromptItem(item)) {
-      return true;
-    }
-    if (item.id === finalItem.id) {
-      return true;
-    }
-    if (buildFeedSkeletonSegmentKey(item, attempts, boundaries, resolveAttempt) !== segmentKey) {
-      return true;
-    }
-    // A later tool.failed / api.error must not wipe earlier message.final bodies;
-    // selectSkeleton/reconcile still picks the authoritative segment final.
-    if (isSkeletonTurnFinalItem(item)) {
-      return true;
-    }
-    return false;
-  });
-  return upsertTrackedItem(kept, finalItem);
-}
-
-function isRunningNarrativeFinalFields(
-  eventType: string,
-  scope: string | undefined,
-  role: string | undefined,
-  text: string,
-): boolean {
-  if (eventType !== "message.final" || scope === "agent") {
-    return false;
-  }
-  const normalizedRole = role?.trim();
-  if (normalizedRole === "user" || normalizedRole === "tool" || normalizedRole === "thinking") {
-    return false;
-  }
-  return text.trim().length > 0;
-}
-
-export interface FeedSkeletonRunningNarrativeIntegrityInput {
-  attempts: readonly ThreadRunProjectionAttempt[];
-  timeline: readonly ThreadRunProjectionTimelineItem[];
-  events: readonly ThreadRunEvent[];
-}
-
 /**
- * Detects skeletons that lost assistant `message.final` rows of a still-running attempt
- * although the event log still has them — the fingerprint of the pre-29a56867
- * collapse-while-running bug (or of any regression in the running-attempt guard).
- *
- * Only running attempts are inspected: finished segments are compacted to their single
- * authoritative final by design, so a count mismatch there is expected, not damage.
- * Counting (instead of id matching) is enough because the event→skeleton direction is
- * append-only for running attempts, and it avoids projecting every event.
+ * Bounds the tracked set to what the selection can still need: the selected items, the user
+ * boundaries, and the whole trail of attempts that are still running. Also used when only
+ * attempt states changed (a run finished without its own event), where re-selecting the
+ * tracked items is enough and no event log read is required.
  */
-export function shouldRebuildFeedSkeletonForMissingRunningNarratives(
-  input: FeedSkeletonRunningNarrativeIntegrityInput,
-): boolean {
-  const runningAttemptIds = new Set(
-    input.attempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
-  );
-  if (runningAttemptIds.size === 0) {
-    return false;
-  }
-  // Same resolver as selectSkeletonTimelineItems / the patch collapse: events without
-  // runAttemptId (api.error) still belong to the attempt that was running then.
-  const resolveAttempt = createFeedSkeletonAttemptResolver(input.attempts);
-  const isOnRunningAttempt = (target: {
-    at: string;
-    runAttemptId?: string | undefined;
-  }): boolean => {
-    const attempt = resolveAttempt(target);
-    return attempt !== undefined && runningAttemptIds.has(attempt.attemptId);
-  };
-
-  let skeletonFinalCount = 0;
-  for (const item of input.timeline) {
-    if (!isRunningNarrativeFinalFields(item.eventType, item.scope, item.role, item.text)) {
-      continue;
-    }
-    if (isOnRunningAttempt(item)) {
-      skeletonFinalCount += 1;
-    }
-  }
-
-  let eventFinalCount = 0;
-  for (const event of input.events) {
-    if (!isRunningNarrativeFinalFields(event.eventType, event.scope, event.role, event.message)) {
-      continue;
-    }
-    if (isOnRunningAttempt({ at: event.observedAt, runAttemptId: event.runAttemptId })) {
-      eventFinalCount += 1;
-    }
-  }
-
-  return eventFinalCount > skeletonFinalCount;
-}
-
-function mergeTrackedItemsWithSkeleton(
-  trackedItems: readonly ThreadRunProjectionTimelineItem[],
-  skeletonTimeline: readonly ThreadRunProjectionTimelineItem[],
-): ThreadRunProjectionTimelineItem[] {
-  const merged = new Map<string, ThreadRunProjectionTimelineItem>();
-  for (const item of trackedItems) {
-    merged.set(item.id, item);
-  }
-  for (const item of skeletonTimeline) {
-    merged.set(item.id, item);
-  }
-  return [...merged.values()].sort(compareFeedSkeletonTimelineItems);
-}
-
-function reconcileTrackedItemsAfterAttemptChange(
+export function reconcileFeedSkeletonTrackedItems(
   items: readonly ThreadRunProjectionTimelineItem[],
   attempts: readonly ThreadRunProjectionAttempt[],
 ): ThreadRunProjectionTimelineItem[] {
-  const runningAttemptIds = new Set(
-    attempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
-  );
+  const isOnRunningAttempt = createFeedSkeletonRunningAttemptMatcher(attempts);
   const skeletonTimeline = selectSkeletonTimelineItems(items, attempts);
   const skeletonIds = new Set(skeletonTimeline.map((item) => item.id));
   const kept = new Map<string, ThreadRunProjectionTimelineItem>();
@@ -454,12 +309,7 @@ function reconcileTrackedItemsAfterAttemptChange(
       kept.set(item.id, item);
       continue;
     }
-    if (skeletonIds.has(item.id)) {
-      kept.set(item.id, item);
-      continue;
-    }
-    const attemptId = item.runAttemptId?.trim();
-    if (attemptId && runningAttemptIds.has(attemptId)) {
+    if (skeletonIds.has(item.id) || isOnRunningAttempt(item)) {
       kept.set(item.id, item);
     }
   }

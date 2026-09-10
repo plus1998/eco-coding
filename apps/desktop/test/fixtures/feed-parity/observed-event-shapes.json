@@ -1,0 +1,3503 @@
+{
+ "generatedFrom": "local dev + prod thread_run_events (shape keys only, no text/ids)",
+ "generatedBy": "apps/desktop/scripts/feed-event-shapes.mjs",
+ "threadCount": 138,
+ "threadsWithOrphanAgentRows": 28,
+ "attemptStatusSets": [
+  "cancelled",
+  "cancelled+completed",
+  "cancelled+completed+failed",
+  "cancelled+completed+running",
+  "cancelled+failed",
+  "completed",
+  "completed+failed",
+  "failed"
+ ],
+ "maxEventsPerThread": 2669,
+ "crossScopeStreamIdentities": 0,
+ "shapes": [
+  {
+   "eventType": "tool.completed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.completed"
+   },
+   "count": 3321,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 3278,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.started",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.started"
+   },
+   "count": 3129,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 1977,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.completed",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.completed"
+   },
+   "count": 1962,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.completed"
+   },
+   "count": 1955,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 1689,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 1682,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,tool:object,turnId:string",
+    "liveType": "tool.started"
+   },
+   "count": 1030,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.completed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,tool:object,turnId:string",
+    "liveType": "tool.completed"
+   },
+   "count": 977,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.completed"
+   },
+   "count": 930,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "agent",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 819,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,reasoningDisplay:string,thinkingStartedAt:string,turnId:string"
+   },
+   "count": 714,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,reasoningDisplay:string,thinkingDurationMs:number,thinkingStartedAt:string,turnId:string"
+   },
+   "count": 707,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 692,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 556,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "agent",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 534,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.running"
+   },
+   "count": 457,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,reasoningDisplay:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 446,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,reasoningDisplay:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 437,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 407,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 406,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "assistant",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,turnId:string"
+   },
+   "count": 353,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "assistant",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,turnId:string"
+   },
+   "count": 353,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 321,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 289,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 233,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.failed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.failed"
+   },
+   "count": 186,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,rewindTarget:object",
+    "liveType": "thread.user_prompt"
+   },
+   "count": 178,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": true,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,thinkingDurationMs:number,thinkingStartedAt:string,turnId:string"
+   },
+   "count": 174,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "agent",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 168,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 165,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 162,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 151,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,tool:object",
+    "liveType": "todo.updated"
+   },
+   "count": 150,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,providerRequestId:string",
+    "liveType": "request.completed"
+   },
+   "count": 146,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,reasoningDisplay:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 130,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.completed"
+   },
+   "count": 130,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,reasoningDisplay:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 129,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "agent",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,reasoningDisplay:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 125,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,rewindTarget:object",
+    "liveType": "thread.user_prompt"
+   },
+   "count": 124,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "agent",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,reasoningDisplay:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 124,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,thinkingStartedAt:string,turnId:string"
+   },
+   "count": 103,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,thinkingDurationMs:number,thinkingStartedAt:string,turnId:string"
+   },
+   "count": 103,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": true,
+   "streamState": "placeholder",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 98,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 88,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.started",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,turnId:string"
+   },
+   "count": 87,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 82,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskToolUseId:string,sdkTaskUsage:object,tool:object",
+    "liveType": "todo.updated"
+   },
+   "count": 82,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,parentToolUseId:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 82,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 80,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 79,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "appServerTokenUsage:object,codexMethod:string,codexThreadId:string,status:string,turnId:string"
+   },
+   "count": 77,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 76,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.completed"
+   },
+   "count": 71,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 65,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.started"
+   },
+   "count": 65,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskToolUseId:string,sdkTaskUsage:object,tool:object",
+    "liveType": "todo.updated"
+   },
+   "count": 56,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,parentToolUseId:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 56,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.started",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.started"
+   },
+   "count": 55,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 55,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string,thinkingDurationMs:number,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 55,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "bashApproval:object,liveType:string,tool:object",
+    "liveType": "bash_approval.requested"
+   },
+   "count": 54,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.started",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.started"
+   },
+   "count": 54,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.completed"
+   },
+   "count": 54,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "bashApproval:object,liveType:string,tool:object",
+    "liveType": "bash_approval.approved"
+   },
+   "count": 53,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.failed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,tool:object,turnId:string",
+    "liveType": "tool.failed"
+   },
+   "count": 52,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "api.error",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,apiError:object,liveType:string,logicalRequestId:string",
+    "liveType": "thread.api_error"
+   },
+   "count": 46,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.runtime_config_updated"
+   },
+   "count": 46,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,providerRequestId:string",
+    "liveType": "request.completed"
+   },
+   "count": 44,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.running"
+   },
+   "count": 44,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.failed",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.failed"
+   },
+   "count": 44,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,turnId:string"
+   },
+   "count": 43,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,thinkingDurationMs:number,turnId:string"
+   },
+   "count": 43,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.completed"
+   },
+   "count": 43,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": true,
+   "streamState": "placeholder",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 42,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": true,
+   "streamState": "placeholder",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 40,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.user_prompt"
+   },
+   "count": 38,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.failed",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "tool.failed"
+   },
+   "count": 37,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.idle"
+   },
+   "count": 34,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,liveType:string",
+    "liveType": "thread.blocked"
+   },
+   "count": 30,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "agent",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskStatus:string,sdkTaskToolUseId:string",
+    "liveType": "todo.updated"
+   },
+   "count": 26,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 25,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 25,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "tester",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskToolUseId:string,sdkTaskUsage:object,tool:object",
+    "liveType": "todo.updated"
+   },
+   "count": 24,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "tester",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 24,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.idle"
+   },
+   "count": 22,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.user_prompt"
+   },
+   "count": 21,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 16,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "clarification.requested"
+   },
+   "count": 16,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "clarification.answered"
+   },
+   "count": 16,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "billing.cache_hit_dropped",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,promptCacheEpisodeId:string,promptCacheHit:object",
+    "liveType": "billing.cache_hit_dropped"
+   },
+   "count": 14,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.route_changed"
+   },
+   "count": 12,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.failed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "tool.failed"
+   },
+   "count": 11,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,promptImagePreviews:array,rewindTarget:object",
+    "liveType": "thread.user_prompt"
+   },
+   "count": 10,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.cancelled",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.cancelled"
+   },
+   "count": 10,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 10,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.final",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 10,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "context.compaction.started",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "compaction:object,liveType:string",
+    "liveType": "context.compaction.started"
+   },
+   "count": 6,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "agent.started",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "delegationPrompt:string,lifecycle:string,missionKey:string"
+   },
+   "count": 6,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.started",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 6,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "count": 6,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "context.compaction.completed",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "compaction:object,liveType:string",
+    "liveType": "context.compaction.completed"
+   },
+   "count": 5,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "request.failed",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,status:string,turnId:string"
+   },
+   "count": 5,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "api.error",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "apiError:object,codexMethod:string,codexThreadId:string,liveType:string,status:string,turnId:string",
+    "liveType": "thread.api_error"
+   },
+   "count": 5,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.completed",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.completed"
+   },
+   "count": 5,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.runtime_config_updated"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.started",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskStatus:string,sdkTaskToolUseId:string,sdkTaskUsage:object",
+    "liveType": "todo.updated"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.cancelled",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.cancelled"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.stopped",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 5,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,mcpInput:object,tool:object,turnId:string,url:string",
+    "liveType": "tool.started"
+   },
+   "count": 4,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.completed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,mcpInput:object,tool:object,turnId:string,url:string",
+    "liveType": "tool.completed"
+   },
+   "count": 4,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,mcpInput:object,tool:object,turnId:string",
+    "liveType": "tool.started"
+   },
+   "count": 4,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.stopped",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "delegationSummary:string,lifecycle:string,missionKey:string"
+   },
+   "count": 4,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "imageCount:number,originalImagesInMainContext:boolean,visionAnalysis:boolean"
+   },
+   "count": 4,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,promptImagePreviews:array,rewindTarget:object",
+    "liveType": "thread.user_prompt"
+   },
+   "count": 4,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "count": 4,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.stopped",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 4,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "api.error",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "apiError:object,codexMethod:string,codexThreadId:string,liveType:string,status:string,turnId:string",
+    "liveType": "thread.api_error"
+   },
+   "count": 4,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.stopped",
+   "scope": "agent",
+   "role": "coder",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 4,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.cancelled",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.cancelled"
+   },
+   "count": 4,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 3,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "tool.completed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,mcpInput:object,tool:object,turnId:string",
+    "liveType": "tool.completed"
+   },
+   "count": 3,
+   "databases": [
+    "dev",
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "agent",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.failed",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,errorMessage:string,status:string,turnId:string"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "context.compaction.started",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,turnId:string"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "context.compaction.completed",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,logicalEntityId:string,turnId:string"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.started",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 3,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 2,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "api.error",
+   "scope": "both",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,agentId:string,apiError:object,liveType:string,logicalRequestId:string,providerRequestId:string",
+    "liveType": "thread.api_error"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.failed",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,providerRequestId:string",
+    "liveType": "request.failed"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.retry_scheduled",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,liveType:string,retry:object",
+    "liveType": "request.retry_scheduled"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.awaiting_plan"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.awaiting_plan"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "context.cache_config_drift",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,promptCache:object,promptCacheEpisodeId:string",
+    "liveType": "context.cache_config_drift"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.failed"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.started",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "delegationPrompt:string,delegationSummary:string,lifecycle:string"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.delta",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "streaming",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": true,
+   "streamState": "placeholder",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string",
+    "liveType": "message.delta"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskStatus:string,sdkTaskToolUseId:string,sdkTaskUsage:object",
+    "liveType": "todo.updated"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.cancelled",
+   "scope": "agent",
+   "role": "explore",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.cancelled"
+   },
+   "count": 2,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "acpAutoRetry:object,activityOrigin:string,liveType:string",
+    "liveType": "thread.event"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "api.error",
+   "scope": "both",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "activityOrigin:string,agentId:string,apiError:object,liveType:string,logicalRequestId:string",
+    "liveType": "thread.api_error"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "request.failed",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.failed"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "tool.failed",
+   "scope": "main",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,mcpInput:object,tool:object,turnId:string",
+    "liveType": "tool.failed"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "thinking.delta",
+   "scope": "main",
+   "role": "thinking",
+   "textEmpty": true,
+   "streamState": "placeholder",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,sdkStreamBlockKey:string,thinkingStartedAt:string",
+    "liveType": "message.delta"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "clarification.requested"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "clarification.answered"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "bashApproval:object,liveType:string,tool:object",
+    "liveType": "bash_approval.denied"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "request.cancelled",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.cancelled"
+   },
+   "count": 1,
+   "databases": [
+    "dev"
+   ]
+  },
+  {
+   "eventType": "agent.abandoned",
+   "scope": "agent",
+   "role": "vision",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string,missionKey:string"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "planner",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "plan_approval.requested"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": false,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.plan_cleared"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "main",
+   "role": "system",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "thread.plan_cleared"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.failed",
+   "scope": "main",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "appServerTokenUsage:object,codexMethod:string,codexThreadId:string,status:string,turnId:string"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "main",
+   "role": "user",
+   "textEmpty": false,
+   "streamState": "finalized",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "codexMethod:string,codexThreadId:string,itemId:string,itemType:string,liveType:string,logicalEntityId:string,rewindTarget:object,turnId:string",
+    "liveType": "message.user"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskToolUseId:string,sdkTaskUsage:object,tool:object",
+    "liveType": "todo.updated"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "main",
+   "role": "tester",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": false,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,sdkMessageId:string,tool:object",
+    "liveType": "tool.started"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "agent.started",
+   "scope": "agent",
+   "role": "tester",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "lifecycle:string"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "tester",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "thread.status",
+   "scope": "agent",
+   "role": "tester",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": true,
+   "metadata": {
+    "keys": "liveType:string,parent_tool_use_id:string,sdkTaskId:string,sdkTaskKind:string,sdkTaskStatus:string,sdkTaskToolUseId:string,sdkTaskUsage:object",
+    "liveType": "todo.updated"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "request.cancelled",
+   "scope": "agent",
+   "role": "tester",
+   "textEmpty": true,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": true,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string",
+    "liveType": "request.cancelled"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "message.final",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "bashApproval:object,liveType:string,tool:object",
+    "liveType": "bash_approval.rejected"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.started",
+   "scope": "agent",
+   "role": "general-purpose",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": false,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "todo.updated"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  },
+  {
+   "eventType": "tool.failed",
+   "scope": "agent",
+   "role": "tool",
+   "textEmpty": false,
+   "streamState": "none",
+   "hasStreamKey": true,
+   "hasRunAttemptId": true,
+   "hasRequestId": false,
+   "hasAgentId": true,
+   "hasParentToolUseId": false,
+   "metadata": {
+    "keys": "liveType:string,tool:object",
+    "liveType": "tool.failed"
+   },
+   "count": 1,
+   "databases": [
+    "prod"
+   ]
+  }
+ ]
+}
