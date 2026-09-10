@@ -182,4 +182,30 @@ void main() {
     expect(collapsed.single.id, 'stage-2');
     expect(collapsed.single.metadata?['reasoningSummarySlotKey'], 'rs_1');
   });
+
+  test('presentThinkingAsEphemeralSummaryTips stamps raw thinking as summary', () {
+    final stamped = presentThinkingAsEphemeralSummaryTips([
+      _item(
+        id: 'raw',
+        eventType: 'thinking.final',
+        text: '先定位入口',
+        metadata: const {'reasoningDisplay': 'raw'},
+      ),
+      _item(
+        id: 'summary',
+        eventType: 'thinking.delta',
+        text: '已是 summary',
+        metadata: const {'reasoningDisplay': 'summary'},
+      ),
+      _item(
+        id: 'message',
+        eventType: 'message.final',
+        text: '结论',
+      ),
+    ]);
+
+    expect(readReasoningDisplay(stamped[0].metadata), 'summary');
+    expect(readReasoningDisplay(stamped[1].metadata), 'summary');
+    expect(stamped[2].eventType, 'message.final');
+  });
 }

@@ -24,7 +24,7 @@ const IMAGE_VIEW_READ_ERRORS: Record<ImageViewReadFailureCode, string> = {
   symbolic_link: "为避免读取目标不明确，图片预览不接受符号链接。",
   not_file: "该路径不是常规文件。",
   too_large: "图片超过 20 MB，无法在 Feed 中预览。",
-  unsupported_type: "文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。",
+  unsupported_type: "文件内容不是受支持的 PNG、JPEG、GIF、WebP、SVG、ICO 或 BMP 图片。",
 };
 
 export interface ImageViewMcpInjection {
@@ -238,7 +238,14 @@ export class ImageViewMcpGateway {
       ...(question ? { question } : fallbackPrompt ? { question: fallbackPrompt } : {}),
       ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
     });
-    return { content: [{ type: "text", text: report }] };
+    const { maybeSpillMcpTextContent } = await import("./mcp-tool-result-spill.js");
+    const spilled = await maybeSpillMcpTextContent({
+      text: report,
+      serverName: ECO_IMAGE_VIEW_MCP_SERVER,
+      toolName: ECO_IMAGE_VIEW_TOOL,
+      threadId: claim.threadId,
+    });
+    return { content: [{ type: "text", text: spilled.text }] };
   }
 }
 

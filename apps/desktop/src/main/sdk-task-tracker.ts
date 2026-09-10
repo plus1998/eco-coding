@@ -355,6 +355,12 @@ export function createSdkTaskTracker(
 
   return {
     handleTaskProgress(payload) {
+      if (payload.ambient === true) {
+        if (payload.sdkKind === "task_notification") {
+          applyTaskNotification(payload);
+        }
+        return;
+      }
       if (payload.sdkKind === "task_progress") {
         applyTaskProgress(payload);
         return;

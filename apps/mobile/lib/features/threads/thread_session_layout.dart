@@ -16,6 +16,9 @@ typedef ThreadSessionFeedBuilder =
       double controlsBottomInset,
     );
 
+typedef ThreadSessionOverlayBuilder =
+    Widget Function(double controlsBottomInset);
+
 /// Overlay shell: feed fills the viewport; only the main composer is measured as
 /// hard occlusion. Satellites above it remain transparent floating content.
 ///
@@ -30,12 +33,15 @@ class ThreadSessionConversationLayout extends StatefulWidget {
     required this.feedBuilder,
     required this.composer,
     this.floatingComposer,
+    this.floatingOverlayBuilder,
     this.foreground,
   });
 
   final ThreadSessionFeedBuilder feedBuilder;
   final Widget composer;
   final Widget? floatingComposer;
+  /// Non-occluding overlay (e.g. image display floating gallery).
+  final ThreadSessionOverlayBuilder? floatingOverlayBuilder;
   final Widget? foreground;
 
   @override
@@ -114,6 +120,8 @@ class _ThreadSessionConversationLayoutState
             ],
           ),
         ),
+        if (widget.floatingOverlayBuilder != null)
+          widget.floatingOverlayBuilder!(controlsBottomInset),
         if (widget.foreground != null)
           Positioned.fill(child: widget.foreground!),
       ],

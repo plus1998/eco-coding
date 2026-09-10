@@ -7,6 +7,7 @@ import {
   getPendingBashApprovalForThread,
   listPendingBashApprovalsForThread,
   registerPendingBashApproval,
+  resolveBashApprovalIdempotent,
   resolvePendingBashApproval,
 } from "../src/main/bash-approval-bridge";
 
@@ -42,6 +43,33 @@ test("registers and resolves pending Bash approvals", async () => {
   expect(resolvePendingBashApproval("tool_bash_1", { decision: "approved" })).toBe(true);
   await expect(pending).resolves.toEqual({ decision: "approved" });
   expect(getPendingBashApprovalForThread("thread_1")).toBeUndefined();
+});
+
+test("idempotent resolve succeeds twice without throwing (PC/mobile race)", async () => {
+  const pending = registerPendingBashApproval("thread_race", {
+    toolUseId: "tool_race_1",
+    threadId: "thread_race",
+    command: "echo race",
+    cwd: "/repo",
+    reason: "race",
+    riskScore: 5,
+    riskLevel: "low",
+    agentId: "planner:race",
+  });
+
+  const first = resolveBashApprovalIdempotent("tool_race_1", { decision: "approved" });
+  expect(first).toEqual({
+    ok: true,
+    alreadyResolved: false,
+    request: expect.objectContaining({ toolUseId: "tool_race_1", command: "echo race" }),
+  });
+  await expect(pending).resolves.toEqual({ decision: "approved" });
+
+  const second = resolveBashApprovalIdempotent("tool_race_1", { decision: "approved" });
+  expect(second).toEqual({ ok: true, alreadyResolved: true });
+
+  const neverExisted = resolveBashApprovalIdempotent("tool_ghost", { decision: "denied" });
+  expect(neverExisted).toEqual({ ok: true, alreadyResolved: true });
 });
 
 test("cancels pending Bash approvals for a thread", async () => {

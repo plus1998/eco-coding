@@ -4,10 +4,12 @@ import { useTranslation } from "react-i18next";
 import {
   type MainAgentConfigResource,
   type MainAgentPromptResource,
+  type OrchestrationSelection,
   resolveAgentTemplateCatalog,
   type SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
 import type { McpServerConfigView, ModelSettingsSnapshot } from "../shared/ipc";
+import { hasCompleteOrchestrationSelection } from "../shared/thread-runtime-config";
 import {
   type AgentCompositionEditorMode,
   type AgentCompositionEditorScope,
@@ -28,6 +30,7 @@ import {
   mainAgentPromptToForm,
   subagentOrchestrationToForm,
 } from "./agent-resource-form";
+import { UseMainAgentConfigAsDefaultPromptDialog } from "./UseMainAgentConfigAsDefaultPromptDialog";
 
 interface AgentCompositionResourcesSectionProps {
   settings: ModelSettingsSnapshot;
@@ -40,6 +43,10 @@ interface AgentCompositionResourcesSectionProps {
   /** When set, open the main-config create dialog with this candidate model preselected. */
   pendingCreateMainConfig?: PendingMainAgentConfigCreateSeed | undefined;
   onPendingCreateMainConfigConsumed?: (() => void) | undefined;
+  /** Current global default runtime orchestration; used to decide whether to prompt. */
+  defaultOrchestrationSelection?: OrchestrationSelection | undefined;
+  /** Apply a newly created main agent config as the global default runtime config. */
+  onUseMainAgentConfigAsDefault?: ((mainAgentConfigId: string) => void | Promise<void>) | undefined;
 }
 
 export interface PendingMainAgentConfigCreateSeed {
@@ -64,9 +71,12 @@ export function AgentCompositionResourcesSection({
   onErrorMessage,
   pendingCreateMainConfig,
   onPendingCreateMainConfigConsumed,
+  defaultOrchestrationSelection,
+  onUseMainAgentConfigAsDefault,
 }: AgentCompositionResourcesSectionProps) {
   const [error, setError] = useState("");
   const [editorSession, setEditorSession] = useState<CompositionEditorSession>();
+  const [useAsDefaultPromptConfigId, setUseAsDefaultPromptConfigId] = useState<string>();
   const { t } = useTranslation();
 
   const clearError = useCallback(() => {
@@ -188,12 +198,19 @@ export function AgentCompositionResourcesSection({
     if (!editorSession) {
       return;
     }
-    const { scope, form } = editorSession;
+    const { scope, mode, form } = editorSession;
     await handleAsyncOperation(async () => {
       if (scope === "mainConfig") {
         const existing = mainAgentConfigs.find((entry) => entry.id === form.id);
         const config = buildMainAgentConfigFromForm(form, existing ? { existing } : {});
-        await window.eco!.saveMainAgentConfig(config);
+        const saved = await window.eco!.saveMainAgentConfig(config);
+        if (
+          mode === "create" &&
+          onUseMainAgentConfigAsDefault &&
+          !hasCompleteOrchestrationSelection(defaultOrchestrationSelection)
+        ) {
+          setUseAsDefaultPromptConfigId(saved.id);
+        }
       } else if (scope === "prompt") {
         const existing = mainAgentPrompts.find((entry) => entry.id === form.id);
         const prompt = buildMainAgentPromptFromForm(form, existing ? { existing } : {});
@@ -209,13 +226,36 @@ export function AgentCompositionResourcesSection({
       setEditorSession(undefined);
     });
   }, [
+    defaultOrchestrationSelection,
     editorSession,
     handleAsyncOperation,
     mainAgentConfigs,
     mainAgentPrompts,
+    onUseMainAgentConfigAsDefault,
     subagentOrchestrations,
     templates,
   ]);
+
+  const dismissUseAsDefaultPrompt = useCallback(() => {
+    setUseAsDefaultPromptConfigId(undefined);
+  }, []);
+
+  const confirmUseAsDefaultPrompt = useCallback(() => {
+    if (!useAsDefaultPromptConfigId || !onUseMainAgentConfigAsDefault) {
+      setUseAsDefaultPromptConfigId(undefined);
+      return;
+    }
+    const configId = useAsDefaultPromptConfigId;
+    setUseAsDefaultPromptConfigId(undefined);
+    void Promise.resolve(onUseMainAgentConfigAsDefault(configId)).catch((caught) => {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      if (onErrorMessage) {
+        onErrorMessage(message);
+      } else {
+        setError(message);
+      }
+    });
+  }, [onErrorMessage, onUseMainAgentConfigAsDefault, useAsDefaultPromptConfigId]);
 
   const handleCopyMainAgent = useCallback(
     async (config: MainAgentConfigResource) => {
@@ -492,6 +532,13 @@ export function AgentCompositionResourcesSection({
           busy={busy}
           onClose={() => setEditorSession(undefined)}
           onSave={() => void saveEditorSession()}
+        />
+      ) : null}
+
+      {useAsDefaultPromptConfigId ? (
+        <UseMainAgentConfigAsDefaultPromptDialog
+          onDismiss={dismissUseAsDefaultPrompt}
+          onConfirm={confirmUseAsDefaultPrompt}
         />
       ) : null}
     </div>

@@ -2795,3 +2795,33 @@ test("dispatch invokes onTokenUsageUpdated for thread/tokenUsage/updated", () =>
   expect(resolved.contextOccupied).toBe(42_000);
   expect(resolved.context.segments).toEqual([]);
 });
+
+test("dispatch maps model safety buffering and auth recovery to thread.status", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("model/safetyBuffering/updated", {
+      threadId: CODEX_THREAD,
+      useCases: ["cyber"],
+      reasons: ["user_risk"],
+    });
+    adapter.dispatch("modelProvider/authRecoveryStarted", {
+      threadId: CODEX_THREAD,
+      provider: "bedrock",
+    });
+    adapter.dispatch("modelProvider/authRecoveryCompleted", {
+      threadId: CODEX_THREAD,
+      provider: "bedrock",
+    });
+  });
+
+  expect(events.map((event) => event.eventType)).toEqual([
+    "thread.status",
+    "thread.status",
+    "thread.status",
+  ]);
+  expect(events[0]?.metadata?.liveType).toBe("codex.safety_buffering");
+  expect(events[0]?.message).toContain("cyber");
+  expect(events[1]?.metadata?.liveType).toBe("codex.auth_recovery");
+  expect(events[1]?.message).toContain("Refreshing credentials");
+  expect(events[2]?.message).toContain("Credential refresh finished");
+});

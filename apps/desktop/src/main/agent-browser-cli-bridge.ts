@@ -354,7 +354,41 @@ export async function callAgentBrowserToolViaCli(
       }
       settled = true;
       clearTimeout(timer);
-      resolve(result);
+      void (async () => {
+        const textEntry = Array.isArray(result.content)
+          ? result.content.find(
+              (entry) =>
+                entry &&
+                typeof entry === "object" &&
+                "type" in entry &&
+                entry.type === "text" &&
+                typeof (entry as { text?: unknown }).text === "string",
+            )
+          : undefined;
+        const rawText =
+          textEntry && typeof textEntry === "object" && "text" in textEntry
+            ? String((textEntry as { text: string }).text)
+            : "";
+        if (!result.isError && rawText.length > 0) {
+          try {
+            const { maybeSpillMcpTextContent } = await import("./mcp-tool-result-spill.js");
+            const spilled = await maybeSpillMcpTextContent({
+              text: rawText,
+              serverName: "eco_agent_browser",
+              toolName: input.toolName,
+              threadId: input.sessionKey,
+            });
+            resolve({
+              ...result,
+              content: [{ type: "text", text: spilled.text }],
+            });
+            return;
+          } catch {
+            // Fall through to original result if spill fails.
+          }
+        }
+        resolve(result);
+      })();
     };
 
     const timer = setTimeout(() => {

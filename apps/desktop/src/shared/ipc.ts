@@ -473,7 +473,7 @@ export type ImageViewReadResult =
   | {
       ok: true;
       dataBase64: string;
-      mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+      mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml" | "image/x-icon" | "image/bmp";
       path: string;
       fileName: string;
       bytes: number;
@@ -1863,6 +1863,11 @@ export interface ClarificationRequest {
   toolUseId: string;
   threadId: string;
   questions: ClarificationQuestion[];
+  /**
+   * Codex 0.153+ async user input: turn continues while Eco shows the panel.
+   * Omitted / "sync" = blocking `item/tool/requestUserInput`.
+   */
+  delivery?: "sync" | "async";
 }
 
 /** selections[i] = chosen option labels for question i */
@@ -1920,6 +1925,12 @@ export interface BashApprovalResolvePayload {
   decision: BashApprovalDecision;
   /** When denying, optional instructions for Eco on how to adjust. */
   feedback?: string;
+}
+
+/** Result of `bash-approval:resolve`. `alreadyResolved` is true when the tool use was already gone (idempotent). */
+export interface BashApprovalResolveResult {
+  ok: true;
+  alreadyResolved?: boolean;
 }
 
 export interface PlanApprovalRequest {
@@ -2006,6 +2017,8 @@ export interface ThreadModelUsageEntry {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd?: number;
+  thinkingTokens?: number;
+  costBasis?: "list" | "managed" | "unknown";
 }
 
 export type BillingUsageSource = "proxy" | "sdk" | "codex" | "pi";
@@ -2286,6 +2299,11 @@ export interface ThreadLiveEvent {
     /** Opaque revision used for compare-and-delete acknowledgement. */
     revision?: string;
   };
+  /**
+   * When set, patches ThreadSummary.prompt (e.g. clear after unstarted first-turn discard
+   * so the Feed does not re-show the prompt via showThreadPrompt).
+   */
+  threadPrompt?: string;
   /** Present when follow-up auto-drain pause state changes (or on failed/blocked). */
   followUpQueuePaused?: boolean;
 }

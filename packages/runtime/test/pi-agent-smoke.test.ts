@@ -106,9 +106,9 @@ test("3. bash tool.started shows command label", () => {
     },
   ]);
   const l = findLine(mapped, "tool.started");
-  expect(l).toBe("Tool: bash · ls -la");
+  expect(l).toBe("Tool: Bash · ls -la");
   const p = findPayload(mapped, "tool.started")!;
-  expect(p.tool_name).toBe("bash");
+  expect(p.tool_name).toBe("Bash");
   expect((p.input as Record<string, unknown>).command).toBe("ls -la");
 });
 
@@ -285,7 +285,7 @@ test("11. tool.failed surfaces error message and replays tool input", () => {
   expect(payload.message).toBe("EISDIR: illegal operation on a directory, read");
   expect((payload.input as Record<string, unknown>).path).toBe("/tmp/project");
   const l = formatAgentEventLine(failed!);
-  expect(l).toBe("Tool failed: read: EISDIR: illegal operation on a directory, read");
+  expect(l).toBe("Tool failed: Read: EISDIR: illegal operation on a directory, read");
 });
 
 test("12. agent lifecycle events map correctly", () => {
@@ -319,10 +319,10 @@ test("SMOKE SUMMARY", () => {
   const rows: Array<[string, string, string, string, string]> = [
     ["text delta", "message.delta", "streaming text block", "✅ yes", "PASS"],
     ["thinking delta", "message.delta (thinking)", "streaming thinking block", "✅ yes", "PASS"],
-    ["bash tool.started", "tool.started", "Tool: bash · ls -la", "✅ command shown", "PASS"],
+    ["bash tool.started", "tool.started", "Tool: Bash · ls -la", "✅ command shown", "PASS"],
     ["read tool.completed", "tool.completed", "Tool: read · a.ts · content", "✅ path + preview", "PASS"],
     ["write/edit completed", "tool.completed", "Tool: write · b.ts · result", "✅ path + preview", "PASS"],
-    ["grep completed", "tool.completed", "Tool: bash · cmd · matches", "✅ cmd + preview", "PASS"],
+    ["grep completed", "tool.completed", "Tool: Bash · cmd · matches", "✅ cmd + preview", "PASS"],
     ["mcp proxy completed", "tool.completed", "Tool: mcp · result", "✅ result preview", "PASS"],
     ["skill completed", "tool.completed", "Tool: dataviz · result", "✅ result preview", "PASS"],
     [
@@ -334,7 +334,7 @@ test("SMOKE SUMMARY", () => {
     ],
     ["finalize_plan completed", "tool.completed", "Tool: finalize_plan · plan", "✅ plan preview", "PASS"],
     ["usage.recorded", "usage.recorded", "(no line, by design)", "—", "PASS"],
-    ["tool.failed", "tool.failed", "Tool failed: read: EISDIR", "✅ error + input replay", "PASS"],
+    ["tool.failed", "tool.failed", "Tool failed: Read: EISDIR", "✅ error + input replay", "PASS"],
     ["agent lifecycle", "agent.loop_ended/settled", "(no line)", "—", "PASS"],
   ];
   const header = ["feature", "event type", "line shown", "content surfaced?", "verdict"];

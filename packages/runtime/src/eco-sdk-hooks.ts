@@ -1556,6 +1556,7 @@ export function createPreCompactHook(onPreCompact: EcoHookContext["onPreCompact"
 /**
  * Codex-aligned record-time tool output prune: replace oversized tool_response before
  * it is written into the SDK transcript / model context (TruncationPolicy ≈ 10k tokens × 1.2).
+ * Also stamps a short `classifierContext` (tool name + brief outcome) for PostToolUse.
  */
 export function createToolOutputTruncationPostToolHook(): HookCallback {
   return async (input) => {
@@ -1563,17 +1564,66 @@ export function createToolOutputTruncationPostToolHook(): HookCallback {
       return {};
     }
     const post = input as PostToolUseHookInput;
+    const classifierContext = buildPostToolClassifierContext(post);
     const pruned = truncateToolOutputForHistory(post.tool_response);
     if (!pruned.truncated) {
-      return {};
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PostToolUse",
+          classifierContext,
+        },
+      } satisfies HookJSONOutput;
     }
     return {
       hookSpecificOutput: {
         hookEventName: "PostToolUse",
         updatedToolOutput: pruned.value,
+        classifierContext,
       },
     } satisfies HookJSONOutput;
   };
+}
+
+/** Standalone PostToolUse hook that only sets classifierContext. */
+export function createClassifierContextPostToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PostToolUse") {
+      return {};
+    }
+    const post = input as PostToolUseHookInput;
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        classifierContext: buildPostToolClassifierContext(post),
+      },
+    } satisfies HookJSONOutput;
+  };
+}
+
+const CLASSIFIER_CONTEXT_MAX_CHARS = 240;
+
+function buildPostToolClassifierContext(post: PostToolUseHookInput): string {
+  const toolName = typeof post.tool_name === "string" && post.tool_name.trim() ? post.tool_name.trim() : "Tool";
+  const outcome = summarizeToolResponseForClassifier(post.tool_response);
+  const combined = outcome ? `${toolName}: ${outcome}` : toolName;
+  if (combined.length <= CLASSIFIER_CONTEXT_MAX_CHARS) {
+    return combined;
+  }
+  return `${combined.slice(0, CLASSIFIER_CONTEXT_MAX_CHARS - 1)}…`;
+}
+
+function summarizeToolResponseForClassifier(toolResponse: unknown): string {
+  if (typeof toolResponse === "string") {
+    return toolResponse.replace(/\s+/g, " ").trim();
+  }
+  if (toolResponse == null) {
+    return "";
+  }
+  try {
+    return JSON.stringify(toolResponse).replace(/\s+/g, " ").trim();
+  } catch {
+    return String(toolResponse).replace(/\s+/g, " ").trim();
+  }
 }
 
 export function createNotificationHook(

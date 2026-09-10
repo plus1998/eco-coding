@@ -46,6 +46,8 @@ export const CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL = "item/commandExecution/r
 export const CODEX_FILE_CHANGE_REQUEST_APPROVAL = "item/fileChange/requestApproval";
 export const CODEX_PERMISSIONS_REQUEST_APPROVAL = "item/permissions/requestApproval";
 export const CODEX_TOOL_REQUEST_USER_INPUT = "item/tool/requestUserInput";
+/** Codex 0.153+ non-blocking structured questions (model catalog may enable). */
+export const CODEX_TOOL_REQUEST_USER_INPUT_ASYNC = "item/tool/requestUserInputAsync";
 export const CODEX_MCP_SERVER_ELICITATION_REQUEST = "mcpServer/elicitation/request";
 
 /**
@@ -180,6 +182,17 @@ export interface CodexApprovalBridgeDeps {
     toolUseId: string;
     text: string;
   }) => Promise<void>;
+  /**
+   * Deliver async clarification answers after the non-blocking request returned `accepted`.
+   * Prefer mid-turn steer / queue inject; do not block the original server request.
+   */
+  injectAsyncClarificationAnswers?: (input: {
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId: string;
+    toolUseId: string;
+    text: string;
+  }) => Promise<void>;
 }
 
 export interface CodexApprovalBridge {
@@ -210,7 +223,8 @@ export async function handleCodexServerRequest(
       return handlePermissionsRequestApproval(deps, requireRequestParams(method, params));
     case CODEX_TOOL_REQUEST_USER_INPUT:
     case LEGACY_TOOL_REQUEST_USER_INPUT:
-      return handleToolRequestUserInput(deps, requireRequestParams(method, params));
+    case CODEX_TOOL_REQUEST_USER_INPUT_ASYNC:
+      return handleToolRequestUserInput(deps, method, requireRequestParams(method, params));
     case CODEX_MCP_SERVER_ELICITATION_REQUEST:
       return handleMcpServerElicitationRequest(deps, requireRequestParams(method, params));
     default:
@@ -675,22 +689,34 @@ async function handleMcpServerElicitationRequest(
 
 async function handleToolRequestUserInput(
   deps: CodexApprovalBridgeDeps,
+  method: string,
   params: Record<string, unknown>,
-): Promise<{ answers: Record<string, { answers: string[] }> }> {
+): Promise<unknown> {
+  const asyncDelivery =
+    method === CODEX_TOOL_REQUEST_USER_INPUT_ASYNC ||
+    params.async === true ||
+    params.delivery === "async" ||
+    params.mode === "async";
   const codexThreadId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "threadId");
-  requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "turnId");
+  const turnId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "turnId");
   const itemId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "itemId");
   const ecoThreadId = deps.resolveEcoThreadId(codexThreadId);
   const rawQuestions = validateToolRequestUserInputQuestions(params.questions);
   const autoResolutionMs = validateAutoResolutionMs(params.autoResolutionMs);
 
   const mappedClarification = mapCodexToolQuestionsToClarification(ecoThreadId, itemId, rawQuestions);
+  const clarificationRequest = {
+    ...mappedClarification.request,
+    delivery: asyncDelivery ? ("async" as const) : ("sync" as const),
+  };
   deps.emitThreadLive({
     threadId: ecoThreadId,
     type: "clarification.requested",
-    message: "Planner 需要你回答几个问题。",
+    message: asyncDelivery
+      ? "Codex 需要你回答几个问题（异步，任务可继续）。"
+      : "Planner 需要你回答几个问题。",
     role: "planner",
-    clarification: mappedClarification.request,
+    clarification: clarificationRequest,
     tool: buildClarificationToolMetadata(itemId, "started"),
   });
   deps.updateThreadStatus(ecoThreadId, {
@@ -700,6 +726,7 @@ async function handleToolRequestUserInput(
 
   const pendingAnswers = registerPendingClarification(ecoThreadId, itemId, {
     questions: mappedClarification.request.questions,
+    delivery: clarificationRequest.delivery,
   });
   let autoResolutionTimer: ReturnType<typeof setTimeout> | undefined;
   if (autoResolutionMs !== undefined) {
@@ -710,24 +737,69 @@ async function handleToolRequestUserInput(
       });
     }, autoResolutionMs);
   }
+
+  const finishAnswers = async (answers: ClarificationAnswers) => {
+    deps.updateThreadStatus(ecoThreadId, {
+      status: "running",
+      message: "",
+    });
+    deps.emitThreadLive({
+      threadId: ecoThreadId,
+      type: "clarification.answered",
+      message: formatClarificationAnswersSummary(mappedClarification.request, answers),
+      role: "planner",
+      tool: buildClarificationToolMetadata(itemId, "completed"),
+    });
+    return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
+  };
+
+  if (asyncDelivery) {
+    void pendingAnswers
+      .finally(() => {
+        if (autoResolutionTimer !== undefined) {
+          clearTimeout(autoResolutionTimer);
+        }
+      })
+      .then(async (answers) => {
+        const mapped = await finishAnswers(answers);
+        const summary = formatClarificationAnswersSummary(mappedClarification.request, answers);
+        const inject = deps.injectAsyncClarificationAnswers ?? deps.injectCodexApprovalFeedback;
+        if (!inject) {
+          throw new Error(
+            "Codex async clarification answers cannot be delivered: no injectAsyncClarificationAnswers handler.",
+          );
+        }
+        await inject({
+          ecoThreadId,
+          codexThreadId,
+          turnId,
+          toolUseId: itemId,
+          text: [
+            "Async clarification answers (user responded after request_user_input_async accepted):",
+            summary,
+            "",
+            `Structured answers JSON: ${JSON.stringify(mapped)}`,
+          ].join("\n"),
+        });
+      })
+      .catch((error) => {
+        deps.emitThreadLive({
+          threadId: ecoThreadId,
+          type: "clarification.failed",
+          message: error instanceof Error ? error.message : String(error),
+          role: "system",
+          tool: buildClarificationToolMetadata(itemId, "failed"),
+        });
+      });
+    return { accepted: true };
+  }
+
   const answers = await pendingAnswers.finally(() => {
     if (autoResolutionTimer !== undefined) {
       clearTimeout(autoResolutionTimer);
     }
   });
-  deps.updateThreadStatus(ecoThreadId, {
-    status: "running",
-    message: "",
-  });
-  deps.emitThreadLive({
-    threadId: ecoThreadId,
-    type: "clarification.answered",
-    message: formatClarificationAnswersSummary(mappedClarification.request, answers),
-    role: "planner",
-    tool: buildClarificationToolMetadata(itemId, "completed"),
-  });
-
-  return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
+  return finishAnswers(answers);
 }
 
 function handlePlanItemCompleted(deps: CodexApprovalBridgeDeps, params: Record<string, unknown>): void {

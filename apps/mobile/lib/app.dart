@@ -31,6 +31,7 @@ import 'features/settings/settings_models_page.dart';
 import 'features/settings/settings_orchestration_page.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/settings/settings_theme_page.dart';
+import 'features/settings/settings_thinking_content_page.dart';
 import 'features/threads/thread_providers.dart';
 import 'features/threads/thread_session_route.dart';
 import 'features/threads/thread_session_screen.dart';
@@ -177,6 +178,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'language',
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => const SettingsLanguagePage(),
+                  ),
+                  GoRoute(
+                    path: 'thinking-content',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const SettingsThinkingContentPage(),
                   ),
                   GoRoute(
                     path: 'default-mode',

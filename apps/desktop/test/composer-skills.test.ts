@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   applySlashSkillSelection,
+  fileAttachmentToken,
   formatSkillDisplayName,
   parsePromptSegments,
   parseSlashQuery,
@@ -25,7 +26,7 @@ test("applySlashSkillSelection inserts $skill-name token", () => {
   expect(result.cursor).toBe(7 + "$utools-plugin-dev ".length);
 });
 
-test("parsePromptSegments splits text and skill tokens", () => {
+test("parsePromptSegments splits text, skill, and file tokens", () => {
   expect(parsePromptSegments("hello $vue-best $pdf end")).toEqual([
     { type: "text", value: "hello " },
     { type: "skill", name: "vue-best" },
@@ -33,6 +34,20 @@ test("parsePromptSegments splits text and skill tokens", () => {
     { type: "skill", name: "pdf" },
     { type: "text", value: " end" },
   ]);
+  expect(parsePromptSegments("see @file{/tmp/a.ts} and $pdf")).toEqual([
+    { type: "text", value: "see " },
+    { type: "file", path: "/tmp/a.ts" },
+    { type: "text", value: " and " },
+    { type: "skill", name: "pdf" },
+  ]);
+  expect(parsePromptSegments(String.raw`open @file{C:\work\App.tsx}`)).toEqual([
+    { type: "text", value: "open " },
+    { type: "file", path: String.raw`C:\work\App.tsx` },
+  ]);
+});
+
+test("fileAttachmentToken", () => {
+  expect(fileAttachmentToken("/tmp/a.ts")).toBe("@file{/tmp/a.ts}");
 });
 
 test("skillToken", () => {

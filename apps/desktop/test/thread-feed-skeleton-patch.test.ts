@@ -4,6 +4,7 @@ import {
   createFeedSkeletonPatchState,
   createThreadFeedSkeletonRecord,
   feedSkeletonTimelineIds,
+  hasFeedSkeletonAttemptBecameTerminal,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
   shouldTrackEventForFeedSkeletonPatch,
@@ -679,5 +680,133 @@ describe("thread feed skeleton patch", () => {
     expect(patched).not.toBeNull();
     expect(feedSkeletonTimelineIds(patched!.snapshot)).toEqual(["user_1", "planner_think"]);
     expect(patched!.snapshot.timeline.some((item) => item.scope === "agent")).toBe(false);
+  });
+
+  test("compacts live process rows on request.failed without run.attempt.*", () => {
+    const running = [attemptRecord("att_run", "running")];
+    const failed = [attemptRecord("att_run", "failed")];
+    const liveEvents = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "message.final",
+        message: "提问",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "tool_live",
+        sequence: 2,
+        eventType: "tool.completed",
+        message: "Tool: Bash",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "delta_live",
+        sequence: 3,
+        eventType: "message.delta",
+        message: "还在写",
+        role: "coder",
+        runAttemptId: "att_run",
+        streamKey: "stream_1",
+        streamState: "streaming",
+      }),
+    ];
+
+    let record = createThreadFeedSkeletonRecord(emptySnapshot(), {
+      attempts: mapAttempts(running),
+      agents: [],
+      historyRevision: 0,
+      maxEventSequence: 0,
+    });
+    record.patchState = createFeedSkeletonPatchState(record.snapshot);
+    for (const event of liveEvents) {
+      record = patchThreadFeedSkeletonFromEvent(
+        record,
+        event,
+        patchContext(mapAttempts(running), event.sequence),
+      )!;
+    }
+    expect(feedSkeletonTimelineIds(record.snapshot)).toEqual(["user_1", "tool_live", "delta_live"]);
+
+    record = patchThreadFeedSkeletonFromEvent(
+      record,
+      runEvent({
+        id: "req_failed",
+        sequence: 4,
+        eventType: "request.failed",
+        message: "请求失败",
+        runAttemptId: "att_run",
+      }),
+      patchContext(mapAttempts(failed), 4),
+    )!;
+
+    expect(feedSkeletonTimelineIds(record.snapshot)).toEqual(["user_1"]);
+    expect(shouldTrackEventForFeedSkeletonPatch(
+      runEvent({
+        id: "req_failed",
+        sequence: 4,
+        eventType: "request.failed",
+        message: "请求失败",
+        runAttemptId: "att_run",
+      }),
+      mapAttempts(failed),
+    )).toBe(false);
+  });
+
+  test("reconciles when attempt becomes terminal even without a terminal event type", () => {
+    const running = [projectionAttempt("att_run", "running")];
+    const failed = [projectionAttempt("att_run", "failed")];
+    let record = createThreadFeedSkeletonRecord(
+      {
+        ...emptySnapshot(),
+        attempts: running,
+        timeline: [
+          {
+            id: "user_1",
+            sequence: 1,
+            eventType: "message.final",
+            scope: "main",
+            role: "user",
+            text: "提问",
+            at: "2026-01-01T00:00:01.000Z",
+            metadata: { liveType: "thread.user_prompt" },
+          },
+          {
+            id: "tool_live",
+            sequence: 2,
+            eventType: "tool.completed",
+            scope: "main",
+            role: "coder",
+            text: "Tool: Bash",
+            at: "2026-01-01T00:00:02.000Z",
+            runAttemptId: "att_run",
+          },
+        ],
+      },
+      {
+        attempts: running,
+        agents: [],
+        historyRevision: 0,
+        maxEventSequence: 2,
+      },
+    );
+    record.patchState = createFeedSkeletonPatchState(record.snapshot);
+
+    const patched = patchThreadFeedSkeletonFromEvent(
+      record,
+      runEvent({
+        id: "noise_after_stop",
+        sequence: 3,
+        eventType: "tool.completed",
+        message: "Tool: Read",
+        runAttemptId: "att_run",
+      }),
+      patchContext(failed, 3),
+    );
+
+    expect(patched).not.toBeNull();
+    expect(feedSkeletonTimelineIds(patched!.snapshot)).toEqual(["user_1"]);
+    expect(hasFeedSkeletonAttemptBecameTerminal(running, failed)).toBe(true);
   });
 });

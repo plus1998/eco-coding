@@ -11,6 +11,7 @@ import 'package:eco_mobile/core/models/image_view_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
+import 'package:eco_mobile/core/preferences/thinking_display_preferences.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
@@ -1300,7 +1301,7 @@ void main() {
   });
 
   test(
-    'buildActivityFeed keeps raw and untagged thinking as thinking cards',
+    'buildActivityFeed presents raw thinking as ephemeral tips by default',
     () {
       ActivityFeedEntry buildThinking(ThreadRunProjectionTimelineItem item) {
         return _flattenFeed(
@@ -1342,10 +1343,111 @@ void main() {
         ),
       );
 
-      expect(raw.kind, ActivityFeedKind.thinking);
+      expect(raw.kind, ActivityFeedKind.reasoningStage);
       expect(raw.text, 'raw chain of thought');
-      expect(legacy.kind, ActivityFeedKind.thinking);
+      expect(raw.streaming, isTrue);
+      expect(legacy.kind, ActivityFeedKind.reasoningStage);
       expect(legacy.text, 'legacy thinking without tag');
+      expect(legacy.streaming, isTrue);
+    },
+  );
+
+  test(
+    'buildActivityFeed keeps raw thinking as cards when collapsed/expanded',
+    () {
+      ActivityFeedEntry buildThinking(
+        ThreadRunProjectionTimelineItem item, {
+        required ThinkingDisplayMode mode,
+      }) {
+        return _flattenFeed(
+          buildActivityFeed(
+            threadPrompt: '',
+            threadId: 't1',
+            groupTurns: false,
+            thinkingDisplayMode: mode,
+            runProjection: ThreadRunProjectionSnapshot(
+              threadId: 't1',
+              status: 'completed',
+              generatedAt: item.at,
+              sourceEventCount: 1,
+              agents: const [],
+              timeline: [item],
+            ),
+          ),
+        ).single;
+      }
+
+      final item = _thinkingTimelineItem(
+        id: 'raw-1',
+        eventType: 'thinking.final',
+        text: 'raw chain of thought',
+        sequence: 1,
+        at: '2026-01-01T00:00:01.000Z',
+        streamKey: 'raw_1',
+        metadata: const {'reasoningDisplay': 'raw'},
+      );
+
+      expect(
+        buildThinking(item, mode: ThinkingDisplayMode.collapsed).kind,
+        ActivityFeedKind.thinking,
+      );
+      expect(
+        buildThinking(item, mode: ThinkingDisplayMode.expanded).kind,
+        ActivityFeedKind.thinking,
+      );
+    },
+  );
+
+  test(
+    'buildActivityFeed ephemeral mode hides completed thinking after message',
+    () {
+      final feed = _flattenFeed(
+        buildActivityFeed(
+          threadPrompt: '',
+          threadId: 't1',
+          groupTurns: false,
+          runProjection: ThreadRunProjectionSnapshot(
+            threadId: 't1',
+            status: 'completed',
+            generatedAt: '2026-01-01T00:00:02.000Z',
+            sourceEventCount: 2,
+            agents: const [],
+            timeline: [
+              _thinkingTimelineItem(
+                id: 'raw-1',
+                eventType: 'thinking.final',
+                text: '先定位入口',
+                sequence: 1,
+                at: '2026-01-01T00:00:01.000Z',
+                streamKey: 'raw_1',
+                metadata: const {'reasoningDisplay': 'raw'},
+              ),
+              ThreadRunProjectionTimelineItem(
+                id: 'msg-1',
+                sequence: 2,
+                eventType: 'message.final',
+                scope: 'main',
+                text: '结论',
+                at: '2026-01-01T00:00:02.000Z',
+                role: 'assistant',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(
+        feed.map((entry) => entry.kind).toList(),
+        [ActivityFeedKind.assistant],
+      );
+      expect(
+        feed.any((entry) => entry.kind == ActivityFeedKind.reasoningStage),
+        isFalse,
+      );
+      expect(
+        feed.any((entry) => entry.kind == ActivityFeedKind.thinking),
+        isFalse,
+      );
     },
   );
 
@@ -5094,8 +5196,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.edit_outlined));
+      expect(find.byIcon(EcoIcons.edit), findsOneWidget);
+      await tester.tap(find.byIcon(EcoIcons.edit));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsOneWidget);
       expect(find.text('loaded original'), findsOneWidget);
@@ -5498,6 +5600,7 @@ void main() {
     final feed = buildActivityFeed(
       threadPrompt: '',
       threadId: 't1',
+      thinkingDisplayMode: ThinkingDisplayMode.collapsed,
       runProjection: ThreadRunProjectionSnapshot(
         threadId: 't1',
         status: 'idle',
@@ -5626,6 +5729,7 @@ void main() {
     final feed = buildActivityFeed(
       threadPrompt: '',
       threadId: 't1',
+      thinkingDisplayMode: ThinkingDisplayMode.collapsed,
       runProjection: ThreadRunProjectionSnapshot(
         threadId: 't1',
         status: 'idle',
@@ -5700,6 +5804,7 @@ void main() {
       final feed = buildActivityFeed(
         threadPrompt: '',
         threadId: 't1',
+        thinkingDisplayMode: ThinkingDisplayMode.collapsed,
         runProjection: ThreadRunProjectionSnapshot(
           threadId: 't1',
           status: 'idle',

@@ -10,6 +10,7 @@ import {
   CODEX_THREAD_READ_METHOD,
   CodexResumeNotAvailable,
   isCodexThreadStatusTerminal,
+  isCodexZeroTurnRolloutMissingError,
   parseCodexThreadStatus,
   readCodexThreadStatus,
   requireCodexSubagentThreadId,
@@ -288,6 +289,37 @@ test("requireCodexSubagentThreadId returns agent id when attribution exists", ()
   expect(requireCodexSubagentThreadId((id) => attributions.get(id), " thr_codex_child ")).toBe(
     "thr_codex_child",
   );
+});
+
+test("resumeCodexThread maps zero-turn missing rollout to CodexResumeNotAvailable", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const client = new CodexAppServerClient(stdin, stdout);
+
+  const resume = resumeCodexThread(client, {
+    threadId: "codex-thread-zero-turn",
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 1,
+    error: {
+      code: -32600,
+      message: "no rollout found for thread id codex-thread-zero-turn",
+    },
+  });
+
+  const error = await resume.catch((value) => value);
+  expect(error).toBeInstanceOf(CodexResumeNotAvailable);
+  expect(String(error)).toMatch(/no durable rollout/i);
+});
+
+test("isCodexZeroTurnRolloutMissingError detects Codex #42099 message", () => {
+  expect(
+    isCodexZeroTurnRolloutMissingError(
+      new Error("thread/resume failed: no rollout found for thread id abc"),
+    ),
+  ).toBe(true);
+  expect(isCodexZeroTurnRolloutMissingError(new Error("other failure"))).toBe(false);
 });
 
 test("requireCodexSubagentThreadId rejects missing attribution without inventing a thread", () => {

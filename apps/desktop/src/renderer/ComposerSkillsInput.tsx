@@ -78,6 +78,14 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
         return;
       }
       const next = serializeEditable(editor);
+      const needsChipUpgrade =
+        (next.includes("$") || next.includes("@file{")) &&
+        !editor.querySelector("[data-skill], [data-file-path]");
+      if (needsChipUpgrade) {
+        const cursor = getCursorOffset(editor);
+        renderEditablePrompt(editor, next, skillsByNameRef.current);
+        setSelectionOffsets(editor, cursor, cursor);
+      }
       lastEmittedValueRef.current = next;
       onChange(next);
       onCursorChange?.(getCursorOffset(editor));
@@ -124,7 +132,11 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
           return;
         }
         const serialized = serializeEditable(editor);
-        if (serialized === value) {
+        const hasChipTokens = value.includes("$") || value.includes("@file{");
+        const domHasChips = Boolean(editor.querySelector("[data-skill], [data-file-path]"));
+        // Plain-text token strings can serialize equal to `value` while chips are
+        // still missing (e.g. Playwright fill / paste of `@file{...}`).
+        if (serialized === value && !(hasChipTokens && !domHasChips)) {
           return;
         }
         const selection = restoreCursor ? getSelectionOffsets(editor) : null;
@@ -151,7 +163,11 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
 
     useLayoutEffect(() => {
       const editor = editorRef.current;
-      if (!editor || isComposingRef.current || !value.includes("$")) {
+      if (
+        !editor ||
+        isComposingRef.current ||
+        (!value.includes("$") && !value.includes("@file{"))
+      ) {
         return;
       }
       if (serializeEditable(editor) !== value) {

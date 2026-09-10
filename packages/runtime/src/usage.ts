@@ -15,6 +15,10 @@ export interface ModelUsageEntry {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd?: number;
+  /** Claude Agent SDK ModelUsage.thinkingTokens when reported. */
+  thinkingTokens?: number;
+  /** Claude Agent SDK ModelUsage.costBasis when reported. */
+  costBasis?: "list" | "managed" | "unknown";
 }
 
 export function parseUsagePayload(payload: unknown): ParsedUsage | null {
@@ -98,6 +102,8 @@ export function parseSdkModelUsageBilling(payload: unknown): SdkModelUsageBillin
       outputTokens: entry.outputTokens,
       cacheReadTokens: entry.cacheReadTokens,
       cacheCreationTokens: entry.cacheCreationTokens,
+      ...(entry.thinkingTokens !== undefined &&
+        entry.thinkingTokens > 0 && { reasoningTokens: entry.thinkingTokens }),
     },
     ...(entry.costUsd !== undefined && { sdkCostUsd: entry.costUsd }),
   }));
@@ -341,6 +347,17 @@ export function parseModelUsage(payload: unknown): Record<string, ModelUsageEntr
         : typeof entry.cost_usd === "number"
           ? entry.cost_usd
           : undefined;
+    const thinkingTokens = readTokenCount(entry, ["thinkingTokens", "thinking_tokens"]);
+    const costBasisRaw =
+      typeof entry.costBasis === "string"
+        ? entry.costBasis
+        : typeof entry.cost_basis === "string"
+          ? entry.cost_basis
+          : undefined;
+    const costBasis =
+      costBasisRaw === "list" || costBasisRaw === "managed" || costBasisRaw === "unknown"
+        ? costBasisRaw
+        : undefined;
     result[modelName] = {
       inputTokens: readTokenCount(entry, ["inputTokens", "input_tokens"]),
       outputTokens: readTokenCount(entry, ["outputTokens", "output_tokens"]),
@@ -355,6 +372,8 @@ export function parseModelUsage(payload: unknown): Record<string, ModelUsageEntr
         "cache_creation_tokens",
       ]),
       ...(costUsd !== undefined && { costUsd }),
+      ...(thinkingTokens > 0 && { thinkingTokens }),
+      ...(costBasis !== undefined && { costBasis }),
     };
   }
 
@@ -446,6 +465,10 @@ function readTokenCount(usage: Record<string, unknown>, keys: string[]): number 
 
 /** Reads provider-reported reasoning token counts from OpenAI/LongCat usage details. */
 export function readReasoningTokens(usage: Record<string, unknown>): number {
+  const topLevelThinking = readTokenCount(usage, ["thinkingTokens", "thinking_tokens"]);
+  if (topLevelThinking > 0) {
+    return topLevelThinking;
+  }
   for (const key of [
     "completion_tokens_details",
     "completionTokensDetails",

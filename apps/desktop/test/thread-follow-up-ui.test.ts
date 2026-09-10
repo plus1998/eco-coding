@@ -5,6 +5,7 @@ import {
   isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
   queuedThreadFollowUps,
+  shouldComposerUseFollowUpQueue,
 } from "../src/renderer/thread-follow-up-ui";
 import type { ThreadPendingFollowUp } from "../src/shared/ipc";
 import {
@@ -31,6 +32,23 @@ test("isLiveFollowUpThreadStatus only opens running and queued UI", () => {
   expect(isLiveFollowUpThreadStatus("queued")).toBe(true);
   expect(isLiveFollowUpThreadStatus("awaiting_plan")).toBe(false);
   expect(isLiveFollowUpThreadStatus("completed")).toBe(false);
+});
+
+test("shouldComposerUseFollowUpQueue while live, editing, or paused", () => {
+  expect(shouldComposerUseFollowUpQueue({ status: "running" })).toBe(true);
+  expect(shouldComposerUseFollowUpQueue({ status: "idle" })).toBe(false);
+  expect(
+    shouldComposerUseFollowUpQueue({
+      status: "idle",
+      followUpQueuePaused: true,
+    }),
+  ).toBe(true);
+  expect(
+    shouldComposerUseFollowUpQueue({
+      status: "completed",
+      editingFollowUpId: "fu_1",
+    }),
+  ).toBe(true);
 });
 
 test("queuedThreadFollowUps hides non-queued records and preserves stable priority order", () => {

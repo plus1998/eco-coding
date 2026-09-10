@@ -50,6 +50,9 @@ export async function createImageDisplayStore(
 }
 
 export class ImageDisplayStore {
+  /** Avoid re-reading the same artifact file on every chunked RPC. */
+  private readonly fileCache = new Map<string, Buffer>();
+
   constructor(
     private readonly db: DatabaseSyncType,
     private readonly rootDir: string,
@@ -161,32 +164,60 @@ export class ImageDisplayStore {
     return this.listArtifacts(threadId)[0];
   }
 
-  async readArtifactFile(artifactId: string): Promise<{
+  async readArtifactFile(
+    artifactId: string,
+    options?: { offset?: number; length?: number },
+  ): Promise<{
     dataBase64: string;
     mimeType: string;
     path: string;
     fileName: string;
     bytes: number;
+    totalBytes: number;
+    offset: number;
+    chunkBytes: number;
     width?: number;
     height?: number;
   }> {
     const artifact = this.getArtifact(artifactId);
-    const data = await fs.readFile(artifact.filePath);
-    if (data.length > IMAGE_VIEW_MAX_BYTES) {
-      throw new ImageDisplayError("too_large", "图片超过 20 MB，无法在 Feed 中预览。");
+    let data = this.fileCache.get(artifactId);
+    if (!data) {
+      data = await fs.readFile(artifact.filePath);
+      if (data.length > IMAGE_VIEW_MAX_BYTES) {
+        throw new ImageDisplayError("too_large", "图片超过 20 MB，无法在 Feed 中预览。");
+      }
+      this.fileCache.set(artifactId, data);
     }
+    const totalBytes = data.length;
+    const offset =
+      typeof options?.offset === "number" && Number.isFinite(options.offset)
+        ? Math.max(0, Math.floor(options.offset))
+        : 0;
+    if (offset > totalBytes) {
+      throw new ImageDisplayError("invalid_artifact", "分片偏移超出文件大小。");
+    }
+    const length =
+      typeof options?.length === "number" && Number.isFinite(options.length)
+        ? Math.max(0, Math.floor(options.length))
+        : undefined;
+    const end = length === undefined ? totalBytes : Math.min(offset + length, totalBytes);
+    const slice = length === undefined && offset === 0 ? data : data.subarray(offset, end);
     return {
-      dataBase64: data.toString("base64"),
+      dataBase64: slice.toString("base64"),
       mimeType: artifact.mimeType,
       path: artifact.filePath,
       fileName: path.basename(artifact.filePath),
-      bytes: data.length,
+      bytes: totalBytes,
+      totalBytes,
+      offset,
+      chunkBytes: slice.length,
       ...(artifact.width !== undefined ? { width: artifact.width } : {}),
       ...(artifact.height !== undefined ? { height: artifact.height } : {}),
     };
   }
 
   close(): void {
+    this.fileCache.clear();
     this.db.close();
   }
 }
@@ -297,6 +328,12 @@ function extensionForMimeType(mimeType: string): string {
       return ".gif";
     case "image/webp":
       return ".webp";
+    case "image/svg+xml":
+      return ".svg";
+    case "image/x-icon":
+      return ".ico";
+    case "image/bmp":
+      return ".bmp";
     default:
       return ".png";
   }

@@ -48,6 +48,7 @@ import {
 import {
   type ClipboardEvent,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -91,6 +92,7 @@ import {
   type BashApprovalRequest,
   buildThreadRuntimeConfigFromDefaults,
   type CandidateModelView,
+  type CenterServerConnectionState,
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
@@ -229,7 +231,7 @@ import {
   taskPanelMaxWidthForPane,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
-import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
+import { isStalePendingBashApprovalError, shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
@@ -280,6 +282,7 @@ import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
 import {
   applySlashSkillSelection,
   buildSkillMap,
+  fileAttachmentToken,
   filterSkillsForSlash,
   parseSlashQuery,
 } from "./composer-skills";
@@ -406,9 +409,9 @@ import {
 } from "./thinking-display-preferences";
 import {
   formatThreadFollowUpPreview,
-  isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
   queuedThreadFollowUps,
+  shouldComposerUseFollowUpQueue,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
@@ -444,6 +447,7 @@ import { WebChatListPopover } from "./WebChatListPopover";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import {
+  isAbsoluteLocalFilePath,
   isWorkspacePathContained,
   WORKSPACE_FILE_REFERENCE_EVENT,
   type WorkspaceFileReference,
@@ -573,6 +577,19 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
   },
   status: { state: "disabled" },
 };
+
+/** Sidebar presence: green online, yellow reconnecting, red offline. */
+function sidebarCenterPresenceDotKind(
+  state: CenterServerConnectionState,
+): "online" | "pending" | "error" {
+  if (state === "connected") {
+    return "online";
+  }
+  if (state === "connecting") {
+    return "pending";
+  }
+  return "error";
+}
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
@@ -1342,6 +1359,17 @@ function App() {
       (settings.hasDeviceSecret || settings.hasRefreshToken)
     );
   }, [centerServerSettings]);
+  const centerServerRegistered =
+    centerServerSettings.settings.hasDeviceSecret || centerServerSettings.settings.hasRefreshToken;
+  const sidebarCenterDeviceName =
+    centerServerSettings.settings.deviceName.trim() || t("settings.center.remoteService");
+  const sidebarCenterPresenceDot = sidebarCenterPresenceDotKind(centerServerSettings.status.state);
+  const sidebarCenterPresenceLabel =
+    centerServerSettings.status.state === "connected"
+      ? t("settings.center.online")
+      : centerServerSettings.status.state === "connecting"
+        ? t("settings.center.reconnecting")
+        : t("settings.center.offline");
   const [asrProfiles, setAsrProfiles] = useState<AsrProfilesSnapshot>(emptyAsrProfiles);
   const [asrSettingsLoadError, setAsrSettingsLoadError] = useState<string>();
   const [asrBusy, setAsrBusy] = useState(false);
@@ -2119,6 +2147,17 @@ function App() {
             attachments: fromPromptImageAttachments(event.composerRestore.attachments ?? []),
           });
         }
+      }
+
+      if (event.threadPrompt !== undefined) {
+        const threadPrompt = event.threadPrompt;
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId
+              ? { ...thread, prompt: threadPrompt, updatedAt: new Date().toISOString() }
+              : thread,
+          ),
+        );
       }
 
       if (event.type === "thread.run_projection_updated" && event.projection) {
@@ -4473,7 +4512,12 @@ function App() {
   const composerRoutesReady = !composerNeedsOrchestration || routesReady;
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
-    activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
+    activeThread &&
+      shouldComposerUseFollowUpQueue({
+        status: activeThread.status,
+        editingFollowUpId,
+        followUpQueuePaused: activeThread.followUpQueuePaused,
+      }),
   );
   const showBashApproval = Boolean(pendingBashApproval);
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
@@ -7196,8 +7240,25 @@ function App() {
         ...(resolution.feedback ? { feedback: resolution.feedback } : {}),
       });
       clearPendingBashApprovalForThread(pendingBashApproval.threadId);
+      if (typeof window.eco.getPendingBashApproval === "function") {
+        const next = await window.eco.getPendingBashApproval(pendingBashApproval.threadId);
+        if (next) {
+          upsertPendingBashApprovalForThread(pendingBashApproval.threadId, next);
+        }
+      }
     } catch (caught) {
-      setError(errorMessage(caught));
+      const message = errorMessage(caught);
+      if (isStalePendingBashApprovalError(message)) {
+        clearPendingBashApprovalForThread(pendingBashApproval.threadId);
+        if (typeof window.eco.getPendingBashApproval === "function") {
+          const next = await window.eco.getPendingBashApproval(pendingBashApproval.threadId);
+          if (next) {
+            upsertPendingBashApprovalForThread(pendingBashApproval.threadId, next);
+          }
+        }
+      } else {
+        setError(message);
+      }
     } finally {
       setBashApprovalBusy(false);
     }
@@ -7722,7 +7783,11 @@ function App() {
     setError(undefined);
 
     if (activeThread) {
-      if (activeThread.status === "running" || activeThread.status === "queued") {
+      if (
+        activeThread.status === "running" ||
+        activeThread.status === "queued" ||
+        activeThread.followUpQueuePaused
+      ) {
         if (typeof window.eco.enqueueThreadFollowUp !== "function") {
           setError(t("app.preload.followUpEnqueue"));
           return;
@@ -9034,6 +9099,65 @@ function App() {
     void addComposerImageFiles(imageFiles);
   }
 
+  function handleComposerDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    if (![...event.dataTransfer.types].includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleComposerDrop(event: ReactDragEvent<HTMLDivElement>) {
+    if (![...event.dataTransfer.types].includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (composerDisabled) {
+      return;
+    }
+    const files = [...event.dataTransfer.files];
+    if (files.length === 0) {
+      return;
+    }
+    const resolvedPaths: string[] = [];
+    let failed = 0;
+    for (const file of files) {
+      const rawPath = window.eco?.getPathForFile?.(file)?.trim() ?? "";
+      if (!rawPath || !isAbsoluteLocalFilePath(rawPath)) {
+        failed += 1;
+        continue;
+      }
+      resolvedPaths.push(rawPath);
+    }
+    if (resolvedPaths.length === 0) {
+      setComposerImageNotice(t("app.fileDropNoPath"));
+      return;
+    }
+    if (failed > 0) {
+      setComposerImageNotice(
+        t("app.fileDropPartial", { ok: resolvedPaths.length, failed }),
+      );
+    } else {
+      setComposerImageNotice(undefined);
+    }
+
+    const composer = composerRef.current;
+    const selectionStart = composer?.getSelectionStart() ?? prompt.length;
+    const selectionEnd = composer?.getSelectionEnd() ?? prompt.length;
+    const insertion = resolvedPaths.map((path) => `${fileAttachmentToken(path)} `).join("");
+    const next = `${prompt.slice(0, selectionStart)}${insertion}${prompt.slice(selectionEnd)}`;
+    const cursor = selectionStart + insertion.length;
+    composerPromptRef.current = next;
+    setPrompt(next);
+    queueMicrotask(() => {
+      composer?.setCursor(cursor);
+      composer?.focus();
+      composer?.fitHeight();
+      setComposerCursor(cursor);
+    });
+  }
+
   function removeComposerAttachment(id: string) {
     setComposerAttachments((current) => {
       const target = current.find((attachment) => attachment.id === id);
@@ -9841,6 +9965,8 @@ function App() {
                   .filter(Boolean)
                   .join(" ")}
                 ref={composerAnchorRef}
+                onDragOver={handleComposerDragOver}
+                onDrop={handleComposerDrop}
               >
                 <ComposerSkillsSlashMenu
                   open={composerSkillPopoverOpen}
@@ -10254,9 +10380,33 @@ function App() {
           </div>
 
           <div className="sidebar-settings">
-            <button type="button" className="sidebar-settings-action" onClick={openSettings}>
-              <Cog size={18} />
-              {t("nav.settings")}
+            <button
+              type="button"
+              className="sidebar-settings-action"
+              onClick={openSettings}
+              aria-label={
+                centerServerRegistered
+                  ? `${sidebarCenterDeviceName} · ${sidebarCenterPresenceLabel} · ${t("nav.settings")}`
+                  : t("nav.settings")
+              }
+              title={
+                centerServerRegistered
+                  ? `${sidebarCenterDeviceName} · ${sidebarCenterPresenceLabel}`
+                  : t("nav.settings")
+              }
+            >
+              <Cog size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+              {centerServerRegistered ? (
+                <>
+                  <span className="sidebar-settings-action-label">{sidebarCenterDeviceName}</span>
+                  <span
+                    className={`cs-dot cs-dot--${sidebarCenterPresenceDot} sidebar-settings-presence-dot`}
+                    aria-hidden
+                  />
+                </>
+              ) : (
+                <span className="sidebar-settings-action-label">{t("nav.settings")}</span>
+              )}
             </button>
             <SidebarSettingsUpdateControl
               state={desktopUpdateState}

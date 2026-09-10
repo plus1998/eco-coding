@@ -24,6 +24,8 @@ import '../threads/thread_session_app_bar.dart';
 import 'settings_disclosure_row.dart';
 import 'settings_labels.dart';
 import 'settings_workflow_persistence.dart';
+import '../../core/preferences/thinking_display_preferences.dart';
+import '../../core/providers/thinking_display_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -34,6 +36,7 @@ class SettingsScreen extends ConsumerWidget {
     final l10n = context.l10n;
     final themePreference = ref.watch(appThemePreferenceProvider);
     final localePreference = ref.watch(appLocalePreferenceProvider);
+    final thinkingDisplayMode = ref.watch(thinkingDisplayModeProvider);
     final workflowAsync = ref.watch(workflowSettingsProvider);
     final modelSettingsAsync = ref.watch(modelSettingsProvider);
     final workflow = workflowAsync.valueOrNull;
@@ -51,6 +54,11 @@ class SettingsScreen extends ConsumerWidget {
       AppLocalePreference.system => l10n.settingsLanguageSystem,
       AppLocalePreference.zhCN => l10n.settingsLanguageChinese,
       AppLocalePreference.enUS => l10n.settingsLanguageEnglish,
+    };
+    final thinkingValue = switch (thinkingDisplayMode) {
+      ThinkingDisplayMode.ephemeral => l10n.settingsThinkingContentEphemeral,
+      ThinkingDisplayMode.collapsed => l10n.settingsThinkingContentCollapsed,
+      ThinkingDisplayMode.expanded => l10n.settingsThinkingContentExpanded,
     };
     final sessionMode = workflow?.sessionMode ?? 'agent';
     final modeValue = sessionModeUi(sessionMode, l10n).title;
@@ -140,6 +148,13 @@ class SettingsScreen extends ConsumerWidget {
                               title: l10n.settingsLanguage,
                               value: languageValue,
                               onTap: () => context.push('/settings/language'),
+                            ),
+                            const EcoGroupedDivider(),
+                            SettingsDisclosureRow(
+                              title: l10n.settingsThinkingContent,
+                              value: thinkingValue,
+                              onTap: () =>
+                                  context.push('/settings/thinking-content'),
                             ),
                             const EcoGroupedDivider(),
                             SettingsSwitchRow(

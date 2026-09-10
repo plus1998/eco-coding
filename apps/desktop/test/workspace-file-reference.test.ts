@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   decodeWorkspaceFileReference,
   encodeWorkspaceFileReference,
+  fileAttachmentToken,
   formatWorkspaceFileReferenceLabel,
+  isAbsoluteLocalFilePath,
   isWorkspacePathContained,
   linkifyWorkspaceFileReferences,
+  parseFileAttachmentPath,
   parseWorkspaceFileReference,
   parseWorkspaceFileReferenceHref,
   workspaceFileExtensionBadge,
@@ -20,6 +23,17 @@ describe("workspace file references", () => {
     expect(workspaceFileExtensionBadge("/tmp/example.ts")).toBe("ts");
     expect(workspaceFileExtensionBadge("/tmp/App.tsx")).toBe("tsx");
     expect(workspaceFileExtensionBadge("/tmp/Makefile")).toBe("file");
+  });
+
+  test("builds and validates @file attachment tokens", () => {
+    expect(fileAttachmentToken("/tmp/a.ts")).toBe("@file{/tmp/a.ts}");
+    expect(parseFileAttachmentPath("/tmp/a.ts")).toBe("/tmp/a.ts");
+    expect(parseFileAttachmentPath(String.raw`C:\work\My File.ts`)).toBe(
+      String.raw`C:\work\My File.ts`,
+    );
+    expect(parseFileAttachmentPath("relative/a.ts")).toBeUndefined();
+    expect(isAbsoluteLocalFilePath("/tmp/a.ts")).toBe(true);
+    expect(isAbsoluteLocalFilePath("relative/a.ts")).toBe(false);
   });
 
   test("parses unix and windows paths with positive locations", () => {
@@ -72,6 +86,37 @@ describe("workspace file references", () => {
     ]);
     expect(linkifyWorkspaceFileReferences("输入/输出/缓存明细和事件时间继续作为次级信息展示。")).toEqual([
       { type: "text", value: "输入/输出/缓存明细和事件时间继续作为次级信息展示。" },
+    ]);
+  });
+
+  test("linkifies @file attachment tokens before bare paths", () => {
+    expect(linkifyWorkspaceFileReferences("See @file{/tmp/example.ts} please")).toEqual([
+      { type: "text", value: "See " },
+      {
+        type: "link",
+        value: "@file{/tmp/example.ts}",
+        reference: { path: "/tmp/example.ts" },
+      },
+      { type: "text", value: " please" },
+    ]);
+    expect(
+      linkifyWorkspaceFileReferences(String.raw`Also @file{C:\work\My File.ts} and /tmp/b.ts`),
+    ).toEqual([
+      { type: "text", value: "Also " },
+      {
+        type: "link",
+        value: String.raw`@file{C:\work\My File.ts}`,
+        reference: { path: String.raw`C:\work\My File.ts` },
+      },
+      { type: "text", value: " and " },
+      {
+        type: "link",
+        value: "/tmp/b.ts",
+        reference: { path: "/tmp/b.ts" },
+      },
+    ]);
+    expect(linkifyWorkspaceFileReferences("@file{relative/path.ts}")).toEqual([
+      { type: "text", value: "@file{relative/path.ts}" },
     ]);
   });
 

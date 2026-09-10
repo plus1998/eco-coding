@@ -1,11 +1,18 @@
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  API_COMPAT_THEME,
   normalizeUpstreamApiCompat,
   toggleUpstreamApiCompat,
   UPSTREAM_API_COMPAT_OPTIONS,
   type UpstreamApiCompat,
 } from "../shared/api-compat";
+
+const API_COMPAT_ICONS: Record<UpstreamApiCompat, string> = {
+  anthropic: "./provider-icons/claude.ico",
+  openai_responses: "./provider-icons/openai.svg",
+  openai_chat_completions: "./provider-icons/openai.svg",
+};
 
 interface ApiCompatToggleProps {
   /** Runtime may still carry legacy `openai`; normalized before render. */
@@ -34,6 +41,7 @@ export function ApiCompatToggle({ value, onChange, getNextCompat, disabled }: Ap
   const nextOption = apiCompatOption(nextValue);
   const currentLabel = currentOption?.label ?? normalizedValue;
   const nextLabel = nextOption?.label ?? nextValue;
+  const shortLabel = API_COMPAT_THEME[normalizedValue]?.label ?? normalizedValue;
 
   const updateTooltipPosition = useCallback(() => {
     const el = wrapRef.current;
@@ -85,7 +93,7 @@ export function ApiCompatToggle({ value, onChange, getNextCompat, disabled }: Ap
       document.body,
     );
 
-  return (
+    return (
     <>
       <span
         ref={wrapRef}
@@ -97,12 +105,20 @@ export function ApiCompatToggle({ value, onChange, getNextCompat, disabled }: Ap
       >
         <button
           type="button"
-          className={`api-compat-toggle api-compat-toggle--${normalizedValue.replace(/_/g, "-")}`}
+          className={`api-compat-tag api-compat-tag--${normalizedValue.replace(/_/g, "-")}`}
           disabled={disabled}
           aria-label={`当前是 ${currentLabel}，点击切换为 ${nextLabel}`}
           onClick={() => onChange(nextValue)}
         >
-          <span className="api-compat-toggle-dot" aria-hidden />
+          <img
+            className="api-compat-tag-icon"
+            src={API_COMPAT_ICONS[normalizedValue]}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+          />
+          <span className="api-compat-tag-label">{shortLabel}</span>
         </button>
       </span>
       {tooltip}

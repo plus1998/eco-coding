@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 
 import 'package:eco_mobile/core/models/git_models.dart';
+import 'package:eco_mobile/core/models/thread_models.dart';
+import 'package:eco_mobile/core/utils/thread_session_menu_visibility.dart';
 import 'package:eco_mobile/features/threads/thread_session_menu.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 
@@ -26,6 +28,77 @@ void main() {
     final result = GitFetchResult.fromJson({'output': 'Fetched origin'});
     expect(result.output, 'Fetched origin');
   });
+
+  test('progress menu visibility matches desktop hasProgressInfo', () {
+    expect(threadMenuShouldShowProgress(const []), isFalse);
+    expect(
+      threadMenuShouldShowProgress([
+        _todo(status: 'completed'),
+        _todo(status: 'stopped'),
+      ]),
+      isFalse,
+    );
+    expect(threadMenuShouldShowProgress([_todo(status: 'running')]), isTrue);
+    expect(threadMenuShouldShowProgress([_todo(status: 'pending')]), isTrue);
+    expect(threadMenuShouldShowProgress([_todo(status: 'blocked')]), isTrue);
+  });
+
+  test('plan menu visibility requires non-empty approved plan', () {
+    expect(threadMenuShouldShowPlan(), isFalse);
+    expect(threadMenuShouldShowPlan(pendingPlan: _plan()), isFalse);
+    expect(
+      threadMenuShouldShowPlan(
+        approvedPlan: _plan(plan: ''),
+      ),
+      isFalse,
+    );
+    expect(threadMenuShouldShowPlan(approvedPlan: _plan()), isTrue);
+  });
+
+  test('dynamic card entries are omitted when content is absent', () {
+    final withoutCards = buildThreadSessionMenuEntries(
+      _zh,
+      hasThread: true,
+      workspacePath: '/repo',
+      isRunning: false,
+      autoReadEnabled: false,
+      gitStatus: _gitStatus(behindCount: 0),
+    );
+    final withoutValues = withoutCards.map((entry) => entry.value).toList();
+    expect(withoutValues, isNot(contains('todos')));
+    expect(withoutValues, isNot(contains('plan')));
+    expect(withoutValues, isNot(contains('image_display')));
+    expect(withoutValues, isNot(contains('image_generation')));
+    expect(withoutValues, isNot(contains('html_host')));
+    expect(withoutValues, contains('auto_read'));
+
+    final withCards = buildThreadSessionMenuEntries(
+      _zh,
+      hasThread: true,
+      workspacePath: '/repo',
+      isRunning: false,
+      autoReadEnabled: true,
+      gitStatus: _gitStatus(behindCount: 0),
+      visibility: const ThreadSessionMenuVisibility(
+        showProgress: true,
+        showPlan: true,
+        showImageDisplay: true,
+        showImageGeneration: true,
+        showHtmlHost: true,
+      ),
+    );
+    expect(
+      withCards.map((entry) => entry.value).toList(),
+      containsAll([
+        'todos',
+        'plan',
+        'image_display',
+        'image_generation',
+        'html_host',
+        'auto_read',
+      ]),
+    );
+  });
 }
 
 GitWorkingTreeStatus _gitStatus({required int behindCount}) {
@@ -41,5 +114,28 @@ GitWorkingTreeStatus _gitStatus({required int behindCount}) {
     behindCount: behindCount,
     hasUpstream: true,
     branch: 'main',
+  );
+}
+
+CoderTodoItem _todo({required String status}) {
+  return CoderTodoItem(
+    id: 'todo-$status',
+    threadId: 'thr_1',
+    title: 'Task',
+    detail: '',
+    status: status,
+    position: 0,
+    updatedAt: '',
+  );
+}
+
+ThreadPendingPlan _plan({String plan = '# Plan'}) {
+  return ThreadPendingPlan(
+    threadId: 'thr_1',
+    userPrompt: '',
+    analysis: '',
+    plan: plan,
+    workspacePath: '/repo',
+    worktreePath: '',
   );
 }

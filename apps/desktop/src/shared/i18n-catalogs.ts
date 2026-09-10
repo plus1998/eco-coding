@@ -590,6 +590,10 @@ export const i18nCatalogs = {
       "settings.models.createMainConfigPrompt.message": "保存成功，是否需要立即添加 Agent 配置？",
       "settings.models.createMainConfigPrompt.dismiss": "暂不需要",
       "settings.models.createMainConfigPrompt.confirm": "立即添加",
+      "settings.models.useMainConfigAsDefaultPrompt.message":
+        "添加主代理配置成功，是否立即使用此配置？",
+      "settings.models.useMainConfigAsDefaultPrompt.dismiss": "暂不需要",
+      "settings.models.useMainConfigAsDefaultPrompt.confirm": "立即使用",
       "settings.models.providerDeleteNotFound": "该模型服务商已不存在，设置已刷新。",
       "settings.models.providerDeleteInUse":
         "无法删除，以下活动会话仍在使用该模型服务商：{{references}}。请先停止相关会话后再删除。",
@@ -795,6 +799,7 @@ export const i18nCatalogs = {
       "settings.center.boundPhones": "已绑定手机",
       "settings.center.noPhones": "暂无已连接手机。手机用同一账号登录后即可发现并选择本机。",
       "settings.center.online": "在线",
+      "settings.center.reconnecting": "重连中",
       "settings.center.offline": "离线",
       "settings.center.boundAt": "{{status}} · 绑定于 {{time}}",
       "settings.center.revoking": "解绑中",
@@ -1054,6 +1059,10 @@ export const i18nCatalogs = {
       "fileBrowser.directoryLoadFailed": "无法加载目录。",
       "fileBrowser.apiUnavailable": "文件浏览器不可用。",
       "fileBrowser.unknownError": "发生未知错误。",
+      "fileBrowser.previewMode": "预览模式",
+      "fileBrowser.editMode": "编辑模式",
+      "fileBrowser.preview": "预览",
+      "fileBrowser.edit": "编辑",
       "task.review": "审查",
       "task.processing": "处理中",
       "task.closeTab": "关闭 {{label}} 标签",
@@ -1268,7 +1277,7 @@ export const i18nCatalogs = {
       "activity.imageView.error.symbolicLink": "为避免读取目标不明确，图片预览不接受符号链接。",
       "activity.imageView.error.notFile": "该路径不是常规文件。",
       "activity.imageView.error.tooLarge": "图片超过 20 MB，无法在 Feed 中预览。",
-      "activity.imageView.error.unsupportedType": "文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。",
+      "activity.imageView.error.unsupportedType": "文件内容不是受支持的 PNG、JPEG、GIF、WebP、SVG、ICO 或 BMP 图片。",
       "activity.imageView.error.bridgeUnavailable": "Desktop 图片读取通道不可用。",
       "activity.imageView.error.readFailed": "读取图片失败。",
       "activity.imageDisplay.viewing": "正在展示 1 张图像",
@@ -1279,7 +1288,7 @@ export const i18nCatalogs = {
       "activity.imageDisplay.error.invalidArtifact": "图片产物 ID 无效。",
       "activity.imageDisplay.error.notFound": "图片产物不存在或已被清理。",
       "activity.imageDisplay.error.tooLarge": "图片超过 20 MB，无法在 Feed 中预览。",
-      "activity.imageDisplay.error.unsupportedType": "文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。",
+      "activity.imageDisplay.error.unsupportedType": "文件内容不是受支持的 PNG、JPEG、GIF、WebP、SVG、ICO 或 BMP 图片。",
       "activity.imageDisplay.error.bridgeUnavailable": "Desktop 图片展示通道不可用。",
       "activity.imageDisplay.error.readFailed": "加载图片失败。",
       "activity.htmlHost.publishing": "正在发布 HTML 页面",
@@ -1637,6 +1646,8 @@ export const i18nCatalogs = {
       "app.pastedImages": "已粘贴的图片",
       "app.openPastedImage": "放大查看图片 {{count}}",
       "app.removeImage": "移除图片",
+      "app.fileDropNoPath": "无法获取本地文件路径，请从磁盘拖入文件。",
+      "app.fileDropPartial": "已添加 {{ok}} 个文件，另有 {{failed}} 个无法解析路径。",
       "app.landing.home": "你在忙什么？",
       "app.landing.project": "我们应该在 {{project}} 中构建什么？",
       "app.landing.openProject": "打开一个项目开始编码",
@@ -1956,7 +1967,7 @@ export const i18nCatalogs = {
       "modelSpec.validation.nonNegativeNumber": "{{field}}必须是非负数。",
       "candidateModels.noSpec": "未配置规格",
       "candidateModels.add": "添加候选模型",
-      "candidateModels.empty": "暂无候选模型，点击 + 从上游模型列表中添加",
+      "candidateModels.empty": "暂无候选模型，点击 + 从上游列表选择或手动输入模型 ID",
       "candidateModels.cancelEdit": "取消编辑",
       "candidateModels.pickerTitle": "选择模型添加到候选列表",
       "candidateModels.searchPlaceholder": "搜索模型",
@@ -1967,6 +1978,12 @@ export const i18nCatalogs = {
       "candidateModels.loading": "正在加载模型列表...",
       "candidateModels.noneAvailable": "暂无可添加的模型。请先刷新模型列表，或所有模型已在候选列表中。",
       "candidateModels.addCount": "添加 {{count}}",
+      "candidateModels.displayName": "显示名称",
+      "candidateModels.manualModelIdPlaceholder": "输入模型 ID（如 gpt-4o）",
+      "candidateModels.manualDisplayNamePlaceholder": "显示名称（可选）",
+      "candidateModels.manualAdd": "手动添加",
+      "candidateModels.tabList": "从列表选择",
+      "candidateModels.tabManual": "手动添加",
       "orchestrationResource.source.builtIn": "内置",
       "orchestrationResource.source.derived": "派生",
       "orchestrationResource.source.derivedResource": "派生资源",
@@ -2111,6 +2128,7 @@ export const i18nCatalogs = {
       "native.error.pendingApprovalNotFound": "找不到待处理的审批请求。",
       "native.error.pendingFollowUpNotFound": "找不到待处理的后续消息，或其状态已发生变化。",
       "native.error.threadNotAccepting": "当前会话暂不接受后续消息。",
+      "native.error.followUpQueuePaused": "排队已暂停；请将消息加入队列，或先恢复排队再继续。",
       "native.error.noExportableData": "没有可导出的配置。",
       "native.error.skillNotFound": "在受支持的用户技能目录中找不到该技能。",
       "native.error.operationUnavailable": "当前状态下无法执行此操作。",
@@ -2754,6 +2772,10 @@ export const i18nCatalogs = {
       "settings.models.createMainConfigPrompt.message": "Saved. Add an Agent configuration now?",
       "settings.models.createMainConfigPrompt.dismiss": "Not now",
       "settings.models.createMainConfigPrompt.confirm": "Add now",
+      "settings.models.useMainConfigAsDefaultPrompt.message":
+        "Main agent config added. Use it as the default runtime config now?",
+      "settings.models.useMainConfigAsDefaultPrompt.dismiss": "Not now",
+      "settings.models.useMainConfigAsDefaultPrompt.confirm": "Use now",
       "settings.models.providerDeleteNotFound":
         "This model provider no longer exists. Settings have been refreshed.",
       "settings.models.providerDeleteInUse":
@@ -2974,6 +2996,7 @@ export const i18nCatalogs = {
       "settings.center.noPhones":
         "No phones connected yet. After they sign in with the same account, they can select this PC.",
       "settings.center.online": "Online",
+      "settings.center.reconnecting": "Reconnecting",
       "settings.center.offline": "Offline",
       "settings.center.boundAt": "{{status}} · Bound {{time}}",
       "settings.center.revoking": "Unbinding",
@@ -3244,6 +3267,10 @@ export const i18nCatalogs = {
       "fileBrowser.directoryLoadFailed": "Failed to load directory.",
       "fileBrowser.apiUnavailable": "The file browser is unavailable.",
       "fileBrowser.unknownError": "An unknown error occurred.",
+      "fileBrowser.previewMode": "Preview mode",
+      "fileBrowser.editMode": "Edit mode",
+      "fileBrowser.preview": "Preview",
+      "fileBrowser.edit": "Edit",
       "task.review": "Review",
       "task.processing": "Processing",
       "task.closeTab": "Close {{label}} tab",
@@ -3464,7 +3491,7 @@ export const i18nCatalogs = {
       "activity.imageView.error.notFile": "The path does not point to a regular file.",
       "activity.imageView.error.tooLarge": "The image exceeds the 20 MB Feed preview limit.",
       "activity.imageView.error.unsupportedType":
-        "The file content is not a supported PNG, JPEG, GIF, or WebP image.",
+        "The file content is not a supported PNG, JPEG, GIF, WebP, SVG, ICO, or BMP image.",
       "activity.imageView.error.bridgeUnavailable": "The Desktop image reader is unavailable.",
       "activity.imageView.error.readFailed": "Failed to read the image.",
       "activity.imageDisplay.viewing": "Displaying 1 image",
@@ -3476,7 +3503,7 @@ export const i18nCatalogs = {
       "activity.imageDisplay.error.notFound": "The image artifact does not exist or was removed.",
       "activity.imageDisplay.error.tooLarge": "The image exceeds the 20 MB Feed preview limit.",
       "activity.imageDisplay.error.unsupportedType":
-        "The file content is not a supported PNG, JPEG, GIF, or WebP image.",
+        "The file content is not a supported PNG, JPEG, GIF, WebP, SVG, ICO, or BMP image.",
       "activity.imageDisplay.error.bridgeUnavailable": "The Desktop image display reader is unavailable.",
       "activity.imageDisplay.error.readFailed": "Failed to load the image.",
       "activity.htmlHost.publishing": "Publishing HTML page",
@@ -3848,6 +3875,8 @@ export const i18nCatalogs = {
       "app.pastedImages": "Pasted images",
       "app.openPastedImage": "Enlarge image {{count}}",
       "app.removeImage": "Remove image",
+      "app.fileDropNoPath": "Could not resolve a local file path. Drag files from disk.",
+      "app.fileDropPartial": "Added {{ok}} file(s); {{failed}} could not be resolved to a path.",
       "app.landing.home": "What are you working on?",
       "app.landing.project": "What should we build in {{project}}?",
       "app.landing.openProject": "Open a project to start coding",
@@ -4178,7 +4207,7 @@ export const i18nCatalogs = {
       "modelSpec.validation.nonNegativeNumber": "{{field}} must be a non-negative number.",
       "candidateModels.noSpec": "No specifications configured",
       "candidateModels.add": "Add candidate model",
-      "candidateModels.empty": "No candidate models yet — tap + to add from the upstream list",
+      "candidateModels.empty": "No candidate models yet — tap + to pick from the upstream list or add manually",
       "candidateModels.cancelEdit": "Cancel editing",
       "candidateModels.pickerTitle": "Add models to the candidate list",
       "candidateModels.searchPlaceholder": "Search models",
@@ -4190,6 +4219,12 @@ export const i18nCatalogs = {
       "candidateModels.noneAvailable":
         "No models can be added. Refresh the list, or all models may already be candidates.",
       "candidateModels.addCount": "Add {{count}}",
+      "candidateModels.displayName": "Display name",
+      "candidateModels.manualModelIdPlaceholder": "Enter model ID (e.g. gpt-4o)",
+      "candidateModels.manualDisplayNamePlaceholder": "Display name (optional)",
+      "candidateModels.manualAdd": "Add manually",
+      "candidateModels.tabList": "Pick from list",
+      "candidateModels.tabManual": "Add manually",
       "orchestrationResource.source.builtIn": "Built in",
       "orchestrationResource.source.derived": "Derived",
       "orchestrationResource.source.derivedResource": "Derived resource",
@@ -4341,6 +4376,8 @@ export const i18nCatalogs = {
       "native.error.pendingApprovalNotFound": "No pending approval request was found.",
       "native.error.pendingFollowUpNotFound": "The pending follow-up was not found or its state has changed.",
       "native.error.threadNotAccepting": "This thread is not accepting follow-up messages.",
+      "native.error.followUpQueuePaused":
+        "Follow-up queue is paused; enqueue the message or resume the queue before continuing.",
       "native.error.noExportableData": "There is no configuration to export.",
       "native.error.skillNotFound": "The Skill was not found in a supported user Skills directory.",
       "native.error.operationUnavailable": "This operation is unavailable in the current state.",
@@ -4514,6 +4551,12 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   }
   if (message === "Thread is not accepting queued follow-up messages.") {
     return "native.error.threadNotAccepting";
+  }
+  if (
+    message ===
+    "Follow-up queue is paused; enqueue the message or resume the queue before continuing."
+  ) {
+    return "native.error.followUpQueuePaused";
   }
   if (message === "没有可导出的子代理模板。") {
     return "native.error.noExportableData";

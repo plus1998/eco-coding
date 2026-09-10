@@ -1,0 +1,1518 @@
+# Changelog
+
+## 0.3.266
+
+- Updated to parity with Claude Code v2.1.266
+
+## 0.3.265
+
+- Added `user_message_uuid` and `user_message_uuids` to a synthetic turn's first reply and result for a message sent with `isSynthetic: true` and a `uuid`, naming the message that started it
+- Added `user_message_uuid` and `user_message_uuids` to the first reply and the result of a turn Claude Code started itself, such as a resume, naming the messages you sent that it picked up mid-turn
+- Fixed `user_message_uuid` missing from the success result of a turn that sent no API request, such as a slash command
+- Fixed multi-turn sessions resetting the shell working directory to the `cwd` option at each new user message; a `cd` made by the agent now persists across turns, as in the interactive app
+- Changed `user_message_uuid` to be set on the first reply after each change of the message a turn is answering, instead of on one reply frame per turn
+- Updated to parity with Claude Code v2.1.265
+
+## 0.3.264
+
+- Updated to parity with Claude Code v2.1.264
+
+## 0.3.263
+
+- Updated to parity with Claude Code v2.1.263
+
+## 0.3.262
+
+- Updated to parity with Claude Code v2.1.262
+
+## 0.3.261
+
+- Added `pluginDelivery: 'initialize'` to send `plugins` over stdin so the launch command line no longer grows with the plugin count (fixes Windows start failures with many plugins)
+- Fixed `query()` throwing "Object not disposable" in runtimes without a native `Symbol.dispose`, such as Node ≤22 `vm` contexts (Jest's `node` environment, vitest `vmThreads`/`vmForks`) and Node <18.18
+- Updated to parity with Claude Code v2.1.261
+
+## 0.3.260
+
+- Added optional `user_message_uuid` to `thinking_tokens` system messages, linking thinking progress to the user message that triggered the turn
+- Added optional `first_content_frame_ms`, `first_stream_post_ms`, `first_stream_post_ack_ms` and `first_stream_post_wall_ms` fields to the success result message for remote-session latency breakdowns
+- Fixed `managedSettings` `disableAutoMode: "disable"` (either spelling) being dropped by the restrictive-only filter instead of turning auto mode off for the spawned session
+- Fixed `rewindFiles()` reporting success when no files could be restored (for example when checkpoint backups are missing); it now fails
+- Changed `error_max_structured_output_retries` results to append the last StructuredOutput tool error; validation errors now name the offending key, allowed values, and actual length or count
+- Changed `rate_limit_event` to also re-emit during an exceeded window on repeat 429s (about once per 30 seconds per limit window), so stream consumers can refresh stale rate-limit state
+- Updated to parity with Claude Code v2.1.260
+
+## 0.3.259
+
+- Added `user_message_uuids` beside `user_message_uuid` on a turn's first reply frame and result: every user message the turn answered, so a reply to several merged messages can be matched to each
+- Added `permissionPrompts: 'none'` option to auto-deny permission prompts in sessions with nobody to answer them, without disabling auto mode's classifier
+- Updated to parity with Claude Code v2.1.259
+
+## 0.3.258
+
+- Updated to parity with Claude Code v2.1.258
+
+## 0.3.257
+
+- Added `thinkingTokens` to `ModelUsage` (a subset of `outputTokens`), and fixed result-message `usage.output_tokens_details.thinking_tokens` reporting 0 instead of the session's real count
+- Added `tool_use_result.resourceLinks` on user messages carrying MCP tool results: the `resource_link` blocks the tool returned, so hosts can render returned files without parsing the result text
+- Added optional `resource_links` to `task_notification` for an auto-backgrounded MCP tool call that completed, listing the files it returned by reference; join to the call via `tool_use_id`
+- Fixed `mcp_reconnect` and `mcp_toggle` acting on a same-named `.mcp.json` / `~/.claude.json` server instead of the `--mcp-config` or `mcp_set_servers` one
+- Fixed `mcp_toggle` disable also removing the tools of a sibling MCP server whose name extends the disabled one's (disabling `foo` dropped `foo__bar`'s tools)
+- Changed `mcp_set_servers` to also list a server whose connection attempt throws under `added` (with a `failed` row in `mcp_status`), not only under `errors`
+- Changed Agent tool calls to emit the periodic `tool_progress` heartbeat (`heartbeat: true`) like other long tools; heartbeat frames never clear a `subagent_retry` indicator
+- Fixed the browser SDK bundle (`@anthropic-ai/claude-agent-sdk/browser`) never streaming any messages on engines without native `Symbol.dispose` (Safari/iOS, Firefox ESR, older Chromium)
+- Fixed a background Bash task that is still running when a stream-json session ends right after an interrupt (stdin closed) never receiving its final `task_notification`
+- Fixed `-p` giving up on a long-running background subagent without actually stopping it, so `background_tasks_changed` kept listing it and events for it arrived after its `stopped` notification
+- Added `detail` option to `Query.getContextUsage()`: `'summary'` answers from the last response's usage and local estimates without per-category token-count API calls (default `'full'`)
+- Updated to parity with Claude Code v2.1.257
+
+## 0.3.256
+
+- Updated to parity with Claude Code v2.1.256
+
+## 0.3.255
+
+- Updated to parity with Claude Code v2.1.255
+
+## 0.3.254
+
+- Updated to parity with Claude Code v2.1.254
+
+## 0.3.253
+
+- Updated to parity with Claude Code v2.1.253
+
+## 0.3.252
+
+- Updated to parity with Claude Code v2.1.252
+
+## 0.3.251
+
+- Updated to parity with Claude Code v2.1.251
+
+## 0.3.250
+
+- Updated to parity with Claude Code v2.1.250
+
+## 0.3.249
+
+- Updated to parity with Claude Code v2.1.249
+
+## 0.3.248
+
+- Added a per-server `timeout` for SDK-hosted MCP servers (`createSdkMcpServer({ timeout })`), overriding `MCP_TOOL_TIMEOUT` for that server's tool calls
+
+## 0.3.247
+
+- Added an optional `ambient` flag to `task_started`, `task_notification` and `background_tasks_changed` task entries so hosts can exclude housekeeping tasks from activity indicators
+- Fixed the `permissionMode` on per-turn `system/init` frames reporting the mode at turn start instead of the live mode, so a mode switch right after submitting no longer sends a stale value
+
+## 0.3.246
+
+- Added optional `user_message_uuid` to error result messages and to the first assistant message or `stream_event` of each turn, linking a reply or failure to the user message that triggered it
+- Added `modelUsage[*].costBasis` (`'list' | 'managed' | 'unknown'`) reporting which price table each model's `costUSD` was computed from
+- Added `modelPricing` support in the `managedSettings` option for hosts that set `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`; an admin-managed settings source that sets `modelPricing` still wins
+- Added `perTaskStopAffordance` option: when set, `interrupt()` aborts only the current turn and keeps background agents and workflows running; otherwise (and for one-shot string prompts) they stop
+
+## 0.3.245
+
+- Updated to parity with Claude Code v2.1.245
+
+## 0.3.244
+
+- Updated to parity with Claude Code v2.1.244
+
+## 0.3.243
+
+- Added optional `queued_turn_count` to result messages: the number of queued user sends still pending when the result was produced, so hosts know whether another turn and result will follow
+- Fixed `mcp_status` reporting a remote MCP server as connected after its connection dropped; it now reports pending while reconnecting, then connected or failed
+- Fixed managed `disableAllHooks` also disabling hook callbacks registered through the `hooks` option; they now keep running, matching `allowManagedHooksOnly`
+- Changed Read tool PDF results: the `document` block (or page `image` blocks for `pages` reads) now arrives inside the `tool_result` content instead of as a separate `user` message after it
+- Updated to parity with Claude Code v2.1.243
+
+## 0.3.242
+
+- Updated to parity with Claude Code v2.1.242
+
+## 0.3.241
+
+- Updated to parity with Claude Code v2.1.241
+
+## 0.3.240
+
+- Updated to parity with Claude Code v2.1.240
+
+## 0.3.239
+
+- `total_cost_usd` / `modelUsage.costUSD` now include the 1.1× US-only-inference (data residency) multiplier when the response reports `inference_geo: "us"`
+- A result held back for background subagents in one-shot mode now reports `total_cost_usd`, `duration_api_ms` and `modelUsage` as of its release, not the turn-end snapshot
+- Fixed `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` in an array `systemPrompt` being sent to the model as literal text on Bedrock, Vertex, Foundry, and gateway providers
+- A repeated `initialize` on a running process is now followed by a `background_tasks_changed` snapshot of the live background tasks, so reconnecting hosts see work that is still running
+
+## 0.3.238
+
+- Added `is_backgrounded` and `spawn_depth` to `task_started` events for subagent tasks (`is_backgrounded` also on background Bash tasks)
+- Added `suppressOriginalPrompt` to `UserPromptExpansion` hook output, matching `UserPromptSubmit`
+- Added `command_lifecycle` state `refused`: a cross-session peer message the session's receive-side policy declines now reports this terminal state instead of producing no lifecycle frames
+- Fixed SDK hook callbacks silently not applying after a host re-sends `initialize` to an already-running CLI; the response now reports `hooks_applied`
+- Fixed `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=true` not keeping `prompt_suggestion` messages on when the account is near, but not over, its usage limit
+- Changed `vcs_state_changed` push events to emit one event per pushed branch
+
+## 0.3.237
+
+- Updated to parity with Claude Code v2.1.237
+
+## 0.3.236
+
+- `PostToolUse` hooks can return `hookSpecificOutput.classifierContext`, a short host-asserted note about a tool call's result that the auto mode permission classifier reads alongside that result
+
+## 0.3.235
+
+- Updated to parity with Claude Code v2.1.235
+
+## 0.3.234
+
+- Removed unused `bypass_permissions_disabled` from `ExitReason` type; the value was never emitted — TypeScript consumers with an explicit `case` branch get a compile error on upgrade (runtime unaffected)
+- Updated the `ApiKeySource` type to include the values `system/init` actually reports (`ANTHROPIC_API_KEY`, `apiKeyHelper`, `/login managed key`, `none`)
+- `vcs_state_changed` events report the directory the shell finished in (an inner `cd` is reflected)
+- A peer `origin` injected by the host may declare the sending session's permission class (`fromMode`) so a same-class message is delivered to a recipient that runs without asking
+- `SDKSystemMessage` (`system`/`init`) gains an optional `effort` field: the session's applied effort level, or `null` when none is sent. Set on Remote Control bridge init frames
+
+## 0.3.233
+
+- Notification hooks now fire for pending permission prompts on the SDK path, matching the interactive REPL behavior
+- Todo/task-tracking tools (`TaskCreate`/`TaskGet`/`TaskUpdate`/`TaskList`, `TodoWrite`) are no longer in the default tool surface on Opus 4.8, Sonnet 5, Fable 5, Mythos 5, and newer models; name them in the `tools` option or reference them in `allowedTools` (or set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`) to keep them
+
+## 0.3.232
+
+- Subagent MCP `tool_result` frames whose result carries `_meta` now emit `tool_use_result` as `{ content, _meta }` (matching main-loop frames) instead of a bare value
+- `/context` result messages now carry a structured `context_usage` payload (new `SDKContextUsage` type), so consumers can render the context-usage card without parsing the markdown table
+- `vcs_state_changed` events now populate the `branch` field for push operations, sourced from the pushed ref
+
+## 0.3.231
+
+- Updated to parity with Claude Code v2.1.231
+
+## 0.3.230
+
+- Updated to parity with Claude Code v2.1.230
+
+## 0.3.229
+
+- Added `terminal_slash_commands` to the system init message so Remote Control clients can hide terminal-oriented commands
+- Changed conversations whose messages alone exceed the API's 32 MB limit to end the turn with `terminal_reason` `"api_error"` instead of `"image_error"`; `StopFailure` `error_details` is `"request_body_over_limit: …"`
+
+## 0.3.228
+
+- Agent tool results (`AgentOutput`): `usage.output_tokens_details` is now carried through
+
+## 0.3.227
+
+- Updated to parity with Claude Code v2.1.227
+
+## 0.3.226
+
+- Updated to parity with Claude Code v2.1.226
+
+## 0.3.225
+
+- Fixed background subagents in headless/SDK sessions never resuming when a background shell command or Monitor they left running completed, so the subagent never saw the result
+
+## 0.3.224
+
+- Added `crossSessionInbound` and `dialogExpiry` settings: cross-session messages sent to a session running with bypassed permissions are held for your approval, and messages to other sessions auto-deliver
+- Added `subkind: 'peer-send-message'` to the `task-notification` member of `SDKMessageOrigin`, marking a notification raised by a cross-session `SendMessage`
+- Added `source: 'archive'` plugin config variant to `Settings`, with `url` and optional `sha256`, for installing plugins from a zip over HTTPS
+- Added sandbox credential-masking fields to `Settings`: `decode: 'jwt'` with `maskClaims`, `extract`/`onExtractNoMatch` on `envVars`, and `awsPairs`/`sigv4` for AWS SigV4 re-signing
+- Fixed long (>200 char) project paths resolving to another project's session directory under a shared sanitized prefix; session list/get/rename/tag/fork/delete and `/resume` no longer cross projects
+
+## 0.3.223
+
+- Added `resumeDropsTurn` option: with `resumeSessionAt`, declares the turn a truncating resume intends to drop; the CLI refuses the resume if anything else would be discarded
+- Result messages for repeated 529 overload failures now include `api_error_status: 529`, so SDK consumers can detect overload terminations structurally instead of matching message text
+- Bare headless (`-p` / SDK `query()` without `canUseTool`) now emits `system/permission_denied` stream events when a tool call is auto-denied
+- Documented `usage` vs `modelUsage` on stream-json results: `usage` is main-loop-only and per-turn; `modelUsage` is cumulative, covers all query-pipeline calls, and is the field for cost accounting
+
+## 0.3.222
+
+- Fixed `query({ sessionStore, resume })` not carrying user `settings.json` (`apiKeyHelper`, `env`, `hooks`, `permissions`) into the resumed subprocess
+
+## 0.3.221
+
+- Improved `skills` option validation: malformed names (delimiters or control characters) and wildcard-form names are rejected with a clear error; use `skills: 'all'` to enable every skill
+- Fixed external MCP servers passed via the `mcpServers` option not being connected before the first turn, which caused the model to emit tool calls as literal text
+
+## 0.3.220
+
+- Updated to parity with Claude Code v2.1.220
+
+## 0.3.219
+
+- Added opt-in `cancel_queued` to the interrupt control request (capability `interrupt_cancel_queued_v1`): cancels queued and pending-dispatch messages alongside the abort
+- Added `fast_mode_disabled_reason` to result and init messages so SDK hosts can explain why fast mode is off
+- Added `DirectoryAdded` lifecycle hook event to the control protocol, fired when a new working directory is registered mid-session
+- Fixed the initialize response reporting `fast_mode_state` from the spawn-time model after a model switch
+- Added `sandbox.network.strictAllowlist` to SDK settings types for deterministically denying non-allowlisted hosts in sandboxed commands
+- Added `workflowSizeGuideline` to SDK settings types for setting the advisory dynamic-workflow size guideline
+
+## 0.3.218
+
+- `SkillToolOutput` now reports `background: true` when a forked skill was dispatched as a detached background agent
+- Fixed the result event's `api_error_status` reporting null for rate-limit and overloaded errors delivered mid-stream; it now reports 429/529
+- Added `canonicalModel` and `provider` to each `modelUsage` entry in result messages so downstream billing can look up the correct rate table for `costUSD`
+
+## 0.3.217
+
+- Changed subagents to no longer spawn nested subagents by default (depth cap lowered from 5 to 1); set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` to allow deeper nesting
+- Added a cap on concurrently-running subagents (default 20, override with `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`)
+- Fixed Remote Control sessions not re-sending pending permission prompts to clients that connect after the prompt appeared
+
+## 0.3.216
+
+- Added optional `skippedLinks` count to `rewindFiles` responses for paths the rewind safety guards refused to restore or delete
+- Added `tool_result_meta` sidecar to user messages (`non_execution_kind`, `user_feedback`) so consumers can classify denied, interrupted, or cancelled tool calls without string-matching result prose
+- Added optional `user_message_uuid` and `request_sent_wall_ms` fields to the success result message for cross-host request-latency correlation
+
+## 0.3.215
+
+- Updated to parity with Claude Code v2.1.215
+
+## 0.3.214
+
+- `set_permission_mode` now rejects unrecognized permission modes with an error instead of silently adopting them; the `'manual'` alias is accepted at every ingress
+- Added optional `subkind: 'scheduled-trigger'` to the `task-notification` member of `SDKMessageOrigin`, marking deliveries that are the fired prompt of a user-configured scheduled task
+- `applyFlagSettings({effortLevel})` now accepts `'max'` in its TypeScript type (runtime already supported it)
+- Assistant messages truncated by `interrupt()` now carry `aborted: true`, so consumers can distinguish a mid-stream partial from a completed message
+- Added optional `subagent_type` and `subagent_retry` fields to `tool_progress` messages so clients can show a subagent waiting out an API rate-limit retry
+- The `system/init` message's `plugins` entries and the `reload_plugins` response now include each plugin's manifest `version`
+- SessionStart hooks now report source `"fork"` instead of `"resume"` when the session begins as a fork
+
+## 0.3.213
+
+- Updated to parity with Claude Code v2.1.213
+
+## 0.3.212
+
+- Fixed dash-leading `resumeSessionAt` and `sessionId` values being passed to the CLI as separate argv tokens; both now use equals-form (`--flag=value`)
+- Agent tool output now includes the resolved model when a mid-turn model swap changed the subagent's model
+
+## 0.3.211
+
+- Fixed `--replay-user-messages` with `--include-partial-messages` emitting the turn-start user replay after the first content block instead of before the turn's content events
+- Added `SDKAssistantMessage.timestamp` (ISO-8601) to the live stream, matching `SDKUserMessage`; older emitters omit it, consumers should fall back to receive time
+- Added rate-limit message prefix buckets (`USAGE_LIMIT_ERROR_PREFIXES` and siblings) as `@alpha` exports for classifying rate-limit messages without hand-mirrored lists
+- Improved process-exit errors to include the CLI's stderr output, so a failed child reports its actual cause instead of only an exit code
+
+## 0.3.210
+
+- Added `timedOutAfterMs` to `BashToolOutput`, set when a command is auto-backgrounded on timeout
+
+## 0.3.209
+
+- Updated to parity with Claude Code v2.1.209
+
+## 0.3.208
+
+- Fixed a caller abort during a pending SDK hook callback being converted into hook success, which let PreToolUse-gated tools execute after the abort
+- Fixed a per-query resource leak in the SDK's process tracking when spawning the CLI fails (nonexistent or inaccessible executable path)
+- Fixed an SDK `UserPromptSubmit` hook callback exceeding its timeout killing the entire query with an empty error; it now blocks the prompt with a clear timeout message and the session continues
+- Fixed `extraArgs` values that look like flags (e.g. `resume: '--version'`) being parsed as their own CLI flags; dash-leading values are now bound with equals-form argv
+- Fixed an abort-listener leak: streaming queries sharing one `AbortController` no longer accumulate `abort` listeners on its signal after each completed query
+- Fixed `createSdkMcpServer` docs pointing at a nonexistent env var; the MCP tool-call timeout knob is `MCP_TOOL_TIMEOUT`
+- Fixed an uncaught exception when writing to stdin after the Claude Code subprocess has exited
+
+## 0.3.207
+
+- Fixed `canUseTool` returning `{behavior: 'allow'}` without `updatedInput` being rejected as a deny with a raw ZodError message; the tool now runs with the original input per the documented contract
+- The Agent tool's structured result now has a published SDK type (`AgentToolCompletedOutput`) that matches the emitted object exactly
+
+## 0.3.206
+
+- Added `command_lifecycle` frames to stream-json and SDK sessions, reporting each uuid-stamped message's terminal state (`queued`/`started`/`completed`/`cancelled`/`discarded`); zero-API results no longer report stale `duration_api_ms`
+
+## 0.3.205
+
+- Interrupt control responses now include `still_queued` (UUIDs of queued async messages that will still run), `Query.interrupt()` returns the typed receipt, and `system/init` advertises an `interrupt_receipt_v1` capability for feature detection
+- Added structured `name` and `body` fields to peer-message session events, exposing the sender display name and decoded message body
+
+## 0.3.204
+
+- Added `terminal_reason` values `tool_deferred_unavailable` (deferred tool resume found the tool gone — previously an `is_error` result with no reason, read as a clean completion by lifecycle sweeps) and `turn_setup_failed` (the turn-input builder threw before the turn started). Both classify as dead turns, so commands consumed by them report `command_lifecycle` state `cancelled`
+- Fixed the post-merge cancel backstop cancelling every member of a coalesced prompt batch when a cancel named only one: uncancelled siblings now re-merge and run (previously they were reported `cancelled` — on remote transports that acknowledged them as processed, silently dropping messages nobody cancelled)
+- Added `terminal_reason` values `api_error`, `malformed_tool_use_exhausted`, `budget_exhausted`, and `structured_output_retry_exhausted`. Turns that die on an exhausted-API-retry or malformed-tool-use give-up previously reported `completed`; budget and structured-output exhaustion results previously omitted `terminal_reason`. Commands consumed by such turns now report `command_lifecycle` state `cancelled` instead of `completed` (dup-over-loss)
+- Updated to parity with Claude Code v2.1.204
+
+## 0.3.203
+
+- Added a `background_tasks_changed` system message with the full set of live background tasks on every membership change, so consumers can track background activity as a level instead of pairing `task_started`/`task_notification` edges
+- Fixed stable releases shipping a `sdk.d.ts` with unresolved type references that broke consumer typechecking with `skipLibCheck` disabled
+
+## 0.3.202
+
+- Added `parent_agent_id` field to subagent session messages for building depth-2+ agent trees from disk-persisted metadata
+- Fixed `apply_flag_settings` with a non-object settings value crashing the session instead of returning a control error
+
+## 0.3.201
+
+- Updated to parity with Claude Code v2.1.201
+
+## 0.3.200
+
+- Added `'manual'` as an accepted alias for the `'default'` permission mode in SDK inputs
+- Fixed `onSetPermissionMode` callback not firing for SDK-hosted Remote Control sessions
+- Fixed `set_model` control request accepting unrecognized model strings; invalid models are now rejected before latching
+
+## 0.3.199
+
+- Added `requestId` to `canUseTool` callback options for correlating out-of-band permission responses, and support for returning `null` to suppress the SDK's automatic control response
+- Added `blocked` field to `workflow_agent` progress events indicating when an agent was blocked by the auto-mode safety classifier
+- Added `mode:"mask"` and per-credential `injectHosts` to `sandbox.credentials` settings types for injecting masked credentials into sandboxed commands
+
+## 0.3.198
+
+- Added a runtime warning when `canUseTool` is configured alongside `allowedTools` or `bypassPermissions`, which shadow the callback
+- Added per-server `request_timeout_ms` option to `mcp_set_servers` control request
+- Fixed `SDKUserMessage.isSynthetic` not being mapped to `isMeta` on ingestion, which could cause synthetic messages to be treated as real user messages
+- Fixed workflow progress events silently dropping earliest agents from the list while the phase counter remained correct
+
+## 0.3.197
+
+- Updated to parity with Claude Code v2.1.197
+
+## 0.3.196
+
+- Added `prompt_id` field to hook input payloads for correlating hook events with OpenTelemetry prompt-level events
+- Fixed control protocol deduplication dropping tool-use IDs after 1000 resolutions, which could cause duplicate `tool_result` deliveries in long-running sessions
+
+## 0.3.195
+
+- Added `Query.reinitialize()` to re-send the initialize control request and redeliver pending permission/dialog prompts after a transport gap
+- Fixed `commands_changed` event not being emitted for synced skills when the skill list resolves before the change-detector subscribes
+
+## 0.3.194
+
+- Updated to parity with Claude Code v2.1.194
+
+## 0.3.193
+
+- Added `promptSuggestions` option to Browser SDK `query()` to opt the remote CLI into emitting follow-up suggestions
+- Fixed brief console window flashes on Windows when spawning CLI subprocesses
+
+## 0.3.192
+
+- Updated to parity with Claude Code v2.1.192
+
+## 0.3.191
+
+- Added `old_source` field to `NotebookEdit` tool results for `replace` and `delete` operations, enabling inline diffs
+- Added `seven_day_overage_included` to `SDKRateLimitInfo.rateLimitType` for per-model weekly usage limits
+- Added `model_scoped` array to usage response for per-model weekly limit windows with utilization and reset times
+- Fixed fast mode reverting to standard after the first turn when `settingSources` includes user/project settings
+
+## 0.3.190
+
+- Updated to parity with Claude Code v2.1.190
+
+## 0.3.188
+
+- Updated to parity with Claude Code v2.1.188
+
+## 0.3.187
+
+- Added `sandbox.credentials` to SDK settings types for configuring credential file and environment variable denial in sandboxed commands
+
+## 0.3.186
+
+- Added `agent_id` field to `can_use_tool` control requests — background agents now forward permission prompts to `canUseTool` instead of auto-denying, and stdin stays open while background tasks are running
+- Added `ReadMcpResourceDirTool` tool type to SDK schemas — MCP resource directory listing is now a dedicated tool instead of a fallback inside `ReadMcpResourceTool`
+- Added `rewind_conversation` control request for rewinding a conversation to a previous point with durable resume anchor support
+
+## 0.3.185
+
+- Updated to parity with Claude Code v2.1.185
+
+## 0.3.184
+
+- Updated to parity with Claude Code v2.1.184
+
+## 0.3.183
+
+- Updated to parity with Claude Code v2.1.183
+
+## 0.3.182
+
+- Updated to parity with Claude Code v2.1.182
+
+## 0.3.181
+
+- Added `errorCode`, `canUserPurchaseCredits`, and `hasChargeableSavedPaymentMethod` fields to `SDKRateLimitInfo` for detecting credits-required rate limits
+- Added `tool_use_meta.icon_url` to assistant messages, populated from MCP server directory metadata
+- Fixed SDK-hosted Remote Control sessions dropping `file_attachments` from inbound user messages
+
+## 0.3.180
+
+- Updated to parity with Claude Code v2.1.180
+
+## 0.3.179
+
+- Added optional `tool_use_meta` sidecar to assistant messages with display-friendly names for tool calls, so SDK consumers can render human-readable labels instead of raw wire names
+- Fixed `-p` mode exiting before a completed background agent's notification was delivered, causing interim text to ship as the final result
+- Fixed remote (stream-json) sessions appearing busy for the entire duration of a background workflow — the turn result is now emitted at the turn boundary and the session reports idle while background tasks continue
+
+## 0.3.178
+
+- Spawn failures on an existing native binary now explain the likely libc mismatch (musl binary on a glibc host) and suggest `options.pathToClaudeCodeExecutable`
+- Permission-denied advisory messages now carry typed denial reasons (`safetyCheck`, `asyncAgent`), enabling SDK consumers to programmatically match denial causes
+- Fixed `UserPromptSubmit` hook block feedback not being emitted to the SDK event stream — consumers can now see why a prompt was blocked by a hook instead of a silent hang
+- Remote Control workers now send a `worker_shutting_down` system message on graceful exit so remote clients can show why the session ended
+- Fixed MCP server-level specs (`mcp__server`, `mcp__server__*`) in `disallowedTools` being silently ignored — they now correctly remove all tools from the named server
+
+## 0.3.177
+
+- Updated to parity with Claude Code v2.1.177
+
+## 0.3.176
+
+- Fixed turn `result` messages being dropped when multiple turns complete while a background agent or workflow is running
+- Fixed background agent, remote agent, and MCP task state not being restored when resuming a session via the SDK
+
+## 0.3.175
+
+- Updated to parity with Claude Code v2.1.175
+
+## 0.3.174
+
+- SDK consumers now receive the `system/model_fallback` message for all fallback triggers — `overloaded`, `server_error`, and `last_resort` in addition to `model_not_found` and `permission_denied` — and the message's `trigger` field gained the `server_error` and `last_resort` values
+
+## 0.3.173
+
+- Updated to parity with Claude Code v2.1.173
+
+## 0.3.172
+
+- SDK `plugins` option now accepts `skipMcpDiscovery: true` per plugin, so a host that manages a plugin's MCP connections itself can load skills/hooks from the plugin path without the engine re-reading its `.mcp.json`
+- Fixed slash-followed-by-whitespace input (e.g. `/ add tests`) being silently dropped instead of treated as a plain prompt
+
+## 0.3.171
+
+- Updated to parity with Claude Code v2.1.171
+
+## 0.3.170
+
+- Added claude-fable-5 model and the fable alias to SDK model types. https://www.anthropic.com/news/claude-fable-5-mythos-5
+- Updated to parity with Claude Code v2.1.170
+
+## 0.3.169
+
+- Added an experimental `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()` method on `Query` returning structured session cost, plan rate-limit, and local usage-behaviors data
+- Added an `sse` option (`SSEOptions`) to `BrowserQueryOptions` as an alternative to `websocket`, for browser SDK consumers who prefer Server-Sent Events
+
+## 0.3.168
+
+- Updated to parity with Claude Code v2.1.168
+
+## 0.3.167
+
+- Updated to parity with Claude Code v2.1.167
+
+## 0.3.166
+
+- Fixed MCP resource tools not being injected for servers added at runtime via the `mcp_set_servers` control request
+
+## 0.3.165
+
+- Updated to parity with Claude Code v2.1.165
+
+## 0.3.164
+
+- Updated to parity with Claude Code v2.1.164
+
+## 0.3.163
+
+- `stop_task` control requests now return success when the target task is already gone (`not_found` or `not_running`), so SDK clients can reliably prune stale task chips
+- Fixed SDK hosts being unable to add builtin MCP servers (e.g. `claude-in-chrome`) via `setMcpServers` when the CLI was launched without them
+- Stop and SubagentStop hook events now support `additionalContext` in `hookSpecificOutput`, enabling non-error feedback that continues the turn
+
+## 0.3.162
+
+- Refusal error messages now carry `stop_reason: "refusal"` and `stop_details` on the assistant message and in session transcripts, so SDK consumers can detect refusals without text-matching the error content
+- Agent SDK sessions on native builds now default to fast embedded `find`/`grep` search in Bash, matching the interactive CLI, instead of always registering the dedicated Grep/Glob tools. To keep the dedicated tools (e.g. to intercept searches via `canUseTool` or hooks), name them in the `tools` option or reference them in `allowedTools`
+
+## 0.3.161
+
+- The `initialize` control request is now idempotent: a second `initialize` returns the same success payload instead of an `Already initialized` error. `ControlResponse` gains an optional `pending_permission_requests` field, mirroring `ControlErrorResponse`
+- `applyFlagSettings` now live-applies `agent` changes: switching the active agent (or passing `null` to reset) takes effect on the next turn in a running session
+
+## 0.3.160
+
+- Fixed SDK hook callbacks swallowing abort signals: aborting during a PostToolUse hook now ends the turn with a final `result` message instead of hanging the calling process
+
+## 0.3.159
+
+- Updated to parity with Claude Code v2.1.159
+
+## 0.3.158
+
+- Updated to parity with Claude Code v2.1.158
+
+## 0.3.157
+
+- Updated to parity with Claude Code v2.1.157
+
+## 0.3.156
+
+- Updated to parity with Claude Code v2.1.156
+
+## 0.3.155
+
+- Updated to parity with Claude Code v2.1.155
+
+## 0.3.154
+
+- Fixed stdio MCP servers being incorrectly restarted on every reconcile pass due to config-equality false positives
+
+## 0.3.153
+
+- Updated to parity with Claude Code v2.1.153
+
+## 0.3.152
+
+- `SessionStart` hooks can now return `reloadSkills: true` to trigger a skill re-scan, and set the session title via `hookSpecificOutput.sessionTitle`
+- Added a `MessageDisplay` hook event that lets hooks transform or hide assistant message text as it is displayed
+
+## 0.3.151
+
+- Updated to parity with Claude Code v2.1.151
+
+## 0.3.150
+
+- The `api_retry` system message now reports `error: 'overloaded'` for 529 responses, instead of `'rate_limit'` (which is now reserved for 429). Consumers that handled 529 via `error === 'rate_limit'` should also match `'overloaded'`, or switch to `error_status === 529`.
+- Updated to parity with Claude Code v2.1.150
+
+## 0.3.149
+
+- Fixed `options.env` dropping `CLAUDE_AGENT_SDK_VERSION` (used for `User-Agent` and telemetry) when a custom environment is supplied, and corrected the `Options.env` docs to state that the value replaces the subprocess environment rather than merging with `process.env`
+
+## 0.3.148
+
+- Updated to parity with Claude Code v2.1.148
+
+## 0.3.147
+
+- Updated to parity with Claude Code v2.1.147
+
+## 0.3.146
+
+- Updated to parity with Claude Code v2.1.146
+
+## 0.3.145
+
+- Updated to parity with Claude Code v2.1.145
+
+## 0.3.144
+
+- Assistant messages and `StopFailure` hooks now report `error: 'model_not_found'` when the selected model doesn't exist or isn't available, instead of the generic `'invalid_request'`. The `api_error_status` field on result messages is now documented.
+- Added `@anthropic-ai/claude-agent-sdk/extract` export for `bun build --compile` consumers: import the platform native binary with `with { type: 'file' }`, call `extractFromBunfs(binPath)` to copy it out of the compiled executable's virtual filesystem, and pass the result to `options.pathToClaudeCodeExecutable`
+
+## 0.3.143
+
+- `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` are now `peerDependencies` instead of `dependencies`. Runtime is unaffected (both are bundled); npm/bun/pnpm auto-install them. yarn classic users should add them explicitly for full TypeScript type resolution
+
+## 0.3.142
+
+- **Breaking:** Removed the v2 session API (`unstable_v2_createSession`, `unstable_v2_resumeSession`, `unstable_v2_prompt`, `SDKSession`, `SDKSessionOptions`), deprecated since 0.2.133. Use `query()` — pass an `AsyncIterable<SDKUserMessage>` for multi-turn, or `options.resume` to continue a session.
+- **Breaking:** MCP servers now connect in the background by default; sessions start immediately and slow servers report `status: "pending"` in `init` until ready. Set `MCP_CONNECTION_NONBLOCKING=0` to restore the old behavior of waiting up to 5s before the first query, or mark a server `alwaysLoad: true` to require it in turn 1.
+- **Breaking:** Headless and SDK sessions now use Task tools (`TaskCreate` / `TaskUpdate` / `TaskGet` / `TaskList`) instead of `TodoWrite`, deprecated since 0.2.136. Tool consumers should accumulate by task ID instead of replacing a snapshot list.
+- Surfaced `request_id`, `subagent_type`, and `task_description` on SDK message types and task system events
+- Headless `--sdk-url` sessions now exit non-zero with a stderr diagnostic when the remote transport closes permanently (401/403/404 or WS permanent close), instead of silently exiting 0
+
+## 0.2.141
+
+- `TaskCreateInput`, `TaskCreateOutput`, `TaskGetInput`, `TaskGetOutput`, `TaskUpdateInput`, `TaskUpdateOutput`, `TaskListInput`, and `TaskListOutput` types are now exported from `@anthropic-ai/claude-agent-sdk/sdk-tools` and included in the `ToolInputSchemas`/`ToolOutputSchemas` unions
+- Aligned `@anthropic-ai/sdk` dependency to ^0.93.0
+
+## 0.2.140
+
+- Updated to parity with Claude Code v2.1.140
+
+## 0.2.139
+
+- Updated to parity with Claude Code v2.1.139
+
+## 0.2.138
+
+- Updated to parity with Claude Code v2.1.138
+
+## 0.2.137
+
+- Updated to parity with Claude Code v2.1.137
+
+## 0.2.136
+
+- Added `resolveSettings()` (alpha) to inspect effective merged settings without spawning the Claude CLI; reads MDM (plist/HKLM/HKCU) for parity with CLI startup
+- Deprecated `TodoWrite` tool — future versions will switch to Task tools (`TaskCreate`, `TaskGet`, `TaskUpdate`, `TaskList`)
+
+## 0.2.135
+
+- Updated to parity with Claude Code v2.1.135
+
+## 0.2.134
+
+- Updated to parity with Claude Code v2.1.134
+
+## 0.2.133
+
+- Deprecated the unstable V2 session API (`unstable_v2_createSession` / `unstable_v2_resumeSession` / `unstable_v2_prompt`) — use `query()` instead
+- Deprecated passing `'Skill'` in `allowedTools` — use the `skills` option instead
+- Updated to parity with Claude Code v2.1.133
+
+## 0.2.132
+
+- Documented `applyFlagSettings()` in the TypeScript Agent SDK reference and added support for `null` on top-level keys to clear flag-settings overrides
+- Updated to parity with Claude Code v2.1.132
+
+## 0.2.131
+
+- Updated to parity with Claude Code v2.1.131
+
+## 0.2.130
+
+- Updated to parity with Claude Code v2.1.130
+
+## 0.2.129
+
+- Updated to parity with Claude Code v2.1.129
+
+## 0.2.128
+
+- Updated to parity with Claude Code v2.1.128
+
+## 0.2.127
+
+- Updated to parity with Claude Code v2.1.127
+
+## 0.2.126
+
+- Added `origin` to result messages (`SDKResultSuccess` / `SDKResultError`) — forwards the triggering message's `SDKMessageOrigin` so consumers can distinguish user-prompted results from `task-notification` followups
+
+## 0.2.125
+
+- Updated to parity with Claude Code v2.1.125
+
+## 0.2.124
+
+- Updated to parity with Claude Code v2.1.124
+
+## 0.2.123
+
+- Updated to parity with Claude Code v2.1.123
+
+## 0.2.122
+
+- Updated to parity with Claude Code v2.1.122
+
+## 0.2.121
+
+- Added `updatedToolOutput` to `PostToolUseHookSpecificOutput` for replacing tool output on all tools. `updatedMCPToolOutput` is deprecated.
+
+## 0.2.120
+
+- Added `skills` option (`string[] | 'all'`) to control which Skills are loaded into the main session, matching the Python SDK
+
+## 0.2.119
+
+- Added `forwardSubagentText` option to stream subagent text deltas to SDK consumers
+- `excludeDynamicSections` now keeps static auto-memory instructions in the cacheable system-prompt block; only the per-user memory directory path and per-machine environment values are relocated to the first user message
+- Long-running SDK sessions now reconnect claude.ai-proxied MCP servers after a transport-stream abort
+- `SessionStore.append()` failures are now retried up to 3 times with short backoff before the batch is dropped and `mirror_error` is emitted
+
+## 0.2.118
+
+- Added `Options.managedSettings` for embedders to pass policy-tier settings to the spawned CLI in-memory, honored below IT-controlled managed sources
+
+## 0.2.117
+
+- Updated to parity with Claude Code v2.1.117
+
+## 0.2.116
+
+- Updated to parity with Claude Code v2.1.116
+
+## 0.2.115
+
+- Updated to parity with Claude Code v2.1.115
+
+## 0.2.114
+
+- Updated to parity with Claude Code v2.1.114
+
+## 0.2.113
+
+- Changed the SDK to spawn a native Claude Code binary (via a per-platform optional dependency) instead of bundled JavaScript
+- Added `sessionStore` option (alpha) to `query()` and session helpers for mirroring session transcripts to external storage, with `SessionStore`/`SessionKey`/`SessionStoreEntry` types, `InMemorySessionStore` reference implementation, and `importSessionToStore()` for migrating existing sessions
+- Added `deleteSession()` for removing a session from disk or a `SessionStore`
+- Added `SDKMirrorErrorMessage` (`subtype: 'mirror_error'`) to the `SDKMessage` union — emitted when a `sessionStore.append()` batch fails
+- **Breaking**: `options.env` once again replaces `process.env` for the CLI subprocess instead of overlaying it. To add or override individual variables, pass `env: { ...process.env, MY_VAR: "x" }`
+- Added `title` option to `query()` — sets the session title and skips auto-generation
+- Added OpenTelemetry trace context propagation — the caller's active trace context is forwarded to the CLI subprocess so spans parent under your distributed trace
+
+## 0.2.112
+
+- Updated to parity with Claude Code v2.1.112
+
+## 0.2.111
+
+- Opus 4.7 is now available! This version of the SDK is required to use it.
+- `mcp_set_servers` control request: remote (http/sse) server entries can now carry per-tool `permission_policy` values, which are applied to the session's allow/deny rules
+- `startup()` and `WarmQuery` are now part of the public TypeScript API
+- Changed `options.env` to overlay the inherited `process.env` instead of replacing it
+
+## 0.2.110
+
+- Fixed `unstable_v2_createSession` not respecting `cwd`, `settingSources`, and `allowDangerouslySkipPermissions` options
+- Added optional `shouldQuery` field to `SDKUserMessage` — set to `false` to append a user message without triggering an assistant turn; fixed `shouldQuery: false` messages incorrectly triggering auto-title generation, prompt suggestions, and `UserPromptSubmit` hooks
+- Auto session-title generation now respects `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
+
+## 0.2.109
+
+- Updated to parity with Claude Code v2.1.109
+
+## 0.2.108
+
+- `SDKStatus` now includes `'requesting'`; when `includePartialMessages` is enabled, a `{type:'system', subtype:'status', status:'requesting'}` message is emitted before each API request in the stream
+
+## 0.2.107
+
+- Updated to parity with Claude Code v2.1.107
+
+## 0.2.106
+
+- Updated to parity with Claude Code v2.1.106
+
+## 0.2.105
+
+- Added `system/memory_recall` event and `memory_paths` on `system/init` for SDK renderers to surface memory operations
+- Fixed `error_max_structured_output_retries` being emitted when the final retry attempt succeeded, discarding valid structured output
+
+## 0.2.102
+
+- Updated to parity with Claude Code v2.1.102
+
+## 0.2.101
+
+- Security: bumped `@anthropic-ai/sdk` to `^0.81.0` and `@modelcontextprotocol/sdk` to `^1.29.0` to resolve GHSA-5474-4w2j-mq4c and transitive hono advisories
+- Fixed resume-session temp directory leaking on Windows when subprocess file handles weren't released before cleanup, and on macOS/APFS when `await using` disposal raced its own cleanup callback
+- Fixed `MaxListenersExceededWarning` when running 11+ concurrent `query()` calls
+
+## 0.2.100
+
+- Updated to parity with Claude Code v2.1.100
+
+## 0.2.99
+
+- Updated to parity with Claude Code v2.1.99
+
+## 0.2.98
+
+- Updated to parity with Claude Code v2.1.98
+
+## 0.2.97
+
+- Updated to parity with Claude Code v2.1.97
+
+## 0.2.96
+
+- Updated to parity with Claude Code v2.1.96
+
+## 0.2.95
+
+- Updated to parity with Claude Code v2.1.95
+
+## 0.2.94
+
+- Fixed `getContextUsage()` to include agents passed via `options.agents` in the `agents` breakdown
+- Fixed CJK and other multibyte text being corrupted with U+FFFD in stream-json input/output when chunk boundaries split a UTF-8 sequence
+- Fixed MCP server child processes not being cleaned up when an SDK `query()` session ends
+- Fixed a failed error-report write crashing the SDK process with `unhandledRejection`
+- Updated to parity with Claude Code v2.1.94
+
+## 0.2.93
+
+- Updated to parity with Claude Code v2.1.93
+
+## 0.2.92
+
+- Updated to parity with Claude Code v2.1.92
+
+## 0.2.91
+
+- Added optional `terminal_reason` field to result messages, exposing why the query loop terminated (`completed`, `aborted_tools`, `max_turns`, `blocking_limit`, etc.)
+- Added `'auto'` to the public `PermissionMode` type
+- Changed `sandbox` option to default `failIfUnavailable` to `true` when `enabled: true` is passed — `query()` will emit an error result and exit if sandbox dependencies are missing, instead of silently running unsandboxed. Set `failIfUnavailable: false` to allow graceful degradation.
+- Updated to parity with Claude Code v2.1.91
+
+## 0.2.90
+
+- Updated to parity with Claude Code v2.1.90
+
+## 0.2.89
+
+- Added `startup()` to pre-warm the CLI subprocess before `query()`, making the first query ~20x faster when startup cost can be paid upfront
+- Added `includeSystemMessages` option to `getSessionMessages()` to optionally include system messages in session history
+- Added `listSubagents()` and `getSubagentMessages()` functions to retrieve subagent conversation history from sessions
+- Added `includeHookEvents` option to enable hook lifecycle messages (`hook_started`, `hook_progress`, `hook_response`) for all hook event types
+- Fixed `ERR_STREAM_WRITE_AFTER_END` errors when single-turn queries with SDK MCP servers or hooks have control responses arriving after the result message
+- Fixed Zod v4 field `.describe()` metadata being dropped from `createSdkMcpServer` tool schemas
+- Fixed `side_question` returning null on resume before the first turn completes
+- Fixed `settingSources` empty array causing `--setting-sources ""` to consume the next CLI flag
+- Fixed error result messages (`error_during_execution`, `error_max_turns`, `error_max_budget_usd`) to correctly set `is_error: true` with descriptive messages
+- Fixed MCP servers getting permanently stuck in a failed state after a connection race — they now retry on the next message
+
+## 0.2.87
+
+- Updated to parity with Claude Code v2.1.87
+
+## 0.2.86
+
+- Added `getContextUsage()` control method to retrieve a breakdown of context window usage by category
+- Made `session_id` optional in `SDKUserMessage` type — callers no longer need to provide a session ID when sending user messages, as the SDK assigns one automatically
+- Fixed TypeScript types resolving to `any` by adding `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` as dependencies
+- Updated to parity with Claude Code v2.1.86
+
+## 0.2.85
+
+- Added `reloadPlugins()` SDK method to reload plugins and receive refreshed commands, agents, and MCP server status
+- Fixed PreToolUse hooks with `permissionDecision: "ask"` being ignored in SDK mode
+- Updated to parity with Claude Code v2.1.85
+
+## 0.2.84
+
+- Added `taskBudget` option for API-side token budget awareness, allowing the model to pace tool use within a token limit
+- Added `enableChannel()` method and `capabilities` field on `McpServerStatus` for SDK-driven MCP channel activation
+- Exported `EffortLevel` type (`'low' | 'medium' | 'high' | 'max'`) for consumers to reference effort values directly
+- Fixed showing "[Request interrupted by user]" for errors that were not caused by user interruption
+- Updated to parity with Claude Code v2.1.84
+
+## 0.2.83
+
+- Added `seed_read_state` control subtype to seed `readFileState` with `{path, mtime}` so `Edit` works after the originating `Read` was removed from context
+- Changed `session_state_changed` events to opt-in: set `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1` to receive them
+- Updated to parity with Claude Code v2.1.83
+
+## 0.2.82
+
+- Updated to parity with Claude Code v2.1.82
+
+## 0.2.81
+
+- Fixed `canUseTool` not providing a working `addRules` suggestion when a write under `.claude/skills/{name}/` hits the bypass-immune safety check
+- Updated to parity with Claude Code v2.1.81
+
+## 0.2.80
+
+- Fixed `getSessionMessages()` dropping parallel tool results — sessions with parallel tool calls now return all tool_use/tool_result pairs
+- Updated to parity with Claude Code v2.1.80
+
+## 0.2.79
+
+- Added `'resume'` to the `ExitReason` type for distinguishing resume-triggered session ends in hooks
+- Updated to parity with Claude Code v2.1.79
+
+## 0.2.78
+
+- Updated to parity with Claude Code v2.1.78
+
+## 0.2.77
+
+- Added `api_retry` system messages when retrying transient API errors, exposing attempt count, max retries, delay, and error status
+- Updated to parity with Claude Code v2.1.77
+
+## 0.2.76
+
+- Added `forkSession(sessionId, opts?)` for branching conversations from a point
+- Added `cancel_async_message` control subtype to drop a queued user message by UUID before execution
+- Added `planFilePath` field to `ExitPlanMode` tool input for hooks and SDK consumers
+- Added MCP elicitation hook types and `SDKElicitationCompleteMessage` system message for handling MCP server input requests programmatically
+- Updated to parity with Claude Code v2.1.76
+
+## 0.2.75
+
+- Added `tag` and `createdAt` fields to `SDKSessionInfo`
+- Added `getSessionInfo(sessionId, opts?)` for single-session metadata lookup
+- Added `offset` option to `listSessions` for pagination
+- Added `tagSession(sessionId, tag, opts?)` for tagging session files
+- Added `queued_to_running` status to `AgentToolOutput` — returned when `Agent({resume})` targets a still-running agent
+- Improved error messages when the Claude Code subprocess returns an error result — the SDK now surfaces the actual error text instead of a generic "process exited with code 1"
+- Updated to parity with Claude Code v2.1.75
+
+## 0.2.74
+
+- Added `renameSession(sessionId, title, opts?)` for renaming session files
+- Fixed `import type` from `@anthropic-ai/claude-agent-sdk/sdk-tools` failing under NodeNext/Bundler module resolution (missing exports map entry since v0.2.69)
+- Fixed skills with `user-invocable: false` being included in `supportedCommands()` and the `system:init` message's `slash_commands` / `skills` lists
+- Updated to parity with Claude Code v2.1.74
+
+## 0.2.73
+
+- Fixed `options.env` being overridden by the `~/.claude/settings.json` env block when not using `user` as a `settingSources` option
+- Updated to parity with Claude Code v2.1.73
+
+## 0.2.72
+
+- Added `agentProgressSummaries` option to enable periodic AI-generated progress summaries for running subagents (foreground and background), emitted on `task_progress` events via the new `summary` field
+- Added `getSettings()` `applied` section with runtime-resolved `model` and `effort` values
+- Fixed `toggleMcpServer` and `reconnectMcpServer` failing with "Server not found" for servers passed via `query({mcpServers})`
+- Updated to parity with Claude Code v2.1.72
+
+## 0.2.71
+
+- Updated to parity with Claude Code v2.1.71
+
+## 0.2.70
+
+- Fixed `type: "http"` MCP servers failing with HTTP 406 "Not Acceptable" on Streamable HTTP servers that strictly enforce the `Accept: application/json, text/event-stream` header
+- Changed `AgentToolInput.subagent_type` to optional — defaults to the `general-purpose` agent when omitted
+- Updated to parity with Claude Code v2.1.70
+
+## 0.2.69
+
+- Added `toolConfig.askUserQuestion.previewFormat` option to configure the content format (`'markdown'` or `'html'`) for the `preview` field on AskUserQuestion tool options. The `preview` field and `annotations` output are now exposed in the public SDK types.
+- Added `supportsFastMode` field to `ModelInfo` indicating whether a model supports fast mode
+- Added `agent_id` (for subagents) and `agent_type` (for subagents and `--agent`) fields to hook events
+- Fixed SDK-mode MCP servers (registered via `sdkMcpServers` in the `initialize` control request) getting disconnected when background plugin installation refreshes project MCP config
+- Fixed breaking change: `system:init` and `result` events now emit `'Task'` as the Agent tool name again (reverted from `'Agent'`, which was an unintentional breaking change in a patch release). The wire name will migrate to `'Agent'` in the next minor release.
+- Fixed control responses with malformed `updatedPermissions` from SDK hosts blocking tool calls with a ZodError; the invalid field is now stripped and a warning is logged instead.
+- Improved memory usage of `getSessionMessages()` for large sessions with compacted history
+
+## 0.2.68
+
+- Updated to parity with Claude Code v2.1.68
+
+## 0.2.66
+
+- Updated to parity with Claude Code v2.1.66
+
+## 0.2.63
+
+- SDK: Fixed `pathToClaudeCodeExecutable` failing when set to a bare command name (e.g., `"claude"`) that should resolve via PATH
+- Added `supportedAgents()` method to the Query interface to view available subagents
+- Fixed MCP replacement tools being incorrectly denied in subagents when using unprefixed MCP tool names
+
+## 0.2.61
+
+- Updated to parity with Claude Code v2.1.61
+
+## 0.2.59
+
+- Added `getSessionMessages()` function for reading a session's conversation history from its transcript file, with support for pagination via `limit` and `offset` options
+
+## 0.2.58
+
+- Updated to parity with Claude Code v2.1.58
+
+## 0.2.56
+
+- Updated to parity with Claude Code v2.1.56
+
+## 0.2.55
+
+- Updated to parity with Claude Code v2.1.55
+
+## 0.2.54
+
+- Updated to parity with Claude Code v2.1.54
+
+## 0.2.53
+
+- Added `listSessions()` for discovering and listing past sessions with light metadata
+
+## 0.2.52
+
+- Updated to parity with Claude Code v2.1.52
+
+## 0.2.51
+
+- Updated to parity with Claude Code v2.1.51
+- Fixed SDK crashing with `ReferenceError` when used inside compiled Bun binaries (`bun build --compile`)
+- Fixed unbounded memory growth in long-running SDK sessions caused by message UUID tracking never evicting old entries
+- Fixed local slash command output not being returned to SDK clients
+- Added `task_progress` events for real-time background agent progress reporting with cumulative usage metrics, tool counts, and duration
+- Fixed `session.close()` in the v2 session API killing the subprocess before it could persist session data, which broke `resumeSession()`
+
+## 0.2.50
+
+- Updated to parity with Claude Code v2.1.50
+
+## 0.2.49
+
+- Updated to parity with Claude Code v2.1.49
+- SDK model info now includes `supportsEffort`, `supportedEffortLevels`, and `supportsAdaptiveThinking` fields so consumers can discover model capabilities.
+- Permission suggestions are now populated when safety checks trigger an ask response, enabling SDK consumers to display permission options.
+- Added `ConfigChange` hook event that fires when configuration files change during a session, enabling enterprise security auditing and optional blocking of settings changes.
+
+## 0.2.47
+
+- Updated to parity with Claude Code v2.1.47
+- Added `promptSuggestion()` method on `Query` to request prompt suggestions based on the current conversation context
+- Added `tool_use_id` field to `task_notification` events for correlating task completions with originating tool calls
+
+## 0.2.46
+
+- Updated to parity with Claude Code v2.1.46
+
+## 0.2.45
+
+- Added support for Claude Sonnet 4.6
+- Added `task_started` system message to the SDK stream, emitted when subagent tasks are registered
+- Fixed `Session.stream()` returning prematurely when background subagents are still running, by holding back intermediate result messages until all tasks complete
+- Improved memory usage for shell commands that produce large output — RSS no longer grows unboundedly with command output size
+
+## 0.2.44
+
+- Updated to parity with Claude Code v2.1.44
+
+## 0.2.43
+
+- Updated to parity with Claude Code v2.1.43
+
+## 0.2.42
+
+- Updated to parity with Claude Code v2.1.42
+
+## 0.2.41
+
+- Updated to parity with Claude Code v2.1.41
+
+## 0.2.40
+
+- Updated to parity with Claude Code v2.1.40
+
+## 0.2.39
+
+- Updated to parity with Claude Code v2.1.39
+
+## 0.2.38
+
+- Updated to parity with Claude Code v2.1.38
+
+## 0.2.37
+
+- Updated to parity with Claude Code v2.1.37
+
+## 0.2.36
+
+- Updated to parity with Claude Code v2.1.36
+
+## 0.2.35
+
+- Updated to parity with Claude Code v2.1.35
+
+## 0.2.34
+
+- Updated to parity with Claude Code v2.1.34
+
+## 0.2.33
+
+- Added `TeammateIdle` and `TaskCompleted` hook events with corresponding `TeammateIdleHookInput` and `TaskCompletedHookInput` types
+- Added `sessionId` option to specify a custom UUID for conversations instead of auto-generated ones
+- Updated to parity with Claude Code v2.1.33
+
+## 0.2.32
+
+- Updated to parity with Claude Code v2.1.32
+
+## 0.2.31
+
+- Added `stop_reason` field to `SDKResultSuccess` and `SDKResultError` to indicate why the model stopped generating
+
+## 0.2.30
+
+- Added `debug` and `debugFile` options for programmatic control of debug logging
+- Added optional `pages` field to `FileReadToolInput` for reading specific PDF page ranges
+- Added `parts` output type to `FileReadToolOutput` for page-extracted PDF results
+- Fixed "(no content)" placeholder messages being included in SDK output
+
+## 0.2.29
+
+- Updated to parity with Claude Code v2.1.29
+
+## 0.2.27
+
+- Added optional `annotations` support to the `tool()` helper function for specifying MCP tool hints (readOnlyHint, destructiveHint, openWorldHint, idempotentHint)
+- Fixed `mcpServerStatus()` to include tools from SDK and dynamically-added MCP servers
+- Updated to parity with Claude Code v2.1.27
+
+## 0.2.25
+
+- Updated to parity with Claude Code v2.1.25
+
+## 0.2.23
+
+- Fixed structured output validation errors not being reported correctly
+- Updated to parity with Claude Code v2.1.23
+
+## 0.2.22
+
+- Fixed structured outputs to handle empty assistant messsages
+- Updated to parity with Claude Code v2.1.22
+
+## 0.2.21
+
+- Added `config`, `scope`, and `tools` fields to `McpServerStatus` for richer server introspection
+- Added `reconnectMcpServer()` and `toggleMcpServer()` methods for managing MCP server connections
+- Added `disabled` status to `McpServerStatus`
+- Fixed PermissionRequest hooks not being executed in SDK mode (e.g., VS Code extension)
+- Updated to parity with Claude Code v2.1.21
+
+## 0.2.20
+
+- Added support for loading CLAUDE.md files from directories specified via `additionalDirectories` option (requires setting `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` in the `env` option)
+- Added `CLAUDE_CODE_ENABLE_TASKS` env var, set to `true` to opt into the new task system
+- Updated to parity with Claude Code v2.1.20
+
+## 0.2.19
+
+- Added `CLAUDE_CODE_ENABLE_TASKS` env var, set to `true` to opt into the new task system
+
+## 0.2.17
+
+- Updated to parity with Claude Code v2.1.17
+
+## 0.2.16
+
+- Updated to parity with Claude Code v2.1.16
+
+## 0.2.15
+
+- Added notification hook support
+- Added `close()` method to Query interface for forcefully terminating running queries
+- Updated to parity with Claude Code v2.1.15
+
+## 0.2.14
+
+- Updated to parity with Claude Code v2.1.14
+
+## 0.2.12
+
+- Updated to parity with Claude Code v2.1.12
+
+## 0.2.11
+
+- Updated to parity with Claude Code v2.1.11
+
+## 0.2.10
+
+- Added `skills` and `maxTurns` configuration options to custom agent definitions.
+
+## 0.2.9
+
+- Updated to parity with Claude Code v2.1.9
+
+## 0.2.8
+
+- Updated to parity with Claude Code v2.1.8
+
+## 0.2.7
+
+- Updated to parity with Claude Code v2.1.7
+
+## 0.2.6
+
+- Updated to parity with Claude Code v2.1.6
+- Added `claudeCodeVersion` field to `package.json` for programmatically determining compatible CLI version
+
+## 0.2.5
+
+- Updated to parity with Claude Code v2.1.5
+
+## 0.2.4
+
+- Updated to parity with Claude Code v2.1.4
+
+## 0.2.3
+
+- Updated to parity with Claude Code v2.1.3
+
+## 0.2.0 (2026-01-07)
+
+- Added `error` field to `McpServerStatus` for failed MCP server connections
+- Updated to parity with Claude Code v2.1.0
+
+## 0.1.77 (2026-01-05)
+
+- Updated to parity with Claude Code v2.0.78
+
+## 0.1.75
+
+- Updated to parity with Claude Code v2.0.75
+
+## 0.1.74
+
+- Updated to parity with Claude Code v2.0.74
+
+## 0.1.73
+
+- Fixed a bug where Stop hooks would not consistently run due to `Stream closed` error
+- Updated to parity with Claude Code v2.0.73
+
+## 0.1.72
+
+- Fixed `/context` command not respecting custom system prompts
+- Fixed non-streaming single-turn queries to close immediately on first result instead of waiting for inactivity timeout
+- Changed V2 session API method `receive()` to `stream()` for consistency with Anthropic SDK patterns
+- Updated to parity with Claude Code v2.0.72
+
+## 0.1.71
+
+- Added zod `^4.0.0` as peer dependency option in addition to zod `^3.24.1`
+- Added support for AskUserQuestion tool. If using `tools` option, enable by including `'AskUserQuestion'` in list
+- Fixed visible console window appearing when spawning Claude subprocess on Windows
+- Fixed spawn message being sent to stderr callback (anthropics/claude-agent-sdk-typescript#45)
+- Updated to parity with Claude Code v2.0.71
+
+## 0.1.69
+
+- Updated to parity with Claude Code v2.0.69
+
+## 0.1.68
+
+- Fixed a bug where disallowed MCP tools were visible to the model
+- Updated to parity with Claude Code v2.0.68
+
+## 0.1.67
+
+- Updated to parity with Claude Code v2.0.67
+
+## 0.1.66
+
+- Fixed project MCP servers from `.mcp.json` not being available when `settingSources` includes `project`
+- Updated to parity with Claude Code v2.0.66
+
+## 0.1.65
+
+- Updated to parity with Claude Code v2.0.66
+
+## 0.1.64
+
+- Fixed issues where SDK MCP servers, hooks, or canUseTool callbacks could fail when stdin was closed too early after the first result
+- Updated to parity with Claude Code v2.0.64
+
+## 0.1.63
+
+- Updated to parity with Claude Code v2.0.63
+
+## 0.1.61
+
+- Updated to parity with Claude Code v2.0.61
+
+## 0.1.60
+
+- Updated to parity with Claude Code v2.0.60
+
+## 0.1.59
+
+- Updated to parity with Claude Code v2.0.59
+
+## 0.1.58
+
+- Updated to parity with Claude Code v2.0.58
+- Added `betas` option to enable beta features. Currently supports `'context-1m-2025-08-07'` for 1M token context window on Sonnet 4/4.5. See https://platform.claude.com/docs/en/api/beta-headers for more details.
+
+## 0.1.57
+
+- Updated to parity with Claude Code v2.0.57
+- Added `tools` option to specify the exact set of built-in tools available to the agent. Use `tools: ['Bash', 'Read', 'Edit']` for a strict allowlist, `tools: []` to disable all built-in tools, or `tools: { type: 'preset', preset: 'claude_code' }` for all default tools. Omitting this option preserves existing behavior where all built-in tools are available (and can be filtered with `disallowedTools`).
+
+## 0.1.56
+
+- Updated to parity with Claude Code v2.0.56
+
+## 0.1.55
+
+- Update to parity with Claude Code v2.0.55
+
+## 0.1.54
+
+- Updated to parity with Claude Code v2.0.54
+- Added experimental v2 session APIs (`unstable_v2_createSession`, `unstable_v2_resumeSession`, `unstable_v2_prompt`) for simpler multi-turn conversations
+- Fixed a bug where ExitPlanMode tool input was empty
+
+## 0.1.53
+
+- Updated to parity with Claude Code v2.0.53
+
+## 0.1.52
+
+- Updated to parity with Claude Code v2.0.52
+
+## 0.1.51
+
+- Updated to parity with Claude Code v2.0.51
+- Added support for Opus 4.5! https://www.anthropic.com/news/claude-opus-4-5
+
+## 0.1.50
+
+- Updated to parity with Claude Code v2.0.50
+
+## 0.1.49
+
+- Updated to parity with Claude Code v2.0.49
+
+## 0.1.47
+
+- Updated to parity with Claude Code v2.0.47
+- Add `error` field to some messages
+
+## 0.1.46
+
+- Updated to parity with Claude Code v2.0.46
+
+## 0.1.45
+
+- Add support for Microsoft Foundry! See https://code.claude.com/docs/en/azure-ai-foundry
+- Structured outputs support. Agents can now return validated JSON matching your schema. See https://platform.claude.com/docs/en/agent-sdk/structured-outputs.
+- Updated to parity with Claude Code v2.0.45
+
+## 0.1.44
+
+- Updated to parity with Claude Code v2.0.44
+
+## 0.1.43
+
+- Updated to parity with Claude Code v2.0.43
+
+## 0.1.42
+
+- Updated to parity with Claude Code v2.0.42
+
+## 0.1.39
+
+- Updated to parity with Claude Code v2.0.41
+
+## 0.1.37
+
+- Updated to parity with Claude Code v2.0.37
+
+## 0.1.36
+
+- Updated to parity with Claude Code v2.0.36
+
+## 0.1.35
+
+- Updated to parity with Claude Code v2.0.35
+
+## 0.1.34
+
+- Updated to parity with Claude Code v2.0.34
+
+## 0.1.33
+
+- Updated to parity with Claude Code v2.0.33
+
+## 0.1.31
+
+- Updated to parity with Claude Code v2.0.32
+
+## 0.1.30
+
+- Added --max-budget-usd flag
+- Fixed a bug where hooks were sometimes failing in stream mode
+- Updated to parity with Claude Code v2.0.31
+
+## 0.1.29
+
+- Updated to parity with Claude Code v2.0.29
+
+## 0.1.28
+
+- Updated to parity with Claude Code v2.0.28
+- Fixed a bug where custom tools were timing out after 30 seconds instead of respecting `MCP_TOOL_TIMEOUT` (anthropics/claude-agent-sdk-typescript#42)
+
+## 0.1.27
+
+- Updated to parity with Claude Code v2.0.27
+- Added `plugins` field to `Options`
+
+## 0.1.26
+
+- Updated to parity with Claude Code v2.0.26
+
+## 0.1.25
+
+- Updated to parity with Claude Code v2.0.25
+- Fixed a bug where project-level skills were not loading when `'project'` settings source was specified
+- Added `skills` field to `SDKSystemMessage` with list of available skills
+- Fixed a bug where some exported types were not importing correctly (anthropics/claude-agent-sdk-typescript#39)
+
+## 0.1.22
+
+- Updated to parity with Claude Code v2.0.22
+
+## 0.1.21
+
+- Updated to parity with Claude Code v2.0.21
+
+## 0.1.20
+
+- Updated to parity with Claude Code v2.0.20
+
+## 0.1.19
+
+- Updated to parity with Claude Code v2.0.19
+
+## 0.1.17
+
+- Updated to parity with Claude Code v2.0.18
+
+## 0.1.16
+
+- Updated to parity with Claude Code v2.0.17
+
+## 0.1.15
+
+- Updated to parity with Claude Code v2.0.15
+- Updated `env` type to not use Bun `Dict` type
+- Startup performance improvements when using multiple SDK MCP servers
+
+## 0.1.14
+
+- Updated to parity with Claude Code v2.0.14
+
+## 0.1.13
+
+- Updated to parity with Claude Code v2.0.13
+
+## 0.1.12
+
+- Updated to parity with Claude Code v2.0.12
+- Increased SDK MCP channel closure timeout to 60s, addressing anthropics/claude-agent-sdk-typescript#15
+
+## 0.1.11
+
+- Updated to parity with Claude Code v2.0.11
+
+## 0.1.10
+
+- Updated to parity with Claude Code v2.0.10
+- Added zod ^3.24.1 as peer dependency
+
+## 0.1.9
+
+- Fixed a bug where system prompt was sometimes not getting set correctly: anthropics/claude-agent-sdk-typescript#8
+
+## 0.1.3
+
+- Updated to parity with Claude Code v2.0.1
+
+## 0.1.0
+
+- **Merged prompt options**: The `customSystemPrompt` and `appendSystemPrompt` fields have been merged into a single `systemPrompt` field for simpler configuration
+- **No default system prompt**: The Claude Code system prompt is no longer included by default, giving you full control over agent behavior. To use the Claude Code system prompt, explicitly set:
+- **No filesystem settings by default**: Settings files (`settings.json`, `CLAUDE.md`), slash commands, and subagents are no longer loaded automatically. This ensures SDK applications have predictable behavior independent of local filesystem configurations
+- **Explicit settings control**: Use the new `settingSources` field to specify which settings locations to load: `["user", "project", "local"]`
+- **Programmatic subagents**: Subagents can now be defined inline in code using the `agents` option, enabling dynamic agent creation without filesystem dependencies. [Learn more](https://platform.claude.com/docs/en/agent-sdk/subagents)
+- **Session forking**: Resume sessions with the new `forkSession` option to branch conversations and explore different approaches from the same starting point. [Learn more](https://platform.claude.com/docs/en/agent-sdk/sessions)
+- **Granular settings control**: The `settingSources` option gives you fine-grained control over which filesystem settings to load, improving isolation for CI/CD, testing, and production deployments
+- Comprehensive documentation now available in the [API Guide](https://platform.claude.com/docs/en/agent-sdk/overview)
+- New guides for [Custom Tools](https://platform.claude.com/docs/en/agent-sdk/custom-tools), [Permissions](https://platform.claude.com/docs/en/agent-sdk/permissions), [Session Management](https://platform.claude.com/docs/en/agent-sdk/sessions), and more
+- Complete [TypeScript API reference](https://platform.claude.com/docs/en/agent-sdk/typescript)

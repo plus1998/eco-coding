@@ -224,6 +224,48 @@ abstract class AppLocalizations {
   /// **'Show cumulative usage and cost in Composer.'**
   String get settingsShowBillingSubtitle;
 
+  /// No description provided for @settingsThinkingContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking content'**
+  String get settingsThinkingContent;
+
+  /// No description provided for @settingsThinkingContentEphemeral.
+  ///
+  /// In en, this message translates to:
+  /// **'Ephemeral'**
+  String get settingsThinkingContentEphemeral;
+
+  /// No description provided for @settingsThinkingContentEphemeralHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Shown while generating, then auto-hides.'**
+  String get settingsThinkingContentEphemeralHint;
+
+  /// No description provided for @settingsThinkingContentCollapsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapsed'**
+  String get settingsThinkingContentCollapsed;
+
+  /// No description provided for @settingsThinkingContentCollapsedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapsed when done; expand anytime.'**
+  String get settingsThinkingContentCollapsedHint;
+
+  /// No description provided for @settingsThinkingContentExpanded.
+  ///
+  /// In en, this message translates to:
+  /// **'Expanded'**
+  String get settingsThinkingContentExpanded;
+
+  /// No description provided for @settingsThinkingContentExpandedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Expanded when done; collapse anytime.'**
+  String get settingsThinkingContentExpandedHint;
+
   /// No description provided for @settingsThemeSystem.
   ///
   /// In en, this message translates to:
@@ -2138,11 +2180,29 @@ abstract class AppLocalizations {
   /// **'Generate image'**
   String get activityNamedCreateImage;
 
+  /// No description provided for @activityNamedComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Computer use'**
+  String get activityNamedComputerUse;
+
   /// No description provided for @activityNamedViewImage.
   ///
   /// In en, this message translates to:
   /// **'View image'**
   String get activityNamedViewImage;
+
+  /// No description provided for @activityNamedDisplayImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Display image'**
+  String get activityNamedDisplayImage;
+
+  /// No description provided for @activityNamedPublishHtml.
+  ///
+  /// In en, this message translates to:
+  /// **'Publish HTML page'**
+  String get activityNamedPublishHtml;
 
   /// No description provided for @activityNamedAgentBrowserOpen.
   ///
@@ -2329,6 +2389,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Viewed 1 image'**
   String get activityImageViewViewed;
+
+  /// No description provided for @activityImageDisplayViewing.
+  ///
+  /// In en, this message translates to:
+  /// **'Displaying 1 image'**
+  String get activityImageDisplayViewing;
+
+  /// No description provided for @activityImageDisplayViewed.
+  ///
+  /// In en, this message translates to:
+  /// **'Displayed 1 image'**
+  String get activityImageDisplayViewed;
+
+  /// No description provided for @activityImageDisplayErrorReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load the displayed image.'**
+  String get activityImageDisplayErrorReadFailed;
+
+  /// No description provided for @activityImageDisplayTapToRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to retry'**
+  String get activityImageDisplayTapToRetry;
+
+  /// No description provided for @activityImageDisplayLoadingPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}%'**
+  String activityImageDisplayLoadingPercent(int percent);
+
+  /// No description provided for @taskImageDisplayHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Displayed images'**
+  String get taskImageDisplayHistory;
+
+  /// No description provided for @taskImageGenerationHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing tasks'**
+  String get taskImageGenerationHistory;
+
+  /// No description provided for @taskHtmlHostHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'HTML pages'**
+  String get taskHtmlHostHistory;
+
+  /// No description provided for @taskImageGenerationEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No drawing tasks yet'**
+  String get taskImageGenerationEmpty;
+
+  /// No description provided for @taskHtmlHostEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No HTML pages yet'**
+  String get taskHtmlHostEmpty;
+
+  /// No description provided for @taskHtmlHostOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the page'**
+  String get taskHtmlHostOpenFailed;
+
+  /// No description provided for @taskImageGenerationStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get taskImageGenerationStatusRunning;
+
+  /// No description provided for @taskImageGenerationStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get taskImageGenerationStatusCompleted;
+
+  /// No description provided for @taskImageGenerationStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get taskImageGenerationStatusFailed;
+
+  /// No description provided for @taskHtmlHostStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get taskHtmlHostStatusCompleted;
+
+  /// No description provided for @taskHtmlHostStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get taskHtmlHostStatusFailed;
+
+  /// No description provided for @activityHtmlHostPublishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Publishing HTML page'**
+  String get activityHtmlHostPublishing;
+
+  /// No description provided for @activityHtmlHostPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published HTML page'**
+  String get activityHtmlHostPublished;
 
   /// No description provided for @activityImageViewLoading.
   ///
@@ -4187,8 +4355,14 @@ abstract class AppLocalizations {
   /// No description provided for @composerImageGeneration.
   ///
   /// In en, this message translates to:
-  /// **'Image creation'**
+  /// **'Creative Drawing'**
   String get composerImageGeneration;
+
+  /// No description provided for @composerComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Computer Use'**
+  String get composerComputerUse;
 
   /// No description provided for @composerSkills.
   ///

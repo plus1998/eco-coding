@@ -6,6 +6,7 @@ import {
   collectThreadFollowUpAttachments,
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
+  threadAcceptsQueuedFollowUp,
 } from "../src/shared/thread-follow-up-drain";
 
 function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): ThreadPendingFollowUp {
@@ -99,6 +100,46 @@ test("shouldBlockThreadFollowUpDrain while follow-up queue is paused", () => {
       hasStoredPendingPlan: false,
     }),
   ).toBe(false);
+});
+
+test("threadAcceptsQueuedFollowUp allows paused drainable statuses", () => {
+  expect(
+    threadAcceptsQueuedFollowUp({
+      status: "idle",
+      followUpQueuePaused: true,
+    }),
+  ).toBe(true);
+  expect(
+    threadAcceptsQueuedFollowUp({
+      status: "completed",
+      followUpQueuePaused: true,
+    }),
+  ).toBe(true);
+  expect(
+    threadAcceptsQueuedFollowUp({
+      status: "failed",
+      followUpQueuePaused: true,
+    }),
+  ).toBe(true);
+  expect(
+    threadAcceptsQueuedFollowUp({
+      status: "idle",
+      followUpQueuePaused: false,
+    }),
+  ).toBe(false);
+  expect(
+    threadAcceptsQueuedFollowUp({
+      status: "running",
+      followUpQueuePaused: false,
+    }),
+  ).toBe(true);
+  expect(
+    threadAcceptsQueuedFollowUp({
+      status: "idle",
+      followUpQueuePaused: false,
+      hasPendingBashApproval: true,
+    }),
+  ).toBe(true);
 });
 
 test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {

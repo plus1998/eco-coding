@@ -85,6 +85,7 @@ test("finalize_plan extension rejects empty plan without onSubmitted", async () 
 });
 
 test("Plan session exposes finalize_plan as an active tool and lists it in the system prompt", async () => {
+  // createAgentSession + ModelRuntime cold import is heavier on 0.85.x.
   const agentDir = await mkdtemp(path.join(tmpdir(), "eco-pi-plan-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   await mkdir(path.join(agentDir, "skills"), { recursive: true });
@@ -137,4 +138,4 @@ test("Plan session exposes finalize_plan as an active tool and lists it in the s
   } finally {
     session.dispose();
   }
-});
+}, 30_000);

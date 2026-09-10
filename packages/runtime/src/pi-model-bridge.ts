@@ -21,6 +21,16 @@ export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "x
  */
 export type EcoPiThinkingLevelMap = Partial<Record<PiThinkingLevel, string | null>>;
 
+/**
+ * Subset of PI `Model.compat` Eco may set. Prefer omitting unknown flags —
+ * especially Anthropic `supportsMidConvoEffort` (Gateway is not a faithful
+ * first-party Claude transport; enabling it risks signed-thinking / effort
+ * system-message 400s). See pi coding-agent docs/models.md.
+ */
+export type EcoPiModelCompat = {
+  supportsMaxOutputTokens?: boolean;
+};
+
 export const ECO_PI_EXTENDED_THINKING_LEVEL_MAP = {
   xhigh: "xhigh",
   max: "max",
@@ -47,6 +57,12 @@ export interface EcoPiModelSpec {
   reasoning: boolean;
   /** Required for PI to keep Eco `xhigh` / `max`; omitted when reasoning is off. */
   thinkingLevelMap?: EcoPiThinkingLevelMap;
+  /**
+   * PI model `compat` overrides. Eco does **not** set `supportsMidConvoEffort`:
+   * pi docs require the exact Claude model on a faithful Anthropic Messages
+   * transport; Eco Bridge/Gateway is not that surface and must not imitate it.
+   */
+  compat?: EcoPiModelCompat;
   input: Array<"text" | "image">;
   cost: {
     input: number;

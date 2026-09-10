@@ -28,7 +28,14 @@ import {
   parseWorkspaceFileReferenceHref,
   type WorkspaceFileReference,
 } from "../workspace-file-reference";
-import { countHtmlLines, extractHtmlDocumentTitle, isHtmlLang } from "./html-block";
+import {
+  countHtmlLines,
+  extractHtmlDocumentTitle,
+  htmlBlockToDOM,
+  htmlInlineToDOM,
+  installHtmlContainerStitch,
+  isHtmlLang,
+} from "./html-block";
 import {
   isMermaidLang,
   type MermaidAppTheme,
@@ -198,6 +205,48 @@ const feedTableNodes: Record<string, NodeSpec> = {
 
 export const feedMarkdownSchema: Schema = new Schema({
   nodes: markdownSchema.spec.nodes.append(feedTableNodes).append({
+    // Raw HTML from markdown-it (`html: true`) — same idea as GitHub/GFM HTML passthrough.
+    html_block: {
+      group: "block",
+      atom: true,
+      selectable: true,
+      attrs: {
+        html: { default: "" },
+      },
+      parseDOM: [
+        {
+          tag: "div.markdown-html-block",
+          getAttrs(dom) {
+            if (!(dom instanceof HTMLElement)) return false;
+            return { html: dom.innerHTML };
+          },
+        },
+      ],
+      toDOM(node: PMNode) {
+        return htmlBlockToDOM(String(node.attrs.html ?? ""));
+      },
+    },
+    html_inline: {
+      inline: true,
+      group: "inline",
+      atom: true,
+      selectable: true,
+      attrs: {
+        html: { default: "" },
+      },
+      parseDOM: [
+        {
+          tag: "span.markdown-html-inline",
+          getAttrs(dom) {
+            if (!(dom instanceof HTMLElement)) return false;
+            return { html: dom.innerHTML };
+          },
+        },
+      ],
+      toDOM(node: PMNode) {
+        return htmlInlineToDOM(String(node.attrs.html ?? ""));
+      },
+    },
     file_ref: {
       inline: true,
       atom: true,
@@ -297,10 +346,11 @@ export const feedMarkdownSchema: Schema = new Schema({
 
 // Default markdown-it (not commonmark-only) so GFM tables / strikethrough work.
 const tokenizer = MarkdownIt({
-  html: false,
+  html: true,
   breaks: true,
   linkify: false,
 });
+installHtmlContainerStitch(tokenizer);
 
 export const feedMarkdownParser = new MarkdownParser(
   feedMarkdownSchema,
@@ -315,6 +365,14 @@ export const feedMarkdownParser = new MarkdownParser(
     th: { block: "table_header" },
     td: { block: "table_cell" },
     s: { mark: "strikethrough" },
+    html_block: {
+      node: "html_block",
+      getAttrs: (tok: { content?: string }) => ({ html: tok.content ?? "" }),
+    },
+    html_inline: {
+      node: "html_inline",
+      getAttrs: (tok: { content?: string }) => ({ html: tok.content ?? "" }),
+    },
   },
 );
 
@@ -439,6 +497,9 @@ function serializeInline(node: PMNode): string {
   if (node.type.name === "hard_break") {
     return "<br/>";
   }
+  if (node.type.name === "html_inline") {
+    return String(node.attrs.html ?? "");
+  }
   if (node.isText) {
     let text = escapeHtml(node.text ?? "");
     for (const mark of node.marks) {
@@ -545,6 +606,8 @@ function serializeBlock(node: PMNode): string {
       const title = node.attrs.title ? ` title="${escapeHtml(String(node.attrs.title))}"` : "";
       return `<img src="${src}" alt="${alt}"${title}/>`;
     }
+    case "html_block":
+      return String(node.attrs.html ?? "");
     default:
       return serializeChildren(node);
   }

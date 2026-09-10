@@ -305,6 +305,7 @@ export function BashApprovalPanel({
         fadeClassName="bash-approval-command-fade"
         hintClassName="bash-approval-command-hint"
         maxCollapsedHeight={112}
+        maxExpandedHeight={280}
       />
 
       <ul className="bash-approval-option-list" role="listbox" aria-label={t("approval.bash.options")}>

@@ -35,6 +35,34 @@ export function shouldBlockThreadFollowUpDrain(input: {
   return input.threadStatus === "awaiting_plan" && input.hasStoredPendingPlan;
 }
 
+/**
+ * Whether the thread can accept a new queued follow-up row.
+ * Live run statuses always accept; paused queues also accept on drainable
+ * statuses so new messages join the pause instead of starting a run ahead of
+ * remaining items.
+ */
+export function threadAcceptsQueuedFollowUp(input: {
+  status: ThreadStatus;
+  followUpQueuePaused?: boolean;
+  hasPendingBridgeApproval?: boolean;
+  hasPendingClarification?: boolean;
+  hasPendingBashApproval?: boolean;
+  hasPendingPlanApproval?: boolean;
+}): boolean {
+  if (input.status === "running" || input.status === "queued" || input.status === "awaiting_plan") {
+    return true;
+  }
+  if (input.followUpQueuePaused && shouldDrainThreadFollowUps(input.status)) {
+    return true;
+  }
+  return Boolean(
+    input.hasPendingBridgeApproval ||
+      input.hasPendingClarification ||
+      input.hasPendingBashApproval ||
+      input.hasPendingPlanApproval,
+  );
+}
+
 export function buildThreadFollowUpDisplayPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
   const next = nextDeliveredFollowUp(followUps);
   return next ? normalizeFollowUpPrompt(next) : "";

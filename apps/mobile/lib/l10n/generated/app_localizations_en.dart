@@ -75,6 +75,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show cumulative usage and cost in Composer.';
 
   @override
+  String get settingsThinkingContent => 'Thinking content';
+
+  @override
+  String get settingsThinkingContentEphemeral => 'Ephemeral';
+
+  @override
+  String get settingsThinkingContentEphemeralHint =>
+      'Shown while generating, then auto-hides.';
+
+  @override
+  String get settingsThinkingContentCollapsed => 'Collapsed';
+
+  @override
+  String get settingsThinkingContentCollapsedHint =>
+      'Collapsed when done; expand anytime.';
+
+  @override
+  String get settingsThinkingContentExpanded => 'Expanded';
+
+  @override
+  String get settingsThinkingContentExpandedHint =>
+      'Expanded when done; collapse anytime.';
+
+  @override
   String get settingsThemeSystem => 'System';
 
   @override
@@ -1265,7 +1289,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityNamedCreateImage => 'Generate image';
 
   @override
+  String get activityNamedComputerUse => 'Computer use';
+
+  @override
   String get activityNamedViewImage => 'View image';
+
+  @override
+  String get activityNamedDisplayImage => 'Display image';
+
+  @override
+  String get activityNamedPublishHtml => 'Publish HTML page';
 
   @override
   String get activityNamedAgentBrowserOpen => 'Open page';
@@ -1361,6 +1394,63 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityImageViewViewed => 'Viewed 1 image';
+
+  @override
+  String get activityImageDisplayViewing => 'Displaying 1 image';
+
+  @override
+  String get activityImageDisplayViewed => 'Displayed 1 image';
+
+  @override
+  String get activityImageDisplayErrorReadFailed =>
+      'Failed to load the displayed image.';
+
+  @override
+  String get activityImageDisplayTapToRetry => 'Tap to retry';
+
+  @override
+  String activityImageDisplayLoadingPercent(int percent) {
+    return '$percent%';
+  }
+
+  @override
+  String get taskImageDisplayHistory => 'Displayed images';
+
+  @override
+  String get taskImageGenerationHistory => 'Drawing tasks';
+
+  @override
+  String get taskHtmlHostHistory => 'HTML pages';
+
+  @override
+  String get taskImageGenerationEmpty => 'No drawing tasks yet';
+
+  @override
+  String get taskHtmlHostEmpty => 'No HTML pages yet';
+
+  @override
+  String get taskHtmlHostOpenFailed => 'Could not open the page';
+
+  @override
+  String get taskImageGenerationStatusRunning => 'In progress';
+
+  @override
+  String get taskImageGenerationStatusCompleted => 'Completed';
+
+  @override
+  String get taskImageGenerationStatusFailed => 'Failed';
+
+  @override
+  String get taskHtmlHostStatusCompleted => 'Completed';
+
+  @override
+  String get taskHtmlHostStatusFailed => 'Failed';
+
+  @override
+  String get activityHtmlHostPublishing => 'Publishing HTML page';
+
+  @override
+  String get activityHtmlHostPublished => 'Published HTML page';
 
   @override
   String get activityImageViewLoading => 'Reading local image…';
@@ -2414,7 +2504,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerBrowser => 'Browser';
 
   @override
-  String get composerImageGeneration => 'Image creation';
+  String get composerImageGeneration => 'Creative Drawing';
+
+  @override
+  String get composerComputerUse => 'Computer Use';
 
   @override
   String get composerSkills => 'Skills';

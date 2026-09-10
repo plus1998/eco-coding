@@ -19,6 +19,7 @@ ImageViewReadFailureCode imageViewReadFailureCodeFromWire(Object? value) {
     'not_file' => ImageViewReadFailureCode.notFile,
     'too_large' => ImageViewReadFailureCode.tooLarge,
     'unsupported_type' => ImageViewReadFailureCode.unsupportedType,
+    'invalid_artifact' => ImageViewReadFailureCode.invalidResponse,
     _ => ImageViewReadFailureCode.invalidResponse,
   };
 }

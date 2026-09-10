@@ -238,6 +238,9 @@ const POC_HANDLERS: Record<string, NotificationHandler> = {
   "item/commandExecution/outputDelta": handleCommandExecutionOutputDelta,
   "item/completed": handleItemCompleted,
   deprecationNotice: handleDeprecationNotice,
+  "model/safetyBuffering/updated": handleModelSafetyBufferingUpdated,
+  "modelProvider/authRecoveryStarted": handleModelProviderAuthRecoveryStarted,
+  "modelProvider/authRecoveryCompleted": handleModelProviderAuthRecoveryCompleted,
 };
 
 export class CodexEventAdapter {
@@ -1156,6 +1159,90 @@ function handleDeprecationNotice(ctx: AdapterContext, params: Record<string, unk
       liveType: "codex.deprecation",
       deprecatedMethod: method,
       gap: method === "thread/rollback",
+    },
+  });
+}
+
+function handleModelSafetyBufferingUpdated(ctx: AdapterContext, params: Record<string, unknown>): void {
+  const codexThreadId = readCodexThreadId(params);
+  if (!codexThreadId) {
+    process.stderr.write(
+      `[eco-codex] model/safetyBuffering/updated without threadId params=${JSON.stringify(params).slice(0, 400)}\n`,
+    );
+    return;
+  }
+  const useCases = Array.isArray(params.useCases)
+    ? params.useCases.filter((value): value is string => typeof value === "string")
+    : [];
+  const reasons = Array.isArray(params.reasons)
+    ? params.reasons.filter((value): value is string => typeof value === "string")
+    : [];
+  const message =
+    readString(params, "message") ??
+    (useCases.length > 0
+      ? `Codex safety buffering (${useCases.join(", ")}${reasons.length ? `: ${reasons.join(", ")}` : ""})`
+      : "Codex safety buffering in progress");
+  emit(ctx, {
+    eventType: "thread.status",
+    codexThreadId,
+    message,
+    streamState: "streaming",
+    metadata: {
+      codexMethod: "model/safetyBuffering/updated",
+      liveType: "codex.safety_buffering",
+      ...(useCases.length ? { useCases } : {}),
+      ...(reasons.length ? { reasons } : {}),
+    },
+  });
+}
+
+function handleModelProviderAuthRecoveryStarted(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+): void {
+  emitAuthRecoveryStatus(ctx, params, "started");
+}
+
+function handleModelProviderAuthRecoveryCompleted(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+): void {
+  emitAuthRecoveryStatus(ctx, params, "completed");
+}
+
+function emitAuthRecoveryStatus(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  phase: "started" | "completed",
+): void {
+  const codexThreadId = readCodexThreadId(params);
+  const provider =
+    readString(params, "provider") ??
+    readString(params, "modelProvider") ??
+    readString(params, "name") ??
+    "provider";
+  const message =
+    readString(params, "message") ??
+    (phase === "started"
+      ? `Refreshing credentials for ${provider}…`
+      : `Credential refresh finished for ${provider}`);
+  if (!codexThreadId) {
+    process.stderr.write(`[eco-codex] modelProvider/authRecovery/${phase} ${message}\n`);
+    return;
+  }
+  emit(ctx, {
+    eventType: "thread.status",
+    codexThreadId,
+    message,
+    streamState: phase === "started" ? "streaming" : "finalized",
+    metadata: {
+      codexMethod:
+        phase === "started"
+          ? "modelProvider/authRecoveryStarted"
+          : "modelProvider/authRecoveryCompleted",
+      liveType: "codex.auth_recovery",
+      phase,
+      provider,
     },
   });
 }

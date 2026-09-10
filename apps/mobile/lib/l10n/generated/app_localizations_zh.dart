@@ -72,6 +72,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsShowBillingSubtitle => '在 Composer 中显示会话累计用量和费用。';
 
   @override
+  String get settingsThinkingContent => '思考内容';
+
+  @override
+  String get settingsThinkingContentEphemeral => '阅后即焚';
+
+  @override
+  String get settingsThinkingContentEphemeralHint => '生成时显示，完成后自动隐藏。';
+
+  @override
+  String get settingsThinkingContentCollapsed => '折叠';
+
+  @override
+  String get settingsThinkingContentCollapsedHint => '完成后默认收起，可随时展开。';
+
+  @override
+  String get settingsThinkingContentExpanded => '展开';
+
+  @override
+  String get settingsThinkingContentExpandedHint => '完成后默认展开，可随时收起。';
+
+  @override
   String get settingsThemeSystem => '跟随';
 
   @override
@@ -1188,7 +1209,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityNamedCreateImage => '生成图片';
 
   @override
+  String get activityNamedComputerUse => '电脑操控';
+
+  @override
   String get activityNamedViewImage => '查看图像';
+
+  @override
+  String get activityNamedDisplayImage => '展示图像';
+
+  @override
+  String get activityNamedPublishHtml => '发布 HTML 页面';
 
   @override
   String get activityNamedAgentBrowserOpen => '打开网页';
@@ -1284,6 +1314,62 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityImageViewViewed => '已查看 1 张图像';
+
+  @override
+  String get activityImageDisplayViewing => '正在展示 1 张图像';
+
+  @override
+  String get activityImageDisplayViewed => '已展示 1 张图像';
+
+  @override
+  String get activityImageDisplayErrorReadFailed => '加载展示图片失败。';
+
+  @override
+  String get activityImageDisplayTapToRetry => '点击重试';
+
+  @override
+  String activityImageDisplayLoadingPercent(int percent) {
+    return '$percent%';
+  }
+
+  @override
+  String get taskImageDisplayHistory => '展示图片';
+
+  @override
+  String get taskImageGenerationHistory => '绘画任务';
+
+  @override
+  String get taskHtmlHostHistory => 'HTML 页面';
+
+  @override
+  String get taskImageGenerationEmpty => '暂无绘画任务';
+
+  @override
+  String get taskHtmlHostEmpty => '暂无 HTML 页面';
+
+  @override
+  String get taskHtmlHostOpenFailed => '无法打开页面';
+
+  @override
+  String get taskImageGenerationStatusRunning => '进行中';
+
+  @override
+  String get taskImageGenerationStatusCompleted => '已完成';
+
+  @override
+  String get taskImageGenerationStatusFailed => '失败';
+
+  @override
+  String get taskHtmlHostStatusCompleted => '已完成';
+
+  @override
+  String get taskHtmlHostStatusFailed => '失败';
+
+  @override
+  String get activityHtmlHostPublishing => '正在发布 HTML 页面';
+
+  @override
+  String get activityHtmlHostPublished => '已发布 HTML 页面';
 
   @override
   String get activityImageViewLoading => '正在读取本地图片…';
@@ -2289,7 +2375,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerBrowser => '浏览器';
 
   @override
-  String get composerImageGeneration => '图片创建';
+  String get composerImageGeneration => '创意绘画';
+
+  @override
+  String get composerComputerUse => '电脑操控';
 
   @override
   String get composerSkills => 'Skills';

@@ -10,6 +10,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart';
 import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/ios26_native_search_field.dart';
+import 'thread_session_app_bar.dart';
 
 const _maxThreadResults = 10;
 const _maxProjectResults = 8;
@@ -115,112 +116,123 @@ class _ThreadSearchPageState extends State<_ThreadSearchPage> {
         runningThreads.isNotEmpty ||
         recentThreads.isNotEmpty ||
         matchingProjects.isNotEmpty;
-    final bg = ecoColors(context).bgMain;
+    final frostCanvas = ecoColors(context).bgMain;
     final useIos = PlatformInfo.isIOS;
 
-    final body = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _SearchHeader(
-          controller: _searchController,
-          focusNode: _focusNode,
-          useIos: useIos,
-          onChanged: _onQueryChanged,
-          onClear: _clearQuery,
-          onClose: _close,
-        ),
-        Expanded(
-          child: hasResults
-              ? ListView(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.only(bottom: 24),
-                  children: [
-                    if (runningThreads.isNotEmpty)
-                      _SearchResultSection(
-                        label: context.l10n.threadSearchRunning,
-                        children: [
-                          for (final thread in runningThreads)
-                            _ThreadSearchRow(
-                              thread: thread,
-                              projectName:
-                                  projectNames[normalizeProjectPath(
-                                    thread.workspacePath,
-                                  )] ??
-                                  _projectBasename(
-                                    thread.workspacePath,
-                                    context.l10n.projectFallbackName,
-                                  ),
-                              onTap: () => Navigator.pop(
-                                context,
-                                ThreadSearchSelection.thread(thread),
-                              ),
-                            ),
-                        ],
-                      ),
-                    if (recentThreads.isNotEmpty)
-                      _SearchResultSection(
-                        label: context.l10n.threadSearchSessions,
-                        children: [
-                          for (final thread in recentThreads)
-                            _ThreadSearchRow(
-                              thread: thread,
-                              projectName:
-                                  projectNames[normalizeProjectPath(
-                                    thread.workspacePath,
-                                  )] ??
-                                  _projectBasename(
-                                    thread.workspacePath,
-                                    context.l10n.projectFallbackName,
-                                  ),
-                              onTap: () => Navigator.pop(
-                                context,
-                                ThreadSearchSelection.thread(thread),
-                              ),
-                            ),
-                        ],
-                      ),
-                    if (matchingProjects.isNotEmpty)
-                      _SearchResultSection(
-                        label: context.l10n.threadSearchProjects,
-                        children: [
-                          for (final project in matchingProjects)
-                            _ProjectSearchRow(
-                              project: project,
-                              onTap: () => Navigator.pop(
-                                context,
-                                ThreadSearchSelection.project(project),
-                              ),
-                            ),
-                        ],
-                      ),
-                  ],
-                )
-              : Center(
-                  child: Text(
-                    context.l10n.threadSearchNoResults,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: ecoColors(context).textMuted,
-                    ),
-                  ),
-                ),
-        ),
-      ],
-    );
-
-    if (useIos) {
-      return CupertinoPageScaffold(
-        backgroundColor: bg,
-        child: Material(
-          type: MaterialType.transparency,
-          child: SafeArea(bottom: false, child: body),
-        ),
-      );
-    }
-
+    // Opaque canvas (fullscreen route is above the shell). Transparency is only
+    // the AppBar + frost so results scroll underneath — same as session chrome.
     return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(bottom: false, child: body),
+      backgroundColor: frostCanvas,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        backgroundColor: Colors.transparent,
+        forceMaterialTransparency: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        toolbarHeight: _SearchHeader.toolbarHeight(useIos),
+        // Frost paints under this transparent AppBar (same as session / threads).
+        flexibleSpace: SafeArea(
+          bottom: false,
+          child: _SearchHeader(
+            controller: _searchController,
+            focusNode: _focusNode,
+            useIos: useIos,
+            onChanged: _onQueryChanged,
+            onClear: _clearQuery,
+            onClose: _close,
+          ),
+        ),
+      ),
+      body: Builder(
+        builder: (bodyContext) {
+          final listTopPad = sessionAppBarChromeHeight(bodyContext);
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              hasResults
+                  ? ListView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.only(top: listTopPad, bottom: 24),
+                      children: [
+                        if (runningThreads.isNotEmpty)
+                          _SearchResultSection(
+                            label: context.l10n.threadSearchRunning,
+                            children: [
+                              for (final thread in runningThreads)
+                                _ThreadSearchRow(
+                                  thread: thread,
+                                  projectName:
+                                      projectNames[normalizeProjectPath(
+                                        thread.workspacePath,
+                                      )] ??
+                                      _projectBasename(
+                                        thread.workspacePath,
+                                        context.l10n.projectFallbackName,
+                                      ),
+                                  onTap: () => Navigator.pop(
+                                    context,
+                                    ThreadSearchSelection.thread(thread),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        if (recentThreads.isNotEmpty)
+                          _SearchResultSection(
+                            label: context.l10n.threadSearchSessions,
+                            children: [
+                              for (final thread in recentThreads)
+                                _ThreadSearchRow(
+                                  thread: thread,
+                                  projectName:
+                                      projectNames[normalizeProjectPath(
+                                        thread.workspacePath,
+                                      )] ??
+                                      _projectBasename(
+                                        thread.workspacePath,
+                                        context.l10n.projectFallbackName,
+                                      ),
+                                  onTap: () => Navigator.pop(
+                                    context,
+                                    ThreadSearchSelection.thread(thread),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        if (matchingProjects.isNotEmpty)
+                          _SearchResultSection(
+                            label: context.l10n.threadSearchProjects,
+                            children: [
+                              for (final project in matchingProjects)
+                                _ProjectSearchRow(
+                                  project: project,
+                                  onTap: () => Navigator.pop(
+                                    context,
+                                    ThreadSearchSelection.project(project),
+                                  ),
+                                ),
+                            ],
+                          ),
+                      ],
+                    )
+                  : Padding(
+                      padding: EdgeInsets.only(top: listTopPad),
+                      child: Center(
+                        child: Text(
+                          context.l10n.threadSearchNoResults,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: ecoColors(context).textMuted),
+                        ),
+                      ),
+                    ),
+              SessionTopFrostOverlay(canvasColor: frostCanvas),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -248,6 +260,17 @@ class _SearchHeader extends StatelessWidget {
   /// Large glass close control (maps to 44pt native glass extent).
   static const double _closeButtonSize = 48;
 
+  static const double _paddingTop = 10;
+  static const double _paddingBottom = 20;
+
+  /// Matches session AppBar toolbarHeight: content row + vertical padding.
+  static double toolbarHeight(bool useIos) {
+    final fieldHeight = useIos ? _fieldHeight : 48.0;
+    final contentHeight =
+        fieldHeight > _closeButtonSize ? fieldHeight : _closeButtonSize;
+    return _paddingTop + contentHeight + _paddingBottom;
+  }
+
   @override
   Widget build(BuildContext context) {
     final closeButton = AdaptiveToolbarIcon(
@@ -257,28 +280,36 @@ class _SearchHeader extends StatelessWidget {
       onPressed: onClose,
     );
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(useIos ? 12 : 16, 10, 12, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: useIos
-                ? _IosSearchField(
-                    height: _fieldHeight,
-                    onChanged: onChanged,
-                  )
-                : _MaterialSearchField(
-                    height: 48,
-                    controller: controller,
-                    focusNode: focusNode,
-                    onChanged: onChanged,
-                    onClear: onClear,
-                  ),
-          ),
-          const SizedBox(width: sessionToolbarButtonGap),
-          closeButton,
-        ],
+    return SizedBox(
+      height: toolbarHeight(useIos),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          useIos ? 12 : 16,
+          _paddingTop,
+          12,
+          _paddingBottom,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: useIos
+                  ? _IosSearchField(
+                      height: _fieldHeight,
+                      onChanged: onChanged,
+                    )
+                  : _MaterialSearchField(
+                      height: 48,
+                      controller: controller,
+                      focusNode: focusNode,
+                      onChanged: onChanged,
+                      onClear: onClear,
+                    ),
+            ),
+            const SizedBox(width: sessionToolbarButtonGap),
+            closeButton,
+          ],
+        ),
       ),
     );
   }

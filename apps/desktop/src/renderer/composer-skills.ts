@@ -5,10 +5,18 @@ import {
   type SkillInfo,
 } from "../shared/skills";
 import { filterUserSkills, type SkillFuzzyMatch } from "./skill-fuzzy";
+import {
+  FILE_ATTACHMENT_TOKEN_PATTERN,
+  fileAttachmentToken,
+  parseFileAttachmentPath,
+} from "./workspace-file-reference";
 
-export { parseExplicitSkillNames, promptIncludesSkillName };
+export { parseExplicitSkillNames, promptIncludesSkillName, fileAttachmentToken };
 
-export type PromptSegment = { type: "text"; value: string } | { type: "skill"; name: string };
+export type PromptSegment =
+  | { type: "text"; value: string }
+  | { type: "skill"; name: string }
+  | { type: "file"; path: string };
 
 export type SlashQuery = { start: number; query: string };
 
@@ -37,15 +45,45 @@ export function parsePromptSegments(text: string): PromptSegment[] {
   if (!text) {
     return [];
   }
+  type Hit = { index: number; length: number; segment: Exclude<PromptSegment, { type: "text" }> };
+  const hits: Hit[] = [];
+  for (const match of text.matchAll(SKILL_NAME_TOKEN)) {
+    if (match.index === undefined) {
+      continue;
+    }
+    hits.push({
+      index: match.index,
+      length: match[0].length,
+      segment: { type: "skill", name: match[1]! },
+    });
+  }
+  for (const match of text.matchAll(FILE_ATTACHMENT_TOKEN_PATTERN)) {
+    if (match.index === undefined) {
+      continue;
+    }
+    const path = parseFileAttachmentPath(match[1] ?? "");
+    if (!path) {
+      continue;
+    }
+    hits.push({
+      index: match.index,
+      length: match[0].length,
+      segment: { type: "file", path },
+    });
+  }
+  hits.sort((left, right) => left.index - right.index || left.length - right.length);
+
   const segments: PromptSegment[] = [];
   let lastIndex = 0;
-  for (const match of text.matchAll(SKILL_NAME_TOKEN)) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) {
-      segments.push({ type: "text", value: text.slice(lastIndex, index) });
+  for (const hit of hits) {
+    if (hit.index < lastIndex) {
+      continue;
     }
-    segments.push({ type: "skill", name: match[1]! });
-    lastIndex = index + match[0].length;
+    if (hit.index > lastIndex) {
+      segments.push({ type: "text", value: text.slice(lastIndex, hit.index) });
+    }
+    segments.push(hit.segment);
+    lastIndex = hit.index + hit.length;
   }
   if (lastIndex < text.length) {
     segments.push({ type: "text", value: text.slice(lastIndex) });

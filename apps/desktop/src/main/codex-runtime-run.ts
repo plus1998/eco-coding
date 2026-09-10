@@ -1568,6 +1568,8 @@ function fingerprintPreparedMcpServers(servers: readonly CodexMcpServerForConfig
       httpHeaders: server.httpHeaders,
       enabledTools: server.enabledTools,
       startupTimeoutSec: server.startupTimeoutSec,
+      toolTimeoutSec: server.toolTimeoutSec,
+      toolOutputTokenLimits: server.toolOutputTokenLimits,
     })),
   );
 }

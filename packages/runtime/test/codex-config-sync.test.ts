@@ -67,6 +67,8 @@ test("buildCodexConfigToml maps enabled providers to eco_* model_providers", () 
   expect(toml).toContain("[features]");
   expect(toml).toContain("remote_plugin = false");
   expect(toml).toContain("plugins = false");
+  expect(toml).toContain("[tools.update_plan]");
+  expect(toml).toContain("enabled = true");
   expect(toml).not.toContain("multi_agent = true");
   expect(toml).toContain("[model_providers.eco_openai]");
   expect(toml).toContain('name = "Eco Gateway (eco_openai)"');
@@ -230,6 +232,29 @@ test("buildCodexConfigToml writes tool_timeout_sec when set", () => {
   expect(toml).toContain("[mcp_servers.eco_image_generation]");
   expect(toml).toContain("startup_timeout_sec = 60");
   expect(toml).toContain("tool_timeout_sec = 300");
+  expect(toml).toContain("[mcp_servers.eco_image_generation.tools.create_image]");
+  expect(toml).toContain("output_token_limit = 2000");
+});
+
+test("buildCodexConfigToml writes explicit per-tool output_token_limit", () => {
+  const toml = buildCodexConfigToml({
+    ecoDataDir: "/data",
+    gatewayBaseUrl: "http://127.0.0.1:18765/v1",
+    providers: [{ id: "custom", name: "Custom", enabled: true }],
+    mcpServers: [
+      {
+        name: "eco_agent_browser",
+        transport: "stdio",
+        command: "agent-browser",
+        args: ["mcp"],
+        toolOutputTokenLimits: { snapshot: 4096, get_url: 256 },
+      },
+    ],
+  });
+  expect(toml).toContain("[mcp_servers.eco_agent_browser.tools.snapshot]");
+  expect(toml).toContain("output_token_limit = 4096");
+  expect(toml).toContain("[mcp_servers.eco_agent_browser.tools.get_url]");
+  expect(toml).toContain("output_token_limit = 256");
 });
 
 test("buildCodexConfigToml omits MCP section when none selected", () => {

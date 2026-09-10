@@ -6,6 +6,7 @@ import {
   mergeUsageTotals,
   parseModelUsage,
   parseSdkContextUsage,
+  parseSdkModelUsageBilling,
   parseSdkUsageBilling,
   parseUsagePayload,
 } from "../src/usage";
@@ -55,6 +56,85 @@ test("parseModelUsage reads SDK modelUsage map", () => {
       costUsd: 0.12,
     },
   });
+});
+
+test("parseModelUsage reads thinkingTokens and costBasis", () => {
+  const parsed = parseModelUsage({
+    modelUsage: {
+      "claude-opus-4": {
+        inputTokens: 10,
+        outputTokens: 20,
+        thinkingTokens: 64,
+        costBasis: "managed",
+      },
+      "claude-haiku": {
+        input_tokens: 5,
+        output_tokens: 8,
+        thinking_tokens: 12,
+        cost_basis: "list",
+      },
+    },
+  });
+
+  expect(parsed).toEqual({
+    "claude-opus-4": {
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      thinkingTokens: 64,
+      costBasis: "managed",
+    },
+    "claude-haiku": {
+      inputTokens: 5,
+      outputTokens: 8,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      thinkingTokens: 12,
+      costBasis: "list",
+    },
+  });
+});
+
+test("parseUsagePayload reads top-level thinkingTokens as reasoningTokens", () => {
+  const parsed = parseUsagePayload({
+    usage: {
+      input_tokens: 10,
+      output_tokens: 40,
+      thinkingTokens: 18,
+    },
+  });
+  expect(parsed).toMatchObject({
+    inputTokens: 10,
+    outputTokens: 40,
+    reasoningTokens: 18,
+  });
+});
+
+test("parseSdkModelUsageBilling maps thinkingTokens to reasoningTokens", () => {
+  const billings = parseSdkModelUsageBilling({
+    modelUsage: {
+      "claude-opus-4": {
+        inputTokens: 10,
+        outputTokens: 20,
+        thinkingTokens: 33,
+        costUSD: 0.01,
+      },
+    },
+  });
+  expect(billings).toEqual([
+    {
+      modelId: "claude-opus-4",
+      usage: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        reasoningTokens: 33,
+      },
+      sdkCostUsd: 0.01,
+    },
+  ]);
 });
 
 test("accumulateThreadCost sums query() costs", () => {

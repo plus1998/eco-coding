@@ -1,7 +1,9 @@
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import { Eye, Pencil, RotateCcw } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MarkdownContent } from "./MarkdownContent";
 import { clampTargetColumn, clampTargetLine, languageForFile } from "./workspace-file-browser-logic";
 
 export interface WorkspaceFile {
@@ -240,6 +242,7 @@ export function WorkspaceFilePreview({
 }) {
   const { t } = useTranslation();
   const editable = file.kind === "text" && !file.truncated && Boolean(workspacePath);
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("preview");
   const baselineRef = useRef(file.content ?? "");
   const [draft, setDraft] = useState(file.content ?? "");
   const [dirty, setDirty] = useState(false);
@@ -250,6 +253,28 @@ export function WorkspaceFilePreview({
   const savingRef = useRef(false);
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
+
+  // 判断是否是 Markdown 或 SVG 文件
+  const isMarkdown = useMemo(() => {
+    const ext = file.path.toLowerCase().split(".").pop();
+    return ext === "md" || ext === "markdown";
+  }, [file.path]);
+
+  const isSvg = useMemo(() => {
+    const ext = file.path.toLowerCase().split(".").pop();
+    return ext === "svg";
+  }, [file.path]);
+
+  // 对于 Markdown 和 SVG 文件，默认使用预览模式
+  useEffect(() => {
+    if (isMarkdown || isSvg) {
+      setViewMode("preview");
+    } else {
+      setViewMode("edit");
+    }
+  }, [isMarkdown, isSvg, file.path]);
+
+  const showModeToggle = (isMarkdown || isSvg) && editable;
 
   useEffect(() => {
     const next = file.content ?? "";
@@ -346,22 +371,78 @@ export function WorkspaceFilePreview({
         : dirty
           ? t("fileBrowser.unsaved")
           : null;
+
+  // 渲染预览内容
+  const renderPreviewContent = () => {
+    if (isMarkdown) {
+      return (
+        <div className="workspace-file-browser__markdown-preview">
+          <MarkdownContent
+            text={draft}
+            {...(workspacePath
+              ? { localImageContext: { workspacePath, filePath: file.path } }
+              : {})}
+          />
+        </div>
+      );
+    }
+    if (isSvg) {
+      const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(draft)))}`;
+      return (
+        <div className="workspace-file-browser__svg-preview">
+          <img 
+            src={svgDataUrl} 
+            alt={file.name} 
+            className="workspace-file-browser__svg-image"
+          />
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="workspace-file-browser__preview-body">
-      <Suspense
-        fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}
-      >
-        <LazyCodeMirror
-          key={`${file.path}:${target?.requestId ?? 0}`}
-          content={draft}
-          path={file.path}
-          readOnly={!editable}
-          {...(editable && handleChange ? { onChange: handleChange } : {})}
-          {...(editable ? { onSave: () => void handleSave() } : {})}
-          {...(targetLine === undefined ? {} : { targetLine })}
-          {...(targetColumn === undefined ? {} : { targetColumn })}
-        />
-      </Suspense>
+      {showModeToggle && (
+        <div className="workspace-file-browser__mode-toggle">
+          <button
+            type="button"
+            className={`workspace-file-browser__mode-btn ${viewMode === "preview" ? "is-active" : ""}`}
+            onClick={() => setViewMode("preview")}
+            title={t("fileBrowser.previewMode")}
+          >
+            <Eye size={14} />
+            <span>{t("fileBrowser.preview")}</span>
+          </button>
+          <button
+            type="button"
+            className={`workspace-file-browser__mode-btn ${viewMode === "edit" ? "is-active" : ""}`}
+            onClick={() => setViewMode("edit")}
+            title={t("fileBrowser.editMode")}
+          >
+            <Pencil size={14} />
+            <span>{t("fileBrowser.edit")}</span>
+          </button>
+        </div>
+      )}
+      {viewMode === "preview" && (isMarkdown || isSvg) ? (
+        renderPreviewContent()
+      ) : (
+        <Suspense
+          fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}
+        >
+          <LazyCodeMirror
+            key={`${file.path}:${target?.requestId ?? 0}`}
+            content={draft}
+            path={file.path}
+            readOnly={!editable}
+            {...(editable && handleChange ? { onChange: handleChange } : {})}
+            {...(editable ? { onSave: () => void handleSave() } : {})}
+            {...(targetLine === undefined ? {} : { targetLine })}
+            {...(targetColumn === undefined ? {} : { targetColumn })}
+          />
+        </Suspense>
+      )}
       {statusMessage ? (
         <div
           className={[

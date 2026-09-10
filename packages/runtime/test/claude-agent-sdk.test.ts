@@ -30,6 +30,7 @@ import {
   getDefaultAllowedTools,
   type HeldPromptStream,
   inferActivityRole,
+  interruptOrCloseSdkQuery,
   isCompactBoundarySdkMessage,
   isSdkInitMessage,
   mapSdkMessageToEvents,
@@ -1755,20 +1756,131 @@ test("maps SDK task_progress system messages to todo.updated events", () => {
   });
 });
 
-test("does not map task_started system messages (handled by SDK hooks)", () => {
+test("maps SDK task_started system messages to todo.updated with ambient fields", () => {
   const events = mapSdkMessageToEvents(
     {
       type: "system",
       subtype: "task_started",
       task_id: "task_abc",
       description: "Review changes",
+      ambient: true,
+      is_backgrounded: true,
+      spawn_depth: 2,
       uuid: "sdk_task_1",
       session_id: "session_1",
     },
     "thr_1",
   );
 
-  expect(events).toHaveLength(0);
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "todo.updated",
+    payload: {
+      sdkKind: "task_started",
+      task_id: "task_abc",
+      description: "Review changes",
+      ambient: true,
+      is_backgrounded: true,
+      spawn_depth: 2,
+    },
+  });
+  expect(formatAgentEventLine(events[0]!)).toBeNull();
+});
+
+test("maps task_notification with resource_links and ambient", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_notification",
+      task_id: "task_done",
+      status: "completed",
+      ambient: true,
+      resource_links: [{ uri: "file:///tmp/out.md", name: "out.md", title: "Output" }],
+      uuid: "sdk_task_note",
+      session_id: "session_1",
+    },
+    "thr_1",
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "todo.updated",
+    payload: {
+      sdkKind: "task_notification",
+      task_id: "task_done",
+      status: "completed",
+      ambient: true,
+      resource_links: [{ uri: "file:///tmp/out.md", name: "out.md", title: "Output" }],
+    },
+  });
+});
+
+test("maps SDK result user_message_uuid(s) and queued_turn_count onto usage.recorded", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "result",
+      subtype: "success",
+      uuid: "result_1",
+      session_id: "session_1",
+      total_cost_usd: 0.05,
+      user_message_uuid: "user-last",
+      user_message_uuids: ["user-a", "user-last"],
+      queued_turn_count: 2,
+    },
+    "thr_1",
+  );
+
+  expect(events[0]).toMatchObject({
+    type: "usage.recorded",
+    payload: {
+      type: "result",
+      user_message_uuid: "user-last",
+      user_message_uuids: ["user-a", "user-last"],
+      queued_turn_count: 2,
+    },
+  });
+});
+
+test("maps tool_use_result resourceLinks onto tool.completed", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_read",
+      session_id: "session_1",
+      message: {
+        content: [{ type: "tool_use", id: "call_read", name: "Read", input: { file_path: "a.ts" } }],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "user_tool",
+      session_id: "session_1",
+      tool_use_result: {
+        resourceLinks: [{ uri: "file:///tmp/a.ts", name: "a.ts" }],
+      },
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_read", content: "ok" }],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events[0]).toMatchObject({
+    type: "tool.completed",
+    payload: {
+      type: "tool_result",
+      tool_name: "Read",
+      resource_links: [{ uri: "file:///tmp/a.ts", name: "a.ts" }],
+    },
+  });
 });
 
 test("formatAgentEventLine renders todo.updated task progress for activity", () => {
@@ -1923,6 +2035,90 @@ test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () 
   expect(capturedOptions?.cwd).toBe("/tmp/session-worktree");
   expect(capturedOptions?.pathToClaudeCodeExecutable).toBe("/opt/eco/claude");
   expect(rewoundMessageId).toBe("user-target");
+});
+
+test("ClaudeAgentSdkDriver rewindFiles fails on canRewind false, ok false, and skippedLinks", async () => {
+  const makeDriver = (rewindResult: unknown) =>
+    new ClaudeAgentSdkDriver({
+      apiKey: "test-key",
+      baseUrl: "http://127.0.0.1:36037",
+      loadSdk: async () => ({
+        query: () => ({
+          async *[Symbol.asyncIterator]() {},
+          rewindFiles: async () => rewindResult,
+        }),
+      }),
+    });
+
+  const input = {
+    threadId: "thr_rewind_fail",
+    prompt: "",
+    workspacePath: "/tmp/project",
+    worktreePath: "/tmp/session-worktree",
+    routes,
+    signal: new AbortController().signal,
+    resume: { resumeSessionId: "sess-rewind" },
+  };
+
+  await expect(makeDriver({ canRewind: false, reason: "checkpoint gone" }).rewindSessionFiles(input, "u1")).rejects.toThrow(
+    /checkpoint gone/,
+  );
+  await expect(makeDriver({ ok: false, reason: "rewind failed" }).rewindSessionFiles(input, "u1")).rejects.toThrow(
+    /rewind failed/,
+  );
+  await expect(makeDriver({ success: false, error: "nope" }).rewindSessionFiles(input, "u1")).rejects.toThrow(/nope/);
+  await expect(makeDriver({ skippedLinks: 3 }).rewindSessionFiles(input, "u1")).rejects.toThrow(/skipped 3 path/);
+});
+
+test("interruptOrCloseSdkQuery passes cancelQueued true by default", async () => {
+  let interruptArgs: unknown;
+  const probes: Array<{ phase: string; detail: Record<string, unknown> }> = [];
+  const receipt = await interruptOrCloseSdkQuery(
+    {
+      async *[Symbol.asyncIterator]() {},
+      interrupt: async (options) => {
+        interruptArgs = options;
+        return { still_queued: [], cancelled: ["queued-1"] };
+      },
+    },
+    (phase, detail) => {
+      probes.push({ phase, detail });
+    },
+  );
+
+  expect(interruptArgs).toEqual({ cancelQueued: true });
+  expect(receipt).toEqual({ still_queued: [], cancelled: ["queued-1"] });
+  expect(probes[0]).toMatchObject({
+    phase: "interrupt",
+    detail: { still_queued: [], cancelled: ["queued-1"] },
+  });
+});
+
+test("teardownClaudeQueryHandle returns cancelled uuids from interrupt receipt", async () => {
+  const result = await teardownClaudeQueryHandle(
+    {
+      query: {
+        async *[Symbol.asyncIterator]() {},
+        interrupt: async (options) => {
+          expect(options).toEqual({ cancelQueued: true });
+          return { still_queued: ["survive"], cancelled: ["drop-me"] };
+        },
+        close: () => {},
+      },
+      phase: "open",
+    },
+    {
+      shouldInterrupt: true,
+      drainDeadlineMs: 10,
+    },
+  );
+
+  expect(result).toMatchObject({
+    stillQueued: ["survive"],
+    cancelled: ["drop-me"],
+    interrupted: true,
+    closed: true,
+  });
 });
 
 test("applyClaudeJsonlSessionPersistence enables local JSONL checkpoints", () => {
@@ -2447,6 +2643,7 @@ test("ClaudeAgentSdkDriver interrupts SDK query on abort before falling back to 
     detail: {
       receipt: { still_queued: ["queued-follow-up"] },
       still_queued: ["queued-follow-up"],
+      cancelled: [],
     },
   });
   expect(probes.some((probe) => probe.phase === "query_teardown")).toBe(true);
@@ -3653,6 +3850,136 @@ test("ClaudeAgentSdkDriver closes the held prompt after result so the run can fi
   }
 
   expect(promptSettled).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver delays held prompt close while queued_turn_count > 0", async () => {
+  let promptSettled = false;
+  let releaseSecondResult: (() => void) | undefined;
+  const secondResultGate = new Promise<void>((resolve) => {
+    releaseSecondResult = resolve;
+  });
+
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        expect(options.pluginDelivery).toBe("initialize");
+        expect(options.perTaskStopAffordance).toBe(true);
+        expect(options.permissionPrompts).toBe("none");
+        void (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // Drain until close.
+          }
+          promptSettled = true;
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-queued",
+              uuid: "init-queued",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-queued",
+              uuid: "result-queued-1",
+              queued_turn_count: 1,
+            };
+            await secondResultGate;
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-queued",
+              uuid: "result-queued-2",
+              queued_turn_count: 0,
+            };
+            while (!promptSettled) {
+              await new Promise((resolve) => setTimeout(resolve, 1));
+            }
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  const run = (async () => {
+    const terminals: unknown[] = [];
+    for await (const event of driver.runAsk({
+      threadId: "thr_queued_close",
+      prompt: "queued turns",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    })) {
+      if (event.type === "run.terminal") {
+        terminals.push(event.payload);
+      }
+    }
+    return terminals;
+  })();
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(promptSettled).toBe(false);
+  releaseSecondResult?.();
+  await run;
+  expect(promptSettled).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver getContextUsage is called with detail summary", async () => {
+  let contextUsageOpts: unknown;
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt }) => {
+        void (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // drain
+          }
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-ctx",
+              uuid: "init-ctx",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-ctx",
+              uuid: "result-ctx",
+            };
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          },
+          getContextUsage: async (opts) => {
+            contextUsageOpts = opts;
+            return { type: "sdk_context_usage", categories: [] };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runAsk({
+    threadId: "thr_ctx_usage",
+    prompt: "check context",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // consume
+  }
+
+  expect(contextUsageOpts).toEqual({ detail: "summary" });
 });
 
 test("maps cancelled tool_result_meta onto tool.failed with non_execution_kind", () => {

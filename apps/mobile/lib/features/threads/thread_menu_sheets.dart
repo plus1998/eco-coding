@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/html_host_models.dart';
+import '../../core/models/image_generation_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/storage/package_script_args_storage.dart';
@@ -117,6 +121,60 @@ Future<void> showNpmScriptsSheet({
       maxChildSize: 0.92,
       builder: (context, scrollController) => _NpmScriptsSheet(
         workspacePath: workspacePath,
+        scrollController: scrollController,
+      ),
+    ),
+  );
+}
+
+Future<void> showImageGenerationArtifactsSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String threadId,
+  List<ImageGenerationArtifact> artifacts = const [],
+}) {
+  return showEcoModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: ecoColors(context).bgMenu,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.62,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) => _ImageGenerationArtifactsSheet(
+        threadId: threadId,
+        initialArtifacts: artifacts,
+        scrollController: scrollController,
+      ),
+    ),
+  );
+}
+
+Future<void> showHtmlHostArtifactsSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String threadId,
+  List<HtmlHostArtifact> artifacts = const [],
+}) {
+  return showEcoModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: ecoColors(context).bgMenu,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.55,
+      minChildSize: 0.35,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) => _HtmlHostArtifactsSheet(
+        threadId: threadId,
+        initialArtifacts: artifacts,
         scrollController: scrollController,
       ),
     ),
@@ -1260,4 +1318,369 @@ Future<void> showThreadActionSheet({
       );
     },
   );
+}
+
+class _ImageGenerationArtifactsSheet extends ConsumerStatefulWidget {
+  const _ImageGenerationArtifactsSheet({
+    required this.threadId,
+    required this.initialArtifacts,
+    required this.scrollController,
+  });
+
+  final String threadId;
+  final List<ImageGenerationArtifact> initialArtifacts;
+  final ScrollController scrollController;
+
+  @override
+  ConsumerState<_ImageGenerationArtifactsSheet> createState() =>
+      _ImageGenerationArtifactsSheetState();
+}
+
+class _ImageGenerationArtifactsSheetState
+    extends ConsumerState<_ImageGenerationArtifactsSheet> {
+  late Future<List<ImageGenerationArtifact>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.initialArtifacts.isNotEmpty
+        ? Future.value(widget.initialArtifacts)
+        : _load();
+  }
+
+  Future<List<ImageGenerationArtifact>> _load() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return const [];
+    return rpc.listImageGenerationArtifacts(widget.threadId);
+  }
+
+  Future<void> _openArtifact(ImageGenerationArtifact artifact) async {
+    if (artifact.images.isEmpty) return;
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
+    );
+    try {
+      final read = await rpc.readImageGenerationArtifact(
+        artifactId: artifact.id,
+        imageIndex: 0,
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return Dialog.fullscreen(
+            child: Scaffold(
+              backgroundColor: Colors.black,
+              appBar: AppBar(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                title: Text(
+                  artifact.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              body: Center(
+                child: InteractiveViewer(
+                  child: Image.memory(
+                    Uint8List.fromList(read.bytes),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white54,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (error) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  String _statusLabel(String status, AppLocalizations l10n) {
+    return switch (status) {
+      'running' => l10n.taskImageGenerationStatusRunning,
+      'failed' => l10n.taskImageGenerationStatusFailed,
+      _ => l10n.taskImageGenerationStatusCompleted,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return SafeArea(
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          const EcoSheetGrabber(),
+          _SheetHeader(title: context.l10n.taskImageGenerationHistory),
+          Expanded(
+            child: FutureBuilder<List<ImageGenerationArtifact>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text(snapshot.error.toString()));
+                }
+                final artifacts = snapshot.data ?? const [];
+                if (artifacts.isEmpty) {
+                  return Center(
+                    child: Text(
+                      context.l10n.taskImageGenerationEmpty,
+                      style: TextStyle(color: eco.textMuted),
+                    ),
+                  );
+                }
+                return ListView.separated(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: artifacts.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final artifact = artifacts[index];
+                    final meta = [
+                      _statusLabel(artifact.status, context.l10n),
+                      if (artifact.model.trim().isNotEmpty) artifact.model,
+                    ].join(' · ');
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      tileColor: eco.bgElevated,
+                      leading: Icon(EcoIcons.image, color: eco.textMuted),
+                      title: Text(
+                        artifact.displayTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(meta),
+                      enabled:
+                          artifact.status == 'completed' &&
+                          artifact.images.isNotEmpty,
+                      onTap: () => _openArtifact(artifact),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HtmlHostArtifactsSheet extends ConsumerStatefulWidget {
+  const _HtmlHostArtifactsSheet({
+    required this.threadId,
+    required this.initialArtifacts,
+    required this.scrollController,
+  });
+
+  final String threadId;
+  final List<HtmlHostArtifact> initialArtifacts;
+  final ScrollController scrollController;
+
+  @override
+  ConsumerState<_HtmlHostArtifactsSheet> createState() =>
+      _HtmlHostArtifactsSheetState();
+}
+
+class _HtmlHostArtifactsSheetState
+    extends ConsumerState<_HtmlHostArtifactsSheet> {
+  late Future<List<HtmlHostArtifact>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.initialArtifacts.isNotEmpty
+        ? Future.value(widget.initialArtifacts)
+        : _load();
+  }
+
+  Future<List<HtmlHostArtifact>> _load() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return const [];
+    return rpc.listHtmlHostArtifacts(widget.threadId);
+  }
+
+  Future<void> _openArtifact(HtmlHostArtifact artifact) async {
+    final url = artifact.publicUrl.trim();
+    if (url.isEmpty || artifact.status != 'completed') return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => _HtmlHostPageViewer(
+          title: artifact.displayTitle,
+          url: url,
+        ),
+      ),
+    );
+  }
+
+  String _statusLabel(String status, AppLocalizations l10n) {
+    return status == 'failed'
+        ? l10n.taskHtmlHostStatusFailed
+        : l10n.taskHtmlHostStatusCompleted;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return SafeArea(
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          const EcoSheetGrabber(),
+          _SheetHeader(title: context.l10n.taskHtmlHostHistory),
+          Expanded(
+            child: FutureBuilder<List<HtmlHostArtifact>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text(snapshot.error.toString()));
+                }
+                final artifacts = snapshot.data ?? const [];
+                if (artifacts.isEmpty) {
+                  return Center(
+                    child: Text(
+                      context.l10n.taskHtmlHostEmpty,
+                      style: TextStyle(color: eco.textMuted),
+                    ),
+                  );
+                }
+                return ListView.separated(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: artifacts.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final artifact = artifacts[index];
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      tileColor: eco.bgElevated,
+                      leading: Icon(EcoIcons.browser, color: eco.textMuted),
+                      title: Text(
+                        artifact.displayTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(_statusLabel(artifact.status, context.l10n)),
+                      enabled:
+                          artifact.status == 'completed' &&
+                          artifact.publicUrl.trim().isNotEmpty,
+                      onTap: () => _openArtifact(artifact),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HtmlHostPageViewer extends StatefulWidget {
+  const _HtmlHostPageViewer({required this.title, required this.url});
+
+  final String title;
+  final String url;
+
+  @override
+  State<_HtmlHostPageViewer> createState() => _HtmlHostPageViewerState();
+}
+
+class _HtmlHostPageViewerState extends State<_HtmlHostPageViewer> {
+  late final WebViewController _controller;
+  var _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (!mounted) return;
+            setState(() {
+              _loading = true;
+              _error = null;
+            });
+          },
+          onPageFinished: (_) {
+            if (!mounted) return;
+            setState(() => _loading = false);
+          },
+          onWebResourceError: (error) {
+            if (!mounted) return;
+            setState(() {
+              _loading = false;
+              _error = error.description;
+            });
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(widget.url));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_error != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _error!.isEmpty
+                      ? context.l10n.taskHtmlHostOpenFailed
+                      : _error!,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            WebViewWidget(controller: _controller),
+          if (_loading && _error == null)
+            const Center(child: CircularProgressIndicator()),
+        ],
+      ),
+    );
+  }
 }

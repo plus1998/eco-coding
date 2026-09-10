@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../models/acp_models.dart';
-import '../models/image_view_models.dart';
-import '../models/git_models.dart';
 import '../models/asr_models.dart';
-import '../models/mcp_models.dart';
+import '../models/git_models.dart';
+import '../models/html_host_models.dart';
+import '../models/image_display_models.dart';
+import '../models/image_generation_models.dart';
+import '../models/image_view_models.dart';
 import '../models/integration_models.dart';
+import '../models/mcp_models.dart';
 import '../models/project_orchestration_settings.dart';
 import '../models/skill_models.dart';
 import '../models/thread_models.dart';
@@ -125,52 +129,252 @@ class DesktopRpc {
     }
   }
 
-  Future<ImageViewReadData> readImageDisplay(String artifactId) async {
-    final result = await _client.invoke<dynamic>(
-      desktopDeviceId,
-      'image-display:read',
-      [
-        {'artifactId': artifactId},
-      ],
-    );
-    if (result is! Map<String, dynamic>) {
+  /// Reads a displayed-image artifact via chunked Desktop RPC so large
+  /// screenshots can report progress. Falls back to a single full payload when
+  /// the desktop build ignores `offset`/`length` (legacy).
+  Future<ImageViewReadData> readImageDisplay(
+    String artifactId, {
+    void Function(int receivedBytes, int totalBytes)? onProgress,
+  }) async {
+    // Keep chunks small so progress ticks frequently over the Center bridge.
+    const chunkBytes = 64 * 1024;
+    final builder = BytesBuilder(copy: false);
+    var offset = 0;
+    var totalBytes = 0;
+    var width = 0;
+    var height = 0;
+    late String mimeType;
+    late String imagePath;
+    late String fileName;
+
+    Future<Map<String, dynamic>> readSlice({
+      required int sliceOffset,
+      required int sliceLength,
+    }) async {
+      final result = await _client.invoke<dynamic>(
+        desktopDeviceId,
+        'image-display:read',
+        [
+          {
+            'artifactId': artifactId,
+            'offset': sliceOffset,
+            'length': sliceLength,
+          },
+        ],
+        deadlineMs: 60000,
+      );
+      if (result is! Map) {
+        throw const ImageViewReadException(
+          ImageViewReadFailureCode.invalidResponse,
+        );
+      }
+      final payload = Map<String, dynamic>.from(result);
+      if (payload['ok'] != true) {
+        throw ImageViewReadException(
+          imageViewReadFailureCodeFromWire(payload['code']),
+        );
+      }
+      return payload;
+    }
+
+    while (true) {
+      final payload = await readSlice(
+        sliceOffset: offset,
+        sliceLength: chunkBytes,
+      );
+      final dataBase64 = payload['dataBase64'];
+      final nextMimeType = payload['mimeType'];
+      final nextPath = payload['path'];
+      final nextFileName = payload['fileName'];
+      final reportedTotal = payload['totalBytes'] ?? payload['bytes'];
+      if (dataBase64 is! String ||
+          nextMimeType is! String ||
+          nextPath is! String ||
+          nextFileName is! String ||
+          reportedTotal is! num) {
+        throw const ImageViewReadException(
+          ImageViewReadFailureCode.invalidResponse,
+        );
+      }
+
+      final hasChunkFields =
+          payload.containsKey('chunkBytes') && payload.containsKey('offset');
+
+      if (offset == 0) {
+        mimeType = nextMimeType;
+        imagePath = nextPath;
+        fileName = nextFileName;
+        totalBytes = reportedTotal.toInt();
+        width = payload['width'] is num ? (payload['width'] as num).toInt() : 0;
+        height = payload['height'] is num
+            ? (payload['height'] as num).toInt()
+            : 0;
+      }
+
+      final decoded = base64Decode(dataBase64);
+
+      // Legacy desktop ignored range and returned the whole file once.
+      final isLegacyFull =
+          !hasChunkFields ||
+          (offset == 0 &&
+              totalBytes > 0 &&
+              decoded.length >= totalBytes &&
+              decoded.length > chunkBytes);
+
+      if (isLegacyFull) {
+        onProgress?.call(decoded.length, decoded.length);
+        return ImageViewReadData(
+          bytes: decoded,
+          mimeType: mimeType,
+          path: imagePath,
+          fileName: fileName,
+          byteLength: decoded.length,
+          width: width,
+          height: height,
+        );
+      }
+
+      if (hasChunkFields) {
+        final chunkOffset = payload['offset'];
+        final expectedOffset = chunkOffset is num ? chunkOffset.toInt() : offset;
+        if (expectedOffset != offset) {
+          throw const ImageViewReadException(
+            ImageViewReadFailureCode.invalidResponse,
+          );
+        }
+        final chunkLen = payload['chunkBytes'];
+        if (chunkLen is num && chunkLen.toInt() != decoded.length) {
+          throw const ImageViewReadException(
+            ImageViewReadFailureCode.invalidResponse,
+          );
+        }
+      }
+
+      if (decoded.isEmpty) break;
+      builder.add(decoded);
+      offset += decoded.length;
+      onProgress?.call(offset, totalBytes > 0 ? totalBytes : offset);
+
+      if (totalBytes > 0 && offset >= totalBytes) break;
+      if (decoded.length < chunkBytes) break;
+      if (offset > 20 * 1024 * 1024) {
+        throw const ImageViewReadException(ImageViewReadFailureCode.tooLarge);
+      }
+    }
+
+    final bytes = builder.takeBytes();
+    if (bytes.isEmpty) {
       throw const ImageViewReadException(
         ImageViewReadFailureCode.invalidResponse,
       );
     }
-    if (result['ok'] != true) {
-      throw ImageViewReadException(
-        imageViewReadFailureCodeFromWire(result['code']),
-      );
-    }
-
-    final dataBase64 = result['dataBase64'];
-    final mimeType = result['mimeType'];
-    final imagePath = result['path'];
-    final fileName = result['fileName'];
-    final bytes = result['bytes'];
-    final width = result['width'];
-    final height = result['height'];
-    if (dataBase64 is! String ||
-        mimeType is! String ||
-        imagePath is! String ||
-        fileName is! String ||
-        bytes is! num) {
-      throw const ImageViewReadException(
-        ImageViewReadFailureCode.invalidResponse,
-      );
-    }
-
-    final decoded = base64Decode(dataBase64);
     return ImageViewReadData(
-      bytes: decoded,
+      bytes: bytes,
       mimeType: mimeType,
       path: imagePath,
       fileName: fileName,
-      byteLength: bytes.toInt(),
-      width: width is num ? width.toInt() : 0,
-      height: height is num ? height.toInt() : 0,
+      byteLength: totalBytes > 0 ? totalBytes : bytes.length,
+      width: width,
+      height: height,
     );
+  }
+
+  Future<List<ImageDisplayArtifact>> listImageDisplayArtifacts(
+    String threadId,
+  ) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-display-artifacts:list',
+      [
+        {'threadId': threadId},
+      ],
+    );
+    if (result is! List) {
+      throw const FormatException('Invalid image display artifact list.');
+    }
+    return result
+        .whereType<Map>()
+        .map(
+          (entry) => ImageDisplayArtifact.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        )
+        .where((artifact) => artifact.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<List<ImageGenerationArtifact>> listImageGenerationArtifacts(
+    String threadId,
+  ) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-generation-artifacts:list',
+      [
+        {'threadId': threadId},
+      ],
+    );
+    if (result is! List) {
+      throw const FormatException('Invalid image generation artifact list.');
+    }
+    return result
+        .whereType<Map>()
+        .map(
+          (entry) => ImageGenerationArtifact.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        )
+        .where((artifact) => artifact.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<ImageGenerationArtifactReadResult> readImageGenerationArtifact({
+    required String artifactId,
+    required int imageIndex,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-generation-artifact:read',
+      [
+        {'artifactId': artifactId, 'imageIndex': imageIndex},
+      ],
+      deadlineMs: 60000,
+    );
+    if (result is! Map) {
+      throw const FormatException('Invalid image generation artifact read.');
+    }
+    final payload = Map<String, dynamic>.from(result);
+    final dataBase64 = (payload['dataBase64'] as String?)?.trim() ?? '';
+    final mimeType = (payload['mimeType'] as String?)?.trim() ?? 'image/png';
+    final path = (payload['path'] as String?)?.trim() ?? '';
+    if (dataBase64.isEmpty) {
+      throw const FormatException('Empty image generation artifact payload.');
+    }
+    return ImageGenerationArtifactReadResult(
+      bytes: base64Decode(dataBase64),
+      mimeType: mimeType.isEmpty ? 'image/png' : mimeType,
+      path: path,
+    );
+  }
+
+  Future<List<HtmlHostArtifact>> listHtmlHostArtifacts(String threadId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'html-host-artifacts:list',
+      [
+        {'threadId': threadId},
+      ],
+    );
+    if (result is! List) {
+      throw const FormatException('Invalid html host artifact list.');
+    }
+    return result
+        .whereType<Map>()
+        .map(
+          (entry) =>
+              HtmlHostArtifact.fromJson(Map<String, dynamic>.from(entry)),
+        )
+        .where((artifact) => artifact.id.isNotEmpty || artifact.pageId.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<List<ThreadSummary>> listThreads() async {

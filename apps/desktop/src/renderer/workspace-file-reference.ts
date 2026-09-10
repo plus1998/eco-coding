@@ -45,11 +45,30 @@ export function isWorkspacePathContained(workspacePath: string, targetPath: stri
 
 export const WORKSPACE_FILE_REFERENCE_EVENT = "eco:workspace-file-reference";
 
+/** Composer / prompt wire token for a dragged local file attachment. */
+export const FILE_ATTACHMENT_TOKEN_PATTERN = /@file\{([^{}\n]+)\}/g;
+
 const PATH_PATTERN =
   /(?<![\p{L}\p{N}_])(?<!https:)(?<!http:)(?<!file:)(?<!https:\/)(?<!http:\/)(?<!file:\/)(?<!https:\/\/)(?<!http:\/\/)(?<!file:\/\/)(?:\/[^\s"'`()[\]<>:]+(?:[^\s"'`()[\]<>:]*)?|[A-Za-z]:[\\/][^\s"'`()[\]<>:]+(?:[^\s"'`()[\]<>:]*)?)(?::([1-9]\d*)(?::([1-9]\d*))?)?/gu;
 
 function trimTrailingPunctuation(value: string): string {
   return value.replace(/[.,;!?)}\]]+$/, "");
+}
+
+export function isAbsoluteLocalFilePath(path: string): boolean {
+  return /^(?:\/|[A-Za-z]:[\\/])/.test(path);
+}
+
+export function fileAttachmentToken(path: string): string {
+  return `@file{${path}}`;
+}
+
+export function parseFileAttachmentPath(raw: string): string | undefined {
+  const path = raw.trim();
+  if (!path || path.includes("}") || !isAbsoluteLocalFilePath(path)) {
+    return undefined;
+  }
+  return path;
 }
 
 export function parseWorkspaceFileReference(value: string): WorkspaceFileReference | undefined {
@@ -142,14 +161,12 @@ export function parseWorkspaceFileReferenceHref(
   }
 }
 
-export function linkifyWorkspaceFileReferences(
-  text: string,
-): Array<
-  { type: "text"; value: string } | { type: "link"; value: string; reference: WorkspaceFileReference }
-> {
-  const result: Array<
-    { type: "text"; value: string } | { type: "link"; value: string; reference: WorkspaceFileReference }
-  > = [];
+type LinkifyPart =
+  | { type: "text"; value: string }
+  | { type: "link"; value: string; reference: WorkspaceFileReference };
+
+function linkifyBareWorkspacePaths(text: string): LinkifyPart[] {
+  const result: LinkifyPart[] = [];
   let lastIndex = 0;
   for (const match of text.matchAll(PATH_PATTERN)) {
     const raw = match[0];
@@ -170,6 +187,36 @@ export function linkifyWorkspaceFileReferences(
   }
   if (lastIndex < text.length) {
     result.push({ type: "text", value: text.slice(lastIndex) });
+  }
+  return result;
+}
+
+export function linkifyWorkspaceFileReferences(text: string): LinkifyPart[] {
+  const result: LinkifyPart[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(FILE_ATTACHMENT_TOKEN_PATTERN)) {
+    if (match.index === undefined) {
+      continue;
+    }
+    const path = parseFileAttachmentPath(match[1] ?? "");
+    if (!path) {
+      continue;
+    }
+    if (match.index > lastIndex) {
+      result.push(...linkifyBareWorkspacePaths(text.slice(lastIndex, match.index)));
+    }
+    result.push({
+      type: "link",
+      value: match[0],
+      reference: { path },
+    });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex === 0) {
+    return linkifyBareWorkspacePaths(text);
+  }
+  if (lastIndex < text.length) {
+    result.push(...linkifyBareWorkspacePaths(text.slice(lastIndex)));
   }
   return result;
 }

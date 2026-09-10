@@ -20,6 +20,7 @@ import { normalizeCodexThreadRunEventForProjection } from "../main/codex-thread-
 import { createConversationStore } from "../main/conversation-store";
 import {
   createThreadFeedSkeletonRecord,
+  FEED_SKELETON_TERMINAL_EVENT_TYPES,
   feedSkeletonTimelineIds,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
@@ -40,14 +41,7 @@ import { evaluateFixtureScenarioChecklist, loadConversationRoundFixture } from "
 
 export const CONVERSATION_ROUND_ECO_THREAD_ID = "thr_conversation_round";
 
-const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = new Set([
-  "run.attempt.completed",
-  "run.attempt.failed",
-  "run.attempt.cancelled",
-  "request.completed",
-  "request.failed",
-  "request.cancelled",
-]);
+const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = FEED_SKELETON_TERMINAL_EVENT_TYPES;
 
 export interface ConversationRoundReplayResult {
   fixture: ConversationRoundFixture;

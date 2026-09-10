@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/preferences/thinking_display_preferences.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/feed_action_kind.dart';
 import '../../core/utils/file_change.dart';
@@ -323,6 +324,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   String? threadId,
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
   required AppLocalizations l10n,
+  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
 }) {
   final requestSpansById = {
     for (final span in projection.requestSpans) span.requestId: span,
@@ -380,6 +382,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
         final displayTimeline = _filterProjectionTimelineForDetailFeed(
           agent.timeline,
           requestSpansById,
+          thinkingDisplayMode: thinkingDisplayMode,
         );
         final displayAgent = ThreadRunProjectionAgent(
           agentId: agent.agentId,
@@ -413,7 +416,11 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
 
   final rawMainTimeline = _mainProjectionTimelineItems(projection);
   final mainTimeline = _filterAbsorbedSubagentDelegations(
-    _filterMainTimelineForFeed(rawMainTimeline, requestSpansById),
+    _filterMainTimelineForFeed(
+      rawMainTimeline,
+      requestSpansById,
+      thinkingDisplayMode: thinkingDisplayMode,
+    ),
     subagentCards,
     requestSpansById,
   );
@@ -684,11 +691,13 @@ List<PromptImageAttachment> _visionSubagentPromptImages({
 
 List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(
   List<ThreadRunProjectionTimelineItem> timeline,
-  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
-) {
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById, {
+  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
+}) {
   final displayTimeline = _filterProjectionTimelineForDetailFeed(
     timeline,
     requestSpansById,
+    thinkingDisplayMode: thinkingDisplayMode,
   );
   return _filterCompactionTimelineForFeed(
     displayTimeline
@@ -770,6 +779,7 @@ Set<String> _collectAgentTimelineToolUseIds(
     final displayTimeline = _filterProjectionTimelineForDetailFeed(
       card.agent.timeline,
       requestSpansById,
+      thinkingDisplayMode: defaultThinkingDisplayMode,
     );
     for (final item in displayTimeline) {
       final toolUseId =
@@ -785,14 +795,18 @@ Set<String> _collectAgentTimelineToolUseIds(
 
 List<ThreadRunProjectionTimelineItem> _filterProjectionTimelineForDetailFeed(
   List<ThreadRunProjectionTimelineItem> timeline,
-  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
-) {
-  final displayTimeline = collapseEphemeralReasoningSummaryTimeline(
-    _buildProjectionDisplayTimelineItems(
-      timeline,
-      requestSpansById,
-    ).where((item) => !isEmptyTerminalThinkingItem(item)).toList(),
-  );
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById, {
+  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
+}) {
+  final built = _buildProjectionDisplayTimelineItems(
+    timeline,
+    requestSpansById,
+  ).where((item) => !isEmptyTerminalThinkingItem(item)).toList();
+  // 阅后即焚 → tip path; 折叠/展开 → keep raw thinking as cards.
+  final forCollapse = thinkingDisplayMode.usesEphemeralTip
+      ? presentThinkingAsEphemeralSummaryTips(built)
+      : built;
+  final displayTimeline = collapseEphemeralReasoningSummaryTimeline(forCollapse);
   final failedTools = displayTimeline
       .where((item) => item.eventType == 'tool.failed')
       .map((item) => _resolveProjectionToolName(item).toLowerCase())
@@ -1872,12 +1886,35 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       id: feedId,
       kind: ActivityFeedKind.imageView,
       text: imageLifecycle == ToolActionLifecycle.running
-          ? l10n.activityImageViewViewing
-          : l10n.activityImageViewViewed,
+          ? l10n.activityImageDisplayViewing
+          : l10n.activityImageDisplayViewed,
       actionIcon: ActivityActionIcon.images,
       toolName: toolName,
       lifecycle: imageLifecycle,
-      imageView: ImageViewDisplay(path: 'artifact:${imageDisplay.artifactId}', eventId: item.id),
+      imageView: ImageViewDisplay(
+        path: 'artifact:${imageDisplay.artifactId}',
+        eventId: item.id,
+      ),
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
+    );
+  }
+  final htmlHost = tool?.htmlHost;
+  if (htmlHost != null) {
+    final htmlLifecycle = lifecycle ?? ToolActionLifecycle.completed;
+    final title = htmlHost.title?.trim();
+    return ActivityFeedEntry(
+      id: feedId,
+      kind: ActivityFeedKind.action,
+      text: htmlLifecycle == ToolActionLifecycle.running
+          ? l10n.activityHtmlHostPublishing
+          : l10n.activityHtmlHostPublished,
+      detail: (title != null && title.isNotEmpty) ? title : htmlHost.publicUrl,
+      actionIcon: ActivityActionIcon.browser,
+      toolName: toolName,
+      lifecycle: htmlLifecycle,
+      toolUseId: tool?.toolUseId,
       agentId: item.agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
@@ -1975,7 +2012,18 @@ ActivityActionIcon _projectionToolActionIcon(
   if (tool?.readTargetPath?.isNotEmpty == true) {
     return ActivityActionIcon.read;
   }
-  if (toolName == 'WebSearch' || toolName == 'WebFetch') {
+  if (tool?.imageDisplay != null) {
+    return ActivityActionIcon.images;
+  }
+  if (tool?.htmlHost != null) {
+    return ActivityActionIcon.browser;
+  }
+  if (tool?.imageView != null) {
+    return ActivityActionIcon.images;
+  }
+  if (toolName == 'WebSearch' ||
+      toolName == 'WebFetch' ||
+      isEcoWebSearchToolName(toolName)) {
     return ActivityActionIcon.network;
   }
   return iconForToolName(toolName);

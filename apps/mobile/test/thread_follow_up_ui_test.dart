@@ -79,6 +79,25 @@ void main() {
     expect(isLiveFollowUpThreadStatus('completed'), isFalse);
   });
 
+  test('shouldComposerUseFollowUpQueue while live, editing, or paused', () {
+    expect(shouldComposerUseFollowUpQueue(status: 'running'), isTrue);
+    expect(shouldComposerUseFollowUpQueue(status: 'idle'), isFalse);
+    expect(
+      shouldComposerUseFollowUpQueue(
+        status: 'idle',
+        followUpQueuePaused: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldComposerUseFollowUpQueue(
+        status: 'completed',
+        editingFollowUpId: 'fu_1',
+      ),
+      isTrue,
+    );
+  });
+
   test('queuedThreadFollowUps hides non-queued records', () {
     final normal = followUp('normal');
     final cancelled = followUp('cancelled', status: 'cancelled');

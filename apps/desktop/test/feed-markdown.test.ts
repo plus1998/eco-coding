@@ -19,6 +19,17 @@ test("createFeedMarkdownDoc models paragraphs, code fences, and file refs", () =
   expect(types).toContain("file_ref");
 });
 
+test("createFeedMarkdownDoc recognizes @file attachment tokens", () => {
+  const doc = createFeedMarkdownDoc("Please inspect @file{/tmp/report.md}");
+  let fileRefPath: string | undefined;
+  doc.descendants((node) => {
+    if (node.type.name === "file_ref") {
+      fileRefPath = String(node.attrs.path);
+    }
+  });
+  expect(fileRefPath).toBe("/tmp/report.md");
+});
+
 test("createFeedMarkdownDoc models GFM tables and blockquotes", () => {
   const doc = createFeedMarkdownDoc(
     ["> quoted", "", "| a | b |", "| --- | --- |", "| 1 | 2 |", "", "~~old~~"].join("\n"),
@@ -108,4 +119,37 @@ test("renderFeedMarkdownHtml renders html fences as preview cards", () => {
   expect(html).toContain("markdown-html-card");
   expect(html).toContain("Demo");
   expect(html).not.toContain("<body>Hi</body>");
+});
+
+test("createFeedMarkdownDoc keeps raw HTML blocks and does not invent file refs", () => {
+  const doc = createFeedMarkdownDoc(
+    [
+      "# Title",
+      "",
+      "<details>",
+      "<summary>展开</summary>",
+      "",
+      "隐藏内容",
+      "",
+      "</details>",
+      "",
+      '<div style="color:red">提示</div>',
+    ].join("\n"),
+  );
+  const json = JSON.stringify(doc.toJSON());
+  expect(json).toContain("html_block");
+  expect(json).toContain("<details>");
+  expect(json).toContain("提示");
+  expect(json).not.toContain('"type":"file_ref"');
+});
+
+test("renderFeedMarkdownHtml emits raw HTML for block tags", () => {
+  const html = renderFeedMarkdownHtml(
+    ['<div style="color:red"><strong>提示框</strong></div>', "", "| A | B |", "| --- | --- |", "| 1 | 2 |"].join(
+      "\n",
+    ),
+  );
+  expect(html).toContain('<div style="color:red"><strong>提示框</strong></div>');
+  expect(html).toContain("markdown-table");
+  expect(html).not.toContain("markdown-file-ref");
 });

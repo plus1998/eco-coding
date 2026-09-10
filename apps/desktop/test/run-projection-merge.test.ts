@@ -158,6 +158,61 @@ test("mergeThreadRunProjectionUpdate replaces history after a rewind and ignores
   expect(mergeThreadRunProjectionUpdate(replaced, beforeRewind)).toBe(replaced);
 });
 
+test("mergeThreadRunProjectionUpdate hard-replaces shortened feed after historyRevision bump", () => {
+  const dirtyLive = makeProjection({
+    sourceEventCount: 4,
+    historyRevision: 0,
+    timeline: [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "message.final",
+        scope: "main",
+        text: "提问",
+        at: "2026-01-01T00:00:01.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "tool_live",
+        sequence: 2,
+        eventType: "tool.completed",
+        scope: "main",
+        text: "Tool: Bash",
+        at: "2026-01-01T00:00:02.000Z",
+      },
+      {
+        id: "delta_live",
+        sequence: 3,
+        eventType: "message.delta",
+        scope: "main",
+        text: "还在写",
+        at: "2026-01-01T00:00:03.000Z",
+      },
+    ],
+  });
+  const compacted = makeProjection({
+    sourceEventCount: 5,
+    historyRevision: 1,
+    generatedAt: "2026-01-01T00:00:10.000Z",
+    timeline: [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "message.final",
+        scope: "main",
+        text: "提问",
+        at: "2026-01-01T00:00:01.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+    ],
+  });
+
+  const replaced = mergeThreadRunProjectionUpdate(dirtyLive, compacted);
+  expect(replaced).toBe(compacted);
+  expect(replaced.timeline.map((item) => item.id)).toEqual(["user_1"]);
+  expect(replaced.timeline.some((item) => item.id === "tool_live")).toBe(false);
+});
+
 test("mergeThreadRunProjectionUpdate merges trimmed newer feed without dropping history", () => {
   const full = makeProjection({
     sourceEventCount: 100,

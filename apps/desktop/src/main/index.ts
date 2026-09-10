@@ -365,6 +365,7 @@ import {
   collectThreadFollowUpAttachments,
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
+  threadAcceptsQueuedFollowUp,
 } from "../shared/thread-follow-up-drain";
 import {
   requiresEmptyTurnForRequestRetry,
@@ -443,6 +444,7 @@ import {
   getPendingBashApprovalByToolUseId,
   getPendingBashApprovalForThread,
   registerPendingBashApproval,
+  resolveBashApprovalIdempotent,
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
 import type { UsageBillingObservation } from "./billing-orchestration";
@@ -652,6 +654,12 @@ import {
 } from "./project-skills-settings-store";
 import { formatPromptCacheBreakLog, resolveClaudeMdDigest } from "./prompt-cache-fingerprint";
 import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
+import {
+  hydratePromptAttachmentsForComposerRestore,
+  resolveRestorePromptText,
+  shouldClearThreadPromptAfterUnstartedDiscard,
+  toSpoolStageAttachments,
+} from "./discard-unstarted-composer-restore";
 import { isPromptImageAttachmentRecord, PromptImageFileStore } from "./prompt-image-file-store";
 import { collectProviderDeleteReferences, partitionProviderDeleteReferences } from "./provider-deletion";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
@@ -739,6 +747,8 @@ import { requireThreadCore } from "./thread-core-routing";
 import {
   createThreadFeedSkeletonRecord,
   type FeedSkeletonPatchContext,
+  hasFeedSkeletonAttemptBecameTerminal,
+  isFeedSkeletonTerminalEventType,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
   shouldTrackEventForFeedSkeletonPatch,
@@ -2412,6 +2422,38 @@ app.whenReady().then(async () => {
         input: [{ type: "text", text }],
         clientUserMessageId: `approval-feedback:${toolUseId}`,
       });
+    },
+    injectAsyncClarificationAnswers: async ({ ecoThreadId, codexThreadId, turnId, toolUseId, text }) => {
+      const phase = codexMidTurnPorts.getPhase(ecoThreadId);
+      if (phase === "accepting") {
+        const pushed = await codexMidTurnPorts.tryPushUserText(ecoThreadId, text, {
+          clientUserMessageId: `async-clarification:${toolUseId}`,
+        });
+        if (!pushed.ok) {
+          throw new Error(`Codex async clarification was not delivered: ${pushed.reason}`);
+        }
+        return;
+      }
+      const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+      if (!client) {
+        throw new Error("Codex async clarification cannot be delivered because Codex is not running.");
+      }
+      // Turn may still be active without an Eco mid-turn port (or already past accepting).
+      // Prefer steer; if the turn is gone, surface the gap instead of silently dropping answers.
+      try {
+        await steerCodexTurn(client, {
+          threadId: codexThreadId,
+          turnId,
+          input: [{ type: "text", text }],
+          clientUserMessageId: `async-clarification:${toolUseId}`,
+        });
+      } catch (error) {
+        throw new Error(
+          `Codex async clarification inject failed (turn may have completed before the user answered): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     },
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
@@ -5104,8 +5146,13 @@ function registerIpcHandlers(): void {
     if (!isRecord(payload) || typeof payload.artifactId !== "string" || !payload.artifactId.trim()) {
       return { ok: false as const, code: "invalid_artifact" as const };
     }
+    const offset = typeof payload.offset === "number" ? payload.offset : undefined;
+    const length = typeof payload.length === "number" ? payload.length : undefined;
     try {
-      const file = await imageDisplayStore.readArtifactFile(payload.artifactId.trim());
+      const file = await imageDisplayStore.readArtifactFile(payload.artifactId.trim(), {
+        ...(offset !== undefined ? { offset } : {}),
+        ...(length !== undefined ? { length } : {}),
+      });
       return { ok: true as const, ...file };
     } catch (error) {
       if (error instanceof ImageDisplayError) {
@@ -5114,7 +5161,9 @@ function registerIpcHandlers(): void {
             ? ("not_found" as const)
             : error.code === "too_large"
               ? ("too_large" as const)
-              : ("read_failed" as const);
+              : error.code === "invalid_artifact"
+                ? ("invalid_artifact" as const)
+                : ("read_failed" as const);
         return { ok: false as const, code };
       }
       throw error;
@@ -6056,29 +6105,26 @@ function registerIpcHandlers(): void {
     if (!isBashApprovalResolvePayload(payload)) {
       throw new Error("Invalid Bash approval payload.");
     }
-    const pendingApproval = getPendingBashApprovalByToolUseId(payload.toolUseId);
-    if (!pendingApproval) {
-      throw new Error("No pending Bash approval for this tool use.");
-    }
     const resolution: BashApprovalResolution = {
       decision: payload.decision,
       ...(payload.feedback?.trim() ? { feedback: payload.feedback.trim() } : {}),
     };
-    const ok = resolvePendingBashApproval(payload.toolUseId, resolution);
-    if (!ok) {
-      throw new Error("Failed to resolve Bash approval.");
+    const outcome = resolveBashApprovalIdempotent(payload.toolUseId, resolution);
+    if (outcome.alreadyResolved) {
+      // PC/mobile race — already resolved elsewhere, or client is discarding a stale card.
+      return { ok: true as const, alreadyResolved: true as const };
     }
     const threadPatch = buildResolvedBashApprovalThreadPatch(resolution.decision);
-    patchThreadSummary(pendingApproval.threadId, threadPatch);
+    patchThreadSummary(outcome.request.threadId, threadPatch);
     desktopEventCenter.publishThreadLiveEvent({
-      threadId: pendingApproval.threadId,
+      threadId: outcome.request.threadId,
       type: "bash_approval.resolved",
       message: threadPatch.message,
       role: "tool",
       stream: false,
-      bashApproval: pendingApproval,
+      bashApproval: outcome.request,
     });
-    return { ok: true as const };
+    return { ok: true as const, alreadyResolved: false as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadGetUsageSnapshot, async (threadId: unknown) => {
@@ -6351,10 +6397,13 @@ function registerIpcHandlers(): void {
     const deliveryMode =
       request.followUpDeliveryMode ?? workflowSettingsStore.get().followUpDeliveryMode ?? "steer";
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
+    const queuePaused = Boolean(thread.followUpQueuePaused);
     // ACP has no mid-turn: steer means interrupt + resume. Escalated priority always interrupts.
+    // While the queue is paused, never auto-deliver — new rows must wait for Resume.
     const preferInterrupt =
-      request.priority === "escalated" ||
-      (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer");
+      !queuePaused &&
+      (request.priority === "escalated" ||
+        (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer"));
     const followUpPendingActivityLineId = `follow-up:${randomUUID()}`;
     const persistedAttachments = request.attachments?.length
       ? await promptImageFileStore.persistMessageAttachments(
@@ -6376,6 +6425,14 @@ function registerIpcHandlers(): void {
       ...metadata,
     });
 
+    if (queuePaused || deliveryMode === "queue") {
+      // Keep queued while paused or when the user chose queue delivery.
+      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
+      return buildThreadFollowUpMutationResult(
+        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      );
+    }
+
     if (preferInterrupt) {
       const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
       if (midTurnResult) {
@@ -6389,14 +6446,6 @@ function registerIpcHandlers(): void {
         emitThreadFollowUpEvent(current, "thread.follow_up.queued", formatFollowUpQueuedMessage(current));
       }
       return buildThreadFollowUpMutationResult(current);
-    }
-
-    if (deliveryMode === "queue") {
-      // Only surface the queue panel when we intentionally keep the row queued.
-      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
-      return buildThreadFollowUpMutationResult(
-        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
-      );
     }
 
     const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
@@ -7113,8 +7162,24 @@ async function discardUnstartedAcpTurn(input: {
   }
   const stored = conversationStore.getUserMessageRecord(input.threadId, activityLineId);
   const rawPrompt = stored?.text ?? input.restorePrompt;
-  const restorePrompt = rawPrompt.trim() === ACP_IMAGE_ONLY_PROMPT ? "" : rawPrompt;
-  const attachments = stored?.attachments?.length ? stored.attachments : input.attachments;
+  const restorePrompt = resolveRestorePromptText(rawPrompt, ACP_IMAGE_ONLY_PROMPT);
+  const primaryAttachments = stored?.attachments?.length
+    ? stored.attachments
+    : (input.attachments ?? []);
+  let restoreAttachments = await hydratePromptAttachmentsForComposerRestore(
+    primaryAttachments,
+    (attachment) => promptImageFileStore.readAttachmentData(attachment),
+  );
+  if (
+    restoreAttachments.length === 0 &&
+    input.attachments?.length &&
+    primaryAttachments !== input.attachments
+  ) {
+    restoreAttachments = await hydratePromptAttachmentsForComposerRestore(
+      input.attachments,
+      (attachment) => promptImageFileStore.readAttachmentData(attachment),
+    );
+  }
   try {
     conversationStore.discardThreadTurnFromActivityLine(input.threadId, activityLineId);
   } catch (error) {
@@ -7123,24 +7188,52 @@ async function discardUnstartedAcpTurn(input: {
     return;
   }
   resetThreadRuntimeAfterHistoryRewrite(input.threadId);
+  const clearThreadPrompt = shouldClearThreadPromptAfterUnstartedDiscard(
+    conversationStore.listUserMessageRecords(input.threadId).length,
+  );
+  if (clearThreadPrompt) {
+    conversationStore.updateThreadPrompt(input.threadId, "");
+  }
+  const draftContextKey = `thread:${input.threadId}`;
+  const spoolAttachments = toSpoolStageAttachments(restoreAttachments);
+  const draftAttachments =
+    spoolAttachments.length > 0
+      ? await normalizeComposerDraftAttachments(draftContextKey, spoolAttachments)
+      : [];
+  // Message-dir images are no longer referenced after staging into the composer spool.
+  await promptImageFileStore.deleteMessageActivity(input.threadId, activityLineId).catch((error) => {
+    process.stderr.write(
+      `[eco] ACP unstarted image cleanup failed (${input.threadId}): ${errorMessage(error)}\n`,
+    );
+  });
   const failureMessage = formatUserFacingRequestError(input.reason);
   const draft = conversationStore.saveComposerDraft(
-    `thread:${input.threadId}`,
+    draftContextKey,
     restorePrompt,
-    attachments,
+    draftAttachments,
     failureMessage,
   );
-  if (!draft) {
+  if (!draft && !restorePrompt && restoreAttachments.length === 0) {
     markThreadInterrupted(input.threadId, input.reason);
     return;
   }
+  // Prefer spool paths (+ data) so a resend does not chase deleted message-dir files.
+  const uiAttachments =
+    draftAttachments.length > 0
+      ? await hydratePromptAttachmentsForComposerRestore(
+          draftAttachments,
+          (attachment) => promptImageFileStore.readAttachmentData(attachment),
+        )
+      : toSpoolStageAttachments(restoreAttachments);
   updateThread(input.threadId, { status: "failed", message: failureMessage });
   emitThreadEvent(input.threadId, "thread.unstarted_turn_discarded", failureMessage, "system", false, {
     composerRestore: {
       prompt: restorePrompt,
-      ...(attachments?.length ? { attachments } : {}),
-      revision: draft.revision,
+      // Include inline data so the renderer can build preview URLs immediately.
+      ...(uiAttachments.length ? { attachments: uiAttachments } : {}),
+      ...(draft?.revision ? { revision: draft.revision } : {}),
     },
+    ...(clearThreadPrompt ? { threadPrompt: "" } : {}),
   });
   emitThreadRunProjectionUpdated(input.threadId);
 }
@@ -9175,6 +9268,11 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   if (!thread.coreKind) {
     throw new Error(`Thread ${thread.id} has unknown Core ownership.`);
   }
+  // Pause means new prompts join the queue; do not start a run ahead of it.
+  // Rewind is allowed (explicit edit of history) and still must not drain while paused.
+  if (thread.followUpQueuePaused && !input.rewindTarget) {
+    throw new Error("Follow-up queue is paused; enqueue the message or resume the queue before continuing.");
+  }
   const resolvedTarget = input.rewindTarget
     ? conversationStore.getActivityRewindTarget(input.threadId, input.rewindTarget.activityLineId)
     : undefined;
@@ -9543,14 +9641,14 @@ function isPromptImageMediaType(value: unknown): value is PromptImageAttachment[
 }
 
 function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): boolean {
-  if (status === "running" || status === "queued" || status === "awaiting_plan") {
-    return true;
-  }
-  return Boolean(
-    getPendingClarificationForThread(threadId) ||
-      getPendingBashApprovalForThread(threadId) ||
-      getPendingPlanApprovalForThread(threadId),
-  );
+  return threadAcceptsQueuedFollowUp({
+    status,
+    followUpQueuePaused: Boolean(conversationStore.getThread(threadId)?.followUpQueuePaused),
+    hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
+    hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+    hasPendingBashApproval: Boolean(getPendingBashApprovalForThread(threadId)),
+    hasPendingPlanApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
+  });
 }
 
 /**
@@ -9707,20 +9805,55 @@ async function tryDeliverFollowUpViaMidTurn(
 /**
  * `still_queued` messages survive interrupt and may start immediately. Closing the
  * Query after the receipt makes their final outcome unknowable, so never resend them.
+ * `cancelled` (from interrupt cancelQueued) will not run — mark them cancelled, not unknown.
  */
-function reconcileInterruptedStreamingPushFollowUps(threadId: string, stillQueued: readonly string[]): void {
+function reconcileInterruptedStreamingPushFollowUps(
+  threadId: string,
+  stillQueued: readonly string[],
+  cancelled: readonly string[] = [],
+): void {
   const knownIds = recentStreamingPushFollowUpIds.get(threadId);
   if (!knownIds || knownIds.size === 0) {
-    if (stillQueued.length > 0) {
+    if (stillQueued.length > 0 || cancelled.length > 0) {
       logEcoDiag("follow_up.still_queued_unmapped", {
         threadId: shortThreadId(threadId),
         stillQueued: stillQueued.slice(0, 20),
+        cancelled: cancelled.slice(0, 20),
       });
     }
     return;
   }
+  const cancelledSet = new Set(cancelled.map((id) => id.trim()).filter(Boolean));
+  for (const uuid of cancelledSet) {
+    if (!knownIds.has(uuid)) {
+      logEcoDiag("follow_up.cancelled_unmapped", {
+        threadId: shortThreadId(threadId),
+        uuid,
+        reason: "interrupt cancelled uuid is not a known Eco streaming_push follow-up id",
+      });
+      continue;
+    }
+    const cancelledFollowUp = conversationStore.markThreadFollowUpInterruptCancelled(
+      threadId,
+      uuid,
+      "Cancelled by interrupt (cancelQueued).",
+    );
+    if (cancelledFollowUp) {
+      emitThreadEvent(
+        threadId,
+        "thread.follow_up.cancelled",
+        "中断已取消排队中的 mid-turn 消息。",
+        "system",
+        false,
+        { followUp: cancelledFollowUp },
+      );
+    }
+  }
   const still = new Set(stillQueued.map((id) => id.trim()).filter(Boolean));
   for (const uuid of still) {
+    if (cancelledSet.has(uuid)) {
+      continue;
+    }
     if (!knownIds.has(uuid)) {
       logEcoDiag("follow_up.delivery_unknown", {
         threadId: shortThreadId(threadId),
@@ -10839,7 +10972,7 @@ function createSdkDriver(
         await claudeMidTurnPorts.closeIngress(threadId);
       },
       onClosed: (_handle, detail) => {
-        reconcileInterruptedStreamingPushFollowUps(threadId, detail.stillQueued);
+        reconcileInterruptedStreamingPushFollowUps(threadId, detail.stillQueued, detail.cancelled);
         claudeMidTurnPorts.close(threadId);
         recentStreamingPushFollowUpIds.delete(threadId);
       },
@@ -13091,6 +13224,7 @@ interface EmitThreadEventExtras {
   metadata?: Record<string, unknown>;
   requestId?: string;
   composerRestore?: ThreadLiveEvent["composerRestore"];
+  threadPrompt?: string;
   followUpQueuePaused?: boolean;
 }
 
@@ -13407,6 +13541,9 @@ function emitThreadEvent(
   }
   if (extras?.composerRestore) {
     payload.composerRestore = extras.composerRestore;
+  }
+  if (extras?.threadPrompt !== undefined) {
+    payload.threadPrompt = extras.threadPrompt;
   }
   if (typeof extras?.followUpQueuePaused === "boolean") {
     payload.followUpQueuePaused = extras.followUpQueuePaused;
@@ -13867,12 +14004,6 @@ function buildThreadFeedSkeletonHydrationContext(): Parameters<typeof hydrateThr
   };
 }
 
-const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = new Set([
-  "run.attempt.completed",
-  "run.attempt.failed",
-  "run.attempt.cancelled",
-]);
-
 function buildFeedSkeletonPatchContext(threadId: string): FeedSkeletonPatchContext {
   const cached = conversationStore.getThreadFeedSkeleton(threadId);
   return {
@@ -13893,6 +14024,25 @@ function persistThreadFeedSkeletonRecord(record: ThreadFeedSkeletonRecord): void
     snapshot: record.snapshot,
     ...(record.patchState && { patchState: record.patchState }),
   });
+}
+
+function withBumpedFeedSkeletonHistoryRevision(
+  record: ThreadFeedSkeletonRecord,
+  previousTimelineLength: number,
+): ThreadFeedSkeletonRecord {
+  if (record.snapshot.timeline.length >= previousTimelineLength) {
+    return record;
+  }
+  const threadId = record.snapshot.thread.threadId;
+  const nextRevision = bumpThreadRunProjectionHistoryRevision(threadId);
+  return {
+    ...record,
+    historyRevision: nextRevision,
+    snapshot: {
+      ...record.snapshot,
+      historyRevision: nextRevision,
+    },
+  };
 }
 
 /**
@@ -14005,10 +14155,14 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
 
   const existing = conversationStore.getThreadFeedSkeleton(threadId);
   const leakedAgentItemsOnMain = existing?.snapshot.timeline.some((item) => item.scope === "agent") === true;
+  const attemptBecameTerminal =
+    existing !== undefined &&
+    hasFeedSkeletonAttemptBecameTerminal(existing.snapshot.attempts, context.attempts);
   const structureChanging =
     shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
     shouldPatchAgentTimelineForFeedSkeleton(event) ||
-    RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType) ||
+    isFeedSkeletonTerminalEventType(event.eventType) ||
+    attemptBecameTerminal ||
     leakedAgentItemsOnMain;
 
   if (!structureChanging) {
@@ -14017,7 +14171,12 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
   }
 
   if (!existing?.patchState) {
-    rebuildThreadFeedSkeletonRecord(threadId);
+    const rebuilt = rebuildThreadFeedSkeletonRecord(threadId);
+    if (rebuilt && existing) {
+      persistThreadFeedSkeletonRecord(
+        withBumpedFeedSkeletonHistoryRevision(rebuilt, existing.snapshot.timeline.length),
+      );
+    }
     return;
   }
 
@@ -14026,7 +14185,9 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
     conversationStore.deleteThreadFeedSkeleton(threadId);
     return;
   }
-  persistThreadFeedSkeletonRecord(patched);
+  persistThreadFeedSkeletonRecord(
+    withBumpedFeedSkeletonHistoryRevision(patched, existing.snapshot.timeline.length),
+  );
 }
 
 function rebuildThreadFeedSkeleton(threadId: string): ThreadRunProjectionSnapshot | undefined {

@@ -34,6 +34,7 @@ import {
   createTaskCompletedHook,
   createTaskCreatedHook,
   createTaskToolPreToolHook,
+  createClassifierContextPostToolHook,
   createToolOutputTruncationPostToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
@@ -2623,6 +2624,16 @@ test("PostToolUse truncation hook rewrites oversized tool_response", async () =>
   expect(typeof updated).toBe("string");
   expect(String(updated)).toContain("Warning: truncated output");
   expect(String(updated).length).toBeLessThan(huge.length);
+  expect(
+    result &&
+      typeof result === "object" &&
+      "hookSpecificOutput" in result &&
+      result.hookSpecificOutput &&
+      typeof result.hookSpecificOutput === "object" &&
+      "classifierContext" in result.hookSpecificOutput
+      ? result.hookSpecificOutput.classifierContext
+      : undefined,
+  ).toMatch(/^Bash:/);
 
   const short = await hook(
     {
@@ -2637,7 +2648,43 @@ test("PostToolUse truncation hook rewrites oversized tool_response", async () =>
     undefined,
     { signal: new AbortController().signal },
   );
-  expect(short).toEqual({});
+  expect(short).toMatchObject({
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      classifierContext: "Bash: ok",
+    },
+  });
+  expect(
+    short &&
+      typeof short === "object" &&
+      "hookSpecificOutput" in short &&
+      short.hookSpecificOutput &&
+      typeof short.hookSpecificOutput === "object" &&
+      "updatedToolOutput" in short.hookSpecificOutput,
+  ).toBe(false);
+});
+
+test("createClassifierContextPostToolHook summarizes tool name and result", async () => {
+  const hook = createClassifierContextPostToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PostToolUse",
+      tool_name: "Read",
+      tool_input: {},
+      tool_response: "file contents here",
+      tool_use_id: "call_3",
+      session_id: "s1",
+      cwd: "/tmp",
+    } as PostToolUseHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+  expect(result).toMatchObject({
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      classifierContext: "Read: file contents here",
+    },
+  });
 });
 
 test("buildEcoSdkHooks permits only the exact approved deferred ExitPlanMode call", async () => {

@@ -127,6 +127,7 @@ import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import { RequestSpansContext, TokenSpeedBadge } from "./TokenSpeedBadge";
+import { UserPromptBodyContent } from "./UserPromptBodyContent";
 import {
   findThinkingFeedScrollRoot,
   isThinkingPreferenceDrivenExpand,
@@ -4029,7 +4030,7 @@ function UserPromptBlock({
   onRewriteUserMessage?: RewriteUserMessageHandler;
   allowUserMessageRewrite?: boolean;
 }) {
-  const bodyRef = useRef<HTMLPreElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editRequestRef = useRef(0);
   const previousTextRef = useRef(text);
@@ -4403,12 +4404,12 @@ function UserPromptBlock({
               </div>
             ) : null}
             <div className={["run-log-user-prompt-body-wrap", expanded ? "expanded" : "collapsed"].join(" ")}>
-              <pre
+              <div
                 ref={bodyRef}
                 className={["run-log-user-prompt-body", expanded ? "expanded" : "collapsed"].join(" ")}
               >
-                {text}
-              </pre>
+                <UserPromptBodyContent text={text} />
+              </div>
               {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
             </div>
             {canToggle ? (

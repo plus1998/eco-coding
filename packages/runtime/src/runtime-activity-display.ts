@@ -74,7 +74,7 @@ export function extractCompactPostTokens(payload: unknown): number | undefined {
   return post !== undefined && Number.isFinite(post) ? post : undefined;
 }
 
-export type SdkTodoUpdatedKind = "task_started" | "task_updated" | "task_progress";
+export type SdkTodoUpdatedKind = "task_started" | "task_updated" | "task_progress" | "task_notification";
 
 /** Payload for `todo.updated` events — legacy task system messages (read/display only). */
 export interface SdkTodoUpdatedPayload {
@@ -87,6 +87,18 @@ export interface SdkTodoUpdatedPayload {
   prompt?: string;
   last_tool_name?: string;
   summary?: string;
+  ambient?: boolean;
+  is_backgrounded?: boolean;
+  spawn_depth?: number;
+  resource_links?: Array<{
+    uri: string;
+    name: string;
+    title?: string;
+    description?: string;
+    mimeType?: string;
+    size?: number;
+  }>;
+  status?: "completed" | "failed" | "stopped";
   patch?: {
     status?: string;
     description?: string;
@@ -96,7 +108,12 @@ export interface SdkTodoUpdatedPayload {
 
 export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): SdkTodoUpdatedPayload | null {
   const subtype = message.subtype;
-  if (subtype !== "task_started" && subtype !== "task_updated" && subtype !== "task_progress") {
+  if (
+    subtype !== "task_started" &&
+    subtype !== "task_updated" &&
+    subtype !== "task_progress" &&
+    subtype !== "task_notification"
+  ) {
     return null;
   }
 
@@ -130,6 +147,27 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   }
   if (typeof message.summary === "string" && message.summary.trim()) {
     payload.summary = message.summary.trim();
+  }
+  if (message.ambient === true) {
+    payload.ambient = true;
+  }
+  if (message.is_backgrounded === true || message.isBackgrounded === true) {
+    payload.is_backgrounded = true;
+  }
+  const spawnDepth =
+    typeof message.spawn_depth === "number"
+      ? message.spawn_depth
+      : typeof message.spawnDepth === "number"
+        ? message.spawnDepth
+        : undefined;
+  if (typeof spawnDepth === "number" && Number.isFinite(spawnDepth)) {
+    payload.spawn_depth = spawnDepth;
+  }
+  if (
+    subtype === "task_notification" &&
+    (message.status === "completed" || message.status === "failed" || message.status === "stopped")
+  ) {
+    payload.status = message.status;
   }
   if (subtype === "task_updated" && isRecord(message.patch)) {
     const patch: SdkTodoUpdatedPayload["patch"] = {};
@@ -644,7 +682,12 @@ function isSdkTodoUpdatedPayload(payload: unknown): payload is SdkTodoUpdatedPay
     return false;
   }
   const sdkKind = payload.sdkKind;
-  if (sdkKind !== "task_started" && sdkKind !== "task_updated" && sdkKind !== "task_progress") {
+  if (
+    sdkKind !== "task_started" &&
+    sdkKind !== "task_updated" &&
+    sdkKind !== "task_progress" &&
+    sdkKind !== "task_notification"
+  ) {
     return false;
   }
   return typeof payload.task_id === "string" && payload.task_id.length > 0;
