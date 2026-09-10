@@ -329,7 +329,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final planFailureMessage = isAwaitingPlan
         ? extractPlanFailureMessage(thread.message)
         : null;
-    final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
+    final followUpMode = shouldComposerUseFollowUpQueue(
+      status: thread?.status,
+      editingFollowUpId: _editingFollowUpId,
+      followUpQueuePaused: thread?.followUpQueuePaused ?? false,
+    );
     final pendingBash = session.pendingBash;
     final pendingPlan = session.pendingPlan;
     final pendingClarification = session.pendingClarification;
@@ -1272,7 +1276,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
     final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
-    final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
+    final followUpMode = shouldComposerUseFollowUpQueue(
+      status: thread?.status,
+      editingFollowUpId: _editingFollowUpId,
+      followUpQueuePaused: thread?.followUpQueuePaused ?? false,
+    );
 
     try {
       if (followUpMode) {

@@ -365,6 +365,7 @@ import {
   collectThreadFollowUpAttachments,
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
+  threadAcceptsQueuedFollowUp,
 } from "../shared/thread-follow-up-drain";
 import {
   requiresEmptyTurnForRequestRetry,
@@ -6390,10 +6391,13 @@ function registerIpcHandlers(): void {
     const deliveryMode =
       request.followUpDeliveryMode ?? workflowSettingsStore.get().followUpDeliveryMode ?? "steer";
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
+    const queuePaused = Boolean(thread.followUpQueuePaused);
     // ACP has no mid-turn: steer means interrupt + resume. Escalated priority always interrupts.
+    // While the queue is paused, never auto-deliver — new rows must wait for Resume.
     const preferInterrupt =
-      request.priority === "escalated" ||
-      (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer");
+      !queuePaused &&
+      (request.priority === "escalated" ||
+        (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer"));
     const followUpPendingActivityLineId = `follow-up:${randomUUID()}`;
     const persistedAttachments = request.attachments?.length
       ? await promptImageFileStore.persistMessageAttachments(
@@ -6415,6 +6419,14 @@ function registerIpcHandlers(): void {
       ...metadata,
     });
 
+    if (queuePaused || deliveryMode === "queue") {
+      // Keep queued while paused or when the user chose queue delivery.
+      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
+      return buildThreadFollowUpMutationResult(
+        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      );
+    }
+
     if (preferInterrupt) {
       const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
       if (midTurnResult) {
@@ -6428,14 +6440,6 @@ function registerIpcHandlers(): void {
         emitThreadFollowUpEvent(current, "thread.follow_up.queued", formatFollowUpQueuedMessage(current));
       }
       return buildThreadFollowUpMutationResult(current);
-    }
-
-    if (deliveryMode === "queue") {
-      // Only surface the queue panel when we intentionally keep the row queued.
-      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
-      return buildThreadFollowUpMutationResult(
-        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
-      );
     }
 
     const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
@@ -9214,6 +9218,11 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   if (!thread.coreKind) {
     throw new Error(`Thread ${thread.id} has unknown Core ownership.`);
   }
+  // Pause means new prompts join the queue; do not start a run ahead of it.
+  // Rewind is allowed (explicit edit of history) and still must not drain while paused.
+  if (thread.followUpQueuePaused && !input.rewindTarget) {
+    throw new Error("Follow-up queue is paused; enqueue the message or resume the queue before continuing.");
+  }
   const resolvedTarget = input.rewindTarget
     ? conversationStore.getActivityRewindTarget(input.threadId, input.rewindTarget.activityLineId)
     : undefined;
@@ -9582,14 +9591,14 @@ function isPromptImageMediaType(value: unknown): value is PromptImageAttachment[
 }
 
 function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): boolean {
-  if (status === "running" || status === "queued" || status === "awaiting_plan") {
-    return true;
-  }
-  return Boolean(
-    getPendingClarificationForThread(threadId) ||
-      getPendingBashApprovalForThread(threadId) ||
-      getPendingPlanApprovalForThread(threadId),
-  );
+  return threadAcceptsQueuedFollowUp({
+    status,
+    followUpQueuePaused: Boolean(conversationStore.getThread(threadId)?.followUpQueuePaused),
+    hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
+    hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+    hasPendingBashApproval: Boolean(getPendingBashApprovalForThread(threadId)),
+    hasPendingPlanApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
+  });
 }
 
 /**

@@ -2124,6 +2124,7 @@ export const i18nCatalogs = {
       "native.error.pendingApprovalNotFound": "找不到待处理的审批请求。",
       "native.error.pendingFollowUpNotFound": "找不到待处理的后续消息，或其状态已发生变化。",
       "native.error.threadNotAccepting": "当前会话暂不接受后续消息。",
+      "native.error.followUpQueuePaused": "排队已暂停；请将消息加入队列，或先恢复排队再继续。",
       "native.error.noExportableData": "没有可导出的配置。",
       "native.error.skillNotFound": "在受支持的用户技能目录中找不到该技能。",
       "native.error.operationUnavailable": "当前状态下无法执行此操作。",
@@ -4367,6 +4368,8 @@ export const i18nCatalogs = {
       "native.error.pendingApprovalNotFound": "No pending approval request was found.",
       "native.error.pendingFollowUpNotFound": "The pending follow-up was not found or its state has changed.",
       "native.error.threadNotAccepting": "This thread is not accepting follow-up messages.",
+      "native.error.followUpQueuePaused":
+        "Follow-up queue is paused; enqueue the message or resume the queue before continuing.",
       "native.error.noExportableData": "There is no configuration to export.",
       "native.error.skillNotFound": "The Skill was not found in a supported user Skills directory.",
       "native.error.operationUnavailable": "This operation is unavailable in the current state.",
@@ -4540,6 +4543,12 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   }
   if (message === "Thread is not accepting queued follow-up messages.") {
     return "native.error.threadNotAccepting";
+  }
+  if (
+    message ===
+    "Follow-up queue is paused; enqueue the message or resume the queue before continuing."
+  ) {
+    return "native.error.followUpQueuePaused";
   }
   if (message === "没有可导出的子代理模板。") {
     return "native.error.noExportableData";

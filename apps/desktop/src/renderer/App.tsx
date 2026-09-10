@@ -409,9 +409,9 @@ import {
 } from "./thinking-display-preferences";
 import {
   formatThreadFollowUpPreview,
-  isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
   queuedThreadFollowUps,
+  shouldComposerUseFollowUpQueue,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
@@ -4501,7 +4501,12 @@ function App() {
   const composerRoutesReady = !composerNeedsOrchestration || routesReady;
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
-    activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
+    activeThread &&
+      shouldComposerUseFollowUpQueue({
+        status: activeThread.status,
+        editingFollowUpId,
+        followUpQueuePaused: activeThread.followUpQueuePaused,
+      }),
   );
   const showBashApproval = Boolean(pendingBashApproval);
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
@@ -7750,7 +7755,11 @@ function App() {
     setError(undefined);
 
     if (activeThread) {
-      if (activeThread.status === "running" || activeThread.status === "queued") {
+      if (
+        activeThread.status === "running" ||
+        activeThread.status === "queued" ||
+        activeThread.followUpQueuePaused
+      ) {
         if (typeof window.eco.enqueueThreadFollowUp !== "function") {
           setError(t("app.preload.followUpEnqueue"));
           return;

@@ -30,6 +30,17 @@ bool isLiveFollowUpThreadStatus(String? status) {
   return status == 'running' || status == 'queued';
 }
 
+/// Composer should enqueue (not continue) while live, editing, or queue-paused.
+bool shouldComposerUseFollowUpQueue({
+  String? status,
+  String? editingFollowUpId,
+  bool followUpQueuePaused = false,
+}) {
+  return isLiveFollowUpThreadStatus(status) ||
+      (editingFollowUpId != null && editingFollowUpId.isNotEmpty) ||
+      followUpQueuePaused;
+}
+
 List<ThreadPendingFollowUp> sortThreadFollowUps(
   List<ThreadPendingFollowUp> followUps,
 ) {

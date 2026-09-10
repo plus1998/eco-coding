@@ -5,6 +5,19 @@ export function isLiveFollowUpThreadStatus(status?: ThreadStatus): boolean {
   return status === "running" || status === "queued";
 }
 
+/** Composer should enqueue (not continue/start) while live, editing, or queue-paused. */
+export function shouldComposerUseFollowUpQueue(input: {
+  status?: ThreadStatus;
+  editingFollowUpId?: string | null;
+  followUpQueuePaused?: boolean;
+}): boolean {
+  return Boolean(
+    isLiveFollowUpThreadStatus(input.status) ||
+      input.editingFollowUpId ||
+      input.followUpQueuePaused,
+  );
+}
+
 export function sortThreadFollowUps(followUps: readonly ThreadPendingFollowUp[]): ThreadPendingFollowUp[] {
   return [...followUps].sort(compareThreadFollowUps);
 }
