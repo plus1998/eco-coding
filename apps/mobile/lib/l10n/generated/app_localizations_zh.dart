@@ -159,15 +159,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSwitchPcSubtitle => '选择或绑定其他 Desktop 设备';
 
   @override
-  String get setupUnpairPc => '解除配对';
+  String get setupUnpairPc => '删除 PC';
 
   @override
   String setupUnpairPcTitle(String name) {
-    return '解除与 $name 的配对？';
+    return '从账号中删除 $name？';
   }
 
   @override
-  String get setupUnpairPcMessage => '之后将无法控制这台电脑。请输入账号密码确认；电脑损坏或丢失时也可以在此移除。';
+  String get setupUnpairPcMessage =>
+      '将解除该电脑与云端的连接，之后无法再从手机控制它。丢失或找不到的电脑也可以在此清理。';
 
   @override
   String get setupUnpairPcPasswordHint => '输入与 Desktop 相同的账号密码';
@@ -180,7 +181,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String setupUnpairPcDone(String name) {
-    return '已解除与 $name 的配对';
+    return '已从账号中删除 $name';
   }
 
   @override

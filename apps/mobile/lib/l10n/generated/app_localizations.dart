@@ -389,19 +389,19 @@ abstract class AppLocalizations {
   /// No description provided for @setupUnpairPc.
   ///
   /// In en, this message translates to:
-  /// **'Unpair'**
+  /// **'Remove PC'**
   String get setupUnpairPc;
 
   /// No description provided for @setupUnpairPcTitle.
   ///
   /// In en, this message translates to:
-  /// **'Unpair from {name}?'**
+  /// **'Remove {name} from your account?'**
   String setupUnpairPcTitle(String name);
 
   /// No description provided for @setupUnpairPcMessage.
   ///
   /// In en, this message translates to:
-  /// **'You will no longer be able to control this PC. Enter your account password to confirm. You can also remove it here if the computer is lost or damaged.'**
+  /// **'This disconnects the PC from the cloud so phones can no longer control it. You can also remove lost or unreachable computers here.'**
   String get setupUnpairPcMessage;
 
   /// No description provided for @setupUnpairPcPasswordHint.
@@ -425,7 +425,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupUnpairPcDone.
   ///
   /// In en, this message translates to:
-  /// **'Unpaired from {name}'**
+  /// **'Removed {name} from your account'**
   String setupUnpairPcDone(String name);
 
   /// No description provided for @authInvalidCredentials.

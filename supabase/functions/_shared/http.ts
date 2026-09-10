@@ -51,6 +51,18 @@ export function requireString(body: Record<string, unknown>, key: string): strin
   return value.trim();
 }
 
+export function optionalString(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new HttpError(400, `${key} must be a string.`, "invalid_request");
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function optionalObject(
   body: Record<string, unknown>,
   key: string,

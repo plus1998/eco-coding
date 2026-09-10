@@ -168,16 +168,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'Select or pair another Desktop device';
 
   @override
-  String get setupUnpairPc => 'Unpair';
+  String get setupUnpairPc => 'Remove PC';
 
   @override
   String setupUnpairPcTitle(String name) {
-    return 'Unpair from $name?';
+    return 'Remove $name from your account?';
   }
 
   @override
   String get setupUnpairPcMessage =>
-      'You will no longer be able to control this PC. Enter your account password to confirm. You can also remove it here if the computer is lost or damaged.';
+      'This disconnects the PC from the cloud so phones can no longer control it. You can also remove lost or unreachable computers here.';
 
   @override
   String get setupUnpairPcPasswordHint =>
@@ -191,7 +191,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String setupUnpairPcDone(String name) {
-    return 'Unpaired from $name';
+    return 'Removed $name from your account';
   }
 
   @override

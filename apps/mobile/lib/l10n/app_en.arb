@@ -58,18 +58,18 @@
   "settingsAccount": "Account",
   "settingsSwitchPc": "Switch PC",
   "settingsSwitchPcSubtitle": "Select or pair another Desktop device",
-  "setupUnpairPc": "Unpair",
-  "setupUnpairPcTitle": "Unpair from {name}?",
+  "setupUnpairPc": "Remove PC",
+  "setupUnpairPcTitle": "Remove {name} from your account?",
   "@setupUnpairPcTitle": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
-  "setupUnpairPcMessage": "You will no longer be able to control this PC. Enter your account password to confirm. You can also remove it here if the computer is lost or damaged.",
+  "setupUnpairPcMessage": "This disconnects the PC from the cloud so phones can no longer control it. You can also remove lost or unreachable computers here.",
   "setupUnpairPcPasswordHint": "Enter the same account password as Desktop",
   "setupUnpairPcWrongPassword": "Incorrect password. Try again.",
   "setupUnpairPcPasswordRequired": "Enter your password.",
-  "setupUnpairPcDone": "Unpaired from {name}",
+  "setupUnpairPcDone": "Removed {name} from your account",
   "@setupUnpairPcDone": {
     "placeholders": {
       "name": { "type": "String" }

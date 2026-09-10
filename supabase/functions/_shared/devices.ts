@@ -126,6 +126,56 @@ export async function requireOwnedDevice(
   return device;
 }
 
+/** Account-owner cleanup for lost desktops: JWT proves account, no device secret. */
+export async function requireOwnedActiveDesktop(
+  admin: AdminClient,
+  input: {
+    userId: string;
+    deviceId: string;
+  },
+): Promise<DeviceRow> {
+  const { data, error } = await admin
+    .from("devices")
+    .select(
+      "id, user_id, kind, name, secret_hash, metadata, created_at, last_seen_at, disabled_at, vault_synced_at",
+    )
+    .eq("id", input.deviceId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("devices lookup failed", error);
+    throw new HttpError(500, "Failed to load device.", "device_lookup_failed");
+  }
+
+  const device = data as DeviceRow | null;
+  if (!device || device.user_id !== input.userId || device.kind !== "desktop" || device.disabled_at) {
+    throw new HttpError(403, "desktop device is not active.", "device_inactive");
+  }
+
+  return device;
+}
+
+export async function revokeBindingsForDesktop(
+  admin: AdminClient,
+  input: {
+    userId: string;
+    desktopDeviceId: string;
+  },
+): Promise<void> {
+  const revokedAt = new Date().toISOString();
+  const { error } = await admin
+    .from("device_bindings")
+    .update({ revoked_at: revokedAt })
+    .eq("user_id", input.userId)
+    .eq("desktop_device_id", input.desktopDeviceId)
+    .is("revoked_at", null);
+
+  if (error) {
+    console.error("revoke bindings for desktop failed", error);
+    throw new HttpError(500, "Failed to revoke device bindings.", "binding_revoke_failed");
+  }
+}
+
 export async function disableDevice(
   admin: AdminClient,
   input: {

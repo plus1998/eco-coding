@@ -45,7 +45,7 @@ void main() {
 
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('解除与 Eco Win Dev 的配对'), findsOneWidget);
+    expect(find.textContaining('从账号中删除 Eco Win Dev'), findsOneWidget);
     expect(find.byKey(const Key('unpair-pc-password-field')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('unpair-pc-cancel')));

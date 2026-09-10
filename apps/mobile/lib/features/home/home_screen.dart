@@ -1048,7 +1048,7 @@ class _SelectPcStep extends ConsumerWidget {
   Future<void> _confirmUnpair(
     BuildContext context,
     WidgetRef ref, {
-    required DeviceBinding binding,
+    required String desktopDeviceId,
     required String name,
   }) async {
     final l10n = context.l10n;
@@ -1088,11 +1088,11 @@ class _SelectPcStep extends ConsumerWidget {
     if (!context.mounted) return;
 
     try {
-      await client.revokeBinding(binding.id);
+      await client.disableOwnedDesktop(desktopDeviceId);
       final selected =
           ref.read(selectedDesktopIdProvider) ??
           client.credentials.selectedDesktopId;
-      if (selected == binding.desktopDeviceId) {
+      if (selected == desktopDeviceId) {
         ref.read(selectedDesktopIdProvider.notifier).state = null;
       }
       ref.invalidate(bindingsProvider);
@@ -1111,18 +1111,8 @@ class _SelectPcStep extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bindingsAsync = ref.watch(bindingsProvider);
     final presenceAsync = ref.watch(desktopPresenceProvider);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
-    final credentials =
-        ref.watch(credentialsProvider).valueOrNull ??
-        ref.read(ecoCenterClientProvider).credentials;
-
-    final bindings = bindingsAsync.valueOrNull;
-    final active = activeBindingsForMobile(bindings, credentials.deviceId);
-    final bindingByDesktop = <String, DeviceBinding>{
-      for (final binding in active) binding.desktopDeviceId: binding,
-    };
 
     final presence = presenceAsync.valueOrNull ?? [];
     final presenceLoading =
@@ -1164,7 +1154,6 @@ class _SelectPcStep extends ConsumerWidget {
               final name = formatDesktopLabel(device, desktopId);
               final detail = formatDeviceDetail(device, omitLabel: name);
               final selected = selectedDesktop == desktopId;
-              final binding = bindingByDesktop[desktopId];
               return _PcDeviceTile(
                 name: name,
                 detail: detail,
@@ -1174,12 +1163,12 @@ class _SelectPcStep extends ConsumerWidget {
                 dense: compact,
                 menuEnabled: !busy,
                 onTap: busy ? null : () => onSelect(desktopId, name, online),
-                onUnpair: binding == null
+                onUnpair: busy
                     ? null
                     : () => _confirmUnpair(
                         context,
                         ref,
-                        binding: binding,
+                        desktopDeviceId: desktopId,
                         name: name,
                       ),
               );
