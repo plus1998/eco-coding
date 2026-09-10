@@ -1886,12 +1886,35 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       id: feedId,
       kind: ActivityFeedKind.imageView,
       text: imageLifecycle == ToolActionLifecycle.running
-          ? l10n.activityImageViewViewing
-          : l10n.activityImageViewViewed,
+          ? l10n.activityImageDisplayViewing
+          : l10n.activityImageDisplayViewed,
       actionIcon: ActivityActionIcon.images,
       toolName: toolName,
       lifecycle: imageLifecycle,
-      imageView: ImageViewDisplay(path: 'artifact:${imageDisplay.artifactId}', eventId: item.id),
+      imageView: ImageViewDisplay(
+        path: 'artifact:${imageDisplay.artifactId}',
+        eventId: item.id,
+      ),
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
+    );
+  }
+  final htmlHost = tool?.htmlHost;
+  if (htmlHost != null) {
+    final htmlLifecycle = lifecycle ?? ToolActionLifecycle.completed;
+    final title = htmlHost.title?.trim();
+    return ActivityFeedEntry(
+      id: feedId,
+      kind: ActivityFeedKind.action,
+      text: htmlLifecycle == ToolActionLifecycle.running
+          ? l10n.activityHtmlHostPublishing
+          : l10n.activityHtmlHostPublished,
+      detail: (title != null && title.isNotEmpty) ? title : htmlHost.publicUrl,
+      actionIcon: ActivityActionIcon.browser,
+      toolName: toolName,
+      lifecycle: htmlLifecycle,
+      toolUseId: tool?.toolUseId,
       agentId: item.agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
@@ -1989,7 +2012,18 @@ ActivityActionIcon _projectionToolActionIcon(
   if (tool?.readTargetPath?.isNotEmpty == true) {
     return ActivityActionIcon.read;
   }
-  if (toolName == 'WebSearch' || toolName == 'WebFetch') {
+  if (tool?.imageDisplay != null) {
+    return ActivityActionIcon.images;
+  }
+  if (tool?.htmlHost != null) {
+    return ActivityActionIcon.browser;
+  }
+  if (tool?.imageView != null) {
+    return ActivityActionIcon.images;
+  }
+  if (toolName == 'WebSearch' ||
+      toolName == 'WebFetch' ||
+      isEcoWebSearchToolName(toolName)) {
     return ActivityActionIcon.network;
   }
   return iconForToolName(toolName);

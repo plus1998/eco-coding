@@ -18,6 +18,8 @@ enum ActionKind {
   mcp,
   mcpSearch,
   imageView,
+  imageDisplay,
+  htmlHost,
   imageCreate,
   browser,
   computerUse,
@@ -77,6 +79,18 @@ class ActionKindImageView {
   final String? path;
 }
 
+class ActionKindImageDisplay {
+  const ActionKindImageDisplay({this.artifactId});
+  final String? artifactId;
+}
+
+class ActionKindHtmlHost {
+  const ActionKindHtmlHost({this.pageId, this.publicUrl, this.title});
+  final String? pageId;
+  final String? publicUrl;
+  final String? title;
+}
+
 class ActionKindBashRun {
   const ActionKindBashRun({this.command});
   final String? command;
@@ -90,6 +104,8 @@ class ActionKindPayload {
     this.webSearch,
     this.mcpDiscovery,
     this.imageView,
+    this.imageDisplay,
+    this.htmlHost,
     this.bashRun,
   });
 
@@ -99,6 +115,8 @@ class ActionKindPayload {
   final ActionKindWebSearch? webSearch;
   final ActionKindMcpDiscovery? mcpDiscovery;
   final ActionKindImageView? imageView;
+  final ActionKindImageDisplay? imageDisplay;
+  final ActionKindHtmlHost? htmlHost;
   final ActionKindBashRun? bashRun;
 }
 
@@ -148,6 +166,10 @@ const _aliases = <String, ActionKind>{
   'mcpscript': ActionKind.mcp,
   'viewimage': ActionKind.imageView,
   'view_image': ActionKind.imageView,
+  'displayimage': ActionKind.imageDisplay,
+  'display_image': ActionKind.imageDisplay,
+  'publishhtml': ActionKind.htmlHost,
+  'publish_html': ActionKind.htmlHost,
 };
 
 const _kindIcon = <ActionKind, ActivityActionIcon>{
@@ -165,6 +187,8 @@ const _kindIcon = <ActionKind, ActivityActionIcon>{
   ActionKind.mcp: ActivityActionIcon.network,
   ActionKind.mcpSearch: ActivityActionIcon.network,
   ActionKind.imageView: ActivityActionIcon.images,
+  ActionKind.imageDisplay: ActivityActionIcon.images,
+  ActionKind.htmlHost: ActivityActionIcon.browser,
   ActionKind.imageCreate: ActivityActionIcon.image,
   ActionKind.browser: ActivityActionIcon.browser,
   ActionKind.computerUse: ActivityActionIcon.computer,
@@ -186,6 +210,8 @@ const _kindBucket = <ActionKind, ActionGroupBucket>{
   ActionKind.mcp: ActionGroupBucket.mcpTools,
   ActionKind.mcpSearch: ActionGroupBucket.mcpTools,
   ActionKind.imageView: ActionGroupBucket.images,
+  ActionKind.imageDisplay: ActionGroupBucket.images,
+  ActionKind.htmlHost: ActionGroupBucket.browser,
   ActionKind.imageCreate: ActionGroupBucket.images,
   ActionKind.browser: ActionGroupBucket.browser,
   ActionKind.computerUse: ActionGroupBucket.computerUse,
@@ -234,12 +260,6 @@ ResolvedAction _resolved(ActionKind kind, [String? namedSuffix]) {
   );
 }
 
-bool _isEcoImageViewToolName(String? value) {
-  final name = value?.trim().toLowerCase() ?? '';
-  if (name.isEmpty) return false;
-  return name.contains('eco_image_view');
-}
-
 ActionKind? _kindFromPayload(ActionKindPayload? payload) {
   if (payload == null) return null;
   if (payload.fileChange != null) return ActionKind.edit;
@@ -251,6 +271,8 @@ ActionKind? _kindFromPayload(ActionKindPayload? payload) {
         : ActionKind.webSearch;
   }
   if (payload.imageView != null) return ActionKind.imageView;
+  if (payload.imageDisplay != null) return ActionKind.imageDisplay;
+  if (payload.htmlHost != null) return ActionKind.htmlHost;
   if (payload.bashRun != null) return ActionKind.command;
   return null;
 }
@@ -289,14 +311,23 @@ ResolvedAction resolveActionKind({
   if (isEcoAgentBrowserToolName(toolName)) {
     return _resolved(ActionKind.browser, ecoAgentBrowserToolSuffix(rawName));
   }
+  if (isEcoComputerUseToolName(toolName)) {
+    return _resolved(ActionKind.computerUse);
+  }
   if (isEcoImageGenerationToolName(toolName)) {
     return _resolved(ActionKind.imageCreate);
   }
-  if (_isEcoImageViewToolName(toolName)) {
+  if (isEcoImageViewToolName(toolName)) {
     return _resolved(ActionKind.imageView);
   }
-  if (isEcoComputerUseToolName(toolName)) {
-    return _resolved(ActionKind.computerUse);
+  if (isEcoImageDisplayToolName(toolName)) {
+    return _resolved(ActionKind.imageDisplay);
+  }
+  if (isEcoHtmlHostToolName(toolName)) {
+    return _resolved(ActionKind.htmlHost);
+  }
+  if (isEcoWebSearchToolName(toolName)) {
+    return _resolved(ActionKind.webSearch);
   }
 
   if (name.startsWith('mcp__')) {
@@ -369,6 +400,8 @@ String? resolveActionTarget(
       return normalizedRaw;
     case ActionKind.mcpSearch:
     case ActionKind.imageView:
+    case ActionKind.imageDisplay:
+    case ActionKind.htmlHost:
     case ActionKind.imageCreate:
     case ActionKind.computerUse:
       return null;
@@ -379,7 +412,10 @@ String? _namedLabel(String suffix, AppLocalizations l10n) {
   return switch (suffix) {
     'finalize_plan' => l10n.activityNamedFinalizePlan,
     'create_image' => l10n.activityNamedCreateImage,
+    'computer_use' => l10n.activityNamedComputerUse,
     'view_image' => l10n.activityNamedViewImage,
+    'display_image' => l10n.activityNamedDisplayImage,
+    'publish_html' => l10n.activityNamedPublishHtml,
     'agent_browser_open' => l10n.activityNamedAgentBrowserOpen,
     'agent_browser_snapshot' => l10n.activityNamedAgentBrowserSnapshot,
     'agent_browser_click' => l10n.activityNamedAgentBrowserClick,
@@ -413,6 +449,8 @@ String _runningLine(ActionKind kind, String suffix, AppLocalizations l10n) {
     ActionKind.tool => l10n.activityRunningTool(suffix),
     ActionKind.mcpSearch => l10n.activityRunningMcpSearch,
     ActionKind.imageView => l10n.activityImageViewViewing,
+    ActionKind.imageDisplay => l10n.activityImageDisplayViewing,
+    ActionKind.htmlHost => l10n.activityHtmlHostPublishing,
     ActionKind.imageCreate => l10n.activityRunningImageCreate,
     ActionKind.browser => l10n.activityRunningBrowserOpen(suffix),
     ActionKind.computerUse => l10n.activityRunningComputerUse,
@@ -436,6 +474,8 @@ String _doneLine(ActionKind kind, String suffix, AppLocalizations l10n) {
     ActionKind.tool => l10n.activityDoneTool(suffix),
     ActionKind.mcpSearch => l10n.activityDoneMcpSearch,
     ActionKind.imageView => l10n.activityImageViewViewed,
+    ActionKind.imageDisplay => l10n.activityImageDisplayViewed,
+    ActionKind.htmlHost => l10n.activityHtmlHostPublished,
     ActionKind.imageCreate => l10n.activityDoneImageCreate,
     ActionKind.browser => l10n.activityDoneBrowserOpen(suffix),
     ActionKind.computerUse => l10n.activityDoneComputerUse,
@@ -459,6 +499,8 @@ String _doneFallback(ActionKind kind, AppLocalizations l10n) {
     ActionKind.tool => l10n.activityDoneToolFallback,
     ActionKind.mcpSearch => l10n.activityDoneMcpSearch,
     ActionKind.imageView => l10n.activityImageViewViewed,
+    ActionKind.imageDisplay => l10n.activityImageDisplayViewed,
+    ActionKind.htmlHost => l10n.activityHtmlHostPublished,
     ActionKind.imageCreate => l10n.activityDoneImageCreate,
     ActionKind.browser => l10n.activityDoneToolFallback,
     ActionKind.computerUse => l10n.activityDoneComputerUse,
@@ -478,6 +520,16 @@ String formatActionLine({
     return phase == ActionLinePhase.running
         ? l10n.activityImageViewViewing
         : l10n.activityImageViewViewed;
+  }
+  if (kind == ActionKind.imageDisplay) {
+    return phase == ActionLinePhase.running
+        ? l10n.activityImageDisplayViewing
+        : l10n.activityImageDisplayViewed;
+  }
+  if (kind == ActionKind.htmlHost) {
+    return phase == ActionLinePhase.running
+        ? l10n.activityHtmlHostPublishing
+        : l10n.activityHtmlHostPublished;
   }
   if (kind == ActionKind.imageCreate) {
     return phase == ActionLinePhase.running

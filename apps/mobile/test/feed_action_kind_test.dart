@@ -112,6 +112,90 @@ void main() {
       resolveActionKind(toolName: 'mcp__eco_image_view__view_image').icon,
       ActivityActionIcon.images,
     );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_image_display__display_image').kind,
+      ActionKind.imageDisplay,
+    );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_image_display__display_image').icon,
+      ActivityActionIcon.images,
+    );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_html_host__publish_html').kind,
+      ActionKind.htmlHost,
+    );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_html_host__publish_html').icon,
+      ActivityActionIcon.browser,
+    );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_web_search__search').kind,
+      ActionKind.webSearch,
+    );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_web_search__search').icon,
+      ActivityActionIcon.network,
+    );
+  });
+
+  test('formatMcpToolDisplayName maps built-in eco tools', () {
+    expect(
+      formatMcpToolDisplayName('mcp__eco_image_display__display_image', l10n),
+      '展示图像',
+    );
+    expect(
+      formatMcpToolDisplayName('mcp__eco_html_host__publish_html', l10n),
+      '发布 HTML 页面',
+    );
+    expect(
+      formatMcpToolDisplayName('mcp__eco_computer_use__click', l10n),
+      '电脑操控',
+    );
+    expect(
+      formatMcpToolDisplayName('mcp__eco_web_search__search', l10n),
+      '联网搜索',
+    );
+    expect(
+      formatMcpToolDisplayName('mcp__eco_image_view__view_image', l10n),
+      '查看图像',
+    );
+  });
+
+  test('imageDisplay and htmlHost action lines', () {
+    final display = resolveActionKind(
+      toolName: 'mcp__eco_image_display__display_image',
+    );
+    expect(
+      formatActionLine(
+        resolved: display,
+        phase: ActionLinePhase.running,
+        l10n: l10n,
+      ),
+      '正在展示 1 张图像',
+    );
+    expect(
+      formatActionLine(
+        resolved: display,
+        phase: ActionLinePhase.done,
+        l10n: l10n,
+      ),
+      '已展示 1 张图像',
+    );
+    final html = resolveActionKind(
+      toolName: 'mcp__eco_html_host__publish_html',
+    );
+    expect(
+      formatActionLine(
+        resolved: html,
+        phase: ActionLinePhase.running,
+        l10n: l10n,
+      ),
+      '正在发布 HTML 页面',
+    );
+    expect(
+      formatActionLine(resolved: html, phase: ActionLinePhase.done, l10n: l10n),
+      '已发布 HTML 页面',
+    );
   });
 
   test('mcp tools are not stolen by skill heuristic', () {

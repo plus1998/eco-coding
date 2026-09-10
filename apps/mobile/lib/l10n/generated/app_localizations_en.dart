@@ -1292,7 +1292,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityNamedCreateImage => 'Generate image';
 
   @override
+  String get activityNamedComputerUse => 'Computer use';
+
+  @override
   String get activityNamedViewImage => 'View image';
+
+  @override
+  String get activityNamedDisplayImage => 'Display image';
+
+  @override
+  String get activityNamedPublishHtml => 'Publish HTML page';
 
   @override
   String get activityNamedAgentBrowserOpen => 'Open page';
@@ -1388,6 +1397,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityImageViewViewed => 'Viewed 1 image';
+
+  @override
+  String get activityImageDisplayViewing => 'Displaying 1 image';
+
+  @override
+  String get activityImageDisplayViewed => 'Displayed 1 image';
+
+  @override
+  String get activityHtmlHostPublishing => 'Publishing HTML page';
+
+  @override
+  String get activityHtmlHostPublished => 'Published HTML page';
 
   @override
   String get activityImageViewLoading => 'Reading local image…';

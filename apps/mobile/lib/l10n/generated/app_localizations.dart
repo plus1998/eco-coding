@@ -2186,11 +2186,29 @@ abstract class AppLocalizations {
   /// **'Generate image'**
   String get activityNamedCreateImage;
 
+  /// No description provided for @activityNamedComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Computer use'**
+  String get activityNamedComputerUse;
+
   /// No description provided for @activityNamedViewImage.
   ///
   /// In en, this message translates to:
   /// **'View image'**
   String get activityNamedViewImage;
+
+  /// No description provided for @activityNamedDisplayImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Display image'**
+  String get activityNamedDisplayImage;
+
+  /// No description provided for @activityNamedPublishHtml.
+  ///
+  /// In en, this message translates to:
+  /// **'Publish HTML page'**
+  String get activityNamedPublishHtml;
 
   /// No description provided for @activityNamedAgentBrowserOpen.
   ///
@@ -2377,6 +2395,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Viewed 1 image'**
   String get activityImageViewViewed;
+
+  /// No description provided for @activityImageDisplayViewing.
+  ///
+  /// In en, this message translates to:
+  /// **'Displaying 1 image'**
+  String get activityImageDisplayViewing;
+
+  /// No description provided for @activityImageDisplayViewed.
+  ///
+  /// In en, this message translates to:
+  /// **'Displayed 1 image'**
+  String get activityImageDisplayViewed;
+
+  /// No description provided for @activityHtmlHostPublishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Publishing HTML page'**
+  String get activityHtmlHostPublishing;
+
+  /// No description provided for @activityHtmlHostPublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Published HTML page'**
+  String get activityHtmlHostPublished;
 
   /// No description provided for @activityImageViewLoading.
   ///

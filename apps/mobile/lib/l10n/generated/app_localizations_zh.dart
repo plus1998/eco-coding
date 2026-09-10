@@ -1212,7 +1212,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityNamedCreateImage => '生成图片';
 
   @override
+  String get activityNamedComputerUse => '电脑操控';
+
+  @override
   String get activityNamedViewImage => '查看图像';
+
+  @override
+  String get activityNamedDisplayImage => '展示图像';
+
+  @override
+  String get activityNamedPublishHtml => '发布 HTML 页面';
 
   @override
   String get activityNamedAgentBrowserOpen => '打开网页';
@@ -1308,6 +1317,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityImageViewViewed => '已查看 1 张图像';
+
+  @override
+  String get activityImageDisplayViewing => '正在展示 1 张图像';
+
+  @override
+  String get activityImageDisplayViewed => '已展示 1 张图像';
+
+  @override
+  String get activityHtmlHostPublishing => '正在发布 HTML 页面';
+
+  @override
+  String get activityHtmlHostPublished => '已发布 HTML 页面';
 
   @override
   String get activityImageViewLoading => '正在读取本地图片…';
