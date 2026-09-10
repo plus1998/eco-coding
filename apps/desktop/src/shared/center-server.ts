@@ -390,6 +390,45 @@ export function buildCenterServerWebSocketUrl(serverUrl: string, accessToken: st
 }
 
 /**
+ * `eco://connect` deep link — import a Supabase project from the schema.
+ * `eco://connect?url={baseUrl}&token={token}` where token is the anon key.
+ * `supabase`/`anon` are accepted as aliases (used by the mobile connect QR).
+ */
+export interface EcoConnectDeepLink {
+  /** Normalized Supabase project URL, or empty when missing/invalid. */
+  supabaseUrl: string;
+  /** Raw anon key value, or empty when missing. */
+  anonKey: string;
+}
+
+export function parseEcoConnectDeepLink(rawUrl: string): EcoConnectDeepLink | undefined {
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== "eco:") {
+      return undefined;
+    }
+    const host = parsed.host || parsed.hostname;
+    // eco://connect?url=...&token=... — the project lives in the path host.
+    if (host !== "connect") {
+      return undefined;
+    }
+    const rawUrlValue =
+      parsed.searchParams.get("url") ?? parsed.searchParams.get("supabase") ?? "";
+    const rawToken =
+      parsed.searchParams.get("token") ?? parsed.searchParams.get("anon") ?? "";
+    let supabaseUrl = "";
+    try {
+      supabaseUrl = rawUrlValue ? normalizeSupabaseProjectUrl(rawUrlValue) : "";
+    } catch {
+      supabaseUrl = "";
+    }
+    return { supabaseUrl, anonKey: rawToken.trim() };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Connect QR for Mobile — project URL + anon key only.
  * Scheme: `eco://center?supabase=...&anon=...`
  * Password login is still required on the phone; QR does not grant control.

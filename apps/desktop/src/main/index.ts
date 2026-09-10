@@ -984,19 +984,69 @@ if (!e2eMode && !hasSingleInstanceLock) {
 
 let desktopInitializationComplete = false;
 
-app.on("second-instance", () => {
-  const existingWindow = BrowserWindow.getAllWindows()[0];
-  if (presentDesktopWindow(existingWindow) || !desktopInitializationComplete) {
+/**
+ * Pending deep link (eco://...) delivered while the renderer is not ready yet.
+ * Sent to the renderer once it reports ready.
+ */
+let pendingEcoDeepLink: string | undefined;
+// True once the renderer reports ready (it then subscribes to deep-link events).
+let desktopRendererReady = false;
+
+// Deliver a deep link to the primary window: immediately when the renderer is
+// already ready, otherwise stash it and flush once the renderer reports ready.
+function deliverEcoDeepLink(url: string): void {
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window && !window.isDestroyed() && desktopRendererReady) {
+    window.webContents.send(IPC_CHANNELS.appEcoDeepLinkOpen, url);
     return;
   }
-  void createMainWindow()
-    .then((window) => {
-      presentDesktopWindow(window);
-    })
-    .catch((error) => {
-      process.stderr.write(`[eco] failed to reopen primary window: ${errorMessage(error)}\n`);
-    });
+  pendingEcoDeepLink = url;
+}
+
+// Bring the primary window to the front (creating it if none exists yet).
+function presentPrimaryWindow(): void {
+  const existingWindow = BrowserWindow.getAllWindows()[0];
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    presentDesktopWindow(existingWindow);
+    return;
+  }
+  if (desktopInitializationComplete) {
+    void createMainWindow()
+      .then((window) => {
+        presentDesktopWindow(window);
+      })
+      .catch((error) => {
+        process.stderr.write(`[eco] failed to reopen primary window: ${errorMessage(error)}\n`);
+      });
+  }
+}
+
+app.on("second-instance", (_event, argv) => {
+  const ecoUrl = argv.find((arg) => arg.startsWith("eco://"));
+  presentPrimaryWindow();
+  if (ecoUrl) {
+    deliverEcoDeepLink(ecoUrl);
+  }
 });
+
+// Delivered by the OS when the registered eco:// scheme is opened.
+app.on("open-url", (_event, url) => {
+  if (!url.startsWith("eco://")) {
+    return;
+  }
+  presentPrimaryWindow();
+  deliverEcoDeepLink(url);
+});
+
+// Flush a deep link that arrived before the renderer reported ready.
+function flushPendingEcoDeepLink(window: Electron.BrowserWindow): void {
+  if (!pendingEcoDeepLink) {
+    return;
+  }
+  const url = pendingEcoDeepLink;
+  pendingEcoDeepLink = undefined;
+  window.webContents.send(IPC_CHANNELS.appEcoDeepLinkOpen, url);
+}
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
@@ -1712,6 +1762,12 @@ function isExternalHttpUrl(url: string): boolean {
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) {
     return;
+  }
+  // Let the OS hand eco://... deep links to this app.
+  // Packaged only: in dev the scheme would register against the bare electron.exe,
+  // which treats the URL as an app path and fails to launch.
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient("eco");
   }
   if (appIcon && process.platform === "darwin") {
     app.dock?.setIcon(appIcon);
@@ -2582,6 +2638,14 @@ app.whenReady().then(async () => {
   }
   desktopInitializationComplete = true;
 
+  // On Windows/Linux a deep link that cold-started the app arrives via argv
+  // (the "open-url" event only fires for an already-running instance). Seed
+  // the pending link so it is flushed to the renderer once it is ready.
+  const argvDeepLink = process.argv.find((arg) => arg.startsWith("eco://"));
+  if (argvDeepLink && !pendingEcoDeepLink) {
+    pendingEcoDeepLink = argvDeepLink;
+  }
+
   nativeTheme.on("updated", () => {
     syncWindowControlsOverlays();
   });
@@ -3428,6 +3492,8 @@ function registerIpcHandlers(): void {
       throw new Error("Renderer ready notification came from an unknown window.");
     }
     revealWindowControls(window);
+    desktopRendererReady = true;
+    flushPendingEcoDeepLink(window);
     return { ok: true as const };
   });
 

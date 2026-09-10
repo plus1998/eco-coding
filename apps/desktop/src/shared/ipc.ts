@@ -287,6 +287,7 @@ export const IPC_CHANNELS = {
   htmlHostArtifactsList: "html-host-artifacts:list",
   htmlHostArtifactChanged: "html-host-artifact:changed",
   centerServerHtmlHostingRefresh: "center-server:html-hosting-refresh",
+  appEcoDeepLinkOpen: "app:eco-deep-link-open",
 } as const;
 
 export type AppMenuCommand =
@@ -311,6 +312,7 @@ export type {
   CenterServerDevicePresenceView,
   CenterServerDeviceView,
   CenterServerRegisterDesktopRequest,
+  EcoConnectDeepLink,
   CenterServerRegisterDesktopResult,
   CenterServerRemoveConnectionOptions,
   CenterServerRemoveConnectionResult,
@@ -331,6 +333,8 @@ export type {
   CenterServerVaultStatus,
   CenterServerVaultSyncState,
 } from "./center-server";
+
+export { parseEcoConnectDeepLink } from "./center-server";
 
 export interface CoreAvailabilitySnapshot {
   claude: { available: true; version?: string };

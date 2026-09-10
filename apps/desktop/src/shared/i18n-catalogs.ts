@@ -766,6 +766,14 @@ export const i18nCatalogs = {
       "settings.center.testFirst": "请先测试项目可达性。",
       "settings.center.credentialsRequired": "请填写邮箱和密码。",
       "settings.center.connectionFailed": "连接失败。",
+      "settings.center.ecoConnect.title": "导入 Supabase 配置",
+      "settings.center.ecoConnect.description": "检测到链接 eco://connect 携带的 Supabase 项目（{{url}}），是否使用它进行互联？",
+      "settings.center.ecoConnect.confirm": "使用该项目",
+      "settings.center.ecoConnect.success": "Supabase 配置导入成功。",
+      "settings.center.ecoConnect.sameSuccess": "该 Supabase 项目已关联，无需重复配置。",
+      "settings.center.ecoConnect.sameProject": "链接指向的项目与当前已关联的项目相同。",
+      "settings.center.ecoConnect.alreadyConnected": "当前已连接「{{name}}」，需要先登出（删除现有连接）后才能关联新的 Supabase 项目。",
+      "settings.center.ecoConnect.invalidUrl": "链接中缺少有效的 Supabase 项目 URL。",
       "settings.center.confirmUnbind":
         "确定解绑「{{name}}」？\n解绑后该手机将无法远程操控本机，需重新扫码配对。",
       "settings.center.remove.accountUnusable":
@@ -2960,6 +2968,16 @@ export const i18nCatalogs = {
       "settings.center.testFirst": "Test project reachability first.",
       "settings.center.credentialsRequired": "Enter an email address and password.",
       "settings.center.connectionFailed": "Connection failed.",
+      "settings.center.ecoConnect.title": "Import Supabase configuration",
+      "settings.center.ecoConnect.description":
+        "The eco://connect link points to a Supabase project ({{url}}). Use it to connect?",
+      "settings.center.ecoConnect.confirm": "Use this project",
+      "settings.center.ecoConnect.success": "Supabase configuration imported.",
+      "settings.center.ecoConnect.sameSuccess": "This Supabase project is already connected.",
+      "settings.center.ecoConnect.sameProject": "The linked project matches the one already connected.",
+      "settings.center.ecoConnect.alreadyConnected":
+        "“{{name}}” is already connected. Sign out (remove the existing connection) first to link a different Supabase project.",
+      "settings.center.ecoConnect.invalidUrl": "The link has no valid Supabase project URL.",
       "settings.center.confirmUnbind":
         "Unbind “{{name}}”?\nThis phone will no longer be able to control this device remotely and must scan a new pairing code.",
       "settings.center.remove.accountUnusable":
