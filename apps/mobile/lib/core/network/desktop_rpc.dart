@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/acp_models.dart';
+import '../models/image_display_models.dart';
 import '../models/image_view_models.dart';
 import '../models/git_models.dart';
 import '../models/asr_models.dart';
@@ -171,6 +172,30 @@ class DesktopRpc {
       width: width is num ? width.toInt() : 0,
       height: height is num ? height.toInt() : 0,
     );
+  }
+
+  Future<List<ImageDisplayArtifact>> listImageDisplayArtifacts(
+    String threadId,
+  ) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-display-artifacts:list',
+      [
+        {'threadId': threadId},
+      ],
+    );
+    if (result is! List) {
+      throw const FormatException('Invalid image display artifact list.');
+    }
+    return result
+        .whereType<Map>()
+        .map(
+          (entry) => ImageDisplayArtifact.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        )
+        .where((artifact) => artifact.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<List<ThreadSummary>> listThreads() async {

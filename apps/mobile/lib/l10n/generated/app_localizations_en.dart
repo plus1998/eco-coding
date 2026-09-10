@@ -1405,6 +1405,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityImageDisplayViewed => 'Displayed 1 image';
 
   @override
+  String get activityImageDisplayErrorReadFailed =>
+      'Failed to load the displayed image.';
+
+  @override
+  String get taskImageDisplayHistory => 'Displayed images';
+
+  @override
   String get activityHtmlHostPublishing => 'Publishing HTML page';
 
   @override

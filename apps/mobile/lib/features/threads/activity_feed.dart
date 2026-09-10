@@ -1019,6 +1019,7 @@ class ActivityFeedList extends StatefulWidget {
     this.loadToolDetail,
     this.loadTurnDetail,
     this.loadImageView,
+    this.onOpenImageDisplayArtifact,
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
     this.hasEarlier = false,
@@ -1041,6 +1042,7 @@ class ActivityFeedList extends StatefulWidget {
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final ValueChanged<String>? onOpenImageDisplayArtifact;
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool hasEarlier;
@@ -1207,6 +1209,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     loadToolDetail: widget.loadToolDetail,
                     loadTurnDetail: widget.loadTurnDetail,
                     loadImageView: widget.loadImageView,
+                    onOpenImageDisplayArtifact: widget.onOpenImageDisplayArtifact,
                     onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
                     onRewriteUserMessage: widget.onRewriteUserMessage,
                     expandUserPrompts: widget.expandUserPrompts,
@@ -1315,6 +1318,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.loadToolDetail,
     this.loadTurnDetail,
     this.loadImageView,
+    this.onOpenImageDisplayArtifact,
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
     this.expandUserPrompts = false,
@@ -1330,6 +1334,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final ValueChanged<String>? onOpenImageDisplayArtifact;
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool expandUserPrompts;
@@ -1349,6 +1354,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           loadToolDetail: loadToolDetail,
           loadTurnDetail: loadTurnDetail,
           loadImageView: loadImageView,
+          onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
           thinkingDefaultExpanded: thinkingDefaultExpanded,
           showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
           paceTargetEntryId: paceTargetEntryId,
@@ -1400,7 +1406,11 @@ class _ActivityFeedEntryTile extends StatelessWidget {
               : null,
         );
       case ActivityFeedKind.imageView:
-        return _ImageViewTile(entry: entry, loadImageView: loadImageView);
+        return _ImageViewTile(
+          entry: entry,
+          loadImageView: loadImageView,
+          onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
+        );
       case ActivityFeedKind.actionGroup:
         return _ActionGroupTile(entry: entry, loadToolDetail: loadToolDetail);
       case ActivityFeedKind.phase:
@@ -1444,6 +1454,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.loadToolDetail,
     this.loadTurnDetail,
     this.loadImageView,
+    this.onOpenImageDisplayArtifact,
     this.thinkingDefaultExpanded = false,
     this.showFinalMeta = false,
     this.paceTargetEntryId,
@@ -1455,6 +1466,7 @@ class _TurnFeedTile extends StatefulWidget {
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final ValueChanged<String>? onOpenImageDisplayArtifact;
   final bool thinkingDefaultExpanded;
   final bool showFinalMeta;
   final String? paceTargetEntryId;
@@ -1628,6 +1640,8 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               onOpenAgentDetail: widget.onOpenAgentDetail,
                               loadToolDetail: widget.loadToolDetail,
                               loadImageView: widget.loadImageView,
+                              onOpenImageDisplayArtifact:
+                                  widget.onOpenImageDisplayArtifact,
                               thinkingDefaultExpanded:
                                   widget.thinkingDefaultExpanded,
                               paceTargetEntryId: widget.paceTargetEntryId,
@@ -1675,6 +1689,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
                   loadImageView: widget.loadImageView,
+                  onOpenImageDisplayArtifact: widget.onOpenImageDisplayArtifact,
                   thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                   paceTargetEntryId: widget.paceTargetEntryId,
                   hideMessageActions: widget.showFinalMeta,
@@ -3216,10 +3231,15 @@ class _ActionTileState extends State<_ActionTile> {
 }
 
 class _ImageViewTile extends StatefulWidget {
-  const _ImageViewTile({required this.entry, this.loadImageView});
+  const _ImageViewTile({
+    required this.entry,
+    this.loadImageView,
+    this.onOpenImageDisplayArtifact,
+  });
 
   final ActivityFeedEntry entry;
   final ActivityFeedImageViewLoader? loadImageView;
+  final ValueChanged<String>? onOpenImageDisplayArtifact;
 
   @override
   State<_ImageViewTile> createState() => _ImageViewTileState();
@@ -3265,6 +3285,13 @@ class _ImageViewTileState extends State<_ImageViewTile> {
     if (_expanded) {
       setState(() => _expanded = false);
       return;
+    }
+    final path = widget.entry.imageView?.path.trim() ?? '';
+    if (path.startsWith('artifact:')) {
+      final artifactId = path.substring('artifact:'.length).trim();
+      if (artifactId.isNotEmpty) {
+        widget.onOpenImageDisplayArtifact?.call(artifactId);
+      }
     }
     setState(() {
       _expanded = true;

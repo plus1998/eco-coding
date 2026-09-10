@@ -175,6 +175,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("image-display:read", "Read image display artifact", "read", RPC_INVOKE, [
     objectArg(["artifactId"]),
   ]),
+  command("image-display-artifacts:list", "List image display artifacts for a thread", "read", RPC_INVOKE, [
+    objectArg(["threadId"]),
+  ]),
 
   command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),
   command("git:get-workspace-diff", "Get workspace diff", "read", RPC_INVOKE, [stringArg()]),

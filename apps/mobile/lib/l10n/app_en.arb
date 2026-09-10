@@ -455,6 +455,8 @@
   "activityImageViewViewed": "Viewed 1 image",
   "activityImageDisplayViewing": "Displaying 1 image",
   "activityImageDisplayViewed": "Displayed 1 image",
+  "activityImageDisplayErrorReadFailed": "Failed to load the displayed image.",
+  "taskImageDisplayHistory": "Displayed images",
   "activityHtmlHostPublishing": "Publishing HTML page",
   "activityHtmlHostPublished": "Published HTML page",
   "activityImageViewLoading": "Reading local image…",

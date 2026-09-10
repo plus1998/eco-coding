@@ -1325,6 +1325,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityImageDisplayViewed => '已展示 1 张图像';
 
   @override
+  String get activityImageDisplayErrorReadFailed => '加载展示图片失败。';
+
+  @override
+  String get taskImageDisplayHistory => '展示图片';
+
+  @override
   String get activityHtmlHostPublishing => '正在发布 HTML 页面';
 
   @override

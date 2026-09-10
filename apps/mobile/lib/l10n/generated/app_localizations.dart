@@ -2408,6 +2408,18 @@ abstract class AppLocalizations {
   /// **'Displayed 1 image'**
   String get activityImageDisplayViewed;
 
+  /// No description provided for @activityImageDisplayErrorReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load the displayed image.'**
+  String get activityImageDisplayErrorReadFailed;
+
+  /// No description provided for @taskImageDisplayHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Displayed images'**
+  String get taskImageDisplayHistory;
+
   /// No description provided for @activityHtmlHostPublishing.
   ///
   /// In en, this message translates to:

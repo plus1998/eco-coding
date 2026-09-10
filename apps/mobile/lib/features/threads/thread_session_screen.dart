@@ -7,8 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/app_error.dart';
-import '../../core/models/eco_types.dart' hide workspaceDisplayName;
 import '../../core/models/git_models.dart';
+import '../../core/models/image_display_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
@@ -41,6 +41,8 @@ import '../composer/workspace_changes_pill.dart';
 import '../projects/project_providers.dart';
 import 'activity_feed.dart';
 import 'activity_feed_scroll_coordinator.dart';
+import 'image_display_artifacts.dart';
+import 'image_display_floating_gallery.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_session_layout.dart';
 import 'thread_providers.dart';
@@ -66,6 +68,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ActivityFeedScrollCoordinator(_scrollController);
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
+  final _imageDisplayGalleryController =
+      ImageDisplayFloatingGalleryController();
+  List<ImageDisplayArtifact> _remoteImageDisplayArtifacts = const [];
+  int _imageDisplayListEpoch = 0;
   bool _bashApprovalBusy = false;
   bool _planActionBusy = false;
   bool _clarificationBusy = false;
@@ -99,6 +105,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       }
       final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
       ref.read(runtimeConfigProvider.notifier).state = thread?.runtimeConfig;
+      _scheduleImageDisplayArtifactsRefresh();
     });
   }
 
@@ -183,9 +190,44 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(sessionWakeLock.disable());
+    _imageDisplayGalleryController.dispose();
     _promptController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scheduleImageDisplayArtifactsRefresh() {
+    if (_isLanding) return;
+    final epoch = ++_imageDisplayListEpoch;
+    unawaited(_refreshImageDisplayArtifacts(epoch));
+  }
+
+  Future<void> _refreshImageDisplayArtifacts(int epoch) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    try {
+      final listed = await rpc.listImageDisplayArtifacts(widget.threadId);
+      if (!mounted || epoch != _imageDisplayListEpoch) return;
+      setState(() => _remoteImageDisplayArtifacts = listed);
+    } catch (_) {
+      // Projection-derived artifacts still drive the gallery; list is enrichment.
+    }
+  }
+
+  Future<ImageViewReadData> _loadImageDisplayArtifactBytes(
+    String artifactId,
+  ) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      throw const ImageViewReadException(
+        ImageViewReadFailureCode.bridgeUnavailable,
+      );
+    }
+    return rpc.readImageDisplay(artifactId);
+  }
+
+  void _revealImageDisplayGallery(String artifactId) {
+    _imageDisplayGalleryController.reveal(artifactId: artifactId);
   }
 
   bool _isRunning(ThreadSummary? thread) {
@@ -233,6 +275,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           contextSnapshot: state.contextSnapshot,
           titleGenerating: state.titleGenerating,
           composerRestore: state.composerRestore,
+          runProjection: state.runProjection,
           projectionReady: isProjectionFeedReady(state.runProjection),
           projectionSettled: state.projectionSettled,
           projectionSynchronizing: state.projectionSynchronizing,
@@ -314,6 +357,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         );
         _scrollCoordinator.forceScrollToEnd();
       }
+      if (!identical(previousProjection, nextProjection)) {
+        _scheduleImageDisplayArtifactsRefresh();
+      }
       final restore = next.composerRestore;
       if (restore != null &&
           restore.revision.isNotEmpty &&
@@ -347,6 +393,15 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         hasWorkspaceChanges ||
         queuedFollowUps.isNotEmpty ||
         _editingFollowUpId != null;
+
+    final projectionImageDisplays = collectImageDisplayArtifactsFromProjection(
+      threadId: widget.threadId,
+      projection: session.runProjection,
+    );
+    final imageDisplayArtifacts = mergeImageDisplayArtifacts(
+      fromProjection: projectionImageDisplays,
+      fromRemote: _remoteImageDisplayArtifacts,
+    );
 
     final floatingComposer = hasFloatingComposerContent
         ? Column(
@@ -411,6 +466,14 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ),
       body: ThreadSessionConversationLayout(
         floatingComposer: floatingComposer,
+        floatingOverlayBuilder: imageDisplayArtifacts.isEmpty
+            ? null
+            : (controlsBottomInset) => ImageDisplayFloatingGallery(
+                artifacts: imageDisplayArtifacts,
+                controller: _imageDisplayGalleryController,
+                bottomInset: controlsBottomInset,
+                loadBytes: _loadImageDisplayArtifactBytes,
+              ),
         foreground: sessionContentBooting
             ? SessionContentBootLoading(
                 semanticLabel: context.l10n.feedOpening,
@@ -450,6 +513,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 stopping: stopping,
                 feedBottomInset: feedBottomInset,
                 controlsBottomInset: controlsBottomInset,
+                onOpenImageDisplayArtifact: _revealImageDisplayGallery,
               ),
         composer: IgnorePointer(
           ignoring: sessionContentBooting,
@@ -1334,6 +1398,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
     required this.stopping,
     required this.feedBottomInset,
     required this.controlsBottomInset,
+    this.onOpenImageDisplayArtifact,
   });
 
   final String threadId;
@@ -1343,6 +1408,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
   final bool stopping;
   final double feedBottomInset;
   final double controlsBottomInset;
+  final ValueChanged<String>? onOpenImageDisplayArtifact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1357,6 +1423,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           stopping: stopping,
           feedBottomInset: feedBottomInset,
           controlsBottomInset: controlsBottomInset,
+          onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
         ),
       ],
     );
@@ -1372,6 +1439,7 @@ class _ActivityFeedView extends ConsumerWidget {
     required this.stopping,
     required this.feedBottomInset,
     required this.controlsBottomInset,
+    this.onOpenImageDisplayArtifact,
   });
 
   final String threadId;
@@ -1381,6 +1449,7 @@ class _ActivityFeedView extends ConsumerWidget {
   final bool stopping;
   final double feedBottomInset;
   final double controlsBottomInset;
+  final ValueChanged<String>? onOpenImageDisplayArtifact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1497,6 +1566,7 @@ class _ActivityFeedView extends ConsumerWidget {
       loadTurnDetail: (entry) =>
           _loadTurnProjectionDetail(ref, threadId, entry),
       loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
+      onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
       onLoadUserMessageEdit: (activityLineId) async {
         final rpc = ref.read(desktopRpcProvider);
         if (rpc == null) {
