@@ -7,8 +7,10 @@ import {
   hasFeedSkeletonAttemptBecameTerminal,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
+  shouldRebuildFeedSkeletonForMissingRunningNarratives,
   shouldTrackEventForFeedSkeletonPatch,
 } from "../src/main/thread-feed-skeleton-patch";
+import type { ThreadFeedSkeletonRecord } from "../src/main/thread-feed-skeleton-store";
 import { buildThreadRunProjection, eventToTimelineItem } from "../src/main/thread-run-projection";
 import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
 import type { RunAttemptRecord } from "../src/main/usage-ledger";
@@ -129,10 +131,10 @@ function referenceFeedTimelineIds(
   return trimProjectionForFeed(projection).timeline.map((item) => item.id);
 }
 
-function replayPatchTimelineIds(
+function replayPatchRecords(
   events: readonly ThreadRunEvent[],
   attempts: readonly RunAttemptRecord[],
-): string[] {
+): ThreadFeedSkeletonRecord[] {
   let record = createThreadFeedSkeletonRecord(emptySnapshot(), {
     attempts: mapAttempts(attempts),
     agents: [],
@@ -141,14 +143,24 @@ function replayPatchTimelineIds(
   });
   record.patchState = createFeedSkeletonPatchState(record.snapshot);
 
+  const records: ThreadFeedSkeletonRecord[] = [];
   for (const event of events) {
     const attemptRecords = [...attempts];
     const context = patchContext(mapAttempts(attemptRecords), event.sequence);
     const patched = patchThreadFeedSkeletonFromEvent(record, event, context);
     expect(patched).not.toBeNull();
     record = patched!;
+    records.push(record);
   }
-  return feedSkeletonTimelineIds(record.snapshot);
+  return records;
+}
+
+function replayPatchTimelineIds(
+  events: readonly ThreadRunEvent[],
+  attempts: readonly RunAttemptRecord[],
+): string[] {
+  const records = replayPatchRecords(events, attempts);
+  return feedSkeletonTimelineIds(records[records.length - 1]!.snapshot);
 }
 
 describe("thread feed skeleton patch", () => {
@@ -959,5 +971,153 @@ describe("thread feed skeleton patch", () => {
     expect(patched).not.toBeNull();
     expect(feedSkeletonTimelineIds(patched!.snapshot)).toEqual(["user_1"]);
     expect(hasFeedSkeletonAttemptBecameTerminal(running, failed)).toBe(true);
+  });
+});
+
+describe("feed skeleton running-narrative integrity", () => {
+  function runningConversationEvents(): ThreadRunEvent[] {
+    return [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "message.final",
+        message: "继续",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "tool_1",
+        sequence: 2,
+        eventType: "tool.completed",
+        message: "Tool: Bash",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 3,
+        eventType: "message.final",
+        message: "先说明一下思路",
+        role: "coder",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_2",
+        sequence: 4,
+        eventType: "tool.completed",
+        message: "Tool: Edit",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "narr_2",
+        sequence: 5,
+        eventType: "message.final",
+        message: "改完了",
+        role: "coder",
+        runAttemptId: "att_run",
+      }),
+    ];
+  }
+
+  function isMissingRunningNarrativeFinal(input: {
+    attempts: readonly RunAttemptRecord[];
+    timeline: readonly ThreadRunProjectionTimelineItem[];
+    events: readonly ThreadRunEvent[];
+  }): boolean {
+    return shouldRebuildFeedSkeletonForMissingRunningNarratives({
+      attempts: mapAttempts(input.attempts),
+      timeline: input.timeline,
+      events: input.events,
+    });
+  }
+
+  test("never flags a skeleton produced by the live patch (no rebuild loop)", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = runningConversationEvents();
+
+    const records = replayPatchRecords(events, attempts);
+    // The detector only ever sees skeletons whose maxEventSequence covers the whole
+    // persisted log (isThreadFeedSkeletonFresh), so compare against the same prefix.
+    records.forEach((record, index) => {
+      expect(record.maxEventSequence).toBe(events[index]!.sequence);
+      expect(
+        isMissingRunningNarrativeFinal({
+          attempts,
+          timeline: record.snapshot.timeline,
+          events: events.slice(0, index + 1),
+        }),
+      ).toBe(false);
+    });
+    expect(feedSkeletonTimelineIds(records[records.length - 1]!.snapshot)).toEqual([
+      "user_1",
+      "tool_1",
+      "narr_1",
+      "tool_2",
+      "narr_2",
+    ]);
+  });
+
+  test("flags a running attempt whose earlier narrative bodies were collapsed away", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = runningConversationEvents();
+    const healthy = replayPatchRecords(events, attempts).pop()!;
+
+    const collapsedTimeline = healthy.snapshot.timeline.filter((item) => item.id !== "narr_1");
+    expect(
+      isMissingRunningNarrativeFinal({ attempts, timeline: collapsedTimeline, events }),
+    ).toBe(true);
+
+    // A full rebuild (what the detector triggers) must satisfy the invariant again.
+    const rebuilt = selectSkeletonTimelineItems(events.map((event) => eventToTimelineItem(event)), mapAttempts(attempts));
+    expect(isMissingRunningNarrativeFinal({ attempts, timeline: rebuilt, events })).toBe(false);
+  });
+
+  test("does not flag finished segments (terminal compaction keeps one final by design)", () => {
+    const events = runningConversationEvents();
+    const finished = [attemptRecord("att_run", "completed")];
+    const compacted = selectSkeletonTimelineItems(
+      events.map((event) => eventToTimelineItem(event)),
+      mapAttempts(finished),
+    );
+
+    const bodies = compacted.filter(
+      (item) => item.eventType === "message.final" && item.role !== "user",
+    );
+    expect(bodies).toHaveLength(1);
+    expect(isMissingRunningNarrativeFinal({ attempts: finished, timeline: compacted, events })).toBe(false);
+  });
+
+  test("counts narrative finals that lost their runAttemptId but fall in the running window", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = runningConversationEvents();
+    const healthy = replayPatchRecords(events, attempts).pop()!;
+
+    // Same skeleton, but the event log now also holds an unattributed body inside the
+    // running attempt: the time-window resolver must treat it as that attempt's row.
+    const orphanBody = runEvent({
+      id: "narr_orphan",
+      sequence: 6,
+      eventType: "message.final",
+      message: "补一句",
+      role: "coder",
+    });
+    expect(isMissingRunningNarrativeFinal({ attempts, timeline: healthy.snapshot.timeline, events: [...events, orphanBody] })).toBe(true);
+  });
+
+  test("keeps the running trail when a turn-final event lost its runAttemptId", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      ...runningConversationEvents(),
+      // api.error without runAttemptId used to bypass the running-attempt guard and
+      // collapse the whole segment (first real loss in thr_1789062621587).
+      runEvent({
+        id: "api_error",
+        sequence: 6,
+        eventType: "api.error",
+        message: "上游请求失败",
+        role: "coder",
+      }),
+    ];
+
+    expect(replayPatchTimelineIds(events, attempts)).toEqual(referenceFeedTimelineIds(events, attempts));
   });
 });

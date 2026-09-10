@@ -751,6 +751,7 @@ import {
   isFeedSkeletonTerminalEventType,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
+  shouldRebuildFeedSkeletonForMissingRunningNarratives,
   shouldTrackEventForFeedSkeletonPatch,
 } from "./thread-feed-skeleton-patch";
 import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
@@ -14420,61 +14421,22 @@ function shouldRebuildFeedSkeletonForTruncatedUserPrompts(
  * Incremental Feed patches used to collapse the whole segment on every
  * message.final while the attempt was still running, dropping earlier assistant
  * bodies between tools. Detect that hole so reload/live emit rebuilds from events.
+ *
+ * The predicate itself lives in thread-feed-skeleton-patch.ts (tested); this wrapper
+ * only avoids reading the event log for threads with no running attempt.
  */
 function shouldRebuildFeedSkeletonForCollapsedRunningNarratives(
   threadId: string,
   snapshot: ThreadRunProjectionSnapshot,
 ): boolean {
-  const runningAttemptIds = new Set(
-    snapshot.attempts
-      .filter((attempt) => attempt.status === "running")
-      .map((attempt) => attempt.attemptId),
-  );
-  if (runningAttemptIds.size === 0) {
+  if (!snapshot.attempts.some((attempt) => attempt.status === "running")) {
     return false;
   }
-
-  let skeletonFinalCount = 0;
-  for (const item of snapshot.timeline) {
-    if (item.eventType !== "message.final" || item.scope === "agent") {
-      continue;
-    }
-    const attemptId = item.runAttemptId?.trim();
-    if (!attemptId || !runningAttemptIds.has(attemptId)) {
-      continue;
-    }
-    if (item.role === "user" || item.role === "tool" || item.role === "thinking") {
-      continue;
-    }
-    if (!item.text.trim()) {
-      continue;
-    }
-    skeletonFinalCount += 1;
-  }
-
-  const events = conversationStore.listThreadRunEventsForProjection(threadId);
-  let eventFinalCount = 0;
-  for (const event of events) {
-    if (event.eventType !== "message.final" || event.scope === "agent") {
-      continue;
-    }
-    const attemptId = event.runAttemptId?.trim();
-    if (!attemptId || !runningAttemptIds.has(attemptId)) {
-      continue;
-    }
-    const role = event.role?.trim();
-    if (role === "user" || role === "tool" || role === "thinking") {
-      continue;
-    }
-    if (!event.message.trim()) {
-      continue;
-    }
-    eventFinalCount += 1;
-    if (eventFinalCount > skeletonFinalCount) {
-      return true;
-    }
-  }
-  return false;
+  return shouldRebuildFeedSkeletonForMissingRunningNarratives({
+    attempts: snapshot.attempts,
+    timeline: snapshot.timeline,
+    events: conversationStore.listThreadRunEventsForProjection(threadId),
+  });
 }
 
 function buildCurrentThreadRunProjection(

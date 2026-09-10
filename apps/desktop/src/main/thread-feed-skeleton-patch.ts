@@ -8,7 +8,9 @@ import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-p
 import {
   buildFeedSkeletonSegmentKey,
   compareFeedSkeletonTimelineItems,
+  createFeedSkeletonAttemptResolver,
   excludeAgentScopedFeedTimelineItems,
+  isFeedSkeletonItemOnRunningAttempt,
   isLiveFeedSkeletonAgent,
   isSkeletonTurnFinalItem,
   isSkeletonUserPromptItem,
@@ -158,7 +160,7 @@ export function patchThreadFeedSkeletonFromEvent(
   if (shouldTrackEventForFeedSkeletonPatch(event, attempts)) {
     const item = trimTimelineItemForFeed(eventToTimelineItem(event));
     trackedItems = upsertTrackedItem(trackedItems, item);
-    if (isSkeletonTurnFinalItem(item) && !isTrackedItemOnRunningAttempt(item, attempts)) {
+    if (isSkeletonTurnFinalItem(item) && !isFeedSkeletonItemOnRunningAttempt(item, attempts)) {
       // Live turns must keep every process row (selectSkeletonTimelineItems keeps
       // the full running-attempt trail). Collapsing here dropped earlier
       // message.final bodies when the model spoke multiple times between tools
@@ -320,24 +322,14 @@ function upsertTrackedItem(
   return [...merged.values()].sort(compareFeedSkeletonTimelineItems);
 }
 
-function isTrackedItemOnRunningAttempt(
-  item: ThreadRunProjectionTimelineItem,
-  attempts: readonly ThreadRunProjectionAttempt[],
-): boolean {
-  const attemptId = item.runAttemptId?.trim();
-  if (!attemptId) {
-    return false;
-  }
-  return attempts.some((attempt) => attempt.attemptId === attemptId && attempt.status === "running");
-}
-
 function collapseSegmentProcessItems(
   items: readonly ThreadRunProjectionTimelineItem[],
   finalItem: ThreadRunProjectionTimelineItem,
   attempts: readonly ThreadRunProjectionAttempt[],
 ): ThreadRunProjectionTimelineItem[] {
   const boundaries = listFeedSkeletonUserBoundaries(items);
-  const segmentKey = buildFeedSkeletonSegmentKey(finalItem, attempts, boundaries);
+  const resolveAttempt = createFeedSkeletonAttemptResolver(attempts);
+  const segmentKey = buildFeedSkeletonSegmentKey(finalItem, attempts, boundaries, resolveAttempt);
   const kept = items.filter((item) => {
     if (isSkeletonUserPromptItem(item)) {
       return true;
@@ -345,7 +337,7 @@ function collapseSegmentProcessItems(
     if (item.id === finalItem.id) {
       return true;
     }
-    if (buildFeedSkeletonSegmentKey(item, attempts, boundaries) !== segmentKey) {
+    if (buildFeedSkeletonSegmentKey(item, attempts, boundaries, resolveAttempt) !== segmentKey) {
       return true;
     }
     // A later tool.failed / api.error must not wipe earlier message.final bodies;
@@ -356,6 +348,81 @@ function collapseSegmentProcessItems(
     return false;
   });
   return upsertTrackedItem(kept, finalItem);
+}
+
+function isRunningNarrativeFinalFields(
+  eventType: string,
+  scope: string | undefined,
+  role: string | undefined,
+  text: string,
+): boolean {
+  if (eventType !== "message.final" || scope === "agent") {
+    return false;
+  }
+  const normalizedRole = role?.trim();
+  if (normalizedRole === "user" || normalizedRole === "tool" || normalizedRole === "thinking") {
+    return false;
+  }
+  return text.trim().length > 0;
+}
+
+export interface FeedSkeletonRunningNarrativeIntegrityInput {
+  attempts: readonly ThreadRunProjectionAttempt[];
+  timeline: readonly ThreadRunProjectionTimelineItem[];
+  events: readonly ThreadRunEvent[];
+}
+
+/**
+ * Detects skeletons that lost assistant `message.final` rows of a still-running attempt
+ * although the event log still has them — the fingerprint of the pre-29a56867
+ * collapse-while-running bug (or of any regression in the running-attempt guard).
+ *
+ * Only running attempts are inspected: finished segments are compacted to their single
+ * authoritative final by design, so a count mismatch there is expected, not damage.
+ * Counting (instead of id matching) is enough because the event→skeleton direction is
+ * append-only for running attempts, and it avoids projecting every event.
+ */
+export function shouldRebuildFeedSkeletonForMissingRunningNarratives(
+  input: FeedSkeletonRunningNarrativeIntegrityInput,
+): boolean {
+  const runningAttemptIds = new Set(
+    input.attempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
+  );
+  if (runningAttemptIds.size === 0) {
+    return false;
+  }
+  // Same resolver as selectSkeletonTimelineItems / the patch collapse: events without
+  // runAttemptId (api.error) still belong to the attempt that was running then.
+  const resolveAttempt = createFeedSkeletonAttemptResolver(input.attempts);
+  const isOnRunningAttempt = (target: {
+    at: string;
+    runAttemptId?: string | undefined;
+  }): boolean => {
+    const attempt = resolveAttempt(target);
+    return attempt !== undefined && runningAttemptIds.has(attempt.attemptId);
+  };
+
+  let skeletonFinalCount = 0;
+  for (const item of input.timeline) {
+    if (!isRunningNarrativeFinalFields(item.eventType, item.scope, item.role, item.text)) {
+      continue;
+    }
+    if (isOnRunningAttempt(item)) {
+      skeletonFinalCount += 1;
+    }
+  }
+
+  let eventFinalCount = 0;
+  for (const event of input.events) {
+    if (!isRunningNarrativeFinalFields(event.eventType, event.scope, event.role, event.message)) {
+      continue;
+    }
+    if (isOnRunningAttempt({ at: event.observedAt, runAttemptId: event.runAttemptId })) {
+      eventFinalCount += 1;
+    }
+  }
+
+  return eventFinalCount > skeletonFinalCount;
 }
 
 function mergeTrackedItemsWithSkeleton(
