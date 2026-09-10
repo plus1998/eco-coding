@@ -23,27 +23,27 @@
  *    divergence.
  */
 import { createConversationStore } from "../src/main/conversation-store.ts";
-import { buildThreadRunProjection } from "../src/main/thread-run-projection.ts";
-import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed.ts";
-import {
-  createThreadFeedSkeletonRecord,
-  feedSkeletonTimelineIds,
-  patchThreadFeedSkeletonFromEvent,
-} from "../src/main/thread-feed-skeleton-patch.ts";
-import {
-  mapRunAttemptsForFeedSkeleton,
-} from "../src/main/thread-feed-skeleton-store.ts";
 import {
   shouldRebuildFeedSkeletonForEmptyTimeline,
   shouldRebuildFeedSkeletonForOrphanAgentEvents,
   shouldRebuildFeedSkeletonForTruncatedUserPrompts,
 } from "../src/main/thread-feed-skeleton-detectors.ts";
+import {
+  createThreadFeedSkeletonRecord,
+  feedSkeletonTimelineIds,
+  patchThreadFeedSkeletonFromEvent,
+} from "../src/main/thread-feed-skeleton-patch.ts";
+import { mapRunAttemptsForFeedSkeleton } from "../src/main/thread-feed-skeleton-store.ts";
 import { isFeedMainTimelineEvent } from "../src/main/thread-feed-timeline-items.ts";
+import { buildThreadRunProjection } from "../src/main/thread-run-projection.ts";
+import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed.ts";
 
 const argv = process.argv.slice(2);
 const dbPath = argv.find((arg) => !arg.startsWith("--"));
 if (!dbPath) {
-  console.error("usage: bun scripts/feed-skeleton-parity-audit.mjs <sqlite-path> [--seeds 0.5,0.9] [--skip-orphans] [--verbose]");
+  console.error(
+    "usage: bun scripts/feed-skeleton-parity-audit.mjs <sqlite-path> [--seeds 0.5,0.9] [--skip-orphans] [--verbose]",
+  );
   process.exit(2);
 }
 const seedsArgument = argv.find((arg) => arg.startsWith("--seeds="))?.slice("--seeds=".length);
@@ -168,13 +168,13 @@ for (const threadId of threadIds) {
     compared += 1;
     const patchedIds = feedSkeletonTimelineIds(record.snapshot);
     const same =
-      patchedIds.length === referenceIds.length && patchedIds.every((id, index) => id === referenceIds[index]);
+      patchedIds.length === referenceIds.length &&
+      patchedIds.every((id, index) => id === referenceIds[index]);
     if (same) continue;
     mismatched += 1;
     const patchedSet = new Set(patchedIds);
     const referenceSet = new Set(referenceIds);
-    const label = (prefix, item) =>
-      `${prefix}:${item.eventType}:${item.scope}:${item.role ?? "-"}`;
+    const label = (prefix, item) => `${prefix}:${item.eventType}:${item.scope}:${item.role ?? "-"}`;
     if (verbose) {
       console.log(
         `MISMATCH ${threadId} seed=${seedRatio} patched=${patchedIds.length} reference=${referenceIds.length} events=${allEvents.length}`,
@@ -184,7 +184,9 @@ for (const threadId of threadIds) {
       if (verbose) console.log(`   missing ${item.eventType} scope=${item.scope} role=${item.role ?? "-"}`);
       mismatchTypes.set(label("missing", item), (mismatchTypes.get(label("missing", item)) ?? 0) + 1);
     }
-    for (const item of record.snapshot.timeline.filter((candidate) => !referenceSet.has(candidate.id)).slice(0, 5)) {
+    for (const item of record.snapshot.timeline
+      .filter((candidate) => !referenceSet.has(candidate.id))
+      .slice(0, 5)) {
       if (verbose) console.log(`   extra   ${item.eventType} scope=${item.scope} role=${item.role ?? "-"}`);
       mismatchTypes.set(label("extra", item), (mismatchTypes.get(label("extra", item)) ?? 0) + 1);
     }

@@ -43,12 +43,9 @@ export function streamIdentityOf(input: {
   if (!streamKey) {
     return undefined;
   }
-  return [
-    input.eventType,
-    streamKey,
-    input.requestId?.trim() ?? "",
-    input.runAttemptId?.trim() ?? "",
-  ].join("\0");
+  return [input.eventType, streamKey, input.requestId?.trim() ?? "", input.runAttemptId?.trim() ?? ""].join(
+    "\0",
+  );
 }
 
 /** Identity of an SDK message block, used to drop replayed duplicates of a settled block. */

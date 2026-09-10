@@ -18,11 +18,11 @@ import {
   type FeedSkeletonPatchState,
   type ThreadFeedSkeletonRecord,
 } from "./thread-feed-skeleton-store";
+import { type FeedTimelineStageState, stageFeedTimelineEvent } from "./thread-feed-timeline-items";
 import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
+import { collectSettledSdkMessageBlocks } from "./thread-run-message-blocks";
 import { eventToTimelineItem } from "./thread-run-projection";
 import { trimTimelineItemForFeed } from "./thread-run-projection-feed";
-import { collectSettledSdkMessageBlocks } from "./thread-run-message-blocks";
-import { stageFeedTimelineEvent, type FeedTimelineStageState } from "./thread-feed-timeline-items";
 
 export interface FeedSkeletonPatchContext {
   attempts: readonly ThreadRunProjectionAttempt[];

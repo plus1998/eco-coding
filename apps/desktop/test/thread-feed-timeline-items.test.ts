@@ -1,16 +1,16 @@
 import { describe, expect, test } from "vitest";
+import {
+  type FeedTimelineStageState,
+  isFeedMainTimelineEvent,
+  stageFeedTimelineEvent,
+} from "../src/main/thread-feed-timeline-items";
 import { isMetricsOnlyThreadRunEvent } from "../src/main/thread-run-event-normalizer";
-import { buildThreadRunProjection } from "../src/main/thread-run-projection";
-import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
 import {
   collectSettledSdkMessageBlocks,
   sdkMessageBlockIdentity,
 } from "../src/main/thread-run-message-blocks";
-import {
-  isFeedMainTimelineEvent,
-  stageFeedTimelineEvent,
-  type FeedTimelineStageState,
-} from "../src/main/thread-feed-timeline-items";
+import { buildThreadRunProjection } from "../src/main/thread-run-projection";
+import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
 import type { ThreadRunEvent } from "../src/shared/ipc";
 import { compareFeedSkeletonTimelineItems } from "../src/shared/thread-run-projection-skeleton";
 import {
@@ -80,24 +80,43 @@ describe("feed timeline item staging", () => {
       ),
     ).toBe(state);
     // A replayed duplicate of a settled block with no stream identity is also a no-op.
-    const settled = stageAll([
-      event({ id: "m1", sequence: 4, metadata: { sdkMessageId: "m1" } }),
-    ]);
+    const settled = stageAll([event({ id: "m1", sequence: 4, metadata: { sdkMessageId: "m1" } })]);
     expect(
       stageFeedTimelineEvent(settled, event({ id: "m2", sequence: 5, metadata: { sdkMessageId: "m1" } })),
     ).toBe(settled);
   });
 
   test("replaces the tracked item when a stream delta is re-emitted", () => {
-    const first = event({ id: "d1", sequence: 1, eventType: "message.delta", streamState: "streaming", streamKey: "s1", runAttemptId: "att", message: "a" });
-    const second = event({ id: "d2", sequence: 2, eventType: "message.delta", streamState: "streaming", streamKey: "s1", runAttemptId: "att", message: "ab" });
+    const first = event({
+      id: "d1",
+      sequence: 1,
+      eventType: "message.delta",
+      streamState: "streaming",
+      streamKey: "s1",
+      runAttemptId: "att",
+      message: "a",
+    });
+    const second = event({
+      id: "d2",
+      sequence: 2,
+      eventType: "message.delta",
+      streamState: "streaming",
+      streamKey: "s1",
+      runAttemptId: "att",
+      message: "ab",
+    });
     const state = stageAll([first, second]);
     expect(state.items.map((item) => item.id)).toEqual(["d2"]);
     expect(state.items[0]?.text).toBe("ab");
   });
 
   test("keeps deltas of a different stream, attempt or request id side by side", () => {
-    const base = { eventType: "message.delta", streamState: "streaming", streamKey: "s1", runAttemptId: "att" } as const;
+    const base = {
+      eventType: "message.delta",
+      streamState: "streaming",
+      streamKey: "s1",
+      runAttemptId: "att",
+    } as const;
     const state = stageAll([
       event({ id: "d1", sequence: 1, ...base }),
       event({ id: "d2", sequence: 2, ...base, streamKey: "s2" }),
@@ -118,7 +137,13 @@ describe("feed timeline item staging", () => {
       ...settledBlock,
       message: "partial",
     });
-    const final = event({ id: "f1", sequence: 2, streamState: "finalized", ...settledBlock, message: "final" });
+    const final = event({
+      id: "f1",
+      sequence: 2,
+      streamState: "finalized",
+      ...settledBlock,
+      message: "final",
+    });
     const replay = event({
       id: "d2",
       sequence: 3,
@@ -185,6 +210,8 @@ describe("feed timeline item staging", () => {
       event({ id: "b", sequence: 2, scope: "agent", agentId: "agent_a", metadata: { sdkMessageId: "m1" } }),
     ]);
     expect(state.finalizedSdkBlocks).toEqual(["main:message:m1"]);
-    expect(sdkMessageBlockIdentity(event({ id: "a", metadata: { sdkMessageId: "m1" } }))).toBe("main:message:m1");
+    expect(sdkMessageBlockIdentity(event({ id: "a", metadata: { sdkMessageId: "m1" } }))).toBe(
+      "main:message:m1",
+    );
   });
 });

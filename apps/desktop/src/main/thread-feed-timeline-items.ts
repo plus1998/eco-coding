@@ -3,7 +3,6 @@ import type { ThreadRunProjectionTimelineItem } from "../shared/thread-run-proje
 import { compareFeedSkeletonTimelineItems } from "../shared/thread-run-projection-skeleton";
 import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
 import {
-  collectSettledSdkMessageBlocks,
   sdkMessageBlockIdentity,
   settlesSdkMessageBlock,
   streamIdentityOf,
@@ -56,9 +55,7 @@ export function stageFeedTimelineEvent(
     if (!streamIdentity) {
       return state;
     }
-    const superseded = state.items.filter(
-      (existing) => streamIdentityOf(existing) !== streamIdentity,
-    );
+    const superseded = state.items.filter((existing) => streamIdentityOf(existing) !== streamIdentity);
     return superseded.length === state.items.length
       ? state
       : { items: superseded, finalizedSdkBlocks: state.finalizedSdkBlocks };
@@ -73,9 +70,8 @@ export function stageFeedTimelineEvent(
   items.push(item);
   items.sort(compareFeedSkeletonTimelineItems);
 
-  const settleBlock = Boolean(sdkIdentity) && settlesSdkMessageBlock(event);
-  return {
-    items,
-    finalizedSdkBlocks: settleBlock ? [...state.finalizedSdkBlocks, sdkIdentity!] : state.finalizedSdkBlocks,
-  };
+  if (!sdkIdentity || !settlesSdkMessageBlock(event)) {
+    return { items, finalizedSdkBlocks: state.finalizedSdkBlocks };
+  }
+  return { items, finalizedSdkBlocks: [...state.finalizedSdkBlocks, sdkIdentity] };
 }

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { isMetricsOnlyThreadRunEvent } from "../src/main/thread-run-event-normalizer";
 import {
   collectSettledSdkMessageBlocks,
   dedupeSettledSdkMessageBlocks,
@@ -29,12 +28,22 @@ function event(overrides: Partial<ThreadRunEvent> & Pick<ThreadRunEvent, "id">):
 
 describe("thread run message block rules", () => {
   test("only stream deltas with a non-blank stream key collapse", () => {
-    expect(isCollapsibleStreamEvent(event({ id: "a", eventType: "message.delta", streamKey: "s1" }))).toBe(true);
-    expect(isCollapsibleStreamEvent(event({ id: "b", eventType: "thinking.delta", streamKey: "s1" }))).toBe(true);
+    expect(isCollapsibleStreamEvent(event({ id: "a", eventType: "message.delta", streamKey: "s1" }))).toBe(
+      true,
+    );
+    expect(isCollapsibleStreamEvent(event({ id: "b", eventType: "thinking.delta", streamKey: "s1" }))).toBe(
+      true,
+    );
     expect(isCollapsibleStreamEvent(event({ id: "c", eventType: "message.delta" }))).toBe(false);
-    expect(isCollapsibleStreamEvent(event({ id: "d", eventType: "message.delta", streamKey: "   " }))).toBe(false);
-    expect(isCollapsibleStreamEvent(event({ id: "e", eventType: "message.final", streamKey: "s1" }))).toBe(false);
-    expect(isCollapsibleStreamEvent(event({ id: "f", eventType: "tool.started", streamKey: "s1" }))).toBe(false);
+    expect(isCollapsibleStreamEvent(event({ id: "d", eventType: "message.delta", streamKey: "   " }))).toBe(
+      false,
+    );
+    expect(isCollapsibleStreamEvent(event({ id: "e", eventType: "message.final", streamKey: "s1" }))).toBe(
+      false,
+    );
+    expect(isCollapsibleStreamEvent(event({ id: "f", eventType: "tool.started", streamKey: "s1" }))).toBe(
+      false,
+    );
   });
 
   test("stream identity ignores content but separates type, key, request and attempt", () => {
@@ -68,7 +77,9 @@ describe("thread run message block rules", () => {
       parentToolUseId: "tool_a",
     });
     expect(sdkMessageBlockIdentity(base)).toBe("agent_a:message:m1");
-    expect(sdkMessageBlockIdentity(event({ ...base, id: "b", agentId: undefined }))).toBe("tool_a:message:m1");
+    expect(sdkMessageBlockIdentity(event({ ...base, id: "b", agentId: undefined }))).toBe(
+      "tool_a:message:m1",
+    );
     expect(
       sdkMessageBlockIdentity(event({ ...base, id: "c", agentId: undefined, parentToolUseId: undefined })),
     ).toBe("coder:message:m1");
@@ -85,9 +96,9 @@ describe("thread run message block rules", () => {
     ).toBeUndefined();
     expect(sdkMessageBlockIdentity(event({ ...base, id: "g", metadata: {} }))).toBeUndefined();
     expect(sdkMessageBlockIdentity(event({ ...base, id: "h", eventType: "tool.started" }))).toBeUndefined();
-    expect(
-      sdkMessageBlockIdentity(event({ ...base, id: "i", metadata: { sdkMessageId: " m1 " } })),
-    ).toBe("agent_a:message:m1");
+    expect(sdkMessageBlockIdentity(event({ ...base, id: "i", metadata: { sdkMessageId: " m1 " } }))).toBe(
+      "agent_a:message:m1",
+    );
   });
 
   test("a block settles on finals and on finalized stream state only", () => {
@@ -102,8 +113,20 @@ describe("thread run message block rules", () => {
 
   test("dedupe drops replays that arrive after their block settled", () => {
     const stream = [
-      event({ id: "d1", sequence: 1, eventType: "message.delta", streamKey: "s1", metadata: { sdkMessageId: "m1" } }),
-      event({ id: "d2", sequence: 2, eventType: "message.delta", streamKey: "s1", metadata: { sdkMessageId: "m1" } }),
+      event({
+        id: "d1",
+        sequence: 1,
+        eventType: "message.delta",
+        streamKey: "s1",
+        metadata: { sdkMessageId: "m1" },
+      }),
+      event({
+        id: "d2",
+        sequence: 2,
+        eventType: "message.delta",
+        streamKey: "s1",
+        metadata: { sdkMessageId: "m1" },
+      }),
       event({
         id: "f1",
         sequence: 3,
@@ -113,15 +136,35 @@ describe("thread run message block rules", () => {
         metadata: { sdkMessageId: "m1" },
       }),
       // Replay of the same block after it settled -> dropped.
-      event({ id: "d3", sequence: 4, eventType: "message.delta", streamKey: "s1", metadata: { sdkMessageId: "m1" } }),
+      event({
+        id: "d3",
+        sequence: 4,
+        eventType: "message.delta",
+        streamKey: "s1",
+        metadata: { sdkMessageId: "m1" },
+      }),
       // A different block is untouched.
-      event({ id: "o1", sequence: 5, eventType: "thinking.delta", streamKey: "s2", metadata: { sdkMessageId: "m2" } }),
+      event({
+        id: "o1",
+        sequence: 5,
+        eventType: "thinking.delta",
+        streamKey: "s2",
+        metadata: { sdkMessageId: "m2" },
+      }),
       event({ id: "p1", sequence: 6, eventType: "tool.started" }),
     ];
-    expect(dedupeSettledSdkMessageBlocks(stream).map((item) => item.id)).toEqual(["d1", "d2", "f1", "o1", "p1"]);
+    expect(dedupeSettledSdkMessageBlocks(stream).map((item) => item.id)).toEqual([
+      "d1",
+      "d2",
+      "f1",
+      "o1",
+      "p1",
+    ]);
     expect(collectSettledSdkMessageBlocks(stream)).toEqual(["main:message:m1"]);
     // Blocks without an id are always kept.
-    expect(dedupeSettledSdkMessageBlocks([event({ id: "x" }), event({ id: "y", sequence: 2 })])).toHaveLength(2);
+    expect(dedupeSettledSdkMessageBlocks([event({ id: "x" }), event({ id: "y", sequence: 2 })])).toHaveLength(
+      2,
+    );
   });
 
   test("collect matches dedupe for real observed shapes", () => {
@@ -175,12 +218,13 @@ describe("thread run message block rules", () => {
     const sources = {
       projection: readFileSync(new URL("../src/main/thread-run-projection.ts", import.meta.url), "utf8"),
       store: readFileSync(new URL("../src/main/conversation-store.ts", import.meta.url), "utf8"),
-      timelineItems: readFileSync(new URL("../src/main/thread-feed-timeline-items.ts", import.meta.url), "utf8"),
+      timelineItems: readFileSync(
+        new URL("../src/main/thread-feed-timeline-items.ts", import.meta.url),
+        "utf8",
+      ),
     };
     for (const [label, source] of Object.entries(sources)) {
-      expect(source, `${label} must import the shared rules`).toMatch(
-        /from "\.\/thread-run-message-blocks"/,
-      );
+      expect(source, `${label} must import the shared rules`).toMatch(/from "\.\/thread-run-message-blocks"/);
       expect(source, `${label} must not define another copy`).not.toMatch(
         /function\s+(sdkMessageBlockIdentity|isCollapsibleStreamEvent|isCollapsibleProjectionStreamEvent|dedupeSettledSdkMessageBlocks|dedupeFinalizedSdkMessageBlocks|sameStreamIdentity|sameProjectionStreamIdentity)\s*\(/,
       );

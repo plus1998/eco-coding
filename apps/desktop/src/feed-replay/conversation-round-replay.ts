@@ -25,11 +25,11 @@ import {
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
 } from "../main/thread-feed-skeleton-patch";
-import { isFeedMainTimelineEvent } from "../main/thread-feed-timeline-items";
 import {
   mapRunAttemptsForFeedSkeleton,
   type ThreadFeedSkeletonRecord,
 } from "../main/thread-feed-skeleton-store";
+import { isFeedMainTimelineEvent } from "../main/thread-feed-timeline-items";
 import { isMetricsOnlyThreadRunEvent } from "../main/thread-run-event-normalizer";
 import { buildThreadRunProjection } from "../main/thread-run-projection";
 import { trimProjectionForFeed } from "../main/thread-run-projection-feed";

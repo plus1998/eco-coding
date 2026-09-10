@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { isFeedMainTimelineEvent } from "../src/main/thread-feed-timeline-items";
 import {
   shouldRebuildFeedSkeletonForEmptyTimeline,
   shouldRebuildFeedSkeletonForOrphanAgentEvents,
   shouldRebuildFeedSkeletonForTruncatedUserPrompts,
 } from "../src/main/thread-feed-skeleton-detectors";
+import { isFeedMainTimelineEvent } from "../src/main/thread-feed-timeline-items";
 import type { ThreadRunEvent } from "../src/shared/ipc";
 import type { ThreadRunProjectionTimelineItem } from "../src/shared/thread-run-projection";
 import {
@@ -16,6 +16,7 @@ import {
   eventFromShape,
   generateStream,
   loadObservedShapeFile,
+  type ObservedEventShape,
   rebuildFeedTimeline,
 } from "./helpers/feed-parity-corpus";
 
@@ -61,11 +62,9 @@ describe("feed skeleton rebuild detectors", () => {
     };
     expect(shouldRebuildFeedSkeletonForOrphanAgentEvents(input)).toBe(true);
     // The rebuilt skeleton contains the promoted row, so the detector cannot fire again.
-    const promotedTimeline = rebuildFeedTimeline(
-      [orphan],
-      [corpusAttemptRecord("completed")],
-      { agents: [] },
-    );
+    const promotedTimeline = rebuildFeedTimeline([orphan], [corpusAttemptRecord("completed")], {
+      agents: [],
+    });
     expect(promotedTimeline.some((item) => item.scope !== "agent")).toBe(true);
     expect(
       shouldRebuildFeedSkeletonForOrphanAgentEvents({
@@ -103,13 +102,9 @@ describe("feed skeleton rebuild detectors", () => {
     const base = { timeline: [] as ThreadRunProjectionTimelineItem[], sourceEventCount: 0 };
     // The poison this detector exists for: the DB has events, the skeleton was built from
     // an empty event read (projection cache wiped).
-    expect(
-      shouldRebuildFeedSkeletonForEmptyTimeline({ ...base, hasFeedVisibleEvent: true }, 12),
-    ).toBe(true);
+    expect(shouldRebuildFeedSkeletonForEmptyTimeline({ ...base, hasFeedVisibleEvent: true }, 12)).toBe(true);
     // No cursor yet, or no feed-visible row at all: nothing to heal.
-    expect(
-      shouldRebuildFeedSkeletonForEmptyTimeline({ ...base, hasFeedVisibleEvent: true }, 0),
-    ).toBe(false);
+    expect(shouldRebuildFeedSkeletonForEmptyTimeline({ ...base, hasFeedVisibleEvent: true }, 0)).toBe(false);
     expect(
       shouldRebuildFeedSkeletonForEmptyTimeline(
         { ...base, hasFeedVisibleEvent: false, sourceEventCount: 9 },
@@ -188,10 +183,9 @@ describe("feed skeleton rebuild detectors", () => {
         ),
         `seed ${seed} empty`,
       ).toBe(false);
-      expect(
-        shouldRebuildFeedSkeletonForTruncatedUserPrompts(timeline),
-        `seed ${seed} truncated`,
-      ).toBe(false);
+      expect(shouldRebuildFeedSkeletonForTruncatedUserPrompts(timeline), `seed ${seed} truncated`).toBe(
+        false,
+      );
 
       // A stream with only agent-scoped rows legitimately has an empty main timeline; the
       // detector must not treat that as poison (it would rebuild on every emit).
@@ -219,7 +213,10 @@ describe("feed skeleton rebuild detectors", () => {
       (shape) => shape.scope === "agent" && shape.hasAgentId && shape.eventType === "message.final",
     );
     expect(agentShape).toBeDefined();
-    const agentEvent = eventFromShape(agentShape!, { sequence: 1, attemptId: CORPUS_ATTEMPT_ID });
+    const agentEvent = eventFromShape(agentShape as ObservedEventShape, {
+      sequence: 1,
+      attemptId: CORPUS_ATTEMPT_ID,
+    });
     expect(
       shouldRebuildFeedSkeletonForOrphanAgentEvents({
         events: [agentEvent],

@@ -8,7 +8,10 @@ import type {
   ThreadSubagentSessionTiming,
   ThreadSummary,
 } from "../shared/ipc";
-import { excludeAgentScopedFeedTimelineItems, selectSkeletonTimelineItems } from "../shared/thread-run-projection-skeleton";
+import {
+  excludeAgentScopedFeedTimelineItems,
+  selectSkeletonTimelineItems,
+} from "../shared/thread-run-projection-skeleton";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
 /**

@@ -39,8 +39,6 @@ const outputPath = path.resolve(
 const labelArgument = process.argv.find((arg) => arg.startsWith("--labels="));
 const labels = (labelArgument?.slice("--labels=".length) ?? "").split(",").map((label) => label.trim());
 
-const ENUM_METADATA_KEYS = new Set(["liveType", "streamState", "phase", "status", "kind", "role"]);
-
 function valueTypeOf(value) {
   if (Array.isArray(value)) return "array";
   if (value === null) return "null";
@@ -113,10 +111,7 @@ for (const [index, databasePath] of databasePaths.entries()) {
           orphanAgentRows += 1;
         }
       }
-      if (
-        (event.eventType === "message.delta" || event.eventType === "thinking.delta") &&
-        event.streamKey
-      ) {
+      if ((event.eventType === "message.delta" || event.eventType === "thinking.delta") && event.streamKey) {
         deltaIdentities.set(
           [event.eventType, event.streamKey, event.requestId ?? "", event.runAttemptId ?? ""].join("\0"),
           event.scope,
@@ -150,8 +145,7 @@ const fixture = {
   threadsWithOrphanAgentRows: traits.filter((trait) => trait.orphanAgentRows > 0).length,
   attemptStatusSets: [...new Set(traits.map((trait) => trait.attemptStatuses.join("+")))].sort(),
   maxEventsPerThread: Math.max(...traits.map((trait) => trait.events).concat([0])),
-  crossScopeStreamIdentities: [...streamIdentityScopes.values()].filter((scopes) => scopes.size > 1)
-    .length,
+  crossScopeStreamIdentities: [...streamIdentityScopes.values()].filter((scopes) => scopes.size > 1).length,
   shapes: [...shapes.values()]
     .sort((left, right) => right.count - left.count)
     .map((entry) => ({

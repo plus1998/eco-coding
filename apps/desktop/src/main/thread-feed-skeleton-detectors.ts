@@ -42,9 +42,7 @@ export function shouldRebuildFeedSkeletonForOrphanAgentEvents(input: {
     return false;
   }
   // A rebuilt skeleton already contains the promoted row, so this cannot fire twice.
-  return !input.timeline.some(
-    (item) => item.scope !== "agent" && isAssistantBodyEventType(item.eventType),
-  );
+  return !input.timeline.some((item) => item.scope !== "agent" && isAssistantBodyEventType(item.eventType));
 }
 
 function isAssistantBodyEventType(eventType: string): boolean {
@@ -71,11 +69,14 @@ function isAssistantBodyEventType(eventType: string): boolean {
  *    attempt without a final) => a rebuild would be empty too, so rebuilding every emit
  *    would be a rebuild storm.
  */
-export function shouldRebuildFeedSkeletonForEmptyTimeline(input: {
-  timeline: readonly ThreadRunProjectionTimelineItem[];
-  sourceEventCount: number;
-  hasFeedVisibleEvent: boolean;
-}, maxEventSequence: number): boolean {
+export function shouldRebuildFeedSkeletonForEmptyTimeline(
+  input: {
+    timeline: readonly ThreadRunProjectionTimelineItem[];
+    sourceEventCount: number;
+    hasFeedVisibleEvent: boolean;
+  },
+  maxEventSequence: number,
+): boolean {
   if (input.timeline.length > 0 || !input.hasFeedVisibleEvent) {
     return false;
   }
@@ -89,7 +90,5 @@ export function shouldRebuildFeedSkeletonForEmptyTimeline(input: {
 export function shouldRebuildFeedSkeletonForTruncatedUserPrompts(
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): boolean {
-  return timeline.some(
-    (item) => isSkeletonUserPromptItem(item) && item.metadata?.textTruncated === true,
-  );
+  return timeline.some((item) => isSkeletonUserPromptItem(item) && item.metadata?.textTruncated === true);
 }

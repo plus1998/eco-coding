@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
+import { isMetricsOnlyThreadRunEvent } from "../../src/main/thread-run-event-normalizer";
 import { buildThreadRunProjection } from "../../src/main/thread-run-projection";
 import { trimProjectionForFeed } from "../../src/main/thread-run-projection-feed";
-import { isMetricsOnlyThreadRunEvent } from "../../src/main/thread-run-event-normalizer";
 import type { AgentInstanceRecord, RunAttemptRecord } from "../../src/main/usage-ledger";
 import type {
   ThreadRunEvent,
@@ -66,7 +66,7 @@ export function loadObservedShapeFile(): ObservedShapeFile {
 }
 
 export function createSeededRandom(seed: number): () => number {
-  let state = (seed >>> 0) || 0x9e3779b9;
+  let state = seed >>> 0 || 0x9e3779b9;
   return () => {
     state ^= state << 13;
     state >>>= 0;
@@ -92,7 +92,7 @@ function textForShape(shape: ObservedEventShape, index: number): string {
   // Every 7th text-bearing event is an operational status line: `isSkeletonUserPromptItem`
   // rejects those, so a corpus without them would never exercise that branch.
   if (index % 7 === 6) {
-    return OPERATIONAL_TEXTS[index % OPERATIONAL_TEXTS.length]!;
+    return OPERATIONAL_TEXTS[index % OPERATIONAL_TEXTS.length] ?? OPERATIONAL_TEXTS[0];
   }
   const liveType = shape.metadata?.liveType;
   if (liveType === "thread.user_prompt" || liveType === "message.user" || shape.role === "user") {
@@ -101,10 +101,7 @@ function textForShape(shape: ObservedEventShape, index: number): string {
   return `正文 ${index}`;
 }
 
-function metadataForShape(
-  shape: ObservedEventShape,
-  index: number,
-): Record<string, unknown> | undefined {
+function metadataForShape(shape: ObservedEventShape, index: number): Record<string, unknown> | undefined {
   const shapeMetadata = shape.metadata;
   if (!shapeMetadata) {
     return undefined;
@@ -189,10 +186,7 @@ export interface EventContext {
   attemptId?: string;
 }
 
-export function eventFromShape(
-  shape: ObservedEventShape,
-  context: EventContext,
-): ThreadRunEvent {
+export function eventFromShape(shape: ObservedEventShape, context: EventContext): ThreadRunEvent {
   const metadata = metadataForShape(shape, context.sequence);
   return {
     id: `${shape.eventType.replace(/\./g, "_")}_${context.sequence}`,
@@ -212,9 +206,7 @@ export function eventFromShape(
     // deltas for different streams coexist. Scope is part of the key because real data never
     // shares one stream identity across scopes (0 of 138 threads), and the store collapses
     // deltas by identity without looking at scope.
-    ...(shape.hasStreamKey
-      ? { streamKey: `${shape.scope}_stream_${context.sequence % 2}` }
-      : {}),
+    ...(shape.hasStreamKey ? { streamKey: `${shape.scope}_stream_${context.sequence % 2}` } : {}),
     ...(metadata ? { metadata } : {}),
   };
 }
@@ -245,10 +237,7 @@ export function corpusAttemptRecord(
 }
 
 /** Attempt rows as the patch context would see them at a given event sequence. */
-export function attemptsAtSequence(
-  stream: CorpusStream,
-  sequence: number,
-): RunAttemptRecord[] {
+export function attemptsAtSequence(stream: CorpusStream, sequence: number): RunAttemptRecord[] {
   let status: RunAttemptRecord["status"] = "running";
   for (const transition of stream.attemptStatusBySequence) {
     if (transition.sequence <= sequence) {
@@ -275,7 +264,10 @@ export function generateStream(options: GenerateStreamOptions): CorpusStream {
   const shapes: ObservedEventShape[] = [];
   if (options.sampleWeighted === false) {
     for (let index = 0; index < count; index += 1) {
-      shapes.push(options.shapes[index % options.shapes.length]!);
+      const shape = options.shapes[index % options.shapes.length];
+      if (shape) {
+        shapes.push(shape);
+      }
     }
   } else {
     const pool: ObservedEventShape[] = [];
@@ -287,7 +279,10 @@ export function generateStream(options: GenerateStreamOptions): CorpusStream {
       }
     }
     for (let index = 0; index < count; index += 1) {
-      shapes.push(pool[Math.floor(random() * pool.length)]!);
+      const shape = pool[Math.floor(random() * pool.length)];
+      if (shape) {
+        shapes.push(shape);
+      }
     }
   }
   const events = shapes.map((shape, index) =>
@@ -376,9 +371,7 @@ export function rebuildFeedTimeline(
   return trimProjectionForFeed(projection).timeline;
 }
 
-export function timelineSignature(
-  timeline: readonly ThreadRunProjectionTimelineItem[],
-): string[] {
+export function timelineSignature(timeline: readonly ThreadRunProjectionTimelineItem[]): string[] {
   return timeline.map((item) => `${item.id}@${item.sequence}:${item.text}`);
 }
 
