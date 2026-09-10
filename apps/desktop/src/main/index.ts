@@ -7226,6 +7226,8 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
       );
     }
   }
+  // A force-drained escalated row can empty a paused queue; the pause then has no subject.
+  releaseFollowUpQueuePauseWhenEmpty(threadId);
 }
 
 function formatFollowUpDrainError(reason: string): string {
@@ -14312,7 +14314,8 @@ function loadThreadFeedProjectionForClient(
     if (
       shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
       shouldRebuildFeedSkeletonForEmptyTimeline(cached.snapshot, maxEventSequence) ||
-      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot)
+      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot) ||
+      shouldRebuildFeedSkeletonForCollapsedRunningNarratives(threadId, cached.snapshot)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       // Drop in-memory projection event cache too — it may be the empty array that
@@ -14411,6 +14414,67 @@ function shouldRebuildFeedSkeletonForTruncatedUserPrompts(
   return snapshot.timeline.some(
     (item) => isSkeletonUserPromptItem(item) && item.metadata?.textTruncated === true,
   );
+}
+
+/**
+ * Incremental Feed patches used to collapse the whole segment on every
+ * message.final while the attempt was still running, dropping earlier assistant
+ * bodies between tools. Detect that hole so reload/live emit rebuilds from events.
+ */
+function shouldRebuildFeedSkeletonForCollapsedRunningNarratives(
+  threadId: string,
+  snapshot: ThreadRunProjectionSnapshot,
+): boolean {
+  const runningAttemptIds = new Set(
+    snapshot.attempts
+      .filter((attempt) => attempt.status === "running")
+      .map((attempt) => attempt.attemptId),
+  );
+  if (runningAttemptIds.size === 0) {
+    return false;
+  }
+
+  let skeletonFinalCount = 0;
+  for (const item of snapshot.timeline) {
+    if (item.eventType !== "message.final" || item.scope === "agent") {
+      continue;
+    }
+    const attemptId = item.runAttemptId?.trim();
+    if (!attemptId || !runningAttemptIds.has(attemptId)) {
+      continue;
+    }
+    if (item.role === "user" || item.role === "tool" || item.role === "thinking") {
+      continue;
+    }
+    if (!item.text.trim()) {
+      continue;
+    }
+    skeletonFinalCount += 1;
+  }
+
+  const events = conversationStore.listThreadRunEventsForProjection(threadId);
+  let eventFinalCount = 0;
+  for (const event of events) {
+    if (event.eventType !== "message.final" || event.scope === "agent") {
+      continue;
+    }
+    const attemptId = event.runAttemptId?.trim();
+    if (!attemptId || !runningAttemptIds.has(attemptId)) {
+      continue;
+    }
+    const role = event.role?.trim();
+    if (role === "user" || role === "tool" || role === "thinking") {
+      continue;
+    }
+    if (!event.message.trim()) {
+      continue;
+    }
+    eventFinalCount += 1;
+    if (eventFinalCount > skeletonFinalCount) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function buildCurrentThreadRunProjection(
@@ -14572,7 +14636,8 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
     if (
       shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
-      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot)
+      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot) ||
+      shouldRebuildFeedSkeletonForCollapsedRunningNarratives(threadId, cached.snapshot)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       cached = undefined;

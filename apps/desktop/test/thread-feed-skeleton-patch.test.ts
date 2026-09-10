@@ -276,6 +276,157 @@ describe("thread feed skeleton patch", () => {
     expect(patchedAfterComplete).toEqual(referenceFeedTimelineIds(finalEvents, completedAttempts));
   });
 
+  test("keeps every running-attempt message.final between tools (no mid-turn collapse)", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "修一下 Feed 丢正文",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 2,
+        eventType: "message.final",
+        message: "先改 shared helpers",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_1",
+        sequence: 3,
+        eventType: "tool.completed",
+        message: "Tool: Edit · helpers.ts",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "narr_2",
+        sequence: 4,
+        eventType: "message.final",
+        message: "再改 main handler",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_2",
+        sequence: 5,
+        eventType: "tool.started",
+        message: "Tool: Edit · index.ts",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "narr_3",
+        sequence: 6,
+        eventType: "message.final",
+        message: "最后补测试",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+    ];
+
+    const patched = replayPatchTimelineIds(events, attempts);
+    expect(patched).toEqual(["user_1", "narr_1", "tool_1", "narr_2", "tool_2", "narr_3"]);
+    expect(patched).toEqual(referenceFeedTimelineIds(events, attempts));
+
+    const completedAttempts = [attemptRecord("att_run", "completed")];
+    const finalEvents = [
+      ...events,
+      runEvent({
+        id: "att_done",
+        sequence: 7,
+        eventType: "run.attempt.completed",
+        message: "Turn completed",
+        runAttemptId: "att_run",
+      }),
+    ];
+    const patchedAfterComplete = replayPatchTimelineIds(finalEvents, completedAttempts);
+    expect(patchedAfterComplete).toEqual(["user_1", "narr_3"]);
+    expect(patchedAfterComplete).toEqual(referenceFeedTimelineIds(finalEvents, completedAttempts));
+  });
+
+  test("running-attempt tool.failed does not wipe earlier message.final bodies", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "继续改",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 2,
+        eventType: "message.final",
+        message: "先写测试",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_ok",
+        sequence: 3,
+        eventType: "tool.completed",
+        message: "Tool: Edit · ok.ts",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_fail",
+        sequence: 4,
+        eventType: "tool.failed",
+        message: "Tool failed: Edit overlap",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_retry",
+        sequence: 5,
+        eventType: "tool.started",
+        message: "Tool: Edit · retry.ts",
+        runAttemptId: "att_run",
+      }),
+    ];
+
+    const patched = replayPatchTimelineIds(events, attempts);
+    expect(patched).toEqual(["user_1", "narr_1", "tool_ok", "tool_fail", "tool_retry"]);
+    expect(patched).toEqual(referenceFeedTimelineIds(events, attempts));
+  });
+
+  test("completed-attempt tool.failed after message.final keeps the narrative final", () => {
+    const attempts = [attemptRecord("att_1", "completed")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "提问",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 2,
+        eventType: "message.final",
+        message: "回答正文",
+        role: "planner",
+        runAttemptId: "att_1",
+      }),
+      runEvent({
+        id: "tool_fail",
+        sequence: 3,
+        eventType: "tool.failed",
+        message: "Tool failed: Edit overlap",
+        runAttemptId: "att_1",
+      }),
+    ];
+
+    const patched = replayPatchTimelineIds(events, attempts);
+    expect(patched).toEqual(["user_1", "narr_1"]);
+    expect(patched).toEqual(referenceFeedTimelineIds(events, attempts));
+  });
+
   test("ignores completed-attempt tool noise but advances sequence watermark", () => {
     const attempts = [attemptRecord("att_1", "completed")];
     const events = [

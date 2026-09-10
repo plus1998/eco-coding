@@ -158,7 +158,11 @@ export function patchThreadFeedSkeletonFromEvent(
   if (shouldTrackEventForFeedSkeletonPatch(event, attempts)) {
     const item = trimTimelineItemForFeed(eventToTimelineItem(event));
     trackedItems = upsertTrackedItem(trackedItems, item);
-    if (isSkeletonTurnFinalItem(item)) {
+    if (isSkeletonTurnFinalItem(item) && !isTrackedItemOnRunningAttempt(item, attempts)) {
+      // Live turns must keep every process row (selectSkeletonTimelineItems keeps
+      // the full running-attempt trail). Collapsing here dropped earlier
+      // message.final bodies when the model spoke multiple times between tools
+      // (e.g. thr_1789062621587: 7 finals in events, 1 left in Feed skeleton).
       trackedItems = collapseSegmentProcessItems(trackedItems, item, attempts);
     }
     structureChanged = true;
@@ -316,6 +320,17 @@ function upsertTrackedItem(
   return [...merged.values()].sort(compareFeedSkeletonTimelineItems);
 }
 
+function isTrackedItemOnRunningAttempt(
+  item: ThreadRunProjectionTimelineItem,
+  attempts: readonly ThreadRunProjectionAttempt[],
+): boolean {
+  const attemptId = item.runAttemptId?.trim();
+  if (!attemptId) {
+    return false;
+  }
+  return attempts.some((attempt) => attempt.attemptId === attemptId && attempt.status === "running");
+}
+
 function collapseSegmentProcessItems(
   items: readonly ThreadRunProjectionTimelineItem[],
   finalItem: ThreadRunProjectionTimelineItem,
@@ -330,7 +345,15 @@ function collapseSegmentProcessItems(
     if (item.id === finalItem.id) {
       return true;
     }
-    return buildFeedSkeletonSegmentKey(item, attempts, boundaries) !== segmentKey;
+    if (buildFeedSkeletonSegmentKey(item, attempts, boundaries) !== segmentKey) {
+      return true;
+    }
+    // A later tool.failed / api.error must not wipe earlier message.final bodies;
+    // selectSkeleton/reconcile still picks the authoritative segment final.
+    if (isSkeletonTurnFinalItem(item)) {
+      return true;
+    }
+    return false;
   });
   return upsertTrackedItem(kept, finalItem);
 }
