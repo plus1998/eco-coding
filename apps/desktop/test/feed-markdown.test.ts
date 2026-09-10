@@ -19,6 +19,17 @@ test("createFeedMarkdownDoc models paragraphs, code fences, and file refs", () =
   expect(types).toContain("file_ref");
 });
 
+test("createFeedMarkdownDoc recognizes @file attachment tokens", () => {
+  const doc = createFeedMarkdownDoc("Please inspect @file{/tmp/report.md}");
+  let fileRefPath: string | undefined;
+  doc.descendants((node) => {
+    if (node.type.name === "file_ref") {
+      fileRefPath = String(node.attrs.path);
+    }
+  });
+  expect(fileRefPath).toBe("/tmp/report.md");
+});
+
 test("createFeedMarkdownDoc models GFM tables and blockquotes", () => {
   const doc = createFeedMarkdownDoc(
     ["> quoted", "", "| a | b |", "| --- | --- |", "| 1 | 2 |", "", "~~old~~"].join("\n"),

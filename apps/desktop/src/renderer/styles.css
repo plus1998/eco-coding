@@ -12316,6 +12316,15 @@ button.default-agent-option:focus-visible {
   line-height: inherit;
 }
 
+button.markdown-file-ref.run-log-user-prompt-file-ref {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
 .markdown-code-block {
   box-sizing: border-box;
   width: 100%;
@@ -17081,6 +17090,26 @@ a.run-log-web-search-detail-result-url:focus-visible {
 }
 
 .composer-skill-inline-label {
+  color: inherit;
+}
+
+.composer-file-inline {
+  display: inline;
+  vertical-align: baseline;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.composer-file-inline-icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  width: 14px;
+  height: 14px;
+  margin-right: 3px;
+  object-fit: contain;
+}
+
+.composer-file-inline-label {
   color: inherit;
 }
 

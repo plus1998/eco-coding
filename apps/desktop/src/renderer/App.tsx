@@ -48,6 +48,7 @@ import {
 import {
   type ClipboardEvent,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -280,6 +281,7 @@ import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
 import {
   applySlashSkillSelection,
   buildSkillMap,
+  fileAttachmentToken,
   filterSkillsForSlash,
   parseSlashQuery,
 } from "./composer-skills";
@@ -444,6 +446,7 @@ import { WebChatListPopover } from "./WebChatListPopover";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import {
+  isAbsoluteLocalFilePath,
   isWorkspacePathContained,
   WORKSPACE_FILE_REFERENCE_EVENT,
   type WorkspaceFileReference,
@@ -9006,6 +9009,65 @@ function App() {
     void addComposerImageFiles(imageFiles);
   }
 
+  function handleComposerDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    if (![...event.dataTransfer.types].includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleComposerDrop(event: ReactDragEvent<HTMLDivElement>) {
+    if (![...event.dataTransfer.types].includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (composerDisabled) {
+      return;
+    }
+    const files = [...event.dataTransfer.files];
+    if (files.length === 0) {
+      return;
+    }
+    const resolvedPaths: string[] = [];
+    let failed = 0;
+    for (const file of files) {
+      const rawPath = window.eco?.getPathForFile?.(file)?.trim() ?? "";
+      if (!rawPath || !isAbsoluteLocalFilePath(rawPath)) {
+        failed += 1;
+        continue;
+      }
+      resolvedPaths.push(rawPath);
+    }
+    if (resolvedPaths.length === 0) {
+      setComposerImageNotice(t("app.fileDropNoPath"));
+      return;
+    }
+    if (failed > 0) {
+      setComposerImageNotice(
+        t("app.fileDropPartial", { ok: resolvedPaths.length, failed }),
+      );
+    } else {
+      setComposerImageNotice(undefined);
+    }
+
+    const composer = composerRef.current;
+    const selectionStart = composer?.getSelectionStart() ?? prompt.length;
+    const selectionEnd = composer?.getSelectionEnd() ?? prompt.length;
+    const insertion = resolvedPaths.map((path) => `${fileAttachmentToken(path)} `).join("");
+    const next = `${prompt.slice(0, selectionStart)}${insertion}${prompt.slice(selectionEnd)}`;
+    const cursor = selectionStart + insertion.length;
+    composerPromptRef.current = next;
+    setPrompt(next);
+    queueMicrotask(() => {
+      composer?.setCursor(cursor);
+      composer?.focus();
+      composer?.fitHeight();
+      setComposerCursor(cursor);
+    });
+  }
+
   function removeComposerAttachment(id: string) {
     setComposerAttachments((current) => {
       const target = current.find((attachment) => attachment.id === id);
@@ -9813,6 +9875,8 @@ function App() {
                   .filter(Boolean)
                   .join(" ")}
                 ref={composerAnchorRef}
+                onDragOver={handleComposerDragOver}
+                onDrop={handleComposerDrop}
               >
                 <ComposerSkillsSlashMenu
                   open={composerSkillPopoverOpen}
