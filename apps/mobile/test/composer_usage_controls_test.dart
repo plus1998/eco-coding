@@ -545,6 +545,11 @@ void main() {
               available: true,
             ),
             IntegrationAvailabilityItem(
+              id: 'computerUse',
+              enabled: false,
+              available: true,
+            ),
+            IntegrationAvailabilityItem(
               id: 'imageGeneration',
               enabled: true,
               available: false,
@@ -575,13 +580,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Browser'), findsOneWidget);
-    expect(find.text('Image creation'), findsOneWidget);
+    expect(find.text('Computer Use'), findsOneWidget);
+    expect(find.text('Creative Drawing'), findsOneWidget);
+    expect(find.text('Image creation'), findsNothing);
     final tiles = tester
         .widgetList<EcoSheetSwitchTile>(find.byType(EcoSheetSwitchTile))
         .toList();
-    expect(tiles, hasLength(2));
+    expect(tiles, hasLength(3));
     expect(tiles[0].enabled, isTrue);
-    expect(tiles[1].enabled, isFalse);
+    expect(tiles[1].enabled, isTrue);
+    expect(tiles[2].enabled, isFalse);
 
     await tester.tap(
       find.descendant(

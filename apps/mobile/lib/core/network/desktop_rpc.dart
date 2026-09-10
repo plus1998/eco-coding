@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../models/acp_models.dart';
 import '../models/image_display_models.dart';
@@ -126,51 +127,153 @@ class DesktopRpc {
     }
   }
 
-  Future<ImageViewReadData> readImageDisplay(String artifactId) async {
-    final result = await _client.invoke<dynamic>(
-      desktopDeviceId,
-      'image-display:read',
-      [
-        {'artifactId': artifactId},
-      ],
-    );
-    if (result is! Map<String, dynamic>) {
+  /// Reads a displayed-image artifact via chunked Desktop RPC so large
+  /// screenshots can report progress. Falls back to a single full payload when
+  /// the desktop build ignores `offset`/`length` (legacy).
+  Future<ImageViewReadData> readImageDisplay(
+    String artifactId, {
+    void Function(int receivedBytes, int totalBytes)? onProgress,
+  }) async {
+    // Keep chunks small so progress ticks frequently over the Center bridge.
+    const chunkBytes = 64 * 1024;
+    final builder = BytesBuilder(copy: false);
+    var offset = 0;
+    var totalBytes = 0;
+    var width = 0;
+    var height = 0;
+    late String mimeType;
+    late String imagePath;
+    late String fileName;
+
+    Future<Map<String, dynamic>> readSlice({
+      required int sliceOffset,
+      required int sliceLength,
+    }) async {
+      final result = await _client.invoke<dynamic>(
+        desktopDeviceId,
+        'image-display:read',
+        [
+          {
+            'artifactId': artifactId,
+            'offset': sliceOffset,
+            'length': sliceLength,
+          },
+        ],
+        deadlineMs: 60000,
+      );
+      if (result is! Map) {
+        throw const ImageViewReadException(
+          ImageViewReadFailureCode.invalidResponse,
+        );
+      }
+      final payload = Map<String, dynamic>.from(result);
+      if (payload['ok'] != true) {
+        throw ImageViewReadException(
+          imageViewReadFailureCodeFromWire(payload['code']),
+        );
+      }
+      return payload;
+    }
+
+    while (true) {
+      final payload = await readSlice(
+        sliceOffset: offset,
+        sliceLength: chunkBytes,
+      );
+      final dataBase64 = payload['dataBase64'];
+      final nextMimeType = payload['mimeType'];
+      final nextPath = payload['path'];
+      final nextFileName = payload['fileName'];
+      final reportedTotal = payload['totalBytes'] ?? payload['bytes'];
+      if (dataBase64 is! String ||
+          nextMimeType is! String ||
+          nextPath is! String ||
+          nextFileName is! String ||
+          reportedTotal is! num) {
+        throw const ImageViewReadException(
+          ImageViewReadFailureCode.invalidResponse,
+        );
+      }
+
+      final hasChunkFields =
+          payload.containsKey('chunkBytes') && payload.containsKey('offset');
+
+      if (offset == 0) {
+        mimeType = nextMimeType;
+        imagePath = nextPath;
+        fileName = nextFileName;
+        totalBytes = reportedTotal.toInt();
+        width = payload['width'] is num ? (payload['width'] as num).toInt() : 0;
+        height = payload['height'] is num
+            ? (payload['height'] as num).toInt()
+            : 0;
+      }
+
+      final decoded = base64Decode(dataBase64);
+
+      // Legacy desktop ignored range and returned the whole file once.
+      final isLegacyFull =
+          !hasChunkFields ||
+          (offset == 0 &&
+              totalBytes > 0 &&
+              decoded.length >= totalBytes &&
+              decoded.length > chunkBytes);
+
+      if (isLegacyFull) {
+        onProgress?.call(decoded.length, decoded.length);
+        return ImageViewReadData(
+          bytes: decoded,
+          mimeType: mimeType,
+          path: imagePath,
+          fileName: fileName,
+          byteLength: decoded.length,
+          width: width,
+          height: height,
+        );
+      }
+
+      if (hasChunkFields) {
+        final chunkOffset = payload['offset'];
+        final expectedOffset = chunkOffset is num ? chunkOffset.toInt() : offset;
+        if (expectedOffset != offset) {
+          throw const ImageViewReadException(
+            ImageViewReadFailureCode.invalidResponse,
+          );
+        }
+        final chunkLen = payload['chunkBytes'];
+        if (chunkLen is num && chunkLen.toInt() != decoded.length) {
+          throw const ImageViewReadException(
+            ImageViewReadFailureCode.invalidResponse,
+          );
+        }
+      }
+
+      if (decoded.isEmpty) break;
+      builder.add(decoded);
+      offset += decoded.length;
+      onProgress?.call(offset, totalBytes > 0 ? totalBytes : offset);
+
+      if (totalBytes > 0 && offset >= totalBytes) break;
+      if (decoded.length < chunkBytes) break;
+      if (offset > 20 * 1024 * 1024) {
+        throw const ImageViewReadException(ImageViewReadFailureCode.tooLarge);
+      }
+    }
+
+    final bytes = builder.takeBytes();
+    if (bytes.isEmpty) {
       throw const ImageViewReadException(
         ImageViewReadFailureCode.invalidResponse,
       );
     }
-    if (result['ok'] != true) {
-      throw ImageViewReadException(
-        imageViewReadFailureCodeFromWire(result['code']),
-      );
-    }
-
-    final dataBase64 = result['dataBase64'];
-    final mimeType = result['mimeType'];
-    final imagePath = result['path'];
-    final fileName = result['fileName'];
-    final bytes = result['bytes'];
-    final width = result['width'];
-    final height = result['height'];
-    if (dataBase64 is! String ||
-        mimeType is! String ||
-        imagePath is! String ||
-        fileName is! String ||
-        bytes is! num) {
-      throw const ImageViewReadException(
-        ImageViewReadFailureCode.invalidResponse,
-      );
-    }
-
-    final decoded = base64Decode(dataBase64);
     return ImageViewReadData(
-      bytes: decoded,
+      bytes: bytes,
       mimeType: mimeType,
       path: imagePath,
       fileName: fileName,
-      byteLength: bytes.toInt(),
-      width: width is num ? width.toInt() : 0,
-      height: height is num ? height.toInt() : 0,
+      byteLength: totalBytes > 0 ? totalBytes : bytes.length,
+      width: width,
+      height: height,
     );
   }
 

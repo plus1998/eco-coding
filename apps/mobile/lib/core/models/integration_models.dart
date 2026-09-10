@@ -1,4 +1,4 @@
-const integrationIds = ['browser', 'imageGeneration'];
+const integrationIds = ['browser', 'imageGeneration', 'computerUse'];
 
 Map<String, bool>? normalizeIntegrationsEnabled(Object? value) {
   if (value is! Map) return null;

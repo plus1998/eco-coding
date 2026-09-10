@@ -173,6 +173,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("asr:transcribe", "Transcribe audio", "execute", RPC_INVOKE, [objectArg(["audioWavBase64"])]),
   command("image-view:read", "Read image for image view", "read", RPC_INVOKE, [objectArg(["path"])]),
   command("image-display:read", "Read image display artifact", "read", RPC_INVOKE, [
+    // offset/length are optional chunking fields; requiredKeys only enforces presence of listed keys.
     objectArg(["artifactId"]),
   ]),
   command("image-display-artifacts:list", "List image display artifacts for a thread", "read", RPC_INVOKE, [

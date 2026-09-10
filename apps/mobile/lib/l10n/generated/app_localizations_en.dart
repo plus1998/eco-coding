@@ -1409,6 +1409,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Failed to load the displayed image.';
 
   @override
+  String get activityImageDisplayTapToRetry => 'Tap to retry';
+
+  @override
+  String activityImageDisplayLoadingPercent(int percent) {
+    return '$percent%';
+  }
+
+  @override
   String get taskImageDisplayHistory => 'Displayed images';
 
   @override
@@ -2472,7 +2480,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerBrowser => 'Browser';
 
   @override
-  String get composerImageGeneration => 'Image creation';
+  String get composerImageGeneration => 'Creative Drawing';
+
+  @override
+  String get composerComputerUse => 'Computer Use';
 
   @override
   String get composerSkills => 'Skills';

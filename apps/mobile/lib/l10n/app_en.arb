@@ -456,6 +456,13 @@
   "activityImageDisplayViewing": "Displaying 1 image",
   "activityImageDisplayViewed": "Displayed 1 image",
   "activityImageDisplayErrorReadFailed": "Failed to load the displayed image.",
+  "activityImageDisplayTapToRetry": "Tap to retry",
+  "activityImageDisplayLoadingPercent": "{percent}%",
+  "@activityImageDisplayLoadingPercent": {
+    "placeholders": {
+      "percent": { "type": "int" }
+    }
+  },
   "taskImageDisplayHistory": "Displayed images",
   "activityHtmlHostPublishing": "Publishing HTML page",
   "activityHtmlHostPublished": "Published HTML page",
@@ -814,7 +821,8 @@
   "composerIntegrationsLoadFailed": "Failed to load integrations from Desktop",
   "composerNoIntegrations": "No integrations are available from Desktop",
   "composerBrowser": "Browser",
-  "composerImageGeneration": "Image creation",
+  "composerImageGeneration": "Creative Drawing",
+  "composerComputerUse": "Computer Use",
   "composerSkills": "Skills",
   "composerPlanMode": "Plan Mode",
   "composerBashReview": "Bash Review",

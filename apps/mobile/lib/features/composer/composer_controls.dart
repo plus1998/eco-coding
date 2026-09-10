@@ -1231,9 +1231,14 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                                 final enabled =
                                     integrationsEnabled[integration.id] ??
                                     false;
-                                final title = integration.id == 'browser'
-                                    ? context.l10n.composerBrowser
-                                    : context.l10n.composerImageGeneration;
+                                final title = switch (integration.id) {
+                                  'browser' => context.l10n.composerBrowser,
+                                  'imageGeneration' =>
+                                    context.l10n.composerImageGeneration,
+                                  'computerUse' =>
+                                    context.l10n.composerComputerUse,
+                                  _ => integration.id,
+                                };
                                 return EcoSheetSwitchTile(
                                   title: title,
                                   subtitle: integration.available

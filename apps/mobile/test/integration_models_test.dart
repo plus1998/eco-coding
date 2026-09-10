@@ -24,13 +24,26 @@ void main() {
   test('project integrations retain only supported ids', () {
     final snapshot = ProjectIntegrationsSettingsSnapshot.fromJson({
       'workspacePath': '/repo',
-      'enabled': {'browser': true, 'imageGeneration': false, 'unknown': true},
+      'enabled': {
+        'browser': true,
+        'imageGeneration': false,
+        'computerUse': true,
+        'unknown': true,
+      },
     });
 
-    expect(snapshot.enabled, const {'browser': true, 'imageGeneration': false});
+    expect(snapshot.enabled, const {
+      'browser': true,
+      'imageGeneration': false,
+      'computerUse': true,
+    });
     expect(snapshot.toJson(), {
       'workspacePath': '/repo',
-      'enabled': {'browser': true, 'imageGeneration': false},
+      'enabled': {
+        'browser': true,
+        'imageGeneration': false,
+        'computerUse': true,
+      },
     });
   });
 }

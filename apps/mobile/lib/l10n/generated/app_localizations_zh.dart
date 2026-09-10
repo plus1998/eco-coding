@@ -1328,6 +1328,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityImageDisplayErrorReadFailed => '加载展示图片失败。';
 
   @override
+  String get activityImageDisplayTapToRetry => '点击重试';
+
+  @override
+  String activityImageDisplayLoadingPercent(int percent) {
+    return '$percent%';
+  }
+
+  @override
   String get taskImageDisplayHistory => '展示图片';
 
   @override
@@ -2343,7 +2351,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerBrowser => '浏览器';
 
   @override
-  String get composerImageGeneration => '图片创建';
+  String get composerImageGeneration => '创意绘画';
+
+  @override
+  String get composerComputerUse => '电脑操控';
 
   @override
   String get composerSkills => 'Skills';

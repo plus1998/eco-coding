@@ -60,3 +60,28 @@ test("ingest base64 stores decoded bytes", async () => {
   const file = await store.readArtifactFile(artifact.id);
   expect(Buffer.from(file.dataBase64, "base64").equals(PNG)).toBe(true);
 });
+
+test("readArtifactFile supports byte-range chunks", async () => {
+  const { store } = await createStore();
+  const artifact = await store.ingestFromToolInput({
+    threadId: "thr_chunk",
+    toolInput: { source: "base64", data: PNG.toString("base64"), mimeType: "image/png" },
+  });
+  const first = await store.readArtifactFile(artifact.id, { offset: 0, length: 8 });
+  expect(first.offset).toBe(0);
+  expect(first.chunkBytes).toBe(8);
+  expect(first.totalBytes).toBe(PNG.length);
+  expect(Buffer.from(first.dataBase64, "base64").equals(PNG.subarray(0, 8))).toBe(true);
+  const rest = await store.readArtifactFile(artifact.id, {
+    offset: 8,
+    length: PNG.length,
+  });
+  expect(rest.offset).toBe(8);
+  expect(rest.chunkBytes).toBe(PNG.length - 8);
+  expect(
+    Buffer.concat([
+      Buffer.from(first.dataBase64, "base64"),
+      Buffer.from(rest.dataBase64, "base64"),
+    ]).equals(PNG),
+  ).toBe(true);
+});

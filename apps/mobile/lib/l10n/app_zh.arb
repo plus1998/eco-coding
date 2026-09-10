@@ -411,6 +411,13 @@
   "activityImageDisplayViewing": "正在展示 1 张图像",
   "activityImageDisplayViewed": "已展示 1 张图像",
   "activityImageDisplayErrorReadFailed": "加载展示图片失败。",
+  "activityImageDisplayTapToRetry": "点击重试",
+  "activityImageDisplayLoadingPercent": "{percent}%",
+  "@activityImageDisplayLoadingPercent": {
+    "placeholders": {
+      "percent": { "type": "int" }
+    }
+  },
   "taskImageDisplayHistory": "展示图片",
   "activityHtmlHostPublishing": "正在发布 HTML 页面",
   "activityHtmlHostPublished": "已发布 HTML 页面",
@@ -769,7 +776,8 @@
   "composerIntegrationsLoadFailed": "无法从 Desktop 加载集成",
   "composerNoIntegrations": "Desktop 没有可用的集成",
   "composerBrowser": "浏览器",
-  "composerImageGeneration": "图片创建",
+  "composerImageGeneration": "创意绘画",
+  "composerComputerUse": "电脑操控",
   "composerSkills": "Skills",
   "composerPlanMode": "Plan Mode",
   "composerBashReview": "Bash Review",

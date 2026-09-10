@@ -2414,6 +2414,18 @@ abstract class AppLocalizations {
   /// **'Failed to load the displayed image.'**
   String get activityImageDisplayErrorReadFailed;
 
+  /// No description provided for @activityImageDisplayTapToRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to retry'**
+  String get activityImageDisplayTapToRetry;
+
+  /// No description provided for @activityImageDisplayLoadingPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}%'**
+  String activityImageDisplayLoadingPercent(int percent);
+
   /// No description provided for @taskImageDisplayHistory.
   ///
   /// In en, this message translates to:
@@ -4295,8 +4307,14 @@ abstract class AppLocalizations {
   /// No description provided for @composerImageGeneration.
   ///
   /// In en, this message translates to:
-  /// **'Image creation'**
+  /// **'Creative Drawing'**
   String get composerImageGeneration;
+
+  /// No description provided for @composerComputerUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Computer Use'**
+  String get composerComputerUse;
 
   /// No description provided for @composerSkills.
   ///

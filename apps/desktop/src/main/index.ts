@@ -5132,8 +5132,13 @@ function registerIpcHandlers(): void {
     if (!isRecord(payload) || typeof payload.artifactId !== "string" || !payload.artifactId.trim()) {
       return { ok: false as const, code: "invalid_artifact" as const };
     }
+    const offset = typeof payload.offset === "number" ? payload.offset : undefined;
+    const length = typeof payload.length === "number" ? payload.length : undefined;
     try {
-      const file = await imageDisplayStore.readArtifactFile(payload.artifactId.trim());
+      const file = await imageDisplayStore.readArtifactFile(payload.artifactId.trim(), {
+        ...(offset !== undefined ? { offset } : {}),
+        ...(length !== undefined ? { length } : {}),
+      });
       return { ok: true as const, ...file };
     } catch (error) {
       if (error instanceof ImageDisplayError) {
@@ -5142,7 +5147,9 @@ function registerIpcHandlers(): void {
             ? ("not_found" as const)
             : error.code === "too_large"
               ? ("too_large" as const)
-              : ("read_failed" as const);
+              : error.code === "invalid_artifact"
+                ? ("invalid_artifact" as const)
+                : ("read_failed" as const);
         return { ok: false as const, code };
       }
       throw error;

@@ -215,15 +215,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   }
 
   Future<ImageViewReadData> _loadImageDisplayArtifactBytes(
-    String artifactId,
-  ) async {
+    String artifactId, {
+    void Function(int receivedBytes, int totalBytes)? onProgress,
+  }) async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
       throw const ImageViewReadException(
         ImageViewReadFailureCode.bridgeUnavailable,
       );
     }
-    return rpc.readImageDisplay(artifactId);
+    return rpc.readImageDisplay(artifactId, onProgress: onProgress);
   }
 
   void _revealImageDisplayGallery(String artifactId) {
