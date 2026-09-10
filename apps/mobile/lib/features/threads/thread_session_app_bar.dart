@@ -157,6 +157,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
   required bool isRunning,
   GitWorkingTreeStatus? gitStatus,
   bool showNewThreadAction = true,
+  VoidCallback? onRevealImageDisplay,
 }) {
   final desktopLabel = ref.watch(selectedDesktopLabelProvider);
   final subtitle = threadSessionSubtitleLabel(
@@ -249,6 +250,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
                 runtimeConfig: runtimeConfig,
                 isRunning: isRunning,
                 gitStatus: gitStatus,
+                onRevealImageDisplay: onRevealImageDisplay,
               ),
             ],
           ),

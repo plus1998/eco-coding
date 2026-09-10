@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/acp_models.dart';
-import '../models/image_display_models.dart';
-import '../models/image_view_models.dart';
-import '../models/git_models.dart';
 import '../models/asr_models.dart';
-import '../models/mcp_models.dart';
+import '../models/git_models.dart';
+import '../models/html_host_models.dart';
+import '../models/image_display_models.dart';
+import '../models/image_generation_models.dart';
+import '../models/image_view_models.dart';
 import '../models/integration_models.dart';
+import '../models/mcp_models.dart';
 import '../models/project_orchestration_settings.dart';
 import '../models/skill_models.dart';
 import '../models/thread_models.dart';
@@ -298,6 +300,80 @@ class DesktopRpc {
           ),
         )
         .where((artifact) => artifact.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<List<ImageGenerationArtifact>> listImageGenerationArtifacts(
+    String threadId,
+  ) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-generation-artifacts:list',
+      [
+        {'threadId': threadId},
+      ],
+    );
+    if (result is! List) {
+      throw const FormatException('Invalid image generation artifact list.');
+    }
+    return result
+        .whereType<Map>()
+        .map(
+          (entry) => ImageGenerationArtifact.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        )
+        .where((artifact) => artifact.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<ImageGenerationArtifactReadResult> readImageGenerationArtifact({
+    required String artifactId,
+    required int imageIndex,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-generation-artifact:read',
+      [
+        {'artifactId': artifactId, 'imageIndex': imageIndex},
+      ],
+      deadlineMs: 60000,
+    );
+    if (result is! Map) {
+      throw const FormatException('Invalid image generation artifact read.');
+    }
+    final payload = Map<String, dynamic>.from(result);
+    final dataBase64 = (payload['dataBase64'] as String?)?.trim() ?? '';
+    final mimeType = (payload['mimeType'] as String?)?.trim() ?? 'image/png';
+    final path = (payload['path'] as String?)?.trim() ?? '';
+    if (dataBase64.isEmpty) {
+      throw const FormatException('Empty image generation artifact payload.');
+    }
+    return ImageGenerationArtifactReadResult(
+      bytes: base64Decode(dataBase64),
+      mimeType: mimeType.isEmpty ? 'image/png' : mimeType,
+      path: path,
+    );
+  }
+
+  Future<List<HtmlHostArtifact>> listHtmlHostArtifacts(String threadId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'html-host-artifacts:list',
+      [
+        {'threadId': threadId},
+      ],
+    );
+    if (result is! List) {
+      throw const FormatException('Invalid html host artifact list.');
+    }
+    return result
+        .whereType<Map>()
+        .map(
+          (entry) =>
+              HtmlHostArtifact.fromJson(Map<String, dynamic>.from(entry)),
+        )
+        .where((artifact) => artifact.id.isNotEmpty || artifact.pageId.isNotEmpty)
         .toList(growable: false);
   }
 

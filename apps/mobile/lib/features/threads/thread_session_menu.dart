@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/providers/activity_feed_auto_read_provider.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/html_host_models.dart';
+import '../../core/models/image_generation_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_adaptive_icons.dart';
@@ -15,6 +17,7 @@ import '../../l10n/generated/app_localizations.dart';
 import '../composer/commit_push_sheet.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
+import 'thread_session_menu_cards.dart';
 
 final _openingCommitPushWorkspaces = <String>{};
 
@@ -32,6 +35,109 @@ String resolveGitRemoteSyncLabel(
       : l10n.threadFetch;
 }
 
+class ThreadSessionMenuVisibility {
+  const ThreadSessionMenuVisibility({
+    this.showProgress = false,
+    this.showPlan = false,
+    this.showImageDisplay = false,
+    this.showImageGeneration = false,
+    this.showHtmlHost = false,
+  });
+
+  final bool showProgress;
+  final bool showPlan;
+  final bool showImageDisplay;
+  final bool showImageGeneration;
+  final bool showHtmlHost;
+
+  static const none = ThreadSessionMenuVisibility();
+}
+
+List<ThreadSessionMenuEntry> buildThreadSessionMenuEntries(
+  AppLocalizations l10n, {
+  required bool hasThread,
+  required String workspacePath,
+  required bool isRunning,
+  required bool autoReadEnabled,
+  GitWorkingTreeStatus? gitStatus,
+  ThreadSessionMenuVisibility visibility = ThreadSessionMenuVisibility.none,
+}) {
+  final canPull =
+      gitStatus?.isGitRepository == true &&
+      gitStatus?.branch != null &&
+      gitStatus!.branch != 'detached' &&
+      gitStatus.hasUpstream;
+
+  return [
+    if (visibility.showProgress)
+      ThreadSessionMenuEntry(
+        value: 'todos',
+        icon: EcoIcons.todos,
+        label: l10n.threadTasks,
+        enabled: hasThread,
+      ),
+    if (visibility.showPlan)
+      ThreadSessionMenuEntry(
+        value: 'plan',
+        icon: EcoIcons.planApproval,
+        label: l10n.threadPlan,
+        enabled: hasThread,
+      ),
+    if (visibility.showImageDisplay)
+      ThreadSessionMenuEntry(
+        value: 'image_display',
+        icon: EcoIcons.images,
+        label: l10n.taskImageDisplayHistory,
+        enabled: hasThread,
+      ),
+    if (visibility.showImageGeneration)
+      ThreadSessionMenuEntry(
+        value: 'image_generation',
+        icon: EcoIcons.image,
+        label: l10n.taskImageGenerationHistory,
+        enabled: hasThread,
+      ),
+    if (visibility.showHtmlHost)
+      ThreadSessionMenuEntry(
+        value: 'html_host',
+        icon: EcoIcons.browser,
+        label: l10n.taskHtmlHostHistory,
+        enabled: hasThread,
+      ),
+    ThreadSessionMenuEntry(
+      value: 'review',
+      icon: EcoIcons.codeReview,
+      label: l10n.threadCodeReview,
+      enabled: workspacePath.isNotEmpty,
+    ),
+    ThreadSessionMenuEntry(
+      value: 'commit',
+      icon: EcoIcons.commitPush,
+      label: l10n.threadCommitPush,
+      enabled:
+          workspacePath.isNotEmpty && (gitStatus?.isGitRepository ?? false),
+    ),
+    ThreadSessionMenuEntry(
+      value: resolveGitRemoteSyncAction(gitStatus?.behindCount ?? 0),
+      icon: EcoIcons.pull,
+      label: resolveGitRemoteSyncLabel(gitStatus, l10n),
+      enabled: !isRunning && canPull,
+    ),
+    ThreadSessionMenuEntry(
+      value: 'scripts',
+      icon: EcoIcons.npmScripts,
+      label: l10n.threadNpmScripts,
+      enabled: workspacePath.isNotEmpty,
+    ),
+    ThreadSessionMenuEntry(
+      value: 'auto_read',
+      icon: autoReadEnabled ? EcoIcons.speaking : EcoIcons.volume2,
+      label: l10n.threadAutoRead,
+      enabled: true,
+    ),
+  ];
+}
+
 class ThreadSessionMenuButton extends ConsumerWidget {
   const ThreadSessionMenuButton({
     super.key,
@@ -40,6 +146,7 @@ class ThreadSessionMenuButton extends ConsumerWidget {
     required this.runtimeConfig,
     required this.isRunning,
     this.gitStatus,
+    this.onRevealImageDisplay,
   });
 
   final String? threadId;
@@ -47,68 +154,32 @@ class ThreadSessionMenuButton extends ConsumerWidget {
   final ThreadRuntimeConfigInput runtimeConfig;
   final bool isRunning;
   final GitWorkingTreeStatus? gitStatus;
+  final VoidCallback? onRevealImageDisplay;
 
   bool get _hasThread => threadId != null && threadId!.isNotEmpty;
-
-  bool get _canPull =>
-      gitStatus?.isGitRepository == true &&
-      gitStatus?.branch != null &&
-      gitStatus!.branch != 'detached' &&
-      (gitStatus?.hasUpstream ?? false);
-
-  List<_ThreadSessionMenuEntry> _entries(
-    AppLocalizations l10n, {
-    required bool autoReadEnabled,
-  }) => [
-    _ThreadSessionMenuEntry(
-      value: 'todos',
-      icon: EcoIcons.todos,
-      label: l10n.threadTasks,
-      enabled: _hasThread,
-    ),
-    _ThreadSessionMenuEntry(
-      value: 'plan',
-      icon: EcoIcons.planApproval,
-      label: l10n.threadPlan,
-      enabled: _hasThread,
-    ),
-    _ThreadSessionMenuEntry(
-      value: 'review',
-      icon: EcoIcons.codeReview,
-      label: l10n.threadCodeReview,
-      enabled: workspacePath.isNotEmpty,
-    ),
-    _ThreadSessionMenuEntry(
-      value: 'commit',
-      icon: EcoIcons.commitPush,
-      label: l10n.threadCommitPush,
-      enabled:
-          workspacePath.isNotEmpty && (gitStatus?.isGitRepository ?? false),
-    ),
-    _ThreadSessionMenuEntry(
-      value: resolveGitRemoteSyncAction(gitStatus?.behindCount ?? 0),
-      icon: EcoIcons.pull,
-      label: resolveGitRemoteSyncLabel(gitStatus, l10n),
-      enabled: !isRunning && _canPull,
-    ),
-    _ThreadSessionMenuEntry(
-      value: 'scripts',
-      icon: EcoIcons.npmScripts,
-      label: l10n.threadNpmScripts,
-      enabled: workspacePath.isNotEmpty,
-    ),
-    _ThreadSessionMenuEntry(
-      value: 'auto_read',
-      icon: autoReadEnabled ? EcoIcons.speaking : EcoIcons.volume2,
-      label: l10n.threadAutoRead,
-      enabled: true,
-    ),
-  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final autoReadEnabled = ref.watch(activityFeedAutoReadProvider);
-    final entries = _entries(context.l10n, autoReadEnabled: autoReadEnabled);
+    final cards = _hasThread
+        ? ref.watch(threadSessionMenuCardsProvider(threadId!)).valueOrNull
+        : null;
+    final visibility = ThreadSessionMenuVisibility(
+      showProgress: cards?.showProgress ?? false,
+      showPlan: cards?.showPlan ?? false,
+      showImageDisplay: cards?.showImageDisplay ?? false,
+      showImageGeneration: cards?.showImageGeneration ?? false,
+      showHtmlHost: cards?.showHtmlHost ?? false,
+    );
+    final entries = buildThreadSessionMenuEntries(
+      context.l10n,
+      hasThread: _hasThread,
+      workspacePath: workspacePath,
+      isRunning: isRunning,
+      autoReadEnabled: autoReadEnabled,
+      gitStatus: gitStatus,
+      visibility: visibility,
+    );
     final menuItems = [
       for (final entry in entries)
         AdaptivePopupMenuItem<String>(
@@ -136,6 +207,9 @@ class ThreadSessionMenuButton extends ConsumerWidget {
               workspacePath: workspacePath,
               runtimeConfig: runtimeConfig,
               gitStatus: gitStatus,
+              onRevealImageDisplay: onRevealImageDisplay,
+              imageGenerationArtifacts: cards?.imageGenerationArtifacts ?? const [],
+              htmlHostArtifacts: cards?.htmlHostArtifacts ?? const [],
             );
           },
           child: AdaptiveToolbarIcon(
@@ -150,8 +224,8 @@ class ThreadSessionMenuButton extends ConsumerWidget {
   }
 }
 
-class _ThreadSessionMenuEntry {
-  const _ThreadSessionMenuEntry({
+class ThreadSessionMenuEntry {
+  const ThreadSessionMenuEntry({
     required this.value,
     required this.icon,
     required this.label,
@@ -172,6 +246,9 @@ Future<void> handleThreadSessionMenuAction({
   required String workspacePath,
   required ThreadRuntimeConfigInput runtimeConfig,
   GitWorkingTreeStatus? gitStatus,
+  VoidCallback? onRevealImageDisplay,
+  List<ImageGenerationArtifact> imageGenerationArtifacts = const [],
+  List<HtmlHostArtifact> htmlHostArtifacts = const [],
 }) async {
   final rpc = ref.read(desktopRpcProvider);
   if (rpc == null) return;
@@ -201,6 +278,25 @@ Future<void> handleThreadSessionMenuAction({
           context: context,
           ref: ref,
           threadId: threadId,
+        );
+      case 'image_display':
+        if (threadId == null || threadId.isEmpty) return;
+        onRevealImageDisplay?.call();
+      case 'image_generation':
+        if (threadId == null || threadId.isEmpty) return;
+        await showImageGenerationArtifactsSheet(
+          context: context,
+          ref: ref,
+          threadId: threadId,
+          artifacts: imageGenerationArtifacts,
+        );
+      case 'html_host':
+        if (threadId == null || threadId.isEmpty) return;
+        await showHtmlHostArtifactsSheet(
+          context: context,
+          ref: ref,
+          threadId: threadId,
+          artifacts: htmlHostArtifacts,
         );
       case 'review':
         if (workspacePath.isEmpty) return;

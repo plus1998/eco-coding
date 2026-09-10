@@ -2426,6 +2426,66 @@ abstract class AppLocalizations {
   /// **'Displayed images'**
   String get taskImageDisplayHistory;
 
+  /// No description provided for @taskImageGenerationHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Drawing tasks'**
+  String get taskImageGenerationHistory;
+
+  /// No description provided for @taskHtmlHostHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'HTML pages'**
+  String get taskHtmlHostHistory;
+
+  /// No description provided for @taskImageGenerationEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No drawing tasks yet'**
+  String get taskImageGenerationEmpty;
+
+  /// No description provided for @taskHtmlHostEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No HTML pages yet'**
+  String get taskHtmlHostEmpty;
+
+  /// No description provided for @taskHtmlHostOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the page'**
+  String get taskHtmlHostOpenFailed;
+
+  /// No description provided for @taskImageGenerationStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get taskImageGenerationStatusRunning;
+
+  /// No description provided for @taskImageGenerationStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get taskImageGenerationStatusCompleted;
+
+  /// No description provided for @taskImageGenerationStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get taskImageGenerationStatusFailed;
+
+  /// No description provided for @taskHtmlHostStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get taskHtmlHostStatusCompleted;
+
+  /// No description provided for @taskHtmlHostStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get taskHtmlHostStatusFailed;
+
   /// No description provided for @activityHtmlHostPublishing.
   ///
   /// In en, this message translates to:

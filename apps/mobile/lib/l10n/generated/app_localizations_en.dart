@@ -1417,6 +1417,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get taskImageDisplayHistory => 'Displayed images';
 
   @override
+  String get taskImageGenerationHistory => 'Drawing tasks';
+
+  @override
+  String get taskHtmlHostHistory => 'HTML pages';
+
+  @override
+  String get taskImageGenerationEmpty => 'No drawing tasks yet';
+
+  @override
+  String get taskHtmlHostEmpty => 'No HTML pages yet';
+
+  @override
+  String get taskHtmlHostOpenFailed => 'Could not open the page';
+
+  @override
+  String get taskImageGenerationStatusRunning => 'In progress';
+
+  @override
+  String get taskImageGenerationStatusCompleted => 'Completed';
+
+  @override
+  String get taskImageGenerationStatusFailed => 'Failed';
+
+  @override
+  String get taskHtmlHostStatusCompleted => 'Completed';
+
+  @override
+  String get taskHtmlHostStatusFailed => 'Failed';
+
+  @override
   String get activityHtmlHostPublishing => 'Publishing HTML page';
 
   @override

@@ -1336,6 +1336,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get taskImageDisplayHistory => '展示图片';
 
   @override
+  String get taskImageGenerationHistory => '绘画任务';
+
+  @override
+  String get taskHtmlHostHistory => 'HTML 页面';
+
+  @override
+  String get taskImageGenerationEmpty => '暂无绘画任务';
+
+  @override
+  String get taskHtmlHostEmpty => '暂无 HTML 页面';
+
+  @override
+  String get taskHtmlHostOpenFailed => '无法打开页面';
+
+  @override
+  String get taskImageGenerationStatusRunning => '进行中';
+
+  @override
+  String get taskImageGenerationStatusCompleted => '已完成';
+
+  @override
+  String get taskImageGenerationStatusFailed => '失败';
+
+  @override
+  String get taskHtmlHostStatusCompleted => '已完成';
+
+  @override
+  String get taskHtmlHostStatusFailed => '失败';
+
+  @override
   String get activityHtmlHostPublishing => '正在发布 HTML 页面';
 
   @override

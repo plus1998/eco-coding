@@ -465,6 +465,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         runtimeConfig: runtimeConfig,
         isRunning: isRunning,
         gitStatus: gitStatus,
+        onRevealImageDisplay: imageDisplayArtifacts.isEmpty
+            ? null
+            : () => _imageDisplayGalleryController.reveal(
+                artifactId: imageDisplayArtifacts.last.id,
+              ),
       ),
       body: ThreadSessionConversationLayout(
         floatingComposer: floatingComposer,
