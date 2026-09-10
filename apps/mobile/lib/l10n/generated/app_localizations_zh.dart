@@ -159,20 +159,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSwitchPcSubtitle => '选择或绑定其他 Desktop 设备';
 
   @override
-  String get setupUnpairPc => '解除配对';
+  String get setupUnpairPc => '删除 PC';
 
   @override
   String setupUnpairPcTitle(String name) {
-    return '解除与 $name 的配对？';
+    return '从账号中删除 $name？';
   }
 
   @override
-  String get setupUnpairPcMessage => '之后将无法控制这台电脑。电脑损坏或丢失时也可以在此移除。';
+  String get setupUnpairPcMessage =>
+      '将解除该电脑与云端的连接，之后无法再从手机控制它。丢失或找不到的电脑也可以在此清理。';
+
+  @override
+  String get setupUnpairPcPasswordHint => '输入与 Desktop 相同的账号密码';
+
+  @override
+  String get setupUnpairPcWrongPassword => '密码不正确，请重试。';
+
+  @override
+  String get setupUnpairPcPasswordRequired => '请输入密码。';
 
   @override
   String setupUnpairPcDone(String name) {
-    return '已解除与 $name 的配对';
+    return '已从账号中删除 $name';
   }
+
+  @override
+  String get authInvalidCredentials => '邮箱或密码不正确。';
 
   @override
   String get settingsSignOut => '退出登录';
@@ -868,6 +881,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get composerUnsupportedImage => '仅支持 JPEG、PNG、GIF 和 WebP 图片';
+
+  @override
+  String get composerImageTooLarge => '图片不能超过 20 MB';
 
   @override
   String get composerOrchestrationSelection => '编排组合';

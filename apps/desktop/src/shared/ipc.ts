@@ -90,6 +90,9 @@ export const IPC_CHANNELS = {
   composerDraftDelete: "composer-draft:delete",
   promptImageStage: "prompt-image:stage",
   promptImageRelease: "prompt-image:release",
+  promptImageUploadBegin: "prompt-image:upload-begin",
+  promptImageUploadChunk: "prompt-image:upload-chunk",
+  promptImageUploadFinish: "prompt-image:upload-finish",
   threadSessionBootstrap: "thread:session-bootstrap",
   threadActivityList: "thread:activity-list",
   threadUserMessageEditGet: "thread:user-message-edit-get",
@@ -284,6 +287,7 @@ export const IPC_CHANNELS = {
   htmlHostArtifactsList: "html-host-artifacts:list",
   htmlHostArtifactChanged: "html-host-artifact:changed",
   centerServerHtmlHostingRefresh: "center-server:html-hosting-refresh",
+  appEcoDeepLinkOpen: "app:eco-deep-link-open",
 } as const;
 
 export type AppMenuCommand =
@@ -308,6 +312,7 @@ export type {
   CenterServerDevicePresenceView,
   CenterServerDeviceView,
   CenterServerRegisterDesktopRequest,
+  EcoConnectDeepLink,
   CenterServerRegisterDesktopResult,
   CenterServerRemoveConnectionOptions,
   CenterServerRemoveConnectionResult,
@@ -328,6 +333,8 @@ export type {
   CenterServerVaultStatus,
   CenterServerVaultSyncState,
 } from "./center-server";
+
+export { parseEcoConnectDeepLink } from "./center-server";
 
 export interface CoreAvailabilitySnapshot {
   claude: { available: true; version?: string };
@@ -1385,6 +1392,42 @@ export interface PromptImageStageResult {
 
 export interface PromptImageReleaseRequest {
   paths: string[];
+}
+
+export interface PromptImageUploadBeginRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  totalBytes: number;
+}
+
+export interface PromptImageUploadBeginResult {
+  path: string;
+  receivedBytes: number;
+  complete: boolean;
+}
+
+export interface PromptImageUploadChunkRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  offset: number;
+  data: string;
+}
+
+export interface PromptImageUploadChunkResult {
+  receivedBytes: number;
+}
+
+export interface PromptImageUploadFinishRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  totalBytes: number;
+}
+
+export interface PromptImageUploadFinishResult {
+  path: string;
 }
 
 export interface ModelSettingsSnapshot {

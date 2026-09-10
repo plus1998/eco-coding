@@ -108,6 +108,16 @@ bool isThreadBusy(ThreadSummary thread) {
   return thread.status == 'running' || thread.status == 'queued';
 }
 
+/// Matches desktop `isThreadStoppedForFinalSummary`: copy/time under messages
+/// only after the conversation has left live statuses.
+bool isThreadStoppedForMessageMeta(String status) {
+  return status == 'completed' ||
+      status == 'failed' ||
+      status == 'blocked' ||
+      status == 'cancelled' ||
+      status == 'idle';
+}
+
 bool hasThreadStatusIndicator(ThreadSummary thread) {
   return isThreadWaitingForApproval(thread) ||
       isThreadBusy(thread) ||

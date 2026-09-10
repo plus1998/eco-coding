@@ -1028,6 +1028,11 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.centerServerStatusChanged, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.centerServerStatusChanged, listener);
   },
+  onEcoDeepLinkOpen(callback: (url: string) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: string) => callback(payload);
+    ipcRenderer.on(IPC_CHANNELS.appEcoDeepLinkOpen, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.appEcoDeepLinkOpen, listener);
+  },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);
   },

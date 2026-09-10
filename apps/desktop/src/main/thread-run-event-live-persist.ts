@@ -19,6 +19,7 @@ import type { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
 import {
   buildThreadRunEventFromLiveEvent,
   isMetricsOnlyThreadLiveEvent,
+  isThreadStatusLiveTypeOmittedFromFeed,
 } from "./thread-run-event-normalizer";
 
 export interface ThreadRunEventLivePersistExtras {
@@ -154,6 +155,12 @@ export function createThreadRunEventLivePersister(deps: ThreadRunEventLivePersis
       ...(bashApproval && { bashApproval }),
     });
     if (!event) {
+      // thread.completed/started are omitted from the run timeline on purpose, but
+      // finishRunAttempt may have just marked attempts terminal with no run.attempt.*
+      // event — still push a hydrated feed projection so Mobile leaves "Processing".
+      if (isThreadStatusLiveTypeOmittedFromFeed(input.type)) {
+        deps.onProjectionUpdated(input.threadId, { streaming: false });
+      }
       return;
     }
     if (event.eventType === "request.started") {

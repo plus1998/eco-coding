@@ -58,20 +58,24 @@
   "settingsAccount": "账户",
   "settingsSwitchPc": "切换 PC",
   "settingsSwitchPcSubtitle": "选择或绑定其他 Desktop 设备",
-  "setupUnpairPc": "解除配对",
-  "setupUnpairPcTitle": "解除与 {name} 的配对？",
+  "setupUnpairPc": "删除 PC",
+  "setupUnpairPcTitle": "从账号中删除 {name}？",
   "@setupUnpairPcTitle": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
-  "setupUnpairPcMessage": "之后将无法控制这台电脑。电脑损坏或丢失时也可以在此移除。",
-  "setupUnpairPcDone": "已解除与 {name} 的配对",
+  "setupUnpairPcMessage": "将解除该电脑与云端的连接，之后无法再从手机控制它。丢失或找不到的电脑也可以在此清理。",
+  "setupUnpairPcPasswordHint": "输入与 Desktop 相同的账号密码",
+  "setupUnpairPcWrongPassword": "密码不正确，请重试。",
+  "setupUnpairPcPasswordRequired": "请输入密码。",
+  "setupUnpairPcDone": "已从账号中删除 {name}",
   "@setupUnpairPcDone": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
+  "authInvalidCredentials": "邮箱或密码不正确。",
   "settingsSignOut": "退出登录",
   "settingsSignedOut": "已退出登录",
   "settingsRealtimeStatus": "实时通道",
@@ -295,6 +299,7 @@
   "bashReviewAllowAllConfirm": "开启「完全访问」后，将尽量自动放行对互联网和本机文件的操作，且不再逐条请求你批准。确定继续？",
   "composerSettings": "Composer 设置",
   "composerUnsupportedImage": "仅支持 JPEG、PNG、GIF 和 WebP 图片",
+  "composerImageTooLarge": "图片不能超过 20 MB",
   "composerOrchestrationSelection": "编排组合",
   "activityToolIncomplete": "工具未完成 · {text}",
   "activityReadFiles": "已读取 {count} 个文件",

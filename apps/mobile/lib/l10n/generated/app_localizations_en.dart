@@ -168,21 +168,34 @@ class AppLocalizationsEn extends AppLocalizations {
       'Select or pair another Desktop device';
 
   @override
-  String get setupUnpairPc => 'Unpair';
+  String get setupUnpairPc => 'Remove PC';
 
   @override
   String setupUnpairPcTitle(String name) {
-    return 'Unpair from $name?';
+    return 'Remove $name from your account?';
   }
 
   @override
   String get setupUnpairPcMessage =>
-      'You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.';
+      'This disconnects the PC from the cloud so phones can no longer control it. You can also remove lost or unreachable computers here.';
+
+  @override
+  String get setupUnpairPcPasswordHint =>
+      'Enter the same account password as Desktop';
+
+  @override
+  String get setupUnpairPcWrongPassword => 'Incorrect password. Try again.';
+
+  @override
+  String get setupUnpairPcPasswordRequired => 'Enter your password.';
 
   @override
   String setupUnpairPcDone(String name) {
-    return 'Unpaired from $name';
+    return 'Removed $name from your account';
   }
+
+  @override
+  String get authInvalidCredentials => 'Incorrect email or password.';
 
   @override
   String get settingsSignOut => 'Sign out';
@@ -948,6 +961,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get composerUnsupportedImage =>
       'Only JPEG, PNG, GIF, and WebP images are supported';
+
+  @override
+  String get composerImageTooLarge => 'Images must be 20 MB or smaller';
 
   @override
   String get composerOrchestrationSelection => 'Orchestration';

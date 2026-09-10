@@ -362,9 +362,13 @@ import {
 import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
+  canEscalatedFollowUpProgressNow,
   collectThreadFollowUpAttachments,
+  isFollowUpMidTurnResultDelivered,
+  shouldAutoPauseFollowUpQueue,
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
+  shouldReleaseFollowUpQueuePause,
   threadAcceptsQueuedFollowUp,
 } from "../shared/thread-follow-up-drain";
 import {
@@ -375,6 +379,7 @@ import {
 import {
   excludeAgentScopedFeedTimelineItems,
   isSkeletonUserPromptItem,
+  selectSkeletonTimelineItems,
 } from "../shared/thread-run-projection-skeleton";
 import {
   projectThreadRunToolMetadata,
@@ -750,9 +755,15 @@ import {
   hasFeedSkeletonAttemptBecameTerminal,
   isFeedSkeletonTerminalEventType,
   patchThreadFeedSkeletonFromEvent,
+  reconcileFeedSkeletonTrackedItems,
   shouldPatchAgentTimelineForFeedSkeleton,
-  shouldTrackEventForFeedSkeletonPatch,
 } from "./thread-feed-skeleton-patch";
+import {
+  shouldRebuildFeedSkeletonForEmptyTimeline,
+  shouldRebuildFeedSkeletonForOrphanAgentEvents,
+  shouldRebuildFeedSkeletonForTruncatedUserPrompts,
+} from "./thread-feed-skeleton-detectors";
+import { isFeedMainTimelineEvent } from "./thread-feed-timeline-items";
 import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
 import {
   hydrateThreadFeedSkeletonSnapshot,
@@ -841,9 +852,9 @@ import {
 } from "./thread-run-projection-detail";
 import {
   buildFeedProjectionSignature,
-  filterFeedProjectionAfterSequence,
   filterFeedProjectionForClient,
   maxFeedProjectionTimelineSequence,
+  selectFeedProjectionLivePayload,
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
@@ -979,19 +990,69 @@ if (!e2eMode && !hasSingleInstanceLock) {
 
 let desktopInitializationComplete = false;
 
-app.on("second-instance", () => {
-  const existingWindow = BrowserWindow.getAllWindows()[0];
-  if (presentDesktopWindow(existingWindow) || !desktopInitializationComplete) {
+/**
+ * Pending deep link (eco://...) delivered while the renderer is not ready yet.
+ * Sent to the renderer once it reports ready.
+ */
+let pendingEcoDeepLink: string | undefined;
+// True once the renderer reports ready (it then subscribes to deep-link events).
+let desktopRendererReady = false;
+
+// Deliver a deep link to the primary window: immediately when the renderer is
+// already ready, otherwise stash it and flush once the renderer reports ready.
+function deliverEcoDeepLink(url: string): void {
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window && !window.isDestroyed() && desktopRendererReady) {
+    window.webContents.send(IPC_CHANNELS.appEcoDeepLinkOpen, url);
     return;
   }
-  void createMainWindow()
-    .then((window) => {
-      presentDesktopWindow(window);
-    })
-    .catch((error) => {
-      process.stderr.write(`[eco] failed to reopen primary window: ${errorMessage(error)}\n`);
-    });
+  pendingEcoDeepLink = url;
+}
+
+// Bring the primary window to the front (creating it if none exists yet).
+function presentPrimaryWindow(): void {
+  const existingWindow = BrowserWindow.getAllWindows()[0];
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    presentDesktopWindow(existingWindow);
+    return;
+  }
+  if (desktopInitializationComplete) {
+    void createMainWindow()
+      .then((window) => {
+        presentDesktopWindow(window);
+      })
+      .catch((error) => {
+        process.stderr.write(`[eco] failed to reopen primary window: ${errorMessage(error)}\n`);
+      });
+  }
+}
+
+app.on("second-instance", (_event, argv) => {
+  const ecoUrl = argv.find((arg) => arg.startsWith("eco://"));
+  presentPrimaryWindow();
+  if (ecoUrl) {
+    deliverEcoDeepLink(ecoUrl);
+  }
 });
+
+// Delivered by the OS when the registered eco:// scheme is opened.
+app.on("open-url", (_event, url) => {
+  if (!url.startsWith("eco://")) {
+    return;
+  }
+  presentPrimaryWindow();
+  deliverEcoDeepLink(url);
+});
+
+// Flush a deep link that arrived before the renderer reported ready.
+function flushPendingEcoDeepLink(window: Electron.BrowserWindow): void {
+  if (!pendingEcoDeepLink) {
+    return;
+  }
+  const url = pendingEcoDeepLink;
+  pendingEcoDeepLink = undefined;
+  window.webContents.send(IPC_CHANNELS.appEcoDeepLinkOpen, url);
+}
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
@@ -1253,6 +1314,7 @@ const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastFeedProjectionSignatures = new Map<string, string>();
 const lastFeedProjectionTimelineSequences = new Map<string, number>();
+const lastFeedProjectionHistoryRevisions = new Map<string, number>();
 const threadRunProjectionHistoryRevisions = new Map<string, number>();
 const pendingClaudeForksByThread = new Map<string, { sessionId: string; cwd: string }>();
 const claudeUserMessageHydrationByThread = new Map<string, Promise<void>>();
@@ -1706,6 +1768,12 @@ function isExternalHttpUrl(url: string): boolean {
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) {
     return;
+  }
+  // Let the OS hand eco://... deep links to this app.
+  // Packaged only: in dev the scheme would register against the bare electron.exe,
+  // which treats the URL as an app path and fails to launch.
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient("eco");
   }
   if (appIcon && process.platform === "darwin") {
     app.dock?.setIcon(appIcon);
@@ -2576,6 +2644,14 @@ app.whenReady().then(async () => {
   }
   desktopInitializationComplete = true;
 
+  // On Windows/Linux a deep link that cold-started the app arrives via argv
+  // (the "open-url" event only fires for an already-running instance). Seed
+  // the pending link so it is flushed to the renderer once it is ready.
+  const argvDeepLink = process.argv.find((arg) => arg.startsWith("eco://"));
+  if (argvDeepLink && !pendingEcoDeepLink) {
+    pendingEcoDeepLink = argvDeepLink;
+  }
+
   nativeTheme.on("updated", () => {
     syncWindowControlsOverlays();
   });
@@ -3422,6 +3498,8 @@ function registerIpcHandlers(): void {
       throw new Error("Renderer ready notification came from an unknown window.");
     }
     revealWindowControls(window);
+    desktopRendererReady = true;
+    flushPendingEcoDeepLink(window);
     return { ok: true as const };
   });
 
@@ -4006,6 +4084,99 @@ function registerIpcHandlers(): void {
       imageId,
       mediaType: record.mediaType,
       dataBase64: data,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageUploadBegin, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image upload begin request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      totalBytes?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    if (typeof record.totalBytes !== "number" || !Number.isFinite(record.totalBytes)) {
+      throw new Error("Image upload totalBytes is required.");
+    }
+    return promptImageFileStore.beginComposerImageUpload({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      totalBytes: record.totalBytes,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageUploadChunk, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image upload chunk request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      offset?: unknown;
+      data?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    if (typeof record.offset !== "number" || !Number.isFinite(record.offset)) {
+      throw new Error("Image upload offset is required.");
+    }
+    const data = typeof record.data === "string" ? record.data.trim() : "";
+    if (!data) {
+      throw new Error("Image upload chunk data is required.");
+    }
+    return promptImageFileStore.writeComposerImageChunk({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      offset: record.offset,
+      dataBase64: data,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageUploadFinish, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image upload finish request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      totalBytes?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    if (typeof record.totalBytes !== "number" || !Number.isFinite(record.totalBytes)) {
+      throw new Error("Image upload totalBytes is required.");
+    }
+    return promptImageFileStore.finishComposerImageUpload({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      totalBytes: record.totalBytes,
     });
   });
 
@@ -6435,12 +6606,28 @@ function registerIpcHandlers(): void {
 
     if (preferInterrupt) {
       const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
-      if (midTurnResult) {
+      if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
         return buildThreadFollowUpMutationResult(midTurnResult);
+      }
+      // Mid-turn was skipped (blocking approval, editing row, or a port that is not
+      // accepting) and the row is still `queued`: "handle now" must fall through to the
+      // interrupt instead of reporting a silent no-op. A run that is still starting up
+      // has nothing to interrupt, so that row simply keeps waiting.
+      if (
+        !canEscalatedFollowUpProgressNow({
+          hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
+          status: thread.status,
+        })
+      ) {
+        const settled = midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
+        if (settled.status === "queued") {
+          emitThreadFollowUpEvent(settled, "thread.follow_up.queued", formatFollowUpQueuedMessage(settled));
+        }
+        return buildThreadFollowUpMutationResult(settled);
       }
       const current = await requestEscalatedFollowUpInterrupt(
         thread,
-        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+        midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
       );
       if (current.status === "queued") {
         emitThreadFollowUpEvent(current, "thread.follow_up.queued", formatFollowUpQueuedMessage(current));
@@ -6488,12 +6675,26 @@ function registerIpcHandlers(): void {
     emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "");
 
     const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
-    if (midTurnResult) {
+    if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
       return buildThreadFollowUpMutationResult(midTurnResult);
+    }
+    // A skipped mid-turn inject leaves the row `queued`; Guide must not be swallowed
+    // by a paused queue (or a non-accepting port) — fall through to interrupt, which
+    // arms one forced drain past the pause. When nothing can move (e.g. the run is
+    // still starting up), keep the row queued instead of failing it.
+    if (
+      !canEscalatedFollowUpProgressNow({
+        hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
+        status: thread.status,
+      })
+    ) {
+      return buildThreadFollowUpMutationResult(
+        midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      );
     }
     const current = await requestEscalatedFollowUpInterrupt(
       thread,
-      conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
     );
     return buildThreadFollowUpMutationResult(current);
   });
@@ -6548,6 +6749,8 @@ function registerIpcHandlers(): void {
     if (attachmentPaths.length > 0) {
       await promptImageFileStore.releasePaths(attachmentPaths);
     }
+    // Cancelling the last held row means the pause has nothing left to hold.
+    releaseFollowUpQueuePauseWhenEmpty(request.threadId);
     emitThreadFollowUpEvent(followUp, "thread.follow_up.cancelled", "已取消排队的后续消息。");
     return buildThreadFollowUpMutationResult(followUp);
   });
@@ -6838,7 +7041,7 @@ function markThreadInterrupted(threadId: string, reason: string): void {
   const followUpQueuePaused = autoPauseFollowUpQueueForErrorStatus(threadId, "blocked");
   emitThreadEvent(threadId, "thread.blocked", truncated, "system", false, {
     metadata: { activityOrigin: "eco.thread_blocked" },
-    followUpQueuePaused,
+    ...(typeof followUpQueuePaused === "boolean" ? { followUpQueuePaused } : {}),
   });
 }
 
@@ -6872,6 +7075,12 @@ function runThreadRequestOnce(
     settlements: usageLedgerCoordinator,
     retryIndex,
     ...(signal && { signal }),
+  }).finally(() => {
+    // finishRunAttempt writes DB only — no run.attempt.* ThreadRunEvent. Sync the
+    // feed skeleton attempts and force a projection emit so live clients (Mobile)
+    // do not stay stuck on a running attempt after the last message.final.
+    syncThreadFeedSkeletonAttemptsFromStore(threadId);
+    scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
   });
 }
 
@@ -7004,6 +7213,9 @@ async function requestEscalatedFollowUpInterrupt(
   }
 
   if (shouldDrainThreadFollowUps(thread.status)) {
+    // Escalated owns exactly one drain: arm the forced flag so the paused queue does
+    // not block it, while the remaining rows stay paused afterwards.
+    pendingEscalatedFollowUpDrain.add(thread.id);
     void drainQueuedThreadFollowUpsAfterRun(thread.id);
     return followUp;
   }
@@ -7098,6 +7310,7 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
       ...(attachments.length > 0 ? { attachments } : {}),
       requireResumeForInterrupted:
         forceEscalatedDrain || thread.status === "failed" || thread.status === "blocked",
+      ...(forceEscalatedDrain ? { allowWhileQueuePaused: true } : {}),
       ...(skipRecordUserPrompt ? { skipRecordUserPrompt: true } : {}),
     });
     for (const followUp of claimed) {
@@ -9257,6 +9470,11 @@ interface StartThreadContinuationInput {
   requireResumeForInterrupted?: boolean;
   /** Mid-turn already wrote thread.user_prompt for this follow-up; drain must not duplicate. */
   skipRecordUserPrompt?: boolean;
+  /**
+   * Escalated ("handle now") drain: the paused queue is intentional for the remaining
+   * rows, but this one row was explicitly escalated, so it may start a run anyway.
+   */
+  allowWhileQueuePaused?: boolean;
 }
 
 async function startThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
@@ -9270,7 +9488,9 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   }
   // Pause means new prompts join the queue; do not start a run ahead of it.
   // Rewind is allowed (explicit edit of history) and still must not drain while paused.
-  if (thread.followUpQueuePaused && !input.rewindTarget) {
+  // Escalated ("handle now") is the one explicit exception: the user asked for this
+  // single row to be sent now even though the rest of the queue stays paused.
+  if (thread.followUpQueuePaused && !input.rewindTarget && !input.allowWhileQueuePaused) {
     throw new Error("Follow-up queue is paused; enqueue the message or resume the queue before continuing.");
   }
   const resolvedTarget = input.rewindTarget
@@ -11147,12 +11367,14 @@ function clearThreadRuntimeMemory(threadId: string): void {
   }
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+  lastFeedProjectionHistoryRevisions.delete(threadId);
 }
 
 function releaseIdleThreadProjectionMemory(threadId: string): void {
   conversationStore.releaseThreadProjectionWorkingMemory(threadId);
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+  lastFeedProjectionHistoryRevisions.delete(threadId);
   // Soft release only — keep SQLite feed skeletons and history revisions so reselect is cheap.
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
@@ -11203,6 +11425,7 @@ function resetThreadRuntimeAfterHistoryRewrite(threadId: string): void {
   conversationStore.deleteThreadFeedSkeleton(threadId);
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+  lastFeedProjectionHistoryRevisions.delete(threadId);
 }
 
 async function prepareThreadRewindForContinue(input: {
@@ -13148,17 +13371,42 @@ function autoPauseFollowUpQueueForErrorStatus(
   if (current.followUpQueuePaused) {
     return true;
   }
-  conversationStore.setThreadFollowUpQueuePaused(threadId, true);
-  return true;
+  // Only a pause with a subject: an empty queue has no rows to protect, and arming it would
+  // silently queue the next message the user composes after the error.
+  autoPauseFollowUpQueueWhenQueuedRemain(threadId);
+  return conversationStore.getThread(threadId)?.followUpQueuePaused ? true : undefined;
 }
 
 /** Pause the follow-up queue when queued rows remain after a user stop. */
 function autoPauseFollowUpQueueWhenQueuedRemain(threadId: string): void {
-  const queued = conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] });
-  if (queued.length === 0) {
+  if (!shouldAutoPauseFollowUpQueue(countQueuedThreadFollowUps(threadId))) {
     return;
   }
   setThreadFollowUpQueuePausedState(threadId, true);
+}
+
+/**
+ * Drop a pause that has no queued rows left (rows cancelled or force-drained). Keeps the
+ * thread summary, the renderer flag, and the DB flag in sync through the resumed event.
+ */
+function releaseFollowUpQueuePauseWhenEmpty(threadId: string): void {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return;
+  }
+  if (
+    !shouldReleaseFollowUpQueuePause({
+      paused: Boolean(thread.followUpQueuePaused),
+      queuedCount: countQueuedThreadFollowUps(threadId),
+    })
+  ) {
+    return;
+  }
+  setThreadFollowUpQueuePausedState(threadId, false);
+}
+
+function countQueuedThreadFollowUps(threadId: string): number {
+  return conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] }).length;
 }
 
 function setThreadFollowUpQueuePausedState(
@@ -14130,7 +14378,11 @@ function rebuildThreadFeedSkeletonRecord(threadId: string): ThreadFeedSkeletonRe
     return undefined;
   }
   const feedProjection = trimProjectionForFeed(projection);
-  const record = createThreadFeedSkeletonRecord(feedProjection, buildFeedSkeletonPatchContext(threadId));
+  const record = createThreadFeedSkeletonRecord(
+    feedProjection,
+    buildFeedSkeletonPatchContext(threadId),
+    conversationStore.listThreadRunEventsForProjection(threadId),
+  );
   persistThreadFeedSkeletonRecord(record);
   return record;
 }
@@ -14159,7 +14411,7 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
     existing !== undefined &&
     hasFeedSkeletonAttemptBecameTerminal(existing.snapshot.attempts, context.attempts);
   const structureChanging =
-    shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
+    isFeedMainTimelineEvent(event) ||
     shouldPatchAgentTimelineForFeedSkeleton(event) ||
     isFeedSkeletonTerminalEventType(event.eventType) ||
     attemptBecameTerminal ||
@@ -14194,6 +14446,37 @@ function rebuildThreadFeedSkeleton(threadId: string): ThreadRunProjectionSnapsho
   return rebuildThreadFeedSkeletonRecord(threadId)?.snapshot;
 }
 
+/**
+ * Runs the rebuild safety nets for a cached skeleton. Reads the event log once for all of
+ * them (the orphan and empty-timeline checks both need it).
+ */
+function shouldRebuildCachedThreadFeedSkeleton(
+  threadId: string,
+  snapshot: ThreadRunProjectionSnapshot,
+  maxEventSequence: number,
+): boolean {
+  const events = conversationStore.listThreadRunEventsForProjection(threadId);
+  return (
+    shouldRebuildFeedSkeletonForOrphanAgentEvents({
+      events,
+      timeline: snapshot.timeline,
+      knownAgentIds: [
+        ...conversationStore.listAgentInstances(threadId).map((agent) => agent.agentId),
+        ...snapshot.agents.map((agent) => agent.agentId),
+      ],
+    }) ||
+    shouldRebuildFeedSkeletonForEmptyTimeline(
+      {
+        timeline: snapshot.timeline,
+        sourceEventCount: snapshot.sourceEventCount,
+        hasFeedVisibleEvent: events.some(isFeedMainTimelineEvent),
+      },
+      maxEventSequence,
+    ) ||
+    shouldRebuildFeedSkeletonForTruncatedUserPrompts(snapshot.timeline)
+  );
+}
+
 function loadThreadFeedProjectionForClient(
   threadId: string,
   request: ReturnType<typeof parseThreadRunProjectionGetRequest>,
@@ -14207,9 +14490,7 @@ function loadThreadFeedProjectionForClient(
     // Empty timelines with a positive event cursor are also poisoned (e.g. full
     // projection cache wiped by maxEvents=0 slice) and must not stay "fresh".
     if (
-      shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
-      shouldRebuildFeedSkeletonForEmptyTimeline(cached.snapshot, maxEventSequence) ||
-      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot)
+      shouldRebuildCachedThreadFeedSkeleton(threadId, cached.snapshot, maxEventSequence)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       // Drop in-memory projection event cache too — it may be the empty array that
@@ -14231,83 +14512,6 @@ function loadThreadFeedProjectionForClient(
     buildThreadFeedSkeletonHydrationContext(),
   );
   return filterFeedProjectionForClient(hydrated, request);
-}
-
-/**
- * Cursor ACP root events historically landed as `scope: agent` with a per-run UUID
- * that has no agent instance. Incremental Feed patches dropped them; detect that
- * hole so reload rebuilds from the full projection (orphan → main).
- */
-function shouldRebuildFeedSkeletonForOrphanAgentEvents(
-  threadId: string,
-  snapshot: ThreadRunProjectionSnapshot,
-): boolean {
-  const knownAgentIds = new Set([
-    ...conversationStore.listAgentInstances(threadId).map((agent) => agent.agentId),
-    ...snapshot.agents.map((agent) => agent.agentId),
-  ]);
-  const events = conversationStore.listThreadRunEventsForProjection(threadId);
-  let orphanAssistant = false;
-  for (const event of events) {
-    if (event.scope !== "agent") {
-      continue;
-    }
-    const agentId = event.agentId?.trim();
-    if (!agentId || knownAgentIds.has(agentId)) {
-      continue;
-    }
-    if (
-      event.eventType === "message.final" ||
-      event.eventType === "message.delta" ||
-      event.eventType === "thinking.final" ||
-      event.eventType === "thinking.delta" ||
-      event.eventType === "tool.started" ||
-      event.eventType === "tool.completed"
-    ) {
-      orphanAssistant = true;
-      break;
-    }
-  }
-  if (!orphanAssistant) {
-    return false;
-  }
-  const mainHasAssistant = snapshot.timeline.some(
-    (item) =>
-      item.scope !== "agent" &&
-      (item.eventType === "message.final" ||
-        item.eventType === "message.delta" ||
-        item.eventType === "thinking.final" ||
-        item.eventType === "thinking.delta" ||
-        item.eventType === "tool.started" ||
-        item.eventType === "tool.completed"),
-  );
-  return !mainHasAssistant;
-}
-
-/** Poisoned skeleton: event cursor advanced but timeline was wiped (empty finals/prompts). */
-function shouldRebuildFeedSkeletonForEmptyTimeline(
-  snapshot: ThreadRunProjectionSnapshot,
-  maxEventSequence: number,
-): boolean {
-  if (snapshot.timeline.length > 0) {
-    return false;
-  }
-  if (!(maxEventSequence > 0 || snapshot.attempts.length > 0 || snapshot.sourceEventCount > 0)) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * Older Feed trims capped user prompts at 1_200 chars with textTruncated and no
- * hydrate path. Force rebuild so long prompts reappear after the keep-full fix.
- */
-function shouldRebuildFeedSkeletonForTruncatedUserPrompts(
-  snapshot: ThreadRunProjectionSnapshot,
-): boolean {
-  return snapshot.timeline.some(
-    (item) => isSkeletonUserPromptItem(item) && item.metadata?.textTruncated === true,
-  );
 }
 
 function buildCurrentThreadRunProjection(
@@ -14424,15 +14628,64 @@ function scheduleThreadRunProjectionUpdated(threadId: string, options?: { stream
   runProjectionEmitTimers.set(threadId, timer);
 }
 
+function syncThreadFeedSkeletonAttemptsFromStore(threadId: string): void {
+  const existing = conversationStore.getThreadFeedSkeleton(threadId);
+  if (!existing) {
+    return;
+  }
+  const hydrated = hydrateThreadFeedSkeletonSnapshot(
+    existing.snapshot,
+    threadId,
+    buildThreadFeedSkeletonHydrationContext(),
+  );
+  const attemptsUnchanged =
+    JSON.stringify(existing.snapshot.attempts) === JSON.stringify(hydrated.attempts);
+  const threadStatusUnchanged = existing.snapshot.thread.status === hydrated.thread.status;
+  if (attemptsUnchanged && threadStatusUnchanged) {
+    return;
+  }
+  // Re-derive the Feed from the tracked items under the new attempt states instead of
+  // trusting the previously selected timeline: a run that finished without its own event
+  // (finishRunAttempt) must compact its trail right away, with no event log read.
+  const patchState = existing.patchState;
+  const trackedItems = patchState
+    ? reconcileFeedSkeletonTrackedItems(
+        excludeAgentScopedFeedTimelineItems(patchState.trackedItems),
+        hydrated.attempts,
+      )
+    : undefined;
+  persistThreadFeedSkeletonRecord({
+    ...existing,
+    snapshot: {
+      ...existing.snapshot,
+      attempts: hydrated.attempts,
+      timeline: trackedItems
+        ? selectSkeletonTimelineItems(trackedItems, hydrated.attempts).map((item) => ({ ...item }))
+        : hydrated.timeline,
+      thread: {
+        ...existing.snapshot.thread,
+        status: hydrated.thread.status,
+        ...(hydrated.thread.message !== undefined && { message: hydrated.thread.message }),
+        ...(hydrated.thread.currentAttemptId && {
+          currentAttemptId: hydrated.thread.currentAttemptId,
+        }),
+      },
+    },
+    ...(patchState && trackedItems && { patchState: { ...patchState, trackedItems } }),
+  });
+}
+
 function emitThreadRunProjectionUpdated(threadId: string): void {
   threadProjectionMemory?.noteThreadTouched(threadId);
+  // finishRunAttempt / thread.completed may land after the last message.final patch;
+  // heal cached attempts + thread.status before we read the skeleton for the wire.
+  syncThreadFeedSkeletonAttemptsFromStore(threadId);
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
   let cached = conversationStore.getThreadFeedSkeleton(threadId);
   if (cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)) {
     if (
-      shouldRebuildFeedSkeletonForOrphanAgentEvents(threadId, cached.snapshot) ||
-      shouldRebuildFeedSkeletonForTruncatedUserPrompts(cached.snapshot)
+      shouldRebuildCachedThreadFeedSkeleton(threadId, cached.snapshot, maxEventSequence)
     ) {
       conversationStore.deleteThreadFeedSkeleton(threadId);
       cached = undefined;
@@ -14445,10 +14698,16 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   if (!feedProjection) {
     return;
   }
-  const withSpans = hydrateFeedProjectionRequestSpans(threadId, feedProjection);
+  // Always overlay live attempts/thread status — skeleton may still say "running"
+  // after finishRunAttempt when no run.attempt.* event patched it.
+  feedProjection = hydrateThreadFeedSkeletonSnapshot(
+    hydrateFeedProjectionRequestSpans(threadId, feedProjection),
+    threadId,
+    buildThreadFeedSkeletonHydrationContext(),
+  );
   feedProjection = {
-    ...withSpans,
-    timeline: excludeAgentScopedFeedTimelineItems(withSpans.timeline),
+    ...feedProjection,
+    timeline: excludeAgentScopedFeedTimelineItems(feedProjection.timeline),
   };
   const signature = buildFeedProjectionSignature(feedProjection);
   if (lastFeedProjectionSignatures.get(threadId) === signature) {
@@ -14456,11 +14715,17 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   }
   lastFeedProjectionSignatures.set(threadId, signature);
   const previousMaxSequence = lastFeedProjectionTimelineSequences.get(threadId);
+  const previousEmittedRevision = lastFeedProjectionHistoryRevisions.get(threadId);
   const currentMaxSequence = maxFeedProjectionTimelineSequence(feedProjection);
-  const payloadProjection = filterFeedProjectionAfterSequence(feedProjection, previousMaxSequence);
+  const { payload: payloadProjection, nextEmittedRevision } = selectFeedProjectionLivePayload({
+    feedProjection,
+    previousMaxSequence,
+    previousEmittedRevision,
+  });
   if (currentMaxSequence !== undefined) {
     lastFeedProjectionTimelineSequences.set(threadId, currentMaxSequence);
   }
+  lastFeedProjectionHistoryRevisions.set(threadId, nextEmittedRevision);
   const payload: ThreadLiveEvent = {
     threadId,
     type: "thread.run_projection_updated",

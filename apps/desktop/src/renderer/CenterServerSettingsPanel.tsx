@@ -26,6 +26,7 @@ import type {
   CenterServerDevicePresenceView,
   CenterServerDomainSyncState,
   CenterServerRequestVaultClaimResult,
+  EcoConnectDeepLink,
   CenterServerSettingsInput,
   CenterServerSettingsSnapshot,
   CenterServerSettingsView,
@@ -46,6 +47,7 @@ import {
   classifyCenterServerAuthError,
   isCenterServerReloginError,
   isLocalhostCenterServerUrl,
+  resolveSupabaseProjectUrl,
 } from "../shared/center-server";
 import { i18n } from "./i18n";
 
@@ -79,6 +81,10 @@ interface CenterServerSettingsPanelProps {
   onApproveVaultClaim: (claimId: string) => Promise<CenterServerApproveVaultClaimResult>;
   onSubmitVaultClaimCode: (code: string) => Promise<CenterServerSubmitVaultClaimCodeResult>;
   onCancelVaultClaim: () => Promise<CenterServerVaultStatus>;
+  /** Supabase project imported via an eco://connect deep link, if pending. */
+  ecoConnectLink?: EcoConnectDeepLink | undefined;
+  /** Dismiss the deep-link confirmation dialog. */
+  onEcoConnectLinkDismiss: () => void;
 }
 
 type PanelView = "list" | "edit-server" | "edit-account";
@@ -107,6 +113,8 @@ export function CenterServerSettingsPanel({
   onApproveVaultClaim,
   onSubmitVaultClaimCode,
   onCancelVaultClaim,
+  ecoConnectLink,
+  onEcoConnectLinkDismiss,
 }: CenterServerSettingsPanelProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<PanelView>("list");
@@ -124,6 +132,7 @@ export function CenterServerSettingsPanel({
   const [revokingBindingId, setRevokingBindingId] = useState<string>();
   const [testing, setTesting] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
+  const [ecoConnectBusy, setEcoConnectBusy] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -153,7 +162,8 @@ export function CenterServerSettingsPanel({
   const hasUrl = projectUrl.length > 0;
   const hasAnonKeyInput = Boolean(form.anonKey?.trim()) || snapshot.settings.hasAnonKey;
   // Binding list refresh must not disable the connection switch / delete action.
-  const actionBusy = busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy || vaultBusy;
+  const actionBusy =
+    busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy || vaultBusy || ecoConnectBusy;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const needsReauth =
@@ -351,6 +361,60 @@ export function CenterServerSettingsPanel({
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setSaveBusy(false);
+    }
+  }
+
+  // The project this device is currently bound to (from the stored config).
+  const boundProjectUrl = resolveSupabaseProjectUrl({
+    supabaseUrl: snapshot.settings.supabaseUrl,
+    serverUrl: snapshot.settings.serverUrl,
+  });
+  const sameProjectAsBound = Boolean(ecoConnectLink?.supabaseUrl) && boundProjectUrl === ecoConnectLink!.supabaseUrl;
+
+  async function handleEcoConnectConfirm() {
+    if (!ecoConnectLink) {
+      return;
+    }
+    // An existing connection to a different project must be removed first.
+    if (registered && boundProjectUrl && !sameProjectAsBound) {
+      setError(t("settings.center.ecoConnect.alreadyConnected", { name: deviceLabel }));
+      onEcoConnectLinkDismiss();
+      return;
+    }
+    if (!ecoConnectLink.supabaseUrl) {
+      setError(t("settings.center.ecoConnect.invalidUrl"));
+      onEcoConnectLinkDismiss();
+      return;
+    }
+    setError(undefined);
+    setEcoConnectBusy(true);
+    try {
+      await onSave({
+        ...form,
+        enabled: registered ? form.enabled : false,
+        supabaseUrl: ecoConnectLink.supabaseUrl,
+        serverUrl: ecoConnectLink.supabaseUrl,
+        deviceName: form.deviceName?.trim() || snapshot.settings.deviceName,
+        anonKey: ecoConnectLink.anonKey,
+      });
+      onEcoConnectLinkDismiss();
+      if (!registered) {
+        // Fresh import — continue into account setup (sign up / sign in),
+        // matching the manual "save server config" -> "edit-account" flow.
+        setAuthMode("signup");
+        setView("edit-account");
+        return;
+      }
+      setView("list");
+      setInfoNotice(
+        sameProjectAsBound
+          ? t("settings.center.ecoConnect.sameSuccess")
+          : t("settings.center.ecoConnect.success"),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setEcoConnectBusy(false);
     }
   }
 
@@ -637,9 +701,76 @@ export function CenterServerSettingsPanel({
     setView("edit-account");
   }
 
+  const ecoConnectDialog = ecoConnectLink ? (
+    createPortal(
+      <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
+        <button
+          type="button"
+          className="cs-sheet-scrim"
+          aria-label={t("common.close")}
+          disabled={actionBusy}
+          onClick={() => onEcoConnectLinkDismiss()}
+        />
+        <div
+          className="cs-sheet cs-sheet--connect"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cs-connect-title"
+        >
+          <div className="cs-sheet-stack">
+            <span className="cs-sheet-glyph" aria-hidden>
+              <Smartphone size={22} strokeWidth={1.75} />
+            </span>
+            <header className="cs-sheet-head">
+              <h2 id="cs-connect-title" className="cs-sheet-title">
+                {t("settings.center.ecoConnect.title")}
+              </h2>
+              <p className="cs-sheet-subtitle">
+                {t("settings.center.ecoConnect.description", {
+                  url: ecoConnectLink.supabaseUrl,
+                })}
+              </p>
+            </header>
+            {sameProjectAsBound && registered ? (
+              <p className="cs-pairing-note">{t("settings.center.ecoConnect.sameProject")}</p>
+            ) : registered && boundProjectUrl ? (
+              <p className="cs-error">
+                {t("settings.center.ecoConnect.alreadyConnected", { name: deviceLabel })}
+              </p>
+            ) : null}
+            <div className="cs-sheet-actions">
+              <button
+                type="button"
+                className="cs-btn"
+                disabled={actionBusy}
+                onClick={() => onEcoConnectLinkDismiss()}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="cs-btn cs-btn--accent"
+                disabled={Boolean(
+                  actionBusy ||
+                  !ecoConnectLink.supabaseUrl ||
+                  (registered && boundProjectUrl && !sameProjectAsBound),
+                )}
+                onClick={() => void handleEcoConnectConfirm()}
+              >
+                {t("settings.center.ecoConnect.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    )
+  ) : null;
+
   if (view === "edit-server") {
     return (
       <div className="cs">
+        {ecoConnectDialog}
         <ServerEditor
           form={form}
           setForm={setForm}
@@ -660,6 +791,7 @@ export function CenterServerSettingsPanel({
   if (view === "edit-account") {
     return (
       <div className="cs">
+        {ecoConnectDialog}
         <AccountEditor
           serverUrl={serverUrl}
           registered={registered}
@@ -683,6 +815,7 @@ export function CenterServerSettingsPanel({
 
   return (
     <div className="cs">
+      {ecoConnectDialog}
       <header className="cs-head">
         <h1 className="cs-title">{t("settings.center.title")}</h1>
         <p className="cs-desc">{t("settings.center.description")}</p>

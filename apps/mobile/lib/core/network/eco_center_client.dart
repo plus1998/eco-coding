@@ -16,6 +16,7 @@ typedef JsonMap = Map<String, dynamic>;
 abstract final class EcoSupabaseFunctions {
   static const deviceRegister = 'device-register';
   static const deviceSessionRegister = 'device-session-register';
+  static const deviceDisable = 'device-disable';
   static const bindingEnsure = 'binding-ensure';
   static const pairingJoin = 'pairing-join';
   static const pairingCreate = 'pairing-create';
@@ -323,6 +324,27 @@ class EcoCenterClient {
     return _applyAuthSession(user, session);
   }
 
+  /// Re-authenticate the current account password without changing the signed-in email.
+  ///
+  /// Used before destructive account actions such as unpairing a Desktop.
+  Future<void> verifyAccountPassword(String password) async {
+    final email = _credentials.userEmail?.trim() ?? '';
+    if (email.isEmpty || !_credentials.hasUserSession) {
+      throw EcoCenterException.app(
+        EcoCenterErrorKind.reauthRequired,
+        recovery: CenterServerAuthRecovery.relogin,
+      );
+    }
+    if (password.isEmpty) {
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidCredentials);
+    }
+    try {
+      await login(email: email, password: password);
+    } on AuthException {
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidCredentials);
+    }
+  }
+
   Future<PublicDevice> registerMobileDevice({String? deviceName}) async {
     final client = await _ensureSupabaseClient();
     await _ensureUserAccessToken();
@@ -505,6 +527,35 @@ class EcoCenterClient {
       _teardownBindChannel();
     }
     return binding;
+  }
+
+  /// Disable a desktop device owned by this account (no device secret required).
+  ///
+  /// Used to remove lost / unreachable PCs from the account. Server also revokes
+  /// any active bindings for that desktop.
+  Future<PublicDevice> disableOwnedDesktop(String desktopDeviceId) async {
+    final trimmed = desktopDeviceId.trim();
+    if (trimmed.isEmpty) {
+      throw EcoCenterException.app(EcoCenterErrorKind.bindingRequired);
+    }
+    final client = await _ensureSupabaseClient();
+    await _ensureUserAccessToken();
+    final response = await client.functions.invoke(
+      EcoSupabaseFunctions.deviceDisable,
+      body: {
+        'deviceId': trimmed,
+        'kind': 'desktop',
+      },
+    );
+    final data = _requireFunctionJson(response);
+    final device = PublicDevice.fromJson(_asJsonMap(data['device']));
+
+    final selected = _credentials.selectedDesktopId;
+    if (selected != null && selected.isNotEmpty && selected == trimmed) {
+      await setSelectedDesktop(null);
+    }
+    _onlineDesktopDeviceIds.remove(trimmed);
+    return device;
   }
 
   Future<List<PublicDevice>> listPresence() async {

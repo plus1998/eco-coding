@@ -7,8 +7,13 @@ import {
   hasFeedSkeletonAttemptBecameTerminal,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
-  shouldTrackEventForFeedSkeletonPatch,
 } from "../src/main/thread-feed-skeleton-patch";
+import { isFeedMainTimelineEvent } from "../src/main/thread-feed-timeline-items";
+import {
+  FEED_SKELETON_RULES_VERSION,
+  isThreadFeedSkeletonFresh,
+  type ThreadFeedSkeletonRecord,
+} from "../src/main/thread-feed-skeleton-store";
 import { buildThreadRunProjection, eventToTimelineItem } from "../src/main/thread-run-projection";
 import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed";
 import type { RunAttemptRecord } from "../src/main/usage-ledger";
@@ -18,7 +23,24 @@ import type {
   ThreadRunProjectionAttempt,
   ThreadRunProjectionTimelineItem,
 } from "../src/shared/thread-run-projection";
+import { isThreadFollowUpActivityMessage } from "../src/shared/thread-follow-up-events";
 import { selectSkeletonTimelineItems } from "../src/shared/thread-run-projection-skeleton";
+import {
+  CORPUS_ATTEMPT_ID,
+  CORPUS_THREAD_ID,
+  attemptsAtSequence,
+  collapseStreamDeltas,
+  corpusAgentInstance,
+  corpusProjectionAgent,
+  eventFromShape,
+  generateStream,
+  isPersistableShape,
+  loadObservedShapeFile,
+  rebuildFeedTimeline,
+  timelineSignature,
+  type CorpusStream,
+  type ObservedEventShape,
+} from "./helpers/feed-parity-corpus";
 
 const THREAD_ID = "thr_patch";
 const STARTED_AT = "2026-01-01T00:00:00.000Z";
@@ -70,10 +92,10 @@ function mapAttempts(records: readonly RunAttemptRecord[]): ThreadRunProjectionA
   return records.map((record) => projectionAttempt(record.attemptId, record.status, record.startedAt));
 }
 
-function emptySnapshot() {
+function emptySnapshot(threadId = THREAD_ID) {
   return {
     thread: {
-      threadId: THREAD_ID,
+      threadId,
       status: "running",
       generatedAt: STARTED_AT,
     },
@@ -114,6 +136,11 @@ function exploreAgent(
   };
 }
 
+/**
+ * The oracle: what a full rebuild produces for the same event prefix. Deltas are collapsed
+ * first because that is what `listThreadRunEventsForProjection` returns; everything else is
+ * byte-for-byte the production rebuild path.
+ */
 function referenceFeedTimelineIds(
   events: readonly ThreadRunEvent[],
   attempts: readonly RunAttemptRecord[],
@@ -123,16 +150,16 @@ function referenceFeedTimelineIds(
     status: "running",
     attempts,
     agents: [],
-    events,
+    events: collapseStreamDeltas(events),
     historyComplete: true,
   });
   return trimProjectionForFeed(projection).timeline.map((item) => item.id);
 }
 
-function replayPatchTimelineIds(
+function replayPatchRecords(
   events: readonly ThreadRunEvent[],
   attempts: readonly RunAttemptRecord[],
-): string[] {
+): ThreadFeedSkeletonRecord[] {
   let record = createThreadFeedSkeletonRecord(emptySnapshot(), {
     attempts: mapAttempts(attempts),
     agents: [],
@@ -141,14 +168,24 @@ function replayPatchTimelineIds(
   });
   record.patchState = createFeedSkeletonPatchState(record.snapshot);
 
+  const records: ThreadFeedSkeletonRecord[] = [];
   for (const event of events) {
     const attemptRecords = [...attempts];
     const context = patchContext(mapAttempts(attemptRecords), event.sequence);
     const patched = patchThreadFeedSkeletonFromEvent(record, event, context);
     expect(patched).not.toBeNull();
     record = patched!;
+    records.push(record);
   }
-  return feedSkeletonTimelineIds(record.snapshot);
+  return records;
+}
+
+function replayPatchTimelineIds(
+  events: readonly ThreadRunEvent[],
+  attempts: readonly RunAttemptRecord[],
+): string[] {
+  const records = replayPatchRecords(events, attempts);
+  return feedSkeletonTimelineIds(records[records.length - 1]!.snapshot);
 }
 
 describe("thread feed skeleton patch", () => {
@@ -276,6 +313,157 @@ describe("thread feed skeleton patch", () => {
     expect(patchedAfterComplete).toEqual(referenceFeedTimelineIds(finalEvents, completedAttempts));
   });
 
+  test("keeps every running-attempt message.final between tools (no mid-turn collapse)", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "修一下 Feed 丢正文",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 2,
+        eventType: "message.final",
+        message: "先改 shared helpers",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_1",
+        sequence: 3,
+        eventType: "tool.completed",
+        message: "Tool: Edit · helpers.ts",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "narr_2",
+        sequence: 4,
+        eventType: "message.final",
+        message: "再改 main handler",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_2",
+        sequence: 5,
+        eventType: "tool.started",
+        message: "Tool: Edit · index.ts",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "narr_3",
+        sequence: 6,
+        eventType: "message.final",
+        message: "最后补测试",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+    ];
+
+    const patched = replayPatchTimelineIds(events, attempts);
+    expect(patched).toEqual(["user_1", "narr_1", "tool_1", "narr_2", "tool_2", "narr_3"]);
+    expect(patched).toEqual(referenceFeedTimelineIds(events, attempts));
+
+    const completedAttempts = [attemptRecord("att_run", "completed")];
+    const finalEvents = [
+      ...events,
+      runEvent({
+        id: "att_done",
+        sequence: 7,
+        eventType: "run.attempt.completed",
+        message: "Turn completed",
+        runAttemptId: "att_run",
+      }),
+    ];
+    const patchedAfterComplete = replayPatchTimelineIds(finalEvents, completedAttempts);
+    expect(patchedAfterComplete).toEqual(["user_1", "narr_3"]);
+    expect(patchedAfterComplete).toEqual(referenceFeedTimelineIds(finalEvents, completedAttempts));
+  });
+
+  test("running-attempt tool.failed does not wipe earlier message.final bodies", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "继续改",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 2,
+        eventType: "message.final",
+        message: "先写测试",
+        role: "planner",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_ok",
+        sequence: 3,
+        eventType: "tool.completed",
+        message: "Tool: Edit · ok.ts",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_fail",
+        sequence: 4,
+        eventType: "tool.failed",
+        message: "Tool failed: Edit overlap",
+        runAttemptId: "att_run",
+      }),
+      runEvent({
+        id: "tool_retry",
+        sequence: 5,
+        eventType: "tool.started",
+        message: "Tool: Edit · retry.ts",
+        runAttemptId: "att_run",
+      }),
+    ];
+
+    const patched = replayPatchTimelineIds(events, attempts);
+    expect(patched).toEqual(["user_1", "narr_1", "tool_ok", "tool_fail", "tool_retry"]);
+    expect(patched).toEqual(referenceFeedTimelineIds(events, attempts));
+  });
+
+  test("completed-attempt tool.failed after message.final keeps the narrative final", () => {
+    const attempts = [attemptRecord("att_1", "completed")];
+    const events = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        message: "提问",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "narr_1",
+        sequence: 2,
+        eventType: "message.final",
+        message: "回答正文",
+        role: "planner",
+        runAttemptId: "att_1",
+      }),
+      runEvent({
+        id: "tool_fail",
+        sequence: 3,
+        eventType: "tool.failed",
+        message: "Tool failed: Edit overlap",
+        runAttemptId: "att_1",
+      }),
+    ];
+
+    const patched = replayPatchTimelineIds(events, attempts);
+    expect(patched).toEqual(["user_1", "narr_1"]);
+    expect(patched).toEqual(referenceFeedTimelineIds(events, attempts));
+  });
+
   test("ignores completed-attempt tool noise but advances sequence watermark", () => {
     const attempts = [attemptRecord("att_1", "completed")];
     const events = [
@@ -311,8 +499,10 @@ describe("thread feed skeleton patch", () => {
       }),
     ];
 
-    expect(shouldTrackEventForFeedSkeletonPatch(events[2]!, mapAttempts(attempts))).toBe(false);
-    expect(shouldTrackEventForFeedSkeletonPatch(events[3]!, mapAttempts(attempts))).toBe(false);
+    // Process rows of a finished attempt are tracked (they are part of the projection)
+    // but the selection rule keeps them out of the Feed — see the assertions below.
+    expect(isFeedMainTimelineEvent(events[2]!)).toBe(true);
+    expect(isFeedMainTimelineEvent(events[3]!)).toBe(true);
 
     let record = createThreadFeedSkeletonRecord(emptySnapshot(), {
       attempts: mapAttempts(attempts),
@@ -527,8 +717,9 @@ describe("thread feed skeleton patch", () => {
       }),
     ];
 
-    expect(shouldTrackEventForFeedSkeletonPatch(events[2]!, mapAttempts(attempts))).toBe(false);
-    expect(shouldTrackEventForFeedSkeletonPatch(events[3]!, mapAttempts(attempts))).toBe(false);
+    // Agent-scoped rows never enter the main tracked set; they go to the agent timeline.
+    expect(isFeedMainTimelineEvent(events[2]!)).toBe(false);
+    expect(isFeedMainTimelineEvent(events[3]!)).toBe(false);
     expect(shouldPatchAgentTimelineForFeedSkeleton(events[2]!)).toBe(true);
     expect(shouldPatchAgentTimelineForFeedSkeleton(events[3]!)).toBe(true);
     expect(replayPatchTimelineIds(events, attempts)).toEqual(["user_1", "planner_final"]);
@@ -658,10 +849,8 @@ describe("thread feed skeleton patch", () => {
       },
     );
     record.patchState = {
-      trackedItems: [
-        ...(record.patchState?.trackedItems ?? []),
-        leaked,
-      ],
+      ...createFeedSkeletonPatchState(record.snapshot),
+      trackedItems: [...(record.patchState?.trackedItems ?? []), leaked],
     };
 
     const patched = patchThreadFeedSkeletonFromEvent(
@@ -742,16 +931,17 @@ describe("thread feed skeleton patch", () => {
     )!;
 
     expect(feedSkeletonTimelineIds(record.snapshot)).toEqual(["user_1"]);
-    expect(shouldTrackEventForFeedSkeletonPatch(
-      runEvent({
-        id: "req_failed",
-        sequence: 4,
-        eventType: "request.failed",
-        message: "请求失败",
-        runAttemptId: "att_run",
-      }),
-      mapAttempts(failed),
-    )).toBe(false);
+    expect(
+      isFeedMainTimelineEvent(
+        runEvent({
+          id: "req_failed",
+          sequence: 4,
+          eventType: "request.failed",
+          message: "请求失败",
+          runAttemptId: "att_run",
+        }),
+      ),
+    ).toBe(true);
   });
 
   test("reconciles when attempt becomes terminal even without a terminal event type", () => {
@@ -810,3 +1000,538 @@ describe("thread feed skeleton patch", () => {
     expect(hasFeedSkeletonAttemptBecameTerminal(running, failed)).toBe(true);
   });
 });
+
+describe("feed skeleton incremental == full rebuild", () => {
+  /**
+   * Rich stream: request rows, stream deltas carrying SDK block ids, thread.status,
+   * tool rows, an unattributed failure, plus an attempt that flips terminal mid-stream.
+   * `terminalFromStep` is the first step whose events see the attempt as finished.
+   */
+  function buildRichStream(terminalFromStep: number): {
+    events: ThreadRunEvent[];
+    attemptsAt: (step: number) => RunAttemptRecord[];
+  } {
+    const running = [attemptRecord("att_run", "running")];
+    const finished = [attemptRecord("att_run", "completed")];
+    const event = (
+      id: string,
+      eventType: string,
+      extra: Partial<ThreadRunEvent> = {},
+    ): ThreadRunEvent =>
+      runEvent({
+        id,
+        sequence: 0,
+        eventType,
+        message: id,
+        ...extra,
+      });
+    return {
+      attemptsAt: (step) => (step >= terminalFromStep ? finished : running),
+      events: [], // filled below
+    };
+  }
+
+  test("matches the full projection after every event (running -> completed)", () => {
+    const running = [attemptRecord("att_run", "running")];
+    const finished = [attemptRecord("att_run", "completed")];
+    const terminalFromStep = 9;
+    const events: ThreadRunEvent[] = [
+      runEvent({
+        id: "user_1",
+        sequence: 1,
+        eventType: "message.final",
+        message: "把排序做一下",
+        role: "user",
+        metadata: { liveType: "thread.user_prompt" },
+      }),
+      runEvent({
+        id: "req_started",
+        sequence: 2,
+        eventType: "request.started",
+        message: "Requesting model…",
+        role: "planner",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+      }),
+      runEvent({
+        id: "delta_1",
+        sequence: 3,
+        eventType: "message.delta",
+        message: "先",
+        role: "coder",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+        streamKey: "stream_1",
+        streamState: "streaming",
+        metadata: { sdkMessageId: "sdk_1" },
+      }),
+      runEvent({
+        id: "delta_2",
+        sequence: 4,
+        eventType: "message.delta",
+        message: "先看代码",
+        role: "coder",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+        streamKey: "stream_1",
+        streamState: "streaming",
+        metadata: { sdkMessageId: "sdk_1" },
+      }),
+      runEvent({
+        id: "final_1",
+        sequence: 5,
+        eventType: "message.final",
+        message: "先看代码",
+        role: "coder",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+        streamKey: "stream_1",
+        streamState: "finalized",
+        metadata: { sdkMessageId: "sdk_1" },
+      }),
+      runEvent({
+        id: "tool_1",
+        sequence: 6,
+        eventType: "tool.completed",
+        message: "Tool: Read",
+        role: "tool",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+      }),
+      runEvent({
+        id: "status_1",
+        sequence: 7,
+        eventType: "thread.status",
+        message: "状态已更新",
+        role: "system",
+      }),
+      runEvent({
+        id: "narr_2",
+        sequence: 8,
+        eventType: "message.final",
+        message: "改完了，解释一下",
+        role: "coder",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+      }),
+      runEvent({
+        id: "req_completed",
+        sequence: 9,
+        eventType: "request.completed",
+        message: "Request finished",
+        role: "planner",
+        runAttemptId: "att_run",
+        requestId: "req_1",
+      }),
+      runEvent({
+        id: "api_error_1",
+        sequence: 10,
+        eventType: "api.error",
+        message: "上游 500",
+        role: "coder",
+      }),
+    ];
+
+    let record = createThreadFeedSkeletonRecord(emptySnapshot(), patchContext(running, 0));
+    for (let index = 0; index < events.length; index += 1) {
+      const event = events[index]!;
+      const attempts = index + 1 >= terminalFromStep ? finished : running;
+      record = patchThreadFeedSkeletonFromEvent(
+        record,
+        event,
+        patchContext(mapAttempts(attempts), event.sequence),
+      )!;
+      const reference = referenceFeedTimelineIds(events.slice(0, index + 1), attempts);
+      expect(feedSkeletonTimelineIds(record.snapshot), `after step ${index + 1} (${event.id})`).toEqual(
+        reference,
+      );
+      // The patched state must look fresh to the loader: a stale rules version or a
+      // watermark mismatch would trigger a rebuild on every read.
+      expect(
+        isThreadFeedSkeletonFresh(record, record.historyRevision, record.maxEventSequence),
+      ).toBe(true);
+      expect(record.patchState?.rulesVersion).toBe(FEED_SKELETON_RULES_VERSION);
+    }
+  });
+
+  test("keeps tracked items bounded after the attempt finishes", () => {
+    const running = [attemptRecord("att_run", "running")];
+    const finished = [attemptRecord("att_run", "completed")];
+    const events: ThreadRunEvent[] = [];
+    for (let sequence = 1; sequence <= 40; sequence += 1) {
+      events.push(
+        runEvent({
+          id: `tool_${sequence}`,
+          sequence,
+          eventType: "tool.completed",
+          message: `Tool: Bash ${sequence}`,
+          role: "tool",
+          runAttemptId: "att_run",
+        }),
+      );
+    }
+    events.push(
+      runEvent({
+        id: "final_1",
+        sequence: 41,
+        eventType: "message.final",
+        message: "全部跑完了",
+        role: "coder",
+        runAttemptId: "att_run",
+      }),
+    );
+
+    let record = createThreadFeedSkeletonRecord(emptySnapshot(), patchContext(running, 0));
+    for (const event of events) {
+      record = patchThreadFeedSkeletonFromEvent(record, event, patchContext(mapAttempts(running), event.sequence))!;
+    }
+    // While running, the whole trail is tracked: that is exactly what select keeps.
+    expect(record.patchState!.trackedItems.length).toBe(41);
+
+    record = patchThreadFeedSkeletonFromEvent(
+      record,
+      runEvent({
+        id: "noise_after_finish",
+        sequence: 42,
+        eventType: "tool.completed",
+        message: "Tool: Read",
+        role: "tool",
+        runAttemptId: "att_run",
+      }),
+      patchContext(mapAttempts(finished), 42),
+    )!;
+
+    expect(feedSkeletonTimelineIds(record.snapshot)).toEqual(["final_1"]);
+    expect(record.patchState!.trackedItems.map((item) => item.id)).toEqual(["final_1"]);
+  });
+
+  test("mirrors stream-delta replacement and settled SDK blocks", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const events = [
+      runEvent({
+        id: "delta_a",
+        sequence: 1,
+        eventType: "message.delta",
+        message: "第一版",
+        role: "coder",
+        runAttemptId: "att_run",
+        streamKey: "stream_1",
+        streamState: "streaming",
+        metadata: { sdkMessageId: "sdk_a" },
+      }),
+      runEvent({
+        id: "delta_b",
+        sequence: 2,
+        eventType: "message.delta",
+        message: "第二版内容",
+        role: "coder",
+        runAttemptId: "att_run",
+        streamKey: "stream_1",
+        streamState: "streaming",
+        metadata: { sdkMessageId: "sdk_a" },
+      }),
+      runEvent({
+        id: "final_a",
+        sequence: 3,
+        eventType: "message.final",
+        message: "第二版内容",
+        role: "coder",
+        runAttemptId: "att_run",
+        streamKey: "stream_1",
+        streamState: "finalized",
+        metadata: { sdkMessageId: "sdk_a" },
+      }),
+      // Replayed duplicate of an already settled block: the projection drops it, so the
+      // incremental path must drop it too.
+      runEvent({
+        id: "delta_replay",
+        sequence: 4,
+        eventType: "message.delta",
+        message: "第二版内容",
+        role: "coder",
+        runAttemptId: "att_run",
+        streamKey: "stream_1",
+        streamState: "streaming",
+        metadata: { sdkMessageId: "sdk_a" },
+      }),
+    ];
+
+    let record = createThreadFeedSkeletonRecord(emptySnapshot(), patchContext(attempts, 0));
+    for (let index = 0; index < events.length; index += 1) {
+      const event = events[index]!;
+      record = patchThreadFeedSkeletonFromEvent(record, event, patchContext(mapAttempts(attempts), event.sequence))!;
+      expect(feedSkeletonTimelineIds(record.snapshot), `after ${event.id}`).toEqual(
+        referenceFeedTimelineIds(events.slice(0, index + 1), attempts),
+      );
+    }
+    // The superseded delta was replaced in place, the replay was dropped.
+    expect(feedSkeletonTimelineIds(record.snapshot)).toEqual(["final_a"]);
+  });
+
+  test("treats patch states from older rules as stale", () => {
+    const attempts = [attemptRecord("att_run", "running")];
+    const record = createThreadFeedSkeletonRecord(emptySnapshot(), patchContext(attempts, 0));
+    expect(isThreadFeedSkeletonFresh(record, record.historyRevision, record.maxEventSequence)).toBe(true);
+    expect(
+      isThreadFeedSkeletonFresh(
+        { ...record, patchState: { ...record.patchState!, rulesVersion: 1 } },
+        record.historyRevision,
+        record.maxEventSequence,
+      ),
+    ).toBe(false);
+  });
+});
+
+/**
+ * Regression suite driven by the *observed* shape space of real persisted run events
+ * (dev + prod, 138 threads). Every shape that has ever been written to
+ * `thread_run_events` is replayed through the incremental patch and compared against a full
+ * rebuild after *every* event, so a rule that only holds for hand-picked scenarios fails.
+ */
+describe("feed skeleton parity on observed real event shapes", () => {
+  const shapeFile = loadObservedShapeFile();
+  const shapeCases = shapeFile.shapes.map(
+    (shape, index) => [shapeCaseLabel(shape, index), shape] as const,
+  );
+
+  test("fixture is derived from real data and covers the guard-hole shapes", () => {
+    expect(shapeFile.threadCount).toBeGreaterThan(100);
+    expect(shapeFile.shapes.length).toBeGreaterThan(100);
+    // Metrics-only live types are never persisted; if one ever is, the feed rules must
+    // account for it instead of silently dropping it.
+    expect(shapeFile.shapes.filter((shape) => !isPersistableShape(shape))).toEqual([]);
+    // The shape that defeated the previous running-attempt guard: api.error with no
+    // runAttemptId while an attempt is running.
+    expect(
+      shapeFile.shapes.some((shape) => shape.eventType === "api.error" && !shape.hasRunAttemptId),
+    ).toBe(true);
+    // The corpus generator derives stream keys per scope, which is only faithful because no
+    // real stream identity spans two scopes (the store collapses deltas by identity alone).
+    expect(shapeFile.crossScopeStreamIdentities).toBe(0);
+  });
+
+  test.each(shapeCases)(
+    "incremental patch equals a full rebuild around shape %s",
+    (_label, shape) => {
+      expectParityAfterEveryStep(buildShapeFocusedStream(shape));
+    },
+  );
+
+  test("fuzz: seeded random streams over the observed shapes stay identical to a rebuild", () => {
+    for (let seed = 1; seed <= 60; seed += 1) {
+      const stream = generateStream({
+        seed,
+        shapes: shapeFile.shapes,
+        count: 10 + (seed % 30),
+        finishAttempt: seed % 3 !== 0,
+        finalStatus: seed % 3 === 0 ? "cancelled" : seed % 2 === 0 ? "completed" : "failed",
+      });
+      expectParityAfterEveryStep(stream, `seed ${seed}`);
+    }
+  });
+
+  test("fuzz: settled attempts keep the tracked set bounded and self-consistent", () => {
+    for (let seed = 1; seed <= 20; seed += 1) {
+      const stream = generateStream({
+        seed: seed * 7,
+        shapes: shapeFile.shapes,
+        count: 40,
+        finalStatus: "completed",
+      });
+      const last = replayPatchRecordsForStream(stream).at(-1)!;
+      const tracked = last.patchState!.trackedItems;
+      const timelineIds = feedSkeletonTimelineIds(last.snapshot);
+      expect(new Set(tracked.map((item) => item.id)).size).toBe(tracked.length);
+      for (const id of timelineIds) {
+        expect(tracked.some((item) => item.id === id)).toBe(true);
+      }
+      expect(tracked.length).toBeLessThanOrEqual(stream.events.length);
+      expect(tracked.length).toBeGreaterThan(timelineIds.length - 1);
+    }
+  });
+
+  test("mid-run: every narrative body survives while the attempt is still running", () => {
+    // The reported bug: message.final while running collapsed the segment and dropped
+    // earlier assistant bodies from the live feed (they only reappeared after a reload).
+    const narrativeShapes = shapeFile.shapes.filter((shape) => isNarrativeBodyShape(shape));
+    expect(narrativeShapes.length).toBeGreaterThan(0);
+    const toolShape = shapeFile.shapes.find(
+      (shape) => shape.eventType === "tool.started" && shape.scope !== "agent" && !shape.textEmpty,
+    )!;
+    const failureShape = shapeFile.shapes.find(
+      (shape) => shape.eventType === "tool.failed" && !shape.textEmpty,
+    )!;
+    const narrative = narrativeShapes[0]!;
+
+    const shapes: ObservedEventShape[] = [];
+    for (let turn = 0; turn < 6; turn += 1) {
+      shapes.push(narrative, toolShape, failureShape, narrativeShapes[turn % narrativeShapes.length]!);
+    }
+    const stream = corpusStream(shapes, { runningAttempt: true });
+    const records = replayPatchRecordsForStream(stream);
+    expect(records).toHaveLength(shapes.length);
+
+    for (let step = 1; step <= records.length; step += 1) {
+      const timeline = feedSkeletonTimelineIds(records[step - 1]!.snapshot);
+      for (const event of stream.events.slice(0, step)) {
+        if (!isNarrativeBodyEvent(event.eventType, event.role) || !event.message.trim()) {
+          continue;
+        }
+        // Operational status lines ("已停止"/"正在…") are not dialogue and never reach the
+        // feed; everything else must survive for as long as the attempt is running.
+        if (isThreadFollowUpActivityMessage(event.message)) {
+          continue;
+        }
+        expect(timeline, `step ${step} lost narrative ${event.id}`).toContain(event.id);
+      }
+    }
+    expectParityAfterEveryStep(stream);
+  });
+
+  test("mid-run: api.error without runAttemptId does not drop the running trail", () => {
+    const withAttempt = shapeFile.shapes.find(
+      (shape) => shape.eventType === "api.error" && shape.hasRunAttemptId,
+    )!;
+    const withoutAttempt = shapeFile.shapes.find(
+      (shape) => shape.eventType === "api.error" && !shape.hasRunAttemptId,
+    )!;
+    const narrative = shapeFile.shapes.find(
+      (shape) =>
+        shape.eventType === "message.final" &&
+        shape.role === withAttempt.role &&
+        !shape.textEmpty &&
+        shape.scope !== "agent",
+    )!;
+    const stream = corpusStream([narrative, withAttempt, narrative, withoutAttempt, narrative], {
+      runningAttempt: true,
+    });
+
+    const records = replayPatchRecordsForStream(stream);
+    const timeline = feedSkeletonTimelineIds(records.at(-1)!.snapshot);
+    // A row without runAttemptId still falls inside the running attempt's window, so it must
+    // be attributed to that attempt rather than treated as a reason to drop the trail.
+    expect(timeline).toContain(stream.events[0]!.id);
+    expect(timeline).toContain(stream.events[2]!.id);
+    expectParityAfterEveryStep(stream);
+  });
+
+  test("settling the attempt re-derives the selection from tracked items alone", () => {
+    // Mirrors `syncThreadFeedSkeletonAttemptsFromStore`: attempt status change => re-select
+    // from the tracked items (no event-log read) must equal a full rebuild.
+    for (let seed = 1; seed <= 15; seed += 1) {
+      const stream = generateStream({
+        seed: seed * 13,
+        shapes: shapeFile.shapes,
+        count: 30,
+        finishAttempt: false,
+      });
+      const last = replayPatchRecordsForStream(stream).at(-1)!;
+      const settledAttempts = [attemptRecord("completed")];
+      const settledProjectionAttempts = mapAttempts(settledAttempts);
+      const settledIds = recomputeTimelineFromTrackedItems(last, settledProjectionAttempts);
+      expect(settledIds).toEqual(
+        // Register the agent instance: a rebuild with no agent rows would promote orphan
+        // agent-scope rows onto the main timeline, which no patch can invent.
+        rebuildFeedTimeline(stream.events, settledAttempts, { agents: [corpusAgentInstance()] }).map(
+          (item) => item.id,
+        ),
+      );
+      // And the running view keeps at least as much as the settled view.
+      const runningTimeline = feedSkeletonTimelineIds(last.snapshot);
+      expect(runningTimeline.length).toBeGreaterThanOrEqual(settledIds.length);
+    }
+  });
+});
+
+function shapeCaseLabel(shape: ObservedEventShape, index: number): string {
+  return `${index}:${shape.eventType}/${shape.scope}/${shape.role ?? "-"}${
+    shape.hasRunAttemptId ? "+att" : ""
+  }`;
+}
+
+function isNarrativeBodyShape(shape: ObservedEventShape): boolean {
+  return (
+    isNarrativeBodyEvent(shape.eventType, shape.role) &&
+    shape.scope !== "agent" &&
+    !shape.textEmpty
+  );
+}
+
+function isNarrativeBodyEvent(eventType: string, role: string | undefined): boolean {
+  return eventType === "message.final" && role !== "user" && role !== "tool" && role !== "thinking";
+}
+
+function corpusStream(
+  shapes: readonly ObservedEventShape[],
+  options: { runningAttempt?: boolean } = {},
+): CorpusStream {
+  return {
+    events: shapes.map((shape, index) =>
+      eventFromShape(shape, { sequence: index + 1, attemptId: CORPUS_ATTEMPT_ID }),
+    ),
+    shapes: [...shapes],
+    attemptStatusBySequence: options.runningAttempt
+      ? []
+      : [{ sequence: 1, status: "completed" }],
+    finalStatus: options.runningAttempt ? "running" : "completed",
+  };
+}
+
+/** One shape under test, wrapped in a user prompt so it has dialogue context. */
+function buildShapeFocusedStream(shape: ObservedEventShape): CorpusStream {
+  const prompt = loadObservedShapeFile().shapes.find(
+    (candidate) => candidate.metadata?.liveType === "thread.user_prompt" && !candidate.textEmpty,
+  )!;
+  const narrative = loadObservedShapeFile().shapes.find((candidate) => isNarrativeBodyShape(candidate))!;
+  // Keep the attempt running so the selection has to hold the whole trail: that is the case
+  // the incremental path used to get wrong.
+  return corpusStream([prompt, narrative, shape, narrative], { runningAttempt: true });
+}
+
+/** Replays a stream, deriving the patch context attempts at every step like the store does. */
+function replayPatchRecordsForStream(stream: CorpusStream): ThreadFeedSkeletonRecord[] {
+  let record = createThreadFeedSkeletonRecord(emptySnapshot(CORPUS_THREAD_ID), {
+    attempts: mapAttempts(attemptsAtSequence(stream, 0)),
+    agents: [corpusProjectionAgent()],
+    historyRevision: 0,
+    maxEventSequence: 0,
+  });
+  record.patchState = createFeedSkeletonPatchState(record.snapshot);
+
+  const records: ThreadFeedSkeletonRecord[] = [];
+  for (const event of stream.events) {
+    const attempts = attemptsAtSequence(stream, event.sequence);
+    const patched = patchThreadFeedSkeletonFromEvent(
+      record,
+      event,
+      patchContext(mapAttempts(attempts), event.sequence, [corpusProjectionAgent()]),
+    );
+    expect(patched).not.toBeNull();
+    record = patched!;
+    records.push(record);
+  }
+  return records;
+}
+
+/** Compares the incremental patch against a full rebuild after every single event. */
+function expectParityAfterEveryStep(stream: CorpusStream, label = "stream"): void {
+  const records = replayPatchRecordsForStream(stream);
+  expect(records.length).toBe(stream.events.length);
+  for (let step = 1; step <= records.length; step += 1) {
+    const attempts = attemptsAtSequence(stream, stream.events[step - 1]!.sequence);
+    const patched = timelineSignature(records[step - 1]!.snapshot.timeline);
+    const expected = timelineSignature(
+      rebuildFeedTimeline(stream.events.slice(0, step), attempts, {
+        agents: [corpusAgentInstance()],
+      }),
+    );
+    expect(patched, `${label} step ${step} (${stream.events[step - 1]!.id})`).toEqual(expected);
+  }
+}
+
+function recomputeTimelineFromTrackedItems(
+  record: ThreadFeedSkeletonRecord,
+  attempts: readonly ThreadRunProjectionAttempt[],
+): string[] {
+  return selectSkeletonTimelineItems(record.patchState!.trackedItems, attempts).map((item) => item.id);
+}

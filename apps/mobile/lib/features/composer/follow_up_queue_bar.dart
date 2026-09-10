@@ -171,6 +171,7 @@ class FollowUpQueueBar extends StatelessWidget {
                               followUp: followUps[index],
                               isEditing:
                                   followUps[index].id == editingFollowUpId,
+                              queuePaused: queuePaused,
                               cancelBusyId: cancelBusyId,
                               escalateBusyId: escalateBusyId,
                               onEscalate: onEscalate,
@@ -234,6 +235,7 @@ class _FollowUpQueueItem extends StatefulWidget {
   const _FollowUpQueueItem({
     required this.followUp,
     required this.isEditing,
+    required this.queuePaused,
     required this.cancelBusyId,
     required this.escalateBusyId,
     required this.onEscalate,
@@ -244,6 +246,7 @@ class _FollowUpQueueItem extends StatefulWidget {
 
   final ThreadPendingFollowUp followUp;
   final bool isEditing;
+  final bool queuePaused;
   final String? cancelBusyId;
   final String? escalateBusyId;
   final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
@@ -263,7 +266,10 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
       widget.cancelBusyId == widget.followUp.id ||
       widget.escalateBusyId == widget.followUp.id;
 
-  bool get _canEscalate => widget.followUp.priority != 'escalated';
+  bool get _canEscalate => canEscalateFollowUp(
+    priority: widget.followUp.priority,
+    queuePaused: widget.queuePaused,
+  );
 
   void _showMenu() {
     if (_actionBusy) return;
@@ -341,7 +347,8 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
               children: [
                 widget.dragHandle,
                 const SizedBox(width: 6),
-                if (attachments.isNotEmpty) ...[
+                if (attachments.isNotEmpty &&
+                    attachments.first.data.isNotEmpty) ...[
                   SizedBox(
                     width: 30,
                     height: 30,
@@ -351,6 +358,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
                         base64Decode(attachments.first.data),
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
                       ),
                     ),
                   ),

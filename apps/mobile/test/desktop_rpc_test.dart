@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:eco_mobile/core/models/image_view_models.dart';
 import 'package:eco_mobile/core/models/project_orchestration_settings.dart';
@@ -582,6 +583,61 @@ void main() {
       {'threadId': 'thr_1'},
     ]);
   });
+
+  test('uploadPromptImageChunked stages bytes with resume and progress', () async {
+    final client = _ChunkedUploadEcoCenterClient(failFirstChunkOnce: true);
+    final rpc = DesktopRpc(client, 'desktop_1');
+    final bytes = Uint8List.fromList(List<int>.generate(90 * 1024, (i) => i % 256));
+    final progress = <(int, int)>[];
+
+    final path = await rpc.uploadPromptImageChunked(
+      contextKey: 'thread:thr_1',
+      imageId: 'img_1',
+      mediaType: 'image/png',
+      bytes: bytes,
+      onProgress: (sent, total) => progress.add((sent, total)),
+    );
+
+    expect(path, endsWith('img_1.png'));
+    expect(client.channels, contains('prompt-image:upload-begin'));
+    expect(client.channels, contains('prompt-image:upload-chunk'));
+    expect(client.channels, contains('prompt-image:upload-finish'));
+    expect(client.chunkAttempts, greaterThan(1)); // retried after forced failure
+    expect(progress.first.$1, 0);
+    expect(progress.last, (bytes.length, bytes.length));
+    expect(client.assembled, bytes);
+  });
+
+  test('continueThread sends path-only wire attachments', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.continueThread(
+      threadId: 'thr_1',
+      prompt: 'see image',
+      attachments: const [
+        PromptImageAttachment(
+          mediaType: 'image/png',
+          data: 'YWJj',
+          path: r'C:\eco\prompt-images\spool\thread_thr_1\img.png',
+        ),
+      ],
+    );
+
+    expect(client.channel, 'thread:continue');
+    expect(client.args, [
+      {
+        'threadId': 'thr_1',
+        'prompt': 'see image',
+        'attachments': [
+          {
+            'mediaType': 'image/png',
+            'path': r'C:\eco\prompt-images\spool\thread_thr_1\img.png',
+          },
+        ],
+      },
+    ]);
+  });
 }
 
 class _RecordingEcoCenterClient extends EcoCenterClient {
@@ -824,3 +880,57 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
         as T;
   }
 }
+
+class _ChunkedUploadEcoCenterClient extends EcoCenterClient {
+  _ChunkedUploadEcoCenterClient({this.failFirstChunkOnce = false})
+    : super(store: CredentialStore());
+
+  final bool failFirstChunkOnce;
+  final channels = <String>[];
+  final assembledBuilder = BytesBuilder(copy: false);
+  var chunkAttempts = 0;
+  var _failedOnce = false;
+
+  Uint8List get assembled => assembledBuilder.takeBytes();
+
+  @override
+  Future<T> invoke<T>(
+    String desktopDeviceId,
+    String channel,
+    List<dynamic> args, {
+    int? deadlineMs,
+  }) async {
+    channels.add(channel);
+    final payload = Map<String, dynamic>.from(args.first as Map);
+    if (channel == 'prompt-image:upload-begin') {
+      return {
+            'path': r'C:\eco\prompt-images\spool\thread_thr_1\img_1.png',
+            'receivedBytes': assembledBuilder.length,
+            'complete': false,
+          }
+          as T;
+    }
+    if (channel == 'prompt-image:upload-chunk') {
+      chunkAttempts += 1;
+      if (failFirstChunkOnce && !_failedOnce) {
+        _failedOnce = true;
+        throw Exception('forced chunk failure');
+      }
+      final offset = (payload['offset'] as num).toInt();
+      expect(offset, assembledBuilder.length);
+      final chunk = base64Decode(payload['data'] as String);
+      assembledBuilder.add(chunk);
+      return {'receivedBytes': assembledBuilder.length} as T;
+    }
+    if (channel == 'prompt-image:upload-finish') {
+      final total = (payload['totalBytes'] as num).toInt();
+      expect(assembledBuilder.length, total);
+      return {
+            'path': r'C:\eco\prompt-images\spool\thread_thr_1\img_1.png',
+          }
+          as T;
+    }
+    throw StateError('unexpected channel $channel');
+  }
+}
+

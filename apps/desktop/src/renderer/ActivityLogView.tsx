@@ -474,7 +474,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
             <UserPromptBlock
               text={props.thread.prompt}
               anchorId={`thread:${props.thread.id}`}
-              createdAt={props.thread.createdAt}
+              {...(props.thread.createdAt ? { createdAt: props.thread.createdAt } : {})}
             />,
           )}
           <RunLogActiveTail waiting />
@@ -619,7 +619,13 @@ function ProjectionActivityLogView({
         }
         return isWaitingThinkingItem(entry.item, requestSpansById);
       }));
+  // Copy/time meta under each turn final causes layout jitter while the run is
+  // still live (sticky opacity + min-height appear as streaming settles). Only
+  // attach those ids after the conversation has stopped.
   const finalSummaryItemIds = useMemo(() => {
+    if (!isThreadStoppedForFinalSummary(projection.thread.status)) {
+      return new Set<string>();
+    }
     const ids = new Set(resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status));
     for (const section of feedSections) {
       if (section.kind === "turn" && section.finalEntry?.kind === "timeline") {
@@ -745,7 +751,7 @@ function ProjectionActivityLogView({
                   <UserPromptBlock
                     text={thread.prompt}
                     anchorId={`thread:${thread.id}`}
-                    createdAt={thread.createdAt}
+                    {...(thread.createdAt ? { createdAt: thread.createdAt } : {})}
                     {...(onRestorePrompt && { onRestorePrompt })}
                     {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
                     {...(onRewriteUserMessage && { onRewriteUserMessage })}
@@ -2785,7 +2791,7 @@ function ProjectionTimelineEntry({
         text={item.text}
         images={readPromptImagePreviews(item.metadata)}
         anchorId={item.id}
-        createdAt={item.at}
+        {...(item.at ? { createdAt: item.at } : {})}
         {...(rewindTarget && { rewindTarget })}
         {...(onRestorePrompt && { onRestorePrompt })}
         {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
@@ -4425,10 +4431,12 @@ function UserPromptBlock({
           </div>
         </div>
       )}
+      {/* 用户消息的操作区只跟着「文本非空」走，不随会话进行状态隐藏：
+          延迟挂载 meta 的策略只针对 agent 侧流式输出（turn final summary）。 */}
       <RunLogMessageMeta
         align="end"
         copyText={text}
-        {...(createdAt && { createdAt })}
+        {...(createdAt ? { createdAt } : {})}
         {...(allowUserMessageRewrite &&
           onRestorePrompt &&
           rewindTarget &&

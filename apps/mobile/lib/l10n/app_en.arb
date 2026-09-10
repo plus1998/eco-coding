@@ -58,20 +58,24 @@
   "settingsAccount": "Account",
   "settingsSwitchPc": "Switch PC",
   "settingsSwitchPcSubtitle": "Select or pair another Desktop device",
-  "setupUnpairPc": "Unpair",
-  "setupUnpairPcTitle": "Unpair from {name}?",
+  "setupUnpairPc": "Remove PC",
+  "setupUnpairPcTitle": "Remove {name} from your account?",
   "@setupUnpairPcTitle": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
-  "setupUnpairPcMessage": "You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.",
-  "setupUnpairPcDone": "Unpaired from {name}",
+  "setupUnpairPcMessage": "This disconnects the PC from the cloud so phones can no longer control it. You can also remove lost or unreachable computers here.",
+  "setupUnpairPcPasswordHint": "Enter the same account password as Desktop",
+  "setupUnpairPcWrongPassword": "Incorrect password. Try again.",
+  "setupUnpairPcPasswordRequired": "Enter your password.",
+  "setupUnpairPcDone": "Removed {name} from your account",
   "@setupUnpairPcDone": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
+  "authInvalidCredentials": "Incorrect email or password.",
   "settingsSignOut": "Sign out",
   "settingsSignedOut": "Signed out",
   "settingsRealtimeStatus": "Realtime",
@@ -340,6 +344,7 @@
   "bashReviewAllowAllConfirm": "Full access auto-allows internet and local-file actions without asking you each time. Continue?",
   "composerSettings": "Composer settings",
   "composerUnsupportedImage": "Only JPEG, PNG, GIF, and WebP images are supported",
+  "composerImageTooLarge": "Images must be 20 MB or smaller",
   "composerOrchestrationSelection": "Orchestration",
   "activityToolIncomplete": "Tool incomplete · {text}",
   "activityReadFiles": "Read {count} files",

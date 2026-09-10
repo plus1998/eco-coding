@@ -2,6 +2,12 @@ appId: com.eco.coding
 productName: Eco Coding
 copyright: Copyright © Eco Coding
 
+# Register the eco:// URL scheme so clicking eco://connect?... hands the link
+# to this app (see main-process open-url / second-instance handling).
+protocols:
+  - name: Eco Coding
+    schemes: [eco]
+
 directories:
   output: release
   buildResources: packaging
@@ -66,6 +72,10 @@ mac:
   category: public.app-category.developer-tools
   extendInfo:
     NSMicrophoneUsageDescription: Eco Coding needs microphone access for voice transcription.
+    CFBundleURLTypes:
+      - CFBundleURLName: Eco Coding
+        CFBundleURLSchemes:
+          - eco
   target:
     - target: dmg
       arch:

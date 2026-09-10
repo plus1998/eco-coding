@@ -92,6 +92,51 @@ test("resolveAttachmentsForRuntime reads managed files back as base64", async ()
   ]);
 });
 
+test("chunked composer upload supports resume after partial write", async () => {
+  const store = await createStore();
+  const bytes = Buffer.from("abcdefghijklmnopqrstuvwxyz");
+  const begin = await store.beginComposerImageUpload({
+    contextKey: "thread:thr_chunk",
+    imageId: "img_chunk",
+    mediaType: "image/png",
+    totalBytes: bytes.length,
+  });
+  expect(begin).toMatchObject({ receivedBytes: 0, complete: false });
+
+  const first = await store.writeComposerImageChunk({
+    contextKey: "thread:thr_chunk",
+    imageId: "img_chunk",
+    mediaType: "image/png",
+    offset: 0,
+    dataBase64: bytes.subarray(0, 10).toString("base64"),
+  });
+  expect(first.receivedBytes).toBe(10);
+
+  const resume = await store.beginComposerImageUpload({
+    contextKey: "thread:thr_chunk",
+    imageId: "img_chunk",
+    mediaType: "image/png",
+    totalBytes: bytes.length,
+  });
+  expect(resume.receivedBytes).toBe(10);
+
+  await store.writeComposerImageChunk({
+    contextKey: "thread:thr_chunk",
+    imageId: "img_chunk",
+    mediaType: "image/png",
+    offset: 10,
+    dataBase64: bytes.subarray(10).toString("base64"),
+  });
+  const finished = await store.finishComposerImageUpload({
+    contextKey: "thread:thr_chunk",
+    imageId: "img_chunk",
+    mediaType: "image/png",
+    totalBytes: bytes.length,
+  });
+  expect(store.isManagedPath(finished.path)).toBe(true);
+  await expect(fs.readFile(finished.path)).resolves.toEqual(bytes);
+});
+
 test("deleteThreadMessages removes all message-owned prompt images", async () => {
   const store = await createStore();
   const persisted = await store.persistMessageAttachments("thr_delete", "user:1", [

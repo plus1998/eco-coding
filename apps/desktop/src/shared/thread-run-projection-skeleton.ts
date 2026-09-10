@@ -82,12 +82,17 @@ function isSkeletonFailureFinalItem(item: ThreadRunProjectionTimelineItem): bool
   return item.eventType === "api.error" || item.eventType === "tool.failed";
 }
 
-export function isSkeletonTurnFinalItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return isSkeletonNarrativeFinalItem(item) || isSkeletonFailureFinalItem(item);
-}
+/**
+ * Minimal shape needed to resolve which attempt an item belongs to. Both timeline
+ * items and raw run events can be resolved through {@link createFeedSkeletonAttemptResolver}.
+ */
+export type FeedSkeletonAttemptResolvable = {
+  at: string;
+  runAttemptId?: string | undefined;
+};
 
 function resolveItemAttempt(
-  item: ThreadRunProjectionTimelineItem,
+  item: FeedSkeletonAttemptResolvable,
   attempts: readonly ThreadRunProjectionAttempt[],
 ): ThreadRunProjectionAttempt | undefined {
   const explicitId = item.runAttemptId?.trim();
@@ -106,6 +111,41 @@ function resolveItemAttempt(
     candidate = attempt;
   }
   return candidate;
+}
+
+/**
+ * Canonical attempt resolver for Feed skeleton decisions (segment keys, selection and
+ * incremental patches). `attempts` is sorted once so callers can resolve in loops.
+ *
+ * Events may lack `runAttemptId`; the time-window fallback is what makes
+ * `selectSkeletonTimelineItems` treat such rows as part of the surrounding attempt, so
+ * every consumer must resolve through this factory instead of matching the explicit id.
+ */
+export function createFeedSkeletonAttemptResolver(
+  attempts: readonly ThreadRunProjectionAttempt[],
+): (item: FeedSkeletonAttemptResolvable) => ThreadRunProjectionAttempt | undefined {
+  const sortedAttempts = [...attempts].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+  return (item) => resolveItemAttempt(item, sortedAttempts);
+}
+
+/**
+ * Tests whether an item resolves to an attempt that is still running. Resolves the attempts
+ * once so callers can filter whole timelines without rebuilding the resolver per item.
+ */
+export function createFeedSkeletonRunningAttemptMatcher(
+  attempts: readonly ThreadRunProjectionAttempt[],
+): (item: FeedSkeletonAttemptResolvable) => boolean {
+  const runningAttemptIds = new Set(
+    attempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
+  );
+  if (runningAttemptIds.size === 0) {
+    return () => false;
+  }
+  const resolveAttempt = createFeedSkeletonAttemptResolver(attempts);
+  return (item) => {
+    const attempt = resolveAttempt(item);
+    return attempt !== undefined && runningAttemptIds.has(attempt.attemptId);
+  };
 }
 
 type UserPromptBoundary = {
@@ -154,14 +194,20 @@ function pickSegmentFinal(
   return undefined;
 }
 
+/**
+ * The only Feed timeline rule: what the user sees is a pure function of the tracked items
+ * and the current attempt states. Running attempts keep their whole trail; finished
+ * segments keep a single final (the last narrative body, else the failure row). Write
+ * paths must never prune items themselves — that decision lives here alone.
+ */
 export function selectSkeletonTimelineItems(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   attempts: readonly ThreadRunProjectionAttempt[],
 ): ThreadRunProjectionTimelineItem[] {
   const mainTimeline = excludeAgentScopedFeedTimelineItems(timeline);
-  const sortedAttempts = [...attempts].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+  const resolveAttempt = createFeedSkeletonAttemptResolver(attempts);
   const runningAttemptIds = new Set(
-    sortedAttempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
+    attempts.filter((attempt) => attempt.status === "running").map((attempt) => attempt.attemptId),
   );
   const userItems = mainTimeline.filter(isSkeletonUserPromptItem);
   const boundaries: UserPromptBoundary[] = userItems
@@ -177,7 +223,7 @@ export function selectSkeletonTimelineItems(
     if (isSkeletonUserPromptItem(item)) {
       continue;
     }
-    const attempt = resolveItemAttempt(item, sortedAttempts);
+    const attempt = resolveAttempt(item);
     if (attempt && runningAttemptIds.has(attempt.attemptId)) {
       kept.set(item.id, item);
       continue;
@@ -197,30 +243,6 @@ export function selectSkeletonTimelineItems(
   }
 
   return [...kept.values()].sort(compareFeedSkeletonTimelineItems);
-}
-
-export type FeedSkeletonUserPromptBoundary = {
-  sequence: number;
-  at: string;
-};
-
-export function listFeedSkeletonUserBoundaries(
-  timeline: readonly ThreadRunProjectionTimelineItem[],
-): FeedSkeletonUserPromptBoundary[] {
-  return timeline
-    .filter(isSkeletonUserPromptItem)
-    .map((item) => ({ sequence: item.sequence, at: item.at }))
-    .sort((left, right) => left.sequence - right.sequence);
-}
-
-export function buildFeedSkeletonSegmentKey(
-  item: ThreadRunProjectionTimelineItem,
-  attempts: readonly ThreadRunProjectionAttempt[],
-  boundaries: readonly FeedSkeletonUserPromptBoundary[],
-): string {
-  const attempt = resolveItemAttempt(item, attempts);
-  const afterUserSequence = lastUserBoundaryForItem(boundaries, item)?.sequence ?? 0;
-  return `${attempt?.attemptId ?? "orphan"}#after:${afterUserSequence}`;
 }
 
 export function buildSkeletonFeedProjection(

@@ -24,12 +24,12 @@ import {
   feedSkeletonTimelineIds,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
-  shouldTrackEventForFeedSkeletonPatch,
 } from "../main/thread-feed-skeleton-patch";
 import {
   mapRunAttemptsForFeedSkeleton,
   type ThreadFeedSkeletonRecord,
 } from "../main/thread-feed-skeleton-store";
+import { isFeedMainTimelineEvent } from "../main/thread-feed-timeline-items";
 import { isMetricsOnlyThreadRunEvent } from "../main/thread-run-event-normalizer";
 import { buildThreadRunProjection } from "../main/thread-run-projection";
 import { trimProjectionForFeed } from "../main/thread-run-projection-feed";
@@ -332,7 +332,7 @@ function maintainSkeletonRecord(
   }
 
   const structureChanging =
-    shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
+    isFeedMainTimelineEvent(event) ||
     shouldPatchAgentTimelineForFeedSkeleton(event) ||
     RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType);
 

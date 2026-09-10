@@ -8,11 +8,24 @@ import type {
   ThreadSubagentSessionTiming,
   ThreadSummary,
 } from "../shared/ipc";
-import { excludeAgentScopedFeedTimelineItems, selectSkeletonTimelineItems } from "../shared/thread-run-projection-skeleton";
+import {
+  excludeAgentScopedFeedTimelineItems,
+  selectSkeletonTimelineItems,
+} from "../shared/thread-run-projection-skeleton";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
+
+/**
+ * Version of the incremental Feed skeleton rules (tracked-set definition + selection).
+ * Bump it whenever the patch/selection semantics change: persisted skeletons are then
+ * treated as stale and rebuilt once, instead of being patched with rules they predate.
+ */
+export const FEED_SKELETON_RULES_VERSION = 2;
 
 export interface FeedSkeletonPatchState {
   trackedItems: ThreadRunProjectionTimelineItem[];
+  /** SDK message blocks already settled (see stageFeedTimelineEvent). */
+  finalizedSdkBlocks: string[];
+  rulesVersion: number;
 }
 
 export interface ThreadFeedSkeletonRecord {
@@ -36,7 +49,11 @@ export function isThreadFeedSkeletonFresh(
   historyRevision: number,
   maxEventSequence: number,
 ): boolean {
-  return record.historyRevision === historyRevision && record.maxEventSequence === maxEventSequence;
+  return (
+    record.historyRevision === historyRevision &&
+    record.maxEventSequence === maxEventSequence &&
+    record.patchState?.rulesVersion === FEED_SKELETON_RULES_VERSION
+  );
 }
 
 export function resolveFeedSkeletonPatchAgents(

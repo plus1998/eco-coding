@@ -63,6 +63,53 @@ export function threadAcceptsQueuedFollowUp(input: {
   );
 }
 
+/**
+ * Auto-pause (session error / user stop) only protects rows that exist. An empty queue
+ * must stay sendable: arming the pause there would silently queue the next message the
+ * user composes, with no queued row explaining why.
+ */
+export function shouldAutoPauseFollowUpQueue(queuedCount: number): boolean {
+  return queuedCount > 0;
+}
+
+/**
+ * A pause with no queued rows left has no subject (the rows it held are gone), so it must
+ * lift itself instead of holding back newly composed messages.
+ */
+export function shouldReleaseFollowUpQueuePause(input: {
+  paused: boolean;
+  queuedCount: number;
+}): boolean {
+  return input.paused && input.queuedCount === 0;
+}
+
+/**
+ * Mid-turn inject leaves the row `queued` when it was skipped (paused queue,
+ * interrupted turn, blocking approval, or no accepting port). That is not a
+ * delivery, so callers must not treat it as a handled row.
+ */
+export function isFollowUpMidTurnResultDelivered(
+  result: ThreadPendingFollowUp | undefined,
+): result is ThreadPendingFollowUp {
+  return Boolean(result && result.status !== "queued");
+}
+
+/**
+ * Escalated ("handle now") may bypass a user-paused queue, but it still needs
+ * something that can move: an active run to interrupt, or a drainable boundary.
+ * Used after a skipped mid-turn inject so a paused queue cannot swallow the
+ * Guide click while a starting run keeps the row queued instead of failing it.
+ */
+export function canEscalatedFollowUpProgressNow(input: {
+  hasActiveRun: boolean;
+  status?: ThreadStatus;
+}): boolean {
+  if (input.hasActiveRun) {
+    return true;
+  }
+  return Boolean(input.status && shouldDrainThreadFollowUps(input.status));
+}
+
 export function buildThreadFollowUpDisplayPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
   const next = nextDeliveredFollowUp(followUps);
   return next ? normalizeFollowUpPrompt(next) : "";

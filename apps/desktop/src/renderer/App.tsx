@@ -99,6 +99,8 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerSyncDomain,
   type ClarificationRequest,
+  type EcoConnectDeepLink,
+  parseEcoConnectDeepLink,
   type CoderTodoItem,
   type CoreAvailabilitySnapshot,
   type CursorAgentsListResult,
@@ -408,6 +410,7 @@ import {
   type ThinkingDisplayPreferences,
 } from "./thinking-display-preferences";
 import {
+  canEscalateThreadFollowUp,
   formatThreadFollowUpPreview,
   mergeThreadFollowUp,
   queuedThreadFollowUps,
@@ -1057,6 +1060,7 @@ function ActivityUserMessageNavigator({
 function App() {
   const { t } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ecoConnectLink, setEcoConnectLink] = useState<EcoConnectDeepLink>();
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(compactSidebarMediaQuery).matches);
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState>();
@@ -1381,6 +1385,24 @@ function App() {
     }
     return window.eco.onCenterServerStatusChange((snapshot) => {
       setCenterServerSettings(snapshot);
+    });
+  }, []);
+
+  // Import a Supabase project from an eco://connect deep link
+  // (eco://connect?url=...&token=...). Opens the connection panel where a
+  // confirmation dialog is shown.
+  useEffect(() => {
+    if (!window.eco?.onEcoDeepLinkOpen) {
+      return undefined;
+    }
+    return window.eco.onEcoDeepLinkOpen((rawUrl) => {
+      const link = parseEcoConnectDeepLink(rawUrl);
+      if (!link) {
+        return;
+      }
+      setEcoConnectLink(link);
+      setSettingsSection("centerServer");
+      setSettingsOpen(true);
     });
   }, []);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
@@ -11152,6 +11174,8 @@ function App() {
                   onApproveVaultClaim={approveCenterServerVaultClaim}
                   onSubmitVaultClaimCode={submitCenterServerVaultClaimCode}
                   onCancelVaultClaim={cancelCenterServerVaultClaim}
+                  ecoConnectLink={ecoConnectLink}
+                  onEcoConnectLinkDismiss={() => setEcoConnectLink(undefined)}
                 />
               )}
 
@@ -11361,7 +11385,13 @@ function FollowUpQueuePanel({
           const isEditing = editingFollowUpId === followUp.id;
           const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id || isEditing;
           const isEscalating = escalateBusyId === followUp.id;
-          const canEscalate = allowEscalate && followUp.priority !== "escalated";
+          // Paused queues also let an already-escalated row be clicked: it is stuck
+          // there, so the click means "send this one now".
+          const canEscalate = canEscalateThreadFollowUp({
+            priority: followUp.priority,
+            coreSupportsEscalate: allowEscalate,
+            queuePaused,
+          });
 
           return (
             <div

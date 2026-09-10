@@ -6,6 +6,8 @@ import type { PromptImageAttachment } from "../shared/ipc";
 const STORE_DIR_NAME = "prompt-images";
 const SPOOL_DIR_NAME = "spool";
 const MESSAGES_DIR_NAME = "messages";
+/** Matches mobile remote uploads; desktop renderer still caps picks at 5 MB. */
+export const PROMPT_IMAGE_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
 const MEDIA_TYPE_EXTENSION: Record<PromptImageAttachment["mediaType"], string> = {
   "image/jpeg": "jpg",
@@ -42,8 +44,112 @@ export class PromptImageFileStore {
     dataBase64: string;
   }): Promise<{ path: string }> {
     const data = decodeBase64(input.dataBase64);
+    if (data.length > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
+      throw new Error("Image attachment exceeds 20 MB.");
+    }
     const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
     await this.writeFileAtomic(targetPath, data);
+    await this.unlinkIfExists(this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType));
+    return { path: targetPath };
+  }
+
+  async beginComposerImageUpload(input: {
+    contextKey: string;
+    imageId: string;
+    mediaType: PromptImageAttachment["mediaType"];
+    totalBytes: number;
+  }): Promise<{ path: string; receivedBytes: number; complete: boolean }> {
+    const totalBytes = Math.floor(input.totalBytes);
+    if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+      throw new Error("Image upload totalBytes must be a positive integer.");
+    }
+    if (totalBytes > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
+      throw new Error("Image attachment exceeds 20 MB.");
+    }
+    const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
+    const partialPath = this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+    const existingFinal = await this.safeStatSize(targetPath);
+    if (existingFinal === totalBytes) {
+      await this.unlinkIfExists(partialPath);
+      return { path: targetPath, receivedBytes: totalBytes, complete: true };
+    }
+    if (existingFinal !== undefined) {
+      await this.unlinkIfExists(targetPath);
+    }
+
+    const existingPartial = await this.safeStatSize(partialPath);
+    if (existingPartial !== undefined) {
+      if (existingPartial > totalBytes) {
+        await this.unlinkIfExists(partialPath);
+        await fs.writeFile(partialPath, Buffer.alloc(0));
+        return { path: targetPath, receivedBytes: 0, complete: false };
+      }
+      return { path: targetPath, receivedBytes: existingPartial, complete: false };
+    }
+
+    await fs.writeFile(partialPath, Buffer.alloc(0));
+    return { path: targetPath, receivedBytes: 0, complete: false };
+  }
+
+  async writeComposerImageChunk(input: {
+    contextKey: string;
+    imageId: string;
+    mediaType: PromptImageAttachment["mediaType"];
+    offset: number;
+    dataBase64: string;
+  }): Promise<{ receivedBytes: number }> {
+    const offset = Math.floor(input.offset);
+    if (!Number.isFinite(offset) || offset < 0) {
+      throw new Error("Image upload offset must be a non-negative integer.");
+    }
+    const chunk = decodeBase64(input.dataBase64);
+    if (chunk.length === 0) {
+      throw new Error("Image upload chunk is empty.");
+    }
+    const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
+    const partialPath = this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType);
+    const finalSize = await this.safeStatSize(targetPath);
+    if (finalSize !== undefined) {
+      return { receivedBytes: finalSize };
+    }
+    const current = (await this.safeStatSize(partialPath)) ?? 0;
+    if (offset !== current) {
+      throw new Error(`Image upload offset mismatch: expected ${current}, got ${offset}.`);
+    }
+    if (current + chunk.length > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
+      throw new Error("Image attachment exceeds 20 MB.");
+    }
+    await fs.mkdir(path.dirname(partialPath), { recursive: true });
+    await fs.appendFile(partialPath, chunk);
+    return { receivedBytes: current + chunk.length };
+  }
+
+  async finishComposerImageUpload(input: {
+    contextKey: string;
+    imageId: string;
+    mediaType: PromptImageAttachment["mediaType"];
+    totalBytes: number;
+  }): Promise<{ path: string }> {
+    const totalBytes = Math.floor(input.totalBytes);
+    if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+      throw new Error("Image upload totalBytes must be a positive integer.");
+    }
+    const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
+    const partialPath = this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType);
+    const finalSize = await this.safeStatSize(targetPath);
+    if (finalSize === totalBytes) {
+      await this.unlinkIfExists(partialPath);
+      return { path: targetPath };
+    }
+    const partialSize = await this.safeStatSize(partialPath);
+    if (partialSize !== totalBytes) {
+      throw new Error(
+        `Image upload incomplete: expected ${totalBytes} bytes, got ${partialSize ?? 0}.`,
+      );
+    }
+    await fs.rename(partialPath, targetPath);
     return { path: targetPath };
   }
 
@@ -54,6 +160,7 @@ export class PromptImageFileStore {
         continue;
       }
       await this.unlinkIfExists(filePath);
+      await this.unlinkIfExists(`${filePath}.partial`);
     }
   }
 
@@ -160,6 +267,26 @@ export class PromptImageFileStore {
       this.spoolContextDir(contextKey),
       `${sanitizeSegment(imageId)}.${MEDIA_TYPE_EXTENSION[mediaType]}`,
     );
+  }
+
+  private partialSpoolFilePath(
+    contextKey: string,
+    imageId: string,
+    mediaType: PromptImageAttachment["mediaType"],
+  ): string {
+    return `${this.spoolFilePath(contextKey, imageId, mediaType)}.partial`;
+  }
+
+  private async safeStatSize(filePath: string): Promise<number | undefined> {
+    try {
+      const stat = await fs.stat(filePath);
+      return stat.isFile() ? stat.size : undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   private messageFilePath(

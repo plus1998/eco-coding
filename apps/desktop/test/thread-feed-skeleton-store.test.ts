@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  FEED_SKELETON_RULES_VERSION,
   hydrateThreadFeedSkeletonSnapshot,
   isThreadFeedSkeletonFresh,
   resolveFeedSkeletonPatchAgents,
@@ -40,15 +41,75 @@ const baseSnapshot = (): ThreadRunProjectionSnapshot => ({
 });
 
 describe("thread feed skeleton store", () => {
-  test("isThreadFeedSkeletonFresh matches revision and sequence", () => {
+  test("isThreadFeedSkeletonFresh matches revision, sequence and rules version", () => {
+    const patchState = {
+      trackedItems: [],
+      finalizedSdkBlocks: [],
+      rulesVersion: FEED_SKELETON_RULES_VERSION,
+    };
     const record = {
       historyRevision: 2,
       maxEventSequence: 42,
       snapshot: baseSnapshot(),
+      patchState,
     };
     expect(isThreadFeedSkeletonFresh(record, 2, 42)).toBe(true);
     expect(isThreadFeedSkeletonFresh(record, 1, 42)).toBe(false);
     expect(isThreadFeedSkeletonFresh(record, 2, 41)).toBe(false);
+    // A skeleton without a current-version patch state cannot be patched with the current
+    // rules (older build, or parsed from an older auxiliary_json) so it must be rebuilt.
+    expect(isThreadFeedSkeletonFresh({ ...record, patchState: undefined }, 2, 42)).toBe(false);
+    expect(
+      isThreadFeedSkeletonFresh(
+        { ...record, patchState: { ...patchState, rulesVersion: FEED_SKELETON_RULES_VERSION - 1 } },
+        2,
+        42,
+      ),
+    ).toBe(false);
+  });
+
+  test("hydrateThreadFeedSkeletonSnapshot refreshes running attempt to terminal", () => {
+    const snapshot = baseSnapshot();
+    snapshot.thread.status = "running";
+    snapshot.attempts = [
+      {
+        attemptId: "att_1",
+        phase: "execution",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const hydrated = hydrateThreadFeedSkeletonSnapshot(snapshot, "thr_1", {
+      getThread: () => ({
+        id: "thr_1",
+        title: "Title",
+        prompt: "hello",
+        workspacePath: "/tmp",
+        status: "completed",
+        message: "",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      listRunAttempts: () => [
+        {
+          attemptId: "att_1",
+          threadId: "thr_1",
+          phase: "execution",
+          retryIndex: 0,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+      getBilling: () => undefined,
+      getContext: () => undefined,
+      getHistoryRevision: () => 0,
+      getSubagentTimings: () => [],
+    });
+    expect(hydrated.thread.status).toBe("completed");
+    expect(hydrated.attempts[0]?.status).toBe("completed");
+    expect(hydrated.attempts[0]?.endedAt).toBe("2026-01-01T00:00:01.000Z");
   });
 
   test("hydrateThreadFeedSkeletonSnapshot refreshes volatile thread fields", () => {

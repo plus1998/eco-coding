@@ -245,6 +245,7 @@ enum EcoCenterErrorKind {
   invalidPairQr,
   reauthRequired,
   bindingRequired,
+  invalidCredentials,
 }
 
 enum EcoCenterNoticeKind { deviceInactive, localSignOutCleanupFailed }

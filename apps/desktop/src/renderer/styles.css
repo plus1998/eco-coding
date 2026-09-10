@@ -29908,6 +29908,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   letter-spacing: -0.01em;
   line-height: 1.45;
   color: var(--text-secondary);
+  word-break: break-all;
 }
 
 .cs-sheet-stack {

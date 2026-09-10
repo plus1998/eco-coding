@@ -30,6 +30,7 @@ import '../../core/widgets/activity_feed_block.dart';
 import '../../core/widgets/activity_feed_speak_button.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
+import '../../core/widgets/image_memory_lightbox.dart';
 import '../../core/widgets/paced_stream_text.dart';
 import '../../core/widgets/shimmer_text.dart';
 import '../../core/theme/subagent_theme.dart';
@@ -1031,6 +1032,7 @@ class ActivityFeedList extends StatefulWidget {
     this.showScrollJumpButton = true,
     this.scrollJumpBottomInset = 0,
     this.stopping = false,
+    this.showMessageCopyAndTime = true,
     this.padding,
   });
 
@@ -1054,6 +1056,8 @@ class ActivityFeedList extends StatefulWidget {
   final bool showScrollJumpButton;
   final double scrollJumpBottomInset;
   final bool stopping;
+  /// Copy/time (and speak) under messages — only after the conversation stopped.
+  final bool showMessageCopyAndTime;
   final EdgeInsetsGeometry? padding;
 
   @override
@@ -1148,7 +1152,9 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   @override
   Widget build(BuildContext context) {
     final displayEntries = widget.entries.reversed.toList(growable: false);
-    final finalMetaId = _resolveFinalTurnMetaId(widget.entries);
+    final finalMetaId = widget.showMessageCopyAndTime
+        ? _resolveFinalTurnMetaId(widget.entries)
+        : null;
     final paceTargetId = resolveFeedPaceTargetId(widget.entries);
 
     return _FeedStoppingScope(
@@ -1216,6 +1222,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                     finalMetaEntryId: finalMetaId,
                     paceTargetEntryId: paceTargetId,
+                    showMessageCopyAndTime: widget.showMessageCopyAndTime,
                   );
                 },
               ),
@@ -1298,6 +1305,7 @@ class _ScrollToBottomButton extends StatelessWidget {
 }
 
 /// 只给最后一个已完成回合的最终输出加 meta（复制 + 时间），与桌面端一致。
+/// 调用方应在会话仍在进行时传入 `showMessageCopyAndTime: false`，避免 meta 插入抖动。
 String? _resolveFinalTurnMetaId(List<ActivityFeedEntry> entries) {
   String? metaId;
   for (final entry in entries) {
@@ -1326,6 +1334,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.finalMetaEntryId,
     this.paceTargetEntryId,
     this.hideMessageActions = false,
+    this.showMessageCopyAndTime = true,
   });
 
   final ActivityFeedEntry entry;
@@ -1342,6 +1351,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final String? finalMetaEntryId;
   final String? paceTargetEntryId;
   final bool hideMessageActions;
+  final bool showMessageCopyAndTime;
 
   @override
   Widget build(BuildContext context) {
@@ -1356,7 +1366,9 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           loadImageView: loadImageView,
           onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
           thinkingDefaultExpanded: thinkingDefaultExpanded,
-          showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
+          showFinalMeta: showMessageCopyAndTime &&
+              entry.finalOutput?.id == finalMetaEntryId,
+          showMessageCopyAndTime: showMessageCopyAndTime,
           paceTargetEntryId: paceTargetEntryId,
         );
       case ActivityFeedKind.user:
@@ -1378,7 +1390,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           streaming: entry.streaming,
           pacing: entry.id == paceTargetEntryId,
           usageBadge: entry.usageBadge,
-          hideMessageActions: hideMessageActions,
+          hideMessageActions: hideMessageActions || !showMessageCopyAndTime,
         );
       case ActivityFeedKind.thinking:
         return _ThinkingTile(
@@ -1457,6 +1469,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.onOpenImageDisplayArtifact,
     this.thinkingDefaultExpanded = false,
     this.showFinalMeta = false,
+    this.showMessageCopyAndTime = true,
     this.paceTargetEntryId,
   });
 
@@ -1469,6 +1482,7 @@ class _TurnFeedTile extends StatefulWidget {
   final ValueChanged<String>? onOpenImageDisplayArtifact;
   final bool thinkingDefaultExpanded;
   final bool showFinalMeta;
+  final bool showMessageCopyAndTime;
   final String? paceTargetEntryId;
 
   @override
@@ -1645,6 +1659,8 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               thinkingDefaultExpanded:
                                   widget.thinkingDefaultExpanded,
                               paceTargetEntryId: widget.paceTargetEntryId,
+                              showMessageCopyAndTime:
+                                  widget.showMessageCopyAndTime,
                             ),
                         ],
                       ),
@@ -1693,6 +1709,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                   paceTargetEntryId: widget.paceTargetEntryId,
                   hideMessageActions: widget.showFinalMeta,
+                  showMessageCopyAndTime: widget.showMessageCopyAndTime,
                 ),
               ),
             ),
@@ -1967,10 +1984,15 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     }
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null || !mounted) return;
-    final attachment = await promptImageAttachmentFromXFile(file);
+    final picked = await promptImageAttachmentFromXFile(file);
     if (!mounted) return;
+    final attachment = picked.attachment;
     if (attachment == null) {
-      _showEditToast(context.l10n.composerUnsupportedImage);
+      _showEditToast(
+        picked.failure == PromptImagePickFailure.tooLarge
+            ? context.l10n.composerImageTooLarge
+            : context.l10n.composerUnsupportedImage,
+      );
       return;
     }
     setState(() {
@@ -2018,9 +2040,13 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       ? '消息不能为空'
       : 'Message cannot be empty';
 
-  Widget _buildImage(PromptImageAttachment attachment, {double size = 108}) {
+  Widget _buildImage(
+    PromptImageAttachment attachment, {
+    double size = 108,
+    VoidCallback? onTap,
+  }) {
     try {
-      return Image.memory(
+      final image = Image.memory(
         base64Decode(attachment.data),
         width: size,
         height: size,
@@ -2030,9 +2056,54 @@ class _UserPromptTileState extends State<_UserPromptTile> {
         errorBuilder: (_, _, _) =>
             const Center(child: Icon(Icons.broken_image_outlined)),
       );
+      if (onTap == null) return image;
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(onTap: onTap, child: image),
+      );
     } on FormatException {
       return const Center(child: Icon(Icons.broken_image_outlined));
     }
+  }
+
+  Future<void> _openAttachmentLightbox(int index) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < widget.attachments.length; i++) {
+      try {
+        images.add(base64Decode(widget.attachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty || !mounted) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
+  }
+
+  Future<void> _openEditAttachmentLightbox(int index) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < _editAttachments.length; i++) {
+      try {
+        images.add(base64Decode(_editAttachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty || !mounted) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
   }
 
   Widget _buildEditBubble(BuildContext context, double maxBubbleWidth) {
@@ -2088,7 +2159,11 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                         borderRadius: BorderRadius.circular(10),
                         child: SizedBox.square(
                           dimension: 88,
-                          child: _buildImage(attachment, size: 88),
+                          child: _buildImage(
+                            attachment,
+                            size: 88,
+                            onTap: () => _openEditAttachmentLightbox(index),
+                          ),
                         ),
                       ),
                       Positioned(
@@ -2211,7 +2286,10 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                         borderRadius: BorderRadius.circular(10),
                         child: SizedBox.square(
                           dimension: 108,
-                          child: _buildImage(widget.attachments[index]),
+                          child: _buildImage(
+                            widget.attachments[index],
+                            onTap: () => _openAttachmentLightbox(index),
+                          ),
                         ),
                       ),
                     ),
@@ -2299,7 +2377,10 @@ class _UserPromptTileState extends State<_UserPromptTile> {
             constraints: BoxConstraints(maxWidth: maxBubbleWidth),
             child: bubble,
           ),
-          if (!_editing && (widget.text.trim().isNotEmpty || _canEdit))
+          // 用户消息不随会话进行状态隐藏操作：编辑与复制始终可见（仅要求文本非空），
+          // 只有 agent 侧输出才用 showMessageCopyAndTime 延迟挂载以避免 streaming 抖动。
+          if (!_editing &&
+              (_canEdit || widget.text.trim().isNotEmpty))
             Padding(
               // Keep space below copy/edit actions so the next agent turn does
               // not sit flush against the icon row (desktop uses ~20px block gap).
@@ -3307,56 +3388,10 @@ class _ImageViewTileState extends State<_ImageViewTile> {
   }
 
   Future<void> _openLightbox(ImageViewReadData image) {
-    final eco = ecoColors(context);
-    return showDialog<void>(
-      context: context,
-      barrierColor: eco.bgOverlay,
-      builder: (context) => Dialog.fullscreen(
-        backgroundColor: eco.bgElevated,
-        child: SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                boundaryMargin: const EdgeInsets.all(48),
-                child: Center(
-                  child: ColoredBox(
-                    color: eco.cardSurface,
-                    child: Image.memory(
-                      image.bytes,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                left: 16,
-                right: 64,
-                child: Text(
-                  image.fileName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: eco.textMuted),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 4,
-                child: IconButton(
-                  tooltip: context.l10n.commonClose,
-                  icon: const Icon(EcoIcons.close),
-                  color: eco.textHeading,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return showImageMemoryLightboxSingle(
+      context,
+      bytes: image.bytes,
+      title: image.fileName,
     );
   }
 
@@ -4644,6 +4679,26 @@ class _SubagentImageStrip extends StatelessWidget {
 
   final List<PromptImageAttachment> attachments;
 
+  Future<void> _open(BuildContext context, int index) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < attachments.length; i++) {
+      try {
+        images.add(base64Decode(attachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -4656,11 +4711,19 @@ class _SubagentImageStrip extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: SizedBox.square(
             dimension: 88,
-            child: Image.memory(
-              base64Decode(attachments[index].data),
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.medium,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _open(context, index),
+                child: Image.memory(
+                  base64Decode(attachments[index].data),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (_, _, _) =>
+                      const Center(child: Icon(Icons.broken_image_outlined)),
+                ),
+              ),
             ),
           ),
         ),

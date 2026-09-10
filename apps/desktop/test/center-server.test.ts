@@ -7,6 +7,7 @@ import {
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
+  parseEcoConnectDeepLink,
   recoveryForSessionRefreshFailure,
   validateCenterServerSettingsInput,
 } from "../src/shared/center-server";
@@ -73,4 +74,30 @@ test("recoveryForSessionRefreshFailure keeps session on transient failures", () 
   expect(recoveryForSessionRefreshFailure("Unauthorized")).toBe("network");
   expect(recoveryForSessionRefreshFailure("Something ambiguous")).toBe("network");
   expect(recoveryForSessionRefreshFailure("Refresh token is invalid or expired.")).toBe("relogin");
+});
+
+test("parseEcoConnectDeepLink parses eco://connect with url + token", () => {
+  const parsed = parseEcoConnectDeepLink(
+    "eco://connect?url=https://abc.supabase.co&token=your.anon.key",
+  );
+  expect(parsed).toEqual({ supabaseUrl: "https://abc.supabase.co", anonKey: "your.anon.key" });
+});
+
+test("parseEcoConnectDeepLink accepts supabase/anon aliases and normalizes URLs", () => {
+  const parsed = parseEcoConnectDeepLink("eco://connect?supabase=https://abc.supabase.co/&anon=key123");
+  expect(parsed).toEqual({ supabaseUrl: "https://abc.supabase.co", anonKey: "key123" });
+});
+
+test("parseEcoConnectDeepLink rejects non-eco schemes and other hosts", () => {
+  expect(parseEcoConnectDeepLink("https://connect?url=x&token=y")).toBeUndefined();
+  expect(parseEcoConnectDeepLink("eco://center?supabase=x&anon=y")).toBeUndefined();
+  expect(parseEcoConnectDeepLink("garbage")).toBeUndefined();
+});
+
+test("parseEcoConnectDeepLink keeps empty fields for missing/invalid params", () => {
+  expect(parseEcoConnectDeepLink("eco://connect")).toEqual({ supabaseUrl: "", anonKey: "" });
+  expect(parseEcoConnectDeepLink("eco://connect?url=not-a-url&token=k")).toEqual({
+    supabaseUrl: "",
+    anonKey: "k",
+  });
 });

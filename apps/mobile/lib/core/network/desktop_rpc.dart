@@ -465,6 +465,127 @@ class DesktopRpc {
     return result['deleted'] == true;
   }
 
+  /// Stages a prompt image via 64 KiB chunks with resume from `receivedBytes`.
+  Future<String> uploadPromptImageChunked({
+    required String contextKey,
+    required String imageId,
+    required String mediaType,
+    required Uint8List bytes,
+    void Function(int sentBytes, int totalBytes)? onProgress,
+    int maxChunkAttempts = 3,
+  }) async {
+    if (bytes.isEmpty) {
+      throw StateError('Prompt image bytes are empty.');
+    }
+    if (bytes.length > 20 * 1024 * 1024) {
+      throw StateError('Prompt image exceeds 20 MB.');
+    }
+    const chunkBytes = 64 * 1024;
+    final totalBytes = bytes.length;
+
+    Future<Map<String, dynamic>> begin() async {
+      final result = await _client.invoke<dynamic>(
+        desktopDeviceId,
+        'prompt-image:upload-begin',
+        [
+          {
+            'contextKey': contextKey,
+            'imageId': imageId,
+            'mediaType': mediaType,
+            'totalBytes': totalBytes,
+          },
+        ],
+        deadlineMs: 60000,
+      );
+      if (result is! Map) {
+        throw StateError('Invalid prompt image upload begin response.');
+      }
+      return Map<String, dynamic>.from(result);
+    }
+
+    var beginResult = await begin();
+    if (beginResult['complete'] == true && beginResult['path'] is String) {
+      onProgress?.call(totalBytes, totalBytes);
+      return beginResult['path'] as String;
+    }
+
+    var offset = beginResult['receivedBytes'] is num
+        ? (beginResult['receivedBytes'] as num).toInt()
+        : 0;
+    if (offset < 0 || offset > totalBytes) {
+      throw StateError('Invalid prompt image upload resume offset.');
+    }
+    onProgress?.call(offset, totalBytes);
+
+    while (offset < totalBytes) {
+      final end = (offset + chunkBytes).clamp(0, totalBytes);
+      final slice = bytes.sublist(offset, end);
+      final chunkB64 = base64Encode(slice);
+      var attempt = 0;
+      while (true) {
+        attempt += 1;
+        try {
+          final result = await _client.invoke<dynamic>(
+            desktopDeviceId,
+            'prompt-image:upload-chunk',
+            [
+              {
+                'contextKey': contextKey,
+                'imageId': imageId,
+                'mediaType': mediaType,
+                'offset': offset,
+                'data': chunkB64,
+              },
+            ],
+            deadlineMs: 60000,
+          );
+          if (result is! Map) {
+            throw StateError('Invalid prompt image upload chunk response.');
+          }
+          final payload = Map<String, dynamic>.from(result);
+          final received = payload['receivedBytes'];
+          if (received is! num) {
+            throw StateError('Prompt image upload chunk missing receivedBytes.');
+          }
+          offset = received.toInt();
+          onProgress?.call(offset, totalBytes);
+          break;
+        } catch (error) {
+          if (attempt >= maxChunkAttempts) rethrow;
+          // Re-sync offset from desktop before retrying (breakpoint resume).
+          beginResult = await begin();
+          if (beginResult['complete'] == true && beginResult['path'] is String) {
+            onProgress?.call(totalBytes, totalBytes);
+            return beginResult['path'] as String;
+          }
+          offset = beginResult['receivedBytes'] is num
+              ? (beginResult['receivedBytes'] as num).toInt()
+              : offset;
+          onProgress?.call(offset, totalBytes);
+        }
+      }
+    }
+
+    final finish = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'prompt-image:upload-finish',
+      [
+        {
+          'contextKey': contextKey,
+          'imageId': imageId,
+          'mediaType': mediaType,
+          'totalBytes': totalBytes,
+        },
+      ],
+      deadlineMs: 60000,
+    );
+    if (finish is! Map || finish['path'] is! String) {
+      throw StateError('Invalid prompt image upload finish response.');
+    }
+    onProgress?.call(totalBytes, totalBytes);
+    return finish['path'] as String;
+  }
+
   Future<ThreadSummary> startThread({
     required String workspacePath,
     required String prompt,
@@ -481,7 +602,7 @@ class DesktopRpc {
           'prompt': prompt,
           'coreKind': ?coreKind,
           if (attachments != null && attachments.isNotEmpty)
-            'attachments': attachments.map((a) => a.toJson()).toList(),
+            'attachments': attachments.map((a) => a.toWireJson()).toList(),
           'runtimeConfig': runtimeConfig.toJson(),
         },
       ],
@@ -503,7 +624,7 @@ class DesktopRpc {
           'threadId': threadId,
           'prompt': prompt,
           if (attachments != null && attachments.isNotEmpty)
-            'attachments': attachments.map((a) => a.toJson()).toList(),
+            'attachments': attachments.map((a) => a.toWireJson()).toList(),
           if (runtimeConfig != null) 'runtimeConfig': runtimeConfig.toJson(),
         },
       ],
@@ -578,7 +699,7 @@ class DesktopRpc {
           'activityLineId': activityLineId,
           'prompt': prompt,
           'attachments': attachments
-              .map((attachment) => attachment.toJson())
+              .map((attachment) => attachment.toWireJson())
               .toList(),
           'expectedHistoryRevision': expectedHistoryRevision,
           if (runtimeConfig != null) 'runtimeConfig': runtimeConfig.toJson(),
@@ -825,7 +946,7 @@ class DesktopRpc {
         'prompt': prompt,
         if (attachments != null && attachments.isNotEmpty)
           'attachments': attachments
-              .map((attachment) => attachment.toJson())
+              .map((attachment) => attachment.toWireJson())
               .toList(),
       },
     ]);
@@ -882,7 +1003,7 @@ class DesktopRpc {
         'prompt': prompt,
         if (attachments != null && attachments.isNotEmpty)
           'attachments': attachments
-              .map((attachment) => attachment.toJson())
+              .map((attachment) => attachment.toWireJson())
               .toList(),
       },
     ]);
