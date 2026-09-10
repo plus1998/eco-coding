@@ -8,6 +8,7 @@ import {
   filterFeedProjectionAfterSequence,
   filterFeedProjectionForClient,
   maxFeedProjectionTimelineSequence,
+  selectFeedProjectionLivePayload,
   trimProjectionForFeed,
   trimProjectionForRemoteWire,
 } from "../src/main/thread-run-projection-feed";
@@ -326,6 +327,117 @@ test("filterFeedProjectionAfterSequence does not resend an acknowledged mutable 
   };
 
   expect(filterFeedProjectionAfterSequence(projection, 1).timeline).toHaveLength(0);
+});
+
+test("selectFeedProjectionLivePayload sends a full skeleton on historyRevision bump", () => {
+  const projection = {
+    ...createProjection("compacted", { longDelegation: false }),
+    historyRevision: 2,
+    timeline: [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status" as const,
+        scope: "main" as const,
+        text: "first",
+        at: "2026-01-01T00:00:00.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "final_1",
+        sequence: 100,
+        eventType: "message.final" as const,
+        scope: "main" as const,
+        text: "answer",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "user_2",
+        sequence: 101,
+        eventType: "thread.status" as const,
+        scope: "main" as const,
+        text: "follow-up",
+        at: "2026-01-01T00:00:02.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "final_2",
+        sequence: 200,
+        eventType: "message.final" as const,
+        scope: "main" as const,
+        text: "next",
+        at: "2026-01-01T00:00:03.000Z",
+      },
+    ],
+  };
+
+  const selected = selectFeedProjectionLivePayload({
+    feedProjection: projection,
+    previousMaxSequence: 199,
+    previousEmittedRevision: 1,
+  });
+
+  expect(selected.forceFull).toBe(true);
+  expect(selected.nextEmittedRevision).toBe(2);
+  expect(selected.payload.timeline.map((item) => item.id)).toEqual([
+    "user_1",
+    "final_1",
+    "user_2",
+    "final_2",
+  ]);
+});
+
+test("selectFeedProjectionLivePayload keeps afterSequence deltas on the same revision", () => {
+  const projection = {
+    ...createProjection("live", { longDelegation: false }),
+    historyRevision: 1,
+    timeline: [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status" as const,
+        scope: "main" as const,
+        text: "first",
+        at: "2026-01-01T00:00:00.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "delta_2",
+        sequence: 2,
+        eventType: "message.delta" as const,
+        scope: "main" as const,
+        text: "writing",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ],
+  };
+
+  const selected = selectFeedProjectionLivePayload({
+    feedProjection: projection,
+    previousMaxSequence: 1,
+    previousEmittedRevision: 1,
+  });
+
+  expect(selected.forceFull).toBe(false);
+  expect(selected.nextEmittedRevision).toBe(1);
+  expect(selected.payload.timeline.map((item) => item.id)).toEqual(["delta_2"]);
+});
+
+test("selectFeedProjectionLivePayload sends a full skeleton after rewrite cursor clear", () => {
+  const projection = {
+    ...createProjection("rewritten", { longDelegation: false }),
+    historyRevision: 3,
+  };
+
+  const selected = selectFeedProjectionLivePayload({
+    feedProjection: projection,
+    previousMaxSequence: undefined,
+    previousEmittedRevision: undefined,
+  });
+
+  expect(selected.forceFull).toBe(true);
+  expect(selected.nextEmittedRevision).toBe(3);
+  expect(selected.payload.timeline.map((item) => item.id)).toEqual(["evt_main"]);
 });
 
 test("filterFeedProjectionForClient returns the current feed after a history revision change", () => {

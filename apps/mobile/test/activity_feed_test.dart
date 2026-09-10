@@ -479,6 +479,73 @@ void main() {
     expect(feed, isEmpty);
   });
 
+  test(
+    'buildActivityFeed seeds threadPrompt only when the projection timeline is empty',
+    () {
+      final emptyFeed = buildActivityFeed(
+        threadPrompt: '首条 TTS 调研',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          // Ready for the Feed builder, but still no timeline rows yet.
+          sourceEventCount: 1,
+          agents: [],
+          timeline: [],
+        ),
+      );
+      expect(emptyFeed, hasLength(1));
+      expect(emptyFeed.single.kind, ActivityFeedKind.user);
+      expect(emptyFeed.single.text, '首条 TTS 调研');
+      expect(emptyFeed.single.id, 'user-prompt-t1');
+    },
+  );
+
+  test(
+    'buildActivityFeed does not inject threadPrompt over a user-less live delta',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '首条 TTS 调研',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:02.000Z',
+          sourceEventCount: 2,
+          historyRevision: 4,
+          agents: [],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'assistant-hf',
+              sequence: 535,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              text: '我去查一下 Hugging Face 上常见开源 TTS 的部署形态和对外接口。',
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+          ],
+        ),
+      );
+
+      expect(
+        feed.any(
+          (entry) =>
+              entry.kind == ActivityFeedKind.user &&
+              entry.text.contains('首条 TTS'),
+        ),
+        isFalse,
+      );
+      expect(
+        feed.any(
+          (entry) => entry.text.contains('Hugging Face'),
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('buildActivityFeed hides Codex connection status messages', () {
     final feed = buildActivityFeed(
       threadPrompt: '',

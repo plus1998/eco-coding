@@ -841,9 +841,9 @@ import {
 } from "./thread-run-projection-detail";
 import {
   buildFeedProjectionSignature,
-  filterFeedProjectionAfterSequence,
   filterFeedProjectionForClient,
   maxFeedProjectionTimelineSequence,
+  selectFeedProjectionLivePayload,
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
@@ -1253,6 +1253,7 @@ const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastFeedProjectionSignatures = new Map<string, string>();
 const lastFeedProjectionTimelineSequences = new Map<string, number>();
+const lastFeedProjectionHistoryRevisions = new Map<string, number>();
 const threadRunProjectionHistoryRevisions = new Map<string, number>();
 const pendingClaudeForksByThread = new Map<string, { sessionId: string; cwd: string }>();
 const claudeUserMessageHydrationByThread = new Map<string, Promise<void>>();
@@ -6965,6 +6966,12 @@ function runThreadRequestOnce(
     settlements: usageLedgerCoordinator,
     retryIndex,
     ...(signal && { signal }),
+  }).finally(() => {
+    // finishRunAttempt writes DB only — no run.attempt.* ThreadRunEvent. Sync the
+    // feed skeleton attempts and force a projection emit so live clients (Mobile)
+    // do not stay stuck on a running attempt after the last message.final.
+    syncThreadFeedSkeletonAttemptsFromStore(threadId);
+    scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
   });
 }
 
@@ -11240,12 +11247,14 @@ function clearThreadRuntimeMemory(threadId: string): void {
   }
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+  lastFeedProjectionHistoryRevisions.delete(threadId);
 }
 
 function releaseIdleThreadProjectionMemory(threadId: string): void {
   conversationStore.releaseThreadProjectionWorkingMemory(threadId);
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+  lastFeedProjectionHistoryRevisions.delete(threadId);
   // Soft release only — keep SQLite feed skeletons and history revisions so reselect is cheap.
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
@@ -11296,6 +11305,7 @@ function resetThreadRuntimeAfterHistoryRewrite(threadId: string): void {
   conversationStore.deleteThreadFeedSkeleton(threadId);
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
+  lastFeedProjectionHistoryRevisions.delete(threadId);
 }
 
 async function prepareThreadRewindForContinue(input: {
@@ -14517,8 +14527,45 @@ function scheduleThreadRunProjectionUpdated(threadId: string, options?: { stream
   runProjectionEmitTimers.set(threadId, timer);
 }
 
+function syncThreadFeedSkeletonAttemptsFromStore(threadId: string): void {
+  const existing = conversationStore.getThreadFeedSkeleton(threadId);
+  if (!existing) {
+    return;
+  }
+  const hydrated = hydrateThreadFeedSkeletonSnapshot(
+    existing.snapshot,
+    threadId,
+    buildThreadFeedSkeletonHydrationContext(),
+  );
+  const attemptsUnchanged =
+    JSON.stringify(existing.snapshot.attempts) === JSON.stringify(hydrated.attempts);
+  const threadStatusUnchanged = existing.snapshot.thread.status === hydrated.thread.status;
+  if (attemptsUnchanged && threadStatusUnchanged) {
+    return;
+  }
+  persistThreadFeedSkeletonRecord({
+    ...existing,
+    snapshot: {
+      ...existing.snapshot,
+      attempts: hydrated.attempts,
+      timeline: hydrated.timeline,
+      thread: {
+        ...existing.snapshot.thread,
+        status: hydrated.thread.status,
+        ...(hydrated.thread.message !== undefined && { message: hydrated.thread.message }),
+        ...(hydrated.thread.currentAttemptId && {
+          currentAttemptId: hydrated.thread.currentAttemptId,
+        }),
+      },
+    },
+  });
+}
+
 function emitThreadRunProjectionUpdated(threadId: string): void {
   threadProjectionMemory?.noteThreadTouched(threadId);
+  // finishRunAttempt / thread.completed may land after the last message.final patch;
+  // heal cached attempts + thread.status before we read the skeleton for the wire.
+  syncThreadFeedSkeletonAttemptsFromStore(threadId);
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
   let cached = conversationStore.getThreadFeedSkeleton(threadId);
@@ -14538,10 +14585,16 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   if (!feedProjection) {
     return;
   }
-  const withSpans = hydrateFeedProjectionRequestSpans(threadId, feedProjection);
+  // Always overlay live attempts/thread status — skeleton may still say "running"
+  // after finishRunAttempt when no run.attempt.* event patched it.
+  feedProjection = hydrateThreadFeedSkeletonSnapshot(
+    hydrateFeedProjectionRequestSpans(threadId, feedProjection),
+    threadId,
+    buildThreadFeedSkeletonHydrationContext(),
+  );
   feedProjection = {
-    ...withSpans,
-    timeline: excludeAgentScopedFeedTimelineItems(withSpans.timeline),
+    ...feedProjection,
+    timeline: excludeAgentScopedFeedTimelineItems(feedProjection.timeline),
   };
   const signature = buildFeedProjectionSignature(feedProjection);
   if (lastFeedProjectionSignatures.get(threadId) === signature) {
@@ -14549,11 +14602,17 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   }
   lastFeedProjectionSignatures.set(threadId, signature);
   const previousMaxSequence = lastFeedProjectionTimelineSequences.get(threadId);
+  const previousEmittedRevision = lastFeedProjectionHistoryRevisions.get(threadId);
   const currentMaxSequence = maxFeedProjectionTimelineSequence(feedProjection);
-  const payloadProjection = filterFeedProjectionAfterSequence(feedProjection, previousMaxSequence);
+  const { payload: payloadProjection, nextEmittedRevision } = selectFeedProjectionLivePayload({
+    feedProjection,
+    previousMaxSequence,
+    previousEmittedRevision,
+  });
   if (currentMaxSequence !== undefined) {
     lastFeedProjectionTimelineSequences.set(threadId, currentMaxSequence);
   }
+  lastFeedProjectionHistoryRevisions.set(threadId, nextEmittedRevision);
   const payload: ThreadLiveEvent = {
     threadId,
     type: "thread.run_projection_updated",

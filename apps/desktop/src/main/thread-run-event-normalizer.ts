@@ -43,6 +43,11 @@ export function isMetricsOnlyThreadLiveEvent(liveType: string): boolean {
   return METRICS_ONLY_THREAD_LIVE_TYPES.has(liveType);
 }
 
+/** Status live types that skip run-event persist (still need feed projection refresh). */
+export function isThreadStatusLiveTypeOmittedFromFeed(liveType: string): boolean {
+  return THREAD_STATUS_LIVE_TYPES_OMITTED_FROM_FEED.has(liveType);
+}
+
 export function isMetricsOnlyThreadRunEvent(event: { metadata?: Record<string, unknown> }): boolean {
   const liveType = event.metadata?.liveType;
   return typeof liveType === "string" && METRICS_ONLY_THREAD_LIVE_TYPES.has(liveType);

@@ -336,7 +336,15 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     _isProjectionUserPromptItem,
   );
   final prompt = threadPrompt?.trim();
-  if (!hasProjectedUserPrompt && prompt != null && prompt.isNotEmpty) {
+  // Only seed the first thread.prompt when the Feed is still empty. If the
+  // timeline already has assistant/tool rows but no user prompt (e.g. a bad
+  // incremental replace), injecting the original prompt creates a cliff that
+  // pairs turn-1 text with the latest agent output.
+  if (
+      !hasProjectedUserPrompt &&
+      projection.timeline.isEmpty &&
+      prompt != null &&
+      prompt.isNotEmpty) {
     slots.add(
       _ProjectionFeedSlot(
         entry: ActivityFeedEntry(

@@ -169,6 +169,45 @@ export function filterFeedProjectionAfterSequence(
   };
 }
 
+/**
+ * Live `thread.run_projection_updated` payload selection.
+ *
+ * Clients hard-replace on `historyRevision` increase (rewrite / skeleton
+ * compaction). That only works if the bump carries an authoritative full
+ * skeleton — never an afterSequence delta that dropped earlier user prompts.
+ */
+export function selectFeedProjectionLivePayload(input: {
+  feedProjection: ThreadRunProjectionSnapshot;
+  previousMaxSequence: number | undefined;
+  previousEmittedRevision: number | undefined;
+}): {
+  payload: ThreadRunProjectionSnapshot;
+  forceFull: boolean;
+  nextEmittedRevision: number;
+} {
+  const nextEmittedRevision = input.feedProjection.historyRevision ?? 0;
+  // Missing cursor = first emit for this thread (or after rewrite reset).
+  // Revision change = skeleton compaction / rewrite — clients hard-replace.
+  const forceFull =
+    input.previousEmittedRevision === undefined ||
+    nextEmittedRevision !== input.previousEmittedRevision;
+  if (forceFull) {
+    return {
+      payload: input.feedProjection,
+      forceFull: true,
+      nextEmittedRevision,
+    };
+  }
+  return {
+    payload: filterFeedProjectionAfterSequence(
+      input.feedProjection,
+      input.previousMaxSequence,
+    ),
+    forceFull: false,
+    nextEmittedRevision,
+  };
+}
+
 export function filterFeedProjectionForClient(
   snapshot: ThreadRunProjectionSnapshot,
   cursor: { afterSequence?: number; historyRevision?: number },

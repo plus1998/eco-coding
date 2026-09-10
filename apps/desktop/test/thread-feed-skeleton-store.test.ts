@@ -51,6 +51,50 @@ describe("thread feed skeleton store", () => {
     expect(isThreadFeedSkeletonFresh(record, 2, 41)).toBe(false);
   });
 
+  test("hydrateThreadFeedSkeletonSnapshot refreshes running attempt to terminal", () => {
+    const snapshot = baseSnapshot();
+    snapshot.thread.status = "running";
+    snapshot.attempts = [
+      {
+        attemptId: "att_1",
+        phase: "execution",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const hydrated = hydrateThreadFeedSkeletonSnapshot(snapshot, "thr_1", {
+      getThread: () => ({
+        id: "thr_1",
+        title: "Title",
+        prompt: "hello",
+        workspacePath: "/tmp",
+        status: "completed",
+        message: "",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      listRunAttempts: () => [
+        {
+          attemptId: "att_1",
+          threadId: "thr_1",
+          phase: "execution",
+          retryIndex: 0,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+      getBilling: () => undefined,
+      getContext: () => undefined,
+      getHistoryRevision: () => 0,
+      getSubagentTimings: () => [],
+    });
+    expect(hydrated.thread.status).toBe("completed");
+    expect(hydrated.attempts[0]?.status).toBe("completed");
+    expect(hydrated.attempts[0]?.endedAt).toBe("2026-01-01T00:00:01.000Z");
+  });
+
   test("hydrateThreadFeedSkeletonSnapshot refreshes volatile thread fields", () => {
     const hydrated = hydrateThreadFeedSkeletonSnapshot(baseSnapshot(), "thr_1", {
       getThread: () => ({
