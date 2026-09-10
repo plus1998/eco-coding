@@ -590,6 +590,10 @@ export const i18nCatalogs = {
       "settings.models.createMainConfigPrompt.message": "保存成功，是否需要立即添加 Agent 配置？",
       "settings.models.createMainConfigPrompt.dismiss": "暂不需要",
       "settings.models.createMainConfigPrompt.confirm": "立即添加",
+      "settings.models.useMainConfigAsDefaultPrompt.message":
+        "添加主代理配置成功，是否立即使用此配置？",
+      "settings.models.useMainConfigAsDefaultPrompt.dismiss": "暂不需要",
+      "settings.models.useMainConfigAsDefaultPrompt.confirm": "立即使用",
       "settings.models.providerDeleteNotFound": "该模型服务商已不存在，设置已刷新。",
       "settings.models.providerDeleteInUse":
         "无法删除，以下活动会话仍在使用该模型服务商：{{references}}。请先停止相关会话后再删除。",
@@ -2768,6 +2772,10 @@ export const i18nCatalogs = {
       "settings.models.createMainConfigPrompt.message": "Saved. Add an Agent configuration now?",
       "settings.models.createMainConfigPrompt.dismiss": "Not now",
       "settings.models.createMainConfigPrompt.confirm": "Add now",
+      "settings.models.useMainConfigAsDefaultPrompt.message":
+        "Main agent config added. Use it as the default runtime config now?",
+      "settings.models.useMainConfigAsDefaultPrompt.dismiss": "Not now",
+      "settings.models.useMainConfigAsDefaultPrompt.confirm": "Use now",
       "settings.models.providerDeleteNotFound":
         "This model provider no longer exists. Settings have been refreshed.",
       "settings.models.providerDeleteInUse":

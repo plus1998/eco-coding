@@ -957,6 +957,15 @@ export function ModelsSettingsPanel({
               onErrorMessage={(message: string) => showProviderTestMessage("error", message)}
               {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
               {...(onPendingCreateMainConfigConsumed ? { onPendingCreateMainConfigConsumed } : {})}
+              {...(defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {})}
+              onUseMainAgentConfigAsDefault={(mainAgentConfigId) => {
+                updateDefaultOrchestrationDraft({
+                  mainAgentConfigId,
+                  mainPrompt: { mode: "builtin" },
+                  subagents: { mode: "none" },
+                });
+                setRuntimeConfigTab("defaults");
+              }}
             />
           )}
         </>
