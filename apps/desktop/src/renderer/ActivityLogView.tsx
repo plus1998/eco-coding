@@ -474,7 +474,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
             <UserPromptBlock
               text={props.thread.prompt}
               anchorId={`thread:${props.thread.id}`}
-              createdAt={props.thread.createdAt}
+              showCopyAndTime={false}
             />,
           )}
           <RunLogActiveTail waiting />
@@ -619,7 +619,13 @@ function ProjectionActivityLogView({
         }
         return isWaitingThinkingItem(entry.item, requestSpansById);
       }));
+  // Copy/time meta under each turn final causes layout jitter while the run is
+  // still live (sticky opacity + min-height appear as streaming settles). Only
+  // attach those ids after the conversation has stopped.
   const finalSummaryItemIds = useMemo(() => {
+    if (!isThreadStoppedForFinalSummary(projection.thread.status)) {
+      return new Set<string>();
+    }
     const ids = new Set(resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status));
     for (const section of feedSections) {
       if (section.kind === "turn" && section.finalEntry?.kind === "timeline") {
@@ -695,6 +701,7 @@ function ProjectionActivityLogView({
     requestSpansById,
     finalSummaryItemIds,
     deferReasoningStageTip,
+    showMessageCopyAndTime: !conversationActive,
     ...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId }),
     ...(selectedSubagentAgentId && { selectedSubagentAgentId }),
     ...(onOpenSubagent && { onOpenSubagent }),
@@ -745,7 +752,8 @@ function ProjectionActivityLogView({
                   <UserPromptBlock
                     text={thread.prompt}
                     anchorId={`thread:${thread.id}`}
-                    createdAt={thread.createdAt}
+                    showCopyAndTime={!conversationActive}
+                    {...(!conversationActive && thread.createdAt ? { createdAt: thread.createdAt } : {})}
                     {...(onRestorePrompt && { onRestorePrompt })}
                     {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
                     {...(onRewriteUserMessage && { onRewriteUserMessage })}
@@ -796,6 +804,8 @@ type ProjectionFeedEntrySharedProps = {
   stickyFinalSummaryItemId?: string;
   /** Defer reasoning-stage tip rows into the feed active-tail (live conversation). */
   deferReasoningStageTip?: boolean;
+  /** Copy/time under messages — only after the conversation has stopped. */
+  showMessageCopyAndTime?: boolean;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
@@ -1178,6 +1188,7 @@ function ProjectionMainFeedEntry({
   finalSummaryItemIds,
   stickyFinalSummaryItemId,
   deferReasoningStageTip = false,
+  showMessageCopyAndTime = true,
   selectedSubagentAgentId,
   onOpenSubagent,
   onOpenImageGenerationTool,
@@ -1200,6 +1211,7 @@ function ProjectionMainFeedEntry({
   finalSummaryItemIds: ReadonlySet<string>;
   stickyFinalSummaryItemId?: string;
   deferReasoningStageTip?: boolean;
+  showMessageCopyAndTime?: boolean;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
@@ -1227,6 +1239,7 @@ function ProjectionMainFeedEntry({
         deferReasoningStageTip={deferReasoningStageTip}
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
+        showMessageCopyAndTime={showMessageCopyAndTime}
         pacing={paceTargetKey ? entry.key === paceTargetKey : true}
         {...(onRestorePrompt && { onRestorePrompt })}
         {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
@@ -2740,6 +2753,7 @@ function ProjectionTimelineEntry({
   actionLabelOverride,
   showMessageMeta = false,
   stickyMessageMeta = false,
+  showMessageCopyAndTime = true,
   pacing = true,
   onOpenImageGenerationTool,
   onOpenImageDisplayTool,
@@ -2763,6 +2777,7 @@ function ProjectionTimelineEntry({
   actionLabelOverride?: string;
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
+  showMessageCopyAndTime?: boolean;
   pacing?: boolean;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
@@ -2785,7 +2800,8 @@ function ProjectionTimelineEntry({
         text={item.text}
         images={readPromptImagePreviews(item.metadata)}
         anchorId={item.id}
-        createdAt={item.at}
+        showCopyAndTime={showMessageCopyAndTime}
+        {...(showMessageCopyAndTime && item.at ? { createdAt: item.at } : {})}
         {...(rewindTarget && { rewindTarget })}
         {...(onRestorePrompt && { onRestorePrompt })}
         {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
@@ -4011,6 +4027,7 @@ function UserPromptBlock({
   className,
   anchorId,
   createdAt,
+  showCopyAndTime = true,
   rewindTarget,
   onRestorePrompt,
   historyRevision = 0,
@@ -4023,6 +4040,7 @@ function UserPromptBlock({
   className?: string;
   anchorId?: string;
   createdAt?: string;
+  showCopyAndTime?: boolean;
   rewindTarget?: ThreadActivityRewindTarget;
   onRestorePrompt?: RestorePromptHandler;
   historyRevision?: number;
@@ -4427,8 +4445,8 @@ function UserPromptBlock({
       )}
       <RunLogMessageMeta
         align="end"
-        copyText={text}
-        {...(createdAt && { createdAt })}
+        {...(showCopyAndTime ? { copyText: text } : {})}
+        {...(showCopyAndTime && createdAt ? { createdAt } : {})}
         {...(allowUserMessageRewrite &&
           onRestorePrompt &&
           rewindTarget &&

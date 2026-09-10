@@ -1467,6 +1467,9 @@ class _ActivityFeedView extends ConsumerWidget {
     final threadPrompt = ref.watch(
       threadSessionProvider(threadId).select((state) => state.thread?.prompt),
     );
+    final threadStatus = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.thread?.status),
+    );
     final runProjection = ref.watch(
       threadSessionProvider(threadId).select((state) => state.runProjection),
     );
@@ -1563,6 +1566,9 @@ class _ActivityFeedView extends ConsumerWidget {
       themeSource: themeSource,
       thinkingDefaultExpanded: thinkingDisplayMode.defaultExpanded,
       stopping: stopping,
+      showMessageCopyAndTime: isThreadStoppedForMessageMeta(
+        threadStatus ?? (isRunning ? 'running' : 'idle'),
+      ),
       scrollJumpBottomInset: controlsBottomInset,
       padding: EdgeInsets.fromLTRB(
         threadSessionFeedHorizontalPadding,

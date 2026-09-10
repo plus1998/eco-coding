@@ -1031,6 +1031,7 @@ class ActivityFeedList extends StatefulWidget {
     this.showScrollJumpButton = true,
     this.scrollJumpBottomInset = 0,
     this.stopping = false,
+    this.showMessageCopyAndTime = true,
     this.padding,
   });
 
@@ -1054,6 +1055,8 @@ class ActivityFeedList extends StatefulWidget {
   final bool showScrollJumpButton;
   final double scrollJumpBottomInset;
   final bool stopping;
+  /// Copy/time (and speak) under messages — only after the conversation stopped.
+  final bool showMessageCopyAndTime;
   final EdgeInsetsGeometry? padding;
 
   @override
@@ -1148,7 +1151,9 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   @override
   Widget build(BuildContext context) {
     final displayEntries = widget.entries.reversed.toList(growable: false);
-    final finalMetaId = _resolveFinalTurnMetaId(widget.entries);
+    final finalMetaId = widget.showMessageCopyAndTime
+        ? _resolveFinalTurnMetaId(widget.entries)
+        : null;
     final paceTargetId = resolveFeedPaceTargetId(widget.entries);
 
     return _FeedStoppingScope(
@@ -1216,6 +1221,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                     finalMetaEntryId: finalMetaId,
                     paceTargetEntryId: paceTargetId,
+                    showMessageCopyAndTime: widget.showMessageCopyAndTime,
                   );
                 },
               ),
@@ -1298,6 +1304,7 @@ class _ScrollToBottomButton extends StatelessWidget {
 }
 
 /// 只给最后一个已完成回合的最终输出加 meta（复制 + 时间），与桌面端一致。
+/// 调用方应在会话仍在进行时传入 `showMessageCopyAndTime: false`，避免 meta 插入抖动。
 String? _resolveFinalTurnMetaId(List<ActivityFeedEntry> entries) {
   String? metaId;
   for (final entry in entries) {
@@ -1326,6 +1333,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.finalMetaEntryId,
     this.paceTargetEntryId,
     this.hideMessageActions = false,
+    this.showMessageCopyAndTime = true,
   });
 
   final ActivityFeedEntry entry;
@@ -1342,6 +1350,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final String? finalMetaEntryId;
   final String? paceTargetEntryId;
   final bool hideMessageActions;
+  final bool showMessageCopyAndTime;
 
   @override
   Widget build(BuildContext context) {
@@ -1356,7 +1365,9 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           loadImageView: loadImageView,
           onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
           thinkingDefaultExpanded: thinkingDefaultExpanded,
-          showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
+          showFinalMeta: showMessageCopyAndTime &&
+              entry.finalOutput?.id == finalMetaEntryId,
+          showMessageCopyAndTime: showMessageCopyAndTime,
           paceTargetEntryId: paceTargetEntryId,
         );
       case ActivityFeedKind.user:
@@ -1368,6 +1379,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           onLoadUserMessageEdit: onLoadUserMessageEdit,
           onRewriteUserMessage: onRewriteUserMessage,
           initiallyExpanded: expandUserPrompts,
+          showCopyAndTime: showMessageCopyAndTime,
         );
       case ActivityFeedKind.clarificationAnswer:
         return _ClarificationAnswerTile(text: entry.text);
@@ -1378,7 +1390,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           streaming: entry.streaming,
           pacing: entry.id == paceTargetEntryId,
           usageBadge: entry.usageBadge,
-          hideMessageActions: hideMessageActions,
+          hideMessageActions: hideMessageActions || !showMessageCopyAndTime,
         );
       case ActivityFeedKind.thinking:
         return _ThinkingTile(
@@ -1457,6 +1469,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.onOpenImageDisplayArtifact,
     this.thinkingDefaultExpanded = false,
     this.showFinalMeta = false,
+    this.showMessageCopyAndTime = true,
     this.paceTargetEntryId,
   });
 
@@ -1469,6 +1482,7 @@ class _TurnFeedTile extends StatefulWidget {
   final ValueChanged<String>? onOpenImageDisplayArtifact;
   final bool thinkingDefaultExpanded;
   final bool showFinalMeta;
+  final bool showMessageCopyAndTime;
   final String? paceTargetEntryId;
 
   @override
@@ -1645,6 +1659,8 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               thinkingDefaultExpanded:
                                   widget.thinkingDefaultExpanded,
                               paceTargetEntryId: widget.paceTargetEntryId,
+                              showMessageCopyAndTime:
+                                  widget.showMessageCopyAndTime,
                             ),
                         ],
                       ),
@@ -1693,6 +1709,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                   paceTargetEntryId: widget.paceTargetEntryId,
                   hideMessageActions: widget.showFinalMeta,
+                  showMessageCopyAndTime: widget.showMessageCopyAndTime,
                 ),
               ),
             ),
@@ -1824,6 +1841,7 @@ class _UserPromptTile extends StatefulWidget {
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
     this.initiallyExpanded = false,
+    this.showCopyAndTime = true,
   });
 
   final String text;
@@ -1833,6 +1851,7 @@ class _UserPromptTile extends StatefulWidget {
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool initiallyExpanded;
+  final bool showCopyAndTime;
 
   @override
   State<_UserPromptTile> createState() => _UserPromptTileState();
@@ -2299,7 +2318,9 @@ class _UserPromptTileState extends State<_UserPromptTile> {
             constraints: BoxConstraints(maxWidth: maxBubbleWidth),
             child: bubble,
           ),
-          if (!_editing && (widget.text.trim().isNotEmpty || _canEdit))
+          if (!_editing &&
+              ((_canEdit) ||
+                  (widget.showCopyAndTime && widget.text.trim().isNotEmpty)))
             Padding(
               // Keep space below copy/edit actions so the next agent turn does
               // not sit flush against the icon row (desktop uses ~20px block gap).
@@ -2318,9 +2339,11 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                       tooltip: context.l10n.activityEditing,
                       style: activityFeedMessageActionStyle(context),
                     ),
-                  if (_canEdit && widget.text.trim().isNotEmpty)
+                  if (_canEdit &&
+                      widget.showCopyAndTime &&
+                      widget.text.trim().isNotEmpty)
                     const SizedBox(width: activityFeedMessageActionGap),
-                  if (widget.text.trim().isNotEmpty)
+                  if (widget.showCopyAndTime && widget.text.trim().isNotEmpty)
                     ActivityFeedCopyButton(
                       onPressed: _copyMessage,
                     ),
