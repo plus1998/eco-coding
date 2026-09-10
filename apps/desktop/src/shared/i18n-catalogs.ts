@@ -793,6 +793,7 @@ export const i18nCatalogs = {
       "settings.center.boundPhones": "已绑定手机",
       "settings.center.noPhones": "暂无已连接手机。手机用同一账号登录后即可发现并选择本机。",
       "settings.center.online": "在线",
+      "settings.center.reconnecting": "重连中",
       "settings.center.offline": "离线",
       "settings.center.boundAt": "{{status}} · 绑定于 {{time}}",
       "settings.center.revoking": "解绑中",
@@ -2981,6 +2982,7 @@ export const i18nCatalogs = {
       "settings.center.noPhones":
         "No phones connected yet. After they sign in with the same account, they can select this PC.",
       "settings.center.online": "Online",
+      "settings.center.reconnecting": "Reconnecting",
       "settings.center.offline": "Offline",
       "settings.center.boundAt": "{{status}} · Bound {{time}}",
       "settings.center.revoking": "Unbinding",

@@ -92,6 +92,7 @@ import {
   type BashApprovalRequest,
   buildThreadRuntimeConfigFromDefaults,
   type CandidateModelView,
+  type CenterServerConnectionState,
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
@@ -576,6 +577,19 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
   },
   status: { state: "disabled" },
 };
+
+/** Sidebar presence: green online, yellow reconnecting, red offline. */
+function sidebarCenterPresenceDotKind(
+  state: CenterServerConnectionState,
+): "online" | "pending" | "error" {
+  if (state === "connected") {
+    return "online";
+  }
+  if (state === "connecting") {
+    return "pending";
+  }
+  return "error";
+}
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
@@ -1345,6 +1359,17 @@ function App() {
       (settings.hasDeviceSecret || settings.hasRefreshToken)
     );
   }, [centerServerSettings]);
+  const centerServerRegistered =
+    centerServerSettings.settings.hasDeviceSecret || centerServerSettings.settings.hasRefreshToken;
+  const sidebarCenterDeviceName =
+    centerServerSettings.settings.deviceName.trim() || t("settings.center.remoteService");
+  const sidebarCenterPresenceDot = sidebarCenterPresenceDotKind(centerServerSettings.status.state);
+  const sidebarCenterPresenceLabel =
+    centerServerSettings.status.state === "connected"
+      ? t("settings.center.online")
+      : centerServerSettings.status.state === "connecting"
+        ? t("settings.center.reconnecting")
+        : t("settings.center.offline");
   const [asrProfiles, setAsrProfiles] = useState<AsrProfilesSnapshot>(emptyAsrProfiles);
   const [asrSettingsLoadError, setAsrSettingsLoadError] = useState<string>();
   const [asrBusy, setAsrBusy] = useState(false);
@@ -10290,9 +10315,33 @@ function App() {
           </div>
 
           <div className="sidebar-settings">
-            <button type="button" className="sidebar-settings-action" onClick={openSettings}>
-              <Cog size={18} />
-              {t("nav.settings")}
+            <button
+              type="button"
+              className="sidebar-settings-action"
+              onClick={openSettings}
+              aria-label={
+                centerServerRegistered
+                  ? `${sidebarCenterDeviceName} · ${sidebarCenterPresenceLabel} · ${t("nav.settings")}`
+                  : t("nav.settings")
+              }
+              title={
+                centerServerRegistered
+                  ? `${sidebarCenterDeviceName} · ${sidebarCenterPresenceLabel}`
+                  : t("nav.settings")
+              }
+            >
+              <Cog size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+              {centerServerRegistered ? (
+                <>
+                  <span className="sidebar-settings-action-label">{sidebarCenterDeviceName}</span>
+                  <span
+                    className={`cs-dot cs-dot--${sidebarCenterPresenceDot} sidebar-settings-presence-dot`}
+                    aria-hidden
+                  />
+                </>
+              ) : (
+                <span className="sidebar-settings-action-label">{t("nav.settings")}</span>
+              )}
             </button>
             <SidebarSettingsUpdateControl
               state={desktopUpdateState}
