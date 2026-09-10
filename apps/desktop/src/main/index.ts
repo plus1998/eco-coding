@@ -740,6 +740,8 @@ import { requireThreadCore } from "./thread-core-routing";
 import {
   createThreadFeedSkeletonRecord,
   type FeedSkeletonPatchContext,
+  hasFeedSkeletonAttemptBecameTerminal,
+  isFeedSkeletonTerminalEventType,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
   shouldTrackEventForFeedSkeletonPatch,
@@ -13950,12 +13952,6 @@ function buildThreadFeedSkeletonHydrationContext(): Parameters<typeof hydrateThr
   };
 }
 
-const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = new Set([
-  "run.attempt.completed",
-  "run.attempt.failed",
-  "run.attempt.cancelled",
-]);
-
 function buildFeedSkeletonPatchContext(threadId: string): FeedSkeletonPatchContext {
   const cached = conversationStore.getThreadFeedSkeleton(threadId);
   return {
@@ -13976,6 +13972,25 @@ function persistThreadFeedSkeletonRecord(record: ThreadFeedSkeletonRecord): void
     snapshot: record.snapshot,
     ...(record.patchState && { patchState: record.patchState }),
   });
+}
+
+function withBumpedFeedSkeletonHistoryRevision(
+  record: ThreadFeedSkeletonRecord,
+  previousTimelineLength: number,
+): ThreadFeedSkeletonRecord {
+  if (record.snapshot.timeline.length >= previousTimelineLength) {
+    return record;
+  }
+  const threadId = record.snapshot.thread.threadId;
+  const nextRevision = bumpThreadRunProjectionHistoryRevision(threadId);
+  return {
+    ...record,
+    historyRevision: nextRevision,
+    snapshot: {
+      ...record.snapshot,
+      historyRevision: nextRevision,
+    },
+  };
 }
 
 /**
@@ -14088,10 +14103,14 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
 
   const existing = conversationStore.getThreadFeedSkeleton(threadId);
   const leakedAgentItemsOnMain = existing?.snapshot.timeline.some((item) => item.scope === "agent") === true;
+  const attemptBecameTerminal =
+    existing !== undefined &&
+    hasFeedSkeletonAttemptBecameTerminal(existing.snapshot.attempts, context.attempts);
   const structureChanging =
     shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
     shouldPatchAgentTimelineForFeedSkeleton(event) ||
-    RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType) ||
+    isFeedSkeletonTerminalEventType(event.eventType) ||
+    attemptBecameTerminal ||
     leakedAgentItemsOnMain;
 
   if (!structureChanging) {
@@ -14100,7 +14119,12 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
   }
 
   if (!existing?.patchState) {
-    rebuildThreadFeedSkeletonRecord(threadId);
+    const rebuilt = rebuildThreadFeedSkeletonRecord(threadId);
+    if (rebuilt && existing) {
+      persistThreadFeedSkeletonRecord(
+        withBumpedFeedSkeletonHistoryRevision(rebuilt, existing.snapshot.timeline.length),
+      );
+    }
     return;
   }
 
@@ -14109,7 +14133,9 @@ function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
     conversationStore.deleteThreadFeedSkeleton(threadId);
     return;
   }
-  persistThreadFeedSkeletonRecord(patched);
+  persistThreadFeedSkeletonRecord(
+    withBumpedFeedSkeletonHistoryRevision(patched, existing.snapshot.timeline.length),
+  );
 }
 
 function rebuildThreadFeedSkeleton(threadId: string): ThreadRunProjectionSnapshot | undefined {

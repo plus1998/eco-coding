@@ -8,7 +8,7 @@ import type {
   ThreadSubagentSessionTiming,
   ThreadSummary,
 } from "../shared/ipc";
-import { excludeAgentScopedFeedTimelineItems } from "../shared/thread-run-projection-skeleton";
+import { excludeAgentScopedFeedTimelineItems, selectSkeletonTimelineItems } from "../shared/thread-run-projection-skeleton";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
 export interface FeedSkeletonPatchState {
@@ -89,6 +89,12 @@ export function hydrateThreadFeedSkeletonSnapshot(
   const billing = context.getBilling(threadId);
   const threadContext = context.getContext(threadId);
   const subagentTimings = context.getSubagentTimings(threadId);
+  const mainTimeline = excludeAgentScopedFeedTimelineItems(snapshot.timeline);
+  const hasRunningAttempt = attempts.some((attempt) => attempt.status === "running");
+  const timeline =
+    !hasRunningAttempt && attempts.length > 0
+      ? selectSkeletonTimelineItems(mainTimeline, attempts)
+      : mainTimeline;
   return {
     ...snapshot,
     thread: {
@@ -100,7 +106,7 @@ export function hydrateThreadFeedSkeletonSnapshot(
       ...(currentAttemptId && { currentAttemptId }),
     },
     attempts,
-    timeline: excludeAgentScopedFeedTimelineItems(snapshot.timeline),
+    timeline,
     ...(billing && { billing }),
     ...(threadContext && { context: threadContext }),
     ...(subagentTimings.length > 0 && { subagentTimings: [...subagentTimings] }),

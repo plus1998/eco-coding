@@ -113,6 +113,62 @@ describe("thread feed skeleton store", () => {
     expect(hydrated.timeline.map((item) => item.id)).toEqual(["user_1"]);
   });
 
+  test("hydrateThreadFeedSkeletonSnapshot re-selects skeleton when no attempt is running", () => {
+    const snapshot = baseSnapshot();
+    snapshot.timeline = [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "message.final",
+        scope: "main",
+        role: "user",
+        text: "hello",
+        at: "2026-01-01T00:00:00.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "tool_live",
+        sequence: 2,
+        eventType: "tool.completed",
+        scope: "main",
+        role: "coder",
+        text: "Tool: Bash",
+        at: "2026-01-01T00:00:01.000Z",
+        runAttemptId: "att_1",
+      },
+      {
+        id: "final_1",
+        sequence: 3,
+        eventType: "message.final",
+        scope: "main",
+        role: "coder",
+        text: "done",
+        at: "2026-01-01T00:00:02.000Z",
+        runAttemptId: "att_1",
+      },
+    ];
+    const hydrated = hydrateThreadFeedSkeletonSnapshot(snapshot, "thr_1", {
+      getThread: () => undefined,
+      listRunAttempts: () => [
+        {
+          attemptId: "att_1",
+          threadId: "thr_1",
+          phase: "execution",
+          retryIndex: 0,
+          status: "failed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:10:00.000Z",
+        },
+      ],
+      getBilling: () => undefined,
+      getContext: () => undefined,
+      getHistoryRevision: () => 0,
+      getSubagentTimings: () => [],
+    });
+
+    expect(hydrated.timeline.map((item) => item.id)).toEqual(["user_1", "final_1"]);
+  });
+
   test("resolveFeedSkeletonPatchAgents heals empty cached agents from store instances", () => {
     const healed = resolveFeedSkeletonPatchAgents([], [
       {

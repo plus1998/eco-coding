@@ -27,11 +27,37 @@ export interface FeedSkeletonPatchContext {
   maxEventSequence: number;
 }
 
-const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = new Set([
+/** Attempt / request terminal events that must compact Feed skeleton (align with replay). */
+export const FEED_SKELETON_TERMINAL_EVENT_TYPES = new Set<string>([
   "run.attempt.completed",
   "run.attempt.failed",
   "run.attempt.cancelled",
+  "request.completed",
+  "request.failed",
+  "request.cancelled",
 ]);
+
+export function isFeedSkeletonTerminalEventType(eventType: string): boolean {
+  return FEED_SKELETON_TERMINAL_EVENT_TYPES.has(eventType);
+}
+
+/** True when any attempt moved from running → terminal between snapshot and live context. */
+export function hasFeedSkeletonAttemptBecameTerminal(
+  snapshotAttempts: readonly ThreadRunProjectionAttempt[],
+  liveAttempts: readonly ThreadRunProjectionAttempt[],
+): boolean {
+  const liveById = new Map(liveAttempts.map((attempt) => [attempt.attemptId, attempt.status]));
+  for (const snapshot of snapshotAttempts) {
+    if (snapshot.status !== "running") {
+      continue;
+    }
+    const liveStatus = liveById.get(snapshot.attemptId);
+    if (liveStatus !== undefined && liveStatus !== "running") {
+      return true;
+    }
+  }
+  return false;
+}
 
 export function createFeedSkeletonPatchState(snapshot: ThreadRunProjectionSnapshot): FeedSkeletonPatchState {
   return {
@@ -58,13 +84,16 @@ export function shouldTrackEventForFeedSkeletonPatch(
   if (isMetricsOnlyThreadRunEvent(event)) {
     return false;
   }
-  if (RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType)) {
+  if (isFeedSkeletonTerminalEventType(event.eventType)) {
     return false;
   }
   if (event.eventType.startsWith("agent.")) {
     return false;
   }
   if (event.eventType.startsWith("run.attempt.")) {
+    return false;
+  }
+  if (event.eventType.startsWith("request.")) {
     return false;
   }
   if (event.scope === "agent") {
@@ -124,6 +153,8 @@ export function patchThreadFeedSkeletonFromEvent(
   );
   let structureChanged = trackedItems.length !== record.patchState.trackedItems.length;
 
+  const attemptBecameTerminal = hasFeedSkeletonAttemptBecameTerminal(record.snapshot.attempts, attempts);
+
   if (shouldTrackEventForFeedSkeletonPatch(event, attempts)) {
     const item = trimTimelineItemForFeed(eventToTimelineItem(event));
     trackedItems = upsertTrackedItem(trackedItems, item);
@@ -131,7 +162,7 @@ export function patchThreadFeedSkeletonFromEvent(
       trackedItems = collapseSegmentProcessItems(trackedItems, item, attempts);
     }
     structureChanged = true;
-  } else if (RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType)) {
+  } else if (isFeedSkeletonTerminalEventType(event.eventType) || attemptBecameTerminal) {
     trackedItems = reconcileTrackedItemsAfterAttemptChange(trackedItems, attempts);
     structureChanged = true;
   } else {
