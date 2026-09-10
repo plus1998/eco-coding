@@ -65,13 +65,17 @@
       "name": { "type": "String" }
     }
   },
-  "setupUnpairPcMessage": "之后将无法控制这台电脑。电脑损坏或丢失时也可以在此移除。",
+  "setupUnpairPcMessage": "之后将无法控制这台电脑。请输入账号密码确认；电脑损坏或丢失时也可以在此移除。",
+  "setupUnpairPcPasswordHint": "输入与 Desktop 相同的账号密码",
+  "setupUnpairPcWrongPassword": "密码不正确，请重试。",
+  "setupUnpairPcPasswordRequired": "请输入密码。",
   "setupUnpairPcDone": "已解除与 {name} 的配对",
   "@setupUnpairPcDone": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
+  "authInvalidCredentials": "邮箱或密码不正确。",
   "settingsSignOut": "退出登录",
   "settingsSignedOut": "已退出登录",
   "settingsRealtimeStatus": "实时通道",

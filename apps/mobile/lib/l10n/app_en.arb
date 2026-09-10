@@ -65,13 +65,17 @@
       "name": { "type": "String" }
     }
   },
-  "setupUnpairPcMessage": "You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.",
+  "setupUnpairPcMessage": "You will no longer be able to control this PC. Enter your account password to confirm. You can also remove it here if the computer is lost or damaged.",
+  "setupUnpairPcPasswordHint": "Enter the same account password as Desktop",
+  "setupUnpairPcWrongPassword": "Incorrect password. Try again.",
+  "setupUnpairPcPasswordRequired": "Enter your password.",
   "setupUnpairPcDone": "Unpaired from {name}",
   "@setupUnpairPcDone": {
     "placeholders": {
       "name": { "type": "String" }
     }
   },
+  "authInvalidCredentials": "Incorrect email or password.",
   "settingsSignOut": "Sign out",
   "settingsSignedOut": "Signed out",
   "settingsRealtimeStatus": "Realtime",

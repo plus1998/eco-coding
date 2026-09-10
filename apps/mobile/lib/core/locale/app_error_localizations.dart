@@ -57,6 +57,7 @@ String localizedAppError(Object error, AppLocalizations l10n) {
       EcoCenterErrorKind.invalidPairQr => l10n.errorInvalidPairQr,
       EcoCenterErrorKind.reauthRequired => l10n.authRelogin,
       EcoCenterErrorKind.bindingRequired => l10n.errorBindingRequired,
+      EcoCenterErrorKind.invalidCredentials => l10n.authInvalidCredentials,
       null => null,
     };
     if (localized != null) return localized;

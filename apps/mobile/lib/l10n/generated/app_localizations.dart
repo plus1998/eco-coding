@@ -401,14 +401,38 @@ abstract class AppLocalizations {
   /// No description provided for @setupUnpairPcMessage.
   ///
   /// In en, this message translates to:
-  /// **'You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.'**
+  /// **'You will no longer be able to control this PC. Enter your account password to confirm. You can also remove it here if the computer is lost or damaged.'**
   String get setupUnpairPcMessage;
+
+  /// No description provided for @setupUnpairPcPasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the same account password as Desktop'**
+  String get setupUnpairPcPasswordHint;
+
+  /// No description provided for @setupUnpairPcWrongPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password. Try again.'**
+  String get setupUnpairPcWrongPassword;
+
+  /// No description provided for @setupUnpairPcPasswordRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your password.'**
+  String get setupUnpairPcPasswordRequired;
 
   /// No description provided for @setupUnpairPcDone.
   ///
   /// In en, this message translates to:
   /// **'Unpaired from {name}'**
   String setupUnpairPcDone(String name);
+
+  /// No description provided for @authInvalidCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect email or password.'**
+  String get authInvalidCredentials;
 
   /// No description provided for @settingsSignOut.
   ///

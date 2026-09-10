@@ -323,6 +323,27 @@ class EcoCenterClient {
     return _applyAuthSession(user, session);
   }
 
+  /// Re-authenticate the current account password without changing the signed-in email.
+  ///
+  /// Used before destructive account actions such as unpairing a Desktop.
+  Future<void> verifyAccountPassword(String password) async {
+    final email = _credentials.userEmail?.trim() ?? '';
+    if (email.isEmpty || !_credentials.hasUserSession) {
+      throw EcoCenterException.app(
+        EcoCenterErrorKind.reauthRequired,
+        recovery: CenterServerAuthRecovery.relogin,
+      );
+    }
+    if (password.isEmpty) {
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidCredentials);
+    }
+    try {
+      await login(email: email, password: password);
+    } on AuthException {
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidCredentials);
+    }
+  }
+
   Future<PublicDevice> registerMobileDevice({String? deviceName}) async {
     final client = await _ensureSupabaseClient();
     await _ensureUserAccessToken();

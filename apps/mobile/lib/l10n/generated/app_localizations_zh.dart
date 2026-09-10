@@ -167,12 +167,24 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get setupUnpairPcMessage => '之后将无法控制这台电脑。电脑损坏或丢失时也可以在此移除。';
+  String get setupUnpairPcMessage => '之后将无法控制这台电脑。请输入账号密码确认；电脑损坏或丢失时也可以在此移除。';
+
+  @override
+  String get setupUnpairPcPasswordHint => '输入与 Desktop 相同的账号密码';
+
+  @override
+  String get setupUnpairPcWrongPassword => '密码不正确，请重试。';
+
+  @override
+  String get setupUnpairPcPasswordRequired => '请输入密码。';
 
   @override
   String setupUnpairPcDone(String name) {
     return '已解除与 $name 的配对';
   }
+
+  @override
+  String get authInvalidCredentials => '邮箱或密码不正确。';
 
   @override
   String get settingsSignOut => '退出登录';

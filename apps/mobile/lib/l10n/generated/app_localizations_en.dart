@@ -177,12 +177,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupUnpairPcMessage =>
-      'You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.';
+      'You will no longer be able to control this PC. Enter your account password to confirm. You can also remove it here if the computer is lost or damaged.';
+
+  @override
+  String get setupUnpairPcPasswordHint =>
+      'Enter the same account password as Desktop';
+
+  @override
+  String get setupUnpairPcWrongPassword => 'Incorrect password. Try again.';
+
+  @override
+  String get setupUnpairPcPasswordRequired => 'Enter your password.';
 
   @override
   String setupUnpairPcDone(String name) {
     return 'Unpaired from $name';
   }
+
+  @override
+  String get authInvalidCredentials => 'Incorrect email or password.';
 
   @override
   String get settingsSignOut => 'Sign out';

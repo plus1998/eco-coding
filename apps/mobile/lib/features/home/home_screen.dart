@@ -24,6 +24,7 @@ import '../projects/project_providers.dart';
 import '../threads/thread_providers.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
+import 'unpair_pc_dialog.dart';
 import '../threads/session_content_boot_loading.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -1051,32 +1052,42 @@ class _SelectPcStep extends ConsumerWidget {
     required String name,
   }) async {
     final l10n = context.l10n;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(l10n.setupUnpairPcTitle(name)),
-          content: Text(l10n.setupUnpairPcMessage),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(l10n.commonCancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(dialogContext).colorScheme.error,
-              ),
-              child: Text(l10n.setupUnpairPc),
-            ),
-          ],
+    final client = ref.read(ecoCenterClientProvider);
+    String? passwordError;
+
+    while (context.mounted) {
+      final password = await showUnpairPcPasswordDialog(
+        context,
+        desktopName: name,
+        initialError: passwordError,
+      );
+      passwordError = null;
+      if (password == null || !context.mounted) return;
+
+      try {
+        await client.verifyAccountPassword(password);
+        break;
+      } on EcoCenterException catch (error) {
+        if (!context.mounted) return;
+        if (error.kind == EcoCenterErrorKind.invalidCredentials) {
+          passwordError = l10n.setupUnpairPcWrongPassword;
+          continue;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, l10n))),
         );
-      },
-    );
-    if (confirmed != true || !context.mounted) return;
+        return;
+      } catch (error) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, l10n))),
+        );
+        return;
+      }
+    }
+    if (!context.mounted) return;
 
     try {
-      final client = ref.read(ecoCenterClientProvider);
       await client.revokeBinding(binding.id);
       final selected =
           ref.read(selectedDesktopIdProvider) ??
