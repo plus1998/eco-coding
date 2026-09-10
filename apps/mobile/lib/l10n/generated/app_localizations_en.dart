@@ -75,6 +75,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show cumulative usage and cost in Composer.';
 
   @override
+  String get settingsThinkingContent => 'Thinking content';
+
+  @override
+  String get settingsThinkingContentEphemeral => 'Ephemeral';
+
+  @override
+  String get settingsThinkingContentEphemeralHint =>
+      'Shown while generating, then auto-hides.';
+
+  @override
+  String get settingsThinkingContentCollapsed => 'Collapsed';
+
+  @override
+  String get settingsThinkingContentCollapsedHint =>
+      'Collapsed when done; expand anytime.';
+
+  @override
+  String get settingsThinkingContentExpanded => 'Expanded';
+
+  @override
+  String get settingsThinkingContentExpandedHint =>
+      'Expanded when done; collapse anytime.';
+
+  @override
   String get settingsThemeSystem => 'System';
 
   @override

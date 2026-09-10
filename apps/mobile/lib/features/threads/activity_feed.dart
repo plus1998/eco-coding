@@ -11,6 +11,7 @@ import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/thread_run_projection.dart';
+import '../../core/preferences/thinking_display_preferences.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -337,6 +338,7 @@ List<ActivityFeedEntry> buildActivityFeed({
   AppLocalizations? l10n,
   bool groupTurns = true,
   bool groupActions = true,
+  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
 }) {
   if (!isProjectionFeedReady(runProjection)) {
     return const [];
@@ -348,6 +350,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     threadId: threadId,
     subagentSessions: subagentSessions,
     l10n: strings,
+    thinkingDisplayMode: thinkingDisplayMode,
   );
   final groupedActions = groupActions
       ? groupActivityFeedActionEntries(projected, l10n: strings)
@@ -1022,6 +1025,7 @@ class ActivityFeedList extends StatefulWidget {
     this.onLoadEarlier,
     this.onLoadEarlierError,
     this.expandUserPrompts = false,
+    this.thinkingDefaultExpanded = false,
     this.shrinkWrap = false,
     this.showScrollJumpButton = true,
     this.scrollJumpBottomInset = 0,
@@ -1043,6 +1047,7 @@ class ActivityFeedList extends StatefulWidget {
   final ActivityFeedEarlierLoader? onLoadEarlier;
   final ActivityFeedLoadErrorCallback? onLoadEarlierError;
   final bool expandUserPrompts;
+  final bool thinkingDefaultExpanded;
   final bool shrinkWrap;
   final bool showScrollJumpButton;
   final double scrollJumpBottomInset;
@@ -1205,6 +1210,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
                     onRewriteUserMessage: widget.onRewriteUserMessage,
                     expandUserPrompts: widget.expandUserPrompts,
+                    thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                     finalMetaEntryId: finalMetaId,
                     paceTargetEntryId: paceTargetId,
                   );
@@ -1312,6 +1318,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
     this.expandUserPrompts = false,
+    this.thinkingDefaultExpanded = false,
     this.finalMetaEntryId,
     this.paceTargetEntryId,
     this.hideMessageActions = false,
@@ -1326,6 +1333,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool expandUserPrompts;
+  final bool thinkingDefaultExpanded;
   final String? finalMetaEntryId;
   final String? paceTargetEntryId;
   final bool hideMessageActions;
@@ -1341,6 +1349,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           loadToolDetail: loadToolDetail,
           loadTurnDetail: loadTurnDetail,
           loadImageView: loadImageView,
+          thinkingDefaultExpanded: thinkingDefaultExpanded,
           showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
           paceTargetEntryId: paceTargetEntryId,
         );
@@ -1373,6 +1382,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           startedAt: entry.startedAt,
           endedAt: entry.endedAt,
           durationMs: entry.durationMs,
+          defaultExpanded: thinkingDefaultExpanded,
         );
       case ActivityFeedKind.reasoningStage:
         return _WaitingThinkingLine(label: entry.text);
@@ -1434,6 +1444,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.loadToolDetail,
     this.loadTurnDetail,
     this.loadImageView,
+    this.thinkingDefaultExpanded = false,
     this.showFinalMeta = false,
     this.paceTargetEntryId,
   });
@@ -1444,6 +1455,7 @@ class _TurnFeedTile extends StatefulWidget {
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final bool thinkingDefaultExpanded;
   final bool showFinalMeta;
   final String? paceTargetEntryId;
 
@@ -1616,6 +1628,8 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               onOpenAgentDetail: widget.onOpenAgentDetail,
                               loadToolDetail: widget.loadToolDetail,
                               loadImageView: widget.loadImageView,
+                              thinkingDefaultExpanded:
+                                  widget.thinkingDefaultExpanded,
                               paceTargetEntryId: widget.paceTargetEntryId,
                             ),
                         ],
@@ -1661,6 +1675,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
                   loadImageView: widget.loadImageView,
+                  thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                   paceTargetEntryId: widget.paceTargetEntryId,
                   hideMessageActions: widget.showFinalMeta,
                 ),
@@ -2643,6 +2658,7 @@ class _ThinkingTile extends StatelessWidget {
     this.startedAt,
     this.endedAt,
     this.durationMs = 0,
+    this.defaultExpanded = false,
   });
 
   final String text;
@@ -2652,6 +2668,7 @@ class _ThinkingTile extends StatelessWidget {
   final String? startedAt;
   final String? endedAt;
   final int durationMs;
+  final bool defaultExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -2666,6 +2683,7 @@ class _ThinkingTile extends StatelessWidget {
         startedAt: startedAt,
         endedAt: endedAt,
         durationMs: durationMs,
+        defaultExpanded: defaultExpanded,
       ),
     );
   }
@@ -2679,6 +2697,7 @@ class _ThinkingTileBody extends StatefulWidget {
     this.startedAt,
     this.endedAt,
     this.durationMs = 0,
+    this.defaultExpanded = false,
   });
 
   final String text;
@@ -2687,6 +2706,7 @@ class _ThinkingTileBody extends StatefulWidget {
   final String? startedAt;
   final String? endedAt;
   final int durationMs;
+  final bool defaultExpanded;
 
   @override
   State<_ThinkingTileBody> createState() => _ThinkingTileBodyState();
@@ -2704,7 +2724,7 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
   @override
   void initState() {
     super.initState();
-    _expanded = _activelyStreaming;
+    _expanded = _activelyStreaming || widget.defaultExpanded;
     _durationMs = _resolveDurationMs();
     _syncTimer();
   }
@@ -2715,9 +2735,19 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
     final wasActive = oldWidget.streaming || oldWidget.revealing;
     final isActive = _activelyStreaming;
     if (wasActive && !isActive) {
-      _expanded = false;
-      _startSettling();
+      _expanded = widget.defaultExpanded;
+      if (widget.defaultExpanded) {
+        _cancelSettling();
+      } else {
+        _startSettling();
+      }
     } else if (isActive && !_expanded) {
+      _cancelSettling();
+      _expanded = true;
+    } else if (!isActive &&
+        !oldWidget.defaultExpanded &&
+        widget.defaultExpanded &&
+        !_expanded) {
       _cancelSettling();
       _expanded = true;
     }

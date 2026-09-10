@@ -72,6 +72,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsShowBillingSubtitle => '在 Composer 中显示会话累计用量和费用。';
 
   @override
+  String get settingsThinkingContent => '思考内容';
+
+  @override
+  String get settingsThinkingContentEphemeral => '阅后即焚';
+
+  @override
+  String get settingsThinkingContentEphemeralHint => '生成时显示，完成后自动隐藏。';
+
+  @override
+  String get settingsThinkingContentCollapsed => '折叠';
+
+  @override
+  String get settingsThinkingContentCollapsedHint => '完成后默认收起，可随时展开。';
+
+  @override
+  String get settingsThinkingContentExpanded => '展开';
+
+  @override
+  String get settingsThinkingContentExpandedHint => '完成后默认展开，可随时收起。';
+
+  @override
   String get settingsThemeSystem => '跟随';
 
   @override

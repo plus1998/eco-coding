@@ -17,6 +17,8 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/acp_host_ui_features.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/providers/thinking_display_provider.dart';
+import '../../core/preferences/thinking_display_preferences.dart';
 import '../../core/widgets/activity_feed_auto_read_listener.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -1401,12 +1403,14 @@ class _ActivityFeedView extends ConsumerWidget {
         ? null
         : resolveThreadOrchestrationSnapshot(modelSettings, runtimeConfig);
     final themeSource = SubagentThemeSource.fromSnapshot(snapshot);
+    final thinkingDisplayMode = ref.watch(thinkingDisplayModeProvider);
     final feedEntries = buildActivityFeed(
       threadPrompt: threadPrompt,
       threadId: threadId,
       runProjection: runProjection,
       subagentSessions: subagentSessions,
       l10n: context.l10n,
+      thinkingDisplayMode: thinkingDisplayMode,
     );
     final projectionReady = isProjectionFeedReady(runProjection);
     final optimisticPrompt = threadPrompt?.trim() ?? '';
@@ -1477,6 +1481,7 @@ class _ActivityFeedView extends ConsumerWidget {
       scrollController: scrollController,
       scrollCoordinator: scrollCoordinator,
       themeSource: themeSource,
+      thinkingDefaultExpanded: thinkingDisplayMode.defaultExpanded,
       stopping: stopping,
       scrollJumpBottomInset: controlsBottomInset,
       padding: EdgeInsets.fromLTRB(
@@ -1629,6 +1634,7 @@ Future<List<ActivityFeedEntry>> _loadToolProjectionDetail(
     cachedTimeline: cachedTimeline,
     detail: detail,
     l10n: context.l10n,
+    thinkingDisplayMode: ref.read(thinkingDisplayModeProvider),
   );
 }
 
@@ -1897,7 +1903,7 @@ String? _projectionToolUseId(ThreadRunProjectionTimelineItem item) {
   return null;
 }
 
-class _ProjectionDetailSheet extends StatefulWidget {
+class _ProjectionDetailSheet extends ConsumerStatefulWidget {
   const _ProjectionDetailSheet({
     required this.threadId,
     required this.emptyText,
@@ -1921,10 +1927,12 @@ class _ProjectionDetailSheet extends StatefulWidget {
   final bool injectMainThreadUserPrompts;
 
   @override
-  State<_ProjectionDetailSheet> createState() => _ProjectionDetailSheetState();
+  ConsumerState<_ProjectionDetailSheet> createState() =>
+      _ProjectionDetailSheetState();
 }
 
-class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
+class _ProjectionDetailSheetState
+    extends ConsumerState<_ProjectionDetailSheet> {
   final _scrollController = ScrollController();
 
   @override
@@ -1936,6 +1944,7 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final thinkingDisplayMode = ref.watch(thinkingDisplayModeProvider);
     final title = widget.title?.trim() ?? '';
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1986,6 +1995,7 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
               l10n: context.l10n,
               missionText: widget.missionText,
               injectMainThreadUserPrompts: widget.injectMainThreadUserPrompts,
+              thinkingDisplayMode: thinkingDisplayMode,
             );
             Widget body;
             if (entries.isEmpty && loading) {
@@ -2029,6 +2039,8 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
                       entries: entries,
                       scrollController: _scrollController,
                       expandUserPrompts: true,
+                      thinkingDefaultExpanded:
+                          thinkingDisplayMode.defaultExpanded,
                       shrinkWrap: true,
                       showScrollJumpButton: false,
                       loadImageView: widget.loadImageView,
@@ -2136,6 +2148,7 @@ List<ActivityFeedEntry> buildProjectionDetailEntries({
   required AppLocalizations l10n,
   String? missionText,
   bool injectMainThreadUserPrompts = true,
+  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
 }) {
   final timeline = _mergeProjectionDetailTimeline(
     cachedTimeline,
@@ -2159,6 +2172,7 @@ List<ActivityFeedEntry> buildProjectionDetailEntries({
       threadId: threadId,
       runProjection: detailProjection,
       l10n: l10n,
+      thinkingDisplayMode: thinkingDisplayMode,
     );
   }
 
@@ -2175,6 +2189,7 @@ List<ActivityFeedEntry> buildProjectionDetailEntries({
     l10n: l10n,
     groupTurns: false,
     groupActions: false,
+    thinkingDisplayMode: thinkingDisplayMode,
   );
 }
 

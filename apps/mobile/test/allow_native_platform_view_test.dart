@@ -17,6 +17,7 @@ void main() {
     test('covers settings detail routes', () {
       expect(isShellCoveredLocation('/settings/theme'), isTrue);
       expect(isShellCoveredLocation('/settings/language'), isTrue);
+      expect(isShellCoveredLocation('/settings/thinking-content'), isTrue);
       expect(isShellCoveredLocation('/settings/models'), isTrue);
     });
 

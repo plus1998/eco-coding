@@ -224,6 +224,48 @@ abstract class AppLocalizations {
   /// **'Show cumulative usage and cost in Composer.'**
   String get settingsShowBillingSubtitle;
 
+  /// No description provided for @settingsThinkingContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking content'**
+  String get settingsThinkingContent;
+
+  /// No description provided for @settingsThinkingContentEphemeral.
+  ///
+  /// In en, this message translates to:
+  /// **'Ephemeral'**
+  String get settingsThinkingContentEphemeral;
+
+  /// No description provided for @settingsThinkingContentEphemeralHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Shown while generating, then auto-hides.'**
+  String get settingsThinkingContentEphemeralHint;
+
+  /// No description provided for @settingsThinkingContentCollapsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapsed'**
+  String get settingsThinkingContentCollapsed;
+
+  /// No description provided for @settingsThinkingContentCollapsedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapsed when done; expand anytime.'**
+  String get settingsThinkingContentCollapsedHint;
+
+  /// No description provided for @settingsThinkingContentExpanded.
+  ///
+  /// In en, this message translates to:
+  /// **'Expanded'**
+  String get settingsThinkingContentExpanded;
+
+  /// No description provided for @settingsThinkingContentExpandedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Expanded when done; collapse anytime.'**
+  String get settingsThinkingContentExpandedHint;
+
   /// No description provided for @settingsThemeSystem.
   ///
   /// In en, this message translates to:

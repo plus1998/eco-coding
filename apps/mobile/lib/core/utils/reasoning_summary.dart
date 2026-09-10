@@ -53,6 +53,46 @@ bool isReasoningSummarySupersedingItem(ThreadRunProjectionTimelineItem item) {
   return false;
 }
 
+/// Display-only fork onto the tip path: stamp raw/untagged thinking as
+/// `reasoningDisplay: "summary"` so `reasoningStage` +
+/// [collapseEphemeralReasoningSummaryTimeline] apply. Does not mutate
+/// persisted activity.
+List<ThreadRunProjectionTimelineItem> presentThinkingAsEphemeralSummaryTips(
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  return [
+    for (final item in timeline)
+      if (item.eventType != 'thinking.delta' &&
+          item.eventType != 'thinking.final')
+        item
+      else if (item.text.trim().isEmpty)
+        item
+      else if (readReasoningDisplay(item.metadata) == 'summary')
+        item
+      else
+        ThreadRunProjectionTimelineItem(
+          id: item.id,
+          sequence: item.sequence,
+          eventType: item.eventType,
+          scope: item.scope,
+          text: item.text,
+          at: item.at,
+          summary: item.summary,
+          contentLoaded: item.contentLoaded,
+          contentAvailable: item.contentAvailable,
+          role: item.role,
+          agentId: item.agentId,
+          runAttemptId: item.runAttemptId,
+          requestId: item.requestId,
+          streamKey: item.streamKey,
+          metadata: {
+            ...(item.metadata ?? {}),
+            'reasoningDisplay': 'summary',
+          },
+        ),
+  ];
+}
+
 /// Reasoning summary is a single replaceable tip status:
 /// - later summary replaces earlier ones
 /// - tools / messages / raw thinking after it clear the tip
