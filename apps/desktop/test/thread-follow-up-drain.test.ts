@@ -3,9 +3,13 @@ import type { ThreadPendingFollowUp } from "../src/shared/ipc";
 import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
+  canEscalatedFollowUpProgressNow,
   collectThreadFollowUpAttachments,
+  isFollowUpMidTurnResultDelivered,
+  shouldAutoPauseFollowUpQueue,
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
+  shouldReleaseFollowUpQueuePause,
   threadAcceptsQueuedFollowUp,
 } from "../src/shared/thread-follow-up-drain";
 
@@ -151,6 +155,55 @@ test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
   expect(shouldDrainThreadFollowUps("idle")).toBe(true);
   expect(shouldDrainThreadFollowUps("running")).toBe(false);
   expect(shouldDrainThreadFollowUps("queued")).toBe(false);
+});
+
+test("auto-pause needs queued rows, and lifts itself once they are gone", () => {
+  // Session error / user stop with an empty queue: nothing to protect, and pausing would
+  // silently queue the next message the user composes.
+  expect(shouldAutoPauseFollowUpQueue(0)).toBe(false);
+  expect(shouldAutoPauseFollowUpQueue(1)).toBe(true);
+  expect(shouldAutoPauseFollowUpQueue(3)).toBe(true);
+
+  // Rows cancelled or force-drained while paused: the pause has no subject left.
+  expect(shouldReleaseFollowUpQueuePause({ paused: true, queuedCount: 0 })).toBe(true);
+  expect(shouldReleaseFollowUpQueuePause({ paused: true, queuedCount: 1 })).toBe(false);
+  expect(shouldReleaseFollowUpQueuePause({ paused: false, queuedCount: 0 })).toBe(false);
+});
+
+test("a paused queue only blocks drains that are not already an escalated force", () => {
+  const base = {
+    hasPendingBridgeApproval: false,
+    hasPendingClarification: false,
+    hasStoredPendingPlan: false,
+    threadStatus: "idle" as const,
+  };
+  expect(shouldBlockThreadFollowUpDrain({ ...base, hasFollowUpQueuePaused: true })).toBe(true);
+  // drainNextQueuedThreadFollowUp passes `queuePaused && !forceEscalatedDrain`, so a Guide
+  // click that armed the forced drain is not blocked while the other rows stay paused.
+  expect(shouldBlockThreadFollowUpDrain({ ...base, hasFollowUpQueuePaused: false })).toBe(false);
+});
+
+test("escalated Guide must not treat a still-queued mid-turn skip as delivered", () => {
+  // tryDeliverFollowUpViaMidTurn returns the row as-is when the inject was skipped
+  // (paused queue / interrupted turn / no accepting port).
+  expect(isFollowUpMidTurnResultDelivered(followUp("skipped", { status: "queued" }))).toBe(false);
+  expect(isFollowUpMidTurnResultDelivered(undefined)).toBe(false);
+  // Applied / failed / unknown rows are terminal for this click.
+  expect(isFollowUpMidTurnResultDelivered(followUp("applied", { status: "applied" }))).toBe(true);
+  expect(isFollowUpMidTurnResultDelivered(followUp("failed", { status: "failed" }))).toBe(true);
+});
+
+test("escalated Guide can still progress through the paused queue when a run or boundary exists", () => {
+  // Paused + running: interrupt is available, the forced drain bypasses the pause.
+  expect(canEscalatedFollowUpProgressNow({ hasActiveRun: true, status: "running" })).toBe(true);
+  // Paused + idle/completed: drainable boundary, armed as one forced drain.
+  expect(canEscalatedFollowUpProgressNow({ hasActiveRun: false, status: "idle" })).toBe(true);
+  expect(canEscalatedFollowUpProgressNow({ hasActiveRun: false, status: "completed" })).toBe(true);
+  expect(canEscalatedFollowUpProgressNow({ hasActiveRun: false, status: "failed" })).toBe(true);
+  // A run that is still starting up has nothing to interrupt and no safe boundary:
+  // keep the row queued instead of failing it.
+  expect(canEscalatedFollowUpProgressNow({ hasActiveRun: false, status: "queued" })).toBe(false);
+  expect(canEscalatedFollowUpProgressNow({ hasActiveRun: false, status: undefined })).toBe(false);
 });
 
 test("buildThreadFollowUpDisplayPrompt only includes the first delivered message", () => {

@@ -362,9 +362,13 @@ import {
 import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
+  canEscalatedFollowUpProgressNow,
   collectThreadFollowUpAttachments,
+  isFollowUpMidTurnResultDelivered,
+  shouldAutoPauseFollowUpQueue,
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
+  shouldReleaseFollowUpQueuePause,
   threadAcceptsQueuedFollowUp,
 } from "../shared/thread-follow-up-drain";
 import {
@@ -6530,12 +6534,28 @@ function registerIpcHandlers(): void {
 
     if (preferInterrupt) {
       const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
-      if (midTurnResult) {
+      if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
         return buildThreadFollowUpMutationResult(midTurnResult);
+      }
+      // Mid-turn was skipped (blocking approval, editing row, or a port that is not
+      // accepting) and the row is still `queued`: "handle now" must fall through to the
+      // interrupt instead of reporting a silent no-op. A run that is still starting up
+      // has nothing to interrupt, so that row simply keeps waiting.
+      if (
+        !canEscalatedFollowUpProgressNow({
+          hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
+          status: thread.status,
+        })
+      ) {
+        const settled = midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
+        if (settled.status === "queued") {
+          emitThreadFollowUpEvent(settled, "thread.follow_up.queued", formatFollowUpQueuedMessage(settled));
+        }
+        return buildThreadFollowUpMutationResult(settled);
       }
       const current = await requestEscalatedFollowUpInterrupt(
         thread,
-        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+        midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
       );
       if (current.status === "queued") {
         emitThreadFollowUpEvent(current, "thread.follow_up.queued", formatFollowUpQueuedMessage(current));
@@ -6583,12 +6603,26 @@ function registerIpcHandlers(): void {
     emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "");
 
     const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
-    if (midTurnResult) {
+    if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
       return buildThreadFollowUpMutationResult(midTurnResult);
+    }
+    // A skipped mid-turn inject leaves the row `queued`; Guide must not be swallowed
+    // by a paused queue (or a non-accepting port) — fall through to interrupt, which
+    // arms one forced drain past the pause. When nothing can move (e.g. the run is
+    // still starting up), keep the row queued instead of failing it.
+    if (
+      !canEscalatedFollowUpProgressNow({
+        hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
+        status: thread.status,
+      })
+    ) {
+      return buildThreadFollowUpMutationResult(
+        midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      );
     }
     const current = await requestEscalatedFollowUpInterrupt(
       thread,
-      conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
     );
     return buildThreadFollowUpMutationResult(current);
   });
@@ -6643,6 +6677,8 @@ function registerIpcHandlers(): void {
     if (attachmentPaths.length > 0) {
       await promptImageFileStore.releasePaths(attachmentPaths);
     }
+    // Cancelling the last held row means the pause has nothing left to hold.
+    releaseFollowUpQueuePauseWhenEmpty(request.threadId);
     emitThreadFollowUpEvent(followUp, "thread.follow_up.cancelled", "已取消排队的后续消息。");
     return buildThreadFollowUpMutationResult(followUp);
   });
@@ -6933,7 +6969,7 @@ function markThreadInterrupted(threadId: string, reason: string): void {
   const followUpQueuePaused = autoPauseFollowUpQueueForErrorStatus(threadId, "blocked");
   emitThreadEvent(threadId, "thread.blocked", truncated, "system", false, {
     metadata: { activityOrigin: "eco.thread_blocked" },
-    followUpQueuePaused,
+    ...(typeof followUpQueuePaused === "boolean" ? { followUpQueuePaused } : {}),
   });
 }
 
@@ -7105,6 +7141,9 @@ async function requestEscalatedFollowUpInterrupt(
   }
 
   if (shouldDrainThreadFollowUps(thread.status)) {
+    // Escalated owns exactly one drain: arm the forced flag so the paused queue does
+    // not block it, while the remaining rows stay paused afterwards.
+    pendingEscalatedFollowUpDrain.add(thread.id);
     void drainQueuedThreadFollowUpsAfterRun(thread.id);
     return followUp;
   }
@@ -7199,6 +7238,7 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
       ...(attachments.length > 0 ? { attachments } : {}),
       requireResumeForInterrupted:
         forceEscalatedDrain || thread.status === "failed" || thread.status === "blocked",
+      ...(forceEscalatedDrain ? { allowWhileQueuePaused: true } : {}),
       ...(skipRecordUserPrompt ? { skipRecordUserPrompt: true } : {}),
     });
     for (const followUp of claimed) {
@@ -7227,8 +7267,6 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
       );
     }
   }
-  // A force-drained escalated row can empty a paused queue; the pause then has no subject.
-  releaseFollowUpQueuePauseWhenEmpty(threadId);
 }
 
 function formatFollowUpDrainError(reason: string): string {
@@ -9360,6 +9398,11 @@ interface StartThreadContinuationInput {
   requireResumeForInterrupted?: boolean;
   /** Mid-turn already wrote thread.user_prompt for this follow-up; drain must not duplicate. */
   skipRecordUserPrompt?: boolean;
+  /**
+   * Escalated ("handle now") drain: the paused queue is intentional for the remaining
+   * rows, but this one row was explicitly escalated, so it may start a run anyway.
+   */
+  allowWhileQueuePaused?: boolean;
 }
 
 async function startThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
@@ -9373,7 +9416,9 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   }
   // Pause means new prompts join the queue; do not start a run ahead of it.
   // Rewind is allowed (explicit edit of history) and still must not drain while paused.
-  if (thread.followUpQueuePaused && !input.rewindTarget) {
+  // Escalated ("handle now") is the one explicit exception: the user asked for this
+  // single row to be sent now even though the rest of the queue stays paused.
+  if (thread.followUpQueuePaused && !input.rewindTarget && !input.allowWhileQueuePaused) {
     throw new Error("Follow-up queue is paused; enqueue the message or resume the queue before continuing.");
   }
   const resolvedTarget = input.rewindTarget
@@ -13254,17 +13299,42 @@ function autoPauseFollowUpQueueForErrorStatus(
   if (current.followUpQueuePaused) {
     return true;
   }
-  conversationStore.setThreadFollowUpQueuePaused(threadId, true);
-  return true;
+  // Only a pause with a subject: an empty queue has no rows to protect, and arming it would
+  // silently queue the next message the user composes after the error.
+  autoPauseFollowUpQueueWhenQueuedRemain(threadId);
+  return conversationStore.getThread(threadId)?.followUpQueuePaused ? true : undefined;
 }
 
 /** Pause the follow-up queue when queued rows remain after a user stop. */
 function autoPauseFollowUpQueueWhenQueuedRemain(threadId: string): void {
-  const queued = conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] });
-  if (queued.length === 0) {
+  if (!shouldAutoPauseFollowUpQueue(countQueuedThreadFollowUps(threadId))) {
     return;
   }
   setThreadFollowUpQueuePausedState(threadId, true);
+}
+
+/**
+ * Drop a pause that has no queued rows left (rows cancelled or force-drained). Keeps the
+ * thread summary, the renderer flag, and the DB flag in sync through the resumed event.
+ */
+function releaseFollowUpQueuePauseWhenEmpty(threadId: string): void {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return;
+  }
+  if (
+    !shouldReleaseFollowUpQueuePause({
+      paused: Boolean(thread.followUpQueuePaused),
+      queuedCount: countQueuedThreadFollowUps(threadId),
+    })
+  ) {
+    return;
+  }
+  setThreadFollowUpQueuePausedState(threadId, false);
+}
+
+function countQueuedThreadFollowUps(threadId: string): number {
+  return conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] }).length;
 }
 
 function setThreadFollowUpQueuePausedState(

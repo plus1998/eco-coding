@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { i18n } from "../src/renderer/i18n";
 import {
+  canEscalateThreadFollowUp,
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
@@ -93,6 +94,30 @@ test("formatThreadFollowUpPreview localizes image and empty defaults", async () 
     ),
   ).toBe("1 image(s)");
   expect(formatThreadFollowUpPreview(followUp("empty", { prompt: "" }))).toBe("Empty follow-up message");
+});
+
+test("Guide stays clickable on an escalated row while the queue is paused", () => {
+  expect(
+    canEscalateThreadFollowUp({ priority: "normal", coreSupportsEscalate: true, queuePaused: true }),
+  ).toBe(true);
+  expect(
+    canEscalateThreadFollowUp({
+      priority: "escalated",
+      coreSupportsEscalate: true,
+      queuePaused: true,
+    }),
+  ).toBe(true);
+  // Unpaused: an escalated row is already next in line, so the action is inert.
+  expect(
+    canEscalateThreadFollowUp({
+      priority: "escalated",
+      coreSupportsEscalate: true,
+      queuePaused: false,
+    }),
+  ).toBe(false);
+  expect(
+    canEscalateThreadFollowUp({ priority: "normal", coreSupportsEscalate: false, queuePaused: true }),
+  ).toBe(false);
 });
 
 test("ACP follow-up UI allows escalate; steer delivery mode is preserved", () => {

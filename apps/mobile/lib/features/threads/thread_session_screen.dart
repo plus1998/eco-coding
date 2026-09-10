@@ -1209,7 +1209,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   Future<void> _escalateFollowUp(ThreadPendingFollowUp followUp) async {
     final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null || followUp.priority == 'escalated') return;
+    if (rpc == null) return;
+    // An already-escalated row is stuck while the queue is paused, so Guide there
+    // means "send this one now" (mirrors canEscalateFollowUp).
+    final queuePaused =
+        ref
+            .read(threadSessionProvider(widget.threadId))
+            .thread
+            ?.followUpQueuePaused ??
+        false;
+    if (followUp.priority == 'escalated' && !queuePaused) return;
     setState(() => _followUpEscalateBusyId = followUp.id);
     try {
       await rpc.followUpEscalate(

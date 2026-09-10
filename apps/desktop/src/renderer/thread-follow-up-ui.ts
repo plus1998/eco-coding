@@ -1,4 +1,4 @@
-import type { ThreadPendingFollowUp, ThreadStatus } from "../shared/ipc";
+import type { ThreadFollowUpPriority, ThreadPendingFollowUp, ThreadStatus } from "../shared/ipc";
 import { i18n } from "./i18n";
 
 export function isLiveFollowUpThreadStatus(status?: ThreadStatus): boolean {
@@ -16,6 +16,23 @@ export function shouldComposerUseFollowUpQueue(input: {
       input.editingFollowUpId ||
       input.followUpQueuePaused,
   );
+}
+
+/**
+ * Whether the row's Guide action can be clicked.
+ * Normal rows are always escalatable. An already-escalated row only becomes clickable
+ * again while the queue is paused: there it is stuck (escalate does not auto-drain past
+ * the pause), so a click is the user's "send this one now".
+ */
+export function canEscalateThreadFollowUp(input: {
+  priority: ThreadFollowUpPriority;
+  coreSupportsEscalate: boolean;
+  queuePaused: boolean;
+}): boolean {
+  if (!input.coreSupportsEscalate) {
+    return false;
+  }
+  return input.priority !== "escalated" || input.queuePaused;
 }
 
 export function sortThreadFollowUps(followUps: readonly ThreadPendingFollowUp[]): ThreadPendingFollowUp[] {

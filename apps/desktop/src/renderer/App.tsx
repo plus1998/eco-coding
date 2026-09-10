@@ -408,6 +408,7 @@ import {
   type ThinkingDisplayPreferences,
 } from "./thinking-display-preferences";
 import {
+  canEscalateThreadFollowUp,
   formatThreadFollowUpPreview,
   mergeThreadFollowUp,
   queuedThreadFollowUps,
@@ -11361,7 +11362,13 @@ function FollowUpQueuePanel({
           const isEditing = editingFollowUpId === followUp.id;
           const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id || isEditing;
           const isEscalating = escalateBusyId === followUp.id;
-          const canEscalate = allowEscalate && followUp.priority !== "escalated";
+          // Paused queues also let an already-escalated row be clicked: it is stuck
+          // there, so the click means "send this one now".
+          const canEscalate = canEscalateThreadFollowUp({
+            priority: followUp.priority,
+            coreSupportsEscalate: allowEscalate,
+            queuePaused,
+          });
 
           return (
             <div

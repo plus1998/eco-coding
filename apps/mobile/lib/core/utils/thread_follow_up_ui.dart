@@ -41,6 +41,17 @@ bool shouldComposerUseFollowUpQueue({
       followUpQueuePaused;
 }
 
+/// Whether the row's Guide action can be used.
+/// Normal rows are always escalatable. An already-escalated row only becomes usable
+/// again while the queue is paused: it is stuck there (escalate does not drain past the
+/// pause), so tapping it means "send this one now".
+bool canEscalateFollowUp({
+  required String priority,
+  required bool queuePaused,
+}) {
+  return priority != 'escalated' || queuePaused;
+}
+
 List<ThreadPendingFollowUp> sortThreadFollowUps(
   List<ThreadPendingFollowUp> followUps,
 ) {

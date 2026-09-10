@@ -117,6 +117,13 @@ void main() {
     );
   });
 
+  test('canEscalateFollowUp lets a stuck escalated row be sent while paused', () {
+    expect(canEscalateFollowUp(priority: 'normal', queuePaused: false), isTrue);
+    expect(canEscalateFollowUp(priority: 'normal', queuePaused: true), isTrue);
+    expect(canEscalateFollowUp(priority: 'escalated', queuePaused: true), isTrue);
+    expect(canEscalateFollowUp(priority: 'escalated', queuePaused: false), isFalse);
+  });
+
   test('mergeThreadFollowUp replaces existing records by id', () {
     final original = followUp('same', prompt: '旧消息');
     final updated = followUp('same', prompt: '已取消', status: 'cancelled');
