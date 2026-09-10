@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export interface ExpandablePreBlockProps {
@@ -9,6 +9,8 @@ export interface ExpandablePreBlockProps {
   fadeClassName?: string;
   hintClassName?: string;
   maxCollapsedHeight?: number;
+  /** When set, expanded content is capped and scrolls inside the pre. */
+  maxExpandedHeight?: number;
   singleLine?: boolean;
   collapsedLabel?: string;
   expandedLabel?: string;
@@ -22,6 +24,7 @@ export function ExpandablePreBlock({
   fadeClassName,
   hintClassName,
   maxCollapsedHeight = 160,
+  maxExpandedHeight,
   singleLine = false,
   collapsedLabel,
   expandedLabel,
@@ -59,20 +62,41 @@ export function ExpandablePreBlock({
     setExpanded((value) => !value);
   }
 
+  function onWrapKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (!canToggle || expanded) {
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleExpanded();
+    }
+  }
+
+  const maxHeight = singleLine
+    ? undefined
+    : expanded
+      ? maxExpandedHeight
+      : maxCollapsedHeight;
+
   return (
     <div className={className}>
-      <button
-        type="button"
+      {/*
+        Use a div (not <button>) so expanded overflow scrolling works reliably;
+        browsers often clip overflow on button descendants.
+      */}
+      <div
         className={[
           wrapClassName,
           !expanded ? "collapsed" : "expanded",
           singleLine ? "is-single-line" : "",
-          canToggle ? "is-toggleable" : "",
+          canToggle && !expanded ? "is-toggleable" : "",
         ]
           .filter(Boolean)
           .join(" ")}
-        onClick={toggleExpanded}
-        disabled={!canToggle}
+        role={canToggle && !expanded ? "button" : undefined}
+        tabIndex={canToggle && !expanded ? 0 : undefined}
+        onClick={canToggle && !expanded ? toggleExpanded : undefined}
+        onKeyDown={canToggle && !expanded ? onWrapKeyDown : undefined}
         aria-expanded={canToggle ? expanded : undefined}
         title={canToggle && !expanded ? text : undefined}
       >
@@ -80,12 +104,18 @@ export function ExpandablePreBlock({
           ref={bodyRef}
           className={[
             preClassName,
-            !expanded ? "collapsed" : "",
+            !expanded ? "collapsed" : "expanded",
             singleLine && !expanded ? "is-single-line" : "",
           ]
             .filter(Boolean)
             .join(" ")}
-          style={!expanded && !singleLine ? { maxHeight: maxCollapsedHeight } : undefined}
+          style={
+            maxHeight != null
+              ? {
+                  maxHeight: expanded ? `min(40vh, ${maxHeight}px)` : maxHeight,
+                }
+              : undefined
+          }
         >
           {text}
         </pre>
@@ -94,7 +124,7 @@ export function ExpandablePreBlock({
             <span className={hintClassName}>{resolvedCollapsedLabel}</span>
           </span>
         ) : null}
-      </button>
+      </div>
       {canToggle && expanded ? (
         <button type="button" className={hintClassName} onClick={() => setExpanded(false)}>
           {resolvedExpandedLabel}

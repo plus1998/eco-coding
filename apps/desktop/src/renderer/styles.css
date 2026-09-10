@@ -7539,12 +7539,14 @@ button.sidebar-settings-meta {
   cursor: pointer;
 }
 
-.bash-approval-command-body-wrap.is-toggleable:disabled {
-  cursor: default;
-}
-
 .bash-approval-command-body-wrap.collapsed .bash-approval-command {
   overflow: hidden;
+}
+
+.bash-approval-command-body-wrap.expanded .bash-approval-command {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .bash-approval-command {
