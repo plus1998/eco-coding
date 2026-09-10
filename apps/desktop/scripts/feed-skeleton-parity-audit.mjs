@@ -11,9 +11,11 @@
  * (`test/fixtures/feed-parity/observed-event-shapes.json`); this script is the real-data
  * counterpart and the place to look when a shape is missing from that fixture.
  *
- * Usage:
- *   cd apps/desktop
- *   bun scripts/feed-skeleton-parity-audit.mjs <sqlite-path> [--seeds 0.5,0.9] [--skip-orphans] [--verbose]
+ * Usage (from the repo root; the database path is always required):
+ *   bun run feed:parity -- <sqlite-path> [--seeds 0.5,0.9] [--skip-orphans] [--verbose]
+ *
+ *   # macOS dev database (already a copy, see the note below)
+ *   bun run feed:parity -- "$HOME/Library/Application Support/@eco/desktopDev/eco-coding.sqlite"
  *
  * Notes:
  *  - Copy the database first; the script only reads, but WAL files of a live app can move.
@@ -41,8 +43,9 @@ import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed.ts
 const argv = process.argv.slice(2);
 const dbPath = argv.find((arg) => !arg.startsWith("--"));
 if (!dbPath) {
+  console.error("usage: bun run feed:parity -- <sqlite-path> [--seeds 0.5,0.9] [--skip-orphans] [--verbose]");
   console.error(
-    "usage: bun scripts/feed-skeleton-parity-audit.mjs <sqlite-path> [--seeds 0.5,0.9] [--skip-orphans] [--verbose]",
+    'example: bun run feed:parity -- "$HOME/Library/Application Support/@eco/desktopDev/eco-coding.sqlite"',
   );
   process.exit(2);
 }

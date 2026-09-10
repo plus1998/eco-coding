@@ -23,6 +23,7 @@
     "pack": "bun run --cwd apps/desktop pack",
     "readme:screenshots": "bun run --cwd apps/desktop readme:screenshots",
     "readme:screenshots:demo": "bun run --cwd apps/desktop readme:screenshots:demo",
+    "feed:parity": "bun run --cwd apps/desktop feed:parity",
     "test": "node scripts/test.mjs",
     "test:e2e": "bun run --cwd apps/desktop test:e2e",
     "round": "bun scripts/round.mjs",
