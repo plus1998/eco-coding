@@ -90,6 +90,9 @@ export const IPC_CHANNELS = {
   composerDraftDelete: "composer-draft:delete",
   promptImageStage: "prompt-image:stage",
   promptImageRelease: "prompt-image:release",
+  promptImageUploadBegin: "prompt-image:upload-begin",
+  promptImageUploadChunk: "prompt-image:upload-chunk",
+  promptImageUploadFinish: "prompt-image:upload-finish",
   threadSessionBootstrap: "thread:session-bootstrap",
   threadActivityList: "thread:activity-list",
   threadUserMessageEditGet: "thread:user-message-edit-get",
@@ -1385,6 +1388,42 @@ export interface PromptImageStageResult {
 
 export interface PromptImageReleaseRequest {
   paths: string[];
+}
+
+export interface PromptImageUploadBeginRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  totalBytes: number;
+}
+
+export interface PromptImageUploadBeginResult {
+  path: string;
+  receivedBytes: number;
+  complete: boolean;
+}
+
+export interface PromptImageUploadChunkRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  offset: number;
+  data: string;
+}
+
+export interface PromptImageUploadChunkResult {
+  receivedBytes: number;
+}
+
+export interface PromptImageUploadFinishRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  totalBytes: number;
+}
+
+export interface PromptImageUploadFinishResult {
+  path: string;
 }
 
 export interface ModelSettingsSnapshot {

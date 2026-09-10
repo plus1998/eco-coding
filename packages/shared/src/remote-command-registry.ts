@@ -37,6 +37,18 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("composer-draft:delete", "Delete composer draft", "write_safe", RPC_INVOKE, [
     objectArg(["contextKey", "expectedRevision"]),
   ]),
+  command("prompt-image:upload-begin", "Begin chunked prompt image upload", "write_safe", RPC_INVOKE, [
+    objectArg(["contextKey", "imageId", "mediaType", "totalBytes"]),
+  ]),
+  command("prompt-image:upload-chunk", "Append prompt image upload chunk", "write_safe", RPC_INVOKE, [
+    objectArg(["contextKey", "imageId", "mediaType", "offset", "data"]),
+  ]),
+  command("prompt-image:upload-finish", "Finish chunked prompt image upload", "write_safe", RPC_INVOKE, [
+    objectArg(["contextKey", "imageId", "mediaType", "totalBytes"]),
+  ]),
+  command("prompt-image:release", "Release staged prompt images", "write_safe", RPC_INVOKE, [
+    objectArg(["paths"]),
+  ]),
   command("thread:session-bootstrap", "Bootstrap thread session", "read", RPC_INVOKE, [stringArg()]),
   command("thread:start", "Start thread", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "prompt", "runtimeConfig"]),

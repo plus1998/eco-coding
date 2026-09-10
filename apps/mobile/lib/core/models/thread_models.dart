@@ -567,18 +567,69 @@ class WorkflowSettingsSnapshot {
 }
 
 class PromptImageAttachment {
-  const PromptImageAttachment({required this.mediaType, required this.data});
+  const PromptImageAttachment({
+    required this.mediaType,
+    required this.data,
+    this.id,
+    this.path,
+    this.uploadProgress,
+    this.uploadFailed = false,
+  });
 
   factory PromptImageAttachment.fromJson(Map<String, dynamic> json) =>
       PromptImageAttachment(
+        id: json['id'] as String?,
         mediaType: json['mediaType'] as String? ?? 'image/jpeg',
         data: json['data'] as String? ?? '',
+        path: json['path'] as String?,
       );
 
-  Map<String, dynamic> toJson() => {'mediaType': mediaType, 'data': data};
+  /// Local preview / UI copy. Wire payloads use [toWireJson].
+  Map<String, dynamic> toJson() => {
+    'mediaType': mediaType,
+    if (id != null && id!.isNotEmpty) 'id': id,
+    if (data.isNotEmpty) 'data': data,
+    if (path != null && path!.isNotEmpty) 'path': path,
+  };
 
+  /// Desktop thread RPC payload: prefer staged path so large base64 is not
+  /// shipped again through Center.
+  Map<String, dynamic> toWireJson() {
+    final staged = path?.trim() ?? '';
+    if (staged.isNotEmpty) {
+      return {'mediaType': mediaType, 'path': staged};
+    }
+    return {'mediaType': mediaType, 'data': data};
+  }
+
+  PromptImageAttachment copyWith({
+    String? id,
+    String? mediaType,
+    String? data,
+    String? path,
+    double? uploadProgress,
+    bool clearUploadProgress = false,
+    bool? uploadFailed,
+  }) {
+    return PromptImageAttachment(
+      id: id ?? this.id,
+      mediaType: mediaType ?? this.mediaType,
+      data: data ?? this.data,
+      path: path ?? this.path,
+      uploadProgress: clearUploadProgress
+          ? null
+          : (uploadProgress ?? this.uploadProgress),
+      uploadFailed: uploadFailed ?? this.uploadFailed,
+    );
+  }
+
+  final String? id;
   final String mediaType;
   final String data;
+  final String? path;
+  /// 0..1 while uploading; null when idle / finished.
+  final double? uploadProgress;
+  final bool uploadFailed;
 }
 
 class ComposerDraftRecord {
@@ -609,7 +660,8 @@ class ComposerDraftRecord {
                 )
                 .where(
                   (attachment) =>
-                      attachment.data.isNotEmpty &&
+                      (attachment.data.isNotEmpty ||
+                          (attachment.path?.isNotEmpty ?? false)) &&
                       _isSupportedPromptImageMediaType(attachment.mediaType),
                 )
                 .toList(growable: false)
@@ -647,7 +699,8 @@ class ComposerRestore {
                 )
                 .where(
                   (attachment) =>
-                      attachment.data.isNotEmpty &&
+                      (attachment.data.isNotEmpty ||
+                          (attachment.path?.isNotEmpty ?? false)) &&
                       _isSupportedPromptImageMediaType(attachment.mediaType),
                 )
                 .toList(growable: false)
@@ -1245,7 +1298,11 @@ class ThreadPendingFollowUp {
         attachments: (json['attachments'] as List<dynamic>? ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(PromptImageAttachment.fromJson)
-            .where((attachment) => attachment.data.isNotEmpty)
+            .where(
+              (attachment) =>
+                  attachment.data.isNotEmpty ||
+                  (attachment.path?.isNotEmpty ?? false),
+            )
             .toList(),
       );
 

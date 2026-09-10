@@ -299,6 +299,7 @@
   "bashReviewAllowAllConfirm": "开启「完全访问」后，将尽量自动放行对互联网和本机文件的操作，且不再逐条请求你批准。确定继续？",
   "composerSettings": "Composer 设置",
   "composerUnsupportedImage": "仅支持 JPEG、PNG、GIF 和 WebP 图片",
+  "composerImageTooLarge": "图片不能超过 20 MB",
   "composerOrchestrationSelection": "编排组合",
   "activityToolIncomplete": "工具未完成 · {text}",
   "activityReadFiles": "已读取 {count} 个文件",

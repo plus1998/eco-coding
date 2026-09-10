@@ -6,6 +6,7 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/image_display_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/image_memory_lightbox.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../composer/composer_stack_card.dart';
 
@@ -225,54 +226,10 @@ class _ImageDisplayFloatingGalleryState
     ImageDisplayArtifact artifact,
     ImageViewReadData image,
   ) async {
-    final eco = ecoColors(context);
-    await showDialog<void>(
-      context: context,
-      barrierColor: eco.bgOverlay,
-      builder: (context) => Dialog.fullscreen(
-        backgroundColor: eco.bgElevated,
-        child: SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                boundaryMargin: const EdgeInsets.all(48),
-                child: Center(
-                  child: ColoredBox(
-                    color: eco.cardSurface,
-                    child: Image.memory(
-                      image.bytes,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                left: 16,
-                right: 64,
-                child: Text(
-                  artifact.displayTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: eco.textMuted),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    await showImageMemoryLightboxSingle(
+      context,
+      bytes: image.bytes,
+      title: artifact.displayTitle,
     );
   }
 

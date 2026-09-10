@@ -883,6 +883,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerUnsupportedImage => '仅支持 JPEG、PNG、GIF 和 WebP 图片';
 
   @override
+  String get composerImageTooLarge => '图片不能超过 20 MB';
+
+  @override
   String get composerOrchestrationSelection => '编排组合';
 
   @override

@@ -963,6 +963,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Only JPEG, PNG, GIF, and WebP images are supported';
 
   @override
+  String get composerImageTooLarge => 'Images must be 20 MB or smaller';
+
+  @override
   String get composerOrchestrationSelection => 'Orchestration';
 
   @override

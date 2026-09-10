@@ -25,6 +25,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/prompt_image_attachment.dart';
+import '../../core/utils/prompt_image_upload.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
@@ -988,11 +989,26 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           );
         }
       }
+      final stagedAttachments = _attachments.isEmpty
+          ? null
+          : await stagePromptImageAttachments(
+              rpc: rpc,
+              contextKey: composerDraftContextKey(workspacePath: workspacePath),
+              attachments: List.of(_attachments),
+              onUpdate: (next) {
+                if (!mounted) return;
+                setState(() {
+                  _attachments
+                    ..clear()
+                    ..addAll(next);
+                });
+              },
+            );
       final thread = await rpc.startThread(
         workspacePath: workspacePath,
         prompt: prompt,
         coreKind: _coreKind,
-        attachments: _attachments.isEmpty ? null : List.of(_attachments),
+        attachments: stagedAttachments,
         runtimeConfig: sendRuntimeConfig,
       );
       ref.read(threadSessionSeedProvider.notifier).state = thread;
@@ -1020,11 +1036,18 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   Future<void> _pickImage() async {
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
-    final attachment = await promptImageAttachmentFromXFile(file);
+    final picked = await promptImageAttachmentFromXFile(file);
     if (!mounted) return;
+    final attachment = picked.attachment;
     if (attachment == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.composerUnsupportedImage)),
+        SnackBar(
+          content: Text(
+            picked.failure == PromptImagePickFailure.tooLarge
+                ? context.l10n.composerImageTooLarge
+                : context.l10n.composerUnsupportedImage,
+          ),
+        ),
       );
       return;
     }
@@ -1290,19 +1313,34 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     try {
       if (followUpMode) {
         setState(() => _followUpBusy = true);
+        final stagedAttachments = _attachments.isEmpty
+            ? null
+            : await stagePromptImageAttachments(
+                rpc: rpc,
+                contextKey: composerDraftContextKey(threadId: widget.threadId),
+                attachments: List.of(_attachments),
+                onUpdate: (next) {
+                  if (!mounted) return;
+                  setState(() {
+                    _attachments
+                      ..clear()
+                      ..addAll(next);
+                  });
+                },
+              );
         if (_editingFollowUpId != null) {
           await rpc.followUpUpdate(
             threadId: widget.threadId,
             followUpId: _editingFollowUpId!,
             prompt: prompt,
-            attachments: _attachments.isEmpty ? null : List.of(_attachments),
+            attachments: stagedAttachments,
           );
           await _cancelEditingFollowUp();
         } else {
           await rpc.followUpEnqueue(
             threadId: widget.threadId,
             prompt: prompt,
-            attachments: _attachments.isEmpty ? null : List.of(_attachments),
+            attachments: stagedAttachments,
           );
           FocusManager.instance.primaryFocus?.unfocus();
           _promptController.clear();
@@ -1328,10 +1366,25 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
               );
             }
           }
+          final stagedAttachments = _attachments.isEmpty
+              ? null
+              : await stagePromptImageAttachments(
+                  rpc: rpc,
+                  contextKey: composerDraftContextKey(threadId: widget.threadId),
+                  attachments: List.of(_attachments),
+                  onUpdate: (next) {
+                    if (!mounted) return;
+                    setState(() {
+                      _attachments
+                        ..clear()
+                        ..addAll(next);
+                    });
+                  },
+                );
           final updatedThread = await rpc.continueThread(
             threadId: widget.threadId,
             prompt: prompt,
-            attachments: _attachments.isEmpty ? null : List.of(_attachments),
+            attachments: stagedAttachments,
             runtimeConfig: sendRuntimeConfig,
           );
           ref
@@ -1609,11 +1662,19 @@ class _ActivityFeedView extends ConsumerWidget {
                 AppErrorCode.threadProjectionNoPcSelected,
               );
             }
+            final staged = attachments.isEmpty
+                ? attachments
+                : await stagePromptImageAttachments(
+                    rpc: rpc,
+                    contextKey: composerDraftContextKey(threadId: threadId),
+                    attachments: attachments,
+                    onUpdate: (_) {},
+                  );
             final thread = await rpc.rewriteThreadFromMessage(
               threadId: threadId,
               activityLineId: activityLineId,
               prompt: prompt,
-              attachments: attachments,
+              attachments: staged,
               expectedHistoryRevision: expectedHistoryRevision,
             );
             await ref

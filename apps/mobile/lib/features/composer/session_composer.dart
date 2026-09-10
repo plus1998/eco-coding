@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import '../../core/platform/mobile_asr_service.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
+import '../../core/widgets/image_memory_lightbox.dart';
 import 'composer_controls.dart';
 import 'composer_plus_menu.dart';
 import 'composer_toolbar_icon.dart';
@@ -395,6 +397,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                                 _PendingImagePreview(
                                   attachment: widget.attachments[index],
                                   index: index,
+                                  attachments: widget.attachments,
                                   onRemove: () =>
                                       widget.onRemoveAttachment(index),
                                 ),
@@ -559,42 +562,117 @@ class _PendingImagePreview extends StatelessWidget {
   const _PendingImagePreview({
     required this.attachment,
     required this.index,
+    required this.attachments,
     required this.onRemove,
   });
 
   final PromptImageAttachment attachment;
   final int index;
+  final List<PromptImageAttachment> attachments;
   final VoidCallback onRemove;
+
+  Future<void> _openPreview(BuildContext context) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < attachments.length; i++) {
+      try {
+        images.add(base64Decode(attachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return Semantics(
+      button: true,
       label: context.l10n.composerPendingImage(index + 1),
       child: SizedBox.square(
         dimension: 72,
         child: Stack(
           children: [
             Positioned.fill(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: eco.composerPillBg,
-                    border: Border.all(
-                      width: 0.5,
-                      color: eco.composerPillBorder.withValues(alpha: 0.5),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _openPreview(context),
+                  borderRadius: BorderRadius.circular(12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: eco.composerPillBg,
+                        border: Border.all(
+                          width: 0.5,
+                          color: eco.composerPillBorder.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Image.memory(
+                        base64Decode(attachment.data),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (_, _, _) =>
+                            const Center(child: Icon(Icons.broken_image_outlined)),
+                      ),
                     ),
-                  ),
-                  child: Image.memory(
-                    base64Decode(attachment.data),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    filterQuality: FilterQuality.medium,
                   ),
                 ),
               ),
             ),
+            if (attachment.uploadProgress != null || attachment.uploadFailed)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: attachment.uploadFailed
+                          ? Icon(
+                              Icons.refresh,
+                              size: 20,
+                              color: Colors.white.withValues(alpha: 0.95),
+                            )
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    value: attachment.uploadProgress,
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                    backgroundColor: Colors.white24,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${((attachment.uploadProgress ?? 0) * 100).clamp(0, 100).round()}%',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               top: 4,
               right: 4,

@@ -341,7 +341,8 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
               children: [
                 widget.dragHandle,
                 const SizedBox(width: 6),
-                if (attachments.isNotEmpty) ...[
+                if (attachments.isNotEmpty &&
+                    attachments.first.data.isNotEmpty) ...[
                   SizedBox(
                     width: 30,
                     height: 30,
@@ -351,6 +352,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
                         base64Decode(attachments.first.data),
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
                       ),
                     ),
                   ),

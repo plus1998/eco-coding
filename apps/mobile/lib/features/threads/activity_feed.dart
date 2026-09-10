@@ -30,6 +30,7 @@ import '../../core/widgets/activity_feed_block.dart';
 import '../../core/widgets/activity_feed_speak_button.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
+import '../../core/widgets/image_memory_lightbox.dart';
 import '../../core/widgets/paced_stream_text.dart';
 import '../../core/widgets/shimmer_text.dart';
 import '../../core/theme/subagent_theme.dart';
@@ -1983,10 +1984,15 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     }
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null || !mounted) return;
-    final attachment = await promptImageAttachmentFromXFile(file);
+    final picked = await promptImageAttachmentFromXFile(file);
     if (!mounted) return;
+    final attachment = picked.attachment;
     if (attachment == null) {
-      _showEditToast(context.l10n.composerUnsupportedImage);
+      _showEditToast(
+        picked.failure == PromptImagePickFailure.tooLarge
+            ? context.l10n.composerImageTooLarge
+            : context.l10n.composerUnsupportedImage,
+      );
       return;
     }
     setState(() {
@@ -2034,9 +2040,13 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       ? '消息不能为空'
       : 'Message cannot be empty';
 
-  Widget _buildImage(PromptImageAttachment attachment, {double size = 108}) {
+  Widget _buildImage(
+    PromptImageAttachment attachment, {
+    double size = 108,
+    VoidCallback? onTap,
+  }) {
     try {
-      return Image.memory(
+      final image = Image.memory(
         base64Decode(attachment.data),
         width: size,
         height: size,
@@ -2046,9 +2056,54 @@ class _UserPromptTileState extends State<_UserPromptTile> {
         errorBuilder: (_, _, _) =>
             const Center(child: Icon(Icons.broken_image_outlined)),
       );
+      if (onTap == null) return image;
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(onTap: onTap, child: image),
+      );
     } on FormatException {
       return const Center(child: Icon(Icons.broken_image_outlined));
     }
+  }
+
+  Future<void> _openAttachmentLightbox(int index) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < widget.attachments.length; i++) {
+      try {
+        images.add(base64Decode(widget.attachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty || !mounted) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
+  }
+
+  Future<void> _openEditAttachmentLightbox(int index) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < _editAttachments.length; i++) {
+      try {
+        images.add(base64Decode(_editAttachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty || !mounted) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
   }
 
   Widget _buildEditBubble(BuildContext context, double maxBubbleWidth) {
@@ -2104,7 +2159,11 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                         borderRadius: BorderRadius.circular(10),
                         child: SizedBox.square(
                           dimension: 88,
-                          child: _buildImage(attachment, size: 88),
+                          child: _buildImage(
+                            attachment,
+                            size: 88,
+                            onTap: () => _openEditAttachmentLightbox(index),
+                          ),
                         ),
                       ),
                       Positioned(
@@ -2227,7 +2286,10 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                         borderRadius: BorderRadius.circular(10),
                         child: SizedBox.square(
                           dimension: 108,
-                          child: _buildImage(widget.attachments[index]),
+                          child: _buildImage(
+                            widget.attachments[index],
+                            onTap: () => _openAttachmentLightbox(index),
+                          ),
                         ),
                       ),
                     ),
@@ -3326,56 +3388,10 @@ class _ImageViewTileState extends State<_ImageViewTile> {
   }
 
   Future<void> _openLightbox(ImageViewReadData image) {
-    final eco = ecoColors(context);
-    return showDialog<void>(
-      context: context,
-      barrierColor: eco.bgOverlay,
-      builder: (context) => Dialog.fullscreen(
-        backgroundColor: eco.bgElevated,
-        child: SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                boundaryMargin: const EdgeInsets.all(48),
-                child: Center(
-                  child: ColoredBox(
-                    color: eco.cardSurface,
-                    child: Image.memory(
-                      image.bytes,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                left: 16,
-                right: 64,
-                child: Text(
-                  image.fileName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: eco.textMuted),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 4,
-                child: IconButton(
-                  tooltip: context.l10n.commonClose,
-                  icon: const Icon(EcoIcons.close),
-                  color: eco.textHeading,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return showImageMemoryLightboxSingle(
+      context,
+      bytes: image.bytes,
+      title: image.fileName,
     );
   }
 
@@ -4663,6 +4679,26 @@ class _SubagentImageStrip extends StatelessWidget {
 
   final List<PromptImageAttachment> attachments;
 
+  Future<void> _open(BuildContext context, int index) async {
+    final images = <Uint8List>[];
+    final indexes = <int>[];
+    for (var i = 0; i < attachments.length; i++) {
+      try {
+        images.add(base64Decode(attachments[i].data));
+        indexes.add(i);
+      } on FormatException {
+        // Skip undecodable thumbnails.
+      }
+    }
+    if (images.isEmpty) return;
+    final start = indexes.indexOf(index).clamp(0, images.length - 1);
+    await showImageMemoryLightbox(
+      context,
+      images: images,
+      initialIndex: start,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -4675,11 +4711,19 @@ class _SubagentImageStrip extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: SizedBox.square(
             dimension: 88,
-            child: Image.memory(
-              base64Decode(attachments[index].data),
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.medium,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _open(context, index),
+                child: Image.memory(
+                  base64Decode(attachments[index].data),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (_, _, _) =>
+                      const Center(child: Icon(Icons.broken_image_outlined)),
+                ),
+              ),
             ),
           ),
         ),

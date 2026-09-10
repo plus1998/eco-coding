@@ -4009,6 +4009,99 @@ function registerIpcHandlers(): void {
     });
   });
 
+  registerDesktopCommand(IPC_CHANNELS.promptImageUploadBegin, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image upload begin request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      totalBytes?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    if (typeof record.totalBytes !== "number" || !Number.isFinite(record.totalBytes)) {
+      throw new Error("Image upload totalBytes is required.");
+    }
+    return promptImageFileStore.beginComposerImageUpload({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      totalBytes: record.totalBytes,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageUploadChunk, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image upload chunk request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      offset?: unknown;
+      data?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    if (typeof record.offset !== "number" || !Number.isFinite(record.offset)) {
+      throw new Error("Image upload offset is required.");
+    }
+    const data = typeof record.data === "string" ? record.data.trim() : "";
+    if (!data) {
+      throw new Error("Image upload chunk data is required.");
+    }
+    return promptImageFileStore.writeComposerImageChunk({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      offset: record.offset,
+      dataBase64: data,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageUploadFinish, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image upload finish request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      totalBytes?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    if (typeof record.totalBytes !== "number" || !Number.isFinite(record.totalBytes)) {
+      throw new Error("Image upload totalBytes is required.");
+    }
+    return promptImageFileStore.finishComposerImageUpload({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      totalBytes: record.totalBytes,
+    });
+  });
+
   registerDesktopCommand(IPC_CHANNELS.promptImageRelease, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid prompt image release request.");

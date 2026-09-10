@@ -344,6 +344,7 @@
   "bashReviewAllowAllConfirm": "Full access auto-allows internet and local-file actions without asking you each time. Continue?",
   "composerSettings": "Composer settings",
   "composerUnsupportedImage": "Only JPEG, PNG, GIF, and WebP images are supported",
+  "composerImageTooLarge": "Images must be 20 MB or smaller",
   "composerOrchestrationSelection": "Orchestration",
   "activityToolIncomplete": "Tool incomplete · {text}",
   "activityReadFiles": "Read {count} files",

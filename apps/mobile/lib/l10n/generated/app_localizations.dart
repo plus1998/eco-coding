@@ -1742,6 +1742,12 @@ abstract class AppLocalizations {
   /// **'Only JPEG, PNG, GIF, and WebP images are supported'**
   String get composerUnsupportedImage;
 
+  /// No description provided for @composerImageTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Images must be 20 MB or smaller'**
+  String get composerImageTooLarge;
+
   /// No description provided for @composerOrchestrationSelection.
   ///
   /// In en, this message translates to:
