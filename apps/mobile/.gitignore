@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 手工冒烟产生的 uiautomator dump / 截图等一次性产物（可再生，勿提交）。
+# 冒烟脚本放在 scripts/，产物写到这个目录。
+/smoke-artifacts/

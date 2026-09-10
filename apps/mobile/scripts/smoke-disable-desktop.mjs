@@ -48,15 +48,9 @@ console.log(
   devices.map((d) => ({ id: d.id, name: d.name })),
 );
 
-const target = targetId
-  ? devices.find((d) => d.id === targetId)
-  : devices.find((d) => d.name === targetName);
+const target = targetId ? devices.find((d) => d.id === targetId) : devices.find((d) => d.name === targetName);
 if (!target) {
-  console.error(
-    targetId
-      ? `No active desktop id ${targetId}`
-      : `No active desktop named ${targetName}`,
-  );
+  console.error(targetId ? `No active desktop id ${targetId}` : `No active desktop named ${targetName}`);
   process.exit(1);
 }
 
@@ -106,7 +100,5 @@ const disableText = await disableRes.text();
 console.log("device-disable status", disableRes.status, disableText);
 if (!disableRes.ok) process.exit(1);
 
-const after = await admin(
-  `/rest/v1/devices?id=eq.${target.id}&select=id,name,disabled_at`,
-);
+const after = await admin(`/rest/v1/devices?id=eq.${target.id}&select=id,name,disabled_at`);
 console.log("after disable:", after);

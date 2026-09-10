@@ -1,8 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
 const dbPath =
-  process.env.ECO_DB ||
-  "C:\\Users\\admin\\AppData\\Roaming\\@eco\\desktopDev\\eco-coding.sqlite";
+  process.env.ECO_DB || "C:\\Users\\admin\\AppData\\Roaming\\@eco\\desktopDev\\eco-coding.sqlite";
 const db = new DatabaseSync(dbPath, { readOnly: true });
 const tables = db
   .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
