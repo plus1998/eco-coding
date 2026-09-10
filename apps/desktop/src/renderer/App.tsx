@@ -2149,6 +2149,17 @@ function App() {
         }
       }
 
+      if (event.threadPrompt !== undefined) {
+        const threadPrompt = event.threadPrompt;
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId
+              ? { ...thread, prompt: threadPrompt, updatedAt: new Date().toISOString() }
+              : thread,
+          ),
+        );
+      }
+
       if (event.type === "thread.run_projection_updated" && event.projection) {
         const preserveHistory = userDetachedFromBottomRef.current;
         setRunProjectionByThread((current) => {

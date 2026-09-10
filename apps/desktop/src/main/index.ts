@@ -654,6 +654,12 @@ import {
 } from "./project-skills-settings-store";
 import { formatPromptCacheBreakLog, resolveClaudeMdDigest } from "./prompt-cache-fingerprint";
 import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
+import {
+  hydratePromptAttachmentsForComposerRestore,
+  resolveRestorePromptText,
+  shouldClearThreadPromptAfterUnstartedDiscard,
+  toSpoolStageAttachments,
+} from "./discard-unstarted-composer-restore";
 import { isPromptImageAttachmentRecord, PromptImageFileStore } from "./prompt-image-file-store";
 import { collectProviderDeleteReferences, partitionProviderDeleteReferences } from "./provider-deletion";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
@@ -7156,8 +7162,24 @@ async function discardUnstartedAcpTurn(input: {
   }
   const stored = conversationStore.getUserMessageRecord(input.threadId, activityLineId);
   const rawPrompt = stored?.text ?? input.restorePrompt;
-  const restorePrompt = rawPrompt.trim() === ACP_IMAGE_ONLY_PROMPT ? "" : rawPrompt;
-  const attachments = stored?.attachments?.length ? stored.attachments : input.attachments;
+  const restorePrompt = resolveRestorePromptText(rawPrompt, ACP_IMAGE_ONLY_PROMPT);
+  const primaryAttachments = stored?.attachments?.length
+    ? stored.attachments
+    : (input.attachments ?? []);
+  let restoreAttachments = await hydratePromptAttachmentsForComposerRestore(
+    primaryAttachments,
+    (attachment) => promptImageFileStore.readAttachmentData(attachment),
+  );
+  if (
+    restoreAttachments.length === 0 &&
+    input.attachments?.length &&
+    primaryAttachments !== input.attachments
+  ) {
+    restoreAttachments = await hydratePromptAttachmentsForComposerRestore(
+      input.attachments,
+      (attachment) => promptImageFileStore.readAttachmentData(attachment),
+    );
+  }
   try {
     conversationStore.discardThreadTurnFromActivityLine(input.threadId, activityLineId);
   } catch (error) {
@@ -7166,24 +7188,52 @@ async function discardUnstartedAcpTurn(input: {
     return;
   }
   resetThreadRuntimeAfterHistoryRewrite(input.threadId);
+  const clearThreadPrompt = shouldClearThreadPromptAfterUnstartedDiscard(
+    conversationStore.listUserMessageRecords(input.threadId).length,
+  );
+  if (clearThreadPrompt) {
+    conversationStore.updateThreadPrompt(input.threadId, "");
+  }
+  const draftContextKey = `thread:${input.threadId}`;
+  const spoolAttachments = toSpoolStageAttachments(restoreAttachments);
+  const draftAttachments =
+    spoolAttachments.length > 0
+      ? await normalizeComposerDraftAttachments(draftContextKey, spoolAttachments)
+      : [];
+  // Message-dir images are no longer referenced after staging into the composer spool.
+  await promptImageFileStore.deleteMessageActivity(input.threadId, activityLineId).catch((error) => {
+    process.stderr.write(
+      `[eco] ACP unstarted image cleanup failed (${input.threadId}): ${errorMessage(error)}\n`,
+    );
+  });
   const failureMessage = formatUserFacingRequestError(input.reason);
   const draft = conversationStore.saveComposerDraft(
-    `thread:${input.threadId}`,
+    draftContextKey,
     restorePrompt,
-    attachments,
+    draftAttachments,
     failureMessage,
   );
-  if (!draft) {
+  if (!draft && !restorePrompt && restoreAttachments.length === 0) {
     markThreadInterrupted(input.threadId, input.reason);
     return;
   }
+  // Prefer spool paths (+ data) so a resend does not chase deleted message-dir files.
+  const uiAttachments =
+    draftAttachments.length > 0
+      ? await hydratePromptAttachmentsForComposerRestore(
+          draftAttachments,
+          (attachment) => promptImageFileStore.readAttachmentData(attachment),
+        )
+      : toSpoolStageAttachments(restoreAttachments);
   updateThread(input.threadId, { status: "failed", message: failureMessage });
   emitThreadEvent(input.threadId, "thread.unstarted_turn_discarded", failureMessage, "system", false, {
     composerRestore: {
       prompt: restorePrompt,
-      ...(attachments?.length ? { attachments } : {}),
-      revision: draft.revision,
+      // Include inline data so the renderer can build preview URLs immediately.
+      ...(uiAttachments.length ? { attachments: uiAttachments } : {}),
+      ...(draft?.revision ? { revision: draft.revision } : {}),
     },
+    ...(clearThreadPrompt ? { threadPrompt: "" } : {}),
   });
   emitThreadRunProjectionUpdated(input.threadId);
 }
@@ -13174,6 +13224,7 @@ interface EmitThreadEventExtras {
   metadata?: Record<string, unknown>;
   requestId?: string;
   composerRestore?: ThreadLiveEvent["composerRestore"];
+  threadPrompt?: string;
   followUpQueuePaused?: boolean;
 }
 
@@ -13490,6 +13541,9 @@ function emitThreadEvent(
   }
   if (extras?.composerRestore) {
     payload.composerRestore = extras.composerRestore;
+  }
+  if (extras?.threadPrompt !== undefined) {
+    payload.threadPrompt = extras.threadPrompt;
   }
   if (typeof extras?.followUpQueuePaused === "boolean") {
     payload.followUpQueuePaused = extras.followUpQueuePaused;

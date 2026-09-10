@@ -2299,6 +2299,11 @@ export interface ThreadLiveEvent {
     /** Opaque revision used for compare-and-delete acknowledgement. */
     revision?: string;
   };
+  /**
+   * When set, patches ThreadSummary.prompt (e.g. clear after unstarted first-turn discard
+   * so the Feed does not re-show the prompt via showThreadPrompt).
+   */
+  threadPrompt?: string;
   /** Present when follow-up auto-drain pause state changes (or on failed/blocked). */
   followUpQueuePaused?: boolean;
 }
