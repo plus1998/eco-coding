@@ -1904,14 +1904,39 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     String decision, {
     String? feedback,
   }) async {
-    await ref
-        .read(desktopRpcProvider)
-        ?.resolveBashApproval(
-          toolUseId: toolUseId,
-          decision: decision,
-          feedback: feedback,
-        );
-    state = state.copyWith(clearBash: true);
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      state = state.copyWith(clearBash: true);
+      return;
+    }
+    try {
+      await rpc.resolveBashApproval(
+        toolUseId: toolUseId,
+        decision: decision,
+        feedback: feedback,
+      );
+    } catch (error) {
+      // Old desktop hosts still throw; treat as discardable stale card.
+      if (!isStalePendingBashApprovalError(error)) {
+        rethrow;
+      }
+    }
+    if (!mounted) return;
+    BashApprovalRequest? next;
+    try {
+      next = await rpc.getPendingBashApproval(threadId);
+    } catch (_) {
+      next = null;
+    }
+    if (!mounted) return;
+    // Drop the card we just acted on; surface any remaining parked approvals.
+    if (next != null && next.toolUseId == toolUseId) {
+      next = null;
+    }
+    state = state.copyWith(
+      pendingBash: next,
+      clearBash: next == null,
+    );
   }
 
   Future<void> submitClarification(
@@ -1940,6 +1965,22 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (!mounted) return;
     state = state.copyWith(clearClarification: true);
   }
+}
+
+/// Cross-device race: PC already resolved; mobile still shows the card.
+/// Old hosts throw; new hosts return ok — both paths should discard the UI.
+@visibleForTesting
+bool isStalePendingBashApprovalError(Object error) {
+  final message = error is EcoCenterException
+      ? (error.nativeMessage ?? error.message)
+      : error.toString();
+  final trimmed = message.trim();
+  if (trimmed.isEmpty) return false;
+  return trimmed == 'No pending Bash approval for this tool use.' ||
+      trimmed == 'No pending approval request was found.' ||
+      trimmed == '找不到待处理的审批请求。' ||
+      trimmed.contains('No pending Bash approval') ||
+      trimmed.contains('pendingApprovalNotFound');
 }
 
 ThreadRunProjectionSnapshot? _pickNewerProjection(

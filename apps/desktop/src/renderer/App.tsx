@@ -231,7 +231,7 @@ import {
   taskPanelMaxWidthForPane,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
-import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
+import { isStalePendingBashApprovalError, shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
@@ -7229,8 +7229,25 @@ function App() {
         ...(resolution.feedback ? { feedback: resolution.feedback } : {}),
       });
       clearPendingBashApprovalForThread(pendingBashApproval.threadId);
+      if (typeof window.eco.getPendingBashApproval === "function") {
+        const next = await window.eco.getPendingBashApproval(pendingBashApproval.threadId);
+        if (next) {
+          upsertPendingBashApprovalForThread(pendingBashApproval.threadId, next);
+        }
+      }
     } catch (caught) {
-      setError(errorMessage(caught));
+      const message = errorMessage(caught);
+      if (isStalePendingBashApprovalError(message)) {
+        clearPendingBashApprovalForThread(pendingBashApproval.threadId);
+        if (typeof window.eco.getPendingBashApproval === "function") {
+          const next = await window.eco.getPendingBashApproval(pendingBashApproval.threadId);
+          if (next) {
+            upsertPendingBashApprovalForThread(pendingBashApproval.threadId, next);
+          }
+        }
+      } else {
+        setError(message);
+      }
     } finally {
       setBashApprovalBusy(false);
     }

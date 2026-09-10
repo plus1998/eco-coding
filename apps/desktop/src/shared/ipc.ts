@@ -1927,6 +1927,12 @@ export interface BashApprovalResolvePayload {
   feedback?: string;
 }
 
+/** Result of `bash-approval:resolve`. `alreadyResolved` is true when the tool use was already gone (idempotent). */
+export interface BashApprovalResolveResult {
+  ok: true;
+  alreadyResolved?: boolean;
+}
+
 export interface PlanApprovalRequest {
   toolUseId: string;
   threadId: string;

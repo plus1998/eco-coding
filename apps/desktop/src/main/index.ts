@@ -444,6 +444,7 @@ import {
   getPendingBashApprovalByToolUseId,
   getPendingBashApprovalForThread,
   registerPendingBashApproval,
+  resolveBashApprovalIdempotent,
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
 import type { UsageBillingObservation } from "./billing-orchestration";
@@ -6098,29 +6099,26 @@ function registerIpcHandlers(): void {
     if (!isBashApprovalResolvePayload(payload)) {
       throw new Error("Invalid Bash approval payload.");
     }
-    const pendingApproval = getPendingBashApprovalByToolUseId(payload.toolUseId);
-    if (!pendingApproval) {
-      throw new Error("No pending Bash approval for this tool use.");
-    }
     const resolution: BashApprovalResolution = {
       decision: payload.decision,
       ...(payload.feedback?.trim() ? { feedback: payload.feedback.trim() } : {}),
     };
-    const ok = resolvePendingBashApproval(payload.toolUseId, resolution);
-    if (!ok) {
-      throw new Error("Failed to resolve Bash approval.");
+    const outcome = resolveBashApprovalIdempotent(payload.toolUseId, resolution);
+    if (outcome.alreadyResolved) {
+      // PC/mobile race — already resolved elsewhere, or client is discarding a stale card.
+      return { ok: true as const, alreadyResolved: true as const };
     }
     const threadPatch = buildResolvedBashApprovalThreadPatch(resolution.decision);
-    patchThreadSummary(pendingApproval.threadId, threadPatch);
+    patchThreadSummary(outcome.request.threadId, threadPatch);
     desktopEventCenter.publishThreadLiveEvent({
-      threadId: pendingApproval.threadId,
+      threadId: outcome.request.threadId,
       type: "bash_approval.resolved",
       message: threadPatch.message,
       role: "tool",
       stream: false,
-      bashApproval: pendingApproval,
+      bashApproval: outcome.request,
     });
-    return { ok: true as const };
+    return { ok: true as const, alreadyResolved: false as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadGetUsageSnapshot, async (threadId: unknown) => {

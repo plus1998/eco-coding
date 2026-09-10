@@ -76,6 +76,25 @@ export function resolvePendingBashApproval(toolUseId: string, resolution: BashAp
 }
 
 /**
+ * Idempotent resolve for PC/mobile races: missing pending is success (`alreadyResolved`),
+ * not an error. Callers should only emit live events when `alreadyResolved` is false.
+ */
+export function resolveBashApprovalIdempotent(
+  toolUseId: string,
+  resolution: BashApprovalResolution,
+):
+  | { ok: true; alreadyResolved: false; request: BashApprovalRequest }
+  | { ok: true; alreadyResolved: true } {
+  const entry = pending.get(toolUseId);
+  if (!entry) {
+    return { ok: true, alreadyResolved: true };
+  }
+  pending.delete(toolUseId);
+  entry.resolve(resolution);
+  return { ok: true, alreadyResolved: false, request: entry.request };
+}
+
+/**
  * Mid-run switch to Eco「完全访问」: host-approve every parked execution card for the thread.
  * Does not touch plan approvals. Uses one-shot `approved` (no remember-prefix / session grant).
  */

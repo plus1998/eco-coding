@@ -1099,7 +1099,10 @@ const api = {
   getPendingBashApproval(threadId: string): Promise<BashApprovalRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.bashApprovalGetPending, threadId);
   },
-  resolveBashApproval(payload: BashApprovalResolvePayload): Promise<{ ok: true }> {
+  resolveBashApproval(payload: BashApprovalResolvePayload): Promise<{
+    ok: true;
+    alreadyResolved?: boolean;
+  }> {
     return ipcRenderer.invoke(IPC_CHANNELS.bashApprovalResolve, payload);
   },
   approvePlan(request: ThreadApprovePlanRequest): Promise<{ thread?: ThreadSummary }> {
