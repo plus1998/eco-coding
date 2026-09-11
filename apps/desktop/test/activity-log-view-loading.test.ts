@@ -2504,6 +2504,114 @@ test("failed Bash action uses the completed command style plus a status dot", ()
   expect(expandedFailedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
 });
 
+test("ActivityLogView aggregates a group that mixes commands with a failed image view", () => {
+  const mixedProjection = projection({
+    status: "completed",
+    timeline: [
+      item({
+        id: "bash-ok-1",
+        sequence: 1,
+        eventType: "tool.completed",
+        text: 'Tool: Bash · export PATH="$PATH:/sdk/platform-tools"; adb devices',
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: 'export PATH="$PATH:/sdk/platform-tools"; adb devices',
+            toolUseId: "toolu_bash_ok_1",
+            status: "completed",
+          },
+        },
+      }),
+      item({
+        id: "image-view-failed",
+        sequence: 2,
+        eventType: "tool.failed",
+        text: "Tool failed: mcp: Failed to call tool: Request timed out",
+        metadata: {
+          itemType: "mcpToolCall",
+          tool: {
+            name: "mcp__eco_image_view__view_image",
+            detail: "Failed to call tool: Request timed out",
+            toolUseId: "toolu_image_view_failed",
+            status: "failed",
+            imageView: { path: "/tmp/cascade_land_fix_small.png" },
+          },
+        },
+      }),
+      item({
+        id: "bash-ok-2",
+        sequence: 3,
+        eventType: "tool.completed",
+        text: "Tool: Bash · bun test",
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: "bun test",
+            toolUseId: "toolu_bash_ok_2",
+            status: "completed",
+          },
+        },
+      }),
+    ],
+  });
+
+  const html = renderToStaticMarkup(createElement(ActivityLogView, { projection: mixedProjection }));
+
+  // The group title summarizes every tool call it holds; one failed image view must
+  // never retitle a group of commands.
+  expect(html).toContain("已运行 2 条命令和已处理 1 张图像");
+  expect(html).not.toContain("已查看 1 张图像");
+
+  const entry = buildThreadRunProjectionViewModel(mixedProjection).mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("mixed tool group missing");
+  }
+  const expandedHtml = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(expandedHtml).toContain("已运行 2 条命令和已处理 1 张图像");
+  expect(expandedHtml).toContain("运行了 bun test");
+  // The failed image view keeps its own copy and status dot on the child row.
+  expect(expandedHtml).toContain("已查看 1 张图像");
+  expect(expandedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
+});
+
+test("ActivityLogView keeps a lone failed tool's own copy as the group title", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "image-view-failed",
+            sequence: 1,
+            eventType: "tool.failed",
+            text: "Tool failed: mcp: Failed to call tool: Request timed out",
+            metadata: {
+              itemType: "mcpToolCall",
+              tool: {
+                name: "mcp__eco_image_view__view_image",
+                detail: "Failed to call tool: Request timed out",
+                toolUseId: "toolu_image_view_failed",
+                status: "failed",
+                imageView: { path: "/tmp/cascade_land_fix_small.png" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已查看 1 张图像");
+  expect(html.match(/run-log-tool-group-trigger/g)?.length).toBe(1);
+});
+
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {
   const subagent = agent({
     agentId: "agent_coder_1",

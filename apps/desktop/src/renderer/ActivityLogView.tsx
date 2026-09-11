@@ -61,6 +61,7 @@ import {
 } from "../shared/activity-display";
 import {
   type ActionGroupBucket,
+  type ActionKindPayload,
   formatActionLine,
   type ResolvedAction,
   resolveActionKind,
@@ -1658,24 +1659,27 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   const actionBlocks = blocks.filter(
     (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action",
   );
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
+  const failedBlocks = blocks.filter(
+    (block): block is Extract<ActivityDetailBlock, { kind: "tool-failed" }> => block.kind === "tool-failed",
+  );
+  // Every group child is one tool call. A group holding a single tool call keeps that
+  // tool's own failure copy ("运行了命令", "编辑了 panel.ts", recovered-patch notices).
+  // A group that aggregates several calls has to describe all of them
+  // ("已运行 4 条命令和已处理 1 张图像") — otherwise a single failed image / HTML tool
+  // retitles the aggregate ("已查看 1 张图像") and hides every action next to it.
+  if (blocks.length === 1) {
+    const block = blocks[0];
     if (block?.kind === "tool-failed") {
-      const sibling = siblingActionForFailedTool(blocks, block);
-      let commandHeader =
-        actionBlocks.length === 1 && sibling ? summarizeSingleCommandGroupHeader(sibling, "done") : undefined;
-      if (!commandHeader && actionBlocks.length === 0 && blocks.length === 1) {
-        const resolved = resolveActionKind({
+      const commandHeader =
+        resolveActionKind({
           toolName: block.tool,
           ...(block.command && { payload: { bashRun: { command: block.command } } }),
-        });
-        if (resolved.kind === "command") {
-          commandHeader = {
-            label: translateActionKind("activity.done.command.fallback"),
-            icon: iconForToolName(block.tool),
-          };
-        }
-      }
+        }).kind === "command"
+          ? {
+              label: translateActionKind("activity.done.command.fallback"),
+              icon: iconForToolName(block.tool),
+            }
+          : undefined;
       return {
         label: block.recoveredResult
           ? i18n.t("activity.patchRecovered")
@@ -1683,7 +1687,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
             summarizeFailedTool(
               block.tool,
               block.command,
-              sibling ?? (block.fileChange ? { fileChange: block.fileChange } : undefined),
+              block.fileChange ? { fileChange: block.fileChange } : undefined,
             )),
         icon: commandHeader?.icon ?? iconForToolName(block.tool),
       };
@@ -1704,7 +1708,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       icon: runningBlock.icon,
     };
   }
-  if (actionBlocks.length === 1 && actionBlocks[0]) {
+  if (actionBlocks.length === 1 && actionBlocks[0] && failedBlocks.length === 0) {
     return (
       summarizeSingleCommandGroupHeader(actionBlocks[0], "done") ?? {
         label: formatBlockActionLine(actionBlocks[0], "done"),
@@ -1715,28 +1719,50 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
 
   const fileBucketKeys = new Map<ActionGroupBucket, Set<string>>();
   const items: ResolvedAction[] = [];
-  for (const block of actionBlocks) {
-    const action = resolveBlockAction(block);
+  const pushAction = (action: ResolvedAction, targetKey: string) => {
     if (
       action.bucket === "readFiles" ||
       action.bucket === "writtenFiles" ||
       action.bucket === "editedFiles"
     ) {
-      const key = actionBlockTargetKey(block);
       let seen = fileBucketKeys.get(action.bucket);
       if (!seen) {
         seen = new Set();
         fileBucketKeys.set(action.bucket, seen);
       }
-      if (seen.has(key)) {
-        continue;
+      if (seen.has(targetKey)) {
+        return;
       }
-      seen.add(key);
+      seen.add(targetKey);
     }
     items.push(action);
+  };
+  for (const block of actionBlocks) {
+    pushAction(resolveBlockAction(block), actionBlockTargetKey(block));
+  }
+  // Failed tools count into the aggregate too: the header claims what the group holds,
+  // while the failure itself stays visible on the child row.
+  for (const block of failedBlocks) {
+    pushAction(
+      resolveFailedBlockAction(block),
+      block.command ?? block.fileChange?.path ?? block.fileChange?.fileName ?? "",
+    );
   }
 
   return summarizeActionGroup(items, translateActionKind);
+}
+
+/** Bucket a failed tool by what it tried to do, so aggregates count it like its siblings. */
+function resolveFailedBlockAction(block: Extract<ActivityDetailBlock, { kind: "tool-failed" }>): ResolvedAction {
+  const fileChange = block.fileChange as ActionKindPayload["fileChange"] | undefined;
+  const payload: ActionKindPayload = {};
+  if (block.command) {
+    payload.bashRun = { command: block.command };
+  }
+  if (fileChange) {
+    payload.fileChange = fileChange;
+  }
+  return resolveActionKind({ toolName: block.tool, payload });
 }
 
 function translateActionKind(key: string, vars?: Record<string, string | number>): string {
@@ -1845,20 +1871,6 @@ function summarizeFailedTool(
     action.webSearch = sibling.webSearch;
   }
   return formatBlockActionLine(action, "done");
-}
-
-function siblingActionForFailedTool(
-  blocks: readonly ToolGroupDetailBlock[],
-  failed: Extract<ActivityDetailBlock, { kind: "tool-failed" }>,
-): Extract<ActivityDetailBlock, { kind: "action" }> | undefined {
-  const tool = failed.tool.trim().toLowerCase();
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
-    if (block?.kind === "action" && block.toolName?.trim().toLowerCase() === tool) {
-      return block;
-    }
-  }
-  return undefined;
 }
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
