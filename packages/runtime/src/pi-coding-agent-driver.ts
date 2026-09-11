@@ -75,6 +75,87 @@ export function createPiSideEventBus(): PiSideEventBus {
   };
 }
 
+/**
+ * Raised when mid-turn steering cannot be delivered into a live PI run.
+ * Callers must keep the message in their own queue; this is not a delivered state.
+ */
+export class PiMidTurnUnavailable extends Error {
+  readonly code = "PiMidTurnUnavailable";
+
+  constructor(message = "PI session is not accepting mid-turn steering.") {
+    super(message);
+    this.name = "PiMidTurnUnavailable";
+  }
+}
+
+export function isPiMidTurnUnavailable(error: unknown): error is PiMidTurnUnavailable {
+  return error instanceof PiMidTurnUnavailable;
+}
+
+/** Minimal AgentSession surface needed to steer a live PI run. */
+export interface PiSteerableSessionLike {
+  readonly isStreaming: boolean;
+  steer(text: string): Promise<void>;
+  getSteeringMessages(): readonly string[];
+  clearQueue(): { steering: string[]; followUp: string[] };
+}
+
+/**
+ * Build the `isStreaming` + `steer` handle surface shared by the production session and
+ * hosts that wrap an AgentSession themselves (round scripts, test doubles).
+ *
+ * `steer` fails closed: when the session is not streaming, or when the run took its final
+ * steering poll before our enqueue landed, it reclaims the orphaned queue entry and throws
+ * {@link PiMidTurnUnavailable} so the caller keeps its own queued copy.
+ *
+ * Steers for one session are serialized: PI exposes no selective dequeue, so the orphan
+ * reclaim clears the whole queue, and overlapping steers could otherwise let one call
+ * reclaim another call's still-pending entry and report it as delivered.
+ */
+export function createPiMidTurnHandle(session: PiSteerableSessionLike): {
+  isStreaming: () => boolean;
+  steer: (text: string) => Promise<void>;
+} {
+  const enqueue = createMidTurnSteerQueue();
+  return {
+    isStreaming: () => session.isStreaming,
+    steer: (text) => enqueue(() => steerLiveSession(session, text)),
+  };
+}
+
+/** Serializes same-session steers so each call observes a queue only it mutated. */
+function createMidTurnSteerQueue(): (task: () => Promise<void>) => Promise<void> {
+  let tail: Promise<void> = Promise.resolve();
+  return (task) => {
+    const run = tail.then(task);
+    tail = run.catch(() => {});
+    return run;
+  };
+}
+
+/**
+ * Queue one steering message into a live PI run.
+ *
+ * Throws {@link PiMidTurnUnavailable} when the session is not streaming, or when the run
+ * took its final steering poll between our enqueue and delivery. In the latter case the
+ * orphaned entry is reclaimed instead of leaking into the next, unrelated prompt; the
+ * caller requeues the original text and the drain resends it as a turn.
+ */
+async function steerLiveSession(session: PiSteerableSessionLike, text: string): Promise<void> {
+  if (!session.isStreaming) {
+    throw new PiMidTurnUnavailable("PI session has no active run to steer.");
+  }
+  const pendingBefore = session.getSteeringMessages().length;
+  await session.steer(text);
+  if (session.isStreaming) {
+    return;
+  }
+  if (session.getSteeringMessages().length > pendingBefore) {
+    session.clearQueue();
+    throw new PiMidTurnUnavailable("PI run ended before the steering message was delivered.");
+  }
+}
+
 export interface PiSessionHandle {
   sessionId: string;
   /** Absolute JSONL path when persisting; undefined only for test doubles. */
@@ -91,6 +172,15 @@ export interface PiSessionHandle {
   prompt: (text: string, signal?: AbortSignal) => AsyncIterable<AgentEvent>;
   abort: () => Promise<void>;
   dispose: () => void;
+  /** Whether the underlying AgentSession is inside an active run (mid-turn steer window). */
+  isStreaming: () => boolean;
+  /**
+   * Queue mid-turn steering text into the live run. PI delivers it after the current
+   * assistant turn's tool calls, before the next model call.
+   * Throws {@link PiMidTurnUnavailable} when no run is live or the run ended before
+   * delivery; callers must keep their own queued copy instead of pretending it landed.
+   */
+  steer: (text: string) => Promise<void>;
   /** Rebind model + attempt credential without disposing conversation state. */
   rebind: (input: PiSessionRebindInput) => Promise<void>;
   /**
@@ -271,6 +361,32 @@ export class PiSessionRegistry {
 }
 
 export const globalPiSessionRegistry = new PiSessionRegistry();
+
+/** True while the thread's live in-process PI parent session can take mid-turn steering. */
+export function isPiThreadMidTurnAccepting(
+  threadId: string,
+  registry: PiSessionRegistry = globalPiSessionRegistry,
+): boolean {
+  const session = registry.get(piParentSessionKey(threadId));
+  return session ? session.isStreaming() : false;
+}
+
+/**
+ * Inject mid-turn steering text into the thread's live PI run.
+ * Throws {@link PiMidTurnUnavailable} when the run is not accepting; the caller must keep
+ * the message queued so the normal post-run drain sends it as a fresh turn instead.
+ */
+export async function steerPiThreadMidTurn(
+  threadId: string,
+  text: string,
+  registry: PiSessionRegistry = globalPiSessionRegistry,
+): Promise<void> {
+  const session = registry.get(piParentSessionKey(threadId));
+  if (!session) {
+    throw new PiMidTurnUnavailable("PI session is not live for this thread.");
+  }
+  await session.steer(text);
+}
 
 export class PiCodingAgentDriver implements AgentRuntimeDriver {
   private readonly createSession: PiSessionFactory;
@@ -835,6 +951,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     dispose: () => {
       session.dispose();
     },
+    ...createPiMidTurnHandle(session),
     rebind: async (rebindInput) => {
       const nextAuthProvider = mapApiCompatToPiAuthProvider(rebindInput.apiCompat);
       await modelRuntime.setRuntimeApiKey(nextAuthProvider, rebindInput.apiKey);

@@ -286,7 +286,7 @@ export const i18nCatalogs = {
       "settings.cacheBreakTipsHint": "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
       "settings.followUpDelivery": "跟进处理方式",
       "settings.followUpDeliveryHint":
-        "Agent 运行中发送后续消息时，默认加入队列或引导当前回合（Claude/Codex 为 mid-turn 注入；Cursor ACP 为打断后重发）。按 ⌘↩ 可对单条消息执行相反操作。",
+        "Agent 运行中发送后续消息时，默认加入队列或引导当前回合（Claude/Codex/PI 为 mid-turn 注入；Cursor ACP 为打断后重发）。按 ⌘↩ 可对单条消息执行相反操作。",
       "settings.followUpDelivery.queue": "加入队列",
       "settings.followUpDelivery.steer": "调整方向",
       "settings.defaultBashReviewMode": "默认审批模式",
@@ -2462,7 +2462,7 @@ export const i18nCatalogs = {
         "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
       "settings.followUpDelivery": "Follow-up handling",
       "settings.followUpDeliveryHint":
-        "While the agent is running, queue follow-ups or steer the current turn (mid-turn inject for Claude/Codex; interrupt-and-resend for Cursor ACP). Press ⌘↩ to do the opposite for one message.",
+        "While the agent is running, queue follow-ups or steer the current turn (mid-turn inject for Claude/Codex/PI; interrupt-and-resend for Cursor ACP). Press ⌘↩ to do the opposite for one message.",
       "settings.followUpDelivery.queue": "Queue",
       "settings.followUpDelivery.steer": "Steer",
       "settings.defaultBashReviewMode": "Default approval mode",

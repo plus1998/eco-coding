@@ -807,6 +807,8 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
+    isStreaming: () => false,
+    steer: async () => {},
     rebind: async (input) => {
       // keep shape for driver rebind path
       void input;
@@ -1037,6 +1039,8 @@ test("token-only MCP env change reuses registry session", async () => {
     mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
+    isStreaming: () => false,
+    steer: async () => {},
     rebind: async (input) => {
       void input;
     },
@@ -1163,6 +1167,8 @@ test("inherited spawn env in live MCP config does not recreate or clear JSONL", 
     mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
+    isStreaming: () => false,
+    steer: async () => {},
     rebind: async (input) => {
       void input;
     },
@@ -1298,6 +1304,8 @@ test("legacy resumeMcpFingerprint with embedded token still disk-resumes", async
     mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
+    isStreaming: () => false,
+    steer: async () => {},
     rebind: async (input) => {
       void input;
     },
@@ -1426,6 +1434,8 @@ test("PiCodingAgentDriver injects eco-pi-approval and re-arms handler on session
     mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
+    isStreaming: () => false,
+    steer: async () => {},
     rebind: async (input) => {
       void input;
     },
@@ -1560,6 +1570,8 @@ test("PiCodingAgentDriver recreates session when tool approval presence drifts",
     mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
+    isStreaming: () => false,
+    steer: async () => {},
     rebind: async (input) => {
       void input;
     },
@@ -1665,6 +1677,8 @@ test("PiCodingAgentDriver passes planner thinkingEffort into PI session thinking
           mcpFingerprint: "",
           abort: async () => {},
           dispose: () => {},
+          isStreaming: () => false,
+          steer: async () => {},
           rebind: async () => {},
           updateSkillPaths: async () => {},
           async *prompt(text: string): AsyncIterable<AgentEvent> {
