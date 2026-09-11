@@ -1,9 +1,14 @@
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
+
+// Windows resolves `flutter` through PATHEXT, which only happens with a shell:
+// spawning the bare name raises ENOENT and spawning `flutter.bat` raises EINVAL.
+const flutterNeedsShell = process.platform === "win32";
 
 const smokeScripts = {
   "agent-ui": ["apps/desktop/scripts/agent-ui-smoke.mjs", { build: true }],
@@ -87,6 +92,8 @@ function parseArgs(argv) {
     "h",
     "smoke",
     "sqlite",
+    "mobile",
+    "no-mobile",
     ...Object.keys(smokeScripts),
     ...Object.keys(testSuites),
   ]);
@@ -150,12 +157,40 @@ function resolveCommand({ options, passthrough }) {
     return { kind: "commands", commands: [["node", "scripts/test-node-sqlite.mjs", ...passthrough]] };
   }
 
+  // Flutter (apps/mobile) is a separate toolchain from bun, so it has its own
+  // entry point instead of living inside the `bun test` glob. `--mobile` runs it
+  // alone; the default run includes it so the mobile suite cannot rot unseen.
+  if (options.has("mobile")) {
+    return { kind: "commands", commands: [mobileTestCommand(passthrough)] };
+  }
+  if (options.has("no-mobile")) {
+    if (options.size > 0) {
+      throwUsageError(`未知参数：${[...options].map((option) => `--${option}`).join(" ")}`);
+    }
+    return {
+      kind: "commands",
+      commands: [["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough]],
+    };
+  }
+
   if (options.size > 0) {
     throwUsageError(`未知参数：${[...options].map((option) => `--${option}`).join(" ")}`);
   }
   return {
     kind: "commands",
-    commands: [["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough]],
+    commands: [
+      ["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough],
+      mobileTestCommand([]),
+    ],
+  };
+}
+
+/** `flutter test` for apps/mobile, portable across POSIX and Windows shells. */
+function mobileTestCommand(passthroughArgs) {
+  return {
+    argv: ["flutter", "test", ...passthroughArgs],
+    cwd: join(root, "apps", "mobile"),
+    shell: flutterNeedsShell,
   };
 }
 
@@ -165,20 +200,31 @@ async function run(command) {
     return 0;
   }
 
+  // Run every step before reporting: a red bun suite on one platform must not
+  // hide whether the Flutter suite (or a later smoke step) is also red.
+  let exitCode = 0;
   for (const argv of command.commands) {
-    const exitCode = await spawnCommand(argv);
-    if (exitCode !== 0) return exitCode;
+    const code = await spawnCommand(argv);
+    if (code !== 0 && exitCode === 0) exitCode = code;
   }
-  return 0;
+  return exitCode;
 }
 
-function spawnCommand(argv) {
+function spawnCommand(command) {
+  const { argv, cwd, shell } = Array.isArray(command)
+    ? { argv: command, cwd: root, shell: undefined }
+    : { argv: command.argv, cwd: command.cwd ?? root, shell: command.shell };
   return new Promise((resolve, reject) => {
-    const child = spawn(argv[0], argv.slice(1), {
-      cwd: root,
-      env: process.env,
-      stdio: "inherit",
-    });
+    // With shell: true Node concatenates args unescaped (and warns about it), so
+    // pass a single pre-quoted command string rather than an argv array.
+    const child = shell
+      ? spawn(argv.map(quoteShellArg).join(" "), {
+          cwd,
+          env: process.env,
+          stdio: "inherit",
+          shell: true,
+        })
+      : spawn(argv[0], argv.slice(1), { cwd, env: process.env, stdio: "inherit" });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       if (signal) {
@@ -193,6 +239,10 @@ function spawnCommand(argv) {
   });
 }
 
+function quoteShellArg(value) {
+  return /[\s"']/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+}
+
 function throwUsageError(message) {
   console.error(message);
   printUsage();
@@ -202,12 +252,16 @@ function throwUsageError(message) {
 function printUsage() {
   console.log(`用法：
   npm run test
+  npm run test -- --mobile
+  npm run test -- --no-mobile
   npm run test -- --smoke --feed-loading
   npm run test -- --smoke --codex-session-modes
   npm run test -- --agent-presets
   npm run test -- --sqlite
 
-  --sqlite  用系统 Node（node:sqlite）跑 apps/desktop/test-node/*.test.ts
+  --sqlite    用系统 Node（node:sqlite）跑 apps/desktop/test-node/*.test.ts
+  --mobile    只跑 apps/mobile 的 Flutter 测试（默认全量运行已包含）
+  --no-mobile 跳过 Flutter 步骤（仅跑 bun 测试）
 
 smoke 类型：
   ${Object.keys(smokeScripts)
