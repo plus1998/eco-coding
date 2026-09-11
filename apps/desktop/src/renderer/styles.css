@@ -9524,6 +9524,19 @@ button.default-agent-option:focus-visible {
   flex-shrink: 0;
 }
 
+/* 代理面板：逐行留出呼吸空间 */
+.proxy-settings-section .settings-section-head {
+  margin-bottom: 12px;
+}
+
+.proxy-settings-section .mcp-field {
+  margin-top: 16px;
+}
+
+.proxy-settings-section .git-settings-section-actions {
+  margin-top: 20px;
+}
+
 .git-settings-instructions-input {
   box-sizing: border-box;
   width: 100%;

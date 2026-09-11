@@ -75,6 +75,10 @@ export const LazyPersonalizationSettingsPanel = lazy(() =>
   import("./PersonalizationSettingsPanel").then((m) => ({ default: m.PersonalizationSettingsPanel })),
 );
 
+export const LazyProxySettingsPanel = lazy(() =>
+  import("./ProxySettingsPanel").then((m) => ({ default: m.ProxySettingsPanel })),
+);
+
 export const LazySkillsSettingsPanel = lazy(() =>
   import("./SkillsSettingsPanel").then((m) => ({ default: m.SkillsSettingsPanel })),
 );

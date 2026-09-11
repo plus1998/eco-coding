@@ -22,6 +22,7 @@ import type { IntegratedWebSearchSettingsStore } from "./integrated-web-search-s
 import type { PackageScriptArgsStore } from "./package-script-args-store";
 import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
 import type { ProviderStore } from "./provider-store";
+import { resolveOutboundProxyUrl } from "./proxy-bridge-settings-store";
 import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
 import type { SshBookmarkStore } from "./ssh-bookmark-store";
 import { sshBookmarkSecretKeyKey, sshBookmarkSecretPasswordKey } from "./ssh-bookmark-store";
@@ -387,6 +388,7 @@ function applyProxyBridgeSettingsPayload(
 ): void {
   const current = input.proxyBridgeSettingsStore.get();
   input.proxyBridgeSettingsStore.save({
+    ...(current.enabled === undefined ? {} : { enabled: current.enabled }),
     ...(proxyBridge.upstreamUserAgent ? { upstreamUserAgent: proxyBridge.upstreamUserAgent } : {}),
     ...(current.upstreamProxyUrl ? { upstreamProxyUrl: current.upstreamProxyUrl } : {}),
   });
@@ -438,7 +440,7 @@ function collectSecrets(input: {
     });
   }
 
-  const proxyUrl = input.proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim();
+  const proxyUrl = resolveOutboundProxyUrl(input.proxyBridgeSettingsStore.get());
   if (proxyUrl) {
     secrets.push({ kind: "proxy", key: ECO_PROXY_URL_SECRET, value: proxyUrl });
   }

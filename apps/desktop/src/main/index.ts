@@ -678,6 +678,7 @@ import {
   isProxyBridgeSettingsSnapshot,
   normalizeProxyBridgeSettingsSnapshot,
   type ProxyBridgeSettingsStore,
+  resolveOutboundProxyUrl,
   resolveUpstreamUserAgentOverride,
 } from "./proxy-bridge-settings-store";
 import {
@@ -979,6 +980,7 @@ function broadcastDesktopUpdateState(state: DesktopUpdateState): void {
 const desktopUpdateService = new DesktopUpdateService({
   manifestPath: path.join(__dirname, "../release-manifest.json"),
   onStateChange: broadcastDesktopUpdateState,
+  getOutboundProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
 });
 
 configureDesktopDevIdentity();
@@ -2056,10 +2058,7 @@ app.whenReady().then(async () => {
       });
     },
     getUpstreamUserAgent: () => resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
-    getUpstreamProxyUrl: () => {
-      const raw = proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim();
-      return raw || undefined;
-    },
+    getUpstreamProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
     getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
     resolveEcoThreadIdFromCodex: (codexThreadId) => codexThreadMap.getEcoThreadId(codexThreadId),
     prepareClaudeMessages: async ({ path, body, model, headers }) => {

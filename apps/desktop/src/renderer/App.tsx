@@ -17,6 +17,7 @@ import {
   Gauge,
   GitBranch,
   Globe,
+  Globe2,
   GripVertical,
   HardDrive,
   Image as ImageIcon,
@@ -309,6 +310,7 @@ import {
   LazyModelsSettingsPanel,
   LazyNotificationPreferencesPanel,
   LazyPersonalizationSettingsPanel,
+  LazyProxySettingsPanel,
   LazySkillsSettingsPanel,
   LazyStorageSettingsPanel,
   LazySubagentTaskDrawer,
@@ -545,6 +547,7 @@ type SettingsSectionId =
   | "imageGeneration"
   | "integratedWebSearch"
   | "providers"
+  | "proxy"
   | "mcp"
   | "centerServer"
   | "defaultAgent"
@@ -1307,6 +1310,20 @@ function App() {
           { id: "agentLibrary", label: t("settings.agentLibrary"), icon: BookOpen },
           { id: "skills", label: t("settings.skills.store"), icon: Sparkles },
           { id: "git", label: "Git", icon: GitBranch },
+          {
+            id: "proxy",
+            label: t("settings.proxy"),
+            icon: Globe2,
+            keywords: [
+              "proxy",
+              "代理",
+              "socks5",
+              "http",
+              "upgrade",
+              "升级",
+              "outbound",
+            ],
+          },
         ],
       },
     ],
@@ -11028,6 +11045,19 @@ function App() {
                       setThinkingDisplayPreferences({ mode });
                     });
                   }}
+                  upstreamUserAgent={proxyBridgeSettings?.upstreamUserAgent}
+                  upstreamUserAgentSaving={isSavingProxyBridgeSettings}
+                  onUpstreamUserAgentChange={(value) => {
+                    const next: ProxyBridgeSettingsSnapshot = {
+                      ...(proxyBridgeSettings ?? {}),
+                    };
+                    if (value) {
+                      next.upstreamUserAgent = value;
+                    } else {
+                      delete next.upstreamUserAgent;
+                    }
+                    void saveProxyBridgeSettings(next);
+                  }}
                 />
               )}
 
@@ -11219,36 +11249,53 @@ function App() {
                   <p className="settings-empty-hint">{t("settings.integratedWebSearch.loading")}</p>
                 ))}
 
-              {settingsSection === "providers" &&
+              {settingsSection === "providers" && (
+                <LazyModelsSettingsPanel
+                  settings={settings}
+                  mode="providerSettings"
+                  busy={isSavingSettings}
+                  onSettingsChange={setSettings}
+                  onSavingChange={setIsSavingSettings}
+                  onRequestCreateMainAgentConfig={(seed) => {
+                    setPendingCreateMainConfig(seed);
+                    setSettingsSection("orchestrationComponents");
+                  }}
+                  centerServerSyncVisible={centerServerSyncVisible}
+                  onSyncDomain={syncCenterServerConfigDomain}
+                />
+              )}
+
+              {settingsSection === "proxy" &&
                 (proxyBridgeSettings ? (
-                  <LazyModelsSettingsPanel
-                    settings={settings}
-                    proxyBridgeSettings={proxyBridgeSettings}
-                    proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                    mode="providerSettings"
-                    busy={isSavingSettings}
-                    onSettingsChange={setSettings}
-                    onSavingChange={setIsSavingSettings}
-                    onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
-                    onRequestCreateMainAgentConfig={(seed) => {
-                      setPendingCreateMainConfig(seed);
-                      setSettingsSection("orchestrationComponents");
+                  <LazyProxySettingsPanel
+                    settings={proxyBridgeSettings}
+                    busy={isSavingProxyBridgeSettings}
+                    onSave={(next) => {
+                      const merged: ProxyBridgeSettingsSnapshot = { ...(proxyBridgeSettings ?? {}) };
+                      merged.enabled = next.enabled === undefined ? true : next.enabled;
+                      // 键存在与否表示是否修改：关闭开关时保留已保存 URL。
+                      if (next.upstreamProxyUrl !== undefined) {
+                        if (next.upstreamProxyUrl) {
+                          merged.upstreamProxyUrl = next.upstreamProxyUrl;
+                        } else {
+                          delete merged.upstreamProxyUrl;
+                        }
+                      }
+                      void saveProxyBridgeSettings(merged);
                     }}
                     centerServerSyncVisible={centerServerSyncVisible}
                     onSyncDomain={syncCenterServerConfigDomain}
                   />
                 ) : (
-                  <p className="settings-empty-hint">{t("settings.loadingProviders")}</p>
+                  <p className="settings-empty-hint">{t("settings.proxy.loading")}</p>
                 ))}
 
               {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
                 (proxyBridgeSettings ? (
                   <LazyModelsSettingsPanel
                     settings={settings}
-                    proxyBridgeSettings={proxyBridgeSettings}
                     mcpServers={mcpSettings.servers}
                     skillsSnapshot={skillsSnapshot}
-                    proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
                     initialTab={
                       settingsSection === "orchestrationComponents" ? "compositionParts" : "subagents"
                     }
@@ -11278,7 +11325,6 @@ function App() {
                     }
                     onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
                     onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
-                    onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                     {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
                       ? {
                           centerServerSyncVisible,

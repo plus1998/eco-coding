@@ -35,7 +35,6 @@ import type {
   ProviderConfigView,
   ProviderDeleteReference,
   ProviderRequestError,
-  ProxyBridgeSettingsSnapshot,
   SkillsListResult,
   VisionModelSelection,
 } from "../shared/ipc";
@@ -60,7 +59,6 @@ import {
   toCandidateModelSelection,
   toModelCascadeSelection,
 } from "./model-cascade-options";
-import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import {
   applyProviderPreset,
   DEFAULT_NEW_PROVIDER_PRESET_ID,
@@ -75,16 +73,14 @@ import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
-export type ModelsSettingsTab = "subagents" | "providers" | "proxyBridge" | "compositionParts";
+export type ModelsSettingsTab = "subagents" | "providers" | "compositionParts";
 
 type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
-  proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
   mcpServers?: McpServerConfigView[] | undefined;
   skillsSnapshot?: SkillsListResult | undefined;
-  proxyBridgeSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
@@ -103,7 +99,6 @@ interface ModelsSettingsPanelProps {
   onDefaultVisionModelChange?:
     | ((selection: VisionModelSelection | undefined) => void | Promise<void>)
     | undefined;
-  onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
   /** Ask App to open orchestration settings and create a main agent config. */
   onRequestCreateMainAgentConfig?: ((seed: PendingMainAgentConfigCreateSeed) => void) | undefined;
@@ -124,10 +119,8 @@ interface ModelsCacheEntry {
 
 export function ModelsSettingsPanel({
   settings,
-  proxyBridgeSettings,
   mcpServers = [],
   skillsSnapshot,
-  proxyBridgeSettingsSaving,
   busy,
   initialTab = "subagents",
   mode = "agentBuilder",
@@ -140,7 +133,6 @@ export function ModelsSettingsPanel({
   onDefaultAuxiliaryModelChange,
   defaultVisionModel,
   onDefaultVisionModelChange,
-  onProxyBridgeSettingsChange,
   onSavingChange,
   onRequestCreateMainAgentConfig,
   pendingCreateMainConfig,
@@ -151,7 +143,6 @@ export function ModelsSettingsPanel({
   const { t } = useTranslation();
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
     { id: "providers", label: t("settings.models.providers") },
-    { id: "proxyBridge", label: t("settings.models.proxyBridge") },
   ];
   const runtimeConfigTabItems: Array<{ id: RuntimeConfigTab; label: string }> = [
     { id: "defaults", label: t("settings.models.runtimeConfigTab.defaults") },
@@ -161,10 +152,8 @@ export function ModelsSettingsPanel({
   ];
   const resolvedInitialTab =
     mode === "providerSettings"
-      ? initialTab === "proxyBridge"
-        ? "proxyBridge"
-        : "providers"
-      : initialTab === "providers" || initialTab === "proxyBridge"
+      ? "providers"
+      : initialTab === "providers"
         ? "subagents"
         : initialTab;
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
@@ -189,9 +178,7 @@ export function ModelsSettingsPanel({
   const [panelError, setPanelError] = useState<string>();
   const syncDomain: CenterServerSyncDomain | undefined =
     mode === "providerSettings"
-      ? activeTab === "proxyBridge"
-        ? "proxyBridge"
-        : "providers"
+      ? "providers"
       : activeTab === "compositionParts"
         ? "orchestration"
         : activeTab === "subagents"
@@ -661,7 +648,7 @@ export function ModelsSettingsPanel({
         </header>
       )}
 
-      {!hideCategoryTabs && (
+      {!hideCategoryTabs && mode !== "providerSettings" && (
         <div
           className="models-settings-tabs"
           role="tablist"
@@ -691,14 +678,6 @@ export function ModelsSettingsPanel({
           registryDisabled={busy}
           onRegistryChange={refreshSettings}
           onSavingChange={onSavingChange}
-        />
-      )}
-
-      {activeTab === "proxyBridge" && (
-        <ProxyBridgeSettingsSection
-          settings={proxyBridgeSettings}
-          disabled={busy || proxyBridgeSettingsSaving}
-          onSave={onProxyBridgeSettingsChange}
         />
       )}
 

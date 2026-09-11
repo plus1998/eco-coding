@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { app, net, powerMonitor, shell } from "electron";
+import { app, net, powerMonitor, session, shell } from "electron";
 import electronUpdater from "electron-updater";
 import {
   canRunAutomaticUpdateCheck,
@@ -22,11 +22,14 @@ const MIN_AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1_000;
 interface DesktopUpdateServiceOptions {
   manifestPath: string;
   onStateChange: (state: DesktopUpdateState) => void;
+  /** Outbound proxy URL (http/https/socks5/socks); routes update check/download through it. */
+  getOutboundProxyUrl?: (() => string | undefined) | undefined;
 }
 
 export class DesktopUpdateService {
   private readonly manifestPath: string;
   private readonly onStateChange: (state: DesktopUpdateState) => void;
+  private readonly getOutboundProxyUrl: (() => string | undefined) | undefined;
   private readonly currentVersion: string;
   private manifest: DesktopReleaseManifest | undefined;
   private state: DesktopUpdateState;
@@ -42,6 +45,7 @@ export class DesktopUpdateService {
   constructor(options: DesktopUpdateServiceOptions) {
     this.manifestPath = options.manifestPath;
     this.onStateChange = options.onStateChange;
+    this.getOutboundProxyUrl = options.getOutboundProxyUrl;
     this.currentVersion = app.getVersion();
     this.manifest = this.readManifest();
     this.state = this.resolveInitialState();
@@ -104,6 +108,7 @@ export class DesktopUpdateService {
       this.lastAutoCheckAt = now;
     }
 
+    await this.applyOutboundProxy();
     this.setState({
       phase: "checking",
       error: undefined,
@@ -136,6 +141,7 @@ export class DesktopUpdateService {
     if (this.state.capability !== "auto" || this.state.phase !== "available") {
       return this.state;
     }
+    await this.applyOutboundProxy();
     try {
       this.setState({
         phase: "downloading",
@@ -246,6 +252,22 @@ export class DesktopUpdateService {
         error: formatDesktopUpdateError(error),
       });
     });
+  }
+
+  private async applyOutboundProxy(): Promise<void> {
+    // electron-updater downloads on its own session partition; proxy only that
+    // session so the rest of the app keeps its default connectivity.
+    const netSession = session.fromPartition("electron-updater", { cache: false });
+    const proxyUrl = this.getOutboundProxyUrl?.()?.trim();
+    try {
+      if (proxyUrl) {
+        await netSession.setProxy({ proxyRules: proxyUrl, proxyBypassRules: "<-loopback>" });
+      } else {
+        await netSession.setProxy({});
+      }
+    } catch (error: unknown) {
+      this.writeLog("warn", `apply update proxy failed: ${formatDesktopUpdateError(error)}`);
+    }
   }
 
   private readManifest(): DesktopReleaseManifest | undefined {

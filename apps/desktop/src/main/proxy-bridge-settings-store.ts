@@ -66,6 +66,10 @@ export function normalizeProxyBridgeSettingsSnapshot(value: unknown): ProxyBridg
   const record = value as Record<string, unknown>;
   const result: ProxyBridgeSettingsSnapshot = {};
 
+  if (typeof record.enabled === "boolean") {
+    result.enabled = record.enabled;
+  }
+
   const rawUa = typeof record.upstreamUserAgent === "string" ? record.upstreamUserAgent.trim() : "";
   if (rawUa) {
     if (rawUa.includes("\r") || rawUa.includes("\n")) {
@@ -106,6 +110,9 @@ export function isProxyBridgeSettingsSnapshot(value: unknown): value is ProxyBri
     return false;
   }
   const record = value as Record<string, unknown>;
+  if (record.enabled !== undefined && typeof record.enabled !== "boolean") {
+    return false;
+  }
   if (record.upstreamUserAgent !== undefined && typeof record.upstreamUserAgent !== "string") {
     return false;
   }
@@ -119,4 +126,16 @@ export function isProxyBridgeSettingsSnapshot(value: unknown): value is ProxyBri
 export function resolveUpstreamUserAgentOverride(settings: ProxyBridgeSettingsSnapshot): string | undefined {
   const trimmed = settings.upstreamUserAgent?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+/**
+ * 生效的出站代理 URL。开关默认视为开启（enabled !== false）；关闭时返回 undefined。
+ * 关闭不会清除已保存的 URL，方便重新开启。
+ */
+export function resolveOutboundProxyUrl(settings: ProxyBridgeSettingsSnapshot): string | undefined {
+  if (settings.enabled === false) {
+    return undefined;
+  }
+  const raw = settings.upstreamProxyUrl?.trim();
+  return raw ? raw : undefined;
 }

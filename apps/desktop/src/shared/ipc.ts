@@ -1129,9 +1129,11 @@ export type { BrowserAgentPresenceEvent } from "./browser-agent-presence";
 export { BROWSER_AGENT_PRESENCE_IDLE_MS } from "./browser-agent-presence";
 
 export interface ProxyBridgeSettingsSnapshot {
+  /** 出站代理总开关；关闭时忽略 upstreamProxyUrl */
+  enabled?: boolean;
   /** 留空：透传 SDK User-Agent；非空：覆盖透传 */
   upstreamUserAgent?: string;
-  /** 出站 HTTP/HTTPS/SOCKS5 代理 URL（gateway upstream）；留空直连 */
+  /** 出站 HTTP/HTTPS/SOCKS5 代理 URL（gateway upstream + 在线升级）；留空直连 */
   upstreamProxyUrl?: string;
 }
 
