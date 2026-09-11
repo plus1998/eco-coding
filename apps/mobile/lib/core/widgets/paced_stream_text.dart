@@ -1,5 +1,4 @@
-import 'dart:async';
-
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../utils/stream_text.dart';
@@ -23,18 +22,20 @@ class PacedStreamText extends StatefulWidget {
   State<PacedStreamText> createState() => _PacedStreamTextState();
 }
 
-class _PacedStreamTextState extends State<PacedStreamText> {
+class _PacedStreamTextState extends State<PacedStreamText>
+    with SingleTickerProviderStateMixin {
   late String _displayText;
   late String _targetText;
-  Timer? _timer;
+  Ticker? _ticker;
+  late Duration _lastTickTime;
 
   @override
   void initState() {
     super.initState();
-    // 已有内容直接全量展示：逐字效果只作用于存活期间新到达的文本，
-    // 避免重建 / 重新进入页面时把整段已有内容重放一遍。
     _targetText = widget.text;
     _displayText = _targetText;
+    _lastTickTime = Duration.zero;
+    _scheduleTicker();
   }
 
   @override
@@ -44,22 +45,26 @@ class _PacedStreamTextState extends State<PacedStreamText> {
       _targetText = mergeStreamText(_targetText, widget.text);
     }
     if (!widget.streaming) {
-      // 已定稿或不再是逐字目标：直接补齐全量，不做慢速追赶。
-      _timer?.cancel();
-      _timer = null;
+      // 已定稿或不再是逐字目标：直接补齐全量。
+      _ticker?.stop();
+      _ticker = null;
       if (_displayText != _targetText) {
         setState(() => _displayText = _targetText);
       }
       return;
     }
-    _scheduleNextReveal();
+    _scheduleTicker();
   }
 
-  void _scheduleNextReveal() {
-    if (_timer != null || _displayText == _targetText) return;
-    _timer = Timer(pacedStreamInterval, () {
-      _timer = null;
-      if (!mounted) return;
+  void _scheduleTicker() {
+    _ticker?.stop();
+    _ticker = null;
+    if (_displayText == _targetText) return;
+
+    _ticker = createTicker((elapsed) {
+      final delta = elapsed - _lastTickTime;
+      if (delta < pacedStreamInterval) return; // 不到 40ms 不 reveal
+      _lastTickTime = elapsed;
       final nextText = revealPacedStreamText(
         _displayText,
         _targetText,
@@ -68,13 +73,17 @@ class _PacedStreamTextState extends State<PacedStreamText> {
       if (nextText != _displayText) {
         setState(() => _displayText = nextText);
       }
-      _scheduleNextReveal();
+      if (_displayText == _targetText) {
+        _ticker?.stop();
+        _ticker = null;
+      }
     });
+    _ticker!.start();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _ticker?.dispose();
     super.dispose();
   }
 

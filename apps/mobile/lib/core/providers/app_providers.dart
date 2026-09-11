@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/eco_types.dart';
@@ -8,6 +9,40 @@ import '../services/eco_tts_service.dart';
 import '../storage/credential_store.dart';
 import '../utils/center_server_auth.dart';
 import '../utils/device_display.dart';
+import '../widgets/lifecycle_tracker.dart';
+
+/// Tracks whether the app is in the foreground.
+///
+/// Consumers (timers, polling) should watch this and pause work when the app
+/// is hidden / paused / detached to save battery.
+final appForegroundProvider = Provider<bool>((ref) {
+  bool foreground = true;
+
+  void handleLifecycle(AppLifecycleState state) {
+    AppLifecycleTracker.update(state);
+    final nowForeground = AppLifecycleTracker.isForeground;
+    if (foreground != nowForeground) {
+      foreground = nowForeground;
+      ref.state = nowForeground;
+    }
+  }
+
+  final observer = _LifecycleObserver(handleLifecycle);
+  WidgetsBinding.instance.addObserver(observer);
+  ref.onDispose(() => WidgetsBinding.instance.removeObserver(observer));
+  return foreground;
+});
+
+class _LifecycleObserver extends Object with WidgetsBindingObserver {
+  _LifecycleObserver(this._onStateChange);
+  final void Function(AppLifecycleState) _onStateChange;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _onStateChange(state);
+  }
+}
+
 
 final credentialStoreProvider = Provider<CredentialStore>((ref) {
   return CredentialStore();
@@ -152,6 +187,8 @@ class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
 
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      // Skip polling when app is in background to save battery.
+      if (!AppLifecycleTracker.isForeground) return;
       unawaited(refresh());
     });
 
