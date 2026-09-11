@@ -8,7 +8,7 @@ import {
   ProjectionSubagentDetailFeed,
   ProjectionToolGroupEntry,
   resolveActiveSubagentDurationMs,
-  resolveMinimumVisibleToolRunningState,
+  resolveToolGroupDisplayState,
   splitThinkingCarouselLines,
 } from "../src/renderer/ActivityLogView";
 import { formatDuration, iconForToolName, reasoningSummaryLabel } from "../src/renderer/activity-log";
@@ -87,61 +87,61 @@ test("running turn heading switches to stopping while cancelling", async () => {
   expect(formatRunLogTurnHeading(true, "running", 4_000, true)).toBe("停止中 4s");
 });
 
-test("tool running status remains visible for at least one second", () => {
-  const running = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_000,
-    minimumMs: 1_000,
-    summary: { label: "正在运行 git status", icon: "terminal" },
-    lifecycle: "running",
-    currentActionIdentity: "tool-a",
-    runningActionIdentity: "tool-a",
-  });
-  const completed = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_100,
-    minimumMs: 1_000,
-    summary: { label: "已运行 git status", icon: "terminal" },
-    lifecycle: "completed",
-    currentActionIdentity: "tool-a",
-    previous: running.running,
-  });
+test("settled tool group keeps its running display for at least one second", () => {
+  const now = 1_000_000;
+  const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+  const entry = {
+    kind: "timeline" as const,
+    key: "tool-settled",
+    at: iso(-200),
+    sequence: 1,
+    item: {
+      id: "tool-settled",
+      sequence: 1,
+      eventType: "tool.completed",
+      scope: "main",
+      role: "tool",
+      text: "Tool: Bash · git status",
+      at: iso(-200),
+      metadata: {
+        tool: { name: "Bash", detail: "git status", status: "completed", durationMs: 100 },
+      },
+    },
+  };
 
-  expect(completed.lifecycle).toBe("running");
-  expect(completed.summary.label).toBe("正在运行 git status");
-  expect(completed.remainingMs).toBe(900);
+  const extended = resolveToolGroupDisplayState([entry], now);
+  expect(extended.lifecycle).toBe("running");
+  // finished at now-200 after a 100ms run → started at now-300 → window ends at now+700.
+  expect(extended.remainingMs).toBe(700);
 
-  const released = resolveMinimumVisibleToolRunningState({
-    nowMs: 2_000,
-    minimumMs: 1_000,
-    summary: { label: "已运行 git status", icon: "terminal" },
-    lifecycle: "completed",
-    currentActionIdentity: "tool-a",
-    previous: completed.running,
-  });
+  const released = resolveToolGroupDisplayState([entry], now + 700);
   expect(released.lifecycle).toBe("completed");
-  expect(released.summary.label).toBe("已运行 git status");
+  expect(released.remainingMs).toBe(0);
 });
 
-test("a newer overlapping tool skips the previous minimum running duration", () => {
-  const running = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_000,
-    minimumMs: 1_000,
-    summary: { label: "正在运行 git status", icon: "terminal" },
-    lifecycle: "running",
-    currentActionIdentity: "tool-a",
-    runningActionIdentity: "tool-a",
-  });
-  const newer = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_100,
-    minimumMs: 1_000,
-    summary: { label: "已读取 README.md", icon: "read" },
-    lifecycle: "completed",
-    currentActionIdentity: "tool-b",
-    previous: running.running,
-  });
+test("a long settled tool group does not extend past its minimum window", () => {
+  const now = 1_000_000;
+  const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+  const entry = {
+    kind: "timeline" as const,
+    key: "tool-long",
+    at: iso(-5_000),
+    sequence: 1,
+    item: {
+      id: "tool-long",
+      sequence: 1,
+      eventType: "tool.completed",
+      scope: "main",
+      role: "tool",
+      text: "Tool: Bash · build",
+      at: iso(-5_000),
+      metadata: { tool: { name: "Bash", detail: "build", status: "completed", durationMs: 4_000 } },
+    },
+  };
 
-  expect(newer.lifecycle).toBe("completed");
-  expect(newer.summary.label).toBe("已读取 README.md");
-  expect(newer.remainingMs).toBe(0);
+  const display = resolveToolGroupDisplayState([entry], now);
+  expect(display.lifecycle).toBe("completed");
+  expect(display.remainingMs).toBe(0);
 });
 
 function projection(input: {
@@ -441,7 +441,7 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
   expect(afterRequest).toContain("正在思考");
 });
 
-test("ActivityLogView keeps the active thinking indicator at the bottom after tool rows", () => {
+test("ActivityLogView suppresses the thinking indicator while a tool row is the latest content", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -474,9 +474,11 @@ test("ActivityLogView keeps the active thinking indicator at the bottom after to
     }),
   );
 
-  expect(html.indexOf("config.ts")).toBeLessThan(html.indexOf("正在思考"));
-  expect(html.match(/正在思考/g)?.length).toBe(1);
-  expect(html).not.toContain("run-log-conversation-tail");
+  // The settled tool row is the latest content, so it is the tail state itself —
+  // the「正在思考」line must not render beneath it.
+  expect(html).toContain("config.ts");
+  expect(html).not.toContain("正在思考");
+  expect(html).toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView replaces answered clarification waiting with its question and answer", () => {
