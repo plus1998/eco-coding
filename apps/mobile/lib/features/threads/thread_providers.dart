@@ -1168,6 +1168,7 @@ class ThreadSessionState {
     this.loading = true,
     this.error,
     this.thread,
+    this.titleGenerating = false,
     this.runProjection,
     this.subagentSessions = const [],
     this.billing,
@@ -1184,6 +1185,9 @@ class ThreadSessionState {
   final bool loading;
   final String? error;
   final ThreadSummary? thread;
+
+  /// Desktop is currently auto-generating this session's title.
+  final bool titleGenerating;
   final ThreadRunProjectionSnapshot? runProjection;
   final List<ThreadSubagentSessionTiming> subagentSessions;
   final ThreadBillingSnapshot? billing;
@@ -1207,6 +1211,7 @@ class ThreadSessionState {
     bool? loading,
     String? error,
     ThreadSummary? thread,
+    bool? titleGenerating,
     ThreadRunProjectionSnapshot? runProjection,
     bool clearProjection = false,
     List<ThreadSubagentSessionTiming>? subagentSessions,
@@ -1229,6 +1234,7 @@ class ThreadSessionState {
       loading: loading ?? this.loading,
       error: error,
       thread: thread ?? this.thread,
+      titleGenerating: titleGenerating ?? this.titleGenerating,
       runProjection: clearProjection
           ? null
           : (runProjection ?? this.runProjection),
@@ -1264,9 +1270,57 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   bool _selectedDesktopWasOffline = false;
   bool _projectionSynchronized = false;
   Future<ThreadRunProjectionSnapshot?>? _projectionRequestInFlight;
+  Future<ThreadSummary?>? _threadLoadInFlight;
   final _loadedProjectionDetailKeys = <String>{};
 
   String get _composerDraftContextKey => 'thread:$threadId';
+
+  /// Fills in a missing thread summary. Bootstrap can leave `thread` null
+  /// after a transient bind failure (nothing re-fetches it unless the
+  /// connection state changes), which leaves the session chrome — title,
+  /// workspace, runtime config — blank forever even though the feed loads.
+  Future<void> ensureThreadLoaded() async {
+    if (!mounted || state.thread != null) {
+      return;
+    }
+    final inFlight = _threadLoadInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      return;
+    }
+
+    Future<ThreadSummary?> fetchThread() async {
+      try {
+        return await rpc.getThread(threadId);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final request = fetchThread().then((thread) {
+      _threadLoadInFlight = null;
+      if (!mounted || thread == null) {
+        return;
+      }
+      state = state.copyWith(thread: thread);
+      if (thread.titleGenerating) {
+        state = state.copyWith(titleGenerating: true);
+      }
+      final runtimeConfig = thread.runtimeConfig;
+      if (runtimeConfig != null && ref.read(runtimeConfigProvider) == null) {
+        ref.read(runtimeConfigProvider.notifier).state = runtimeConfig;
+      }
+      ref
+          .read(threadListProvider.notifier)
+          .upsertThread(thread, countAsNew: false);
+    });
+    _threadLoadInFlight = request;
+    await request;
+  }
 
   void _markProjectionSyncStarted() {
     if (!mounted || state.projectionSynchronizing) {
@@ -1454,6 +1508,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           unawaited(_bootstrapSession());
           return;
         }
+        if (state.thread == null) {
+          unawaited(ensureThreadLoaded());
+        }
         unawaited(_refreshFollowUpsFromRpc());
         unawaited(_refreshComposerDraftFromRpc());
         unawaited(recoverProjection());
@@ -1479,7 +1536,20 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     ThreadSummary? seededThread;
     if (seed != null && seed.id == threadId) {
       seededThread = seed;
-      ref.read(threadSessionSeedProvider.notifier).state = null;
+      // The synchronous prefix of this method runs while the session provider is
+      // being initialized (constructor → `_init`), so writing another provider
+      // here trips Riverpod's "Providers are not allowed to modify other
+      // providers during their initialization" assertion in debug builds. The
+      // resulting async error aborts bootstrap before the Feed RPC, so a session
+      // handed off from the landing composer (the user's own new message) never
+      // loads its projection and the user prompt never renders. Clear the seed on
+      // the next microtask instead, which leaves the build phase first.
+      scheduleMicrotask(() {
+        if (!mounted) return;
+        if (ref.read(threadSessionSeedProvider)?.id == threadId) {
+          ref.read(threadSessionSeedProvider.notifier).state = null;
+        }
+      });
     }
     final cachedThread = seededThread ?? state.thread ?? _threadFromCacheSync();
     if (cachedThread != null) {
@@ -1531,6 +1601,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         pendingClarification: bootstrap.pendingClarification,
         followUps: loadedFollowUps,
         thread: thread ?? state.thread,
+        titleGenerating: thread?.titleGenerating ?? state.titleGenerating,
         runProjection: _pickNewerProjection(state.runProjection, projection),
         subagentSessions: state.subagentSessions.isNotEmpty
             ? state.subagentSessions
@@ -1583,6 +1654,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       payloadThreadId: live.threadId,
     );
     if (eventThreadId != threadId) return;
+
+    // A live event for this thread proves the desktop knows the thread even
+    // when our bootstrap missed it — recover the missing summary so the
+    // session chrome (title etc.) is not left blank.
+    if (state.thread == null) {
+      unawaited(ensureThreadLoaded());
+    }
 
     if (isFollowUpThreadLiveEvent(
       kind: event.kind,
@@ -1660,6 +1738,11 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       state = state.copyWith(
         thread: state.thread!.copyWith(title: updatedTitle),
       );
+    }
+
+    final titleGenerating = live.titleGenerating;
+    if (titleGenerating != null && titleGenerating != state.titleGenerating) {
+      state = state.copyWith(titleGenerating: titleGenerating);
     }
 
     if (live.runtimeConfig != null) {

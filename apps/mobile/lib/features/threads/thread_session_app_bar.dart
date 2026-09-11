@@ -10,6 +10,8 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/device_display.dart';
+import '../../core/utils/thread_title.dart'
+    show displayThreadTitle, isThreadTitlePending;
 import '../../core/widgets/adaptive_toolbar_icon.dart'
     show AdaptiveToolbarIcon, sessionToolbarButtonGap, sessionToolbarButtonSize;
 import '../../core/widgets/progressive_blur.dart';
@@ -155,6 +157,9 @@ PreferredSizeWidget buildThreadSessionAppBar(
   String? projectName,
   required ThreadRuntimeConfigInput runtimeConfig,
   required bool isRunning,
+  bool titleGenerating = false,
+  String prompt = '',
+  String fallback = '',
   GitWorkingTreeStatus? gitStatus,
   bool showNewThreadAction = true,
   VoidCallback? onRevealImageDisplay,
@@ -165,6 +170,19 @@ PreferredSizeWidget buildThreadSessionAppBar(
     workspacePath: workspacePath,
     desktopLabel: desktopLabel,
   );
+  final eco = ecoColors(context);
+  // While the desktop is auto-generating the title, the stored title is still
+  // a placeholder — show a loading row instead of a stale/empty title.
+  final showTitleGenerating = titleGenerating && isThreadTitlePending(title);
+  // Never render a blank title: empty / placeholder titles fall back to the
+  // first line of the prompt (displayThreadTitle), then to [fallback].
+  final displayTitle = showTitleGenerating
+      ? ''
+      : displayThreadTitle(
+          title: title,
+          prompt: prompt,
+          fallback: fallback.isNotEmpty ? fallback : title,
+        );
 
   return AppBar(
     automaticallyImplyLeading: false,
@@ -199,16 +217,47 @@ PreferredSizeWidget buildThreadSessionAppBar(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              height: 1.15,
+                      if (showTitleGenerating)
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: eco.textMuted.withValues(alpha: 0.7),
+                              ),
                             ),
-                      ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                context.l10n.threadTitleGenerating,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.15,
+                                          color: eco.textMuted,
+                                        ) ??
+                                    const TextStyle(),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          displayTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                height: 1.15,
+                              ),
+                        ),
                       if (subtitle.isNotEmpty)
                         GestureDetector(
                           onLongPress: workspacePath.isEmpty

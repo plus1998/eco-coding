@@ -80,6 +80,77 @@ void main() {
     },
   );
 
+  test('a same-revision delta tops up the base and keeps earlier prompts', () {
+    // The desktop live wire carries `afterSequence` deltas for clients that
+    // already hold the skeleton; merging them must not drop what came before.
+    final current = _projection(
+      historyRevision: 1,
+      timeline: [
+        _item('user:1', 1, scope: 'main', role: 'user', text: 'hi'),
+        _item('main_29', 29, scope: 'main', text: 'hello'),
+      ],
+    );
+    final incoming = _projection(
+      historyRevision: 1,
+      generatedAt: '2026-01-01T00:00:02.000Z',
+      timeline: [_item('main_31', 31, scope: 'main', text: 'still working')],
+    );
+
+    final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+
+    expect(merged.timeline.map((item) => item.text), [
+      'hi',
+      'hello',
+      'still working',
+    ]);
+  });
+
+  test('a revision bump hard-replaces the base, so it must carry a full skeleton', () {
+    // Characterization of the cross-repo contract: `historyRevision` changes
+    // mean "rewrite / compaction — trust me wholesale". The desktop live wire
+    // therefore has to send the complete skeleton whenever it bumps the
+    // revision (see apps/desktop/src/main/thread-run-projection-feed.ts and
+    // mobile-remote-event-publisher.ts); a delta here silently drops history.
+    final current = _projection(
+      historyRevision: 1,
+      timeline: [
+        _item('user:1', 1, scope: 'main', role: 'user', text: 'hi'),
+        _item('main_29', 29, scope: 'main', text: 'hello'),
+      ],
+    );
+    final incoming = _projection(
+      historyRevision: 2,
+      generatedAt: '2026-01-01T00:00:02.000Z',
+      timeline: [_item('main_31', 31, scope: 'main', text: 'still working')],
+    );
+
+    final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+
+    expect(merged.historyRevision, 2);
+    expect(merged.timeline.map((item) => item.text), ['still working']);
+  });
+
+  test('an older revision bump cannot roll the base backwards', () {
+    final current = _projection(
+      historyRevision: 2,
+      generatedAt: '2026-01-01T00:00:05.000Z',
+      timeline: [
+        _item('user:1', 1, scope: 'main', role: 'user', text: 'hi'),
+        _item('main_31', 31, scope: 'main', text: 'still working'),
+      ],
+    );
+    final stale = _projection(
+      historyRevision: 1,
+      generatedAt: '2026-01-01T00:00:01.000Z',
+      timeline: [_item('main_2', 2, scope: 'main', text: 'old')],
+    );
+
+    final merged = mergeThreadRunProjectionSnapshots(current, stale);
+
+    expect(merged.historyRevision, 2);
+    expect(merged.timeline.map((item) => item.text), ['hi', 'still working']);
+  });
+
   test('projection parsing preserves earlier history availability', () {
     final projection = ThreadRunProjectionSnapshot.fromJson({
       'thread': {

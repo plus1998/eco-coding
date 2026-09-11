@@ -61,6 +61,7 @@ import {
 } from "../shared/activity-display";
 import {
   type ActionGroupBucket,
+  type ActionKindPayload,
   formatActionLine,
   type ResolvedAction,
   resolveActionKind,
@@ -151,6 +152,7 @@ import {
   isProjectionUserPromptItem,
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
+  readProjectionToolMetadata,
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
@@ -597,7 +599,60 @@ function ProjectionActivityLogView({
     viewModel.mainFeedEntries.every(
       (entry) => entry.kind === "timeline" && isProjectionUserPromptItem(entry.item),
     );
-  const runningToolVisible = viewModel.mainFeedEntries.some((entry) => isRunningToolFeedEntry(entry));
+  // Settled tool groups keep their "running" display for TOOL_RUNNING_MIN_VISIBLE_MS
+  // (resolveToolGroupDisplayState). The tail must honor the same window, otherwise the
+  // settling tool row and the「正在思考」tail state render at the same time.
+  const [settlingToolClock, setSettlingToolClock] = useState(0);
+  const settlingToolExtensionMs = useMemo(() => {
+    const nowMs = Date.now();
+    let deadlineMs = 0;
+    for (const entry of viewModel.mainFeedEntries) {
+      if (entry.kind !== "tool-group") {
+        continue;
+      }
+      const endMs = resolveToolGroupSettledExtensionEndMs(entry.entries);
+      if (endMs !== undefined && endMs > deadlineMs) {
+        deadlineMs = endMs;
+      }
+    }
+    // settlingToolClock only re-arms the deadline after the timer fires.
+    return deadlineMs > nowMs ? deadlineMs - nowMs : 0;
+  }, [settlingToolClock, viewModel.mainFeedEntries]);
+
+  useEffect(() => {
+    if (settlingToolExtensionMs <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setSettlingToolClock((value) => value + 1),
+      settlingToolExtensionMs,
+    );
+    return () => window.clearTimeout(timer);
+  }, [settlingToolClock, settlingToolExtensionMs]);
+
+  const runningToolVisible =
+    viewModel.mainFeedEntries.some((entry) => isRunningToolFeedEntry(entry)) || settlingToolExtensionMs > 0;
+  // The live tail states are exclusive: while the latest content is a tool call or
+  // aggregation, that tool row is the tail itself — never render「正在思考」or a
+  // Summary tip beneath it. Trailing empty waiting slots (the next request span,
+  // not yet streamed) do not count as content, so the group still ends the feed.
+  const latestContentIsToolGroup = useMemo(() => {
+    const entries = viewModel.mainFeedEntries;
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (!entry) {
+        continue;
+      }
+      if (entry.kind === "timeline" || entry.kind === "agent-echo") {
+        if (isWaitingThinkingItem(entry.item, requestSpansById)) {
+          continue;
+        }
+        return false;
+      }
+      return entry.kind === "tool-group";
+    }
+    return false;
+  }, [viewModel.mainFeedEntries, requestSpansById]);
   const runningContextCompactionVisible = viewModel.mainFeedEntries.some((entry) =>
     isRunningContextCompactionFeedEntry(entry),
   );
@@ -611,6 +666,7 @@ function ProjectionActivityLogView({
   const waitingThinkingVisible =
     !runningToolVisible &&
     !runningContextCompactionVisible &&
+    !latestContentIsToolGroup &&
     (Boolean(liveReasoningStageLabel) ||
       showInitialWaiting ||
       viewModel.mainFeedEntries.some((entry) => {
@@ -1313,31 +1369,22 @@ export function ProjectionToolGroupEntry({
   onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const blocks = useMemo(
-    () =>
-      entry.entries
-        .map((child) => projectionItemToDetailBlock(child.item))
-        .filter(
-          (block): block is ToolGroupDetailBlock => block?.kind === "action" || block?.kind === "tool-failed",
-        ),
-    [entry.entries],
+  // Same pure window as the feed tail (resolveToolGroupDisplayState): the settling
+  // "running" row and the「正在思考」tail can never render together.
+  const [displayClock, setDisplayClock] = useState(0);
+  const display = useMemo(
+    () => resolveToolGroupDisplayState(entry.entries, Date.now()),
+    // displayClock only re-arms the minimum-visible deadline.
+    [displayClock, entry.entries],
   );
-  const currentSummary = useMemo(() => summarizeActionBlocks(blocks), [blocks]);
-  const currentLifecycle = useMemo(() => resolveActionBlocksLifecycle(blocks), [blocks]);
-  const currentActionIdentity = useMemo(
-    () => resolveLatestToolGroupActionIdentity(entry.entries),
-    [entry.entries],
-  );
-  const runningActionIdentity = useMemo(
-    () => resolveLatestToolGroupActionIdentity(entry.entries, "running"),
-    [entry.entries],
-  );
-  const { summary, lifecycle } = useMinimumVisibleToolRunningState({
-    summary: currentSummary,
-    ...(currentLifecycle && { lifecycle: currentLifecycle }),
-    ...(currentActionIdentity && { currentActionIdentity }),
-    ...(runningActionIdentity && { runningActionIdentity }),
-  });
+  const { summary, lifecycle, remainingMs } = display;
+  useEffect(() => {
+    if (remainingMs <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => setDisplayClock((value) => value + 1), remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [remainingMs, displayClock]);
   const imageToolUseIds = [
     ...new Set(
       entry.entries
@@ -1386,107 +1433,94 @@ export function ProjectionToolGroupEntry({
   );
 }
 
-interface MinimumVisibleToolRunningSnapshot {
-  identity: string;
-  startedAtMs: number;
-  summary: { label: string; icon: ActivityActionIcon };
-}
-
-export function resolveMinimumVisibleToolRunningState(input: {
-  nowMs: number;
-  minimumMs: number;
+export interface ToolGroupDisplayState {
   summary: { label: string; icon: ActivityActionIcon };
   lifecycle?: ToolActionLifecycle;
-  currentActionIdentity?: string;
-  runningActionIdentity?: string;
-  previous?: MinimumVisibleToolRunningSnapshot;
-}): {
-  summary: { label: string; icon: ActivityActionIcon };
-  lifecycle?: ToolActionLifecycle;
-  running?: MinimumVisibleToolRunningSnapshot;
+  /** ms until the minimum-visible "running" extension ends (0 when settled display applies). */
   remainingMs: number;
-} {
-  if (input.lifecycle === "running" && input.runningActionIdentity) {
-    const running =
-      input.previous?.identity === input.runningActionIdentity
-        ? { ...input.previous, summary: input.summary }
-        : {
-            identity: input.runningActionIdentity,
-            startedAtMs: input.nowMs,
-            summary: input.summary,
-          };
-    return { summary: input.summary, lifecycle: input.lifecycle, running, remainingMs: 0 };
-  }
-
-  const previous = input.previous;
-  const hasNewerAction = Boolean(
-    previous && input.currentActionIdentity && input.currentActionIdentity !== previous.identity,
-  );
-  if (previous && !hasNewerAction) {
-    const remainingMs = Math.max(0, input.minimumMs - (input.nowMs - previous.startedAtMs));
-    if (remainingMs > 0) {
-      return {
-        summary: previous.summary,
-        lifecycle: "running",
-        running: previous,
-        remainingMs,
-      };
-    }
-  }
-
-  return {
-    summary: input.summary,
-    ...(input.lifecycle && { lifecycle: input.lifecycle }),
-    remainingMs: 0,
-  };
 }
 
-function useMinimumVisibleToolRunningState(input: {
-  summary: { label: string; icon: ActivityActionIcon };
-  lifecycle?: ToolActionLifecycle;
-  currentActionIdentity?: string;
-  runningActionIdentity?: string;
-}): {
-  summary: { label: string; icon: ActivityActionIcon };
-  lifecycle?: ToolActionLifecycle;
-} {
-  const runningRef = useRef<MinimumVisibleToolRunningSnapshot | undefined>(undefined);
-  const [, refresh] = useState(0);
-  const resolved = resolveMinimumVisibleToolRunningState({
-    nowMs: Date.now(),
-    minimumMs: TOOL_RUNNING_MIN_VISIBLE_MS,
-    summary: input.summary,
-    ...(input.lifecycle && { lifecycle: input.lifecycle }),
-    ...(input.currentActionIdentity && { currentActionIdentity: input.currentActionIdentity }),
-    ...(input.runningActionIdentity && { runningActionIdentity: input.runningActionIdentity }),
-    ...(runningRef.current && { previous: runningRef.current }),
-  });
-  runningRef.current = resolved.running;
-
-  useEffect(() => {
-    if (resolved.remainingMs <= 0) {
-      return;
-    }
-    const timer = window.setTimeout(() => refresh((value) => value + 1), resolved.remainingMs);
-    return () => window.clearTimeout(timer);
-  }, [resolved.remainingMs]);
-
-  return { summary: resolved.summary, ...(resolved.lifecycle && { lifecycle: resolved.lifecycle }) };
-}
-
-function resolveLatestToolGroupActionIdentity(
+/**
+ * Settled tool groups keep their "running" display until TOOL_RUNNING_MIN_VISIBLE_MS
+ * has elapsed since the latest action started, so fast tools do not flash past. The
+ * window is derived from item timestamps — a settled action's item is its completion
+ * event (possibly a merged started+completed) that started at `at - durationMs` — so
+ * the feed tail can share the exact same window: a settling tool row must never
+ * render alongside the「正在思考」tail state.
+ */
+export function resolveToolGroupDisplayState(
   entries: readonly (ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry)[],
-  lifecycle?: ToolActionLifecycle,
-): string | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (!entry) {
+  nowMs: number,
+): ToolGroupDisplayState {
+  const blocks = entries
+    .map((child) => projectionItemToDetailBlock(child.item))
+    .filter(
+      (block): block is ToolGroupDetailBlock => block?.kind === "action" || block?.kind === "tool-failed",
+    );
+  const summary = summarizeActionBlocks(blocks);
+  const lifecycle = resolveActionBlocksLifecycle(blocks);
+  if (lifecycle === "running") {
+    return { summary, lifecycle, remainingMs: 0 };
+  }
+  const extensionEndMs = resolveToolGroupSettledExtensionEndMs(entries);
+  if (extensionEndMs !== undefined && extensionEndMs > nowMs) {
+    return {
+      summary: resolveToolGroupRunningLabel(entries) ?? summary,
+      lifecycle: "running",
+      remainingMs: extensionEndMs - nowMs,
+    };
+  }
+  return { summary, ...(lifecycle && { lifecycle }), remainingMs: 0 };
+}
+
+/**
+ * End of the minimum-visible window for a settled tool group, or undefined when no
+ * settled action is inside (or recently closed) the window.
+ */
+export function resolveToolGroupSettledExtensionEndMs(
+  entries: readonly (ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry)[],
+): number | undefined {
+  let endMs: number | undefined;
+  for (const child of entries) {
+    const block = projectionItemToDetailBlock(child.item);
+    // Only actions that finished running settle into the extension window.
+    if (block?.kind !== "action" || (block.lifecycle !== "completed" && block.lifecycle !== "failed")) {
       continue;
     }
-    const block = projectionItemToDetailBlock(entry.item);
-    if (block?.kind === "action" && (!lifecycle || block.lifecycle === lifecycle)) {
-      return entry.key;
+    const endedAtMs = Date.parse(child.item.at);
+    if (Number.isNaN(endedAtMs)) {
+      continue;
     }
+    const durationMs = readSettledToolDurationMs(child.item);
+    const candidate = endedAtMs - (durationMs ?? 0) + TOOL_RUNNING_MIN_VISIBLE_MS;
+    if (endMs === undefined || candidate > endMs) {
+      endMs = candidate;
+    }
+  }
+  return endMs;
+}
+
+function readSettledToolDurationMs(item: ThreadRunProjectionTimelineItem): number | undefined {
+  const durationMs = readProjectionToolMetadata(item)?.durationMs;
+  return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
+    ? durationMs
+    : undefined;
+}
+
+/** Label shown while a settled group still presents its minimum "running" window. */
+function resolveToolGroupRunningLabel(
+  entries: readonly (ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry)[],
+): { label: string; icon: ActivityActionIcon } | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const child = entries[index];
+    if (!child) {
+      continue;
+    }
+    const block = projectionItemToDetailBlock(child.item);
+    if (block?.kind !== "action") {
+      continue;
+    }
+    return { label: formatBlockActionLine(block, "running"), icon: block.icon };
   }
   return undefined;
 }
@@ -1658,24 +1692,27 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   const actionBlocks = blocks.filter(
     (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action",
   );
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
+  const failedBlocks = blocks.filter(
+    (block): block is Extract<ActivityDetailBlock, { kind: "tool-failed" }> => block.kind === "tool-failed",
+  );
+  // Every group child is one tool call. A group holding a single tool call keeps that
+  // tool's own failure copy ("运行了命令", "编辑了 panel.ts", recovered-patch notices).
+  // A group that aggregates several calls has to describe all of them
+  // ("已运行 4 条命令和已处理 1 张图像") — otherwise a single failed image / HTML tool
+  // retitles the aggregate ("已查看 1 张图像") and hides every action next to it.
+  if (blocks.length === 1) {
+    const block = blocks[0];
     if (block?.kind === "tool-failed") {
-      const sibling = siblingActionForFailedTool(blocks, block);
-      let commandHeader =
-        actionBlocks.length === 1 && sibling ? summarizeSingleCommandGroupHeader(sibling, "done") : undefined;
-      if (!commandHeader && actionBlocks.length === 0 && blocks.length === 1) {
-        const resolved = resolveActionKind({
+      const commandHeader =
+        resolveActionKind({
           toolName: block.tool,
           ...(block.command && { payload: { bashRun: { command: block.command } } }),
-        });
-        if (resolved.kind === "command") {
-          commandHeader = {
-            label: translateActionKind("activity.done.command.fallback"),
-            icon: iconForToolName(block.tool),
-          };
-        }
-      }
+        }).kind === "command"
+          ? {
+              label: translateActionKind("activity.done.command.fallback"),
+              icon: iconForToolName(block.tool),
+            }
+          : undefined;
       return {
         label: block.recoveredResult
           ? i18n.t("activity.patchRecovered")
@@ -1683,7 +1720,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
             summarizeFailedTool(
               block.tool,
               block.command,
-              sibling ?? (block.fileChange ? { fileChange: block.fileChange } : undefined),
+              block.fileChange ? { fileChange: block.fileChange } : undefined,
             )),
         icon: commandHeader?.icon ?? iconForToolName(block.tool),
       };
@@ -1704,7 +1741,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       icon: runningBlock.icon,
     };
   }
-  if (actionBlocks.length === 1 && actionBlocks[0]) {
+  if (actionBlocks.length === 1 && actionBlocks[0] && failedBlocks.length === 0) {
     return (
       summarizeSingleCommandGroupHeader(actionBlocks[0], "done") ?? {
         label: formatBlockActionLine(actionBlocks[0], "done"),
@@ -1715,28 +1752,50 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
 
   const fileBucketKeys = new Map<ActionGroupBucket, Set<string>>();
   const items: ResolvedAction[] = [];
-  for (const block of actionBlocks) {
-    const action = resolveBlockAction(block);
+  const pushAction = (action: ResolvedAction, targetKey: string) => {
     if (
       action.bucket === "readFiles" ||
       action.bucket === "writtenFiles" ||
       action.bucket === "editedFiles"
     ) {
-      const key = actionBlockTargetKey(block);
       let seen = fileBucketKeys.get(action.bucket);
       if (!seen) {
         seen = new Set();
         fileBucketKeys.set(action.bucket, seen);
       }
-      if (seen.has(key)) {
-        continue;
+      if (seen.has(targetKey)) {
+        return;
       }
-      seen.add(key);
+      seen.add(targetKey);
     }
     items.push(action);
+  };
+  for (const block of actionBlocks) {
+    pushAction(resolveBlockAction(block), actionBlockTargetKey(block));
+  }
+  // Failed tools count into the aggregate too: the header claims what the group holds,
+  // while the failure itself stays visible on the child row.
+  for (const block of failedBlocks) {
+    pushAction(
+      resolveFailedBlockAction(block),
+      block.command ?? block.fileChange?.path ?? block.fileChange?.fileName ?? "",
+    );
   }
 
   return summarizeActionGroup(items, translateActionKind);
+}
+
+/** Bucket a failed tool by what it tried to do, so aggregates count it like its siblings. */
+function resolveFailedBlockAction(block: Extract<ActivityDetailBlock, { kind: "tool-failed" }>): ResolvedAction {
+  const fileChange = block.fileChange as ActionKindPayload["fileChange"] | undefined;
+  const payload: ActionKindPayload = {};
+  if (block.command) {
+    payload.bashRun = { command: block.command };
+  }
+  if (fileChange) {
+    payload.fileChange = fileChange;
+  }
+  return resolveActionKind({ toolName: block.tool, payload });
 }
 
 function translateActionKind(key: string, vars?: Record<string, string | number>): string {
@@ -1845,20 +1904,6 @@ function summarizeFailedTool(
     action.webSearch = sibling.webSearch;
   }
   return formatBlockActionLine(action, "done");
-}
-
-function siblingActionForFailedTool(
-  blocks: readonly ToolGroupDetailBlock[],
-  failed: Extract<ActivityDetailBlock, { kind: "tool-failed" }>,
-): Extract<ActivityDetailBlock, { kind: "action" }> | undefined {
-  const tool = failed.tool.trim().toLowerCase();
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
-    if (block?.kind === "action" && block.toolName?.trim().toLowerCase() === tool) {
-      return block;
-    }
-  }
-  return undefined;
 }
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {

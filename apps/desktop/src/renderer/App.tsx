@@ -9692,6 +9692,12 @@ function App() {
         ? "queue"
         : "stop"
       : "send";
+  // The follow-up delivery mode actually applied when sending while the thread is running
+  // (steer = 调整方向, queue = 排队); used to pick the composer action icon/label.
+  const composerFollowUpDeliveryMode: FollowUpDeliveryMode = resolveFollowUpDeliveryModeForCore(
+    activeThread?.coreKind,
+    workflowSettings.followUpDeliveryMode ?? "steer",
+  );
   const composerActionBusy =
     composerActionMode === "stop"
       ? cancelBusy || Boolean(activeThread?.cancelling)
@@ -9704,7 +9710,9 @@ function App() {
         ? t("thread.action.stopping")
         : t("thread.action.stop")
       : composerActionMode === "queue"
-        ? t("thread.action.queue")
+        ? composerFollowUpDeliveryMode === "steer"
+          ? t("thread.action.steer")
+          : t("thread.action.queue")
         : composerActionMode === "save-follow-up"
           ? t("thread.action.saveFollowUp")
           : t("thread.action.send");
@@ -10167,7 +10175,12 @@ function App() {
                         ) : composerActionMode === "stop" ? (
                           <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                         ) : composerActionMode === "queue" ? (
-                          <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                          // Steer = 立即注入当前回合，与“发送”同义，复用发送图标；排队用折线入队图标。
+                          composerFollowUpDeliveryMode === "steer" ? (
+                            <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                          ) : (
+                            <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                          )
                         ) : (
                           <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                         )}

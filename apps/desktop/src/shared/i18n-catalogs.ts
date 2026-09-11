@@ -285,10 +285,12 @@ export const i18nCatalogs = {
       "settings.cacheBreakTips": "Cache break 提示",
       "settings.cacheBreakTipsHint": "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
       "settings.followUpDelivery": "跟进处理方式",
-      "settings.followUpDeliveryHint":
-        "Agent 运行中发送后续消息时，默认加入队列或引导当前回合（Claude/Codex 为 mid-turn 注入；Cursor ACP 为打断后重发）。按 ⌘↩ 可对单条消息执行相反操作。",
       "settings.followUpDelivery.queue": "加入队列",
       "settings.followUpDelivery.steer": "调整方向",
+      "settings.followUpDeliveryHint.queue":
+        "后续消息默认加入队列，当前回合结束后按顺序自动发送。按 ⌘↩ 可对单条消息改为立即注入当前回合。",
+      "settings.followUpDeliveryHint.steer":
+        "后续消息默认立即注入当前回合，即时调整方向。按 ⌘↩ 可对单条消息改为加入队列。",
       "settings.defaultBashReviewMode": "默认审批模式",
       "settings.defaultBashReviewModeHint": "新建会话时 Composer 默认使用的执行审批档位。",
       "settings.defaultBashReviewMode.allowAllConfirm":
@@ -1537,6 +1539,7 @@ export const i18nCatalogs = {
       "thread.action.stop": "停止",
       "thread.action.stopping": "正在停止…",
       "thread.action.queue": "排队后续消息",
+      "thread.action.steer": "调整方向（运行中注入后续消息）",
       "thread.action.saveFollowUp": "保存引导消息",
       "thread.action.send": "发送",
       "app.terminalFallback": "终端",
@@ -2461,10 +2464,12 @@ export const i18nCatalogs = {
       "settings.cacheBreakTipsHint":
         "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
       "settings.followUpDelivery": "Follow-up handling",
-      "settings.followUpDeliveryHint":
-        "While the agent is running, queue follow-ups or steer the current turn (mid-turn inject for Claude/Codex; interrupt-and-resend for Cursor ACP). Press ⌘↩ to do the opposite for one message.",
       "settings.followUpDelivery.queue": "Queue",
       "settings.followUpDelivery.steer": "Steer",
+      "settings.followUpDeliveryHint.queue":
+        "Follow-ups queue by default and send in order once the current turn ends. Press ⌘↩ to inject one message into the current turn instead.",
+      "settings.followUpDeliveryHint.steer":
+        "Follow-ups inject into the current turn by default, adjusting its direction immediately. Press ⌘↩ to queue one message instead.",
       "settings.defaultBashReviewMode": "Default approval mode",
       "settings.defaultBashReviewModeHint": "Execution approval mode used by Composer for new sessions.",
       "settings.defaultBashReviewMode.allowAllConfirm":
@@ -3768,6 +3773,7 @@ export const i18nCatalogs = {
       "thread.action.stop": "Stop",
       "thread.action.stopping": "Stopping…",
       "thread.action.queue": "Queue follow-up message",
+      "thread.action.steer": "Steer (inject follow-up mid-run)",
       "thread.action.saveFollowUp": "Save guidance message",
       "thread.action.send": "Send",
       "app.terminalFallback": "Terminal",

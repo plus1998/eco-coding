@@ -26,6 +26,7 @@ import {
   type IpcChannel,
   isKnownIpcChannel,
   type ThreadLiveEvent,
+  type ThreadRunProjectionSnapshot,
   type ThreadSummary,
 } from "../shared/ipc";
 import type { WorkspaceDiffResult } from "./git-operations";
@@ -38,8 +39,25 @@ import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
 
 export type EventCenterCommandHandler = (args: readonly unknown[]) => unknown | Promise<unknown>;
 
+/**
+ * Per-publish data for a single sink that must not reach the others.
+ *
+ * The local Electron renderer consumes the *incremental* `thread.run_projection_updated`
+ * payload (it holds the full skeleton and patches it), while a remote client may be
+ * attaching mid-run with no skeleton at all. [remoteProjection] carries the already
+ * built full projection for that remote wire only, so the shared envelope payload
+ * keeps its shape and size for every other consumer.
+ */
+export interface DesktopEventCenterSinkExtras {
+  remoteProjection?: ThreadRunProjectionSnapshot;
+}
+
 export interface DesktopEventCenterSink {
-  publish(envelope: EventCenterEnvelope, notification: EventCenterJsonRpcNotification): void;
+  publish(
+    envelope: EventCenterEnvelope,
+    notification: EventCenterJsonRpcNotification,
+    extras?: DesktopEventCenterSinkExtras,
+  ): void;
 }
 
 export interface DesktopEventCenterOptions {
@@ -59,6 +77,7 @@ export interface EventCenterPublishInput<K extends EventCenterEventKind> {
   workspacePath?: string;
   aggregateKey?: string;
   metadata?: Record<string, unknown>;
+  sinkExtras?: DesktopEventCenterSinkExtras;
 }
 
 export class DesktopEventCenter {
@@ -113,12 +132,16 @@ export class DesktopEventCenter {
     };
     const notification = buildEventCenterJsonRpcNotification(envelope);
     for (const sink of this.sinks) {
-      sink.publish(envelope, notification);
+      sink.publish(envelope, notification, input.sinkExtras);
     }
     return envelope;
   }
 
-  publishThreadLiveEvent(payload: ThreadLiveEvent, workspacePath?: string): ThreadLiveEventCenterEnvelope {
+  publishThreadLiveEvent(
+    payload: ThreadLiveEvent,
+    workspacePath?: string,
+    sinkExtras?: DesktopEventCenterSinkExtras,
+  ): ThreadLiveEventCenterEnvelope {
     const kind = classifyThreadLiveEventForCenter(payload);
     return this.publish({
       kind,
@@ -126,6 +149,7 @@ export class DesktopEventCenter {
       threadId: payload.threadId,
       ...(workspacePath?.trim() ? { workspacePath: workspacePath.trim() } : {}),
       aggregateKey: `thread:${payload.threadId}`,
+      ...(sinkExtras ? { sinkExtras } : {}),
     }) as ThreadLiveEventCenterEnvelope;
   }
 
@@ -287,7 +311,7 @@ export function transformRemoteInvokeResult(channel: string, result: unknown): u
     return summarizeThreadListPage(result as import("./conversation-store").ThreadListPage);
   }
   if (channel === IPC_CHANNELS.threadRunProjectionGet && result && typeof result === "object") {
-    return trimProjectionForRemoteWire(result as import("../shared/ipc").ThreadRunProjectionSnapshot, {
+    return trimProjectionForRemoteWire(result as ThreadRunProjectionSnapshot, {
       streaming: false,
     });
   }

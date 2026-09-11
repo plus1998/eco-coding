@@ -120,9 +120,11 @@ test("Guide stays clickable on an escalated row while the queue is paused", () =
   ).toBe(false);
 });
 
-test("ACP follow-up UI allows escalate; steer delivery mode is preserved", () => {
+test("follow-up UI allows escalate and preserves steer for mid-turn cores", () => {
   expect(coreSupportsFollowUpEscalate("acp")).toBe(true);
   expect(coreSupportsFollowUpEscalate("claude")).toBe(true);
+  expect(coreSupportsFollowUpEscalate("pi")).toBe(true);
   expect(resolveFollowUpDeliveryModeForCore("acp", "steer")).toBe("steer");
   expect(resolveFollowUpDeliveryModeForCore("codex", "steer")).toBe("steer");
+  expect(resolveFollowUpDeliveryModeForCore("pi", "steer")).toBe("steer");
 });

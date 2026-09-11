@@ -8,7 +8,7 @@ import {
   ProjectionSubagentDetailFeed,
   ProjectionToolGroupEntry,
   resolveActiveSubagentDurationMs,
-  resolveMinimumVisibleToolRunningState,
+  resolveToolGroupDisplayState,
   splitThinkingCarouselLines,
 } from "../src/renderer/ActivityLogView";
 import { formatDuration, iconForToolName, reasoningSummaryLabel } from "../src/renderer/activity-log";
@@ -87,61 +87,61 @@ test("running turn heading switches to stopping while cancelling", async () => {
   expect(formatRunLogTurnHeading(true, "running", 4_000, true)).toBe("停止中 4s");
 });
 
-test("tool running status remains visible for at least one second", () => {
-  const running = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_000,
-    minimumMs: 1_000,
-    summary: { label: "正在运行 git status", icon: "terminal" },
-    lifecycle: "running",
-    currentActionIdentity: "tool-a",
-    runningActionIdentity: "tool-a",
-  });
-  const completed = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_100,
-    minimumMs: 1_000,
-    summary: { label: "已运行 git status", icon: "terminal" },
-    lifecycle: "completed",
-    currentActionIdentity: "tool-a",
-    previous: running.running,
-  });
+test("settled tool group keeps its running display for at least one second", () => {
+  const now = 1_000_000;
+  const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+  const entry = {
+    kind: "timeline" as const,
+    key: "tool-settled",
+    at: iso(-200),
+    sequence: 1,
+    item: {
+      id: "tool-settled",
+      sequence: 1,
+      eventType: "tool.completed",
+      scope: "main",
+      role: "tool",
+      text: "Tool: Bash · git status",
+      at: iso(-200),
+      metadata: {
+        tool: { name: "Bash", detail: "git status", status: "completed", durationMs: 100 },
+      },
+    },
+  };
 
-  expect(completed.lifecycle).toBe("running");
-  expect(completed.summary.label).toBe("正在运行 git status");
-  expect(completed.remainingMs).toBe(900);
+  const extended = resolveToolGroupDisplayState([entry], now);
+  expect(extended.lifecycle).toBe("running");
+  // finished at now-200 after a 100ms run → started at now-300 → window ends at now+700.
+  expect(extended.remainingMs).toBe(700);
 
-  const released = resolveMinimumVisibleToolRunningState({
-    nowMs: 2_000,
-    minimumMs: 1_000,
-    summary: { label: "已运行 git status", icon: "terminal" },
-    lifecycle: "completed",
-    currentActionIdentity: "tool-a",
-    previous: completed.running,
-  });
+  const released = resolveToolGroupDisplayState([entry], now + 700);
   expect(released.lifecycle).toBe("completed");
-  expect(released.summary.label).toBe("已运行 git status");
+  expect(released.remainingMs).toBe(0);
 });
 
-test("a newer overlapping tool skips the previous minimum running duration", () => {
-  const running = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_000,
-    minimumMs: 1_000,
-    summary: { label: "正在运行 git status", icon: "terminal" },
-    lifecycle: "running",
-    currentActionIdentity: "tool-a",
-    runningActionIdentity: "tool-a",
-  });
-  const newer = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_100,
-    minimumMs: 1_000,
-    summary: { label: "已读取 README.md", icon: "read" },
-    lifecycle: "completed",
-    currentActionIdentity: "tool-b",
-    previous: running.running,
-  });
+test("a long settled tool group does not extend past its minimum window", () => {
+  const now = 1_000_000;
+  const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+  const entry = {
+    kind: "timeline" as const,
+    key: "tool-long",
+    at: iso(-5_000),
+    sequence: 1,
+    item: {
+      id: "tool-long",
+      sequence: 1,
+      eventType: "tool.completed",
+      scope: "main",
+      role: "tool",
+      text: "Tool: Bash · build",
+      at: iso(-5_000),
+      metadata: { tool: { name: "Bash", detail: "build", status: "completed", durationMs: 4_000 } },
+    },
+  };
 
-  expect(newer.lifecycle).toBe("completed");
-  expect(newer.summary.label).toBe("已读取 README.md");
-  expect(newer.remainingMs).toBe(0);
+  const display = resolveToolGroupDisplayState([entry], now);
+  expect(display.lifecycle).toBe("completed");
+  expect(display.remainingMs).toBe(0);
 });
 
 function projection(input: {
@@ -441,7 +441,7 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
   expect(afterRequest).toContain("正在思考");
 });
 
-test("ActivityLogView keeps the active thinking indicator at the bottom after tool rows", () => {
+test("ActivityLogView suppresses the thinking indicator while a tool row is the latest content", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -474,9 +474,11 @@ test("ActivityLogView keeps the active thinking indicator at the bottom after to
     }),
   );
 
-  expect(html.indexOf("config.ts")).toBeLessThan(html.indexOf("正在思考"));
-  expect(html.match(/正在思考/g)?.length).toBe(1);
-  expect(html).not.toContain("run-log-conversation-tail");
+  // The settled tool row is the latest content, so it is the tail state itself —
+  // the「正在思考」line must not render beneath it.
+  expect(html).toContain("config.ts");
+  expect(html).not.toContain("正在思考");
+  expect(html).toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView replaces answered clarification waiting with its question and answer", () => {
@@ -2502,6 +2504,114 @@ test("failed Bash action uses the completed command style plus a status dot", ()
   );
   // Failure indicator belongs on the Bash child title after expand.
   expect(expandedFailedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
+});
+
+test("ActivityLogView aggregates a group that mixes commands with a failed image view", () => {
+  const mixedProjection = projection({
+    status: "completed",
+    timeline: [
+      item({
+        id: "bash-ok-1",
+        sequence: 1,
+        eventType: "tool.completed",
+        text: 'Tool: Bash · export PATH="$PATH:/sdk/platform-tools"; adb devices',
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: 'export PATH="$PATH:/sdk/platform-tools"; adb devices',
+            toolUseId: "toolu_bash_ok_1",
+            status: "completed",
+          },
+        },
+      }),
+      item({
+        id: "image-view-failed",
+        sequence: 2,
+        eventType: "tool.failed",
+        text: "Tool failed: mcp: Failed to call tool: Request timed out",
+        metadata: {
+          itemType: "mcpToolCall",
+          tool: {
+            name: "mcp__eco_image_view__view_image",
+            detail: "Failed to call tool: Request timed out",
+            toolUseId: "toolu_image_view_failed",
+            status: "failed",
+            imageView: { path: "/tmp/cascade_land_fix_small.png" },
+          },
+        },
+      }),
+      item({
+        id: "bash-ok-2",
+        sequence: 3,
+        eventType: "tool.completed",
+        text: "Tool: Bash · bun test",
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: "bun test",
+            toolUseId: "toolu_bash_ok_2",
+            status: "completed",
+          },
+        },
+      }),
+    ],
+  });
+
+  const html = renderToStaticMarkup(createElement(ActivityLogView, { projection: mixedProjection }));
+
+  // The group title summarizes every tool call it holds; one failed image view must
+  // never retitle a group of commands.
+  expect(html).toContain("已运行 2 条命令和已处理 1 张图像");
+  expect(html).not.toContain("已查看 1 张图像");
+
+  const entry = buildThreadRunProjectionViewModel(mixedProjection).mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("mixed tool group missing");
+  }
+  const expandedHtml = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(expandedHtml).toContain("已运行 2 条命令和已处理 1 张图像");
+  expect(expandedHtml).toContain("运行了 bun test");
+  // The failed image view keeps its own copy and status dot on the child row.
+  expect(expandedHtml).toContain("已查看 1 张图像");
+  expect(expandedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
+});
+
+test("ActivityLogView keeps a lone failed tool's own copy as the group title", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "image-view-failed",
+            sequence: 1,
+            eventType: "tool.failed",
+            text: "Tool failed: mcp: Failed to call tool: Request timed out",
+            metadata: {
+              itemType: "mcpToolCall",
+              tool: {
+                name: "mcp__eco_image_view__view_image",
+                detail: "Failed to call tool: Request timed out",
+                toolUseId: "toolu_image_view_failed",
+                status: "failed",
+                imageView: { path: "/tmp/cascade_land_fix_small.png" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已查看 1 张图像");
+  expect(html.match(/run-log-tool-group-trigger/g)?.length).toBe(1);
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../theme/eco_theme.dart';
@@ -7,8 +5,9 @@ import '../utils/shimmer_paint.dart';
 
 /// Same-hue shimmer: a soft highlight sweeps across [text] repeatedly.
 ///
-/// Paints are capped near 30fps so a soft sweep does not force ProMotion /
-/// 120Hz whole-tree raster (especially costly next to [BackdropFilter] frost).
+/// Uses [AnimationController] (driven by the widget's [Ticker]) instead of a
+/// raw Timer so the shimmer animation is integrated with Flutter's frame
+/// scheduler and does not force extra vsync callbacks.
 class ShimmerText extends StatefulWidget {
   const ShimmerText({
     super.key,
@@ -33,50 +32,45 @@ class ShimmerText extends StatefulWidget {
   State<ShimmerText> createState() => _ShimmerTextState();
 }
 
-class _ShimmerTextState extends State<ShimmerText> {
-  Timer? _timer;
-  double _phase = 0;
-  late DateTime _startedAt;
+class _ShimmerTextState extends State<ShimmerText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _startedAt = DateTime.now();
-    _tick();
-    _timer = Timer.periodic(
-      const Duration(milliseconds: shimmerPaintIntervalMs),
-      (_) => _tick(),
-    );
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    )..repeat();
+    _controller.addListener(_onTick);
   }
 
   @override
   void didUpdateWidget(covariant ShimmerText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.duration != widget.duration) {
-      _startedAt = DateTime.now();
-      _tick();
+      _controller
+        ..duration = widget.duration
+        ..stop()
+        ..repeat();
     }
   }
 
-  void _tick() {
+  void _onTick() {
     if (!mounted) return;
-    final now = DateTime.now();
-    final next = shimmerPhaseFromElapsed(
-      ms: now.difference(_startedAt).inMilliseconds,
-      durationMs: widget.duration.inMilliseconds,
-    );
-    if (next == _phase) return;
-    setState(() => _phase = next);
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final phase = _controller.value;
     final peakWhite = ecoColors(context).shimmerHighlight;
     final peak = resolveShimmerPeak(
       base: widget.baseColor,
@@ -85,11 +79,11 @@ class _ShimmerTextState extends State<ShimmerText> {
     );
     final mid =
         widget.highlightColor ?? Color.lerp(widget.baseColor, peakWhite, 0.45)!;
-    final resolvedStyle =
-        (widget.style ?? Theme.of(context).textTheme.bodySmall)?.copyWith(
-          color: widget.baseColor,
-          fontWeight: FontWeight.w500,
-        );
+    final resolvedStyle = (widget.style ?? Theme.of(context).textTheme.bodySmall)
+        ?.copyWith(
+      color: widget.baseColor,
+      fontWeight: FontWeight.w500,
+    );
 
     return RepaintBoundary(
       child: ShaderMask(
@@ -101,7 +95,7 @@ class _ShimmerTextState extends State<ShimmerText> {
             ).createShader(bounds);
           }
           final bandWidth = bounds.width * shimmerBandWidthFactor;
-          final left = shimmerBandLeft(phase: _phase, textWidth: bounds.width);
+          final left = shimmerBandLeft(phase: phase, textWidth: bounds.width);
           return LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,

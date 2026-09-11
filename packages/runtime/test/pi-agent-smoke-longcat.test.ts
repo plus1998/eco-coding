@@ -40,7 +40,12 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentEvent } from "../../shared/src";
 import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
-import { PiCodingAgentDriver, type PiSessionHandle, PiSessionRegistry } from "../src/pi-coding-agent-driver";
+import {
+  createPiMidTurnHandle,
+  PiCodingAgentDriver,
+  type PiSessionHandle,
+  PiSessionRegistry,
+} from "../src/pi-coding-agent-driver";
 import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../src/pi-event-adapter";
 import { createPiMcpExtensionFactory } from "../src/pi-mcp-adapter-factory";
 import { piMcpToolAllowlist } from "../src/pi-mcp";
@@ -254,6 +259,7 @@ async function makeLongcatSession(input: {
       await session.abort();
     },
     dispose: () => session.dispose(),
+    ...createPiMidTurnHandle(session),
     rebind: async () => {},
     updateSkillPaths: async () => {},
     async *prompt(text: string): AsyncIterable<AgentEvent> {

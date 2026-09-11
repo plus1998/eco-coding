@@ -150,6 +150,7 @@
   "toolbarSwitchPc": "Switch PC",
   "threadsTitle": "Sessions",
   "threadNew": "New session",
+  "threadTitleGenerating": "Generating title…",
   "threadMore": "More",
   "threadAttentionTitle": "Needs attention",
   "threadAttentionEmpty": "No sessions need action",

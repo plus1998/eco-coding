@@ -62,7 +62,11 @@ import {
   defaultDesktopDeviceName,
   desktopDeviceMetadata,
 } from "./desktop-device-profile";
-import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
+import type {
+  DesktopEventCenter,
+  DesktopEventCenterSink,
+  DesktopEventCenterSinkExtras,
+} from "./event-center";
 import { MobileRemoteEventPublisher } from "./mobile-remote-event-publisher";
 import { SupabaseRealtimeRpc } from "./supabase-realtime-rpc";
 import {
@@ -235,12 +239,16 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
    * Forward EventCenter notifications over Realtime bind channels
    * (with projection / context / usage throttling).
    */
-  publish(envelope: EventCenterEnvelope, notification: EventCenterJsonRpcNotification): void {
+  publish(
+    envelope: EventCenterEnvelope,
+    notification: EventCenterJsonRpcNotification,
+    extras?: DesktopEventCenterSinkExtras,
+  ): void {
     const settings = this.store.getSettingsWithSecrets();
     if (!settings.enabled) {
       return;
     }
-    this.remotePublisher.publish(envelope, notification);
+    this.remotePublisher.publish(envelope, notification, extras);
   }
 
   getSnapshot(): CenterServerSettingsSnapshot {

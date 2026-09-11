@@ -4332,6 +4332,43 @@ void main() {
     expect(find.text('1 test failed'), findsOneWidget);
   });
 
+  test('action group summarizes every tool call even when one failed', () {
+    final entries = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'bash-ok',
+        kind: ActivityFeedKind.action,
+        text: 'Run unit tests',
+        toolName: 'Bash',
+        actionIcon: ActivityActionIcon.terminal,
+        lifecycle: ToolActionLifecycle.completed,
+        bashRun: BashRunCardDisplay(
+          title: 'Run unit tests',
+          meta: 'npm, 1.2s',
+          command: 'npm test',
+          output: '36 pass',
+        ),
+      ),
+      ActivityFeedEntry(
+        id: 'bash-failed',
+        kind: ActivityFeedKind.action,
+        text: 'Run lint',
+        toolName: 'Bash',
+        actionIcon: ActivityActionIcon.terminal,
+        lifecycle: ToolActionLifecycle.failed,
+        bashRun: BashRunCardDisplay(
+          title: 'Run lint',
+          meta: 'npm, 1.2s',
+          command: 'npm run lint',
+          output: '1 error',
+        ),
+      ),
+    ]);
+
+    // The group title aggregates what ran instead of echoing one failed child.
+    expect(entries.single.text, '已运行 2 条命令');
+    expect(entries.single.actionChildren.length, 2);
+  });
+
   test('Bash title uses description or Shell without command fallback', () {
     expect(
       resolveBashRunCardDisplay(toolName: 'Bash', command: 'npm test')?.title,

@@ -76,6 +76,13 @@ String? sanitizeThreadTitle(String? title, {String prompt = ''}) {
   return cleaned.length > 42 ? '${cleaned.substring(0, 39)}...' : cleaned;
 }
 
+/// True when [title] is empty or still a pre-auto-title placeholder.
+bool isThreadTitlePending(String? title) {
+  final cleaned = title?.trim() ?? '';
+  if (cleaned.isEmpty) return true;
+  return _pendingThreadTitles.contains(cleaned);
+}
+
 String displayThreadTitle({
   required String title,
   required String prompt,

@@ -698,6 +698,12 @@ abstract class AppLocalizations {
   /// **'New session'**
   String get threadNew;
 
+  /// No description provided for @threadTitleGenerating.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating title…'**
+  String get threadTitleGenerating;
+
   /// No description provided for @threadMore.
   ///
   /// In en, this message translates to:

@@ -7,6 +7,7 @@ import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/network/desktop_rpc.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/providers/app_providers.dart';
+import 'package:eco_mobile/core/providers/desktop_bind_ready.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
 import 'package:eco_mobile/features/threads/thread_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +24,11 @@ void main() {
         selectedDesktopIdProvider.overrideWith((ref) => 'desktop_1'),
         connectionStatusProvider.overrideWith((ref) => statuses.stream),
         ecoEventsProvider.overrideWith((ref) => events.stream),
+        // These cases exercise what happens around reconnects, not the Realtime
+        // bind gate itself (desktop_bind_ready_test.dart covers that). Without
+        // this the gate waits 12s for a bind channel the fake client never has,
+        // so bootstrap returns before issuing any projection RPC.
+        desktopBindReadyOverrideProvider.overrideWithValue(true),
       ],
     );
     addTearDown(() async {
@@ -78,8 +84,12 @@ void main() {
     );
     await _waitUntil(() => rpc.projectionRequests.length == 2);
 
-    expect(rpc.projectionRequests[1].afterSequence, 9);
-    expect(rpc.projectionRequests[1].historyRevision, 4);
+    // A transport-level drop (status disconnected → connected) re-bootstraps the
+    // whole session: the client cannot know which events it missed while the
+    // channel was gone, so it asks for the full projection (afterSequence null)
+    // instead of patching onto a base that may be arbitrarily stale.
+    expect(rpc.projectionRequests[1].afterSequence, isNull);
+    expect(rpc.projectionRequests[1].historyRevision, isNull);
 
     events.add(
       const EcoEventEnvelope(
@@ -116,6 +126,8 @@ void main() {
       ),
     );
     await _waitUntil(() => rpc.projectionRequests.length == 3);
+    // Desktop presence offline → online still takes the cheap path: the center
+    // channel never dropped, so the client just tops up from its own cursor.
     expect(rpc.projectionRequests[2].afterSequence, 9);
     expect(rpc.projectionRequests[2].historyRevision, 4);
 
@@ -144,6 +156,8 @@ void main() {
           selectedDesktopIdProvider.overrideWith((ref) => 'desktop_1'),
           connectionStatusProvider.overrideWith((ref) => statuses.stream),
           ecoEventsProvider.overrideWith((ref) => events.stream),
+          // See the first case: the Realtime bind gate is not under test here.
+          desktopBindReadyOverrideProvider.overrideWithValue(true),
         ],
       );
       final subscription = container.listen(
@@ -190,6 +204,8 @@ void main() {
           selectedDesktopIdProvider.overrideWith((ref) => 'desktop_1'),
           connectionStatusProvider.overrideWith((ref) => statuses.stream),
           ecoEventsProvider.overrideWith((ref) => events.stream),
+          // See the first case: the Realtime bind gate is not under test here.
+          desktopBindReadyOverrideProvider.overrideWithValue(true),
         ],
       );
       final subscription = container.listen(
@@ -237,6 +253,8 @@ void main() {
           selectedDesktopIdProvider.overrideWith((ref) => 'desktop_1'),
           connectionStatusProvider.overrideWith((ref) => statuses.stream),
           ecoEventsProvider.overrideWith((ref) => events.stream),
+          // See the first case: the Realtime bind gate is not under test here.
+          desktopBindReadyOverrideProvider.overrideWithValue(true),
         ],
       );
       final subscription = container.listen(

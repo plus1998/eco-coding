@@ -1,0 +1,42 @@
+name: Mobile tests
+
+# The Flutter suite (apps/mobile) is a separate toolchain from the bun suite, so
+# it needs its own job: `bun test` never looks inside apps/mobile, which is how
+# it drifted red unnoticed (see apps/mobile/test/thread_session_reconnect_test.dart).
+#
+# Locally: `npm run test` runs bun **and** `flutter test`; `npm run test -- --mobile`
+# runs only the Flutter suite.
+on:
+  push:
+    branches:
+      - main
+      - beta
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mobile:
+    name: Flutter test (apps/mobile)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.1"
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Test
+        run: flutter test

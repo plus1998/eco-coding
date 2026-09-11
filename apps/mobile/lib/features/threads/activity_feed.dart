@@ -699,14 +699,19 @@ String _formatFeedActionLine(
   List<ActivityFeedEntry> entries,
   AppLocalizations l10n,
 ) {
-  for (final entry in entries.reversed) {
-    if (entry.lifecycle == ToolActionLifecycle.failed) {
+  // Every group child is one tool call. A group holding a single tool call keeps that
+  // tool's own failure copy; a group that aggregates several calls has to summarize all
+  // of them, otherwise one failed tool retitles the aggregate and hides every action
+  // next to it. Kept in sync with the desktop `summarizeActionBlocks`.
+  if (entries.length == 1) {
+    final only = entries.single;
+    if (only.lifecycle == ToolActionLifecycle.failed) {
       return _summarizeSingleCommandGroupHeader(
-            entry,
+            only,
             ActionLinePhase.done,
             l10n,
           ) ??
-          _summarizeActionLine(entry, ActionLinePhase.done, l10n);
+          _summarizeActionLine(only, ActionLinePhase.done, l10n);
     }
   }
   for (final entry in entries.reversed) {

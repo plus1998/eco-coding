@@ -17,7 +17,7 @@
 
 **禁止**把 `service_role` 发给 Desktop / Mobile。
 
-Agent 请遵循 [`.cursor/skills/eco-supabase/SKILL.md`](../.cursor/skills/eco-supabase/SKILL.md)。
+Agent 请遵循 [`.agents/skills/eco-supabase/SKILL.md`](../.agents/skills/eco-supabase/SKILL.md)。
 
 ---
 

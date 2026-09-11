@@ -8,6 +8,7 @@ import '../models/eco_types.dart';
 import '../storage/credential_store.dart';
 import '../utils/center_server_auth.dart';
 import '../utils/device_profile.dart';
+import '../widgets/lifecycle_tracker.dart';
 import 'eco_realtime.dart';
 
 typedef JsonMap = Map<String, dynamic>;
@@ -1416,6 +1417,10 @@ class EcoCenterClient {
   void _startKeepalive() {
     _clearKeepalive();
     _keepaliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      // Skip probe when app is in background to save battery.
+      // WebSocket protocol-level ping/pong still runs; we only skip the
+      // application-level transport health check.
+      if (!AppLifecycleTracker.isForeground) return;
       unawaited(_probeTransport());
     });
   }

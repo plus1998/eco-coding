@@ -5,6 +5,7 @@
  */
 import type { EventCenterEnvelope, EventCenterJsonRpcNotification } from "../shared/event-center";
 import type { ThreadLiveEvent, ThreadRunProjectionSnapshot } from "../shared/ipc";
+import type { DesktopEventCenterSinkExtras } from "./event-center";
 import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
 
 export const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 5_000;
@@ -72,14 +73,18 @@ export class MobileRemoteEventPublisher {
     this.contextUsageThrottleMs = options.contextUsageThrottleMs ?? MOBILE_CONTEXT_USAGE_THROTTLE_MS;
   }
 
-  publish(envelope: EventCenterEnvelope, notification: EventCenterJsonRpcNotification): void {
+  publish(
+    envelope: EventCenterEnvelope,
+    notification: EventCenterJsonRpcNotification,
+    extras?: DesktopEventCenterSinkExtras,
+  ): void {
     const threadEvent = readThreadLiveEvent(envelope);
     if (threadEvent && isRemoteOnlyStreamDelta(threadEvent)) {
       return;
     }
 
     if (envelope.kind === "thread.projection" && threadEvent?.projection) {
-      this.publishMobileProjection(envelope, notification, threadEvent);
+      this.publishMobileProjection(envelope, notification, threadEvent, extras);
       return;
     }
 
@@ -123,9 +128,14 @@ export class MobileRemoteEventPublisher {
     envelope: EventCenterEnvelope,
     notification: EventCenterJsonRpcNotification,
     event: ThreadLiveEvent,
+    extras?: DesktopEventCenterSinkExtras,
   ): void {
     const threadId = envelope.threadId ?? event.threadId;
-    const projection = event.projection;
+    // The envelope payload may be an afterSequence delta meant for clients that
+    // already hold the skeleton (the local renderer). A phone attaching mid-run
+    // has no skeleton to patch, so the full projection wins here whenever the
+    // producer supplied one; the delta is only a fallback.
+    const projection = extras?.remoteProjection ?? event.projection;
     if (!threadId || !projection) {
       this.sendOrQueue(notification);
       return;

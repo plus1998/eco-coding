@@ -3539,7 +3539,7 @@ function readProjectionApiError(
   };
 }
 
-function readProjectionToolMetadata(
+export function readProjectionToolMetadata(
   item: ThreadRunProjectionTimelineItem,
 ): ThreadRunToolMetadata | undefined {
   const raw = item.metadata?.tool;

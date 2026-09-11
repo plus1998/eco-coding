@@ -144,7 +144,7 @@ export function NotificationPreferencesPanel({
             <div className="notification-settings-row">
               <span className="settings-row-main" id={followUpDeliveryId}>
                 <strong>{t("settings.followUpDelivery")}</strong>
-                <small>{t("settings.followUpDeliveryHint")}</small>
+                <small>{t(followUpDeliveryMode === "queue" ? "settings.followUpDeliveryHint.queue" : "settings.followUpDeliveryHint.steer")}</small>
               </span>
               <div
                 className="settings-segmented-control follow-up-delivery-segmented"

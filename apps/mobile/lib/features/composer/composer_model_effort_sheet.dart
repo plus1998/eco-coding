@@ -232,6 +232,7 @@ class _ComposerCascadeOverlayState
     return EcoModelCascadeList(
       layout: EcoModelCascadeLayout.split,
       height: _cascadeBodyHeight,
+      flexibleBody: true,
       options: [
         for (final model in models)
           ModelCascadeEntry(
@@ -290,6 +291,7 @@ class _ComposerCascadeOverlayState
             data: (items) => EcoModelCascadeList(
               layout: EcoModelCascadeLayout.split,
               height: _cascadeBodyHeight,
+              flexibleBody: true,
               options: [
                 for (final option in items)
                   ModelCascadeEntry(
@@ -344,7 +346,9 @@ class _ComposerCascadeOverlayState
           },
         ),
         const EcoGroupedDivider(indent: 12),
-        body,
+        // Fill the rest of the panel rather than demanding a fixed 280 body:
+        // a short surface (or the 48% viewport cap) hands down less here.
+        Flexible(child: body),
       ],
     );
   }
@@ -644,6 +648,9 @@ class _ComposerCascadeOverlayState
 
     final submenuContentHeight = showSubmenu
         ? customCascade != null
+            // Preferred height for a model cascade: search box + rows + a full
+            // catalogue body. Cascades are built with `flexibleBody`, so a
+            // smaller viewport only shrinks the list — it never overflows.
             ? _cursorCascadeHeight
             : submenuItems.fold<double>(8, (sum, item) => sum + item.rowHeight)
         : 0.0;

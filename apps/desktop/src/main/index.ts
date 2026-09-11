@@ -24,6 +24,7 @@ import {
   evaluateFilesystemWriteConfirmation,
   isAcpProviderExhaustionMessage,
   isCoreKind,
+  isPiThreadMidTurnAccepting,
   isReadFilesystemTool,
   isWriteFilesystemTool,
   materializeEcoToolPolicy,
@@ -40,6 +41,7 @@ import {
   type SdkToolPermissionDecision,
   type SdkToolPermissionRequest,
   type SessionCapturedPayload,
+  steerPiThreadMidTurn,
   type SubagentRunPhase,
   toAcpMcpServers,
 } from "@eco/runtime";
@@ -3971,7 +3973,14 @@ function registerIpcHandlers(): void {
       return undefined;
     }
     const thread = conversationStore.getThread(id);
-    return thread ? attachThreadCancelling(ensureThreadRuntimeConfig(thread)) : undefined;
+    if (!thread) {
+      return undefined;
+    }
+    const enriched = attachThreadCancelling(ensureThreadRuntimeConfig(thread));
+    if (titleGeneratingThreadIds.has(id)) {
+      return { ...enriched, titleGenerating: true } satisfies ThreadSummary;
+    }
+    return enriched;
   });
 
   registerDesktopCommand(IPC_CHANNELS.composerDraftGet, async (contextKey: unknown) => {
@@ -4194,7 +4203,7 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.threadSessionBootstrap, async (threadId: unknown) => {
     const id = typeof threadId === "string" ? threadId.trim() : "";
-    return buildThreadSessionBootstrap(id, {
+    const result = buildThreadSessionBootstrap(id, {
       getThread: (targetId) => {
         const thread = conversationStore.getThread(targetId);
         return thread ? ensureThreadRuntimeConfig(thread) : undefined;
@@ -4206,7 +4215,11 @@ function registerIpcHandlers(): void {
       listSubagentSessionTimings: (targetId) =>
         buildSubagentSessionTimings(conversationStore.listSubagentSessions(targetId)),
       usageSnapshotServices: buildThreadUsageSnapshotServices(),
-    }) satisfies ThreadSessionBootstrapResult;
+    });
+    if (id && result.thread && titleGeneratingThreadIds.has(id)) {
+      return { ...result, thread: { ...result.thread, titleGenerating: true } } satisfies ThreadSessionBootstrapResult;
+    }
+    return result;
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadDelete, async (payload: unknown) => {
@@ -9872,7 +9885,7 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
 }
 
 /**
- * Mid-turn delivery for Claude (streamInput) and Codex (turn/steer).
+ * Mid-turn delivery for Claude (streamInput), Codex (turn/steer) and PI (AgentSession.steer).
  * Pure-text only; attachments / blocked approvals / no accepting port stay queued.
  * Returns a handled row (applied, failed, or concurrently finalized); undefined
  * only when the row is safely queued for the existing drain/interrupt path.
@@ -9896,6 +9909,8 @@ async function tryDeliverFollowUpViaMidTurn(
     return undefined;
   }
   const isCodex = thread.coreKind === "codex";
+  const isPi = thread.coreKind === "pi";
+  const midTurnLabel = isCodex ? "Codex turn/steer" : isPi ? "PI steer" : "Claude streamInput";
   const claimed = await withThreadFollowUpLock(thread.id, async () => {
     if (
       shouldBlockThreadFollowUpDrain({
@@ -9917,6 +9932,11 @@ async function tryDeliverFollowUpViaMidTurn(
       if (!codexMidTurnPorts.isAccepting(thread.id)) {
         return undefined;
       }
+    } else if (isPi) {
+      // PI steer needs a live AgentSession run; an idle session keeps the row queued.
+      if (!isPiThreadMidTurnAccepting(thread.id)) {
+        return undefined;
+      }
     } else if (!claudeMidTurnPorts.isAccepting(thread.id)) {
       return undefined;
     }
@@ -9927,10 +9947,17 @@ async function tryDeliverFollowUpViaMidTurn(
     });
   });
   if (!claimed) {
-    logEcoDiag(isCodex ? "follow_up.turn_steer_claim_miss" : "follow_up.stream_input_claim_miss", {
-      threadId: shortThreadId(thread.id),
-      followUpId: followUp.id,
-    });
+    logEcoDiag(
+      isCodex
+        ? "follow_up.turn_steer_claim_miss"
+        : isPi
+          ? "follow_up.pi_steer_claim_miss"
+          : "follow_up.stream_input_claim_miss",
+      {
+        threadId: shortThreadId(thread.id),
+        followUpId: followUp.id,
+      },
+    );
     return conversationStore.getThreadFollowUp(thread.id, followUp.id);
   }
 
@@ -9942,9 +9969,11 @@ async function tryDeliverFollowUpViaMidTurn(
     ? await codexMidTurnPorts.tryPushUserText(thread.id, prompt, {
         clientUserMessageId: followUp.id,
       })
-    : await claudeMidTurnPorts.tryPushUserText(thread.id, prompt, {
-        uuid: followUp.id,
-      });
+    : isPi
+      ? await pushPiMidTurnSteer(thread.id, prompt)
+      : await claudeMidTurnPorts.tryPushUserText(thread.id, prompt, {
+          uuid: followUp.id,
+        });
 
   if (!push.ok) {
     if (push.deliveryUnknown) {
@@ -9952,14 +9981,16 @@ async function tryDeliverFollowUpViaMidTurn(
         conversationStore.markThreadFollowUpDeliveryUnknown(
           thread.id,
           claimed.id,
-          `${isCodex ? "Codex turn/steer" : "Claude streamInput"} delivery is unknown: ${push.reason}`,
+          `${midTurnLabel} delivery is unknown: ${push.reason}`,
         ) ?? claimed;
       emitThreadEvent(
         thread.id,
         "thread.follow_up.delivery_unknown",
         isCodex
           ? "Codex mid-turn 注入结果未知；为避免重复执行，不会自动重发。"
-          : "Claude mid-turn 注入结果未知；为避免重复执行，不会自动重发。",
+          : isPi
+            ? "PI mid-turn 注入结果未知；为避免重复执行，不会自动重发。"
+            : "Claude mid-turn 注入结果未知；为避免重复执行，不会自动重发。",
         "system",
         false,
         { followUp: failed },
@@ -9978,15 +10009,22 @@ async function tryDeliverFollowUpViaMidTurn(
       false,
       { followUp: requeued },
     );
-    logEcoDiag(isCodex ? "follow_up.turn_steer_failed" : "follow_up.stream_input_failed", {
-      threadId: shortThreadId(thread.id),
-      followUpId: followUp.id,
-      reason: push.reason,
-    });
+    logEcoDiag(
+      isCodex
+        ? "follow_up.turn_steer_failed"
+        : isPi
+          ? "follow_up.pi_steer_failed"
+          : "follow_up.stream_input_failed",
+      {
+        threadId: shortThreadId(thread.id),
+        followUpId: followUp.id,
+        reason: push.reason,
+      },
+    );
     return undefined;
   }
 
-  if (!isCodex) {
+  if (!isCodex && !isPi) {
     const known = recentStreamingPushFollowUpIds.get(thread.id) ?? new Set<string>();
     known.add(claimed.id);
     recentStreamingPushFollowUpIds.set(thread.id, known);
@@ -10000,12 +10038,21 @@ async function tryDeliverFollowUpViaMidTurn(
         claimed.id,
         isCodex
           ? "Codex accepted turn/steer, but Eco could not commit the applied state."
-          : "Claude accepted streamInput, but Eco could not commit the applied state.",
+          : isPi
+            ? "PI accepted steer, but Eco could not commit the applied state."
+            : "Claude accepted streamInput, but Eco could not commit the applied state.",
       ) ?? claimed;
-    logEcoDiag(isCodex ? "follow_up.turn_steer_commit_miss" : "follow_up.stream_input_commit_miss", {
-      threadId: shortThreadId(thread.id),
-      followUpId: followUp.id,
-    });
+    logEcoDiag(
+      isCodex
+        ? "follow_up.turn_steer_commit_miss"
+        : isPi
+          ? "follow_up.pi_steer_commit_miss"
+          : "follow_up.stream_input_commit_miss",
+      {
+        threadId: shortThreadId(thread.id),
+        followUpId: followUp.id,
+      },
+    );
     return failed;
   }
 
@@ -10014,12 +10061,40 @@ async function tryDeliverFollowUpViaMidTurn(
     "thread.follow_up.applied",
     isCodex
       ? "已注入当前 Codex 回合（streaming_push / turn/steer）。"
-      : "已注入当前 Claude 回合（streaming_push）。",
+      : isPi
+        ? "已引导当前 PI 回合（mid-turn steer）。"
+        : "已注入当前 Claude 回合（streaming_push）。",
     "user",
     false,
     { followUp: applied },
   );
   return applied;
+}
+
+/**
+ * PI mid-turn steer through the live in-process AgentSession.
+ *
+ * `steer` fails closed: it throws (and reclaims any orphaned queue entry) when the run is
+ * no longer accepting, so the caller requeues the row instead of pretending it landed.
+ * PI steering is always recoverable in-process, so failures are never `deliveryUnknown`.
+ */
+async function pushPiMidTurnSteer(
+  threadId: string,
+  prompt: string,
+): Promise<
+  { ok: true } | { ok: false; reason: string; retriable: boolean; deliveryUnknown: boolean }
+> {
+  try {
+    await steerPiThreadMidTurn(threadId, prompt);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: errorMessage(error),
+      retriable: true,
+      deliveryUnknown: false,
+    };
+  }
 }
 
 /**
@@ -14734,7 +14809,9 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
     stream: false,
     projection: payloadProjection,
   };
-  desktopEventCenter.publishThreadLiveEvent(payload);
+  desktopEventCenter.publishThreadLiveEvent(payload, undefined, {
+    remoteProjection: feedProjection,
+  });
 }
 
 interface RecordedUserPromptResult {

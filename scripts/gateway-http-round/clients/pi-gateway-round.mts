@@ -12,7 +12,11 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { EcoAgentRuntimeConfig } from "../../../packages/runtime/src/agent-orchestration";
-import { PiCodingAgentDriver, PiSessionRegistry } from "../../../packages/runtime/src/pi-coding-agent-driver";
+import {
+  createPiMidTurnHandle,
+  PiCodingAgentDriver,
+  PiSessionRegistry,
+} from "../../../packages/runtime/src/pi-coding-agent-driver";
 import {
   createPiEventAdapterState,
   mapPiSessionEventToAgentEvents,
@@ -399,6 +403,7 @@ export async function runPiGatewayRound(input: PiGatewayRoundInput): Promise<PiG
             await session.abort();
           },
           dispose: () => session.dispose(),
+          ...createPiMidTurnHandle(session),
           rebind: async () => {},
           updateSkillPaths: async () => {},
           prompt: buildPromptIterable(session, sessionId, sessionInput.threadId),
@@ -461,6 +466,7 @@ export async function runPiGatewayRound(input: PiGatewayRoundInput): Promise<PiG
                     await session.abort();
                   },
                   dispose: () => session.dispose(),
+                  ...createPiMidTurnHandle(session),
                   rebind: async () => {},
                   updateSkillPaths: async () => {},
                   prompt: buildPromptIterable(session, sessionId, childInput.threadId),
