@@ -14745,7 +14745,9 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
     stream: false,
     projection: payloadProjection,
   };
-  desktopEventCenter.publishThreadLiveEvent(payload);
+  desktopEventCenter.publishThreadLiveEvent(payload, undefined, {
+    remoteProjection: feedProjection,
+  });
 }
 
 interface RecordedUserPromptResult {
