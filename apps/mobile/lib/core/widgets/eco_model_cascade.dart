@@ -113,6 +113,7 @@ class EcoModelCascadeList extends StatefulWidget {
     this.leading,
     this.layout = EcoModelCascadeLayout.accordion,
     this.height,
+    this.flexibleBody = false,
   });
 
   final List<ModelCascadeEntry> options;
@@ -125,6 +126,14 @@ class EcoModelCascadeList extends StatefulWidget {
 
   /// Fixed height for the scrollable catalogue body (required for [split] in overlays).
   final double? height;
+
+  /// Treat [height] as a preferred maximum instead of a demand.
+  ///
+  /// Use inside a height-bounded parent (an overlay panel): the catalogue then
+  /// takes whatever the panel has left after the search box and [leading] rows,
+  /// so a short surface shrinks the list instead of overflowing it. The parent
+  /// must bound the incoming height; leaving it unbounded throws a layout error.
+  final bool flexibleBody;
 
   @override
   State<EcoModelCascadeList> createState() => _EcoModelCascadeListState();
@@ -279,7 +288,8 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
                 : _buildAccordionCatalogue(groups);
 
     final insetCatalogue = widget.layout == EcoModelCascadeLayout.split;
-    final body = widget.height != null
+    final flexible = widget.flexibleBody && widget.height != null;
+    final body = widget.height != null && !flexible
         ? SizedBox(height: widget.height, child: catalogue)
         : catalogue;
     final insetBody = insetCatalogue
@@ -301,7 +311,16 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
         if (widget.leading != null) ...widget.leading!,
         if (widget.leading != null && widget.options.isNotEmpty)
           const SizedBox(height: 8),
-        insetBody,
+        if (flexible)
+          Flexible(
+            fit: FlexFit.loose,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: widget.height!),
+              child: insetBody,
+            ),
+          )
+        else
+          insetBody,
       ],
     );
   }

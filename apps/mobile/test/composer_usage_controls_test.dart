@@ -1,9 +1,12 @@
 import 'package:eco_mobile/core/models/acp_host_ui_features.dart';
+import 'package:eco_mobile/core/models/acp_models.dart';
+import 'package:eco_mobile/core/models/git_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/models/integration_models.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/core/widgets/eco_action_sheet.dart';
+import 'package:eco_mobile/core/widgets/eco_model_cascade.dart';
 import 'package:eco_mobile/features/composer/composer_context_ring.dart';
 import 'package:eco_mobile/features/composer/composer_controls.dart';
 import 'package:eco_mobile/features/composer/composer_toolbar_icon.dart';
@@ -796,6 +799,164 @@ void main() {
       expect(find.text('21% used'), findsNothing);
     },
   );
+
+  group('model cascade panels fit their surface', () {
+    const acpRuntimeConfig = ThreadRuntimeConfig(
+      subagentEnabled: {},
+      sessionMode: 'agent',
+      bashReviewMode: 'always',
+      cursorModelId: 'cursor-sonnet',
+    );
+    const cursorModels = [
+      CursorModelOption(
+        id: 'cursor-sonnet',
+        displayName: 'Sonnet 4.5',
+        current: true,
+        isDefault: false,
+      ),
+      CursorModelOption(
+        id: 'cursor-haiku',
+        displayName: 'Haiku 4.5',
+        current: false,
+        isDefault: false,
+      ),
+    ];
+    const auxOptions = [
+      CommitModelOptionView(
+        id: 'opt-1',
+        candidateModelId: 'candidate-aux-1',
+        providerId: 'provider-1',
+        providerName: 'OpenAI',
+        modelId: 'gpt-5.6-mini',
+        modelLabel: '5.6 Mini',
+        providerColor: '#10a37f',
+      ),
+      CommitModelOptionView(
+        id: 'opt-2',
+        candidateModelId: 'candidate-aux-2',
+        providerId: 'provider-2',
+        providerName: 'Anthropic',
+        modelId: 'claude-haiku-4.5',
+        modelLabel: 'Haiku 4.5',
+        providerColor: '#d97757',
+      ),
+    ];
+
+    /// The split catalogue's columns are the only vertical scrollables in an
+    /// open cascade, so their geometry is what "fits the panel" means.
+    List<Rect> bodyRects(WidgetTester tester) => [
+      for (final element in find.byType(ListView).evaluate())
+        tester.getRect(find.byWidget(element.widget)),
+    ];
+
+    Future<void> openSheet(
+      WidgetTester tester, {
+      required Size surface,
+      String? coreKind,
+    }) async {
+      // The overlay lays out from MediaQuery.size, which follows the view's
+      // physical size / dpr — `setSurfaceSize` only moves the coordinate
+      // transform and would leave it at the default 800x600.
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = surface;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          overrides: [
+            cursorModelsProvider.overrideWith((ref) async => cursorModels),
+            auxiliaryModelOptionsProvider(
+              'main-1',
+            ).overrideWith((ref) async => auxOptions),
+          ],
+          child: ComposerRouteSummary(
+            runtimeConfig: coreKind == 'acp'
+                ? acpRuntimeConfig
+                : modelRuntimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            coreKind: coreKind,
+            onChanged: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The summary renders the model label in more than one control; the
+      // composer toolbar label is the first.
+      await tester.tap(
+        find.text(coreKind == 'acp' ? 'Sonnet 4.5' : '5.6 Sol').first,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('aux/vision cascade fits the default 800x600 surface', (
+      tester,
+    ) async {
+      await openSheet(tester, surface: const Size(800, 600));
+      await tester.tap(find.text('Advanced'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Aux'));
+      await tester.pumpAndSettle();
+
+      // This is the case that used to overflow by ~85px at 800x600: the panel is
+      // capped at 48% of the viewport while the catalogue wanted a fixed 280.
+      expect(tester.takeException(), isNull);
+      expect(find.byType(EcoModelCascadeList), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text('None'), findsWidgets);
+      final bodies = bodyRects(tester);
+      expect(bodies, isNotEmpty);
+      for (final body in bodies) {
+        expect(body.height, lessThan(280));
+        expect(body.bottom, lessThanOrEqualTo(600));
+      }
+    });
+
+    testWidgets('cascades keep the full catalogue on a tall surface', (
+      tester,
+    ) async {
+      const surface = Size(800, 900);
+      await openSheet(tester, surface: surface);
+      await tester.tap(find.text('Advanced'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Vision'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final bodies = bodyRects(tester);
+      expect(bodies, isNotEmpty);
+      for (final body in bodies) {
+        // ~275 rather than 280: the panel prefers 380 and the search box + rows
+        // take a little more than the 100px that leaves, so the body lands just
+        // under its preference instead of being visibly squeezed.
+        expect(body.height, greaterThan(270));
+        expect(body.bottom, lessThanOrEqualTo(surface.height));
+      }
+    });
+
+    testWidgets('cursor model cascade fits the default and a short surface', (
+      tester,
+    ) async {
+      for (final surface in const [Size(800, 900), Size(800, 600)]) {
+        await openSheet(tester, surface: surface, coreKind: 'acp');
+        await tester.tap(find.text('Model'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(EcoModelCascadeList), findsOneWidget);
+        expect(find.text('Cursor default'), findsOneWidget);
+        expect(find.byType(TextField), findsOneWidget);
+        final bodies = bodyRects(tester);
+        expect(bodies, isNotEmpty);
+        for (final body in bodies) {
+          // 380 preferred panel − chrome ≈ 275 on the tall surface, 189 at 600.
+          expect(body.height, greaterThan(150));
+          expect(body.bottom, lessThanOrEqualTo(surface.height));
+        }
+      }
+    });
+  });
 }
 
 class _TestApp extends StatelessWidget {
@@ -805,6 +966,7 @@ class _TestApp extends StatelessWidget {
     this.candidates = const [],
     this.integrationAvailability,
     this.integrationAvailabilityError,
+    this.overrides = const [],
   });
 
   final Widget child;
@@ -812,6 +974,7 @@ class _TestApp extends StatelessWidget {
   final List<CandidateModelView> candidates;
   final IntegrationAvailabilitySnapshot? integrationAvailability;
   final Object? integrationAvailabilityError;
+  final List<Override> overrides;
 
   @override
   Widget build(BuildContext context) {
@@ -827,6 +990,7 @@ class _TestApp extends StatelessWidget {
           }
           return integrationAvailability;
         }),
+        ...overrides,
       ],
       child: MaterialApp(
         locale: const Locale('en'),
