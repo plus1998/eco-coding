@@ -4,6 +4,15 @@ import '../models/eco_types.dart';
 import '../utils/center_server_auth.dart';
 import 'app_providers.dart';
 
+/// Test seam for the Realtime bind gate.
+///
+/// `null` runs the real check below. Widget/unit tests that only care about
+/// what happens *after* the bind channel is up (session bootstrap, projection
+/// sync, reconnect) override this instead of faking a connected
+/// [ecoCenterClientProvider], which would otherwise need a live status stream
+/// to satisfy the gate and would make their RPC call ordering timing dependent.
+final desktopBindReadyOverrideProvider = Provider<bool?>((ref) => null);
+
 /// Wait until the Realtime bind channel is actually ready for Desktop RPCs.
 ///
 /// List screens used to call [DesktopRpc] as soon as a PC id was selected,
@@ -15,6 +24,10 @@ Future<bool> ensureDesktopBindReady(
   Ref ref, {
   Duration timeout = const Duration(seconds: 12),
 }) async {
+  final forced = ref.read(desktopBindReadyOverrideProvider);
+  if (forced != null) {
+    return forced;
+  }
   final client = ref.read(ecoCenterClientProvider);
   final deadline = DateTime.now().add(timeout);
 
