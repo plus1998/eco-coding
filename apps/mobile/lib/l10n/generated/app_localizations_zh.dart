@@ -332,6 +332,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNew => '新建会话';
 
   @override
+  String get threadTitleGenerating => '正在生成标题…';
+
+  @override
   String get threadMore => '更多';
 
   @override

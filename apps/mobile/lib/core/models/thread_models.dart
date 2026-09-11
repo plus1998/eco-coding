@@ -738,6 +738,7 @@ class ThreadSummary {
     this.runtimeConfig,
     this.hostUiFeatures = AcpHostUiFeatures.showAll,
     this.cancelling = false,
+    this.titleGenerating = false,
     this.followUpQueuePaused = false,
   });
 
@@ -758,6 +759,7 @@ class ThreadSummary {
         : null,
     hostUiFeatures: AcpHostUiFeatures.fromJson(json['hostUiFeatures']),
     cancelling: json['cancelling'] == true,
+    titleGenerating: json['titleGenerating'] == true,
     followUpQueuePaused: json['followUpQueuePaused'] == true,
   );
 
@@ -773,6 +775,7 @@ class ThreadSummary {
     ThreadRuntimeConfig? runtimeConfig,
     AcpHostUiFeatures? hostUiFeatures,
     bool? cancelling,
+    bool? titleGenerating,
     bool? followUpQueuePaused,
   }) {
     return ThreadSummary(
@@ -788,6 +791,7 @@ class ThreadSummary {
       runtimeConfig: runtimeConfig ?? this.runtimeConfig,
       hostUiFeatures: hostUiFeatures ?? this.hostUiFeatures,
       cancelling: cancelling ?? this.cancelling,
+      titleGenerating: titleGenerating ?? this.titleGenerating,
       followUpQueuePaused: followUpQueuePaused ?? this.followUpQueuePaused,
     );
   }
@@ -804,6 +808,9 @@ class ThreadSummary {
   final ThreadRuntimeConfig? runtimeConfig;
   final AcpHostUiFeatures hostUiFeatures;
   final bool cancelling;
+
+  /// Live-only: desktop is currently auto-generating this thread's title.
+  final bool titleGenerating;
   final bool followUpQueuePaused;
 }
 

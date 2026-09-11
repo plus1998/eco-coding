@@ -3971,7 +3971,14 @@ function registerIpcHandlers(): void {
       return undefined;
     }
     const thread = conversationStore.getThread(id);
-    return thread ? attachThreadCancelling(ensureThreadRuntimeConfig(thread)) : undefined;
+    if (!thread) {
+      return undefined;
+    }
+    const enriched = attachThreadCancelling(ensureThreadRuntimeConfig(thread));
+    if (titleGeneratingThreadIds.has(id)) {
+      return { ...enriched, titleGenerating: true } satisfies ThreadSummary;
+    }
+    return enriched;
   });
 
   registerDesktopCommand(IPC_CHANNELS.composerDraftGet, async (contextKey: unknown) => {
@@ -4194,7 +4201,7 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.threadSessionBootstrap, async (threadId: unknown) => {
     const id = typeof threadId === "string" ? threadId.trim() : "";
-    return buildThreadSessionBootstrap(id, {
+    const result = buildThreadSessionBootstrap(id, {
       getThread: (targetId) => {
         const thread = conversationStore.getThread(targetId);
         return thread ? ensureThreadRuntimeConfig(thread) : undefined;
@@ -4206,7 +4213,11 @@ function registerIpcHandlers(): void {
       listSubagentSessionTimings: (targetId) =>
         buildSubagentSessionTimings(conversationStore.listSubagentSessions(targetId)),
       usageSnapshotServices: buildThreadUsageSnapshotServices(),
-    }) satisfies ThreadSessionBootstrapResult;
+    });
+    if (id && result.thread && titleGeneratingThreadIds.has(id)) {
+      return { ...result, thread: { ...result.thread, titleGenerating: true } } satisfies ThreadSessionBootstrapResult;
+    }
+    return result;
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadDelete, async (payload: unknown) => {

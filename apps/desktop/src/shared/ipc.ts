@@ -1502,6 +1502,8 @@ export interface ThreadSummary {
   message: string;
   /** Live-only: user asked to stop and the run is still winding down. Never persisted. */
   cancelling?: boolean;
+  /** Live-only: desktop is currently auto-generating the thread title. Never persisted. */
+  titleGenerating?: boolean;
   /** Runtime Core permanently selected for this thread after first run. */
   coreKind?: import("@eco/runtime/core-runtime").CoreKind;
   /** ACP agent under `coreKind: "acp"` (MVP: `"cursor"`). */

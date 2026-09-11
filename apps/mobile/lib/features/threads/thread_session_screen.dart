@@ -152,6 +152,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         );
         unawaited(notifier.refreshComposerRestore());
         unawaited(notifier.recoverProjection());
+        unawaited(notifier.ensureThreadLoaded());
         final workspacePath =
             ref
                 .read(threadSessionProvider(widget.threadId))
@@ -269,6 +270,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           loading: state.loading,
           error: state.error,
           thread: state.thread,
+          titleGenerating: state.titleGenerating,
           pendingPlan: state.pendingPlan,
           pendingBash: state.pendingBash,
           pendingClarification: state.pendingClarification,
@@ -460,11 +462,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         context,
         ref,
         title: thread?.title ?? '',
+        prompt: thread?.prompt ?? '',
         workspacePath: workspacePath,
         threadId: widget.threadId,
         projectName: projectName,
         runtimeConfig: runtimeConfig,
         isRunning: isRunning,
+        titleGenerating: session.titleGenerating,
         gitStatus: gitStatus,
         onRevealImageDisplay: imageDisplayArtifacts.isEmpty
             ? null
