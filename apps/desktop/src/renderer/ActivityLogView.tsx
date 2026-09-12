@@ -839,7 +839,7 @@ function ProjectionActivityLogView({
               </div>
             ))
           )}
-          {conversationActive && !runningToolVisible ? (
+          {conversationActive && !runningToolVisible && !runningContextCompactionVisible ? (
             <RunLogActiveTail
               waiting={waitingThinkingVisible}
               stopping={Boolean(thread?.cancelling)}

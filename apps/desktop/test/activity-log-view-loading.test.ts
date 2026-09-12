@@ -1902,8 +1902,9 @@ test("ActivityLogView hides waiting thinking while context compaction is running
 
   expect(html).toContain("正在自动压缩上下文");
   expect(html).toContain("run-log-context-action");
-  expect(html).toContain('aria-label="会话进行中"');
   expect(html).not.toContain("正在思考");
+  expect(html).not.toContain("run-log-streaming-dots");
+  expect(html).not.toContain('aria-label="会话进行中"');
 });
 
 test("ActivityLogView hides waiting thinking while an MCP tool is running", () => {
