@@ -113,6 +113,8 @@ export interface SharedBrowserOpenOptions {
    * Default: true for human source, false for agent source.
    */
   updateUiFocus?: boolean;
+  /** When true, force the renderer to switch the task panel to this browser tab. */
+  activate?: boolean;
 }
 
 export interface BrowserHostDeps {
@@ -166,6 +168,8 @@ export class BrowserHost {
   private panelVisible = false;
   private disposed = false;
   private revealBrowserId: string | undefined;
+  /** Browser id that should force task-panel tab switch (user-initiated opens). */
+  private activateBrowserId: string | undefined;
   private browserMcpGateway: BrowserMcpGateway | undefined;
   private readonly partitionHandlers = new Set<string>();
   /** will-attach-webview browser id → guest webContents id after did-attach. */
@@ -488,6 +492,7 @@ export class BrowserHost {
       agentBrowserAvailable: resolved.available,
       ...(resolved.reason ? { agentBrowserUnavailableReason: resolved.reason } : {}),
       ...(revealSurfaced && this.revealBrowserId ? { revealBrowserId: this.revealBrowserId } : {}),
+      ...(this.activateBrowserId ? { activateBrowserId: this.activateBrowserId } : {}),
     };
   }
 
@@ -835,6 +840,9 @@ export class BrowserHost {
 
     if (revealUi && updateUiFocus) {
       this.requestReveal(browser.id);
+    }
+    if (options.activate) {
+      this.activateBrowserId = browser.id;
     }
 
     const raw = options.url?.trim();

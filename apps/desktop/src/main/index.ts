@@ -5540,6 +5540,7 @@ function registerIpcHandlers(): void {
       ...(typeof request.workspacePath === "string" && request.workspacePath.trim()
         ? { workspacePath: request.workspacePath.trim() }
         : {}),
+      ...(request.activate ? { activate: true } : {}),
     });
   });
 

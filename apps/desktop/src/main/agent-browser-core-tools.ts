@@ -83,7 +83,7 @@ const TOOL_DEFINITIONS: Record<
         url: {
           type: "string",
           minLength: 1,
-          description: "Absolute URL to open (http/https or about:).",
+          description: "Absolute URL to open (http/https, file://, or about:) or a local file path.",
         },
       },
     }),

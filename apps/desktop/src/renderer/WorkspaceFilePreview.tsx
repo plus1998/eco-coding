@@ -1,6 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Eye, Pencil, RotateCcw } from "lucide-react";
+import { Eye, ExternalLink, Pencil, RotateCcw } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownContent } from "./MarkdownContent";
@@ -265,6 +265,11 @@ export function WorkspaceFilePreview({
     return ext === "svg";
   }, [file.path]);
 
+  const isHtml = useMemo(() => {
+    const ext = file.path.toLowerCase().split(".").pop();
+    return ext === "html" || ext === "htm";
+  }, [file.path]);
+
   // 对于 Markdown 和 SVG 文件，默认使用预览模式
   useEffect(() => {
     if (isMarkdown || isSvg) {
@@ -275,6 +280,15 @@ export function WorkspaceFilePreview({
   }, [isMarkdown, isSvg, file.path]);
 
   const showModeToggle = (isMarkdown || isSvg) && editable;
+
+  const handleOpenInBrowser = useCallback(async () => {
+    if (!window.eco) return;
+    try {
+      await window.eco.browserOpen({ url: file.path, reveal: true, activate: true });
+    } catch (error) {
+      console.warn("[WorkspaceFilePreview] Failed to open in browser", error);
+    }
+  }, [file.path]);
 
   useEffect(() => {
     const next = file.content ?? "";
@@ -403,26 +417,41 @@ export function WorkspaceFilePreview({
 
   return (
     <div className="workspace-file-browser__preview-body">
-      {showModeToggle && (
+      {(showModeToggle || isHtml) && (
         <div className="workspace-file-browser__mode-toggle">
-          <button
-            type="button"
-            className={`workspace-file-browser__mode-btn ${viewMode === "preview" ? "is-active" : ""}`}
-            onClick={() => setViewMode("preview")}
-            title={t("fileBrowser.previewMode")}
-          >
-            <Eye size={14} />
-            <span>{t("fileBrowser.preview")}</span>
-          </button>
-          <button
-            type="button"
-            className={`workspace-file-browser__mode-btn ${viewMode === "edit" ? "is-active" : ""}`}
-            onClick={() => setViewMode("edit")}
-            title={t("fileBrowser.editMode")}
-          >
-            <Pencil size={14} />
-            <span>{t("fileBrowser.edit")}</span>
-          </button>
+          {showModeToggle && (
+            <>
+              <button
+                type="button"
+                className={`workspace-file-browser__mode-btn ${viewMode === "preview" ? "is-active" : ""}`}
+                onClick={() => setViewMode("preview")}
+                title={t("fileBrowser.previewMode")}
+              >
+                <Eye size={14} />
+                <span>{t("fileBrowser.preview")}</span>
+              </button>
+              <button
+                type="button"
+                className={`workspace-file-browser__mode-btn ${viewMode === "edit" ? "is-active" : ""}`}
+                onClick={() => setViewMode("edit")}
+                title={t("fileBrowser.editMode")}
+              >
+                <Pencil size={14} />
+                <span>{t("fileBrowser.edit")}</span>
+              </button>
+            </>
+          )}
+          {isHtml && (
+            <button
+              type="button"
+              className="workspace-file-browser__mode-btn workspace-file-browser__open-browser-btn"
+              onClick={handleOpenInBrowser}
+              title={t("fileBrowser.openInBrowser")}
+            >
+              <ExternalLink size={14} />
+              <span>{t("fileBrowser.openInBrowser")}</span>
+            </button>
+          )}
         </div>
       )}
       {viewMode === "preview" && (isMarkdown || isSvg) ? (

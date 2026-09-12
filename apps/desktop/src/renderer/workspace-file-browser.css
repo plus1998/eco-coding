@@ -494,6 +494,18 @@
   color: var(--text-primary, currentColor);
 }
 
+.workspace-file-browser__open-browser-btn {
+  margin-left: auto;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-browser__open-browser-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+
 .workspace-file-browser__mode-btn svg {
   width: 14px;
   height: 14px;

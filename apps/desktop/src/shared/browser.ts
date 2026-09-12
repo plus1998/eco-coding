@@ -236,6 +236,11 @@ export interface BrowserViewState {
    * Cleared once the focused browser panel is shown via setVisible(true).
    */
   revealBrowserId?: string;
+  /**
+   * When set, renderer should force-switch the task panel to this browser tab
+   * (even from non-browser tabs). Set by explicit user-initiated browser opens.
+   */
+  activateBrowserId?: string;
 }
 
 export interface BrowserRegisterGuestRequest {
@@ -267,6 +272,8 @@ export interface BrowserOpenRequest {
    * same cookie partition as the thread that will be created on first send.
    */
   workspacePath?: string;
+  /** When true, always switch the task panel to this browser tab (even from non-browser tabs). */
+  activate?: boolean;
 }
 
 export interface BrowserFocusRequest {
@@ -431,6 +438,21 @@ export function buildHtmlDataNavigateUrl(html: string): string | undefined {
   return url;
 }
 
+/** Convert Windows absolute path to file:// URL, or return null if not a Windows path. */
+function windowsPathToFileUrl(input: string): string | null {
+  // Match Windows absolute paths like C:\path\to\file.html or C:/path/to/file.html
+  const match = /^([a-zA-Z]):[\\\/]/.exec(input);
+  if (!match) {
+    return null;
+  }
+  // Normalize backslashes to forward slashes
+  const normalized = input.replace(/\\/g, "/");
+  // Escape special characters for URL
+  const escaped = normalized.replace(/[\s]/g, encodeURIComponent);
+  // Windows file URLs use three slashes: file:///C:/path
+  return `file:///${escaped}`;
+}
+
 export function resolveBrowserNavigateTarget(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -440,6 +462,7 @@ export function resolveBrowserNavigateTarget(raw: string): string | undefined {
     normalizeBrowserNavigateUrl(trimmed) ??
     (isBrowserHtmlDataUrl(trimmed) ? trimmed : undefined) ??
     (isBrowserPreviewFileUrl(trimmed) ? trimmed : undefined) ??
+    (windowsPathToFileUrl(trimmed) ?? undefined) ??
     (trimmed === "about:blank" ? "about:blank" : undefined)
   );
 }
@@ -467,6 +490,10 @@ export function normalizeBrowserNavigateUrl(raw: string): string | undefined {
     return undefined;
   }
   if (isBrowserHttpUrl(trimmed)) {
+    return trimmed;
+  }
+  // Support file:// URLs for opening local HTML files
+  if (trimmed.startsWith("file://")) {
     return trimmed;
   }
   // Do not promote Eco event labels / tool status strings into https://hosts

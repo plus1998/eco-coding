@@ -5245,6 +5245,15 @@ function App() {
           setSelectedSubagentAgentId(undefined);
         }
       }
+      // User-initiated browser open: always switch to the browser tab.
+      if (state.activateBrowserId && currentProjectPath) {
+        const tabId = browserTaskTabId(state.activateBrowserId);
+        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+        if (taskDrawerOpenRef.current) {
+          setTaskPanelActiveTab(tabId);
+          setSelectedSubagentAgentId(undefined);
+        }
+      }
       // Keep open browser tabs aligned with live instances for current UI scope.
       if (state.instances.length > 0) {
         setOpenTaskPanelTabIds((current) => {
