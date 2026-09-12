@@ -1198,6 +1198,11 @@ export interface ProviderConfigInput {
   /** Explicit count_tokens implementation; never inferred from apiCompat. */
   tokenCountMode?: ProviderTokenCountMode;
   apiKey?: string;
+  /**
+   * Per-provider upstream proxy (http/https/socks5). Empty/missing means this
+   * provider follows the global outbound proxy setting.
+   */
+  upstreamProxyUrl?: string;
   defaultModel: string;
   enabled: boolean;
 }
@@ -1215,6 +1220,8 @@ export interface ProviderConfigView {
   enabled: boolean;
   hasApiKey: boolean;
   apiKeyPreview?: string;
+  /** Set only when the provider has a per-provider upstream proxy. */
+  upstreamProxyUrl?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -18,6 +18,8 @@ export interface GatewayProvider {
    */
   version?: string;
   apiKey: string;
+  /** Optional per-provider outbound proxy; requests to this provider's origin bypass the global proxy. */
+  upstreamProxyUrl?: string;
   /** Wire model id sent to the real upstream. */
   upstreamModelId: string;
   /** Request `model` values routed to this provider. */

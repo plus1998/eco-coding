@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
+import { parseUpstreamProxyUrl } from "@eco/gateway";
 import { createBuiltInAgentTemplates } from "../shared/agent-orchestration";
 import { normalizeUpstreamApiCompat } from "../shared/api-compat";
 import {
@@ -30,6 +31,7 @@ interface ProviderRow {
   api_compat: string;
   token_count_mode: string;
   api_key: string;
+  upstream_proxy_url: string;
   default_model: string;
   enabled: number;
   created_at: string;
@@ -137,6 +139,7 @@ export class ProviderStore {
     this.migrateRoleRoutesManualSpec();
     this.migrateProviderApiCompat();
     this.migrateProviderTokenCountMode();
+    this.migrateProviderUpstreamProxy();
     this.migrateRoleRoutesApiCompat();
     this.migrateLegacyOpenaiApiCompatValues();
     this.migrateCandidateModelsTable();
@@ -186,6 +189,16 @@ export class ProviderStore {
     }
   }
 
+  /** Clear the per-provider upstream proxy URL (cloud sync: secret no longer present). */
+  clearProviderUpstreamProxy(id: string): void {
+    const result = this.db
+      .prepare("UPDATE provider_configs SET upstream_proxy_url = '', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) {
+      throw new Error(`找不到 Provider：${id}`);
+    }
+  }
+
   saveProvider(input: ProviderConfigInput): ProviderConfigView {
     validateProviderInput(input);
     const now = new Date().toISOString();
@@ -198,8 +211,8 @@ export class ProviderStore {
       .prepare(`
         INSERT INTO provider_configs (
           id, name, base_url, request_path, version, api_compat, token_count_mode,
-          api_key, default_model, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          api_key, upstream_proxy_url, default_model, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_url = excluded.base_url,
@@ -208,6 +221,7 @@ export class ProviderStore {
           api_compat = excluded.api_compat,
           token_count_mode = excluded.token_count_mode,
           api_key = excluded.api_key,
+          upstream_proxy_url = excluded.upstream_proxy_url,
           default_model = excluded.default_model,
           enabled = excluded.enabled,
           updated_at = excluded.updated_at
@@ -221,6 +235,7 @@ export class ProviderStore {
         normalizeUpstreamApiCompat(input.apiCompat ?? existing?.api_compat),
         normalizeProviderTokenCountMode(input.tokenCountMode ?? existing?.token_count_mode),
         apiKey,
+        normalizeProviderUpstreamProxyUrl(input.upstreamProxyUrl ?? existing?.upstream_proxy_url ?? ""),
         input.defaultModel.trim(),
         input.enabled ? 1 : 0,
         createdAt,
@@ -432,6 +447,17 @@ export class ProviderStore {
     this.db.exec(`UPDATE provider_configs SET version = 'v1' WHERE version IS NULL OR TRIM(version) = ''`);
   }
 
+  /** Per-provider outbound proxy URL. Empty means the global proxy setting applies. */
+  private migrateProviderUpstreamProxy(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "upstream_proxy_url")) {
+      this.db.exec(`ALTER TABLE provider_configs ADD COLUMN upstream_proxy_url TEXT NOT NULL DEFAULT ''`);
+    }
+    this.db.exec(
+      `UPDATE provider_configs SET upstream_proxy_url = '' WHERE upstream_proxy_url IS NULL`,
+    );
+  }
+
   private migrateRoleRoutesToProfiles(): void {
     const tables = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'role_routes'")
@@ -577,7 +603,7 @@ export class ProviderStore {
     return this.db
       .prepare(`
         SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
-               api_key, default_model, enabled, created_at, updated_at
+               api_key, upstream_proxy_url, default_model, enabled, created_at, updated_at
         FROM provider_configs
         ORDER BY updated_at DESC, name ASC
       `)
@@ -588,7 +614,7 @@ export class ProviderStore {
     return this.db
       .prepare(`
         SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
-               api_key, default_model, enabled, created_at, updated_at
+               api_key, upstream_proxy_url, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
       `)
@@ -856,6 +882,7 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
   };
   const apiKeyPreview = previewSecret(row.api_key);
   if (apiKeyPreview) provider.apiKeyPreview = apiKeyPreview;
+  if (row.upstream_proxy_url) provider.upstreamProxyUrl = row.upstream_proxy_url;
   return provider;
 }
 
@@ -1027,6 +1054,19 @@ function validateProviderInput(input: ProviderConfigInput): void {
   const requestPath = input.requestPath?.trim();
   if (requestPath && !requestPath.startsWith("/")) {
     throw new Error("请求端点须以 / 开头，例如 /anthropic。");
+  }
+}
+
+/** Validate per-provider proxy URL; empty means "follow global proxy". */
+function normalizeProviderUpstreamProxyUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    return parseUpstreamProxyUrl(trimmed) ?? "";
+  } catch (error) {
+    throw new Error(`无效的上游代理 URL：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

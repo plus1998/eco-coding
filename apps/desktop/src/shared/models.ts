@@ -22,6 +22,8 @@ export interface ListUpstreamModelsRequest {
   version?: string;
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
+  /** Per-provider upstream proxy override (draft form value); falls back to global proxy. */
+  upstreamProxyUrl?: string;
 }
 
 export type ProviderRequestErrorCode =
@@ -50,6 +52,8 @@ export interface TestProviderConnectionRequest {
   version?: string;
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
+  /** Per-provider upstream proxy override (draft form value); falls back to global proxy. */
+  upstreamProxyUrl?: string;
   defaultModel?: string;
   thinkingEffort?: typeof ROUTE_TEST_THINKING_EFFORT;
 }

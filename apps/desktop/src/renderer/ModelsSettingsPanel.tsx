@@ -1287,6 +1287,19 @@ function ProviderEditorModal({
                     }
                   >
                     <label className="mcp-field">
+                      <span className="mcp-field-label">{t("settings.models.provider.upstreamProxy")}</span>
+                      <input
+                        className="mcp-field-input"
+                        value={form.upstreamProxyUrl ?? ""}
+                        placeholder="socks5://127.0.0.1:7890"
+                        disabled={busy}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, upstreamProxyUrl: event.target.value }))
+                        }
+                      />
+                      <span className="mcp-field-hint">{t("settings.models.provider.upstreamProxyHint")}</span>
+                    </label>
+                    <label className="mcp-field">
                       <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
                       <select
                         className="mcp-field-input"
@@ -1420,6 +1433,7 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     apiCompat: provider?.apiCompat ?? "anthropic",
     tokenCountMode: provider?.tokenCountMode ?? "local_heuristic",
     apiKey: "",
+    upstreamProxyUrl: provider?.upstreamProxyUrl ?? "",
     defaultModel: provider?.defaultModel ?? "",
     enabled: provider?.enabled ?? true,
   };

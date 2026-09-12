@@ -27,7 +27,7 @@ import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
 
 export const ECO_SYNCED_SETTINGS_VERSION = 1 as const;
 
-export type EcoSecretKind = "provider" | "asr" | "image" | "workflow" | "proxy" | "ssh";
+export type EcoSecretKind = "provider" | "provider-proxy" | "asr" | "image" | "workflow" | "proxy" | "ssh";
 
 export const ECO_WORKFLOW_CURSOR_API_KEY_SECRET = "acp_cursor_api_key";
 export const ECO_PROXY_URL_SECRET = "upstream_proxy_url";
@@ -747,6 +747,7 @@ export async function encryptDecryptSecretRoundtrip(vaultKey: string, plaintext:
 function parseSecretKind(value: string): EcoSecretKind | null {
   if (
     value === "provider" ||
+    value === "provider-proxy" ||
     value === "asr" ||
     value === "image" ||
     value === "workflow" ||
@@ -812,7 +813,7 @@ export interface EcoDomainSyncStatusEntry {
 export function secretKindsForDomain(domain: EcoSettingsSyncDomain): readonly EcoSecretKind[] {
   switch (domain) {
     case "providers":
-      return ["provider"];
+      return ["provider", "provider-proxy"];
     case "asr":
       return ["asr"];
     case "imageGeneration":

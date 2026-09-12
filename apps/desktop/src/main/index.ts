@@ -2045,6 +2045,9 @@ app.whenReady().then(async () => {
           requestPath: provider.requestPath,
           version: provider.version,
           apiKey: provider.apiKey,
+          ...(provider.upstreamProxyUrl
+            ? { upstreamProxyUrl: provider.upstreamProxyUrl }
+            : {}),
           apiCompat: provider.apiCompat,
           defaultModel: provider.defaultModel,
           models: candidates.map((model) => ({
@@ -4579,6 +4582,7 @@ function registerIpcHandlers(): void {
       providerStore,
       payload,
       resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+      proxyBridgeSettingsStore.get().upstreamProxyUrl,
     );
   });
 
@@ -4591,6 +4595,7 @@ function registerIpcHandlers(): void {
       payload,
       fetch,
       resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+      proxyBridgeSettingsStore.get().upstreamProxyUrl,
     );
   });
 
@@ -4603,6 +4608,7 @@ function registerIpcHandlers(): void {
       payload,
       fetch,
       resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+      proxyBridgeSettingsStore.get().upstreamProxyUrl,
     );
   });
 

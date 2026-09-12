@@ -24348,6 +24348,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 
 .provider-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   overflow: hidden;
 }
 

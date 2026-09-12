@@ -35,10 +35,28 @@ export function parseUpstreamProxyUrl(raw: string | undefined): string | undefin
   return trimmed;
 }
 
+/**
+ * Per-provider outbound proxy route: requests whose target origin matches
+ * `origin` use `proxyUrl` instead of the global upstream proxy.
+ */
+export interface UpstreamProxyRoute {
+  /** Origin of the upstream service, e.g. `https://api.deepseek.com`. */
+  origin: string;
+  proxyUrl: string;
+}
+
 export interface UpstreamFetchController {
   fetch: typeof fetch;
+  /** Global fallback proxy applied when no per-origin route matches. */
   setProxyUrl: (proxyUrl: string | undefined) => void;
+  /**
+   * Per-provider proxy overrides. Replaces the previous route table;
+   * dispatchers for no-longer-referenced proxy URLs are closed.
+   */
+  setProxyRoutes: (routes: readonly UpstreamProxyRoute[]) => void;
   getProxyUrl: () => string | undefined;
+  /** Close all cached proxy dispatchers. */
+  close: () => void;
 }
 
 type ProxiedFetchFn = (
@@ -46,13 +64,27 @@ type ProxiedFetchFn = (
   init?: RequestInit & { dispatcher?: unknown },
 ) => Promise<Response>;
 
+function targetOrigin(input: RequestInfo | URL): string | undefined {
+  try {
+    const url =
+      typeof input === "string" ? new URL(input) : input instanceof URL ? new URL(input) : new URL(input.url);
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Mutable outbound fetch that optionally routes through undici ProxyAgent.
+ * Each distinct proxy URL gets its own cached dispatcher; the per-request
+ * proxy is resolved from the request target origin (per-provider overrides)
+ * with the global proxy URL as fallback.
  * Lazy-loads undici so pure unit tests without undici still import the module.
  */
 export function createUpstreamFetchController(initialProxyUrl?: string): UpstreamFetchController {
-  let proxyUrl = parseUpstreamProxyUrl(initialProxyUrl);
-  let dispatcher: { close?: () => void } | undefined;
+  let globalProxyUrl = parseUpstreamProxyUrl(initialProxyUrl);
+  let proxyRoutes = new Map<string, string>();
+  const dispatchers = new Map<string, { close?: () => void }>();
   let undiciFetch: ProxiedFetchFn | undefined;
   let ProxyAgentCtor: (new (url: string) => { close?: () => void }) | undefined;
 
@@ -65,30 +97,60 @@ export function createUpstreamFetchController(initialProxyUrl?: string): Upstrea
     ProxyAgentCtor = undici.ProxyAgent as unknown as new (url: string) => { close?: () => void };
   }
 
-  function rebuildDispatcher(next: string | undefined): void {
-    if (dispatcher && typeof dispatcher.close === "function") {
+  function referencedProxyUrls(): Set<string> {
+    const referenced = new Set<string>(proxyRoutes.values());
+    if (globalProxyUrl) {
+      referenced.add(globalProxyUrl);
+    }
+    return referenced;
+  }
+
+  function pruneDispatchers(): void {
+    const referenced = referencedProxyUrls();
+    for (const [proxyUrl, dispatcher] of dispatchers) {
+      if (referenced.has(proxyUrl)) {
+        continue;
+      }
+      dispatchers.delete(proxyUrl);
       try {
-        dispatcher.close();
+        dispatcher.close?.();
       } catch {
         // ignore close races
       }
     }
-    dispatcher = undefined;
-    if (!next || !ProxyAgentCtor) {
-      return;
+  }
+
+  function getDispatcher(proxyUrl: string): { close?: () => void } | undefined {
+    const cached = dispatchers.get(proxyUrl);
+    if (cached) {
+      return cached;
     }
-    dispatcher = new ProxyAgentCtor(next);
+    if (!ProxyAgentCtor) {
+      return undefined;
+    }
+    const dispatcher = new ProxyAgentCtor(proxyUrl);
+    dispatchers.set(proxyUrl, dispatcher);
+    return dispatcher;
+  }
+
+  function resolveProxyForInput(input: RequestInfo | URL): string | undefined {
+    const origin = targetOrigin(input);
+    if (origin) {
+      const routed = proxyRoutes.get(origin);
+      if (routed) {
+        return routed;
+      }
+    }
+    return globalProxyUrl;
   }
 
   const controlledFetch: typeof fetch = async (input, init) => {
-    const activeProxy = proxyUrl;
+    const activeProxy = resolveProxyForInput(input);
     if (!activeProxy) {
       return fetch(input, init);
     }
     await ensureUndici();
-    if (!dispatcher) {
-      rebuildDispatcher(activeProxy);
-    }
+    const dispatcher = getDispatcher(activeProxy);
     if (!undiciFetch || !dispatcher) {
       throw new Error("Failed to initialize undici proxy fetch.");
     }
@@ -102,23 +164,45 @@ export function createUpstreamFetchController(initialProxyUrl?: string): Upstrea
     fetch: controlledFetch,
     setProxyUrl: (next) => {
       const parsed = parseUpstreamProxyUrl(next);
-      if (parsed === proxyUrl) {
+      if (parsed === globalProxyUrl) {
         return;
       }
-      proxyUrl = parsed;
-      // Drop dispatcher so next request rebuilds (async load on demand).
-      if (dispatcher && typeof dispatcher.close === "function") {
-        try {
-          dispatcher.close();
-        } catch {
-          // ignore
-        }
-      }
-      dispatcher = undefined;
+      globalProxyUrl = parsed;
+      pruneDispatchers();
       if (parsed && ProxyAgentCtor) {
-        rebuildDispatcher(parsed);
+        getDispatcher(parsed);
       }
     },
-    getProxyUrl: () => proxyUrl,
+    setProxyRoutes: (routes) => {
+      const next = new Map<string, string>();
+      for (const route of routes) {
+        const origin = route?.origin?.trim();
+        if (!origin) {
+          continue;
+        }
+        const proxyUrl = parseUpstreamProxyUrl(route.proxyUrl);
+        if (proxyUrl) {
+          next.set(origin, proxyUrl);
+        }
+      }
+      proxyRoutes = next;
+      pruneDispatchers();
+      if (ProxyAgentCtor) {
+        for (const proxyUrl of next.values()) {
+          getDispatcher(proxyUrl);
+        }
+      }
+    },
+    getProxyUrl: () => globalProxyUrl,
+    close: () => {
+      for (const dispatcher of dispatchers.values()) {
+        try {
+          dispatcher.close?.();
+        } catch {
+          // ignore close races
+        }
+      }
+      dispatchers.clear();
+    },
   };
 }

@@ -1,4 +1,5 @@
 import { normalizeApiVersion, normalizeRequestPath } from "./provider-router.js";
+import { parseUpstreamProxyUrl, type UpstreamProxyRoute } from "./upstream-proxy.js";
 import type { GatewayConfig, GatewayProvider } from "./types.js";
 
 const DEFAULT_PORT = 18_765;
@@ -33,15 +34,42 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
   const modelMaxOutputTokens = normalizeModelMaxOutputTokens(provider.modelMaxOutputTokens);
   const requestPath = normalizeRequestPath(provider.requestPath);
   const version = normalizeApiVersion(provider.version);
-  const { requestPath: _ignoredRequestPath, modelMaxOutputTokens: _ignoredMax, ...rest } = provider;
+  const upstreamProxyUrl = parseUpstreamProxyUrl(provider.upstreamProxyUrl);
+  const { requestPath: _ignoredRequestPath, modelMaxOutputTokens: _ignoredMax, upstreamProxyUrl: _ignoredProxy, ...rest } = provider;
   return {
     ...rest,
     baseUrl: trimTrailingSlash(provider.baseUrl),
     version,
     models,
     ...(requestPath ? { requestPath } : {}),
+    ...(upstreamProxyUrl ? { upstreamProxyUrl } : {}),
     ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),
   };
+}
+
+/**
+ * Per-provider proxy routes for the outbound fetch controller.
+ * Providers without a proxy contribute no entry (global proxy fallback applies).
+ * When two providers share an origin, the last provider wins.
+ */
+export function buildProviderProxyRoutes(
+  providers: readonly GatewayProvider[],
+): UpstreamProxyRoute[] {
+  const byOrigin = new Map<string, string>();
+  for (const provider of providers) {
+    const proxyUrl = parseUpstreamProxyUrl(provider.upstreamProxyUrl);
+    if (!proxyUrl) {
+      continue;
+    }
+    let origin: string;
+    try {
+      origin = new URL(provider.baseUrl).origin;
+    } catch {
+      continue;
+    }
+    byOrigin.set(origin, proxyUrl);
+  }
+  return [...byOrigin.entries()].map(([origin, proxyUrl]) => ({ origin, proxyUrl }));
 }
 
 function normalizeModelMaxOutputTokens(

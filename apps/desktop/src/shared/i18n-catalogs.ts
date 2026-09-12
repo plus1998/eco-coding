@@ -752,6 +752,9 @@ export const i18nCatalogs = {
       "settings.models.provider.endpoint": "请求端点",
       "settings.models.provider.version": "API 版本",
       "settings.models.provider.versionHint": "路径版本段，默认 v1；部分服务商使用 v2",
+      "settings.models.provider.upstreamProxy": "上游代理（可选）",
+      "settings.models.provider.upstreamProxyHint":
+        "仅对本 Provider 生效（http/https/socks5）；留空则跟随全局代理设置",
       "settings.models.provider.openAiPathHint": "OpenAI 兼容模式的路径前缀，如 /zen",
       "settings.models.provider.anthropicPathHint": "Anthropic Messages 路径前缀，留空表示根路径",
       "settings.models.provider.tokenCountMode": "Token 计数模式",
@@ -2965,6 +2968,9 @@ export const i18nCatalogs = {
       "settings.models.provider.endpoint": "Request endpoint",
       "settings.models.provider.version": "API version",
       "settings.models.provider.versionHint": "Path version segment, default v1; some providers use v2",
+      "settings.models.provider.upstreamProxy": "Upstream proxy (optional)",
+      "settings.models.provider.upstreamProxyHint":
+        "Applies to this provider only (http/https/socks5); leave blank to follow the global proxy setting",
       "settings.models.provider.openAiPathHint": "Path prefix for OpenAI-compatible mode, e.g. /zen",
       "settings.models.provider.anthropicPathHint":
         "Anthropic Messages path prefix; leave blank for the root path",

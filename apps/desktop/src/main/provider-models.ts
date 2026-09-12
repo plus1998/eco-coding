@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import { createUpstreamFetchController } from "@eco/gateway";
 import {
   assertApiCompatCompatibleWithProviderPath,
   IncompatibleApiCompatError,
@@ -58,6 +60,7 @@ export async function listProviderUpstreamModels(
   store: ProviderStore,
   request: ListUpstreamModelsRequest,
   upstreamUserAgent?: string,
+  globalProxyUrl?: string,
 ): Promise<ListUpstreamModelsResult> {
   logUpstream("models-list-request", {
     providerId: request.providerId,
@@ -90,14 +93,19 @@ export async function listProviderUpstreamModels(
     hasApiKey: Boolean(resolved.apiKey.trim()),
   });
 
-  return fetchUpstreamModelsFromCredentials(
-    resolved.baseUrl,
-    resolved.apiKey,
-    resolved.requestPath,
-    { ...(request.providerId && { providerId: request.providerId }), routing },
-    resolved.apiCompat,
-    upstreamUserAgent,
-    resolved.version,
+  // Per-provider proxy wins; falls back to the global outbound proxy.
+  const proxyUrl = resolved.upstreamProxyUrl || globalProxyUrl;
+  return withUpstreamProxyFetch(proxyUrl, fetch, (fetcher) =>
+    fetchUpstreamModelsFromCredentials(
+      resolved.baseUrl,
+      resolved.apiKey,
+      resolved.requestPath,
+      { ...(request.providerId && { providerId: request.providerId }), routing },
+      resolved.apiCompat,
+      upstreamUserAgent,
+      resolved.version,
+      fetcher,
+    ),
   );
 }
 
@@ -106,6 +114,7 @@ export async function testProviderConnection(
   request: TestProviderConnectionRequest,
   fetcher: typeof fetch = fetch,
   upstreamUserAgent?: string,
+  globalProxyUrl?: string,
 ): Promise<TestProviderConnectionResult> {
   const resolved = resolveProviderCredentials(store, request);
   if (!resolved.ok) {
@@ -128,19 +137,24 @@ export async function testProviderConnection(
     return { ok: false, error: "请先选择要测试的模型。" };
   }
 
-  const testResult = await postUpstreamCompatTest(
-    {
-      baseUrl: resolved.baseUrl,
-      requestPath: resolved.requestPath,
-      version: resolved.version,
-      apiCompat: resolved.apiCompat,
-      apiKey: resolved.apiKey,
-      modelId,
-      ...(request.providerId && { providerId: request.providerId }),
-    },
-    resolveRouteTestThinkingEffort(request.thinkingEffort),
+  const testResult = await withUpstreamProxyFetch(
+    resolved.upstreamProxyUrl || globalProxyUrl,
     fetcher,
-    upstreamUserAgent,
+    (activeFetcher) =>
+      postUpstreamCompatTest(
+        {
+          baseUrl: resolved.baseUrl,
+          requestPath: resolved.requestPath,
+          version: resolved.version,
+          apiCompat: resolved.apiCompat,
+          apiKey: resolved.apiKey,
+          modelId,
+          ...(request.providerId && { providerId: request.providerId }),
+        },
+        resolveRouteTestThinkingEffort(request.thinkingEffort),
+        activeFetcher,
+        upstreamUserAgent,
+      ),
   );
   if (testResult.ok) {
     return { ok: true, reply: testResult.reply };
@@ -170,6 +184,7 @@ export async function testRoleRoutes(
   request: TestRoleRoutesRequest,
   fetcher: typeof fetch = fetch,
   upstreamUserAgent?: string,
+  globalProxyUrl?: string,
 ): Promise<TestRoleRoutesResult> {
   const resultsByRole = new Map<string, RoleRouteTestResult>();
   const groups = new Map<string, RouteTestGroup>();
@@ -239,11 +254,10 @@ export async function testRoleRoutes(
       modelId: group.modelId,
       ...(labelRole && { role: labelRole }),
     };
-    const testResult = await postUpstreamCompatTest(
-      testInput,
-      group.thinkingEffort,
+    const testResult = await withUpstreamProxyFetch(
+      group.provider.upstreamProxyUrl || globalProxyUrl,
       fetcher,
-      upstreamUserAgent,
+      (activeFetcher) => postUpstreamCompatTest(testInput, group.thinkingEffort, activeFetcher, upstreamUserAgent),
     );
 
     const shared: RoleRouteTestResult = testResult.ok
@@ -789,6 +803,7 @@ export async function fetchUpstreamModelsFromCredentials(
   apiCompat: UpstreamApiCompat = "anthropic",
   upstreamUserAgent?: string,
   version?: string,
+  fetcher: typeof fetch = fetch,
 ): Promise<ListUpstreamModelsResult> {
   const listResolved = resolveModelsListUrl(baseUrl, requestPath, version);
   if (!listResolved.ok) {
@@ -823,7 +838,7 @@ export async function fetchUpstreamModelsFromCredentials(
   });
 
   try {
-    const response = await fetch(modelsUrl, {
+    const response = await fetcher(modelsUrl, {
       method: "GET",
       headers: buildProviderDirectUpstreamHeaders({
         apiKey,
@@ -1008,6 +1023,7 @@ function resolveProviderCredentials(
       version: string;
       apiCompat: UpstreamApiCompat;
       apiKey: string;
+      upstreamProxyUrl: string;
     }
   | ProviderRequestError {
   const baseUrl = request.baseUrl?.trim();
@@ -1042,6 +1058,10 @@ function resolveProviderCredentials(
         : normalizeRequestPath(provider.requestPath);
     const resolvedVersion = inlineVersion ?? normalizeApiVersion(provider.version);
     const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
+    const resolvedUpstreamProxyUrl =
+      ("upstreamProxyUrl" in request && request.upstreamProxyUrl !== undefined
+        ? request.upstreamProxyUrl
+        : provider.upstreamProxyUrl) ?? "";
     const resolvedApiCompat = resolveUpstreamApiCompat(
       "apiCompat" in request && request.apiCompat !== undefined
         ? normalizeUpstreamApiCompat(request.apiCompat)
@@ -1055,6 +1075,7 @@ function resolveProviderCredentials(
       version: resolvedVersion,
       apiCompat: resolvedApiCompat,
       apiKey: resolvedApiKey,
+      upstreamProxyUrl: resolvedUpstreamProxyUrl,
     };
   }
 
@@ -1066,6 +1087,7 @@ function resolveProviderCredentials(
     "apiCompat" in request && request.apiCompat !== undefined
       ? normalizeUpstreamApiCompat(request.apiCompat)
       : "anthropic";
+  const inlineUpstreamProxyUrl = request.upstreamProxyUrl?.trim() ?? "";
   return {
     ok: true,
     baseUrl,
@@ -1073,7 +1095,29 @@ function resolveProviderCredentials(
     version: inlineVersion ?? DEFAULT_API_VERSION,
     apiCompat: inlineApiCompat,
     apiKey: inlineApiKey ?? "",
+    upstreamProxyUrl: inlineUpstreamProxyUrl,
   };
+}
+
+/**
+ * Run `run` with a fetcher that routes through `proxyUrl` (per-provider proxy
+ * or the global outbound proxy). Without a proxy, `fallbackFetcher` is used as-is.
+ */
+async function withUpstreamProxyFetch<T>(
+  proxyUrl: string | undefined,
+  fallbackFetcher: typeof fetch,
+  run: (fetcher: typeof fetch) => Promise<T>,
+): Promise<T> {
+  const trimmed = proxyUrl?.trim();
+  if (!trimmed) {
+    return run(fallbackFetcher);
+  }
+  const controller = createUpstreamFetchController(trimmed);
+  try {
+    return await run(controller.fetch);
+  } finally {
+    controller.close();
+  }
 }
 
 function formatUpstreamError(status: number, raw: string): string {

@@ -32,6 +32,8 @@ export interface EcoProviderForGateway {
   /** API path version segment (e.g. `v1`). Empty/missing → `v1`. */
   version?: string;
   apiKey: string;
+  /** Per-provider upstream proxy; empty/missing = global proxy setting. */
+  upstreamProxyUrl?: string;
   apiCompat: UpstreamApiCompat;
   defaultModel: string;
   /** Extra model ids that Codex may send (candidates / route models). */
@@ -50,6 +52,7 @@ export interface GatewayProviderPayload {
   requestPath?: string;
   version?: string;
   apiKey: string;
+  upstreamProxyUrl?: string;
   upstreamModelId: string;
   models: string[];
   modelMaxOutputTokens?: Record<string, number>;
@@ -421,6 +424,7 @@ export function buildGatewayProvidersFromEcoProviders(
       ...(requestPath ? { requestPath } : {}),
       version,
       apiKey: provider.apiKey.trim() || "local-unused",
+      ...(provider.upstreamProxyUrl?.trim() ? { upstreamProxyUrl: provider.upstreamProxyUrl.trim() } : {}),
       upstreamModelId: defaultModel,
       models,
       ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),

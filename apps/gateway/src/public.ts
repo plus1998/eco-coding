@@ -1,5 +1,5 @@
 export { CODEX_TURN_METADATA_HEADER, parseCodexTurnMetadataHeader } from "./codex-turn-metadata.js";
-export { defaultProviders, loadGatewayConfig, normalizeProvider } from "./provider-config.js";
+export { buildProviderProxyRoutes, defaultProviders, loadGatewayConfig, normalizeProvider } from "./provider-config.js";
 export {
   applyGatewayResponsesPromptCacheHints,
   buildGatewayPromptCacheKey,
@@ -59,4 +59,5 @@ export {
   createUpstreamFetchController,
   parseUpstreamProxyUrl,
   type UpstreamFetchController,
+  type UpstreamProxyRoute,
 } from "./upstream-proxy.js";

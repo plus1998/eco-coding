@@ -415,6 +415,10 @@ function collectSecrets(input: {
     if (provider.apiKey.trim()) {
       secrets.push({ kind: "provider", key: provider.id, value: provider.apiKey });
     }
+    const providerProxyUrl = provider.upstreamProxyUrl?.trim();
+    if (providerProxyUrl) {
+      secrets.push({ kind: "provider-proxy", key: provider.id, value: providerProxyUrl });
+    }
   }
 
   const asr = input.asrSettingsStore.listProfiles();
@@ -517,27 +521,51 @@ function applyDomainSecrets(
       if (provider.apiKey && !secretIds.has(`provider:${provider.id}`)) {
         input.providerStore.clearProviderApiKey(provider.id);
       }
+      const hasProviderProxy = (provider.upstreamProxyUrl ?? "").trim().length > 0;
+      if (hasProviderProxy && !secretIds.has(`provider-proxy:${provider.id}`)) {
+        input.providerStore.clearProviderUpstreamProxy(provider.id);
+      }
     }
     for (const secret of domainSecrets) {
-      if (!secret.value.trim() || secret.kind !== "provider") {
+      if (!secret.value.trim()) {
         continue;
       }
-      const existing = input.providerStore.getProviderWithSecret(secret.key);
-      if (!existing) {
-        throw new Error(`Cloud provider secret references missing provider: ${secret.key}`);
+      if (secret.kind === "provider") {
+        const existing = input.providerStore.getProviderWithSecret(secret.key);
+        if (!existing) {
+          throw new Error(`Cloud provider secret references missing provider: ${secret.key}`);
+        }
+        input.providerStore.saveProvider({
+          id: existing.id,
+          name: existing.name,
+          baseUrl: existing.baseUrl,
+          requestPath: existing.requestPath,
+          version: existing.version,
+          apiCompat: existing.apiCompat,
+          ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
+          defaultModel: existing.defaultModel,
+          enabled: existing.enabled,
+          apiKey: secret.value,
+        });
       }
-      input.providerStore.saveProvider({
-        id: existing.id,
-        name: existing.name,
-        baseUrl: existing.baseUrl,
-        requestPath: existing.requestPath,
-        version: existing.version,
-        apiCompat: existing.apiCompat,
-        ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
-        defaultModel: existing.defaultModel,
-        enabled: existing.enabled,
-        apiKey: secret.value,
-      });
+      if (secret.kind === "provider-proxy") {
+        const existing = input.providerStore.getProviderWithSecret(secret.key);
+        if (!existing) {
+          throw new Error(`Cloud provider proxy secret references missing provider: ${secret.key}`);
+        }
+        input.providerStore.saveProvider({
+          id: existing.id,
+          name: existing.name,
+          baseUrl: existing.baseUrl,
+          requestPath: existing.requestPath,
+          version: existing.version,
+          apiCompat: existing.apiCompat,
+          ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
+          defaultModel: existing.defaultModel,
+          enabled: existing.enabled,
+          upstreamProxyUrl: secret.value,
+        });
+      }
     }
     return;
   }

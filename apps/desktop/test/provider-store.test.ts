@@ -296,3 +296,65 @@ test.skipIf(!sqliteAvailable)("rejects deleting an unknown provider", async () =
 
   expect(() => store.deleteProvider("missing")).toThrow("找不到 Provider：missing");
 });
+
+test.skipIf(!sqliteAvailable)("per-provider upstream proxy persists, validates, and clears", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-proxy-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const saved = store.saveProvider({
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    upstreamProxyUrl: " socks5://127.0.0.1:7890 ",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(saved.upstreamProxyUrl).toBe("socks5://127.0.0.1:7890");
+  expect(store.getProviderWithSecret(saved.id)?.upstreamProxyUrl).toBe("socks5://127.0.0.1:7890");
+
+  // Omitting the field keeps the existing value; empty string clears it.
+  const kept = store.saveProvider({
+    id: saved.id,
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    apiKey: "k2",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(kept.upstreamProxyUrl).toBe("socks5://127.0.0.1:7890");
+  const cleared = store.saveProvider({
+    id: saved.id,
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    upstreamProxyUrl: "  ",
+    apiKey: "k2",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(cleared.upstreamProxyUrl).toBeUndefined();
+
+  store.saveProvider({
+    id: saved.id,
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    upstreamProxyUrl: "socks5://127.0.0.1:7890",
+    apiKey: "k2",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  store.clearProviderUpstreamProxy(saved.id);
+  expect(store.getProviderWithSecret(saved.id)?.upstreamProxyUrl).toBeUndefined();
+  expect(() => store.clearProviderUpstreamProxy("missing")).toThrow("找不到 Provider：missing");
+
+  expect(() =>
+    store.saveProvider({
+      id: saved.id,
+      name: "ProxyProvider",
+      baseUrl: "https://api.example.com",
+      upstreamProxyUrl: "ftp://127.0.0.1:21",
+      apiKey: "k2",
+      defaultModel: "m1",
+      enabled: true,
+    }),
+  ).toThrow(/无效的上游代理 URL/);
+});

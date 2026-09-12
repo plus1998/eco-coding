@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
-import { normalizeProvider } from "./provider-config.js";
+import { buildProviderProxyRoutes, normalizeProvider } from "./provider-config.js";
 import { handlePostChatCompletions } from "./routes/chat-completions.js";
 import { handleGetModels, handlePostMessages, handlePostMessagesCountTokens } from "./routes/messages.js";
 import { handleHealth, handlePostResponses, handlePostResponsesCompact } from "./routes/responses.js";
@@ -48,6 +48,7 @@ export function createGatewayFetchHandler(
   onLog: GatewayLogFn = defaultGatewayLog,
   onUsage?: GatewayUsageObserver,
   onRequestLifecycle?: GatewayRequestLifecycleObserver,
+  onProvidersChanged?: (providers: readonly GatewayProvider[]) => void,
 ): (request: Request) => Response | Promise<Response> {
   return async (request: Request) => {
     const url = new URL(request.url);
@@ -63,7 +64,7 @@ export function createGatewayFetchHandler(
     }
 
     if (request.method === "PUT" && path === "/v1/providers") {
-      const response = await handlePutProviders(request, config);
+      const response = await handlePutProviders(request, config, onProvidersChanged);
       onLog(
         `PUT /v1/providers → ${response.status} providers=${config.providers.length} models=${config.providers.flatMap((p) => p.models).join(",")}`,
       );
@@ -139,7 +140,11 @@ function defaultGatewayLog(message: string): void {
   process.stderr.write(`[eco-gateway] ${message}\n`);
 }
 
-async function handlePutProviders(request: Request, config: GatewayConfig): Promise<Response> {
+async function handlePutProviders(
+  request: Request,
+  config: GatewayConfig,
+  onProvidersChanged?: (providers: readonly GatewayProvider[]) => void,
+): Promise<Response> {
   let body: unknown;
   try {
     body = await request.json();
@@ -151,6 +156,7 @@ async function handlePutProviders(request: Request, config: GatewayConfig): Prom
   }
   try {
     config.providers = body.map((entry) => normalizeProvider(entry as GatewayProvider));
+    onProvidersChanged?.(config.providers);
   } catch (error) {
     return Response.json(
       {
@@ -191,8 +197,13 @@ export async function startEcoGateway(
     // Validate early so bad config fails before accept.
     parseUpstreamProxyUrl(config.upstreamProxyUrl);
   }
+  // Normalize (and validate) providers, including per-provider proxy URLs.
+  config.providers = config.providers.map((provider) => normalizeProvider(provider));
   const { fetchImpl, proxyController } = resolveFetchImpl(config, options);
   const onLog = options?.onLog ?? defaultGatewayLog;
+  if (proxyController) {
+    proxyController.setProxyRoutes(buildProviderProxyRoutes(config.providers));
+  }
 
   // Mutable fetch slot so setUpstreamProxyUrl can re-point live traffic.
   let activeFetch = fetchImpl;
@@ -202,6 +213,11 @@ export async function startEcoGateway(
     onLog,
     options?.onUsage,
     options?.onRequestLifecycle,
+    proxyController
+      ? (providers) => {
+          proxyController.setProxyRoutes(buildProviderProxyRoutes(providers));
+        }
+      : undefined,
   );
 
   let server: http.Server | undefined;
@@ -250,10 +266,12 @@ export async function startEcoGateway(
     handleRequest: handler,
     stop: () => {
       server?.close();
+      proxyController?.close();
     },
     getProviders: () => config.providers,
     setProviders: (providers) => {
       config.providers = providers.map(normalizeProvider);
+      proxyController?.setProxyRoutes(buildProviderProxyRoutes(config.providers));
     },
     setUpstreamUserAgent: (upstreamUserAgent) => {
       const trimmed = upstreamUserAgent?.trim();
