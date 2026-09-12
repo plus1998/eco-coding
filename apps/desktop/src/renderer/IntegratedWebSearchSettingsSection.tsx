@@ -1,6 +1,10 @@
-import { LinkIcon } from "lucide-react";
+import { ChevronDown, LinkIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  WEB_SEARCH_APPROVAL_MODES,
+  type WebSearchApprovalMode,
+} from "../shared/integrated-web-search";
 import type {
   IntegratedWebSearchProvider,
   IntegratedWebSearchSettingsSaveInput,
@@ -43,6 +47,7 @@ export function IntegratedWebSearchSettingsSection({
 }: IntegratedWebSearchSettingsSectionProps) {
   const { t } = useTranslation();
   const enableId = useId();
+  const approvalId = useId();
   const [enabled, setEnabled] = useState(settings.enabled);
   const [provider, setProvider] = useState(settings.provider);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
@@ -72,6 +77,13 @@ export function IntegratedWebSearchSettingsSection({
       return;
     }
     onSave({ provider: nextProvider });
+  }
+
+  function commitApprovalMode(nextMode: WebSearchApprovalMode) {
+    if (nextMode === settings.approvalMode) {
+      return;
+    }
+    onSave({ approvalMode: nextMode });
   }
 
   function commitApiKey() {
@@ -182,6 +194,31 @@ export function IntegratedWebSearchSettingsSection({
           }}
         />
       </label>
+
+      {enabled ? (
+        <div className="mcp-field models-toggle-field provider-enable-row">
+          <span className="integrated-web-search-enable-copy" id={approvalId}>
+            <span className="mcp-field-label">{t("settings.integratedWebSearch.approvalMode")}</span>
+            <small>{t("settings.integratedWebSearch.approvalModeHint")}</small>
+          </span>
+          <label className="browser-settings-select">
+            <span className="sr-only">{t("settings.integratedWebSearch.approvalMode")}</span>
+            <select
+              value={settings.approvalMode}
+              disabled={disabled}
+              aria-labelledby={approvalId}
+              onChange={(event) => commitApprovalMode(event.target.value as WebSearchApprovalMode)}
+            >
+              {(WEB_SEARCH_APPROVAL_MODES as readonly WebSearchApprovalMode[]).map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(`settings.integratedWebSearch.approvalMode.${mode}`)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} strokeWidth={2} aria-hidden className="browser-settings-select-chevron" />
+          </label>
+        </div>
+      ) : null}
     </section>
   );
 }

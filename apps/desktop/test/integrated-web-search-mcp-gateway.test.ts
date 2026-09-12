@@ -13,7 +13,7 @@ test("resolveThreadWebSearchPlan mirrors cross-core decision table", () => {
     resolveThreadWebSearchPlan({
       networkWebSearch: true,
       plannerManualSpec: { supportsNativeWebSearch: false },
-      integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true },
+      integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true, approvalMode: "always_allow" },
       integratedApiKey: "tvly-test",
     }).backend,
   ).toBe("integrated");
@@ -23,7 +23,7 @@ test("resolveThreadWebSearchPlan mirrors cross-core decision table", () => {
     resolveThreadWebSearchPlan({
       networkWebSearch: true,
       plannerManualSpec: { supportsNativeWebSearch: true },
-      integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true },
+      integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true, approvalMode: "always_allow" },
       integratedApiKey: "tvly-test",
     }).backend,
   ).toBe("integrated");
@@ -32,7 +32,7 @@ test("resolveThreadWebSearchPlan mirrors cross-core decision table", () => {
     resolveThreadWebSearchPlan({
       networkWebSearch: true,
       plannerManualSpec: { supportsNativeWebSearch: true },
-      integratedSettings: { enabled: false, provider: "tavily", hasApiKey: true },
+      integratedSettings: { enabled: false, provider: "tavily", hasApiKey: true, approvalMode: "always_allow" },
       integratedApiKey: "tvly-test",
     }).backend,
   ).toBe("native");
@@ -41,7 +41,7 @@ test("resolveThreadWebSearchPlan mirrors cross-core decision table", () => {
     resolveThreadWebSearchPlan({
       networkWebSearch: false,
       plannerManualSpec: { supportsNativeWebSearch: false },
-      integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true },
+      integratedSettings: { enabled: true, provider: "tavily", hasApiKey: true, approvalMode: "always_allow" },
       integratedApiKey: "tvly-test",
     }).backend,
   ).toBe("none");
@@ -63,7 +63,7 @@ test("feed maps eco web search MCP tool to webSearch action", () => {
 test("integrated web search Codex server starts when configured", async () => {
   const gateway = new IntegratedWebSearchMcpGateway({
     store: {
-      get: () => ({ enabled: true, provider: "tavily", hasApiKey: true }),
+      get: () => ({ enabled: true, provider: "tavily", hasApiKey: true, approvalMode: "always_allow" }),
     } as never,
     getApiKey: () => "tvly-test",
   });
@@ -78,6 +78,7 @@ test("integrated web search Codex server starts when configured", async () => {
 
     const injection = await gateway.resolveInjection({ threadId: "thread-1", sessionEnabled: true });
     expect(injection.enabled).toBe(true);
+    expect(injection.autoApproveTools).toBe(true);
     expect(injection.sdkEntry).toMatchObject({
       type: "http",
       url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
@@ -87,6 +88,28 @@ test("integrated web search Codex server starts when configured", async () => {
       injection,
     );
     expect(merged.allowedTools).toContain(ECO_WEB_SEARCH_FULL_TOOL);
+    expect(Object.keys(merged.mcpServers)).toContain(ECO_WEB_SEARCH_MCP_SERVER);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("always_ask web search approval drops the tool from allowedTools", async () => {
+  const gateway = new IntegratedWebSearchMcpGateway({
+    store: {
+      get: () => ({ enabled: true, provider: "tavily", hasApiKey: true, approvalMode: "always_ask" }),
+    } as never,
+    getApiKey: () => "tvly-test",
+  });
+  try {
+    const injection = await gateway.resolveInjection({ threadId: "thread-1", sessionEnabled: true });
+    expect(injection.enabled).toBe(true);
+    expect(injection.autoApproveTools).toBe(false);
+    const merged = gateway.mergeIntoSdkConfig(
+      { mcpServers: {}, allowedTools: [ECO_WEB_SEARCH_FULL_TOOL] },
+      injection,
+    );
+    expect(merged.allowedTools).not.toContain(ECO_WEB_SEARCH_FULL_TOOL);
     expect(Object.keys(merged.mcpServers)).toContain(ECO_WEB_SEARCH_MCP_SERVER);
   } finally {
     await gateway.close();

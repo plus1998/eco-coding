@@ -22,6 +22,10 @@ import {
   isEcoComputerUseToolName,
   requiresComputerUseActionApproval,
 } from "../shared/computer-use";
+import {
+  isEcoWebSearchToolName,
+  type WebSearchApprovalMode,
+} from "../shared/integrated-web-search";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import type { BashApprovalResolution } from "./bash-approval-bridge";
 import type { EcoApprovalReviewResult } from "./eco-approval-reviewer";
@@ -45,6 +49,11 @@ export interface AcpPermissionBridgeDeps {
    * MCP tools skip auxiliary review / human park.
    */
   getComputerUseActionApprovalMode?: () => ComputerUseActionApprovalMode;
+  /**
+   * Web search approval (settings). When always_allow, eco web-search MCP tools
+   * skip auxiliary review / human park — same policy as Codex elicitation.
+   */
+  getWebSearchApprovalMode?: () => WebSearchApprovalMode;
   getCwd: () => string;
   getWorkspacePath: () => string;
   getPlannerAgentId: () => string | undefined;
@@ -108,6 +117,20 @@ export function shouldAutoAllowAcpEcoComputerUseTool(input: {
     }
   }
   return true;
+}
+
+/**
+ * Whether ACP should auto-allow an eco web-search tool without bash/aux review.
+ * Mirrors Codex elicitation: always_allow → allow; always_ask → never auto-allow.
+ */
+export function shouldAutoAllowAcpEcoWebSearchTool(input: {
+  toolName: string;
+  approvalMode: WebSearchApprovalMode;
+}): boolean {
+  if (!isEcoWebSearchToolName(input.toolName)) {
+    return false;
+  }
+  return input.approvalMode === "always_allow";
 }
 
 export function mapAcpPermissionToBashApprovalRequest(input: {
@@ -218,6 +241,19 @@ export function createAcpPermissionHandler(
         threadId,
         toolName,
         actionApprovalMode: computerUseActionMode,
+      });
+      return resolveAcpPermissionAutoAllow({
+        options: request.options,
+        toolCall: request.toolCall,
+      });
+    }
+
+    const webSearchApprovalMode = deps.getWebSearchApprovalMode?.() ?? "always_allow";
+    if (shouldAutoAllowAcpEcoWebSearchTool({ toolName, approvalMode: webSearchApprovalMode })) {
+      deps.log?.("acp-permission-web-search-auto-allow", {
+        threadId,
+        toolName,
+        approvalMode: webSearchApprovalMode,
       });
       return resolveAcpPermissionAutoAllow({
         options: request.options,

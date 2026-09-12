@@ -13,6 +13,7 @@ import {
   ECO_WEB_SEARCH_MCP_SERVER,
   ECO_WEB_SEARCH_TOOL,
   isEcoWebSearchToolName,
+  shouldAutoApproveEcoWebSearchTools,
 } from "../shared/integrated-web-search";
 import type { McpSdkConfig } from "../shared/mcp";
 import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser-mcp-auth";
@@ -29,6 +30,8 @@ export interface IntegratedWebSearchMcpInjection {
   sdkEntry?: Record<string, unknown>;
   codexServer?: CodexMcpServerForConfigSync;
   promptAppend?: string;
+  /** Whether the SDK should auto-approve the search tool (approvalMode === "always_allow"). */
+  autoApproveTools?: boolean;
   unavailableReason?: string;
 }
 
@@ -99,12 +102,14 @@ export class IntegratedWebSearchMcpGateway {
         enabledTools: [ECO_WEB_SEARCH_TOOL],
       });
       const providerLabel = integratedWebSearchProviderLabel(settings.provider);
+      const autoApproveTools = shouldAutoApproveEcoWebSearchTools(settings.approvalMode);
       return {
         enabled: true,
         serverName: ECO_WEB_SEARCH_MCP_SERVER,
         sdkEntry: http.sdkEntry,
         codexServer: http.codexServer,
         promptAppend: buildIntegratedWebSearchPromptAppend(providerLabel),
+        autoApproveTools,
       };
     } catch (error) {
       return {
@@ -117,12 +122,22 @@ export class IntegratedWebSearchMcpGateway {
 
   mergeIntoSdkConfig(base: McpSdkConfig, injection: IntegratedWebSearchMcpInjection): McpSdkConfig {
     if (!injection.enabled || !injection.sdkEntry) return base;
-    const allowedTools = base.allowedTools.includes(ECO_WEB_SEARCH_FULL_TOOL)
-      ? base.allowedTools
-      : [...base.allowedTools, ECO_WEB_SEARCH_FULL_TOOL];
+    const allowedTools = [...base.allowedTools];
+    if (injection.autoApproveTools === false) {
+      // always_ask: drop the tool so the SDK routes the call through the
+      // Eco approval handler (same gating as built-in browser / computer use).
+      const filtered = allowedTools.filter((tool) => tool !== ECO_WEB_SEARCH_FULL_TOOL);
+      return {
+        mcpServers: { ...base.mcpServers, [ECO_WEB_SEARCH_MCP_SERVER]: injection.sdkEntry },
+        allowedTools: [...new Set(filtered)],
+      };
+    }
+    if (!allowedTools.includes(ECO_WEB_SEARCH_FULL_TOOL)) {
+      allowedTools.push(ECO_WEB_SEARCH_FULL_TOOL);
+    }
     return {
       mcpServers: { ...base.mcpServers, [ECO_WEB_SEARCH_MCP_SERVER]: injection.sdkEntry },
-      allowedTools,
+      allowedTools: [...new Set(allowedTools)],
     };
   }
 

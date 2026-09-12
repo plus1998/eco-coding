@@ -133,6 +133,39 @@ export function createBrowserOpenApprovalPreToolHook(
   };
 }
 
+/** Match Claude-native WebSearch and Eco integrated web-search MCP tool. */
+export function isEcoWebSearchApprovalToolName(toolName: string): boolean {
+  const name = toolName.trim().toLowerCase();
+  if (!name) {
+    return false;
+  }
+  if (name === "websearch" || name === "web_search") {
+    return true;
+  }
+  return name.includes("eco_web_search");
+}
+
+export function createWebSearchApprovalPreToolHook(
+  resolveMode?: () => "always_allow" | "always_ask",
+): HookCallback | undefined {
+  if (!resolveMode) {
+    return undefined;
+  }
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (resolveMode() !== "always_ask") {
+      return {};
+    }
+    if (!isEcoWebSearchApprovalToolName(preInput.tool_name)) {
+      return {};
+    }
+    return askTool(preInput.tool_name, "Agent is about to run a web search.");
+  };
+}
+
 export interface EcoSubagentSessionHooks {
   phase: SubagentRunPhase;
   threadId: string;
@@ -224,6 +257,11 @@ export interface EcoHookContext {
    * canUseTool can show the approval card (including under bypassPermissions).
    */
   resolveBrowserOpenApprovalMode?: () => "always_allow" | "always_ask";
+  /**
+   * Web search approval. When `always_ask`, PreToolUse returns ask so
+   * canUseTool can show the approval card (including under bypassPermissions).
+   */
+  resolveWebSearchApprovalMode?: () => "always_allow" | "always_ask";
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
@@ -1735,6 +1773,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     }),
   );
   pushHook(hooks, "PreToolUse", createBrowserOpenApprovalPreToolHook(ctx.resolveBrowserOpenApprovalMode));
+  pushHook(hooks, "PreToolUse", createWebSearchApprovalPreToolHook(ctx.resolveWebSearchApprovalMode));
   pushHook(hooks, "PreToolUse", createSubagentLaunchGatePreToolHook(ctx.subagentLaunchGate), "Agent|Task");
   const subagentLaunchRegistry =
     ctx.subagentLaunchRegistry ??

@@ -165,6 +165,7 @@ import {
   buildIntegratedWebSearchPromptAppend,
   ECO_WEB_SEARCH_MCP_SERVER,
   isEcoWebSearchToolName,
+  isWebSearchApprovalToolName,
 } from "../shared/integrated-web-search";
 import {
   buildImageViewPromptAppend,
@@ -2466,6 +2467,7 @@ app.whenReady().then(async () => {
     },
     getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
     getComputerUseActionApprovalMode: () => computerUseSettingsStore.get().actionApprovalMode,
+    getWebSearchApprovalMode: () => integratedWebSearchSettingsStore.get().approvalMode,
     noteUpcomingImageGenerationTool: (threadId, toolName, toolUseId) => {
       imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
     },
@@ -7833,6 +7835,7 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
         },
         getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
         getComputerUseActionApprovalMode: () => computerUseSettingsStore.get().actionApprovalMode,
+        getWebSearchApprovalMode: () => integratedWebSearchSettingsStore.get().approvalMode,
         getCwd: () =>
           activeRunRuntimeState.worktreePlan(threadId)?.worktreePath ||
           conversationStore.getThread(threadId)?.sdkCwd ||
@@ -11257,6 +11260,7 @@ function createSdkDriver(
         return ensureThreadRuntimeConfig(current).runtimeConfig?.bashReviewMode ?? "always";
       },
       resolveBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
+      resolveWebSearchApprovalMode: () => integratedWebSearchSettingsStore.get().approvalMode,
       workspacePath: storedThread.workspacePath,
     },
     executionPermissionMode: bashReviewMode === "allow_all" ? "bypassPermissions" : "default",
@@ -15327,12 +15331,14 @@ function createThreadToolPermissionHandler(
   const browserOpenHandler = createBrowserOpenToolPermissionHandler(threadId);
   const computerUseHandler = createComputerUseToolPermissionHandler(threadId);
   const imageGenerationHandler = createImageGenerationToolPermissionHandler(threadId);
+  const webSearchHandler = createWebSearchToolPermissionHandler(threadId);
   if (skipExecutionApprovals) {
     return composeCanUseToolHandlers(
       createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
       imageGenerationHandler,
       computerUseHandler,
       browserOpenHandler,
+      webSearchHandler,
     );
   }
   const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
@@ -15341,8 +15347,90 @@ function createThreadToolPermissionHandler(
     imageGenerationHandler,
     computerUseHandler,
     browserOpenHandler,
+    webSearchHandler,
     bashAndFilesystemHandler,
   );
+}
+
+function createWebSearchToolPermissionHandler(
+  threadId: string,
+): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  return async (request) => {
+    if (!isWebSearchApprovalToolName(request.toolName)) {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    const mode = integratedWebSearchSettingsStore.get().approvalMode;
+    if (mode !== "always_ask") {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+
+    const query = typeof request.input.query === "string" ? request.input.query.trim() : "";
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      return {
+        behavior: "deny",
+        message: "Thread was not found; Eco could not request web search approval.",
+        interrupt: true,
+      };
+    }
+    const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
+    if (!approvalAgentId) {
+      return {
+        behavior: "deny",
+        message: "Eco could not attribute this web search approval to an agent instance.",
+        interrupt: false,
+      };
+    }
+
+    const cwd = request.cwd?.trim() || thread.sdkCwd || thread.workspacePath || ".";
+    const approvalRequest: BashApprovalRequest = {
+      toolUseId: request.toolUseId,
+      threadId,
+      command: query ? `search ${query}` : request.toolName,
+      cwd,
+      reason: query ? `Agent 请求执行网络搜索：${query.slice(0, 500)}` : "Agent 请求执行网络搜索。",
+      riskScore: 35,
+      riskLevel: "low",
+      agentId: approvalAgentId,
+      ...(request.agentType ? { agentType: request.agentType } : {}),
+      description: query ? `Web search: ${query.length > 80 ? `${query.slice(0, 77)}…` : query}` : "Web search",
+      kind: "network",
+    };
+
+    emitThreadEvent(
+      threadId,
+      "bash_approval.requested",
+      query ? `等待确认网络搜索：${query.slice(0, 80)}` : "等待确认网络搜索",
+      "tool",
+      false,
+      bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
+    );
+    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    if (isBashApprovalGranted(resolution)) {
+      emitThreadEvent(
+        threadId,
+        "bash_approval.approved",
+        query ? `已允许网络搜索：${query.slice(0, 80)}` : "已允许网络搜索",
+        "tool",
+        false,
+        bashApprovalEventExtras(approvalRequest, "bash_approval.approved"),
+      );
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    emitThreadEvent(
+      threadId,
+      "bash_approval.rejected",
+      query ? `已拒绝网络搜索：${query.slice(0, 80)}` : "已拒绝网络搜索",
+      "tool",
+      false,
+      bashApprovalEventExtras(approvalRequest, "bash_approval.rejected"),
+    );
+    return {
+      behavior: "deny",
+      message: resolution.feedback?.trim() || "User rejected this web search request.",
+      interrupt: false,
+    };
+  };
 }
 
 function createImageGenerationToolPermissionHandler(

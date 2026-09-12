@@ -13,6 +13,10 @@ import {
   isEcoComputerUseRuntimeServerName,
   requiresComputerUseActionApproval,
 } from "../shared/computer-use";
+import {
+  ECO_WEB_SEARCH_MCP_SERVER,
+  type WebSearchApprovalMode,
+} from "../shared/integrated-web-search";
 import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
 import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_HTML_HOST_MCP_SERVER, ECO_HTML_HOST_TOOL } from "../shared/html-host-tool";
@@ -103,6 +107,26 @@ export function shouldAutoAcceptEcoBrowserToolElicitation(input: {
 }
 
 /**
+ * Whether Eco should accept an eco_web_search tool-run elicitation without UI.
+ * - always_allow: all eco web-search tool-run confirms auto-accept
+ * - always_ask: never auto-accept (user confirms before each search)
+ */
+export function shouldAutoAcceptEcoWebSearchToolElicitation(input: {
+  serverName: string;
+  message: string;
+  approvalMode: WebSearchApprovalMode;
+}): boolean {
+  const server = input.serverName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-");
+  if (server !== ECO_WEB_SEARCH_MCP_SERVER) {
+    return false;
+  }
+  return input.approvalMode === "always_allow";
+}
+
+/**
  * Whether Eco should accept an eco_computer_use tool-run elicitation without UI.
  * - always_allow: all Computer Use tool-run confirms auto-accept
  * - always_ask: only read tools (list_apps / get_app_state) auto-accept
@@ -160,6 +184,11 @@ export interface CodexApprovalBridgeDeps {
    * tool-run elicitations for eco_computer_use when mode is always_allow.
    */
   getComputerUseActionApprovalMode?: () => ComputerUseActionApprovalMode;
+  /**
+   * Web search approval (settings). Used to auto-accept Codex MCP tool-run
+   * elicitations for eco_web_search when mode is always_allow.
+   */
+  getWebSearchApprovalMode?: () => WebSearchApprovalMode;
   /**
    * Codex image MCP has no per-thread auth token. Register a claim when the
    * elicitation is accepted so create_image can bind to this Eco thread.
@@ -523,6 +552,16 @@ async function handleMcpServerElicitationRequest(
     actionApprovalMode: computerUseActionMode,
   });
   if (autoAcceptComputerUse && mode === "form") {
+    return { action: "accept", content: {} };
+  }
+
+  const webSearchApprovalMode = deps.getWebSearchApprovalMode?.() ?? "always_allow";
+  const autoAcceptWebSearch = shouldAutoAcceptEcoWebSearchToolElicitation({
+    serverName,
+    message,
+    approvalMode: webSearchApprovalMode,
+  });
+  if (autoAcceptWebSearch && mode === "form") {
     return { action: "accept", content: {} };
   }
 

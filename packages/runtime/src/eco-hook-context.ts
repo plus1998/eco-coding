@@ -119,6 +119,12 @@ export interface EcoHookContext {
    * even under permissionMode bypassPermissions.
    */
   resolveBrowserOpenApprovalMode?: () => "always_allow" | "always_ask";
+  /**
+   * Web search: whether WebSearch / eco_web_search must ask the user first.
+   * When `always_ask`, PreToolUse returns ask so canUseTool shows the approval card
+   * even under permissionMode bypassPermissions.
+   */
+  resolveWebSearchApprovalMode?: () => "always_allow" | "always_ask";
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */

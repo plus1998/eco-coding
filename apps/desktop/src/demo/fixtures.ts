@@ -578,6 +578,7 @@ export const demoIntegratedWebSearchSettings: IntegratedWebSearchSettingsSnapsho
   enabled: false,
   provider: "tavily",
   hasApiKey: false,
+  approvalMode: "always_allow",
 };
 
 export const demoGitSettings: GitSettingsSnapshot = {

@@ -157,6 +157,7 @@ function collectPayload(input: {
       integratedWebSearch: {
         enabled: input.integratedWebSearchSettingsStore.get().enabled,
         provider: input.integratedWebSearchSettingsStore.get().provider,
+        approvalMode: input.integratedWebSearchSettingsStore.get().approvalMode,
       },
     },
     git: input.gitSettingsStore.get(),
@@ -396,6 +397,7 @@ function applyProxyBridgeSettingsPayload(
     input.integratedWebSearchSettingsStore.save({
       enabled: proxyBridge.integratedWebSearch.enabled,
       provider: proxyBridge.integratedWebSearch.provider,
+      approvalMode: proxyBridge.integratedWebSearch.approvalMode,
     });
   }
 }

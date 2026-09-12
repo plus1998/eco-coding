@@ -1395,11 +1395,22 @@ test("normalizeEcoSyncedProxyBridgeSettings preserves integrated web search", as
   expect(
     normalizeEcoSyncedProxyBridgeSettings({
       upstreamUserAgent: "EcoAgent/1",
+      integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_ask" },
+    }),
+  ).toEqual({
+    upstreamUserAgent: "EcoAgent/1",
+    integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_ask" },
+  });
+
+  // Missing approvalMode falls back to always_allow (legacy payload).
+  expect(
+    normalizeEcoSyncedProxyBridgeSettings({
+      upstreamUserAgent: "EcoAgent/1",
       integratedWebSearch: { enabled: true, provider: "doubao" },
     }),
   ).toEqual({
     upstreamUserAgent: "EcoAgent/1",
-    integratedWebSearch: { enabled: true, provider: "doubao" },
+    integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_allow" },
   });
 });
 
@@ -1411,15 +1422,23 @@ test("domainPayloadEqual compares integrated web search under proxyBridge", asyn
   const left = {
     ...base,
     proxyBridge: {
-      integratedWebSearch: { enabled: true, provider: "doubao" as const },
+      integratedWebSearch: { enabled: true, provider: "doubao" as const, approvalMode: "always_allow" as const },
     },
   };
   const right = {
     ...base,
     proxyBridge: {
-      integratedWebSearch: { enabled: true, provider: "doubao" },
+      integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_allow" },
     },
   };
 
   expect(domainPayloadEqual(left, right, "proxyBridge")).toBe(true);
+  // Different approvalMode must count as a change.
+  const askRight = {
+    ...base,
+    proxyBridge: {
+      integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_ask" },
+    },
+  };
+  expect(domainPayloadEqual(left, askRight, "proxyBridge")).toBe(false);
 });

@@ -20,6 +20,7 @@ import type {
   RouteProfileInput,
 } from "../shared/ipc";
 import { normalizeIntegratedWebSearchProvider } from "./integrated-web-search-settings-store";
+import { isWebSearchApprovalMode } from "../shared/integrated-web-search";
 import type { SshBookmarkPublic } from "../shared/ssh-bookmarks";
 import { defaultGitSettings, normalizeGitSettingsSnapshot } from "./git-settings-store";
 import { normalizePersonalizationSettingsSnapshot } from "./personalization-settings-store";
@@ -35,7 +36,7 @@ export const ECO_INTEGRATED_WEB_SEARCH_API_KEY_SECRET = "integrated_web_search_a
 
 export type EcoSyncedIntegratedWebSearchSettings = Pick<
   IntegratedWebSearchSettingsSnapshot,
-  "enabled" | "provider"
+  "enabled" | "provider" | "approvalMode"
 >;
 
 export type EcoSyncedProxyBridgeSettings = Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent"> & {
@@ -164,7 +165,8 @@ function isEcoSyncedIntegratedWebSearchSettings(value: unknown): value is EcoSyn
   const record = value as Record<string, unknown>;
   return (
     typeof record.enabled === "boolean" &&
-    (record.provider === "brave" || record.provider === "tavily" || record.provider === "doubao")
+    (record.provider === "brave" || record.provider === "tavily" || record.provider === "doubao") &&
+    (record.approvalMode === undefined || isWebSearchApprovalMode(record.approvalMode))
   );
 }
 
@@ -189,12 +191,13 @@ export function normalizeEcoSyncedIntegratedWebSearchSettings(
   value: unknown,
 ): EcoSyncedIntegratedWebSearchSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { enabled: false, provider: "tavily" };
+    return { enabled: false, provider: "tavily", approvalMode: "always_allow" };
   }
   const record = value as Record<string, unknown>;
   return {
     enabled: record.enabled === true,
     provider: normalizeIntegratedWebSearchProvider(record.provider),
+    approvalMode: isWebSearchApprovalMode(record.approvalMode) ? record.approvalMode : "always_allow",
   };
 }
 

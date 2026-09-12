@@ -1143,16 +1143,19 @@ export interface IntegratedWebSearchSettingsSnapshot {
   enabled: boolean;
   provider: IntegratedWebSearchProvider;
   hasApiKey: boolean;
+  approvalMode: WebSearchApprovalMode;
 }
 
 export interface IntegratedWebSearchSettingsSaveInput {
   enabled?: boolean;
   provider?: IntegratedWebSearchProvider;
+  approvalMode?: WebSearchApprovalMode;
   /** Empty string clears the stored key. */
   apiKey?: string;
 }
 
 import type { AgentTemplate } from "./agent-orchestration";
+import type { WebSearchApprovalMode } from "./integrated-web-search";
 import type { UpstreamApiCompat } from "./api-compat";
 import type { ProviderTokenCountMode } from "./provider-token-count";
 import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
