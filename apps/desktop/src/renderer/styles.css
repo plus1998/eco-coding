@@ -1722,6 +1722,37 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   color: #f87171;
 }
 
+.project-group-rename {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 4px;
+}
+
+.project-rename-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: var(--ui-font-size);
+  line-height: 1.4;
+  outline: none;
+}
+
+.project-rename-input::placeholder {
+  color: var(--text-muted);
+}
+
+.project-rename-input:focus-visible {
+  border-color: var(--accent);
+}
+
 .chat-item-row {
   position: relative;
   display: flex;

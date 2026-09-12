@@ -76,8 +76,11 @@ import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
   HOME_PROJECT_DISPLAY_NAME,
   HOME_PROJECT_IMPORTED_AT,
+  isCustomProjectName,
   isHomeProjectPath,
   normalizeProjectPath,
+  pathToName,
+  resolveProjectName,
 } from "../shared/home-project";
 import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
 import type { HtmlHostArtifact } from "../shared/html-host";
@@ -526,6 +529,7 @@ const pinnedThreadsStorageKey = "eco.sidebar.pinned-threads";
 const unreadThreadsStorageKey = "eco.sidebar.unread-threads";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
+const customProjectNamesStorageKey = "eco.sidebar.custom-project-names";
 const compactSidebarMediaQuery = MAIN_SHELL_MEDIA_QUERIES.sidebarOverlay;
 const taskPanelNarrowMediaQuery = MAIN_SHELL_MEDIA_QUERIES.taskOverlay;
 const sidebarThreadsCollapsed = 5;
@@ -1349,6 +1353,7 @@ function App() {
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
   const [unreadThreadIds, setUnreadThreadIds] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [customProjectNames, setCustomProjectNames] = useState<Record<string, string>>({});
   const [homeProjectPath, setHomeProjectPath] = useState<string>();
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
   const projectOrderInitializedRef = useRef(false);
@@ -1924,13 +1929,7 @@ function App() {
         setWorkspace(currentWorkspace);
         if (currentWorkspace) {
           setSelectedProjectPath(currentWorkspace.path);
-          registerImportedProject(
-            currentWorkspace.path,
-            isHomeProjectPath(currentWorkspace.path, resolvedHomeProjectPath)
-              ? HOME_PROJECT_DISPLAY_NAME
-              : currentWorkspace.name,
-            resolvedHomeProjectPath,
-          );
+          registerImportedProject(currentWorkspace.path, resolvedHomeProjectPath);
         }
         setThreads(currentThreads);
         setSettings(modelSettings);
@@ -2838,6 +2837,38 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(customProjectNamesStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as unknown;
+      if (isRecordValue(parsed)) {
+        const next: Record<string, string> = {};
+        for (const [path, name] of Object.entries(parsed)) {
+          if (typeof name === "string") {
+            next[path] = name;
+          }
+        }
+        setCustomProjectNames(next);
+      }
+    } catch {
+      window.localStorage.removeItem(customProjectNamesStorageKey);
+    }
+  }, []);
+
+  function setCustomProjectName(projectPath: string, name: string | undefined) {
+    setCustomProjectNames((current) => {
+      const next = { ...current };
+      if (name === undefined) {
+        delete next[projectPath];
+      } else {
+        next[projectPath] = name;
+      }
+      window.localStorage.setItem(customProjectNamesStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  useEffect(() => {
     const saved = window.localStorage.getItem(projectOrderStorageKey);
     if (!saved) {
       return;
@@ -2931,17 +2962,23 @@ function App() {
       if (homeProjectPath && isHomeProjectPath(project.path, homeProjectPath)) {
         continue;
       }
-      merged.set(normalizeProjectPath(project.path), project);
+      // Prefer the user's custom name; a stored name that differs from the path
+      // basename is a custom name persisted from an older version.
+      merged.set(normalizeProjectPath(project.path), {
+        ...project,
+        name: resolveProjectName(project.path, customProjectNames[project.path] ?? project.name, homeProjectPath).name,
+      });
     }
     if (workspace) {
       const workspacePathKey = normalizeProjectPath(workspace.path);
       const existing = merged.get(workspacePathKey);
-      const workspaceName =
-        homeProjectPath && isHomeProjectPath(workspace.path, homeProjectPath)
-          ? HOME_PROJECT_DISPLAY_NAME
-          : workspace.name;
-      if (existing) {
-        merged.set(workspacePathKey, { ...existing, name: workspaceName });
+      // Keep a custom name when one is set; only adopt the inspected name
+      // (folder basename) when no explicit rename exists.
+      if (existing && !isCustomProjectName(customProjectNames[workspace.path], workspace.path)) {
+        merged.set(workspacePathKey, {
+          ...existing,
+          name: resolveProjectName(workspace.path, customProjectNames[workspace.path], homeProjectPath).name,
+        });
       }
     }
     for (const thread of threads) {
@@ -2954,10 +2991,7 @@ function App() {
         );
         merged.set(workspacePathKey, {
           path: thread.workspacePath,
-          name:
-            homeProjectPath && isHomeProjectPath(thread.workspacePath, homeProjectPath)
-              ? HOME_PROJECT_DISPLAY_NAME
-              : pathToName(thread.workspacePath),
+          name: resolveProjectName(thread.workspacePath, customProjectNames[thread.workspacePath], homeProjectPath).name,
           importedAt,
         });
       }
@@ -2967,7 +3001,7 @@ function App() {
         !hiddenProjectPaths.has(project.path) ||
         (homeProjectPath !== undefined && isHomeProjectPath(project.path, homeProjectPath)),
     );
-  }, [hiddenProjectPaths, homeProjectPath, recentProjects, threads, workspace]);
+  }, [customProjectNames, hiddenProjectPaths, homeProjectPath, recentProjects, threads, workspace]);
 
   const projects = useMemo(
     () => ensureHomeProjectFirst(sortProjectsByOrder(mergedProjects, projectOrder), homeProjectPath),
@@ -8707,12 +8741,7 @@ function App() {
   function activateWorkspace(nextWorkspace: WorkspaceInfo) {
     setWorkspace(nextWorkspace);
     setSelectedProjectPath(nextWorkspace.path);
-    registerImportedProject(
-      nextWorkspace.path,
-      homeProjectPath && isHomeProjectPath(nextWorkspace.path, homeProjectPath)
-        ? HOME_PROJECT_DISPLAY_NAME
-        : nextWorkspace.name,
-    );
+    registerImportedProject(nextWorkspace.path);
     setCollapsedProjectPaths((current) => {
       if (!current.has(nextWorkspace.path)) {
         return current;
@@ -8729,10 +8758,9 @@ function App() {
     setFollowUpsByThread({});
   }
 
-  function registerImportedProject(path: string, name: string, resolvedHomeProjectPath?: string) {
+  function registerImportedProject(path: string, resolvedHomeProjectPath?: string) {
     const homePath = resolvedHomeProjectPath ?? homeProjectPath;
     const isHome = homePath ? isHomeProjectPath(path, homePath) : false;
-    const displayName = isHome ? HOME_PROJECT_DISPLAY_NAME : name;
 
     setHiddenProjectPaths((current) => {
       if (!current.has(path)) {
@@ -8749,9 +8777,14 @@ function App() {
           ? current.filter((item) => !isHomeProjectPath(item.path, homePath))
           : current;
         const existing = withoutHome.find((item) => item.path === path);
+        // Preserve the user's custom name; otherwise keep the resolved display name.
         const next = existing
-          ? withoutHome.map((item) => (item.path === path ? { ...item, name: displayName } : item))
-          : [{ path, name: displayName, importedAt: new Date().toISOString() }, ...withoutHome].slice(0, 12);
+          ? withoutHome.map((item) =>
+              item.path === path
+                ? { ...item, name: resolveProjectName(item.path, customProjectNames[item.path], homePath).name }
+                : item,
+            )
+          : [{ path, name: resolveProjectName(path, customProjectNames[path], homePath).name, importedAt: new Date().toISOString() }, ...withoutHome].slice(0, 12);
         window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
         return next;
       });
@@ -10431,6 +10464,9 @@ function App() {
               onPinProject={pinProject}
               onUnpinProject={unpinProject}
               onRemoveProject={removeProject}
+              onRenameProject={setCustomProjectName}
+              onResetProjectName={(path) => setCustomProjectName(path, undefined)}
+              customProjectNames={customProjectNames}
               onPinThread={pinThread}
               onUnpinThread={unpinThread}
               deletingThreadId={deletingThreadId}
@@ -11633,9 +11669,8 @@ function removeRecordKey<T>(record: Record<string, T>, key: string): Record<stri
   return next;
 }
 
-function pathToName(projectPath: string): string {
-  const segments = projectPath.split("/").filter(Boolean);
-  return segments[segments.length - 1] ?? projectPath;
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 installVitePreloadRecovery();

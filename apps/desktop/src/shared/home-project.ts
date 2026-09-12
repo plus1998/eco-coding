@@ -6,6 +6,44 @@ export function normalizeProjectPath(projectPath: string): string {
   return projectPath.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 }
 
+/** Derive the default project name from the last path segment. */
+export function pathToName(projectPath: string): string {
+  const segments = projectPath.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? projectPath;
+}
+
+export interface ResolvedProjectName {
+  /** The user-facing display name. */
+  name: string;
+  /** True when the user explicitly renamed this project. */
+  custom: boolean;
+}
+
+/**
+ * Resolve the display name for a project path.
+ * Home projects keep their fixed display name; otherwise the custom name set by
+ * the user wins, falling back to the last path segment.
+ */
+export function resolveProjectName(
+  path: string,
+  customName: string | undefined,
+  homeProjectPath: string | undefined,
+): ResolvedProjectName {
+  if (homeProjectPath && isHomeProjectPath(path, homeProjectPath)) {
+    return { name: HOME_PROJECT_DISPLAY_NAME, custom: false };
+  }
+  const trimmed = customName?.trim();
+  if (trimmed) {
+    return { name: trimmed, custom: true };
+  }
+  return { name: pathToName(path), custom: false };
+}
+
+export function isCustomProjectName(name: string | undefined, path: string): boolean {
+  const trimmed = name?.trim();
+  return Boolean(trimmed) && trimmed !== pathToName(path);
+}
+
 export function buildHomeProjectPath(homedir: string): string {
   const trimmed = normalizeProjectPath(homedir);
   return `${trimmed}/.eco/projects/home`;
