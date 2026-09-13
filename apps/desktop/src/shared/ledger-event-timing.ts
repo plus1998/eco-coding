@@ -1,6 +1,6 @@
 import type { ThreadUsageLedgerEventView } from "./ipc";
+import { createRequestSpanLedgerRowMatcher } from "./request-span-usage";
 import type { ThreadRunProjectionRequestSpan } from "./thread-run-projection";
-import { ledgerRowMatchesRequest } from "./request-span-usage";
 
 /**
  * Minimum generation window (ms) before publishing a per-row rate.
@@ -197,11 +197,12 @@ export function attachSpanTimingToLedgerEventViews<T extends ThreadUsageLedgerEv
     return [...views];
   }
   const soleMatchByViewId = new Map<string, ThreadRunProjectionRequestSpan>();
+  const matcher = createRequestSpanLedgerRowMatcher(candidates);
   for (const span of spans) {
     if (!span.startedAt) {
       continue;
     }
-    const matched = candidates.filter((view) => ledgerRowMatchesRequest(span, view));
+    const matched = matcher.matchRequestSpan(span);
     if (matched.length !== 1) {
       continue;
     }

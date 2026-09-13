@@ -72,6 +72,108 @@ export function ledgerRowMatchesRequest(
   return requestKey.split(":").includes(requestId);
 }
 
+export interface RequestSpanLedgerRowMatcher<T extends RequestSpanLedgerUsageRow> {
+  /** Rows accepted by {@link ledgerRowMatchesRequest} for this span, in ledger order. */
+  matchRequestSpan(span: Pick<ThreadRunProjectionRequestSpan, "requestId" | "providerRequestId">): T[];
+}
+
+function lastDashSegment(value: string): string {
+  const index = value.lastIndexOf("-");
+  return index === -1 ? value : value.slice(index + 1);
+}
+
+const LEDGER_BUCKET_SEPARATOR = "\u0000";
+
+function ledgerBucketKey(shape: string, value: string): string {
+  return `${shape}${LEDGER_BUCKET_SEPARATOR}${value}`;
+}
+
+/**
+ * Index ledger rows so a span can be joined without scanning every row.
+ *
+ * {@link ledgerRowMatchesRequest} is a `spans × rows` scan otherwise: a long thread
+ * reaches ~1.3k spans against ~2.6k ledger rows (≈3.4M comparisons, ~700 ms), and the
+ * join runs on every Feed projection load/emit on the Electron main thread. Each row is
+ * bucketed under every id shape a span may match — exact / suffix / last `-` segment of
+ * `logicalRequestId`, plus `providerRequestId`, `requestKey` and its `:` segments — so a
+ * lookup verifies only a handful of candidates. Candidates are still filtered through
+ * {@link ledgerRowMatchesRequest}, so the matched set is identical to the naive scan.
+ */
+export function createRequestSpanLedgerRowMatcher<T extends RequestSpanLedgerUsageRow>(
+  rows: readonly T[],
+): RequestSpanLedgerRowMatcher<T> {
+  const buckets = new Map<string, { order: number; row: T }[]>();
+  const addToBucket = (key: string, entry: { order: number; row: T }): void => {
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      buckets.set(key, [entry]);
+    }
+  };
+
+  rows.forEach((row, order) => {
+    const entry = { order, row };
+    const logicalRequestId = row.logicalRequestId?.trim();
+    const providerRequestId = row.providerRequestId?.trim();
+    const requestKey = row.requestKey?.trim();
+    if (logicalRequestId) {
+      addToBucket(ledgerBucketKey("logical", logicalRequestId), entry);
+      addToBucket(ledgerBucketKey("logical-last-segment", lastDashSegment(logicalRequestId)), entry);
+      for (let index = 1; index < logicalRequestId.length; index += 1) {
+        addToBucket(ledgerBucketKey("logical-suffix", logicalRequestId.slice(index)), entry);
+      }
+    }
+    if (providerRequestId) {
+      addToBucket(ledgerBucketKey("provider", providerRequestId), entry);
+    }
+    if (requestKey) {
+      addToBucket(ledgerBucketKey("request-key", requestKey), entry);
+      for (const segment of requestKey.split(":")) {
+        addToBucket(ledgerBucketKey("request-key", segment), entry);
+      }
+    }
+  });
+
+  return {
+    matchRequestSpan(span) {
+      const requestId = span.requestId?.trim();
+      if (!requestId) {
+        return [];
+      }
+      const providerRequestId = span.providerRequestId?.trim();
+      const candidates = new Map<number, T>();
+      const collect = (key: string): void => {
+        const bucket = buckets.get(key);
+        if (!bucket) {
+          return;
+        }
+        for (const entry of bucket) {
+          if (!candidates.has(entry.order)) {
+            candidates.set(entry.order, entry.row);
+          }
+        }
+      };
+      collect(ledgerBucketKey("logical", requestId));
+      collect(ledgerBucketKey("logical-suffix", requestId));
+      collect(ledgerBucketKey("logical-last-segment", lastDashSegment(requestId)));
+      collect(ledgerBucketKey("provider", requestId));
+      collect(ledgerBucketKey("request-key", requestId));
+      if (providerRequestId) {
+        collect(ledgerBucketKey("provider", providerRequestId));
+      }
+      // `requestId.endsWith(logicalRequestId)`: probe each suffix of the span id.
+      for (let index = 1; index < requestId.length; index += 1) {
+        collect(ledgerBucketKey("logical", requestId.slice(index)));
+      }
+      return [...candidates.entries()]
+        .sort((left, right) => left[0] - right[0])
+        .map(([, row]) => row)
+        .filter((row) => ledgerRowMatchesRequest(span, row));
+    },
+  };
+}
+
 function invocationGroupKey(row: RequestSpanLedgerUsageRow): string {
   const logicalRequestId = row.logicalRequestId?.trim();
   const providerRequestId = row.providerRequestId?.trim();
@@ -90,7 +192,6 @@ function invocationGroupKey(row: RequestSpanLedgerUsageRow): string {
   }
   return `row:${row.outputTokens}:${row.reasoningTokens ?? 0}:${row.generationMs ?? 0}`;
 }
-
 
 /** Drop duplicate pi/sdk rows when gateway proxy already billed the same logical request. */
 export function dedupeUsageLedgerRowsForSpanJoin(
@@ -255,8 +356,9 @@ export function attachOutputTokensToRequestSpans<T extends ThreadRunProjectionRe
     return [...spans];
   }
   const joinedLedger = dedupeUsageLedgerRowsForSpanJoin(ledger);
+  const matcher = createRequestSpanLedgerRowMatcher(joinedLedger);
   return spans.map((span) => {
-    const matched = joinedLedger.filter((row) => ledgerRowMatchesRequest(span, row));
+    const matched = matcher.matchRequestSpan(span);
     const aggregated = aggregateMatchedLedgerRows(matched);
     if (!aggregated) {
       return span;
