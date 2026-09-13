@@ -1,6 +1,11 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime/acp-prompt";
 import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
+import {
+  listPlanDelegationAgents,
+  type PlanDelegationAgentOption,
+  type PlanExecutionTarget,
+} from "@eco/runtime/forced-plan-delegation";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import {
   Activity,
@@ -1472,6 +1477,9 @@ function App() {
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [pendingPlansByThread, setPendingPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
   const pendingPlansByThreadRef = useRef<Record<string, ThreadPendingPlan>>({});
+  const [planDelegationMessagesByThread, setPlanDelegationMessagesByThread] = useState<
+    Record<string, string>
+  >({});
   const [approvedPlansByThread, setApprovedPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
   const [pendingClarificationsByThread, setPendingClarificationsByThread] = useState<
     Record<string, ClarificationRequest>
@@ -4301,6 +4309,12 @@ function App() {
     () =>
       composerRuntimeConfig ? resolveThreadOrchestrationSnapshot(settings, composerRuntimeConfig) : undefined,
     [settings, composerRuntimeConfig],
+  );
+  // "指定子代理执行已批准计划": the delegation roster shown on the plan card comes from
+  // the thread's locked orchestration snapshot (the host re-validates before arming).
+  const planDelegationAgents = useMemo<readonly PlanDelegationAgentOption[]>(
+    () => listPlanDelegationAgents(selectedOrchestrationSnapshot),
+    [selectedOrchestrationSnapshot],
   );
   const composerMcpSettings = useMemo(() => {
     const availableServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
@@ -7256,18 +7270,40 @@ function App() {
   }
 
   async function approvePendingPlan() {
+    await approvePendingPlanWithTarget({ kind: "main" });
+  }
+
+  async function approvePendingPlanWithSubagent(agentKey: string, additionalMessage?: string) {
+    await approvePendingPlanWithTarget({
+      kind: "subagent",
+      agentKey,
+      ...(additionalMessage ? { additionalMessage } : {}),
+    });
+  }
+
+  async function approvePendingPlanWithTarget(executionTarget: PlanExecutionTarget) {
     if (!activeThread || !window.eco) return;
+    const threadId = activeThread.id;
     const planToRemember = pendingPlan;
     setError(undefined);
     setPlanActionBusy(true);
     try {
       const result = await window.eco.approvePlan({
-        threadId: activeThread.id,
+        threadId,
+        executionTarget,
       });
       if (planToRemember) {
-        rememberApprovedPlanForThread(activeThread.id, planToRemember);
+        rememberApprovedPlanForThread(threadId, planToRemember);
       }
-      clearPendingPlanForThread(activeThread.id);
+      clearPendingPlanForThread(threadId);
+      setPlanDelegationMessagesByThread((current) => {
+        if (!(threadId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[threadId];
+        return next;
+      });
       const updatedThread = result.thread;
       if (updatedThread) {
         setThreads((current) =>
@@ -10016,6 +10052,17 @@ function App() {
                 variant="dock"
                 {...(planFailureMessage && { failureMessage: planFailureMessage })}
                 onApprove={() => void approvePendingPlan()}
+                onApproveWithSubagent={(agentKey, additionalMessage) =>
+                  void approvePendingPlanWithSubagent(agentKey, additionalMessage)
+                }
+                delegationAgents={planDelegationAgents}
+                additionalMessage={planDelegationMessagesByThread[pendingPlan.threadId] ?? ""}
+                onAdditionalMessageChange={(value) =>
+                  setPlanDelegationMessagesByThread((current) => ({
+                    ...current,
+                    [pendingPlan.threadId]: value,
+                  }))
+                }
                 onDismiss={() => void dismissPendingPlan()}
                 onOpenInPanel={openPlanTaskDrawer}
               />

@@ -34,6 +34,7 @@ import {
   probePiCoreAvailability,
   readFilesystemPath,
   resolveAcpHostUiFeatures,
+  resolveCodexHomeDir,
   resolveCursorAgentExecutable,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
@@ -45,6 +46,12 @@ import {
   type SubagentRunPhase,
   toAcpMcpServers,
 } from "@eco/runtime";
+import type { PlanExecutionTarget } from "@eco/runtime/forced-plan-delegation";
+import {
+  buildForcedPlanDelegationContract,
+  listPlanDelegationAgents,
+  validatePlanExecutionTarget,
+} from "@eco/runtime/forced-plan-delegation";
 import { steerCodexTurn } from "@eco/runtime/codex-turn-steer";
 import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
 import {
@@ -561,6 +568,16 @@ import {
   stopGlobalEcoGateway,
 } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
+import {
+  armForcedPlanDelegation,
+  buildForcedPlanDelegationHookConfig,
+  clearStaleForcedPlanDelegationState,
+  configureForcedPlanDelegationCodexHome,
+  forcedPlanDelegationStore,
+  releaseForcedPlanDelegation,
+  restrictAgentRuntimeConfigToForcedDelegation,
+  settleForcedPlanDelegation,
+} from "./forced-plan-delegation-runtime.js";
 import { handleGatewayRequestLifecycleEvent } from "./gateway-request-lifecycle";
 import { classifyGatewayUsageEvent } from "./gateway-usage-dispatch";
 import { GitAutoFetcher } from "./git-autofetch";
@@ -1836,6 +1853,10 @@ app.whenReady().then(async () => {
   codexFileCheckpointStore = new CodexFileCheckpointStore(
     path.join(app.getPath("userData"), "codex-file-checkpoints"),
   );
+  // "指定子代理执行已批准计划": point the Codex hook-file arming at the resolved
+  // CODEX_HOME, and drop any arm left over from a previous process.
+  configureForcedPlanDelegationCodexHome(() => resolveCodexHomeDir(app.getPath("userData")));
+  clearStaleForcedPlanDelegationState();
   subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
   usageLedgerCoordinator = new UsageLedgerCoordinator({
     store: conversationStore,
@@ -3189,7 +3210,7 @@ function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRunt
   }
   const systemPromptPreset = resolveMainAgentSystemPromptPreset(snapshot, runtimeConfig);
   const config = orchestrationConfigFromSnapshot(snapshot);
-  return {
+  const resolved: EcoAgentRuntimeConfig = {
     templates: settings.agentTemplates,
     orchestration:
       systemPromptPreset === snapshot.mainAgent.systemPromptPreset
@@ -3199,6 +3220,15 @@ function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRunt
             mainAgent: { ...config.mainAgent, systemPromptPreset },
           },
   };
+  // "指定子代理执行已批准计划": while a forced delegation is armed, the exposed roster is
+  // limited to the chosen subagent so the parent cannot pick another role. Codex is excluded:
+  // its app-server rejects a config change for a loaded (non-cold) thread, so a restricted
+  // roster would block the approved continuation itself — Codex's spawn hook already denies
+  // any wrong-role or repeat spawn_agent call.
+  if (thread.coreKind === "codex") {
+    return resolved;
+  }
+  return restrictAgentRuntimeConfigToForcedDelegation(resolved, thread.id) ?? resolved;
 }
 
 function resolveAgentRuntimeConfigForThreadId(threadId: string): EcoAgentRuntimeConfig | undefined {
@@ -6354,6 +6384,38 @@ function registerIpcHandlers(): void {
     if (!approvalThread) {
       throw new Error("Thread was not found.");
     }
+
+    // "指定子代理执行已批准计划": the renderer only sends the choice; the host re-reads
+    // the thread, pending plan, and locked orchestration snapshot to validate it.
+    const approvalSnapshot = (() => {
+      const config = ensureThreadRuntimeConfig(approvalThread).runtimeConfig;
+      return config
+        ? resolveThreadOrchestrationSnapshot(getModelSettingsSnapshot(), config)
+        : undefined;
+    })();
+    const delegationAgents = listPlanDelegationAgents(approvalSnapshot);
+    let forcedTarget: Extract<PlanExecutionTarget, { kind: "subagent" }> | undefined;
+    if (request.executionTarget && request.executionTarget.kind === "subagent") {
+      const validation = validatePlanExecutionTarget({
+        target: request.executionTarget,
+        coreKind: approvalThread.coreKind,
+        agents: delegationAgents,
+      });
+      if (!validation.ok) {
+        throw new Error(validation.reason);
+      }
+      forcedTarget = validation.target as Extract<PlanExecutionTarget, { kind: "subagent" }>;
+    }
+    const forcedTargetDisplayName = forcedTarget
+      ? delegationAgents.find((agent) => agent.agentKey === forcedTarget?.agentKey)?.displayName
+      : undefined;
+    const forcedContract = forcedTarget
+      ? buildForcedPlanDelegationContract({
+          agentKey: forcedTarget.agentKey,
+          ...(forcedTargetDisplayName ? { displayName: forcedTargetDisplayName } : {}),
+        })
+      : undefined;
+
     if (approvalThread.coreKind === "codex") {
       requireThreadCore(approvalThread, "codex", "approve a Codex plan");
       if (getPendingPlanApprovalForThread(threadId)) {
@@ -6379,14 +6441,32 @@ function registerIpcHandlers(): void {
       );
       conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
       commitThreadPlanApprovalToAgentMode(threadId, "codex_plan_approved");
-      const result = await startCodexThreadContinuation({
-        threadId,
-        prompt: "Implement the plan.",
-        runtimeConfigInput: runtimeConfig,
-      });
+      const forcedAttempt = forcedTarget
+        ? armForcedPlanDelegation({
+            threadId,
+            coreKind: "codex",
+            target: forcedTarget,
+            plan: pendingPlan.plan,
+          })
+        : undefined;
+      let result: ThreadContinueResult;
+      try {
+        result = await startCodexThreadContinuation({
+          threadId,
+          prompt: forcedContract ?? "Implement the plan.",
+          runtimeConfigInput: runtimeConfig,
+        });
+      } catch (error) {
+        if (forcedAttempt) {
+          settleForcedPlanDelegation(threadId, { ok: false, reason: errorMessage(error) });
+        }
+        throw error;
+      }
       await persistApprovedPlanForThread(threadId, pendingPlan);
-      conversationStore.clearPendingPlan(threadId);
-      emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      if (!forcedAttempt) {
+        conversationStore.clearPendingPlan(threadId);
+        emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      }
       return { thread: result.thread };
     }
     if (approvalThread.coreKind === "pi") {
@@ -6413,16 +6493,35 @@ function registerIpcHandlers(): void {
       commitThreadPlanApprovalToAgentMode(threadId, "pi_plan_approved");
       // Cancel any leftover Claude-style bridge if present; PI Plan is Codex-style async.
       cancelPlanApprovalsForThreadKeepPending(threadId, "pi plan approved asynchronously");
-      const result = await startPiThreadContinuation({
-        threadId,
-        prompt:
-          "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan.",
-        runtimeConfigInput: runtimeConfig,
-        skipRecordUserPrompt: true,
-      });
+      const forcedAttempt = forcedTarget
+        ? armForcedPlanDelegation({
+            threadId,
+            coreKind: "pi",
+            target: forcedTarget,
+            plan: pendingPlan.plan,
+          })
+        : undefined;
+      let result: ThreadContinueResult;
+      try {
+        result = await startPiThreadContinuation({
+          threadId,
+          prompt:
+            forcedContract ??
+            "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan.",
+          runtimeConfigInput: runtimeConfig,
+          skipRecordUserPrompt: true,
+        });
+      } catch (error) {
+        if (forcedAttempt) {
+          settleForcedPlanDelegation(threadId, { ok: false, reason: errorMessage(error) });
+        }
+        throw error;
+      }
       await persistApprovedPlanForThread(threadId, pendingPlan);
-      conversationStore.clearPendingPlan(threadId);
-      emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      if (!forcedAttempt) {
+        conversationStore.clearPendingPlan(threadId);
+        emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      }
       return { thread: result.thread };
     }
 
@@ -6456,10 +6555,22 @@ function registerIpcHandlers(): void {
       ) {
         throw new Error("Plan approval could not switch the thread to Agent mode.");
       }
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      const bridgePlanText = pendingPlan?.plan ?? pendingBridge.plan;
+      const forcedAttempt = forcedTarget
+        ? armForcedPlanDelegation({
+            threadId,
+            coreKind: approvalThread.coreKind ?? "claude",
+            target: forcedTarget,
+            plan: bridgePlanText,
+          })
+        : undefined;
       if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
+        if (forcedAttempt) {
+          releaseForcedPlanDelegation(threadId);
+        }
         throw new Error("No pending plan approval is active for this thread.");
       }
-      const pendingPlan = conversationStore.getPendingPlan(threadId);
       const planFilePath = pendingBridge.planFilePath ?? pendingPlan?.planFilePath;
       await persistApprovedPlanForThread(threadId, {
         workspacePath: pendingPlan?.workspacePath ?? approvedThread.workspacePath,
@@ -6468,8 +6579,10 @@ function registerIpcHandlers(): void {
         plan: pendingPlan?.plan ?? pendingBridge.plan,
         ...(planFilePath ? { planFilePath } : {}),
       });
-      conversationStore.clearPendingPlan(threadId);
-      emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，当前会话开始执行。", "system");
+      if (!forcedAttempt) {
+        conversationStore.clearPendingPlan(threadId);
+        emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，当前会话开始执行。", "system");
+      }
       updateThread(threadId, {
         status: "running",
         message: "",
@@ -6534,6 +6647,14 @@ function registerIpcHandlers(): void {
     if (pendingBeforeExecution) {
       await persistApprovedPlanForThread(threadId, pendingBeforeExecution);
     }
+    const forcedAttempt = forcedTarget
+      ? armForcedPlanDelegation({
+          threadId,
+          coreKind: "claude",
+          target: forcedTarget,
+          plan: pendingBeforeExecution?.plan ?? "",
+        })
+      : undefined;
 
     updateThread(threadId, {
       status: "running",
@@ -6541,6 +6662,7 @@ function registerIpcHandlers(): void {
     });
     void runCodingThreadExecution(threadId, approval.runtimeConfig, {
       routesOverride: approval.roleRoutes,
+      ...(forcedAttempt && forcedContract ? { followUp: forcedContract } : {}),
     });
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
   });
@@ -7941,21 +8063,28 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
       mode: "agent" | "plan" | "ask";
       hasPendingPlan: boolean;
     }) => {
+      const forcedActive = Boolean(forcedPlanDelegationStore.get(input.threadId));
+      // A forced delegation intentionally keeps the pending plan until it settles, so the
+      // outcome resolver must not mistake that retained plan for a fresh plan capture.
+      const pendingPlanForOutcome = forcedActive ? false : input.hasPendingPlan;
       const decision =
         input.mode === "ask"
           ? resolveAskRunOutcome(input.decision)
           : input.mode === "plan"
             ? resolvePlanningRunOutcome(input.decision, {
-                hasPendingPlan: input.hasPendingPlan,
+                hasPendingPlan: pendingPlanForOutcome,
               })
             : resolveAutonomousRunOutcome(input.decision, {
-                hasPendingPlan: input.hasPendingPlan,
-                planCaptured: input.hasPendingPlan,
+                hasPendingPlan: pendingPlanForOutcome,
+                planCaptured: pendingPlanForOutcome,
               });
       await applyMainThreadRunDecisionEffects({
         threadId: input.threadId,
         decision,
         onCancelled: async (_reason) => {
+          if (forcedActive) {
+            settleForcedPlanDelegation(input.threadId, { ok: false, reason: "cancelled by user" });
+          }
           const plan = resolveWorktreePlan(
             conversationStore.getThread(input.threadId)?.workspacePath ?? "",
             input.threadId,
@@ -7964,9 +8093,26 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
           await handleRunCancelled(input.threadId, plan);
         },
         onFailed: (reason) => {
+          if (forcedActive) {
+            settleForcedPlanDelegation(input.threadId, { ok: false, reason });
+          }
           markThreadInterrupted(input.threadId, reason);
         },
         onCompleted: () => {
+          if (forcedActive) {
+            const settled = settleForcedPlanDelegation(input.threadId, { ok: true });
+            if (settled?.outcome === "failed") {
+              markThreadInterrupted(input.threadId, settled.reason ?? "计划委派失败。");
+              return;
+            }
+            conversationStore.clearPendingPlan(input.threadId);
+            emitThreadEvent(
+              input.threadId,
+              "thread.plan_cleared",
+              "计划已进入执行阶段。",
+              "system",
+            );
+          }
           updateThread(input.threadId, {
             status: "completed",
             message: "",
@@ -7982,7 +8128,12 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
         cancelClarificationsReason: "run finished",
       });
     },
-    markInterrupted: markThreadInterrupted,
+    markInterrupted: (threadId: string, reason: string) => {
+      if (forcedPlanDelegationStore.get(threadId)) {
+        settleForcedPlanDelegation(threadId, { ok: false, reason });
+      }
+      markThreadInterrupted(threadId, reason);
+    },
     updateThread,
     captureSession: (
       threadId: string,
@@ -8581,13 +8732,30 @@ async function startCodexThreadRun(
       },
     );
 
+    const forcedDelegationActive = Boolean(forcedPlanDelegationStore.get(input.thread.id));
     if (!outcome.ok) {
+      if (forcedDelegationActive) {
+        settleForcedPlanDelegation(input.thread.id, {
+          ok: false,
+          reason: outcome.aborted ? "cancelled by user" : outcome.reason,
+        });
+      }
       if (outcome.aborted) {
         await handleRunCancelled(input.thread.id, worktreePlan);
       } else {
         markThreadInterrupted(input.thread.id, outcome.reason);
       }
       return;
+    }
+
+    if (forcedDelegationActive && mode === "agent") {
+      const settled = settleForcedPlanDelegation(input.thread.id, { ok: true });
+      if (settled?.outcome === "failed") {
+        markThreadInterrupted(input.thread.id, settled.reason ?? "计划委派失败。");
+        return;
+      }
+      conversationStore.clearPendingPlan(input.thread.id);
+      emitThreadEvent(input.thread.id, "thread.plan_cleared", "计划已进入执行阶段。", "system");
     }
 
     if (mode === "agent") {
@@ -8598,6 +8766,9 @@ async function startCodexThreadRun(
       updateThread(input.thread.id, { status: "idle", message: "" });
     }
   } catch (error) {
+    if (forcedPlanDelegationStore.get(input.thread.id)) {
+      settleForcedPlanDelegation(input.thread.id, { ok: false, reason: errorMessage(error) });
+    }
     markThreadInterrupted(input.thread.id, errorMessage(error));
   } finally {
     await finalizeMainThreadRunCleanup({
@@ -9067,33 +9238,53 @@ async function runPlanThread(
       resolveSessionMode(ensureThreadRuntimeConfig(currentThread).runtimeConfig) === "agent";
     const hasPendingPlan = planningPlanCaptured || Boolean(conversationStore.getPendingPlan(thread.id));
     const decision = resolvePlanSessionRunOutcome(outcome, { hasPendingPlan, enteredExecution });
-    const handled = await applyMainThreadRunDecisionEffects({
+    await applyMainThreadRunDecisionEffects({
       threadId: thread.id,
       decision,
       onCancelled: async (reason) => {
+        if (forcedPlanDelegationStore.get(thread.id)) {
+          settleForcedPlanDelegation(thread.id, { ok: false, reason });
+        }
         taskRunHooks.stopIfUnhandled("cancelled");
         cancelClarificationsForThread(thread.id, reason);
         await handleRunCancelled(thread.id, worktreePlan);
       },
       onFailed: (reason) => {
+        if (forcedPlanDelegationStore.get(thread.id)) {
+          settleForcedPlanDelegation(thread.id, { ok: false, reason });
+        }
         taskRunHooks.stopIfUnhandled("blocked");
         markThreadInterrupted(thread.id, reason);
       },
       onIncomplete: (reason) => {
+        if (forcedPlanDelegationStore.get(thread.id)) {
+          settleForcedPlanDelegation(thread.id, { ok: false, reason });
+        }
         taskRunHooks.stopIfUnhandled("blocked");
         markThreadInterrupted(thread.id, reason);
       },
+      onCompleted: () => {
+        taskRunHooks.stopIfUnhandled("completed");
+        // The pending plan is retained while a forced delegation is armed; only a
+        // delegation that actually spawned and finished may release it.
+        if (forcedPlanDelegationStore.get(thread.id)) {
+          const settled = settleForcedPlanDelegation(thread.id, { ok: true });
+          if (settled?.outcome === "failed") {
+            markThreadInterrupted(thread.id, settled.reason ?? "计划委派失败。");
+            return;
+          }
+          conversationStore.clearPendingPlan(thread.id);
+          emitThreadEvent(thread.id, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+        }
+        updateThread(thread.id, { status: "completed", message: "" });
+      },
     });
-    if (handled) {
-      taskRunHooks.stopIfUnhandled("completed");
-      return;
-    }
-    taskRunHooks.stopIfUnhandled("completed");
-    conversationStore.clearPendingPlan(thread.id);
-    await completeCodingThreadRun(thread.id, worktreePlan);
   } catch (error) {
     taskRunHooks.stopIfUnhandled("blocked");
     cancelClarificationsForThread(thread.id, errorMessage(error));
+    if (forcedPlanDelegationStore.get(thread.id)) {
+      settleForcedPlanDelegation(thread.id, { ok: false, reason: errorMessage(error) });
+    }
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePathResolved = resolveThreadWorktreePath(thread.id);
@@ -9360,8 +9551,10 @@ async function runCodingThreadExecution(
   const executionPlan = buildExecutionFailureRestorePendingPlan(pending);
 
   try {
-    conversationStore.clearPendingPlan(threadId);
-    emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+    if (!forcedPlanDelegationStore.get(threadId)) {
+      conversationStore.clearPendingPlan(threadId);
+      emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+    }
 
     const executionOutcome = await runThreadRequestOnce(
       threadId,
@@ -9445,33 +9638,50 @@ async function runCodingThreadExecution(
     );
 
     const executionDecision = resolveExecutionRunOutcome(executionOutcome);
-    if (
-      await applyMainThreadRunDecisionEffects({
-        threadId,
-        decision: executionDecision,
-        onCancelled: async (reason) => {
-          taskRunHooks.stopIfUnhandled("cancelled");
-          cancelClarificationsForThread(threadId, reason);
-          await handleRunCancelled(threadId, worktreePlan);
-        },
-        onFailed: async (reason) => {
-          taskRunHooks.stopIfUnhandled("blocked");
-          await restoreAfterExecutionFailure(threadId, worktreePlan, reason, executionPlan);
-        },
-        onIncomplete: (reason) => {
-          taskRunHooks.stopIfUnhandled("blocked");
-          markThreadInterrupted(threadId, reason);
-        },
-      })
-    ) {
-      return;
-    }
-
-    taskRunHooks.stopIfUnhandled("completed");
-
-    await completeCodingThreadRun(threadId, worktreePlan);
+    await applyMainThreadRunDecisionEffects({
+      threadId,
+      decision: executionDecision,
+      onCancelled: async (reason) => {
+        if (forcedPlanDelegationStore.get(threadId)) {
+          settleForcedPlanDelegation(threadId, { ok: false, reason });
+        }
+        taskRunHooks.stopIfUnhandled("cancelled");
+        cancelClarificationsForThread(threadId, reason);
+        await handleRunCancelled(threadId, worktreePlan);
+      },
+      onFailed: async (reason) => {
+        if (forcedPlanDelegationStore.get(threadId)) {
+          settleForcedPlanDelegation(threadId, { ok: false, reason });
+        }
+        taskRunHooks.stopIfUnhandled("blocked");
+        await restoreAfterExecutionFailure(threadId, worktreePlan, reason, executionPlan);
+      },
+      onIncomplete: (reason) => {
+        if (forcedPlanDelegationStore.get(threadId)) {
+          settleForcedPlanDelegation(threadId, { ok: false, reason });
+        }
+        taskRunHooks.stopIfUnhandled("blocked");
+        markThreadInterrupted(threadId, reason);
+      },
+      onCompleted: () => {
+        taskRunHooks.stopIfUnhandled("completed");
+        if (forcedPlanDelegationStore.get(threadId)) {
+          const settled = settleForcedPlanDelegation(threadId, { ok: true });
+          if (settled?.outcome === "failed") {
+            markThreadInterrupted(threadId, settled.reason ?? "计划委派失败。");
+            return;
+          }
+          conversationStore.clearPendingPlan(threadId);
+          emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+        }
+        updateThread(threadId, { status: "completed", message: "" });
+      },
+    });
   } catch (error) {
     taskRunHooks.stopIfUnhandled("blocked");
+    if (forcedPlanDelegationStore.get(threadId)) {
+      settleForcedPlanDelegation(threadId, { ok: false, reason: errorMessage(error) });
+    }
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
     await finalizeMainThreadRunCleanup({
@@ -11261,6 +11471,9 @@ function createSdkDriver(
       },
       resolveBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
       resolveWebSearchApprovalMode: () => integratedWebSearchSettingsStore.get().approvalMode,
+      // "指定子代理执行已批准计划": while armed, rewrite the parent's Agent/Task spawn to
+      // the chosen role + canonical task and consume the one-shot attempt.
+      resolveForcedPlanDelegation: () => buildForcedPlanDelegationHookConfig(threadId),
       workspacePath: storedThread.workspacePath,
     },
     executionPermissionMode: bashReviewMode === "allow_all" ? "bypassPermissions" : "default",

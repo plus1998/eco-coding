@@ -15,6 +15,7 @@ import type {
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import { truncateToolOutputForHistory } from "./codex-output-truncation.js";
+import { buildForcedPlanDelegationContract } from "./forced-plan-delegation.js";
 import {
   readPlanFileContent,
   readPlanFromPhaseTranscript,
@@ -42,6 +43,7 @@ import {
   parseMcpToolServerName,
   resolveToolPermissionEntryForActor,
   sanitizeMcpServerName,
+  sdkAgentKeyForOrchestrationAgent,
 } from "./agent-orchestration.js";
 import {
   isSubagentEnabled,
@@ -222,6 +224,23 @@ export interface EcoSubagentAttributionHooks {
   onSubagentRegistered?(input: { role: RuntimeAgentRole; agentId?: string; parentToolUseId?: string }): void;
 }
 
+/**
+ * "指定子代理执行已批准计划": host-supplied one-shot delegation contract. When present,
+ * the parent turn's Agent/Task spawn is rewritten to the canonical task and restricted to
+ * the chosen role.
+ */
+export interface ForcedPlanDelegationHookConfig {
+  /** Target role key from the thread's locked orchestration snapshot. */
+  agentKey: string;
+  /** Canonical task (verbatim plan + optional user message) the parent must send. */
+  canonicalTask: string;
+  /** One-shot claim; `ok: false` denies a wrong-target or repeat delegation. */
+  claimSpawn: (input: {
+    toolUseId?: string;
+    agentKey: string;
+  }) => { ok: true } | { ok: false; reason: string };
+}
+
 export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
@@ -233,6 +252,8 @@ export interface EcoHookContext {
   exitPlanCaptureState?: { capturedToolUseIds: Set<string> };
   /** Execution resume: only this previously approved deferred ExitPlanMode call may complete. */
   approvedExitPlanToolUseId?: string;
+  /** Forced one-shot plan delegation (see `ForcedPlanDelegationHookConfig`). */
+  resolveForcedPlanDelegation?: () => ForcedPlanDelegationHookConfig | undefined;
   /** Explicit current phase boundary; do not infer Agent mode from available callbacks. */
   planModeToolPolicy?: PlanModeToolPolicy;
   taskTracker?: EcoTaskTrackerHooks;
@@ -815,6 +836,130 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
   };
 }
 
+/** Canonical comparison key for an Eco/Codex/SDK agent role (tolerates `eco_` prefixes). */
+function canonicalForcedAgentKey(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return "";
+  }
+  const role = normalizeSdkSubagentType(value);
+  if (role) {
+    return role;
+  }
+  return trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+}
+
+/**
+ * Force the parent turn's Agent/Task spawn to the chosen subagent and canonical task.
+ * Subagent actors are ignored: only the main agent may consume the armed delegation.
+ */
+/** Tools the parent may not use while a forced delegation is armed (it must not do the work). */
+const FORCED_DELEGATION_PARENT_DENY_TOOLS = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "Bash",
+]);
+
+export function createForcedPlanDelegationPreToolHook(
+  resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
+): HookCallback {
+  return async (input) => {
+    if (!resolveConfig || input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    const isSpawn = preInput.tool_name === "Agent" || preInput.tool_name === "Task";
+    if (!isSpawn && !FORCED_DELEGATION_PARENT_DENY_TOOLS.has(preInput.tool_name)) {
+      return {};
+    }
+    if (resolveToolPermissionActor(preInput) !== "main") {
+      return {};
+    }
+    const config = resolveConfig();
+    if (!config) {
+      return {};
+    }
+    if (!isSpawn) {
+      // The user chose a subagent: the parent must delegate instead of editing the workspace.
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            `用户已指定由子代理「${config.agentKey}」执行该已批准的计划，主代理不得自行修改工作区。` +
+            `请调用 Agent 工具（subagent_type: ${config.agentKey}）委派该计划。`,
+        },
+      };
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const requested = canonicalForcedAgentKey(readAgentSubagentType(toolInput) ?? "");
+    const target = canonicalForcedAgentKey(config.agentKey);
+    const toolUseId =
+      typeof preInput.tool_use_id === "string" && preInput.tool_use_id.trim()
+        ? preInput.tool_use_id.trim()
+        : undefined;
+    const claim = config.claimSpawn({
+      ...(toolUseId ? { toolUseId } : {}),
+      agentKey: requested || target,
+    });
+    if (!claim.ok) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: claim.reason,
+        },
+      };
+    }
+    const updatedInput: Record<string, unknown> = { ...toolInput, prompt: config.canonicalTask };
+    if (target) {
+      // The SDK resolves agents by their registered `eco_<key>` name, not the bare role key.
+      updatedInput.subagent_type = sdkAgentKeyForOrchestrationAgent(config.agentKey);
+      delete updatedInput.agent_type;
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput,
+      },
+    };
+  };
+}
+
+/**
+ * Injects the forced-delegation contract right after the approved plan is submitted, so
+ * the resumed parent turn knows it must delegate (the bridge path has no other prompt).
+ */
+export function createForcedPlanDelegationPostToolHook(
+  resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
+): HookCallback {
+  return async (input) => {
+    if (!resolveConfig || input.hook_event_name !== "PostToolUse") {
+      return {};
+    }
+    const postInput = input as PostToolUseHookInput;
+    if (postInput.tool_name !== "ExitPlanMode") {
+      return {};
+    }
+    if (resolveToolPermissionActor(postInput) !== "main") {
+      return {};
+    }
+    const config = resolveConfig();
+    if (!config) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: buildForcedPlanDelegationContract({ agentKey: config.agentKey }),
+      },
+    };
+  };
+}
+
 export function createNonEcoSubagentDenyPreToolHook(
   allowedAgentKeys: readonly string[] = [],
   allowedSdkBuiltinAgentKeys: readonly string[] = [],
@@ -993,7 +1138,7 @@ export function createToolPermissionPreToolHook(
   };
 }
 
-function resolveToolPermissionActor(input: PreToolUseHookInput): "main" | string {
+function resolveToolPermissionActor(input: { agent_id?: string; agent_type?: string }): "main" | string {
   if (typeof input.agent_id === "string" && input.agent_id.trim()) {
     return typeof input.agent_type === "string" && input.agent_type.trim()
       ? input.agent_type.trim()
@@ -1753,6 +1898,17 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     );
   }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createForcedPlanDelegationPreToolHook(ctx.resolveForcedPlanDelegation),
+  );
+  pushHook(
+    hooks,
+    "PostToolUse",
+    createForcedPlanDelegationPostToolHook(ctx.resolveForcedPlanDelegation),
+    "ExitPlanMode",
+  );
   pushHook(
     hooks,
     "PreToolUse",

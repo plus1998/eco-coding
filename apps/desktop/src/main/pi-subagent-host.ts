@@ -31,6 +31,7 @@ import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import type { IntegratedWebSearchSettingsSnapshot, RouteManualSpec } from "../shared/ipc";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { ConversationStore } from "./conversation-store.js";
+import { forcedPlanDelegationStore } from "./forced-plan-delegation-runtime.js";
 import type { StartedGatewayRouteBinding } from "./gateway-route-binding";
 import { buildPiGatewayRequestHeaders } from "./gateway-route-binding";
 import { buildPiSessionToolApprovalFields, buildPiWebSearchSessionFields } from "./pi-runtime-run.js";
@@ -79,6 +80,22 @@ export function createPiSubagentSpawnHandler(
       throw new Error(
         `PI subagent "${spawnInput.agentKey}" is not enabled in this session's orchestration snapshot.`,
       );
+    }
+
+    // "指定子代理执行已批准计划": when the host armed a one-shot delegation, the PI spawn
+    // must dispatch the canonical task to exactly the chosen role. A wrong target or a
+    // repeat spawn fails loudly instead of silently falling back to the parent's task.
+    let task = spawnInput.task;
+    if (forcedPlanDelegationStore.get(input.threadId)) {
+      const claim = forcedPlanDelegationStore.claimSpawn({
+        threadId: input.threadId,
+        agentKey: agent.agentKey,
+        ...(spawnInput.parentToolUseId ? { toolUseId: spawnInput.parentToolUseId } : {}),
+      });
+      if (!claim.ok) {
+        throw new Error(claim.reason);
+      }
+      task = claim.attempt.canonicalTask;
     }
 
     const armed = input.getArmedBinding();
@@ -173,7 +190,7 @@ export function createPiSubagentSpawnHandler(
       agentId,
       agentType: agent.agentKey,
       parentToolUseId: spawnInput.parentToolUseId,
-      prompt: spawnInput.task,
+      prompt: task,
     });
 
     spawnInput.emitEvent(
@@ -226,7 +243,7 @@ export function createPiSubagentSpawnHandler(
     const collected: AgentEvent[] = [];
     let failedMessage: string | undefined;
     try {
-      for await (const event of childSession.prompt(spawnInput.task, spawnInput.signal)) {
+      for await (const event of childSession.prompt(task, spawnInput.signal)) {
         // Child run.terminal / thread.failed stay local; do not complete the parent run.
         if (event.type === "run.terminal" || event.type === "thread.failed") {
           if (event.type === "thread.failed") {

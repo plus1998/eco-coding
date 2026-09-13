@@ -1501,6 +1501,12 @@ export interface ThreadApprovePlanRequest {
   /** @deprecated UI no longer edits plan text; ignored if sent. */
   analysis?: string;
   runtimeConfig?: ThreadRuntimeConfigInput;
+  /**
+   * Which agent executes the approved plan. Omitted (or `main`) preserves the
+   * legacy main-agent execution; `subagent` forces a one-shot delegation to the
+   * named role from the thread's locked orchestration snapshot.
+   */
+  executionTarget?: import("@eco/runtime/forced-plan-delegation").PlanExecutionTarget;
 }
 
 export interface ThreadSummary {

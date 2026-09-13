@@ -20,7 +20,7 @@ import { getUpstreamLogBaseDir } from "./upstream-log";
 
 const UPSTREAM_LOG_NAME = /^upstream-\d{4}-\d{2}-\d{2}\.log$/;
 /** Safe-to-regenerate directories under CODEX_HOME only. */
-const CODEX_HOME_CACHE_DIRS = ["eco-pending-spawns"] as const;
+const CODEX_HOME_CACHE_DIRS = ["eco-pending-spawns", "eco-forced-plan-delegations"] as const;
 
 export interface StorageCleanupDeps {
   userDataDir: string;

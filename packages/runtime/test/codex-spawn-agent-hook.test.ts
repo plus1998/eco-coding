@@ -3,7 +3,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { syncCodexSpawnAgentHook } from "../src/codex-spawn-agent-hook.js";
-import { codexSpawnPayloadPath, codexSpawnRoleQueuePath } from "../src/codex-spawn-role-queue.js";
+import {
+  clearCodexForcedPlanDelegationsSync,
+  codexForcedPlanDelegationPath,
+  codexSpawnPayloadPath,
+  codexSpawnRoleQueuePath,
+  purgeExpiredCodexForcedPlanDelegationsSync,
+  writeCodexForcedPlanDelegationSync,
+} from "../src/codex-spawn-role-queue.js";
 
 test("syncCodexSpawnAgentHook writes hooks.json and injects fork_turns=none", async () => {
   const codexHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-spawn-hook-"));
@@ -182,4 +189,126 @@ test("spawn hook fail-open preserves spawn args when tool_input lacks message", 
   };
   expect(output.hookSpecificOutput.permissionDecision).toBe("allow");
   expect(output.hookSpecificOutput.updatedInput).toBeUndefined();
+});
+
+async function runSpawnHook(codexHomeDir: string, input: Record<string, unknown>): Promise<string> {
+  const { scriptPath } = await syncCodexSpawnAgentHook(codexHomeDir);
+  const proc = Bun.spawn({
+    cmd: ["node", scriptPath],
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, CODEX_HOME: codexHomeDir },
+  });
+  proc.stdin.write(JSON.stringify(input));
+  proc.stdin.end();
+  const stdout = await new Response(proc.stdout).text();
+  await proc.exited;
+  return stdout;
+}
+
+test("spawn hook replaces the message with the armed forced plan delegation once", async () => {
+  const codexHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-spawn-hook-forced-"));
+  const canonicalTask = "# 已批准计划\n\n1. 先写测试\n2. 再实现";
+  writeCodexForcedPlanDelegationSync(codexHomeDir, {
+    agentRole: "explore",
+    canonicalTask,
+  });
+
+  const first = JSON.parse(
+    await runSpawnHook(codexHomeDir, {
+      tool_name: "spawn_agent",
+      tool_use_id: "call_forced_1",
+      tool_input: { agent_type: "explore", message: "please implement it yourself" },
+    }),
+  ) as {
+    hookSpecificOutput: {
+      permissionDecision: string;
+      updatedInput: { fork_turns: string; message: string };
+    };
+  };
+  expect(first.hookSpecificOutput.permissionDecision).toBe("allow");
+  expect(first.hookSpecificOutput.updatedInput.fork_turns).toBe("none");
+  expect(first.hookSpecificOutput.updatedInput.message).toBe(canonicalTask);
+
+  // One-shot: the arm is consumed so a second spawn is no longer forced.
+  expect(
+    await fs
+      .stat(codexForcedPlanDelegationPath(codexHomeDir, "explore"))
+      .then(() => true)
+      .catch(() => false),
+  ).toBe(false);
+
+  const second = JSON.parse(
+    await runSpawnHook(codexHomeDir, {
+      tool_name: "spawn_agent",
+      tool_use_id: "call_forced_2",
+      tool_input: { agent_type: "explore", message: "second attempt" },
+    }),
+  ) as { hookSpecificOutput: { permissionDecision: string; updatedInput: { message: string } } };
+  expect(second.hookSpecificOutput.permissionDecision).toBe("allow");
+  expect(second.hookSpecificOutput.updatedInput.message).toBe("second attempt");
+});
+
+test("spawn hook denies a forced delegation aimed at the wrong role", async () => {
+  const codexHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-spawn-hook-forced-wrong-"));
+  writeCodexForcedPlanDelegationSync(codexHomeDir, {
+    agentRole: "explore",
+    canonicalTask: "canonical plan",
+  });
+
+  const output = JSON.parse(
+    await runSpawnHook(codexHomeDir, {
+      tool_name: "spawn_agent",
+      tool_use_id: "call_wrong",
+      tool_input: { agent_type: "coder", message: "do it" },
+    }),
+  ) as {
+    hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+  };
+  expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+  expect(output.hookSpecificOutput.permissionDecisionReason).toContain("explore");
+  expect(output.hookSpecificOutput.permissionDecisionReason).toContain("coder");
+
+  // The denied spawn must not consume the arm.
+  expect(
+    await fs
+      .stat(codexForcedPlanDelegationPath(codexHomeDir, "explore"))
+      .then(() => true)
+      .catch(() => false),
+  ).toBe(true);
+});
+
+test("codex forced delegation queue clears and purges expired arms", async () => {
+  const codexHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-spawn-hook-forced-queue-"));
+  const staleAt = Date.now() - 2 * 60 * 60 * 1_000;
+  writeCodexForcedPlanDelegationSync(codexHomeDir, { agentRole: "explore", canonicalTask: "stale" }, staleAt);
+  writeCodexForcedPlanDelegationSync(codexHomeDir, {
+    agentRole: "coder",
+    canonicalTask: "fresh",
+    sessionId: "s1",
+    turnId: "t1",
+  });
+
+  expect(purgeExpiredCodexForcedPlanDelegationsSync(codexHomeDir)).toBe(1);
+  expect(
+    await fs
+      .stat(codexForcedPlanDelegationPath(codexHomeDir, "explore"))
+      .then(() => true)
+      .catch(() => false),
+  ).toBe(false);
+  expect(
+    await fs
+      .stat(codexForcedPlanDelegationPath(codexHomeDir, "coder"))
+      .then(() => true)
+      .catch(() => false),
+  ).toBe(true);
+
+  clearCodexForcedPlanDelegationsSync(codexHomeDir);
+  expect(
+    await fs
+      .stat(codexForcedPlanDelegationPath(codexHomeDir, "coder"))
+      .then(() => true)
+      .catch(() => false),
+  ).toBe(false);
 });

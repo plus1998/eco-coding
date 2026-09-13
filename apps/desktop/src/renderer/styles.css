@@ -7987,6 +7987,140 @@ button.sidebar-settings-meta {
   border-top: 1px solid var(--codex-panel-border);
 }
 
+.plan-approval-execute-split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  /* Joined split button: a gap would read as two separate pills. */
+  gap: 0;
+}
+
+/* Square the seam so the execute pair reads as a single split button. */
+.plan-approval-execute-split:has(.plan-approval-delegate-toggle) > :first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.plan-approval-delegate-toggle {
+  padding-left: 9px;
+  padding-right: 10px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  /* Hairline seam instead of a gap: adapts to the light and accent execute fills. */
+  box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.plan-approval-delegation-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 260px;
+  max-width: 340px;
+  padding: 12px;
+  border: 1px solid var(--codex-panel-border);
+  border-radius: 12px;
+  background: var(--bg-menu);
+  box-shadow: var(--shadow-composer);
+}
+
+.plan-approval-delegation-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--codex-log-heading);
+}
+
+.plan-approval-delegation-message-label {
+  font-size: 11px;
+  color: var(--codex-log-muted);
+}
+
+.plan-approval-delegation-message {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--codex-log-text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.plan-approval-delegation-message:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.plan-approval-delegation-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.plan-approval-delegation-agent {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-log-text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-approval-delegation-agent:hover:not(:disabled),
+.plan-approval-delegation-agent.is-focused:not(:disabled) {
+  background: var(--codex-panel-hover);
+}
+
+.plan-approval-delegation-agent:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.plan-approval-delegation-agent:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plan-approval-delegation-agent-name {
+  font-weight: 500;
+}
+
+.plan-approval-delegation-agent-key {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--codex-log-faint);
+}
+
+.plan-approval-delegation-agent.is-read-only {
+  opacity: 0.55;
+}
+
+.plan-approval-delegation-agent-note {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 11px;
+  color: var(--codex-log-faint);
+}
+
 .plan-button {
   display: inline-flex;
   align-items: center;

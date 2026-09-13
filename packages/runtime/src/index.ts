@@ -396,6 +396,7 @@ export {
   syncCodexSpawnAgentHook,
 } from "./codex-spawn-agent-hook.js";
 export * from "./codex-spawn-role-queue.js";
+export * from "./forced-plan-delegation.js";
 export * from "./codex-thread-attribution.js";
 export * from "./codex-thread-resume.js";
 export {
