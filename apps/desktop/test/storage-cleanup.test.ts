@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { CodexFileCheckpointStore } from "../src/main/codex-file-checkpoints";
 import { createConversationStore } from "../src/main/conversation-store";
 import { clearCodexHomeCaches, clearLogs, runStorageCleanup } from "../src/main/storage-cleanup";
 import type { ThreadSummary } from "../src/shared/ipc";
@@ -55,30 +54,6 @@ test("clearLogs respects olderThanDays using mtime", async () => {
   expect(await fs.readdir(logsDir)).toEqual(["upstream-2026-08-01.log"]);
 });
 
-test("CodexFileCheckpointStore.deleteThread removes disk tree", async () => {
-  const root = path.join(tempDir, "checkpoints");
-  const store = new CodexFileCheckpointStore(root);
-  const threadId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-  await fs.mkdir(path.join(root, threadId, "items", "item1"), { recursive: true });
-  await fs.writeFile(path.join(root, threadId, "items", "item1", "manifest.json"), "{}");
-  await store.deleteThread(threadId);
-  await expect(fs.access(path.join(root, threadId))).rejects.toMatchObject({ code: "ENOENT" });
-});
-
-test("deleteOrphans keeps active thread directories only", async () => {
-  const root = path.join(tempDir, "checkpoints-orphans");
-  const store = new CodexFileCheckpointStore(root);
-  const active = "11111111-1111-1111-1111-111111111111";
-  const orphan = "22222222-2222-2222-2222-222222222222";
-  await fs.mkdir(path.join(root, active, "items"), { recursive: true });
-  await fs.mkdir(path.join(root, orphan, "items"), { recursive: true });
-  await fs.writeFile(path.join(root, orphan, "items", "blob"), "gone");
-
-  const removed = await store.deleteOrphans([active]);
-  expect(removed).toEqual([orphan]);
-  expect(await fs.readdir(root)).toEqual([active]);
-});
-
 test("clearCodexHomeCaches only removes whitelisted dirs", async () => {
   const codexHome = path.join(tempDir, "codex");
   await fs.mkdir(path.join(codexHome, "eco-pending-spawns"), { recursive: true });
@@ -128,7 +103,6 @@ test("clearClaudeSessions orphansOnly removes Eco worktree projects only", async
       userDataDir: tempDir,
       databasePath: path.join(tempDir, "x.sqlite"),
       conversationStore: store as never,
-      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(tempDir, "cp")),
       deleteThreadWithExternalState: async () => {},
       hasActiveThreadRuns: () => false,
       claudeProjectsDir: projectsDir,
@@ -145,53 +119,9 @@ test("clearClaudeSessions orphansOnly removes Eco worktree projects only", async
   expect(await fs.readFile(path.join(historyDir, "keep"), "utf8")).toBe("history");
 });
 
-test.skipIf(!sqliteAvailable)(
-  "runStorageCleanup clearCodexCheckpoints orphansOnly uses conversation list",
-  async () => {
-    const userDataDir = path.join(tempDir, "userdata");
-    const checkpointsDir = path.join(userDataDir, "codex-file-checkpoints");
-    const store = await createConversationStore(path.join(userDataDir, "eco-coding.sqlite"));
-    const checkpointStore = new CodexFileCheckpointStore(checkpointsDir);
-
-    const active: ThreadSummary = {
-      id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-      title: "Active",
-      prompt: "p",
-      workspacePath: "/tmp",
-      status: "idle",
-      message: "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    store.saveThread(active);
-
-    await fs.mkdir(path.join(checkpointsDir, active.id, "items"), { recursive: true });
-    await fs.mkdir(path.join(checkpointsDir, "orphan-dir", "items"), { recursive: true });
-    await fs.writeFile(path.join(checkpointsDir, "orphan-dir", "items", "x"), "blob");
-
-    const result = await runStorageCleanup(
-      {
-        userDataDir,
-        databasePath: path.join(userDataDir, "eco-coding.sqlite"),
-        conversationStore: store,
-        codexFileCheckpointStore: checkpointStore,
-        deleteThreadWithExternalState: async () => {},
-        hasActiveThreadRuns: () => false,
-      },
-      { action: "clearCodexCheckpoints", options: { orphansOnly: true } },
-    );
-
-    expect(result.ok).toBe(true);
-    expect(result.deletedCount).toBe(1);
-    expect(await fs.readdir(checkpointsDir)).toEqual([active.id]);
-  },
-);
-
 test.skipIf(!sqliteAvailable)("clearAllConversations skips running threads", async () => {
   const userDataDir = path.join(tempDir, "userdata-clear");
-  const checkpointsDir = path.join(userDataDir, "codex-file-checkpoints");
   const store = await createConversationStore(path.join(userDataDir, "eco-coding.sqlite"));
-  const checkpointStore = new CodexFileCheckpointStore(checkpointsDir);
 
   const idle: ThreadSummary = {
     id: "idle-thread-id-0001",
@@ -222,7 +152,6 @@ test.skipIf(!sqliteAvailable)("clearAllConversations skips running threads", asy
       userDataDir,
       databasePath: path.join(userDataDir, "eco-coding.sqlite"),
       conversationStore: store,
-      codexFileCheckpointStore: checkpointStore,
       deleteThreadWithExternalState: async (threadId) => {
         deleted.push(threadId);
         store.deleteThread(threadId);
@@ -268,7 +197,6 @@ test("clearOldConversations deletes by updatedAt and skips busy", async () => {
       conversationStore: {
         listThreads: () => threads,
       } as never,
-      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
       deleteThreadWithExternalState: async (threadId) => {
         deleted.push(threadId);
         const index = threads.findIndex((thread) => thread.id === threadId);
@@ -300,7 +228,6 @@ test("clearOldConversations rejects missing retention options", async () => {
       userDataDir: tempDir,
       databasePath: path.join(tempDir, "x.sqlite"),
       conversationStore: { listThreads: () => [] } as never,
-      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(tempDir, "cp")),
       deleteThreadWithExternalState: async () => {},
       hasActiveThreadRuns: () => false,
     },
@@ -313,13 +240,11 @@ test("clearOldConversations rejects missing retention options", async () => {
 test.skipIf(!sqliteAvailable)("vacuumDatabase refuses while threads are active", async () => {
   const userDataDir = path.join(tempDir, "userdata-vac");
   const store = await createConversationStore(path.join(userDataDir, "eco-coding.sqlite"));
-  const checkpointStore = new CodexFileCheckpointStore(path.join(userDataDir, "cp"));
   const result = await runStorageCleanup(
     {
       userDataDir,
       databasePath: path.join(userDataDir, "eco-coding.sqlite"),
       conversationStore: store,
-      codexFileCheckpointStore: checkpointStore,
       deleteThreadWithExternalState: async () => {},
       hasActiveThreadRuns: () => true,
     },
@@ -344,7 +269,6 @@ test("clearPiAgent orphansOnly removes thread dirs absent from conversation list
       conversationStore: {
         listThreads: () => [{ id: "thr_keep", status: "idle" as const, coreKind: "pi" as const }],
       } as never,
-      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
       deleteThreadWithExternalState: async () => {},
       hasActiveThreadRuns: () => false,
       piAgentDir,
@@ -381,7 +305,6 @@ test("clearPiAgent full wipe deletes Eco PI threads and leftover agent dirs", as
       conversationStore: {
         listThreads: () => threads,
       } as never,
-      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
       deleteThreadWithExternalState: async (threadId) => {
         deleted.push(threadId);
         const index = threads.findIndex((thread) => thread.id === threadId);
@@ -417,7 +340,6 @@ test("clearPiAgent full wipe with no running PI threads removes all agent dirs",
       conversationStore: {
         listThreads: () => [{ id: "thr_pi", status: "idle" as const, coreKind: "pi" as const }],
       } as never,
-      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
       deleteThreadWithExternalState: async (threadId) => {
         deleted.push(threadId);
         await fs.rm(path.join(piAgentDir, threadId), { recursive: true, force: true });

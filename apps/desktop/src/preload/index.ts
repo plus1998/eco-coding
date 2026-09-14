@@ -69,7 +69,6 @@ import {
   type CoreAvailabilitySnapshot,
   type CursorAgentsListResult,
   type CursorModelOption,
-  type FileCheckpointRecord,
   type GitCheckoutBranchRequest,
   type GitCommitRequest,
   type GitCommitResult,
@@ -193,8 +192,6 @@ import {
   type ThreadProjectionFocusReport,
   type ThreadRetryFromMessageRequest,
   type ThreadRevertAppliedDiffResult,
-  type ThreadRewindCheckpointRequest,
-  type ThreadRewindCheckpointResult,
   type ThreadRewriteFromMessageRequest,
   type ThreadRollbackResult,
   type ThreadRunProjectionDetailRequest,
@@ -1121,12 +1118,6 @@ const api = {
   },
   applyWorktree(threadId: string): Promise<WorktreeApplyResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.worktreeApply, threadId);
-  },
-  listFileCheckpoints(threadId: string): Promise<FileCheckpointRecord[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadListCheckpoints, threadId);
-  },
-  rewindToCheckpoint(request: ThreadRewindCheckpointRequest): Promise<ThreadRewindCheckpointResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadRewindCheckpoint, request);
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);

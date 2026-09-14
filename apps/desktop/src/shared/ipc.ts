@@ -109,8 +109,6 @@ export const IPC_CHANNELS = {
   threadRollbackTo: "thread:rollback-to",
   threadGetAppliedDiff: "thread:get-applied-diff",
   threadRevertAppliedDiff: "thread:revert-applied-diff",
-  threadRewindCheckpoint: "thread:rewind-checkpoint",
-  threadListCheckpoints: "thread:list-checkpoints",
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
@@ -1640,7 +1638,6 @@ export type ThreadUserMessageEditReasonCode =
   | "thread_running"
   | "unsupported_core"
   | "missing_upstream_mapping"
-  | "missing_checkpoint"
   | "workspace_unavailable"
   | "history_changed"
   | "invalid_message"
@@ -1866,22 +1863,6 @@ export interface WorktreeStatusResult {
 export interface WorktreeApplyResult {
   ok: true;
   files: string[];
-  message: string;
-}
-
-export interface FileCheckpointRecord {
-  userMessageId: string;
-  activityLineId?: string;
-  createdAt: string;
-}
-
-export interface ThreadRewindCheckpointRequest {
-  threadId: string;
-  userMessageId: string;
-}
-
-export interface ThreadRewindCheckpointResult {
-  ok: boolean;
   message: string;
 }
 
@@ -2774,7 +2755,6 @@ export function isStorageCleanupRequest(
   const action = record.action;
   if (
     action !== "clearLogs" &&
-    action !== "clearCodexCheckpoints" &&
     action !== "clearCodexHomeCaches" &&
     action !== "clearClaudeSessions" &&
     action !== "clearPiAgent" &&

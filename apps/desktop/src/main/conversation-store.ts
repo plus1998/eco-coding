@@ -132,12 +132,6 @@ export interface ThreadCoreSession {
   updatedAt: string;
 }
 
-export interface FileCheckpointRecord {
-  userMessageId: string;
-  activityLineId?: string;
-  createdAt: string;
-}
-
 export interface ThreadUserMessageRecord {
   threadId: string;
   activityLineId: string;
@@ -508,7 +502,6 @@ const threadOwnedTables = [
   "thread_agent_instances",
   "thread_usage_ledger_events",
   "thread_run_events",
-  "thread_file_checkpoints",
   "thread_user_messages",
   "thread_feed_skeleton",
 ] as const;
@@ -1097,16 +1090,9 @@ export class ConversationStore {
       WHERE status = 'stopped' AND ended_at IS NULL
     `);
 
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS thread_file_checkpoints (
-        thread_id TEXT NOT NULL,
-        user_message_id TEXT NOT NULL,
-        activity_line_id TEXT,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (thread_id, user_message_id),
-        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
-      );
+    this.db.exec(`DROP TABLE IF EXISTS thread_file_checkpoints`);
 
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS thread_user_messages (
         thread_id TEXT NOT NULL,
         activity_line_id TEXT NOT NULL,
@@ -1122,13 +1108,6 @@ export class ConversationStore {
       CREATE INDEX IF NOT EXISTS idx_thread_user_messages_thread_created
         ON thread_user_messages(thread_id, created_at, activity_line_id);
     `);
-    const checkpointColumns = this.db.prepare(`PRAGMA table_info(thread_file_checkpoints)`).all() as Array<{
-      name: string;
-    }>;
-    const checkpointNames = new Set(checkpointColumns.map((column) => column.name));
-    if (!checkpointNames.has("activity_line_id")) {
-      this.db.exec(`ALTER TABLE thread_file_checkpoints ADD COLUMN activity_line_id TEXT`);
-    }
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS thread_run_attempts (
@@ -1226,15 +1205,6 @@ export class ConversationStore {
         ON thread_run_events(
           thread_id, event_type, stream_key, request_id, run_attempt_id, sequence DESC
         );
-
-      CREATE TABLE IF NOT EXISTS thread_file_checkpoints (
-        thread_id TEXT NOT NULL,
-        user_message_id TEXT NOT NULL,
-        activity_line_id TEXT,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (thread_id, user_message_id),
-        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
-      );
     `);
 
     this.db.exec(`
@@ -2765,45 +2735,9 @@ export class ConversationStore {
     this.clearSubagentSessions(threadId);
   }
 
-  saveFileCheckpoint(threadId: string, userMessageId: string, activityLineId?: string): void {
-    const id = userMessageId.trim();
-    if (!id) {
-      return;
-    }
-    const lineId = activityLineId?.trim() || null;
-    this.db
-      .prepare(
-        `INSERT INTO thread_file_checkpoints (thread_id, user_message_id, activity_line_id, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(thread_id, user_message_id) DO UPDATE SET
-           activity_line_id = COALESCE(excluded.activity_line_id, thread_file_checkpoints.activity_line_id)`,
-      )
-      .run(threadId, id, lineId, new Date().toISOString());
-  }
-
-  listFileCheckpoints(threadId: string): FileCheckpointRecord[] {
-    const rows = this.db
-      .prepare(
-        `SELECT user_message_id, activity_line_id, created_at
-         FROM thread_file_checkpoints
-         WHERE thread_id = ?
-         ORDER BY created_at ASC`,
-      )
-      .all(threadId) as Array<{
-      user_message_id: string;
-      activity_line_id: string | null;
-      created_at: string;
-    }>;
-    return rows.map((row) => ({
-      userMessageId: row.user_message_id,
-      ...(row.activity_line_id && { activityLineId: row.activity_line_id }),
-      createdAt: row.created_at,
-    }));
-  }
-
   /**
    * Zero-based ordinal of a Codex user-message id among persisted user turns.
-   * Prefer run-event order (feed chronology) over checkpoint created_at.
+   * Prefer run-event order (feed chronology) over user_messages created_at.
    */
   resolveCodexUserTurnIndex(threadId: string, itemId: string): number | undefined {
     const id = itemId.trim();
@@ -2853,17 +2787,6 @@ export class ConversationStore {
       return fromEvents;
     }
 
-    const checkpoints = this.listFileCheckpoints(threadId);
-    const fromCheckpoints = checkpoints.findIndex(
-      (checkpoint) =>
-        checkpoint.userMessageId === id ||
-        checkpoint.activityLineId === activityLineId ||
-        checkpoint.activityLineId === id,
-    );
-    if (fromCheckpoints >= 0) {
-      return fromCheckpoints;
-    }
-
     const records = this.db
       .prepare(
         `SELECT upstream_message_id, activity_line_id
@@ -2879,22 +2802,6 @@ export class ConversationStore {
         row.activity_line_id === id,
     );
     return fromRecords >= 0 ? fromRecords : undefined;
-  }
-
-  hasFileCheckpoint(threadId: string, userMessageId: string, activityLineId?: string): boolean {
-    const id = userMessageId.trim();
-    const lineId = activityLineId?.trim();
-    if (!id && !lineId) return false;
-    const row = this.db
-      .prepare(
-        `SELECT 1
-         FROM thread_file_checkpoints
-         WHERE thread_id = ?
-           AND (user_message_id = ? OR (? <> '' AND activity_line_id = ?))
-         LIMIT 1`,
-      )
-      .get(threadId, id, lineId ?? "", lineId ?? "") as { 1: number } | undefined;
-    return Boolean(row);
   }
 
   saveUserMessageRecord(input: {
@@ -3040,20 +2947,6 @@ export class ConversationStore {
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const checkpointRows = this.db.prepare(
-        `SELECT user_message_id, activity_line_id, created_at
-         FROM thread_file_checkpoints
-         WHERE thread_id = ? AND (user_message_id = ? OR activity_line_id = ?)`,
-      );
-      const insertCheckpoint = this.db.prepare(
-        `INSERT OR REPLACE INTO thread_file_checkpoints (
-           thread_id, user_message_id, activity_line_id, created_at
-         ) VALUES (?, ?, ?, ?)`,
-      );
-      const deleteCheckpoint = this.db.prepare(
-        `DELETE FROM thread_file_checkpoints
-         WHERE thread_id = ? AND user_message_id = ?`,
-      );
       const updateActivity = this.db.prepare(
         `UPDATE thread_activity
          SET sdk_user_message_id = ?
@@ -3063,11 +2956,6 @@ export class ConversationStore {
         `UPDATE thread_user_messages
          SET upstream_message_id = ?, provider = 'claude', updated_at = ?
          WHERE thread_id = ? AND activity_line_id = ?`,
-      );
-      const bindCheckpointActivity = this.db.prepare(
-        `UPDATE thread_file_checkpoints
-         SET activity_line_id = ?
-         WHERE thread_id = ? AND user_message_id = ?`,
       );
       const eventRows = this.db
         .prepare(
@@ -3086,28 +2974,6 @@ export class ConversationStore {
         const previousUpstreamMessageId = record?.upstreamMessageId?.trim();
         updateRecord.run(mapping.upstreamMessageId, now, threadId, mapping.activityLineId);
         updateActivity.run(mapping.upstreamMessageId, threadId, mapping.activityLineId);
-        bindCheckpointActivity.run(mapping.activityLineId, threadId, mapping.upstreamMessageId);
-
-        if (previousUpstreamMessageId && previousUpstreamMessageId !== mapping.upstreamMessageId) {
-          const rows = checkpointRows.all(
-            threadId,
-            previousUpstreamMessageId,
-            mapping.activityLineId,
-          ) as Array<{
-            user_message_id: string;
-            activity_line_id: string | null;
-            created_at: string;
-          }>;
-          for (const row of rows) {
-            insertCheckpoint.run(
-              threadId,
-              mapping.upstreamMessageId,
-              row.activity_line_id ?? mapping.activityLineId,
-              row.created_at,
-            );
-          }
-          deleteCheckpoint.run(threadId, previousUpstreamMessageId);
-        }
 
         for (const row of eventRows) {
           const metadata = parseJsonRecord(row.metadata_json);
@@ -3237,7 +3103,6 @@ export class ConversationStore {
       )
       .get(threadId, id) as ActivityRow | undefined;
     if (existing) {
-      this.saveFileCheckpoint(threadId, id, existing.id);
       this.bindRunEventRewindTarget(threadId, existing.id, id);
       this.saveUserMessageRecord({
         threadId,
@@ -3272,11 +3137,9 @@ export class ConversationStore {
         )
         .get(threadId) as { activity_line_id: string; text: string; created_at: string } | undefined;
       if (!pending) {
-        this.saveFileCheckpoint(threadId, id);
         return undefined;
       }
       this.updateUserMessageUpstream(threadId, pending.activity_line_id, id, "claude");
-      this.saveFileCheckpoint(threadId, id, pending.activity_line_id);
       this.bindRunEventRewindTarget(threadId, pending.activity_line_id, id);
       return {
         id: pending.activity_line_id,
@@ -3289,7 +3152,6 @@ export class ConversationStore {
     this.db
       .prepare(`UPDATE thread_activity SET sdk_user_message_id = ? WHERE thread_id = ? AND id = ?`)
       .run(id, threadId, row.id);
-    this.saveFileCheckpoint(threadId, id, row.id);
     this.bindRunEventRewindTarget(threadId, row.id, id);
     this.saveUserMessageRecord({
       threadId,
@@ -3334,7 +3196,6 @@ export class ConversationStore {
       )
       .get(threadId, activityLineId) as { message: string; metadata_json: string | null } | undefined;
     if (existing) {
-      this.saveFileCheckpoint(threadId, id, activityLineId);
       this.saveUserMessageRecord({
         threadId,
         activityLineId,
@@ -3378,7 +3239,6 @@ export class ConversationStore {
       )
       .get(threadId) as { id: string; message: string; metadata_json: string | null } | undefined;
 
-    this.saveFileCheckpoint(threadId, id, activityLineId);
     if (!row) {
       return undefined;
     }
@@ -3635,22 +3495,6 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       deleteChanges(
-        `DELETE FROM thread_file_checkpoints
-         WHERE thread_id = ?
-           AND (
-             user_message_id = ?
-             OR activity_line_id IN (
-               SELECT id FROM thread_activity WHERE thread_id = ? AND rowid >= ?
-             )
-             OR (activity_line_id IS NULL AND created_at >= ?)
-           )`,
-        threadId,
-        userMessageId,
-        threadId,
-        target.row_id,
-        cutoffCreatedAt,
-      );
-      deleteChanges(
         `DELETE FROM thread_user_messages
          WHERE thread_id = ? AND created_at >= ?`,
         threadId,
@@ -3764,15 +3608,6 @@ export class ConversationStore {
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      deleteChanges(
-        `DELETE FROM thread_file_checkpoints
-         WHERE thread_id = ?
-           AND (user_message_id = ? OR activity_line_id = ? OR created_at >= ?)`,
-        threadId,
-        userMessageId,
-        activityLineId,
-        cutoffCreatedAt,
-      );
       deleteChanges(
         `DELETE FROM thread_user_messages
          WHERE thread_id = ?

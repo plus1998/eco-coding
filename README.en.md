@@ -62,10 +62,10 @@ After the first launch, add API credentials under Settings → Model Providers, 
 | Orchestration | Custom lead config, subagent roster, models, and tool policies |
 | Model routing | Multiple providers; Responses / Messages / Chat Completions |
 | Session modes | Agent, Plan, Ask |
-| Context | Occupancy, compaction, handoff recovery, file checkpoints |
+| Context | Occupancy, compaction, handoff recovery |
 | Cost | Tokens, cost, cache I/O, hit rate, breakdown and comparison |
 | Integrations | MCP, Skills, built-in browser, image generation, vision model, ASR |
-| Engineering workflow | Git diff, checkpoint rewind, Worktrees, terminal, code review |
+| Engineering workflow | Git diff, Worktrees, terminal, code review |
 | Mobile collaboration | Device pairing, remote sessions, approvals, images, voice input |
 
 ## Supported platforms

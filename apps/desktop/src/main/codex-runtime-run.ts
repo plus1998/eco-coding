@@ -188,17 +188,7 @@ export interface CodexRuntimeRunDeps {
   pruneThreadAfterCodexFork?: (ecoThreadId: string, itemId: string) => void;
   /** @deprecated Use pruneThreadAfterCodexFork. */
   pruneThreadAfterCodexRollback?: (ecoThreadId: string, itemId: string) => void;
-  /** Restore the exact local worktree checkpoint before local history is pruned. */
-  restoreFilesAfterCodexFork?: (ecoThreadId: string, itemId: string) => Promise<void>;
-  /** @deprecated Use restoreFilesAfterCodexFork. */
-  restoreFilesAfterCodexRollback?: (ecoThreadId: string, itemId: string) => Promise<void>;
-  /** Capture the current worktree before the remote fork is requested. */
-  captureRecoveryBeforeCodexFork?: (ecoThreadId: string, itemId: string) => Promise<string>;
-  /** Restore the pre-fork worktree when local commit of the fork fails. */
-  restoreRecoveryAfterCodexFork?: (ecoThreadId: string, recoveryId: string) => Promise<void>;
-  /** Remove a recovery snapshot after the fork transaction has settled. */
-  deleteRecoveryAfterCodexFork?: (ecoThreadId: string, recoveryId: string) => Promise<void>;
-  /** Archive a remote fork when local recovery cannot be committed. */
+  /** Archive a remote fork when local prune/mapping cannot be committed. */
   archiveCodexThread?: (codexThreadId: string) => Promise<void>;
   /** Map Eco's persisted user-message UUID to its zero-based Codex turn ordinal. */
   resolveCodexForkTurnIndex?: (ecoThreadId: string, itemId: string) => number | undefined;
@@ -670,33 +660,16 @@ export async function forkCodexThreadForEcoThread(input: {
   const targetTurnIndex =
     runtimeDeps.resolveCodexForkTurnIndex?.(ecoThreadId, targetItemId) ??
     runtimeDeps.resolveCodexRollbackTurnIndex?.(ecoThreadId, targetItemId);
-  let recoveryId: string | undefined;
-  const captureRecovery = runtimeDeps.captureRecoveryBeforeCodexFork;
-  if (captureRecovery) {
-    recoveryId = await captureRecovery(ecoThreadId, targetItemId);
-  }
 
-  let forkResult: Awaited<ReturnType<typeof forkCodexThread>>;
-  try {
-    forkResult = await forkCodexThread(client, {
-      threadId: codexThreadId,
-      itemId: targetItemId,
-      ...(targetTurnIndex !== undefined ? { targetTurnIndex } : {}),
-    });
-  } catch (error) {
-    if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
-      await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
-        runtimeDeps.onStderr?.(
-          `Codex recovery cleanup failed after fork request error: ${String(cleanupError)}`,
-        );
-      });
-    }
-    throw error;
-  }
+  const forkResult = await forkCodexThread(client, {
+    threadId: codexThreadId,
+    itemId: targetItemId,
+    ...(targetTurnIndex !== undefined ? { targetTurnIndex } : {}),
+  });
 
-  // Remap Eco ↔ Codex (or clear) before local restore/prune so the next turn/start
-  // reads the post-fork thread id. Keep this inside the transaction-like recovery
-  // scope: a malformed fork response must not strand the local mapping or snapshot.
+  // Remap Eco ↔ Codex (or clear) before local prune so the next turn/start reads
+  // the post-fork thread id. A malformed fork response must not strand the local
+  // mapping. The fork is conversation-only: worktree files are untouched.
   const appliedByThread = controlPlaneAppliedConfigByClient.get(client);
   const previousAppliedConfig = appliedByThread?.get(codexThreadId);
   appliedByThread?.delete(codexThreadId);
@@ -736,16 +709,8 @@ export async function forkCodexThreadForEcoThread(input: {
       runtimeDeps.onCodexThreadMapped?.(newCodexThreadId);
     }
 
-    const restoreFiles = runtimeDeps.restoreFilesAfterCodexFork ?? runtimeDeps.restoreFilesAfterCodexRollback;
-    if (!restoreFiles) {
-      throw new CodexForkNotAvailable(
-        "Codex fork succeeded but local file checkpoint restore is not configured.",
-        { nextAction: "Configure the Codex file checkpoint store before using rewind." },
-      );
-    }
-    await restoreFiles(ecoThreadId, targetItemId);
-
-    // Remote fork succeeded — keep local run-event / activity / projection consistent.
+    // Remote fork succeeded — prune local run-event / activity / projection so the
+    // Feed matches the post-fork thread. Files are untouched; fork is conversation-only.
     const pruneThread = runtimeDeps.pruneThreadAfterCodexFork ?? runtimeDeps.pruneThreadAfterCodexRollback;
     if (!pruneThread) {
       throw new CodexForkNotAvailable(
@@ -758,20 +723,8 @@ export async function forkCodexThreadForEcoThread(input: {
     }
     pruneThread(ecoThreadId, targetItemId);
   } catch (error) {
-    let recoveryError: unknown;
-    if (recoveryId && runtimeDeps.restoreRecoveryAfterCodexFork) {
-      try {
-        await runtimeDeps.restoreRecoveryAfterCodexFork(ecoThreadId, recoveryId);
-      } catch (restoreError) {
-        recoveryError = restoreError;
-        runtimeDeps.onStderr?.(`Codex local recovery restore failed: ${String(restoreError)}`);
-      }
-    }
-    if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
-      await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
-        runtimeDeps.onStderr?.(`Codex recovery cleanup failed: ${String(cleanupError)}`);
-      });
-    }
+    // Local prune/mapping failed after the remote fork. Archive the orphan forked
+    // thread and restore the original mapping. Files are untouched — no rollback.
     const forkedThreadId = forkResult.thread?.id?.trim();
     if (forkedThreadId) {
       try {
@@ -792,23 +745,7 @@ export async function forkCodexThreadForEcoThread(input: {
       restoredApplied.set(codexThreadId, previousAppliedConfig);
       controlPlaneAppliedConfigByClient.set(client, restoredApplied);
     }
-    if (recoveryError) {
-      throw new Error(
-        `Codex fork local recovery failed: ${String(recoveryError)}; original error: ${String(error)}`,
-      );
-    }
     throw error;
-  }
-
-  // The history/worktree transaction is committed. A cleanup failure must not
-  // roll back an already-pruned local history; keep the snapshot for diagnosis
-  // and report the precise cleanup gap instead.
-  if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
-    await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
-      runtimeDeps.onStderr?.(
-        `Codex recovery cleanup pending after successful fork thread=${ecoThreadId}: ${String(cleanupError)}`,
-      );
-    });
   }
 }
 

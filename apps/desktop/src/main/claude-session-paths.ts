@@ -18,7 +18,7 @@ export function resolveClaudeProjectsDir(env: NodeJS.ProcessEnv = process.env): 
   return path.join(resolveClaudeConfigDir(env), "projects");
 }
 
-/** File checkpoint snapshots for enableFileCheckpointing. */
+/** Claude CLI leftover file-history dir. Eco does not write or restore it. */
 export function resolveClaudeFileHistoryDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(resolveClaudeConfigDir(env), "file-history");
 }

@@ -8,7 +8,6 @@ import { getUpstreamLogBaseDir } from "./upstream-log";
 export interface StorageInventoryPaths {
   userDataDir: string;
   databasePath: string;
-  codexCheckpointsDir: string;
   /** Override for tests; default from getUpstreamLogBaseDir(). */
   logsDir?: string;
   /** Override for tests; default resolveCodexHomeDir(userDataDir). */
@@ -109,7 +108,7 @@ export async function measureDatabaseBytes(databasePath: string): Promise<{
   return { bytes, exists: anyExists, fileCount, path: databasePath };
 }
 
-/** Claude session JSONL under projects/ plus file-history checkpoints. */
+/** Claude session JSONL under projects/ plus leftover CLI file-history. */
 export async function measureClaudeSessionBytes(
   projectsDir: string,
   fileHistoryDir: string,
@@ -128,7 +127,7 @@ export async function measureClaudeSessionBytes(
 
 /**
  * Sum userData files not already counted in exclusive categories.
- * Exclusive: database family, codex-file-checkpoints tree, codex/ home.
+ * Exclusive: database family, codex/ home, pi-agent/. Leftover `codex-file-checkpoints/` rolls in here.
  */
 export async function measureOtherUserDataBytes(
   userDataDir: string,
@@ -184,20 +183,14 @@ export async function buildStorageUsageSnapshot(
   const piAgentDir = paths.piAgentDir ?? path.join(paths.userDataDir, "pi-agent");
   const databaseBasename = path.basename(paths.databasePath);
 
-  const [database, logs, claudeSessions, codexCheckpoints, codexHome, piAgent, otherUserData] =
-    await Promise.all([
-      measureDatabaseBytes(paths.databasePath),
-      measurePathBytes(logsDir),
-      measureClaudeSessionBytes(claudeProjectsDir, claudeFileHistoryDir),
-      measurePathBytes(paths.codexCheckpointsDir),
-      measurePathBytes(codexHomeDir),
-      measurePathBytes(piAgentDir),
-      measureOtherUserDataBytes(
-        paths.userDataDir,
-        ["codex-file-checkpoints", "codex", "pi-agent"],
-        databaseBasename,
-      ),
-    ]);
+  const [database, logs, claudeSessions, codexHome, piAgent, otherUserData] = await Promise.all([
+    measureDatabaseBytes(paths.databasePath),
+    measurePathBytes(logsDir),
+    measureClaudeSessionBytes(claudeProjectsDir, claudeFileHistoryDir),
+    measurePathBytes(codexHomeDir),
+    measurePathBytes(piAgentDir),
+    measureOtherUserDataBytes(paths.userDataDir, ["codex", "pi-agent"], databaseBasename),
+  ]);
 
   const categories: StorageCategoryUsage[] = [
     {
@@ -223,13 +216,6 @@ export async function buildStorageUsageSnapshot(
       bytes: claudeSessions.bytes,
       exists: claudeSessions.exists,
       detail: { fileCount: claudeSessions.fileCount },
-    },
-    {
-      id: "codexCheckpoints",
-      path: paths.codexCheckpointsDir,
-      bytes: codexCheckpoints.bytes,
-      exists: codexCheckpoints.exists,
-      detail: { fileCount: codexCheckpoints.fileCount },
     },
     {
       id: "codexHome",

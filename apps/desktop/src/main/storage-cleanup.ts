@@ -13,7 +13,6 @@ import {
   resolveClaudeFileHistoryDir,
   resolveClaudeProjectsDir,
 } from "./claude-session-paths";
-import type { CodexFileCheckpointStore } from "./codex-file-checkpoints";
 import type { ConversationStore } from "./conversation-store";
 import { measurePathBytes } from "./storage-inventory";
 import { getUpstreamLogBaseDir } from "./upstream-log";
@@ -26,7 +25,6 @@ export interface StorageCleanupDeps {
   userDataDir: string;
   databasePath: string;
   conversationStore: ConversationStore;
-  codexFileCheckpointStore: CodexFileCheckpointStore;
   deleteThreadWithExternalState: (threadId: string) => Promise<void>;
   hasActiveThreadRuns: () => boolean;
   logsDir?: string;
@@ -43,8 +41,6 @@ export async function runStorageCleanup(
   switch (request.action) {
     case "clearLogs":
       return clearLogs(deps.logsDir ?? getUpstreamLogBaseDir(), request.options?.olderThanDays);
-    case "clearCodexCheckpoints":
-      return clearCodexCheckpoints(deps, request.options?.orphansOnly === true);
     case "clearCodexHomeCaches":
       return clearCodexHomeCaches(deps.codexHomeDir ?? resolveCodexHomeDir(deps.userDataDir));
     case "clearClaudeSessions":
@@ -114,30 +110,6 @@ export async function clearLogs(logsDir: string, olderThanDays?: number): Promis
   };
 }
 
-async function clearCodexCheckpoints(
-  deps: StorageCleanupDeps,
-  orphansOnly: boolean,
-): Promise<StorageCleanupResult> {
-  const before = (await measurePathBytes(deps.codexFileCheckpointStore.getRootDir())).bytes;
-  if (orphansOnly) {
-    const activeIds = deps.conversationStore.listThreads().map((thread) => thread.id);
-    const removed = await deps.codexFileCheckpointStore.deleteOrphans(activeIds);
-    const after = (await measurePathBytes(deps.codexFileCheckpointStore.getRootDir())).bytes;
-    return {
-      ok: true,
-      freedBytes: Math.max(0, before - after),
-      deletedCount: removed.length,
-    };
-  }
-  await deps.codexFileCheckpointStore.deleteAll();
-  const after = (await measurePathBytes(deps.codexFileCheckpointStore.getRootDir())).bytes;
-  return {
-    ok: true,
-    freedBytes: Math.max(0, before - after),
-    deletedCount: 1,
-  };
-}
-
 export async function clearCodexHomeCaches(codexHomeDir: string): Promise<StorageCleanupResult> {
   let freedBytes = 0;
   let deletedCount = 0;
@@ -169,7 +141,7 @@ export async function clearCodexHomeCaches(codexHomeDir: string): Promise<Storag
 /**
  * Claude JSONL under projects/ and file-history/.
  * orphansOnly: only Eco worktree project dirs that no active thread still references (by session id or cwd).
- * Full clear also empties file-history (checkpoints) — same confirm path as full wipe.
+ * Full clear also empties leftover Claude CLI file-history — same confirm path as full wipe.
  */
 export async function clearClaudeSessions(
   deps: StorageCleanupDeps,
@@ -246,7 +218,7 @@ export async function clearClaudeSessions(
     };
   }
 
-  // Full clear: projects + file-history (session JSONL + checkpoints)
+  // Full clear: projects + leftover Claude CLI file-history
   const errors: string[] = [];
   let deletedCount = 0;
   for (const target of [projectsDir, fileHistoryDir]) {
@@ -503,7 +475,6 @@ async function vacuumDatabase(deps: StorageCleanupDeps): Promise<StorageCleanupR
 export function isStorageCleanupAction(value: unknown): value is StorageCleanupAction {
   return (
     value === "clearLogs" ||
-    value === "clearCodexCheckpoints" ||
     value === "clearCodexHomeCaches" ||
     value === "clearClaudeSessions" ||
     value === "clearPiAgent" ||

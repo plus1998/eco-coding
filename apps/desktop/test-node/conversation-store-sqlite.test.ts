@@ -1037,13 +1037,6 @@ test("Node SQLite binds projection-only Claude prompts to SDK messages", async (
     store.getUserMessageRecord("thr_claude_projection", "user:local-prompt")?.upstreamMessageId,
     "sdk-user-1",
   );
-  assert.deepEqual(
-    store.listFileCheckpoints("thr_claude_projection").map(({ userMessageId, activityLineId }) => ({
-      userMessageId,
-      activityLineId,
-    })),
-    [{ userMessageId: "sdk-user-1", activityLineId: "user:local-prompt" }],
-  );
   assert.deepEqual(store.listThreadRunEvents("thr_claude_projection")[0]?.metadata?.rewindTarget, {
     activityLineId: "user:local-prompt",
     userMessageId: "sdk-user-1",
@@ -1144,10 +1137,6 @@ test("Node SQLite rewinds projection-only Claude user activity lines", async (t)
   assert.deepEqual(
     store.listThreadRunEvents("thr_claude_proj_rewind").map((event) => event.id),
     ["evt_prompt_a"],
-  );
-  assert.deepEqual(
-    store.listFileCheckpoints("thr_claude_proj_rewind").map((checkpoint) => checkpoint.userMessageId),
-    ["sdk-user-a"],
   );
   assert.equal(store.getUserMessageRecord("thr_claude_proj_rewind", "user:local-b"), undefined);
   assert.equal(
@@ -1280,7 +1269,6 @@ test("Node SQLite repairs projection-only Claude history from transcript mapping
     observedAt: "2026-08-11T00:00:01.000Z",
     metadata: { liveType: "thread.user_prompt" },
   });
-  store.saveFileCheckpoint("thr_claude_legacy", "sdk-user-legacy");
 
   const records = store.ensureClaudeUserMessageRecordsFromRunEvents("thr_claude_legacy");
   assert.equal(records.length, 1);
@@ -1293,13 +1281,6 @@ test("Node SQLite repairs projection-only Claude history from transcript mapping
   assert.equal(
     store.getUserMessageRecord("thr_claude_legacy", "evt_legacy_prompt")?.upstreamMessageId,
     "sdk-user-legacy",
-  );
-  assert.deepEqual(
-    store.listFileCheckpoints("thr_claude_legacy").map(({ userMessageId, activityLineId }) => ({
-      userMessageId,
-      activityLineId,
-    })),
-    [{ userMessageId: "sdk-user-legacy", activityLineId: "evt_legacy_prompt" }],
   );
   assert.deepEqual(store.listThreadRunEvents("thr_claude_legacy")[0]?.metadata?.rewindTarget, {
     activityLineId: "evt_legacy_prompt",

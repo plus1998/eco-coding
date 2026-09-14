@@ -52,7 +52,7 @@ Preload 使用 Electron context bridge 暴露受控 API，保持 Renderer 与 No
 
 - 每个 Thread 的 Worker 与 Agent Core 生命周期
 - 模型供应商、路由和嵌入式网关
-- Git、终端、文件检查点和系统集成
+- Git、终端和系统集成
 - SQLite 持久化与系统 Keychain 密钥访问
 - MCP、Skills、浏览器、创意绘画和 ASR 配置
 - Supabase 设备连接和移动端 Realtime RPC
@@ -70,7 +70,7 @@ Core 适配层统一描述以下能力：
 
 - Agent / Plan / Ask 会话模式
 - 上下文压缩
-- 文件回退
+- 对话回退（不回滚工作区文件）
 - 工具与计划审批
 - MCP、Skills 和子代理
 

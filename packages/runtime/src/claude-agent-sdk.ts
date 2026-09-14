@@ -134,7 +134,6 @@ export type SdkQueryHandle = AsyncIterable<unknown> & {
     mode: "dontAsk" | "default" | "acceptEdits" | "plan" | "bypassPermissions",
   ) => Promise<void> | void;
   getContextUsage?: (opts?: { detail?: "summary" | "full" }) => Promise<Record<string, unknown>>;
-  rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
 
 type SdkQuery = (input: {
@@ -905,95 +904,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   async *compactSession(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
-  }
-
-  async rewindSessionFiles(input: AgentRuntimeRunInput, userMessageId: string): Promise<void> {
-    if (!input.resume?.resumeSessionId) {
-      throw new Error("rewindFiles requires an existing SDK session (resume).");
-    }
-    const sdk = await this.loadSdk();
-    const plannerRoute = input.routes.find((route) => route.role === "planner") ?? input.routes[0];
-    if (!plannerRoute) {
-      throw new Error("At least one model route is required to rewind files");
-    }
-    const sessionCwd = resolveClaudeSessionCwd(input);
-    const queryOptions: Record<string, unknown> = {
-      cwd: sessionCwd,
-      model: plannerRoute.primary.modelId,
-      ...(this.options.pathToClaudeCodeExecutable
-        ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }
-        : {}),
-      fallbackModel: plannerRoute.fallbacks?.[0]?.modelId,
-      permissionMode: "dontAsk",
-      allowedTools: [],
-      systemPrompt: { type: "preset", preset: "claude_code" },
-      tools: { type: "preset", preset: "claude_code" },
-      env: buildSdkProcessEnv({
-        apiKey: this.options.apiKey,
-        baseUrl: this.options.baseUrl,
-        ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
-        ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
-      }),
-      settings: {},
-    };
-    applyClaudeJsonlSessionPersistence(queryOptions);
-    applyResumeToQueryOptions(queryOptions, input.resume);
-    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
-      ...(plannerRoute.primary.contextWindow !== undefined
-        ? { autoCompactWindow: plannerRoute.primary.contextWindow }
-        : {}),
-      ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
-    });
-    // rewind fixture: empty streaming prompt (checkpoint API only; not Thread ask/agent path).
-    const query = sdk.query({
-      prompt: toStreamingUserPrompt(""),
-      options: queryOptions,
-    });
-    try {
-      for await (const _message of query) {
-        if (input.signal.aborted) {
-          break;
-        }
-      }
-      if (typeof query.rewindFiles !== "function") {
-        throw new Error("SDK rewindFiles is not available (enable file checkpointing and update the SDK).");
-      }
-      const result = await query.rewindFiles(userMessageId);
-      if (isRecord(result)) {
-        if (result.canRewind === false) {
-          const reason =
-            typeof result.reason === "string" && result.reason.trim()
-              ? result.reason.trim()
-              : "SDK reported that the checkpoint cannot be rewound.";
-          throw new Error(reason);
-        }
-        if (result.ok === false || result.success === false) {
-          const reason =
-            typeof result.reason === "string" && result.reason.trim()
-              ? result.reason.trim()
-              : typeof result.error === "string" && result.error.trim()
-                ? result.error.trim()
-                : "SDK rewindFiles reported failure.";
-          throw new Error(reason);
-        }
-        if (typeof result.error === "string" && result.error.trim()) {
-          throw new Error(result.error.trim());
-        }
-        const skippedLinks =
-          typeof result.skippedLinks === "number"
-            ? result.skippedLinks
-            : typeof result.skipped_links === "number"
-              ? result.skipped_links
-              : 0;
-        if (skippedLinks > 0) {
-          throw new Error(
-            `SDK rewindFiles skipped ${skippedLinks} path(s); some files were not restored.`,
-          );
-        }
-      }
-    } finally {
-      query.close?.();
-    }
   }
 
   async *runContinuation(
@@ -2236,8 +2146,9 @@ export function formatResumeDropsTurnRejection(message: string): string {
 }
 
 export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, unknown>): void {
+  // Persist the SDK session to local JSONL only — never enable SDK file checkpointing
+  // (rewind is conversation-only; Eco must not restore files or snapshot file state).
   delete queryOptions.sessionStore;
-  queryOptions.enableFileCheckpointing = true;
   queryOptions.extraArgs = {
     ...(isRecord(queryOptions.extraArgs) ? (queryOptions.extraArgs as Record<string, unknown>) : {}),
     "replay-user-messages": null,

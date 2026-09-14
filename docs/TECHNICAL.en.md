@@ -38,7 +38,7 @@ flowchart LR
 
 ## 2. Desktop process boundaries
 
-The React Renderer owns projects, conversations, settings, activity feeds, approvals, diffs, and usage views. It does not read secrets or spawn model processes directly. A context-isolated preload exposes typed IPC, and Electron Main owns all privileged operations: Core workers, model routing, Git, terminals, checkpoints, persistence, integrations, device RPC, and updates.
+The React Renderer owns projects, conversations, settings, activity feeds, approvals, diffs, and usage views. It does not read secrets or spawn model processes directly. A context-isolated preload exposes typed IPC, and Electron Main owns all privileged operations: Core workers, model routing, Git, terminals, persistence, integrations, device RPC, and updates. Rewind truncates conversation history only; Eco does not snapshot or restore workspace files.
 
 ## 3. Agent Cores
 
@@ -48,7 +48,7 @@ The React Renderer owns projects, conversations, settings, activity feeds, appro
 
 **PI mid-turn steer:** follow-ups sent while a PI thread is running are injected into the current turn via `AgentSession.steer()` (delivered before the next model call, without starting a new turn). It is accepted only while the in-process parent session is streaming; when the session is idle, or when the run ends right before delivery, `createPiMidTurnHandle` reclaims the orphaned queue entry and fails closed, so Eco keeps the queued row and the post-run drain sends it as a fresh turn. Subagent sessions never answer thread-level steer.
 
-The adapter layer describes Agent / Plan / Ask modes, compaction, file rewind, approvals, MCP, Skills, and subagents. Eco preserves native Core behavior where possible and explicitly labels capabilities implemented by Eco or unavailable instead of presenting them as native.
+The adapter layer describes Agent / Plan / Ask modes, compaction, conversation rewind (workspace files are not restored), approvals, MCP, Skills, and subagents. Eco preserves native Core behavior where possible and explicitly labels capabilities implemented by Eco or unavailable instead of presenting them as native.
 
 ## 4. Multi-agent orchestration
 

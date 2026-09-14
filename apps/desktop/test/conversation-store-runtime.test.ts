@@ -763,9 +763,7 @@ test.skipIf(!sqliteAvailable)("rewindThreadToActivityLine prunes target and late
     userMessageId: "user-first",
   });
   expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual(["evt_first"]);
-  expect(store.listFileCheckpoints(thread.id).map((checkpoint) => checkpoint.userMessageId)).toEqual([
-    "user-first",
-  ]);
+  expect(store.getUserMessageRecord(thread.id, "act_first")?.upstreamMessageId).toBe("user-first");
   expect(store.getPendingPlan(thread.id)).toBeUndefined();
   expect(store.listCoderTodos(thread.id)).toEqual([]);
   expect(store.getThreadMetrics(thread.id)).toBeUndefined();
@@ -937,9 +935,7 @@ test.skipIf(!sqliteAvailable)(
     });
     expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual(["evt_first"]);
     expect(store.listThreadRunEvents(thread.id)[0]?.streamKey).toBe("sdk:user-first");
-    expect(store.listFileCheckpoints(thread.id).map((checkpoint) => checkpoint.userMessageId)).toEqual([
-      "user-first",
-    ]);
+    expect(store.getUserMessageRecord(thread.id, "sdk:user-first")?.upstreamMessageId).toBe("user-first");
     expect(store.listActivityLines(thread.id)).toEqual([]);
   },
 );

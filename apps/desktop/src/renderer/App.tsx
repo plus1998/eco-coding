@@ -1239,7 +1239,6 @@ function App() {
               t("settings.storage.clearOldConversations"),
               "disk",
               "logs",
-              "checkpoint",
               "sqlite",
               "存储",
               "清理",

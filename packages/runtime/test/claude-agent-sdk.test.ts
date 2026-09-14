@@ -1999,77 +1999,6 @@ test("extractSdkRunFailure formats resumeDropsTurn refusals without inviting ret
   expect(failure).toContain("不会重试同一 fork");
 });
 
-test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () => {
-  let capturedOptions: Record<string, unknown> | undefined;
-  let rewoundMessageId: string | undefined;
-  const driver = new ClaudeAgentSdkDriver({
-    apiKey: "test-key",
-    baseUrl: "http://127.0.0.1:36037",
-    pathToClaudeCodeExecutable: "/opt/eco/claude",
-    loadSdk: async () => ({
-      query: ({ options }) => {
-        capturedOptions = options;
-        return {
-          async *[Symbol.asyncIterator]() {},
-          rewindFiles: async (userMessageId: string) => {
-            rewoundMessageId = userMessageId;
-          },
-        };
-      },
-    }),
-  });
-
-  await driver.rewindSessionFiles(
-    {
-      threadId: "thr_rewind",
-      prompt: "",
-      workspacePath: "/tmp/project",
-      worktreePath: "/tmp/session-worktree",
-      routes,
-      signal: new AbortController().signal,
-      resume: { resumeSessionId: "sess-rewind" },
-    },
-    "user-target",
-  );
-
-  expect(capturedOptions?.cwd).toBe("/tmp/session-worktree");
-  expect(capturedOptions?.pathToClaudeCodeExecutable).toBe("/opt/eco/claude");
-  expect(rewoundMessageId).toBe("user-target");
-});
-
-test("ClaudeAgentSdkDriver rewindFiles fails on canRewind false, ok false, and skippedLinks", async () => {
-  const makeDriver = (rewindResult: unknown) =>
-    new ClaudeAgentSdkDriver({
-      apiKey: "test-key",
-      baseUrl: "http://127.0.0.1:36037",
-      loadSdk: async () => ({
-        query: () => ({
-          async *[Symbol.asyncIterator]() {},
-          rewindFiles: async () => rewindResult,
-        }),
-      }),
-    });
-
-  const input = {
-    threadId: "thr_rewind_fail",
-    prompt: "",
-    workspacePath: "/tmp/project",
-    worktreePath: "/tmp/session-worktree",
-    routes,
-    signal: new AbortController().signal,
-    resume: { resumeSessionId: "sess-rewind" },
-  };
-
-  await expect(makeDriver({ canRewind: false, reason: "checkpoint gone" }).rewindSessionFiles(input, "u1")).rejects.toThrow(
-    /checkpoint gone/,
-  );
-  await expect(makeDriver({ ok: false, reason: "rewind failed" }).rewindSessionFiles(input, "u1")).rejects.toThrow(
-    /rewind failed/,
-  );
-  await expect(makeDriver({ success: false, error: "nope" }).rewindSessionFiles(input, "u1")).rejects.toThrow(/nope/);
-  await expect(makeDriver({ skippedLinks: 3 }).rewindSessionFiles(input, "u1")).rejects.toThrow(/skipped 3 path/);
-});
-
 test("interruptOrCloseSdkQuery passes cancelQueued true by default", async () => {
   let interruptArgs: unknown;
   const probes: Array<{ phase: string; detail: Record<string, unknown> }> = [];
@@ -2121,14 +2050,14 @@ test("teardownClaudeQueryHandle returns cancelled uuids from interrupt receipt",
   });
 });
 
-test("applyClaudeJsonlSessionPersistence enables local JSONL checkpoints", () => {
+test("applyClaudeJsonlSessionPersistence applies local JSONL persistence without file checkpointing", () => {
   const options: Record<string, unknown> = {
     sessionStore: { append: async () => {}, load: async () => null },
     extraArgs: { existing: "value" },
   };
   applyClaudeJsonlSessionPersistence(options);
   expect(options.sessionStore).toBeUndefined();
-  expect(options.enableFileCheckpointing).toBe(true);
+  expect(options.enableFileCheckpointing).toBeUndefined();
   expect(options.extraArgs).toEqual({ existing: "value", "replay-user-messages": null });
 });
 
@@ -3585,7 +3514,7 @@ test("maps AgentOutput API-error text as a failed agent.completed event", () => 
             tool_use_id: "call_explore_failed",
             is_error: true,
             content:
-              'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+              "Agent terminated early due to an API error: 400 {\"error\":\"No provider route configured for model claude-sonnet-5\"}",
           },
         ],
       },
@@ -3596,7 +3525,7 @@ test("maps AgentOutput API-error text as a failed agent.completed event", () => 
         content: [
           {
             type: "text",
-            text: 'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+            text: "Agent terminated early due to an API error: 400 {\"error\":\"No provider route configured for model claude-sonnet-5\"}",
           },
         ],
       },

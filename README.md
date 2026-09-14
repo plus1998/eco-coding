@@ -62,10 +62,10 @@ bun run dev
 | 编排 | 自定义主代理、子代理 roster、模型和工具策略 |
 | 模型路由 | 多服务商；Responses / Messages / Chat Completions |
 | 会话模式 | Agent、Plan、Ask |
-| 上下文 | 占用率、自动压缩、交接恢复、文件检查点 |
+| 上下文 | 占用率、自动压缩、交接恢复 |
 | 成本 | Token、费用、缓存读写、命中率、明细对比 |
 | 扩展 | MCP、Skills、内置浏览器、创意绘画、视觉模型、ASR |
-| 工程工作流 | Git diff、检查点回退、Worktree、终端、代码审查 |
+| 工程工作流 | Git diff、Worktree、终端、代码审查 |
 | 移动协同 | 设备配对、远程会话、审批、图片附件、语音输入 |
 
 ## 支持平台

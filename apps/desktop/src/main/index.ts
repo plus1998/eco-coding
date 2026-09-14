@@ -278,8 +278,6 @@ import {
   type ThreadProjectionFocusReport,
   type ThreadRetryFromMessageRequest,
   type ThreadRevertAppliedDiffResult,
-  type ThreadRewindCheckpointRequest,
-  type ThreadRewindCheckpointResult,
   type ThreadRewriteFromMessageRequest,
   type ThreadRollbackResult,
   type ThreadRunBashApprovalMetadata,
@@ -514,7 +512,6 @@ import {
   submitClarification,
 } from "./clarification-bridge";
 import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
-import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
 import {
   CodexGatewayUsageDeduplicator,
   resolveCodexGatewayUsageBilling,
@@ -1355,7 +1352,6 @@ let promptCacheRunEventEmitter: ReturnType<typeof createPromptCacheRunEventEmitt
 let threadCacheHitMonitor: ThreadCacheHitMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
-let codexFileCheckpointStore: CodexFileCheckpointStore;
 let threadProjectionMemory: ThreadProjectionMemoryCoordinator;
 
 interface ThreadCoreStartRunInput {
@@ -1850,9 +1846,10 @@ app.whenReady().then(async () => {
       removed: compactedLegacyStreamEvents,
     });
   }
-  codexFileCheckpointStore = new CodexFileCheckpointStore(
-    path.join(app.getPath("userData"), "codex-file-checkpoints"),
-  );
+  await fs.rm(path.join(app.getPath("userData"), "codex-file-checkpoints"), {
+    recursive: true,
+    force: true,
+  });
   // "指定子代理执行已批准计划": point the Codex hook-file arming at the resolved
   // CODEX_HOME, and drop any arm left over from a previous process.
   configureForcedPlanDelegationCodexHome(() => resolveCodexHomeDir(app.getPath("userData")));
@@ -2368,32 +2365,8 @@ app.whenReady().then(async () => {
       });
     },
     bindLatestUserPromptToCodexItem: (threadId, itemId) => {
-      const bound = conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId);
-      if (!bound) return false;
-      void codexFileCheckpointStore.bindPending(threadId, itemId).catch((error) => {
-        process.stderr.write(`[eco-codex] file checkpoint bind failed: ${errorMessage(error)}\n`);
-      });
-      return true;
+      return Boolean(conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId));
     },
-    restoreFilesAfterCodexFork: async (threadId, itemId) => {
-      const worktreePath = resolveThreadWorktreePath(threadId);
-      if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path.");
-      await codexFileCheckpointStore.restore(threadId, itemId, worktreePath);
-    },
-    captureRecoveryBeforeCodexFork: async (threadId) => {
-      const worktreePath = resolveThreadWorktreePath(threadId);
-      if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path for recovery.");
-      const recoveryId = `codex-rewind-${randomUUID()}`;
-      await codexFileCheckpointStore.captureRecovery(threadId, worktreePath, recoveryId);
-      return recoveryId;
-    },
-    restoreRecoveryAfterCodexFork: async (threadId, recoveryId) => {
-      const worktreePath = resolveThreadWorktreePath(threadId);
-      if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path for recovery restore.");
-      await codexFileCheckpointStore.restoreRecovery(threadId, worktreePath, recoveryId);
-    },
-    deleteRecoveryAfterCodexFork: (threadId, recoveryId) =>
-      codexFileCheckpointStore.deleteRecovery(threadId, recoveryId),
     resolveCodexForkTurnIndex: (threadId, itemId) =>
       conversationStore.resolveCodexUserTurnIndex(threadId, itemId),
     pruneThreadAfterCodexFork: (threadId, itemId) => {
@@ -5742,7 +5715,6 @@ function registerIpcHandlers(): void {
       paths: {
         userDataDir,
         databasePath: path.join(userDataDir, "eco-coding.sqlite"),
-        codexCheckpointsDir: path.join(userDataDir, "codex-file-checkpoints"),
       },
       threadCount: conversationStore.listThreads().length,
     });
@@ -5758,7 +5730,6 @@ function registerIpcHandlers(): void {
         userDataDir,
         databasePath: path.join(userDataDir, "eco-coding.sqlite"),
         conversationStore,
-        codexFileCheckpointStore,
         deleteThreadWithExternalState: async (threadId) => {
           const deletedThread = conversationStore.getThread(threadId);
           await deleteThreadFully(threadId);
@@ -5992,17 +5963,6 @@ function registerIpcHandlers(): void {
       throw new Error("Thread id is required.");
     }
     return { ok: true, files: [], message: "变更已在项目目录中，无需合并。" } satisfies WorktreeApplyResult;
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.threadRewindCheckpoint, async (payload: unknown) => {
-    return rewindThreadToCheckpoint(payload);
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.threadListCheckpoints, async (threadId: unknown) => {
-    if (typeof threadId !== "string" || !threadId.trim()) {
-      throw new Error("Thread id is required.");
-    }
-    return conversationStore.listFileCheckpoints(threadId.trim());
   });
 
   registerDesktopCommand(IPC_CHANNELS.mcpServerDelete, async (serverId: unknown) => {
@@ -8651,7 +8611,6 @@ async function startCodexThreadRun(
               agentLifecycle.rehydrateCurrentRunAttempt(input.thread.id);
               scheduleThreadRunProjectionUpdated(input.thread.id, { streaming: false });
             }
-            await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
           },
           onConfigReloadWait: () => {
             updateThread(input.thread.id, {
@@ -10730,60 +10689,6 @@ function resolveWorktreeContextForThread(threadId: string): {
   };
 }
 
-async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindCheckpointResult> {
-  if (!payload || typeof payload !== "object") {
-    throw new Error("Invalid rewind request.");
-  }
-  const record = payload as ThreadRewindCheckpointRequest;
-  const threadId = typeof record.threadId === "string" ? record.threadId.trim() : "";
-  const userMessageId = typeof record.userMessageId === "string" ? record.userMessageId.trim() : "";
-  if (!threadId || !userMessageId) {
-    throw new Error("threadId and userMessageId are required.");
-  }
-  const thread = conversationStore.getThread(threadId);
-  if (!thread?.workspacePath) {
-    throw new Error("找不到该对话的工作区。");
-  }
-  requireThreadCore(thread, "claude", "rewind a Claude session");
-  const resume = resolveResumeOptions(threadId, thread.workspacePath);
-  if (!resume?.resumeSessionId) {
-    throw new Error("没有可恢复的 SDK 会话，无法回滚文件。");
-  }
-  await withThreadSdkDriver(threadId, async (driver) => {
-    const routes = resolveRuntimeConfigForThreadId(threadId);
-    if (!routes.ok) {
-      throw new Error(routes.reason);
-    }
-    const proxy = await startRuntimeProxy(routes.routes, undefined, { threadId });
-    try {
-      const built = buildDriverRoutes(proxy.routes);
-      await driver.rewindSessionFiles(
-        buildDesktopSdkRunInput({
-          threadId,
-          prompt: "",
-          workspacePath: thread.workspacePath,
-          worktreePath: thread.workspacePath,
-          routes: built,
-          signal: AbortSignal.timeout(120_000),
-          sdkSession: await buildSdkSessionOptions(threadId, ""),
-          agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
-          resume,
-        }),
-        userMessageId,
-      );
-    } finally {
-      await proxy.close();
-    }
-  });
-  emitThreadEvent(
-    threadId,
-    "thread.files_rewound",
-    `已回滚文件到检查点 ${userMessageId.slice(0, 8)}…`,
-    "system",
-  );
-  return { ok: true, message: "文件已回滚到所选检查点。" };
-}
-
 async function getThreadUserMessageEdit(
   threadId: string,
   activityLineId: string,
@@ -10846,7 +10751,7 @@ async function getThreadUserMessageEdit(
       capability: {
         status: "unavailable",
         reasonCode: "workspace_unavailable",
-        reason: "工作区不存在，无法安全恢复文件。",
+        reason: "工作区不存在，无法改写该消息。",
       },
     };
   }
@@ -10861,24 +10766,6 @@ async function getThreadUserMessageEdit(
         status: "unavailable",
         reasonCode: "missing_upstream_mapping",
         reason: "该消息尚未绑定到当前 SDK 会话。",
-      },
-    };
-  }
-  const checkpointReady =
-    conversationStore.hasFileCheckpoint(threadId, record.upstreamMessageId, activityLineId) &&
-    (await codexFileCheckpointStore.has(threadId, record.upstreamMessageId));
-  if (!checkpointReady) {
-    return {
-      threadId,
-      activityLineId,
-      upstreamMessageId: record.upstreamMessageId,
-      text: record.text,
-      attachments: record.attachments,
-      historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
-      capability: {
-        status: "unavailable",
-        reasonCode: "missing_checkpoint",
-        reason: "该消息没有可验证的文件检查点，已停止改写。",
       },
     };
   }
@@ -11610,7 +11497,7 @@ async function cleanupPendingClaudeFork(threadId: string): Promise<void> {
   }
 }
 
-/** Delete an Eco thread: DB + Claude SDK session + Codex checkpoints + PI agent dir + in-memory run state. */
+/** Delete an Eco thread: DB + Claude SDK session + PI agent dir + in-memory run state. */
 async function deleteThreadFully(threadId: string): Promise<void> {
   await cleanupPendingClaudeFork(threadId);
   await deleteThreadSdkSession(threadId);
@@ -11634,7 +11521,6 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   conversationStore.deleteThread(threadId);
   clearThreadRuntimeMemory(threadId);
   threadRunProjectionHistoryRevisions.delete(threadId);
-  await codexFileCheckpointStore.deleteThread(threadId);
   await promptImageFileStore.deleteThreadMessages(threadId);
 }
 
@@ -11756,20 +11642,13 @@ async function prepareThreadRewindForContinue(input: {
     dir: sessionCwd,
   });
 
-  if (
-    !conversationStore.hasFileCheckpoint(input.threadId, storedUserMessageId, input.target.activityLineId) ||
-    !(await codexFileCheckpointStore.has(input.threadId, storedUserMessageId))
-  ) {
-    throw new Error("该节点没有可验证的 Eco 文件检查点，无法安全回滚。");
-  }
-  const recoveryId = `claude-rewind-${randomUUID()}`;
-  await codexFileCheckpointStore.captureRecovery(input.threadId, sessionCwd, recoveryId);
   let forkedSessionId: string | undefined;
   let resumeOptions: EcoSdkResumeOptions | undefined;
   try {
-    // Fork the remote transcript before touching the local DB/worktree. The
-    // query-level resumeDropsTurn guard is intentionally not used here: the
-    // official SDK may reject it asynchronously and cannot be retried safely.
+    // Fork the remote transcript before pruning local conversation history.
+    // The query-level resumeDropsTurn guard is intentionally not used here:
+    // the official SDK may reject it asynchronously and cannot be retried safely.
+    // Files on disk are left as-is; Eco does not snapshot or restore the worktree.
     if (resumeSessionAt) {
       const createdForkedSessionId = await forkClaudeSessionAt({
         sessionId: session.sessionId,
@@ -11782,8 +11661,6 @@ async function prepareThreadRewindForContinue(input: {
         cwd: sessionCwd,
       });
     }
-
-    await codexFileCheckpointStore.restore(input.threadId, storedUserMessageId, sessionCwd);
 
     conversationStore.rewindThreadToActivityLine(input.threadId, storedTarget.activityLineId);
     resetThreadRuntimeAfterHistoryRewrite(input.threadId);
@@ -11800,40 +11677,19 @@ async function prepareThreadRewindForContinue(input: {
 
     resumeOptions = forkedSessionId ? { resumeSessionId: forkedSessionId } : undefined;
   } catch (error) {
-    const recoveryErrors: unknown[] = [];
-    try {
-      await codexFileCheckpointStore.restoreRecovery(input.threadId, sessionCwd, recoveryId);
-    } catch (restoreError) {
-      recoveryErrors.push(restoreError);
-      process.stderr.write(`[eco] Claude rewind recovery restore failed: ${errorMessage(restoreError)}\n`);
-    }
     if (forkedSessionId) {
       pendingClaudeForksByThread.delete(input.threadId);
       try {
         await deleteClaudeAgentSdkSession({ sessionId: forkedSessionId, dir: sessionCwd });
       } catch (deleteError) {
-        recoveryErrors.push(deleteError);
-        process.stderr.write(`[eco] Claude fork cleanup failed: ${errorMessage(deleteError)}\n`);
+        throw new Error(
+          `Claude rewind fork cleanup failed: ${errorMessage(deleteError)}; original error: ${errorMessage(error)}`,
+        );
       }
-    }
-    await codexFileCheckpointStore.deleteRecovery(input.threadId, recoveryId).catch((cleanupError) => {
-      process.stderr.write(`[eco] Claude rewind recovery cleanup failed: ${errorMessage(cleanupError)}\n`);
-    });
-    if (recoveryErrors.length > 0) {
-      throw new Error(
-        `Claude rewind local recovery failed: ${recoveryErrors.map(errorMessage).join("; ")}; original error: ${errorMessage(error)}`,
-      );
     }
     throw error;
   }
 
-  // The local history/worktree rewrite is committed. Cleanup failure must not
-  // pretend that a committed rewrite was rolled back; retain the exact gap.
-  await codexFileCheckpointStore.deleteRecovery(input.threadId, recoveryId).catch((cleanupError) => {
-    process.stderr.write(
-      `[eco] Claude rewind recovery cleanup pending after successful rewrite: ${errorMessage(cleanupError)}\n`,
-    );
-  });
   return resumeOptions;
 }
 
@@ -11860,13 +11716,9 @@ async function captureSdkSessionFromEvent(
     ) {
       const userMessageId = (payload as { userMessageId: string }).userMessageId;
       const thread = conversationStore.getThread(threadId);
-      if (thread?.coreKind === "claude") {
-        await codexFileCheckpointStore.capturePending(threadId, worktreePath);
-      }
       const bound = conversationStore.bindLatestUserActivityToSdkMessage(threadId, userMessageId);
       if (bound) {
         if (thread?.coreKind === "claude") {
-          await codexFileCheckpointStore.bindPending(threadId, userMessageId);
           await rebindClaudeUserMessageRecordsFromSession(threadId);
         }
         scheduleThreadRunProjectionUpdated(threadId);
@@ -11990,21 +11842,6 @@ async function hydrateClaudeUserMessageEditStateOnce(threadId: string): Promise<
     });
   if (!fullyMapped) {
     await rebindClaudeUserMessageRecordsFromSession(threadId);
-    records = conversationStore
-      .listUserMessageRecords(threadId)
-      .filter((record) => record.provider !== "codex");
-  }
-
-  const latest = [...records].reverse().find((record) => Boolean(record.upstreamMessageId?.trim()));
-  const latestUpstreamMessageId = latest?.upstreamMessageId?.trim();
-  if (
-    latest &&
-    latestUpstreamMessageId &&
-    conversationStore.hasFileCheckpoint(threadId, latestUpstreamMessageId, latest.activityLineId) &&
-    !(await codexFileCheckpointStore.has(threadId, latestUpstreamMessageId)) &&
-    (await codexFileCheckpointStore.hasPending(threadId))
-  ) {
-    await codexFileCheckpointStore.bindPending(threadId, latestUpstreamMessageId);
   }
 }
 
@@ -15052,7 +14889,7 @@ async function recordUserPrompt(
     : undefined;
   const previews = createPromptImagePreviews(resolvedForPreview ?? []);
   const thread = conversationStore.getThread(threadId);
-  // Codex binds SDK item ids later; a local id here would desync file checkpoints.
+  // Codex binds SDK item ids later; a local id here would desync conversation rewind mapping.
   const localActivityLineId = thread?.coreKind === "codex" ? undefined : `user:${randomUUID()}`;
   const line = emitThreadEvent(threadId, "thread.user_prompt", prompt, "user", false, {
     ...((previews.length > 0 || localActivityLineId) && {
