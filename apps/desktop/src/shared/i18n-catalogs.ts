@@ -1549,9 +1549,16 @@ export const i18nCatalogs = {
       "thread.composer.requestChanges": "要求后续变更",
       "thread.composer.unavailable": "当前对话不可发送",
       "thread.composer.placeholder": "尽管问",
+      "thread.idleCacheWarningTitle": "缓存可能已过期",
       "thread.idleCacheWarning":
         "这个会话已闲置 {{duration}}。缓存可能无法复用，继续发送的第一轮可能需要重新处理完整上下文，费用或延迟可能上升。建议新建对话。",
       "thread.idleCacheWarningAction": "新建对话",
+      "thread.idleCacheWarningDismiss": "关闭缓存提醒",
+      "feedNotice.fullAccess.title": "完整访问权限已开启",
+      "feedNotice.fullAccess.description":
+        "Eco 可以在未经你批准的情况下编辑任何文件，并通过互联网访问权限运行命令。这会增加数据丢失、信息暴露和意外更改的风险。",
+      "feedNotice.fullAccess.neverShow": "不再显示",
+      "feedNotice.fullAccess.dismiss": "关闭完整访问提醒",
       "thread.action.stop": "停止",
       "thread.action.stopping": "正在停止…",
       "thread.action.queue": "排队后续消息",
@@ -3809,9 +3816,16 @@ export const i18nCatalogs = {
       "thread.composer.requestChanges": "Request follow-up changes",
       "thread.composer.unavailable": "This thread cannot accept messages",
       "thread.composer.placeholder": "Ask anything",
+      "thread.idleCacheWarningTitle": "The cache may have expired",
       "thread.idleCacheWarning":
         "This thread has been idle for {{duration}}. The cache may no longer be reusable, so the first new turn may reprocess the full context and increase cost or latency. Start a new thread for a cleaner cache.",
       "thread.idleCacheWarningAction": "New thread",
+      "thread.idleCacheWarningDismiss": "Dismiss cache notice",
+      "feedNotice.fullAccess.title": "Full access is enabled",
+      "feedNotice.fullAccess.description":
+        "Eco can edit any file without asking for approval and run commands with internet access. This increases the risk of data loss, information exposure, and unintended changes.",
+      "feedNotice.fullAccess.neverShow": "Don't show again",
+      "feedNotice.fullAccess.dismiss": "Dismiss full access notice",
       "thread.action.stop": "Stop",
       "thread.action.stopping": "Stopping…",
       "thread.action.queue": "Queue follow-up message",

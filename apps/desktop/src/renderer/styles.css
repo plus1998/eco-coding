@@ -16891,93 +16891,15 @@ a.run-log-web-search-detail-result-url:focus-visible {
   border: 1px solid color-mix(in srgb, #3b82f6 28%, transparent);
 }
 
-.composer-idle-cache-warning {
+.composer-feed-notices {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   margin: 0 0 8px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--status-warn-border, rgba(180, 120, 20, 0.35)) 88%, transparent);
-  border-radius: 10px;
-  background: color-mix(
-    in srgb,
-    color-mix(in srgb, var(--status-warn-text, #c9a227) 14%, var(--bg-elevated, #fff)) 64%,
-    transparent
-  );
-  color: var(--status-warn-text, #c9a227);
-  box-shadow:
-    0 10px 28px color-mix(in srgb, black 12%, transparent),
-    inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  isolation: isolate;
-  overflow: hidden;
 }
 
-.composer-idle-cache-warning-copy {
-  display: flex;
-  flex: 1 1 260px;
-  align-items: flex-start;
-  gap: 7px;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.composer-idle-cache-warning-copy svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.composer-idle-cache-warning-copy p {
-  min-width: 0;
-  margin: 0;
-}
-
-.composer-idle-cache-action {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, currentColor 36%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--bg-elevated, #fff) 28%, color-mix(in srgb, currentColor 12%, transparent));
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.2;
-  cursor: pointer;
-}
-
-.composer-idle-cache-action:hover {
-  background: color-mix(in srgb, var(--bg-elevated, #fff) 38%, color-mix(in srgb, currentColor 18%, transparent));
-}
-
-.composer-idle-cache-action:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 62%, transparent);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .composer-idle-cache-warning {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: color-mix(in srgb, var(--status-warn-text, #c9a227) 12%, var(--bg-elevated, #fff));
-    box-shadow: none;
-  }
-}
-
-@media (max-width: 600px) {
-  .composer-idle-cache-warning {
-    flex-direction: column;
-  }
-
-  .composer-idle-cache-action {
-    align-self: flex-start;
-  }
+.composer-feed-notices:empty {
+  display: none;
 }
 
 .composer-input-stack {

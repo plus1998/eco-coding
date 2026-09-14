@@ -1,7 +1,8 @@
 import type { TFunction } from "i18next";
-import { Clock3, MessageCirclePlus } from "lucide-react";
+import { Clock3 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { FeedNotice } from "./FeedNotice";
 import { resolveThreadIdleDuration, type ThreadIdleDuration } from "./thread-idle-cache-warning";
 
 interface ThreadIdleCacheWarningProps {
@@ -25,36 +26,37 @@ function formatIdleDuration(duration: ThreadIdleDuration, t: TFunction): string 
 export function ThreadIdleCacheWarning({ lastActivityAt, onStartNewThread }: ThreadIdleCacheWarningProps) {
   const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
+  const [dismissedActivityAt, setDismissedActivityAt] = useState<string>();
   const duration = resolveThreadIdleDuration(lastActivityAt, now);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(timer);
-  }, [lastActivityAt]);
+  }, []);
 
-  if (!duration) {
+  if (!duration || dismissedActivityAt === lastActivityAt) {
     return null;
   }
 
   return (
-    <div className="composer-idle-cache-warning" role="status" aria-live="polite">
-      <div className="composer-idle-cache-warning-copy">
-        <Clock3 size={15} strokeWidth={1.8} aria-hidden />
+    <FeedNotice
+      title={t("thread.idleCacheWarningTitle")}
+      description={
         <p>
           {t("thread.idleCacheWarning", {
             duration: formatIdleDuration(duration, t),
           })}
         </p>
-      </div>
-      <button
-        type="button"
-        className="composer-idle-cache-action"
-        onClick={onStartNewThread}
-        title={t("thread.idleCacheWarningAction")}
-      >
-        <MessageCirclePlus size={14} strokeWidth={1.8} aria-hidden />
-        {t("thread.idleCacheWarningAction")}
-      </button>
-    </div>
+      }
+      icon={<Clock3 size={20} strokeWidth={1.8} aria-hidden />}
+      primaryAction={{
+        label: t("thread.idleCacheWarningAction"),
+        onClick: onStartNewThread,
+      }}
+      dismissAction={{
+        label: t("thread.idleCacheWarningDismiss"),
+        onClick: () => setDismissedActivityAt(lastActivityAt),
+      }}
+    />
   );
 }

@@ -342,6 +342,7 @@ import {
   useLocalStreamProjection,
 } from "./local-stream-projection";
 import type { ModelsSettingsTab } from "./ModelsSettingsPanel";
+import { FullAccessNotice } from "./FullAccessNotice";
 import {
   diagnoseOrchestrationSnapshotReadiness,
   invalidOrchestrationFieldsFromIssues,
@@ -9997,12 +9998,20 @@ function App() {
           {composerPromptCacheHint}
         </p>
       ) : null}
-      {activeThread && threadIdleCacheWarningEligible ? (
-        <ThreadIdleCacheWarning
-          lastActivityAt={threadIdleCacheWarningActivityAt}
-          onStartNewThread={startNewChat}
-        />
-      ) : null}
+      <div className="composer-feed-notices">
+        {composerRuntimeConfig ? (
+          <FullAccessNotice
+            bashReviewMode={composerRuntimeConfig.bashReviewMode}
+            scopeKey={activeThread?.id ?? `draft:${currentProjectPath}`}
+          />
+        ) : null}
+        {activeThread && threadIdleCacheWarningEligible ? (
+          <ThreadIdleCacheWarning
+            lastActivityAt={threadIdleCacheWarningActivityAt}
+            onStartNewThread={startNewChat}
+          />
+        ) : null}
+      </div>
       <div className="composer-input-stack">
         {showComposerInputOverlays ? (
           <div ref={composerInputOverlaysRef} className="composer-input-overlays">
