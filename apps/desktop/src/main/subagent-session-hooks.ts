@@ -186,17 +186,26 @@ export function createSubagentSessionHooks(
           agentId: input.agentId,
           role,
         });
-        options?.lifecycle?.stopSubagent({
-          threadId,
-          agentId: input.agentId,
-          role,
-        });
+        const abandoned = input.failed === true || input.cancelled === true;
+        if (abandoned) {
+          options?.lifecycle?.abandonSubagent({
+            threadId,
+            agentId: input.agentId,
+            role,
+          });
+        } else {
+          options?.lifecycle?.stopSubagent({
+            threadId,
+            agentId: input.agentId,
+            role,
+          });
+        }
         const runAttemptId = options?.lifecycle?.currentRunAttemptId(threadId);
         appendSubagentLifecycleEvent(store, {
           threadId,
           agentId: input.agentId,
           role,
-          lifecycle: "stopped",
+          lifecycle: abandoned ? "abandoned" : "stopped",
           ...(runAttemptId && { runAttemptId }),
         });
         await options?.onTerminalReconciliation?.({

@@ -181,7 +181,10 @@ export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): 
   const contextByAgentId = buildContextByAgentId(input.context);
   const timingByAgentId = new Map((input.subagentTimings ?? []).map((timing) => [timing.agentId, timing]));
 
-  const projectionAgents = mergeProjectionAgentRecords(input.agents, discoveredAgentsById);
+  const projectionAgents = applyLifecycleEventsToAgents(
+    mergeProjectionAgentRecords(input.agents, discoveredAgentsById),
+    events,
+  );
   const knownAgentIds = new Set(projectionAgents.map((agent) => agent.agentId));
   // Orphan agent-scoped rows (e.g. main Codex id mis-tagged as general without
   // agent.started) never grow an agent card — reclaim them for the main feed.
@@ -463,9 +466,42 @@ function mergeProjectionAgentRecords(
     merged.set(agent.agentId, agent);
   }
   for (const agent of agents) {
-    merged.set(agent.agentId, agent);
+    const existing = merged.get(agent.agentId);
+    merged.set(agent.agentId, existing ? { ...existing, ...agent } : agent);
   }
   return [...merged.values()];
+}
+
+/** Overlay agent.stopped / agent.abandoned onto cards even when the instance row is still active. */
+function applyLifecycleEventsToAgents(
+  agents: readonly AgentInstanceRecord[],
+  events: readonly ThreadRunEvent[],
+): AgentInstanceRecord[] {
+  const byId = new Map(agents.map((agent) => [agent.agentId, agent]));
+  for (const event of events) {
+    if (event.eventType !== "agent.stopped" && event.eventType !== "agent.abandoned") {
+      continue;
+    }
+    const agentId = event.agentId?.trim();
+    if (!agentId) {
+      continue;
+    }
+    const existing = byId.get(agentId);
+    if (!existing) {
+      continue;
+    }
+    const status = event.eventType === "agent.abandoned" ? "abandoned" : "stopped";
+    if (existing.status === "abandoned" && status === "stopped") {
+      continue;
+    }
+    byId.set(agentId, {
+      ...existing,
+      status,
+      endedAt: event.observedAt,
+      updatedAt: event.observedAt,
+    });
+  }
+  return [...byId.values()];
 }
 
 function buildUsageByAgentId(

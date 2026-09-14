@@ -25,7 +25,13 @@ export interface EcoTaskTrackerHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onSubagentStop(input: { agentId: string; agentType: string }): void;
+  onSubagentStop(input: {
+    agentId: string;
+    agentType: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }): void;
   onStop(status: "completed" | "blocked" | "cancelled"): void;
   peekPendingCoderTodoId?: () => string | undefined;
 }
@@ -47,7 +53,15 @@ export interface EcoSubagentSessionHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onStop(input: { agentId: string; agentType: string }): void;
+  onStop(input: {
+    agentId: string;
+    agentType: string;
+    agentTranscriptPath?: string;
+    transcriptPath?: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }): void | Promise<void>;
   /** SDK stream paired parent_tool_use_id with a SubagentStart agent id. */
   onDelegationLinked?(input: {
     agentId: string;

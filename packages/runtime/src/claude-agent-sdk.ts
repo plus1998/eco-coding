@@ -3301,7 +3301,8 @@ function mapUserToolResultEvents(
   const hasCompletedAgentOutput =
     agentOutput?.status === "completed" &&
     typeof agentOutput.agentId === "string" &&
-    agentOutput.agentId.trim();
+    Boolean(agentOutput.agentId.trim());
+  const hasFailedAgentOutput = isFailedAgentOutput(agentOutput);
   const resourceLinks = parseSdkResourceLinks(
     (agentOutput && (agentOutput.resourceLinks ?? agentOutput.resource_links)) ??
       message.resourceLinks ??
@@ -3315,7 +3316,10 @@ function mapUserToolResultEvents(
     const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id.trim() : "";
     const descriptor = toolUseId ? streamCtx?.toolUseById.get(toolUseId) : undefined;
     const output = extractToolResultText(block.content);
-    const failed = block.is_error === true;
+    const failed =
+      block.is_error === true ||
+      hasFailedAgentOutput ||
+      /terminated early due to an API error|API Error:\s*\d{3}/i.test(output);
     if (!failed && hasCompletedAgentOutput) {
       continue;
     }
@@ -3413,6 +3417,40 @@ function extractToolResultText(content: unknown): string {
     .join("\n");
 }
 
+function isFailedAgentOutput(output: Record<string, unknown> | undefined): boolean {
+  if (!output) {
+    return false;
+  }
+  if (output.status === "failed" || output.status === "error" || output.is_error === true) {
+    return true;
+  }
+  const contentText = extractAgentOutputText(output);
+  return /terminated early due to an API error|API Error:\s*\d{3}/i.test(contentText);
+}
+
+function extractAgentOutputText(output: Record<string, unknown>): string {
+  if (typeof output.result === "string" && output.result.trim()) {
+    return output.result.trim();
+  }
+  if (typeof output.error === "string" && output.error.trim()) {
+    return output.error.trim();
+  }
+  if (!Array.isArray(output.content)) {
+    return "";
+  }
+  return output.content
+    .flatMap((entry): string[] => {
+      if (typeof entry === "string") {
+        return entry.trim() ? [entry.trim()] : [];
+      }
+      if (isRecord(entry) && typeof entry.text === "string" && entry.text.trim()) {
+        return [entry.text.trim()];
+      }
+      return [];
+    })
+    .join("\n");
+}
+
 function mapUserAgentOutputToEvents(
   message: Record<string, unknown>,
   threadId: string,
@@ -3427,7 +3465,8 @@ function mapUserAgentOutputToEvents(
   if (!output) {
     return [];
   }
-  if (output.status !== "completed") {
+  const failed = isFailedAgentOutput(output);
+  if (output.status !== "completed" && !failed) {
     return [];
   }
   const agentId = typeof output.agentId === "string" ? output.agentId.trim() : "";
@@ -3437,6 +3476,7 @@ function mapUserAgentOutputToEvents(
   const agentType = typeof output.agentType === "string" ? output.agentType.trim() : "";
   const outputRole = agentType ? normalizeSdkRuntimeAgentRole(agentType) : undefined;
   const toolUseId = readUserToolResultUseId(message);
+  const failureText = failed ? extractAgentOutputText(output) : "";
   return [
     createAgentEvent({
       id: `${uuid}:agent-output:${agentId}`,
@@ -3446,8 +3486,10 @@ function mapUserAgentOutputToEvents(
       type: "agent.completed",
       payload: {
         type: "agent_output",
-        status: "completed",
+        status: failed ? "failed" : "completed",
         agentId,
+        ...(failed && { failed: true }),
+        ...(failureText && { error: failureText }),
         ...(agentType && { agentType }),
         ...(toolUseId && { tool_use_id: toolUseId }),
         ...(typeof output.resolvedModel === "string" && { resolvedModel: output.resolvedModel }),

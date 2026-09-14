@@ -74,7 +74,13 @@ export interface EcoTaskTrackerHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onSubagentStop(input: { agentId: string; agentType: string }): void;
+  onSubagentStop(input: {
+    agentId: string;
+    agentType: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }): void;
   onStop(status: "completed" | "blocked" | "cancelled"): void;
   peekPendingCoderTodoId?: () => string | undefined;
 }
@@ -183,6 +189,9 @@ export interface EcoSubagentSessionHooks {
     agentType: string;
     agentTranscriptPath?: string;
     transcriptPath?: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
   }): void | Promise<void>;
   /** SDK stream paired parent_tool_use_id with a SubagentStart agent id. */
   onDelegationLinked?(input: {
@@ -854,13 +863,7 @@ function canonicalForcedAgentKey(value: string): string {
  * Subagent actors are ignored: only the main agent may consume the armed delegation.
  */
 /** Tools the parent may not use while a forced delegation is armed (it must not do the work). */
-const FORCED_DELEGATION_PARENT_DENY_TOOLS = new Set([
-  "Write",
-  "Edit",
-  "MultiEdit",
-  "NotebookEdit",
-  "Bash",
-]);
+const FORCED_DELEGATION_PARENT_DENY_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]);
 
 export function createForcedPlanDelegationPreToolHook(
   resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
@@ -1673,6 +1676,42 @@ export function createSubagentStartHook(handlers: {
   };
 }
 
+/**
+ * Claude Agent SDK SubagentStopHookInput has no `failed` field (0.3.266).
+ * Infer terminal failure from extra fields some emitters attach, or from the
+ * documented Agent-tool error text (`Agent terminated early due to an API error`).
+ * https://code.claude.com/docs/en/errors
+ */
+export function inferSubagentStopFailure(input: SubagentStopHookInput): {
+  failed?: boolean;
+  cancelled?: boolean;
+  reason?: string;
+} {
+  const extra = input as SubagentStopHookInput & Record<string, unknown>;
+  const reasonCandidates = [
+    extra.last_assistant_message,
+    extra.reason,
+    extra.error,
+    extra.stopReason,
+    extra.stop_reason,
+  ];
+  const reason = reasonCandidates
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim();
+  const cancelled = extra.cancelled === true || extra.status === "stopped" || extra.status === "killed";
+  const failedExplicit =
+    extra.failed === true || extra.status === "failed" || extra.is_error === true || extra.isError === true;
+  const failedFromMessage = Boolean(
+    reason && /terminated early due to an API error|API Error:\s*\d{3}/i.test(reason),
+  );
+  const failed = failedExplicit || failedFromMessage;
+  return {
+    ...(failed && { failed: true }),
+    ...(cancelled && { cancelled: true }),
+    ...(reason && { reason }),
+  };
+}
+
 export function createSubagentStopHook(handlers: {
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
@@ -1684,6 +1723,7 @@ export function createSubagentStopHook(handlers: {
     }
     const stopped = input as SubagentStopHookInput;
     const agentType = normalizeSdkSubagentType(stopped.agent_type) ?? stopped.agent_type;
+    const outcome = inferSubagentStopFailure(stopped);
     const payload = {
       agentId: stopped.agent_id,
       agentType,
@@ -1691,6 +1731,7 @@ export function createSubagentStopHook(handlers: {
         agentTranscriptPath: stopped.agent_transcript_path.trim(),
       }),
       ...(stopped.transcript_path?.trim() && { transcriptPath: stopped.transcript_path.trim() }),
+      ...outcome,
     };
     handlers.runtimeLimit?.onStop(payload);
     handlers.taskTracker?.onSubagentStop(payload);
@@ -1786,7 +1827,8 @@ export function createClassifierContextPostToolHook(): HookCallback {
 const CLASSIFIER_CONTEXT_MAX_CHARS = 240;
 
 function buildPostToolClassifierContext(post: PostToolUseHookInput): string {
-  const toolName = typeof post.tool_name === "string" && post.tool_name.trim() ? post.tool_name.trim() : "Tool";
+  const toolName =
+    typeof post.tool_name === "string" && post.tool_name.trim() ? post.tool_name.trim() : "Tool";
   const outcome = summarizeToolResponseForClassifier(post.tool_response);
   const combined = outcome ? `${toolName}: ${outcome}` : toolName;
   if (combined.length <= CLASSIFIER_CONTEXT_MAX_CHARS) {
@@ -1898,11 +1940,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     );
   }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
-  pushHook(
-    hooks,
-    "PreToolUse",
-    createForcedPlanDelegationPreToolHook(ctx.resolveForcedPlanDelegation),
-  );
+  pushHook(hooks, "PreToolUse", createForcedPlanDelegationPreToolHook(ctx.resolveForcedPlanDelegation));
   pushHook(
     hooks,
     "PostToolUse",

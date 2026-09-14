@@ -9,6 +9,7 @@ import type {
 export interface AgentLifecycleStore {
   upsertRunAttempt(record: RunAttemptRecord): void;
   upsertAgentInstance(record: AgentInstanceRecord): void;
+  listAgentInstances?(threadId: string): AgentInstanceRecord[];
 }
 
 export interface AgentLifecycleServiceOptions {
@@ -189,19 +190,25 @@ export class AgentLifecycleService {
     input: { threadId: string; agentId: string; role: RuntimeAgentRole },
     status: "stopped" | "abandoned",
   ): void {
-    const state = this.threads.get(input.threadId);
-    const existing = state?.activeAgents.get(input.agentId);
-    if (!state || !existing) {
+    const state = this.getOrCreateThread(input.threadId);
+    const existing =
+      state.activeAgents.get(input.agentId) ?? this.readPersistedSubagent(input.threadId, input.agentId);
+    if (!existing || !shouldApplyAgentInstanceStatus(existing.status, status)) {
       return;
     }
     const now = this.now();
     this.upsertAgent(input.threadId, {
       ...existing,
+      role: existing.role || input.role,
       status,
       endedAt: now,
       updatedAt: now,
     });
     state.activeAgents.delete(input.agentId);
+  }
+
+  private readPersistedSubagent(threadId: string, agentId: string): AgentInstanceRecord | undefined {
+    return this.store.listAgentInstances?.(threadId).find((row) => row.agentId === agentId);
   }
 
   settleRecoveredThread(input: AgentLifecycleRecoveryInput): AgentLifecycleRecoveryResult {
@@ -307,8 +314,10 @@ export class AgentLifecycleService {
 
   private upsertAgent(threadId: string, record: AgentInstanceRecord): void {
     const state = this.getOrCreateThread(threadId);
-    if (record.status === "active") {
+    if (record.status === "active" || record.status === "launching") {
       state.activeAgents.set(record.agentId, record);
+    } else {
+      state.activeAgents.delete(record.agentId);
     }
     this.store.upsertAgentInstance(record);
   }
@@ -335,4 +344,17 @@ export class AgentLifecycleService {
     this.sequence += 1;
     return `attempt_${input.phase}_${input.retryIndex}_${Date.now()}_${this.sequence}`;
   }
+}
+
+function shouldApplyAgentInstanceStatus(
+  from: AgentInstanceRecord["status"],
+  to: "stopped" | "abandoned",
+): boolean {
+  if (from === to) {
+    return true;
+  }
+  if (to === "abandoned") {
+    return true;
+  }
+  return from === "active" || from === "launching";
 }

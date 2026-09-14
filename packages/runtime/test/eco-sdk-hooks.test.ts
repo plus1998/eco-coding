@@ -15,6 +15,7 @@ import type {
 import {
   buildEcoSdkHooks,
   captureDeferredExitPlanModeFromResult,
+  createClassifierContextPostToolHook,
   createDisabledSubagentPreToolHook,
   createExitPlanModeAwaitApprovalHook,
   createExitPlanModePermissionRequestHook,
@@ -35,10 +36,10 @@ import {
   createTaskCompletedHook,
   createTaskCreatedHook,
   createTaskToolPreToolHook,
-  createClassifierContextPostToolHook,
   createToolOutputTruncationPostToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
+  inferSubagentStopFailure,
   parseDeferredExitPlanModeResult,
   parseExitPlanModeInput,
   parseExitPlanModeOutput,
@@ -1918,6 +1919,71 @@ test("subagent lifecycle hooks normalize eco agent keys back to roles", async ()
   expect(stops).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
 });
 
+test("inferSubagentStopFailure reads documented Agent API-error text", () => {
+  expect(
+    inferSubagentStopFailure({
+      hook_event_name: "SubagentStop",
+      agent_id: "agent_explore",
+      agent_type: "eco_explore",
+      last_assistant_message:
+        'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+    } as SubagentStopHookInput),
+  ).toEqual({
+    failed: true,
+    reason:
+      'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+  });
+});
+
+test("createSubagentStopHook forwards inferred failure to tracker and sessions", async () => {
+  const stops: Array<Record<string, unknown>> = [];
+  const sessionStops: Array<Record<string, unknown>> = [];
+  const hook = createSubagentStopHook({
+    taskTracker: {
+      onPreToolUse() {},
+      onTaskCreated() {},
+      onTaskCompleted() {},
+      onSubagentStart() {},
+      onSubagentStop(input) {
+        stops.push(input);
+      },
+      onStop() {},
+    },
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_fail",
+      onStart() {},
+      onStop(input) {
+        sessionStops.push(input);
+      },
+      resolveResume: () => undefined,
+    },
+  });
+
+  await hook(
+    {
+      hook_event_name: "SubagentStop",
+      agent_id: "agent_explore",
+      agent_type: ecoSubagentKeyForRole("explore"),
+      last_assistant_message: "API Error: 400 No provider route configured for model claude-sonnet-5",
+      session_id: "s1",
+      cwd: "/tmp",
+    } as SubagentStopHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(stops).toEqual([
+    {
+      agentId: "agent_explore",
+      agentType: "explore",
+      failed: true,
+      reason: "API Error: 400 No provider route configured for model claude-sonnet-5",
+    },
+  ]);
+  expect(sessionStops).toEqual(stops);
+});
+
 test("subagent lifecycle hooks normalize dynamic Eco agent keys", async () => {
   const starts: Array<{ agentId: string; agentType: string }> = [];
   const stops: Array<{ agentId: string; agentType: string }> = [];
@@ -2572,9 +2638,7 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(hooks.TaskCreated).toHaveLength(1);
   expect(hooks.TaskCompleted).toHaveLength(1);
   expect(hooks.PostToolUse?.length).toBeGreaterThanOrEqual(1);
-  expect(
-    (hooks.PostToolUse ?? []).some((matcher) => matcher.matcher === "ExitPlanMode"),
-  ).toBe(true);
+  expect((hooks.PostToolUse ?? []).some((matcher) => matcher.matcher === "ExitPlanMode")).toBe(true);
   expect(hooks.SubagentStart).toHaveLength(1);
   expect(hooks.SubagentStop).toHaveLength(1);
   expect(hooks.Stop).toHaveLength(1);
@@ -2593,9 +2657,7 @@ test("buildEcoSdkHooks does not register AskUserQuestion PreToolUse hooks", () =
   const preToolUse = hooks.PreToolUse ?? [];
   expect(preToolUse.some((matcher) => matcher.matcher === "AskUserQuestion")).toBe(false);
   expect(hooks.PostToolUse ?? []).toHaveLength(2);
-  expect(
-    (hooks.PostToolUse ?? []).filter((matcher) => matcher.matcher === undefined),
-  ).toHaveLength(1);
+  expect((hooks.PostToolUse ?? []).filter((matcher) => matcher.matcher === undefined)).toHaveLength(1);
 });
 
 test("PostToolUse truncation hook rewrites oversized tool_response", async () => {

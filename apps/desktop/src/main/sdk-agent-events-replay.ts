@@ -83,6 +83,46 @@ interface SubagentTaskLink {
   agentType: string;
 }
 
+function findSubagentTaskLink(
+  links: ReadonlyMap<string, SubagentTaskLink>,
+  input: { taskId?: string; parentToolUseId?: string },
+): SubagentTaskLink | undefined {
+  const parentToolUseId = input.parentToolUseId?.trim();
+  if (parentToolUseId) {
+    const byParent = links.get(parentToolUseId);
+    if (byParent) {
+      return byParent;
+    }
+  }
+  const taskId = input.taskId?.trim();
+  if (!taskId) {
+    return undefined;
+  }
+  for (const link of links.values()) {
+    if (link.taskId === taskId) {
+      return link;
+    }
+  }
+  return undefined;
+}
+
+function resolveReplaySubagentType(
+  event: Pick<AgentEvent, "payload" | "role">,
+  links: ReadonlyMap<string, SubagentTaskLink>,
+  input: { taskId?: string; parentToolUseId?: string },
+): string {
+  if (isRecord(event.payload)) {
+    const fromPayload =
+      (typeof event.payload.subagent_type === "string" && event.payload.subagent_type.trim()) ||
+      (typeof event.payload.agentType === "string" && event.payload.agentType.trim()) ||
+      "";
+    if (fromPayload) {
+      return fromPayload;
+    }
+  }
+  return findSubagentTaskLink(links, input)?.agentType || event.role;
+}
+
 interface ReplaySubagentTiming {
   startedAt: string;
   endedAt?: string;
@@ -450,8 +490,14 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       event.payload.sdkKind === "task_started"
     ) {
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
-      const agentType =
-        (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
+      const parentToolUseId =
+        (typeof event.payload.parent_tool_use_id === "string" && event.payload.parent_tool_use_id.trim()) ||
+        (typeof event.payload.tool_use_id === "string" && event.payload.tool_use_id.trim()) ||
+        "";
+      const agentType = resolveReplaySubagentType(event, subagentTaskLinks, {
+        ...(taskId && { taskId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
       if (taskId) {
         const existingTiming = subagentReplayTimings.get(taskId);
         subagentReplayTimings.set(taskId, {
@@ -477,14 +523,39 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
     ) {
       const status = event.payload.status;
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
-      const agentType =
-        (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
-      if (status === "completed" && taskId) {
+      const parentToolUseId =
+        (typeof event.payload.parent_tool_use_id === "string" && event.payload.parent_tool_use_id.trim()) ||
+        (typeof event.payload.tool_use_id === "string" && event.payload.tool_use_id.trim()) ||
+        "";
+      const agentType = resolveReplaySubagentType(event, subagentTaskLinks, {
+        ...(taskId && { taskId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
+      const terminal =
+        status === "completed" || status === "failed" || status === "stopped" || status === "killed";
+      if (terminal && taskId && !syntheticSubagentStops.has(taskId)) {
+        syntheticSubagentStops.add(taskId);
+        const existingTiming = subagentReplayTimings.get(taskId);
+        subagentReplayTimings.set(taskId, {
+          startedAt: existingTiming?.startedAt ?? observedAt,
+          endedAt: observedAt,
+          ...(existingTiming?.parentToolUseId
+            ? { parentToolUseId: existingTiming.parentToolUseId }
+            : parentToolUseId
+              ? { parentToolUseId }
+              : {}),
+        });
+        const summary =
+          (typeof event.payload.summary === "string" && event.payload.summary.trim()) ||
+          (typeof event.payload.error === "string" && event.payload.error.trim()) ||
+          "";
         await subagentStopHook(
           {
             hook_event_name: "SubagentStop",
             agent_id: taskId,
             agent_type: agentType,
+            ...(status !== "completed" && { status }),
+            ...(summary && { last_assistant_message: summary }),
           } as SubagentStopHookInput,
           undefined,
           hookOptions,
@@ -501,14 +572,32 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
         (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) ||
         event.agentId?.trim() ||
         "";
-      const agentType =
-        (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
-      if (agentId) {
+      const parentToolUseId =
+        typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id.trim() : "";
+      const agentType = resolveReplaySubagentType(event, subagentTaskLinks, {
+        ...(agentId && { taskId: agentId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
+      if (agentId && !syntheticSubagentStops.has(agentId)) {
+        syntheticSubagentStops.add(agentId);
+        const existingTiming = subagentReplayTimings.get(agentId);
+        subagentReplayTimings.set(agentId, {
+          startedAt: existingTiming?.startedAt ?? observedAt,
+          endedAt: observedAt,
+          ...(existingTiming?.parentToolUseId ? { parentToolUseId: existingTiming.parentToolUseId } : {}),
+        });
+        const failed = event.payload.failed === true || event.payload.status === "failed";
+        const error =
+          (typeof event.payload.error === "string" && event.payload.error.trim()) ||
+          (typeof event.payload.message === "string" && event.payload.message.trim()) ||
+          "";
         await subagentStopHook(
           {
             hook_event_name: "SubagentStop",
             agent_id: agentId,
             agent_type: agentType,
+            ...(failed && { failed: true, status: "failed" }),
+            ...(error && { last_assistant_message: error }),
           } as SubagentStopHookInput,
           undefined,
           hookOptions,
@@ -530,11 +619,23 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
             endedAt: observedAt,
             ...(existingTiming?.parentToolUseId ? { parentToolUseId: existingTiming.parentToolUseId } : {}),
           });
+          const settledFailed =
+            isRecord(event.payload) && (event.payload.failed === true || event.payload.status === "failed");
+          const settledError =
+            (isRecord(event.payload) &&
+              typeof event.payload.error === "string" &&
+              event.payload.error.trim()) ||
+            (isRecord(event.payload) &&
+              typeof event.payload.message === "string" &&
+              event.payload.message.trim()) ||
+            "";
           await subagentStopHook(
             {
               hook_event_name: "SubagentStop",
               agent_id: childSessionId,
               agent_type: link.agentType,
+              ...(settledFailed && { failed: true, status: "failed" }),
+              ...(settledError && { last_assistant_message: settledError }),
             } as SubagentStopHookInput,
             undefined,
             hookOptions,

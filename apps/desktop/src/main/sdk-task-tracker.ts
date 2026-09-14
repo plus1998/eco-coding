@@ -37,6 +37,20 @@ function mapSdkTaskStatus(status: string | undefined): CoderTodoStatus | undefin
   }
 }
 
+/** Failure/cancel may overlay a completed todo; a later completed/running must not hide a failure. */
+function shouldApplyTodoStatus(from: CoderTodoStatus, to: CoderTodoStatus): boolean {
+  if (from === to) {
+    return true;
+  }
+  if (to === "blocked" || to === "cancelled") {
+    return true;
+  }
+  if (from === "blocked" || from === "cancelled") {
+    return false;
+  }
+  return true;
+}
+
 function readString(input: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const value = input[key];
@@ -195,7 +209,7 @@ export function createSdkTaskTracker(
           ...todo,
           ...(subject ? { title: subject } : {}),
           ...(activeForm ? { detail: activeForm } : description ? { detail: description } : {}),
-          ...(status ? { status } : {}),
+          ...(status && shouldApplyTodoStatus(todo.status, status) ? { status } : {}),
           updatedAt: now,
         };
       }),
@@ -252,6 +266,10 @@ export function createSdkTaskTracker(
       ]);
       return;
     }
+    const existingStatus = existing.status;
+    if (!shouldApplyTodoStatus(existingStatus, "completed")) {
+      return;
+    }
     persist(updateCoderTodoStatus(todos, todoId, "completed"));
   };
 
@@ -268,17 +286,46 @@ export function createSdkTaskTracker(
     persist(updateCoderTodoStatus(todos, linkedTodoId, "running"));
   };
 
-  const applySubagentStop = (input: { agentId: string; agentType: string }) => {
+  const applySubagentStop = (input: {
+    agentId: string;
+    agentType: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }) => {
     progressFromSdk = true;
-    const linkedTodoId = subagentTodoLinks.get(input.agentId);
+    const status: CoderTodoStatus = input.failed ? "blocked" : input.cancelled ? "cancelled" : "completed";
+    const detail = input.reason?.trim();
+    const applyStatus = (todoId: string) => {
+      const now = new Date().toISOString();
+      persist(
+        todos.map((todo) => {
+          if (todo.id !== todoId || !shouldApplyTodoStatus(todo.status, status)) {
+            return todo;
+          }
+          return {
+            ...todo,
+            status,
+            ...(detail && { detail }),
+            updatedAt: now,
+          };
+        }),
+      );
+    };
+    const linkedTodoId = subagentTodoLinks.get(input.agentId) ?? todoIdForSdkTask(input.agentId);
     if (linkedTodoId) {
-      persist(updateCoderTodoStatus(todos, linkedTodoId, "completed"));
+      applyStatus(linkedTodoId);
       subagentTodoLinks.delete(input.agentId);
+      return;
+    }
+    const constructed = `${threadId}:sdk-task:${input.agentId}`;
+    if (todos.some((todo) => todo.id === constructed)) {
+      applyStatus(constructed);
       return;
     }
     const running = todos.find((todo) => todo.status === "running");
     if (running) {
-      persist(updateCoderTodoStatus(todos, running.id, "completed"));
+      applyStatus(running.id);
     }
   };
 
@@ -309,8 +356,18 @@ export function createSdkTaskTracker(
   };
 
   const applyTaskNotification = (payload: SdkTodoUpdatedPayload) => {
-    const todoId = todoIdForSdkTask(payload.task_id);
-    if (!todoId || !payload.status) {
+    if (!payload.status) {
+      return;
+    }
+    let todoId = todoIdForSdkTask(payload.task_id);
+    if (!todoId) {
+      const constructed = `${threadId}:sdk-task:${payload.task_id}`;
+      if (todos.some((todo) => todo.id === constructed)) {
+        todoId = constructed;
+        linkSdkTask(payload.task_id, constructed);
+      }
+    }
+    if (!todoId) {
       return;
     }
     progressFromSdk = true;
@@ -319,16 +376,17 @@ export function createSdkTaskTracker(
     const detail = payload.summary?.trim();
     const now = new Date().toISOString();
     persist(
-      todos.map((todo) =>
-        todo.id === todoId
-          ? {
-              ...todo,
-              status,
-              ...(detail && { detail }),
-              updatedAt: now,
-            }
-          : todo,
-      ),
+      todos.map((todo) => {
+        if (todo.id !== todoId || !shouldApplyTodoStatus(todo.status, status)) {
+          return todo;
+        }
+        return {
+          ...todo,
+          status,
+          ...(detail && { detail }),
+          updatedAt: now,
+        };
+      }),
     );
   };
 

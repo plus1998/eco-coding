@@ -80,6 +80,67 @@ test("thread SDK task runtime handles todo.updated progress events only", () => 
   expect(store.getTodos()[0]?.status).toBe("running");
 });
 
+test("thread SDK task runtime marks a linked todo blocked on failed agent_output", () => {
+  const store = memoryStore();
+  const runtime = createThreadSdkTaskRuntime({
+    threadId: "thr_1",
+    store,
+    emitTodoList: () => undefined,
+  });
+  runtime.taskRunHooks.hookContextExtras.taskTracker?.onTaskCreated({
+    taskId: "agent_explore_failed",
+    subject: "Explore repo",
+  });
+
+  expect(
+    runtime.handleEvent({
+      type: "agent.completed",
+      payload: {
+        type: "agent_output",
+        status: "failed",
+        failed: true,
+        agentId: "agent_explore_failed",
+        error: "Agent terminated early due to an API error: 400",
+      },
+    }),
+  ).toBe(true);
+  expect(store.getTodos()[0]).toMatchObject({
+    status: "blocked",
+    detail: "Agent terminated early due to an API error: 400",
+  });
+});
+
+test("thread SDK task runtime marks a running todo blocked on failed Agent tool", () => {
+  const store = memoryStore([
+    todo({
+      id: "thr_1:task:0",
+      title: "Explore repo",
+      detail: "Explore repo",
+      status: "running",
+    }),
+  ]);
+  const runtime = createThreadSdkTaskRuntime({
+    threadId: "thr_1",
+    store,
+    emitTodoList: () => undefined,
+  });
+
+  expect(
+    runtime.handleEvent({
+      type: "tool.failed",
+      payload: {
+        tool_name: "Agent",
+        tool_use_id: "call_explore_failed",
+        message: "Agent terminated early due to an API error: 400",
+      },
+    }),
+  ).toBe(true);
+  expect(store.getTodos()[0]).toMatchObject({
+    status: "blocked",
+    detail: "Agent terminated early due to an API error: 400",
+  });
+});
+
 test("isSdkTodoProgressPayload requires structured SDK todo payload marker", () => {
   expect(isSdkTodoProgressPayload({ sdkKind: "task_started" })).toBe(true);
   expect(isSdkTodoProgressPayload(null)).toBe(false);

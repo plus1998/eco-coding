@@ -82,6 +82,78 @@ test("buildThreadRunProjection isolates concurrent same-role subagents by agentI
   expect(projection.timeline).toEqual([]);
 });
 
+test("buildThreadRunProjection overlays agent.abandoned onto a discovered started card", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: [
+      event({
+        id: "started",
+        sequence: 1,
+        eventType: "agent.started",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_fail",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "abandoned",
+        sequence: 2,
+        eventType: "agent.abandoned",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_fail",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+  });
+
+  expect(projection.agents[0]).toMatchObject({
+    agentId: "explore_fail",
+    status: "abandoned",
+    endedAt: "2026-01-01T00:00:03.000Z",
+  });
+});
+
+test("buildThreadRunProjection overlays agent.abandoned onto an active instance row", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [agent({ agentId: "explore_fail", role: "explore", status: "active" })],
+    events: [
+      event({
+        id: "started",
+        sequence: 1,
+        eventType: "agent.started",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_fail",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "abandoned",
+        sequence: 2,
+        eventType: "agent.abandoned",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_fail",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+  });
+
+  expect(projection.agents[0]).toMatchObject({
+    agentId: "explore_fail",
+    status: "abandoned",
+    endedAt: "2026-01-01T00:00:03.000Z",
+  });
+});
+
 test("buildThreadRunProjection keeps unattributed subagent tools off main timeline", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",

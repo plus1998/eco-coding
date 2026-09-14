@@ -3571,6 +3571,98 @@ test("maps completed AgentOutput as an exact terminal event without billing dupl
   expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
 });
 
+test("maps AgentOutput API-error text as a failed agent.completed event", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "sdk_agent_output_failed",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_explore_failed",
+            is_error: true,
+            content:
+              'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+      tool_use_result: {
+        status: "completed",
+        agentId: "agent_explore_failed",
+        agentType: "explore",
+        content: [
+          {
+            type: "text",
+            text: 'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+    },
+    "thr_agent_output_failed",
+  );
+
+  expect(events.some((event) => event.type === "agent.completed")).toBe(true);
+  expect(events.find((event) => event.type === "agent.completed")).toMatchObject({
+    agentId: "agent_explore_failed",
+    type: "agent.completed",
+    payload: {
+      type: "agent_output",
+      status: "failed",
+      failed: true,
+      agentId: "agent_explore_failed",
+      tool_use_id: "call_explore_failed",
+    },
+  });
+  expect(events.some((event) => event.type === "tool.failed")).toBe(true);
+});
+
+test("maps Agent tool_result API-error text as failed even without is_error", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "sdk_agent_output_failed_no_flag",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_explore_failed",
+            content:
+              'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+      tool_use_result: {
+        status: "completed",
+        agentId: "agent_explore_failed",
+        agentType: "explore",
+        content: [
+          {
+            type: "text",
+            text: 'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+    },
+    "thr_agent_output_failed_no_flag",
+  );
+
+  expect(events.find((event) => event.type === "agent.completed")).toMatchObject({
+    payload: {
+      type: "agent_output",
+      status: "failed",
+      failed: true,
+      agentId: "agent_explore_failed",
+      tool_use_id: "call_explore_failed",
+    },
+  });
+  expect(events.some((event) => event.type === "tool.failed")).toBe(true);
+});
+
 test("maps successful SDK tool results onto the original tool use", () => {
   const ctx = createSdkStreamContext();
   mapSdkMessageToEvents(
