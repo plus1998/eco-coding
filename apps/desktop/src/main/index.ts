@@ -1,10 +1,13 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+
+const execFileAsync = promisify(execFile);
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   ACP_IMAGE_ONLY_PROMPT,
@@ -3737,6 +3740,67 @@ function registerIpcHandlers(): void {
     return readWorkspaceFile({ workspacePath: request.workspacePath, filePath: request.filePath });
   });
 
+  async function openFileWithAppWindows(bundleId: string, filePath: string): Promise<void> {
+    // If bundleId is an executable name, find its path and run it directly
+    if (bundleId.toLowerCase().endsWith(".exe")) {
+      const { stdout: exePathOutput } = await execFileAsync("where", [bundleId]).catch(() => ({ stdout: "" }));
+      const exePath = exePathOutput.split("\n")[0]?.trim();
+      if (exePath) {
+        const child = spawn(exePath, [filePath], {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: false,
+        });
+        child.on("error", (err) => {
+          console.error("[OpenFileWithApp] spawn error:", err.message);
+        });
+        child.unref();
+        return;
+      }
+      throw new Error("找不到应用程序: " + bundleId);
+    }
+
+    // For ProgIDs, get the command from HKCR\{ProgID}\shell\open\command
+    const { stdout: commandOutput } = await execFileAsync("reg", [
+      "query", `HKCR\\${bundleId}\\shell\\open\\command`, "/ve",
+    ]).catch(() => ({ stdout: "" }));
+
+    const cmdMatch = commandOutput.match(/REG_SZ\s+(.+)/);
+    if (cmdMatch?.[1]) {
+      const command = cmdMatch[1].trim().replace(/\r$/, '');
+      // Extract the executable path (handling quotes)
+      let exePath: string;
+      if (command.startsWith('"')) {
+        const endQuote = command.indexOf('"', 1);
+        exePath = command.substring(1, endQuote);
+      } else {
+        const firstSpace = command.indexOf(' ');
+        exePath = firstSpace === -1 ? command : command.substring(0, firstSpace);
+      }
+      // Verify the executable exists
+      try {
+        await fs.access(exePath);
+      } catch {
+        throw new Error(`找不到应用程序: ${exePath}`);
+      }
+      // Launch the executable with spawn (detached, no wait)
+      // This is more reliable for GUI applications than execFile
+      const child = spawn(exePath, [filePath], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      });
+      child.on("error", (err) => {
+        console.error("[OpenFileWithApp] spawn error:", err.message);
+      });
+      child.unref();
+      return;
+    }
+
+    // Fallback: use start command (opens with default app)
+    await execFileAsync("cmd", ["/c", "start", `""`, `"${filePath}"`]);
+  }
+
   registerDesktopCommand(IPC_CHANNELS.workspaceWriteFile, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid workspace write file request.");
@@ -3782,6 +3846,111 @@ function registerIpcHandlers(): void {
     const openError = await shell.openPath(resolvedPath);
     if (openError) {
       throw new Error(openError);
+    }
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceOpenFileExternally, async (filePath: unknown) => {
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      throw new Error("File path is required.");
+    }
+    const cleanPath = filePath.trim().replace(/[\\/]+$/, "");
+    const resolvedPath = path.resolve(cleanPath);
+    let fileStat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      fileStat = await fs.stat(resolvedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("找不到该文件。");
+      }
+      throw error;
+    }
+    if (!fileStat.isFile()) {
+      throw new Error("请选择一个文件。");
+    }
+    const openError = await shell.openPath(resolvedPath);
+    if (openError) {
+      throw new Error(openError);
+    }
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceOpenContainingFolder, async (filePath: unknown) => {
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      throw new Error("File path is required.");
+    }
+    const cleanPath = filePath.trim().replace(/[\\/]+$/, "");
+    const resolvedPath = path.resolve(cleanPath);
+    let fileStat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      fileStat = await fs.stat(resolvedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("找不到该文件。");
+      }
+      throw error;
+    }
+    if (!fileStat.isFile()) {
+      throw new Error("请选择一个文件。");
+    }
+    shell.showItemInFolder(resolvedPath);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceGetAssociatedApps, async (filePath: unknown) => {
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      throw new Error("File path is required.");
+    }
+    const cleanPath = filePath.trim().replace(/[\\/]+$/, "");
+    const resolvedPath = path.resolve(cleanPath);
+    let fileStat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      fileStat = await fs.stat(resolvedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("找不到该文件。");
+      }
+      throw error;
+    }
+    if (!fileStat.isFile()) {
+      throw new Error("请选择一个文件。");
+    }
+    const { getAssociatedApps } = await import("./get-associated-apps");
+    return getAssociatedApps(resolvedPath);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceOpenFileWithApp, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid request payload.");
+    }
+    const { filePath, bundleId } = payload as { filePath?: string; bundleId?: string };
+    console.log(`[OpenFileWithApp] Received payload: filePath=${JSON.stringify(filePath)} bundleId=${JSON.stringify(bundleId)}`);
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      throw new Error("File path is required.");
+    }
+    if (typeof bundleId !== "string" || !bundleId.trim()) {
+      throw new Error("Application identifier is required.");
+    }
+    const cleanPath = filePath.trim().replace(/[\\/]+$/, "");
+    const resolvedPath = path.resolve(cleanPath);
+    console.log(`[OpenFileWithApp] resolvedPath=${JSON.stringify(resolvedPath)}`);
+    let fileStat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      fileStat = await fs.stat(resolvedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("找不到该文件。");
+      }
+      throw error;
+    }
+    if (!fileStat.isFile()) {
+      throw new Error("请选择一个文件。");
+    }
+    console.log(`[OpenFileWithApp] platform=${process.platform} bundleId=${bundleId} resolvedPath=${resolvedPath}`);
+    if (process.platform === "darwin") {
+      await execFileAsync("open", ["-b", bundleId.trim(), resolvedPath]);
+    } else if (process.platform === "win32") {
+      await openFileWithAppWindows(bundleId.trim(), resolvedPath);
+    } else {
+      // Linux: use xdg-open with the desktop file
+      await execFileAsync("xdg-open", [resolvedPath]);
     }
   });
 

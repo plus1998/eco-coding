@@ -1,6 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Eye, ExternalLink, Pencil, RotateCcw } from "lucide-react";
+import { Eye, Pencil, RotateCcw } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownContent } from "./MarkdownContent";
@@ -281,15 +281,6 @@ export function WorkspaceFilePreview({
 
   const showModeToggle = (isMarkdown || isSvg) && editable;
 
-  const handleOpenInBrowser = useCallback(async () => {
-    if (!window.eco) return;
-    try {
-      await window.eco.browserOpen({ url: file.path, reveal: true, activate: true });
-    } catch (error) {
-      console.warn("[WorkspaceFilePreview] Failed to open in browser", error);
-    }
-  }, [file.path]);
-
   useEffect(() => {
     const next = file.content ?? "";
     baselineRef.current = next;
@@ -417,7 +408,7 @@ export function WorkspaceFilePreview({
 
   return (
     <div className="workspace-file-browser__preview-body">
-      {(showModeToggle || isHtml) && (
+      {showModeToggle && (
         <div className="workspace-file-browser__mode-toggle">
           {showModeToggle && (
             <>
@@ -441,17 +432,7 @@ export function WorkspaceFilePreview({
               </button>
             </>
           )}
-          {isHtml && (
-            <button
-              type="button"
-              className="workspace-file-browser__mode-btn workspace-file-browser__open-browser-btn"
-              onClick={handleOpenInBrowser}
-              title={t("fileBrowser.openInBrowser")}
-            >
-              <ExternalLink size={14} />
-              <span>{t("fileBrowser.openInBrowser")}</span>
-            </button>
-          )}
+
         </div>
       )}
       {viewMode === "preview" && (isMarkdown || isSvg) ? (

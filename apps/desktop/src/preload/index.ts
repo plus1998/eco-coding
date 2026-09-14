@@ -382,6 +382,19 @@ const api = {
   openWorkspaceInFileManager(workspacePath: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenInFileManager, workspacePath);
   },
+  openFileExternally(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenFileExternally, filePath);
+  },
+  openContainingFolder(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenContainingFolder, filePath);
+  },
+  getAssociatedApps(filePath: string): Promise<Array<{ name: string; bundleId: string; iconBase64?: string }>> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetAssociatedApps, filePath);
+  },
+  openFileWithApp(filePath: string, bundleId: string): Promise<void> {
+    console.log("[Preload] openFileWithApp:", JSON.stringify({ filePath, bundleId }));
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenFileWithApp, { filePath, bundleId });
+  },
   prepareWorkspaceGit(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspacePrepareGit, { workspacePath });
   },
