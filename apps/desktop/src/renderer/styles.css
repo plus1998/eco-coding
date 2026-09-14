@@ -25757,13 +25757,13 @@ html:not([data-platform="darwin"])
   padding-bottom: calc(
     var(--activity-feed-composer-mask-height) +
     var(--composer-input-overlays-height, 0px) +
-    12px
+    32px
   );
   scroll-padding-top: 12px;
   scroll-padding-bottom: calc(
     var(--activity-feed-composer-mask-height) +
     var(--composer-input-overlays-height, 0px) +
-    12px
+    32px
   );
 }
 
