@@ -113,6 +113,7 @@ import { createImageObjectUrlFromBase64, revokeImageObjectUrl } from "./image-ob
 import { releaseMermaidModule } from "./prosemirror/mermaid-block";
 import { resolveFeedPaceTargetKey } from "./feed-pace-target";
 import { FeedErrorCard } from "./FeedErrorCard";
+import { FeedStatusDivider } from "./FeedStatusDivider";
 import {
   FEED_VIRTUALIZE_MIN_SECTIONS,
   FeedVirtualSectionWindow,
@@ -3394,16 +3395,7 @@ function isPromptCacheNoticePhaseLabel(label: string): boolean {
 }
 
 function PromptCacheNoticeDivider({ label }: { label: string }) {
-  return (
-    <div className="run-log-prompt-cache-notice" role="status">
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-      <div className="run-log-prompt-cache-notice-label">
-        <Sparkles size={14} aria-hidden />
-        <span>{label}</span>
-      </div>
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-    </div>
-  );
+  return <FeedStatusDivider message={label} />;
 }
 
 function PromptCacheTimelineBlock({
@@ -3418,41 +3410,8 @@ function PromptCacheTimelineBlock({
     episodeId?: string;
   }>;
 }) {
-  return (
-    <div className="run-log-prompt-cache-timeline" role="status">
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-      <div className="run-log-prompt-cache-timeline-body">
-        <div className="run-log-prompt-cache-timeline-title">
-          <Sparkles size={14} aria-hidden />
-          <span>{i18n.t("activity.promptCacheTimeline")}</span>
-        </div>
-        <p className="run-log-prompt-cache-timeline-narrative">{narrative}</p>
-        {steps.length > 1 ? (
-          <ol className="run-log-prompt-cache-timeline-steps">
-            {steps.map((step, index) => (
-              <li key={`${step.kind}-${step.at}-${index}`}>
-                <time dateTime={step.at}>{formatPromptCacheTimelineTime(step.at)}</time>
-                <span>{step.label}</span>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </div>
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-    </div>
-  );
-}
-
-function formatPromptCacheTimelineTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleTimeString(i18n.resolvedLanguage, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  const info = steps.map((step) => step.label).join("\n");
+  return <FeedStatusDivider message={narrative} {...(info && { info })} />;
 }
 
 function ShimmerText({ children }: { children: string }) {

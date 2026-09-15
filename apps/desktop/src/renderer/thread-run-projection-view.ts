@@ -31,6 +31,7 @@ import type {
 import {
   collapsePromptCacheTimelineItems,
   isPromptCacheTimelineEventType,
+  promptCacheTimelineStepFromItem,
   readPromptCacheTimelineMetadata,
 } from "../shared/prompt-cache-timeline";
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
@@ -3270,6 +3271,14 @@ export function projectionItemToDetailBlock(
         kind: "prompt-cache-timeline",
         narrative: timeline.narrative,
         steps: timeline.steps,
+      };
+    }
+    if (isPromptCacheTimelineEventType(item.eventType)) {
+      const step = promptCacheTimelineStepFromItem(item);
+      return {
+        kind: "prompt-cache-timeline",
+        narrative: phaseLabel,
+        steps: step ? [step] : [],
       };
     }
     return { kind: "phase", label: phaseLabel };

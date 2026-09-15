@@ -4548,9 +4548,15 @@ test("resolveProjectionPhaseLabel maps cache hit drop events", () => {
       text: "Prompt cache 命中率从 78% 降至 12%（↓66pp），可能由 cache break 引起。",
     }),
   );
-  expect(detail).toEqual({
-    kind: "phase",
-    label: "Prompt cache 命中率从 78% 降至 12%（↓66pp），可能由 cache break 引起。",
+  expect(detail).toMatchObject({
+    kind: "prompt-cache-timeline",
+    narrative: expect.stringContaining("78%"),
+    steps: [
+      {
+        kind: "hit_dropped",
+        label: expect.stringContaining("12%"),
+      },
+    ],
   });
 });
 

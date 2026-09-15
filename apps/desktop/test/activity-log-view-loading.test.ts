@@ -27,6 +27,10 @@ import { renderLocalized } from "./i18n-test";
 
 const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
 const themes = readFileSync(new URL("../src/renderer/themes.css", import.meta.url), "utf8");
+const feedStatusDividerStyles = readFileSync(
+  new URL("../src/renderer/FeedStatusDivider.css", import.meta.url),
+  "utf8",
+);
 
 let previousLanguage = "zh-CN";
 
@@ -848,9 +852,9 @@ test("run-log feed spacing contract keeps process rhythm on --codex-feed-gap-pro
   expect(styles).toMatch(
     /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-feed-entry--tight \+ \.run-log-feed-entry--tight[\s\S]*?margin-top:\s*var\(--codex-feed-gap-step\);/,
   );
-  expect(styles).toMatch(
-    /\.codex-main:not\(\.codex-main-landing\) \.run-log-prompt-cache-notice,\s*\.codex-main:not\(\.codex-main-landing\) \.run-log-prompt-cache-timeline\s*\{[\s\S]*?margin-block:\s*0;/,
-  );
+  const statusDividerBody = feedStatusDividerStyles.match(/\.feed-status-divider\s*\{([\s\S]*?)\n\}/)?.[1];
+  expect(statusDividerBody).toBeTruthy();
+  expect(statusDividerBody).not.toMatch(/margin(?:-block)?:/);
   expect(styles).not.toMatch(
     /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-context-action\)\s*\{[\s\S]*?margin-block:\s*14px;/,
   );
