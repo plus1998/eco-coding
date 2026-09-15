@@ -11933,56 +11933,12 @@ button.default-agent-option:focus-visible {
   margin-bottom: 0;
 }
 
-.run-log-streaming-dots {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 1px;
-  margin-left: 2px;
-  vertical-align: baseline;
-  color: var(--markdown-muted);
-  font-size: 1.05em;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.02em;
-}
-
 .run-log-conversation-tail {
   display: flex;
   align-items: center;
   min-height: 18px;
   margin-top: 4px;
   color: var(--codex-log-muted, #a3a3a3);
-}
-
-.run-log-conversation-tail .run-log-streaming-dots {
-  margin-left: 0;
-}
-
-.run-log-streaming-dot {
-  display: inline-block;
-  animation: run-log-dot-bounce 1.15s ease-in-out infinite;
-}
-
-.run-log-streaming-dot:nth-child(2) {
-  animation-delay: 0.14s;
-}
-
-.run-log-streaming-dot:nth-child(3) {
-  animation-delay: 0.28s;
-}
-
-@keyframes run-log-dot-bounce {
-  0%,
-  55%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.35;
-  }
-
-  28% {
-    transform: translateY(-3px);
-    opacity: 1;
-  }
 }
 
 .markdown-content--streaming-body .markdown-pre {
@@ -25799,7 +25755,7 @@ html:not([data-platform="darwin"])
 }
 
 /*
- * Active tail (「正在思考」/「...」) is a direct .run-log child after the last
+ * Active tail (「正在思考」/会话进行中) is a direct .run-log child after the last
  * virtual row / turn. Always continue the process rhythm — never step/12px
  * special cases (those made 命令→正在思考 look glued while tool↔narrative stayed open).
  */

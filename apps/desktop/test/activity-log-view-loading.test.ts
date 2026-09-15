@@ -302,6 +302,7 @@ test("ActivityLogView waits for thread stop before exposing final output copy", 
 
   expect(html).not.toContain('aria-label="复制消息"');
   expect(html).toContain('class="run-log-conversation-tail"');
+  expect(html).not.toContain("run-log-streaming-dots");
   expect(html).toContain("run-log-active-tail");
 });
 
@@ -1070,7 +1071,7 @@ test("ActivityLogView collapses multiple completed thinking items by default", (
   expect(html).not.toContain("· 耗时");
 });
 
-test("ActivityLogView shows only the conversation tail for a running file write action", () => {
+test("ActivityLogView keeps a running file write action as the only loading state", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -1096,11 +1097,11 @@ test("ActivityLogView shows only the conversation tail for a running file write 
   );
 
   expect(html).not.toContain("run-log-inline-loading");
-  expect(html).toContain('aria-label="会话进行中"');
-  expect(html.match(/class="run-log-streaming-dot"/g)?.length).toBe(3);
+  expect(html).not.toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("run-log-streaming-dot");
 });
 
-test("ActivityLogView keeps loading at the feed tail for collapsed running tool groups", () => {
+test("ActivityLogView keeps loading in collapsed running tool groups without a separate tail", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -1145,8 +1146,8 @@ test("ActivityLogView keeps loading at the feed tail for collapsed running tool 
   expect(html).toContain("正在读取 config.ts");
   expect(html).not.toContain("已写入 1 个文件和已读取 1 个文件");
   expect(html).not.toContain("run-log-inline-loading");
-  expect(html).toContain('aria-label="会话进行中"');
-  expect(html.match(/class="run-log-streaming-dot"/g)?.length).toBe(3);
+  expect(html).not.toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("run-log-streaming-dot");
 });
 
 test("ActivityLogView switches command groups from live action back to completed totals", () => {
@@ -1871,7 +1872,7 @@ test("ActivityLogView shimmers a running imageView and hides waiting thinking", 
   expect(html).toContain("run-log-image-view");
   expect(html).toContain("正在查看 1 张图像");
   expect(html).toContain("run-log-shimmer-text");
-  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain('aria-label="会话进行中"');
   expect(html).not.toContain("正在思考");
 });
 
@@ -1950,7 +1951,7 @@ test("ActivityLogView hides waiting thinking while an MCP tool is running", () =
   );
 
   expect(html).toContain("正在调用 MCP");
-  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain('aria-label="会话进行中"');
   expect(html).not.toContain("正在思考");
 });
 
@@ -1993,7 +1994,7 @@ test("ActivityLogView hides waiting thinking while a file tool is running", () =
   );
 
   expect(html).toContain("正在写入");
-  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain('aria-label="会话进行中"');
   expect(html).not.toContain("正在思考");
 });
 
@@ -3105,7 +3106,7 @@ test("ActivityLogView summarizes task progress tools without calling them subage
   expect(html).not.toContain("已调用 2 个子代理");
 });
 
-test("ActivityLogView uses conversation loading for a completed request with a stale running action", () => {
+test("ActivityLogView does not add a separate status for a stale running action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -3138,7 +3139,7 @@ test("ActivityLogView uses conversation loading for a completed request with a s
 
   expect(html).toContain("run-log-tool-group-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
-  expect(html).toContain("run-log-conversation-tail");
+  expect(html).not.toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView does not show inline loading for orphan running actions while thread continues", () => {
@@ -3172,7 +3173,7 @@ test("ActivityLogView does not show inline loading for orphan running actions wh
   expect(html).not.toContain("run-log-action--bash-card");
   expect(html).not.toContain("run-log-bash-command");
   expect(html).not.toContain("run-log-inline-loading");
-  expect(html).toContain("run-log-conversation-tail");
+  expect(html).not.toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView does not leave inline loading on orphan running actions after the thread ends", () => {

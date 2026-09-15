@@ -128,7 +128,6 @@ import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from 
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
-import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import { RequestSpansContext, TokenSpeedBadge } from "./TokenSpeedBadge";
 import { UserPromptBodyContent } from "./UserPromptBodyContent";
 import {
@@ -3593,9 +3592,7 @@ function RunLogConversationTail() {
       className="run-log-conversation-tail"
       role="status"
       aria-label={i18n.t("activity.conversationActive")}
-    >
-      <StreamingTypingIndicator />
-    </div>
+    />
   );
 }
 

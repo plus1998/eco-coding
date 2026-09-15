@@ -119,14 +119,14 @@ test("settling tool group keeps the 正在思考 tail suppressed during the mini
     ),
   );
   expect(html).toContain("run-log-shimmer-text");
-  expect(html).toContain("run-log-active-tail");
+  expect(html).not.toContain("run-log-active-tail");
   expect(html).not.toContain("正在思考");
 });
 
 test("settled tool group as the latest content keeps the 正在思考 tail suppressed", () => {
   // Both MCP tools settled long ago: the aggregate row is the latest content, so it
   // is the tail state itself — the「正在思考」line must not render beneath it. The
-  // tail falls back to the neutral conversation indicator instead.
+  // tail keeps a neutral conversation status node instead.
   const html = renderFeed(
     projection(
       [
