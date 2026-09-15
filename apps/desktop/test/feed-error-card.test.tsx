@@ -1,0 +1,176 @@
+import { expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ActivityLogView } from "../src/renderer/ActivityLogView";
+import { FeedErrorCard } from "../src/renderer/FeedErrorCard";
+import type {
+  ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
+  ThreadSummary,
+} from "../src/shared/ipc";
+
+function timelineItem(
+  id: string,
+  sequence: number,
+  input: Partial<ThreadRunProjectionTimelineItem>,
+): ThreadRunProjectionTimelineItem {
+  return {
+    id,
+    sequence,
+    eventType: input.eventType ?? "api.error",
+    scope: input.scope ?? "main",
+    role: input.role ?? "planner",
+    text: input.text ?? "Model request failed",
+    at: input.at ?? `2026-01-01T00:00:0${sequence}.000Z`,
+    ...(input.metadata && { metadata: input.metadata }),
+  };
+}
+
+function failedProjection(failure: ThreadRunProjectionTimelineItem): ThreadRunProjectionSnapshot {
+  const prompt = timelineItem("prompt", 1, {
+    eventType: "thread.status",
+    role: "user",
+    text: "Try the model",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  return {
+    thread: {
+      threadId: "thread-error-card",
+      status: "failed",
+      generatedAt: "2026-01-01T00:00:03.000Z",
+    },
+    attempts: [],
+    agents: [],
+    requestSpans: [],
+    timeline: [prompt, failure],
+    diagnostics: [],
+    sourceEventCount: 2,
+  };
+}
+
+const failedThread: ThreadSummary = {
+  id: "thread-error-card",
+  title: "Model error",
+  prompt: "Try the model",
+  workspacePath: "C:/workspace",
+  status: "failed",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:03.000Z",
+  message: "",
+  coreKind: "claude",
+};
+
+function renderFailure(failure: ThreadRunProjectionTimelineItem): string {
+  return renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: failedProjection(failure),
+      thread: failedThread,
+      onRetryFailedRequest: () => undefined,
+    }),
+  );
+}
+
+test("feed error card renders a model error and text retry action", () => {
+  const markup = renderToStaticMarkup(
+    createElement(FeedErrorCard, {
+      message: "Selected model is at capacity. Please try a different model.",
+      retryLabel: "重试",
+      onRetry: () => undefined,
+      title: "Model request failed",
+    }),
+  );
+
+  expect(markup).toContain('class="feed-error-card"');
+  expect(markup).toContain('role="alert"');
+  expect(markup).toContain("Selected model is at capacity");
+  expect(markup).toContain('class="feed-error-card-retry"');
+  expect(markup).toContain(">重试</button>");
+  expect(markup).not.toContain("refresh-cw");
+});
+
+test("feed error card keeps optional request context and expandable detail", () => {
+  const markup = renderToStaticMarkup(
+    createElement(FeedErrorCard, {
+      context: "Coder · model-x",
+      message: "Connection failed",
+      detail: "ECONNRESET",
+    }),
+  );
+
+  expect(markup).toContain("Coder · model-x");
+  expect(markup).toContain("<details");
+  expect(markup).toContain("ECONNRESET");
+  expect(markup).not.toContain("feed-error-card-retry");
+});
+
+test("ActivityLogView routes model API errors through the shared error card", () => {
+  const markup = renderFailure(
+    timelineItem("api-failure", 2, {
+      eventType: "api.error",
+      text: "Selected model is at capacity. Please try a different model.",
+      metadata: {
+        liveType: "thread.api_error",
+        apiError: { message: "Selected model is at capacity. Please try a different model." },
+      },
+    }),
+  );
+
+  expect(markup).toContain('class="feed-error-card"');
+  expect(markup).toContain("Selected model is at capacity");
+  expect(markup).toContain('class="feed-error-card-retry"');
+});
+
+test("ActivityLogView routes upstream final errors through the shared error card", () => {
+  const markup = renderFailure(
+    timelineItem("upstream-failure", 2, {
+      eventType: "message.final",
+      text: "API Error: 503 Loading model.",
+      metadata: { activityOrigin: "sdk.upstream_error" },
+    }),
+  );
+
+  expect(markup).toContain('class="feed-error-card"');
+  expect(markup).toContain("API Error: 503 Loading model.");
+  expect(markup).toContain('class="feed-error-card-retry"');
+});
+
+test("ActivityLogView routes terminal thread and reconnect failures through the shared error card", () => {
+  const threadFailure = renderFailure(
+    timelineItem("thread-failure", 2, {
+      eventType: "thread.status",
+      text: "The model request was blocked",
+      metadata: { activityOrigin: "eco.thread_blocked", liveType: "thread.blocked" },
+    }),
+  );
+  const reconnectFailure = renderFailure(
+    timelineItem("reconnect-failure", 2, {
+      eventType: "api.error",
+      text: "Connection failed: upstream unavailable",
+      metadata: {
+        activityOrigin: "proxy.connection_error",
+        apiError: { statusCode: 503, message: "upstream unavailable" },
+      },
+    }),
+  );
+
+  expect(threadFailure).toContain('class="feed-error-card"');
+  expect(threadFailure).toContain("The model request was blocked");
+  expect(reconnectFailure).toContain('class="feed-error-card"');
+  expect(reconnectFailure).toContain('class="feed-error-card-retry"');
+});
+
+test("ActivityLogView does not treat tool failures as model request errors", () => {
+  const markup = renderFailure(
+    timelineItem("tool-failure", 2, {
+      eventType: "tool.failed",
+      role: "tool",
+      text: "Tool failed: Bash: command exited with 1",
+      metadata: {
+        tool: { name: "Bash", detail: "exit 1", status: "failed", exitCode: 1 },
+      },
+    }),
+  );
+
+  expect(markup).not.toContain("feed-error-card");
+  expect(markup).toContain("run-log-tool-group");
+});

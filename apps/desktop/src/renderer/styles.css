@@ -4295,7 +4295,7 @@ button.sidebar-settings-meta {
 .run-log-thinking-body *,
 .run-log-user-prompt-body,
 .run-log-tool-failed-error,
-.run-log-api-error-message,
+.feed-error-card-message,
 .clarification-answer-answer,
 .workspace-changes-file-path {
   user-select: text;
@@ -10079,33 +10079,6 @@ button.default-agent-option:focus-visible {
   user-select: none;
 }
 
-.run-log-phase--with-retry {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.run-log-failure-retry {
-  flex-shrink: 0;
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary, #a3a3a3);
-  cursor: pointer;
-}
-
-.run-log-failure-retry:hover {
-  color: var(--text-primary, #e5e5e5);
-  background: color-mix(in srgb, var(--text-primary, #e5e5e5) 8%, transparent);
-}
-
 .run-log-reconnect-summary::-webkit-details-marker {
   display: none;
 }
@@ -11442,49 +11415,6 @@ button.default-agent-option:focus-visible {
   scrollbar-gutter: stable;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.run-log-api-error {
-  margin: 4px 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  background: var(--danger-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.run-log-api-error-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.run-log-api-error-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.run-log-api-error-role {
-  color: var(--danger);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.run-log-api-error-label {
-  color: var(--danger);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.run-log-api-error-message {
-  margin: 0;
-  color: var(--codex-log-text, var(--text-primary, #e5e5e5));
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .run-log-mission-details {
@@ -26627,22 +26557,10 @@ html:not([data-platform="darwin"])
   font-size: 13px;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-api-error {
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--codex-log-line));
-  background: var(--danger-soft);
-  color: var(--codex-log-text);
-}
-
 .codex-main:not(.codex-main-landing) .run-log-tool-failed {
   padding: 6px 0;
   border: 0;
   background: transparent;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-api-error-role,
-.codex-main:not(.codex-main-landing) .run-log-api-error-label {
-  color: var(--danger);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-tool-failed-role,
@@ -26650,8 +26568,7 @@ html:not([data-platform="darwin"])
   color: var(--codex-log-muted);
 }
 
-.codex-main:not(.codex-main-landing) .run-log-tool-failed-error,
-.codex-main:not(.codex-main-landing) .run-log-api-error-message {
+.codex-main:not(.codex-main-landing) .run-log-tool-failed-error {
   color: var(--codex-log-text);
 }
 

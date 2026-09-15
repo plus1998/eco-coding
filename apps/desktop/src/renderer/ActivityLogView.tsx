@@ -112,6 +112,7 @@ import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attac
 import { createImageObjectUrlFromBase64, revokeImageObjectUrl } from "./image-object-url";
 import { releaseMermaidModule } from "./prosemirror/mermaid-block";
 import { resolveFeedPaceTargetKey } from "./feed-pace-target";
+import { FeedErrorCard } from "./FeedErrorCard";
 import {
   FEED_VIRTUALIZE_MIN_SECTIONS,
   FeedVirtualSectionWindow,
@@ -3295,24 +3296,6 @@ function DetailBlock({
   );
 }
 
-function RequestFailureRetryButton({ onRetry }: { onRetry: () => void }) {
-  return (
-    <button
-      type="button"
-      className="run-log-failure-retry"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onRetry();
-      }}
-      aria-label={i18n.t("activity.retryRequest")}
-      title={i18n.t("activity.retryRequestTitle")}
-    >
-      <RefreshCw size={14} aria-hidden />
-    </button>
-  );
-}
-
 function PhaseBlock({
   label,
   reconnecting,
@@ -3336,9 +3319,17 @@ function PhaseBlock({
   if (isPromptCacheNoticePhaseLabel(label)) {
     return <PromptCacheNoticeDivider label={label} />;
   }
-  const retryButton = onRetry ? <RequestFailureRetryButton onRetry={onRetry} /> : null;
   if (reconnecting) {
     const isFailure = Boolean(reconnectFailed);
+    if (isFailure) {
+      return (
+        <FeedErrorCard
+          message={label}
+          {...(reconnectDetail && { detail: reconnectDetail })}
+          {...(onRetry && { retryLabel: i18n.t("common.retry"), onRetry })}
+        />
+      );
+    }
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
     const ReconnectIcon = isFailure ? CircleAlert : RefreshCw;
     const summaryRow = (
@@ -3355,27 +3346,18 @@ function PhaseBlock({
       return (
         <div className={`${className} run-log-reconnect-inline`} role="status" aria-live="polite">
           {summaryRow}
-          {retryButton}
         </div>
       );
     }
     return (
       <details className={className} role="status" aria-live="polite">
-        <summary className="run-log-reconnect-summary">
-          {summaryRow}
-          {retryButton}
-        </summary>
+        <summary className="run-log-reconnect-summary">{summaryRow}</summary>
         <pre className="run-log-reconnect-detail">{reconnectDetail}</pre>
       </details>
     );
   }
-  if (retryButton) {
-    return (
-      <div className="run-log-phase run-log-phase--with-retry">
-        <span>{label}</span>
-        {retryButton}
-      </div>
-    );
+  if (onRetry) {
+    return <FeedErrorCard message={label} retryLabel={i18n.t("common.retry")} onRetry={onRetry} />;
   }
   return <div className="run-log-phase">{label}</div>;
 }
@@ -4730,20 +4712,14 @@ function ApiErrorBlock({
       : i18n.t("activity.connectionFailed"));
 
   return (
-    <div className="run-log-api-error" role="alert">
-      <div className="run-log-api-error-header">
-        <div className="run-log-api-error-heading">
-          {subagent && !omitRoleLabel ? (
-            <span className="run-log-api-error-role">
-              {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-            </span>
-          ) : null}
-          <span className="run-log-api-error-label">{title}</span>
-        </div>
-        {onRetry ? <RequestFailureRetryButton onRetry={onRetry} /> : null}
-      </div>
-      <p className="run-log-api-error-message">{message}</p>
-    </div>
+    <FeedErrorCard
+      message={message}
+      title={title}
+      {...(subagent && !omitRoleLabel
+        ? { context: formatRoleModelLabel(subagent, modelByRole?.[subagent]) }
+        : {})}
+      {...(onRetry ? { retryLabel: i18n.t("common.retry"), onRetry } : {})}
+    />
   );
 }
 
