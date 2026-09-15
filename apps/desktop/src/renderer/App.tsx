@@ -343,6 +343,7 @@ import {
 } from "./local-stream-projection";
 import type { ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { FullAccessNotice } from "./FullAccessNotice";
+import { FeedStatusDivider } from "./FeedStatusDivider";
 import {
   diagnoseOrchestrationSnapshotReadiness,
   invalidOrchestrationFieldsFromIssues,
@@ -9993,12 +9994,8 @@ function App() {
       }
     >
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
-      {composerPromptCacheHint ? (
-        <p className="composer-prompt-cache-hint" role="status">
-          {composerPromptCacheHint}
-        </p>
-      ) : null}
       <div className="composer-feed-notices">
+        {composerPromptCacheHint ? <FeedStatusDivider message={composerPromptCacheHint} /> : null}
         {composerRuntimeConfig ? (
           <FullAccessNotice
             bashReviewMode={composerRuntimeConfig.bashReviewMode}
