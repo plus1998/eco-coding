@@ -22,7 +22,9 @@ export function resolveComposerModelAvailability(
     return "acp";
   }
   const hasEnabledProvider = providers.some((provider) => provider.enabled);
-  if (!hasEnabledProvider) {
+  // Built-in OpenAI (auth.json) doesn't need a Gateway provider
+  const hasBuiltInOpenAi = templateMainModel?.providerId === "openai";
+  if (!hasEnabledProvider && !hasBuiltInOpenAi) {
     return "no-provider";
   }
   if (!templateMainModel) {

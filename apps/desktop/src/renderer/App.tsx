@@ -28,6 +28,7 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   type LucideIcon,
+  KeyRound,
   Maximize2,
   MessageCirclePlus,
   MessageSquare,
@@ -317,6 +318,7 @@ import {
   LazyMcpSettingsPanel,
   LazyModelsSettingsPanel,
   LazyNotificationPreferencesPanel,
+  LazyOpenAIAccountsPanel,
   LazyPersonalizationSettingsPanel,
   LazyProxySettingsPanel,
   LazySkillsSettingsPanel,
@@ -9869,6 +9871,7 @@ function App() {
       onSelectSubagents={selectComposerSubagents}
       onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
       onSelectVisionModel={selectComposerVisionModel}
+      coreKind={composerCoreKind}
       onResetToGlobalSettings={() => void resetComposerToGlobalSettings()}
       onOpenFullSettings={() => openModelsSettings("compositionParts")}
     />

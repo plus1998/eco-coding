@@ -8,6 +8,22 @@ import {
   resolveUpstreamApiCompat,
   type UpstreamApiCompat,
 } from "../shared/api-compat";
+
+/** Built-in OpenAI models for ChatGPT OAuth (auth.json) — same as sub2api openai.DefaultModels. */
+export const OPENAI_BUILTIN_MODELS: { id: string }[] = [
+  { id: "gpt-5.6-sol" },
+  { id: "gpt-6" },
+  { id: "gpt-5.6" },
+  { id: "gpt-5.6-terra" },
+  { id: "gpt-5.6-luna" },
+  { id: "gpt-6-astra" },
+  { id: "gpt-5.5" },
+  { id: "gpt-5.4" },
+  { id: "gpt-5.4-mini" },
+  { id: "gpt-5.3-codex-spark" },
+  { id: "codex-auto-review" },
+  { id: "gpt-5.2" },
+];
 import type { ThinkingEffort } from "../shared/ipc";
 import type {
   ListUpstreamModelsRequest,
@@ -79,6 +95,13 @@ export async function listProviderUpstreamModels(
       error: resolved.error,
     });
     return resolved;
+  }
+
+  // For OAuth/auth.json providers (no API key), return hardcoded OpenAI models.
+  // The ChatGPT OAuth token cannot call /v1/models (missing api.model.read scope).
+  // Same approach as sub2api: use openai.DefaultModels.
+  if (!resolved.apiKey.trim()) {
+    return { ok: true, models: OPENAI_BUILTIN_MODELS };
   }
 
   const routing = describeProviderCompatRouting(

@@ -1009,18 +1009,25 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   );
 
   // Push ProviderStore models into in-process eco-gateway before Codex calls /v1/responses.
+  // Note: providerId "openai" is the built-in Codex provider (auth.json) — no Gateway needed.
   const roleProviderIds = roleSync?.roles.map((role) => role.providerId) ?? [];
   const requiredProviderIds = [
     ...new Set(
-      [...(input.requiredProviderIds ?? []), ...roleProviderIds].map((id) => id.trim()).filter(Boolean),
+      [...(input.requiredProviderIds ?? []), ...roleProviderIds]
+        .map((id) => id.trim())
+        .filter((id) => Boolean(id) && id !== "openai"),
     ),
   ];
-  const gatewayProviders = await ensureGlobalEcoGateway({
-    ...(requiredProviderIds.length > 0 ? { requiredProviderIds } : {}),
-  });
-  runtimeDeps.onStderr?.(
-    `[eco-gateway] ready providers=${gatewayProviders.map((p) => `${p.id}[${p.models.join("|")}]`).join(", ")}`,
-  );
+  const gatewayProviders = requiredProviderIds.length > 0
+    ? await ensureGlobalEcoGateway({ requiredProviderIds })
+    : [];
+  if (gatewayProviders.length > 0) {
+    runtimeDeps.onStderr?.(
+      `[eco-gateway] ready providers=${gatewayProviders.map((p) => `${p.id}[${p.models.join("|")}]`).join(", ")}`,
+    );
+  } else {
+    runtimeDeps.onStderr?.(`[eco-gateway] skipped (no Gateway providers needed)`);
+  }
 
   // Once a global baseline is loaded, normal thread preparation is deliberately
   // thread-only: role files and thread/start config may differ, but neither the

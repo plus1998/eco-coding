@@ -69,6 +69,19 @@ export const IPC_CHANNELS = {
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
   modelProviderTest: "model-provider:test",
+  codexOAuthGetStatus: "codex-oauth:get-status",
+  codexOAuthStartLogin: "codex-oauth:start-login",
+  codexOAuthLogout: "codex-oauth:logout",
+  openAIAccountsList: "openai-accounts:list",
+  openAIAccountsCreate: "openai-accounts:create",
+  openAIAccountsDelete: "openai-accounts:delete",
+  openAIAccountsStartLogin: "openai-accounts:start-login",
+  openAIAccountsSetActive: "openai-accounts:set-active",
+  openAIAccountsGetActive: "openai-accounts:get-active",
+  openAIAccountsSetAuthJson: "openai-accounts:set-auth-json",
+  openAIAccountsQueryQuota: "openai-accounts:query-quota",
+  openAIAccountsUpdate: "openai-accounts:update",
+  openAIAccountsGetAuthJson: "openai-accounts:get-auth-json",
   modelRouteProfileTest: "model-route-profile:test",
   modelRouteProfileSave: "model-route-profile:save",
   modelRouteProfileDelete: "model-route-profile:delete",
@@ -1202,6 +1215,10 @@ export interface ProviderConfigInput {
   apiCompat?: UpstreamApiCompat;
   /** Explicit count_tokens implementation; never inferred from apiCompat. */
   tokenCountMode?: ProviderTokenCountMode;
+  /** Authentication method: API key or OAuth. */
+  authMethod?: "api_key" | "oauth" | "auth_json";
+  /** Raw auth.json content for manual authentication. */
+  authJsonContent?: string;
   apiKey?: string;
   /**
    * Per-provider upstream proxy (http/https/socks5). Empty/missing means this
@@ -1221,6 +1238,8 @@ export interface ProviderConfigView {
   version: string;
   apiCompat: UpstreamApiCompat;
   tokenCountMode?: ProviderTokenCountMode;
+  /** Authentication method for this provider. */
+  authMethod?: "api_key" | "oauth" | "auth_json";
   defaultModel: string;
   enabled: boolean;
   hasApiKey: boolean;

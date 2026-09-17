@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { LazyOpenAIAccountsPanel } from "./lazy-app-panels";
 import {
   ChevronDown,
   ChevronRight,
@@ -73,7 +74,7 @@ import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
-export type ModelsSettingsTab = "subagents" | "providers" | "compositionParts";
+export type ModelsSettingsTab = "subagents" | "providers" | "compositionParts" | "openaiAccounts";
 
 type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
 
@@ -141,8 +142,9 @@ export function ModelsSettingsPanel({
   onSyncDomain,
 }: ModelsSettingsPanelProps) {
   const { t } = useTranslation();
-  const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
+  const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string; icon?: string }> = [
     { id: "providers", label: t("settings.models.providers") },
+    { id: "openaiAccounts" as ModelsSettingsTab, label: t("settings.openaiAccounts.title"), icon: "/provider-icons/openai.svg" },
   ];
   const runtimeConfigTabItems: Array<{ id: RuntimeConfigTab; label: string }> = [
     { id: "defaults", label: t("settings.models.runtimeConfigTab.defaults") },
@@ -173,6 +175,11 @@ export function ModelsSettingsPanel({
     PendingMainAgentConfigCreateSeed | undefined
   >();
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
+  const [oauthLoginStatus, setOauthLoginStatus] = useState<{ isLoggedIn: boolean; message: string }>({
+    isLoggedIn: false,
+    message: "",
+  });
+  const [oauthLoggingIn, setOauthLoggingIn] = useState(false);
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
@@ -314,6 +321,49 @@ export function ModelsSettingsPanel({
     const snapshot = await window.eco.getModelSettings();
     onSettingsChange(snapshot);
   }, [onSettingsChange]);
+
+  const checkOauthStatus = useCallback(async () => {
+    if (!window.eco?.codexOAuthGetStatus) {
+      return;
+    }
+    try {
+      const status = await window.eco.codexOAuthGetStatus();
+      setOauthLoginStatus(status);
+    } catch {
+      setOauthLoginStatus({ isLoggedIn: false, message: "" });
+    }
+  }, []);
+
+  const handleOauthLogin = useCallback(async (upstreamProxyUrl?: string) => {
+    if (!window.eco?.codexOAuthStartLogin) {
+      return;
+    }
+    setOauthLoggingIn(true);
+    try {
+      await window.eco.codexOAuthStartLogin(upstreamProxyUrl);
+      // Listen for result event
+      window.eco.onCodexOauthLoginResult(async (res) => {
+        setOauthLoggingIn(false);
+        if (res.success) {
+          await checkOauthStatus();
+        }
+      });
+    } catch {
+      setOauthLoggingIn(false);
+    }
+  }, [checkOauthStatus]);
+
+  const handleOauthLogout = useCallback(async () => {
+    if (!window.eco?.codexOAuthLogout) {
+      return;
+    }
+    try {
+      await window.eco.codexOAuthLogout();
+      setOauthLoginStatus({ isLoggedIn: false, message: t("settings.models.provider.oauthLoggedOut") });
+    } catch {
+      // ignore
+    }
+  }, [t]);
 
   useEffect(() => {
     if (!window.eco?.listModelsDevModels) {
@@ -626,7 +676,7 @@ export function ModelsSettingsPanel({
     }
   }
 
-  const providerOptions = useMemo(() => settings.providers, [settings.providers]);
+  const providerOptions = useMemo(() => settings.providers.filter((p) => p.id !== "openai"), [settings.providers]);
   return (
     <>
       {providerTestMessage && (
@@ -648,7 +698,7 @@ export function ModelsSettingsPanel({
         </header>
       )}
 
-      {!hideCategoryTabs && mode !== "providerSettings" && (
+      {!hideCategoryTabs && (mode !== "providerSettings" || providerSettingsTabItems.length > 1) && (
         <div
           className="models-settings-tabs"
           role="tablist"
@@ -663,6 +713,7 @@ export function ModelsSettingsPanel({
               className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
               onClick={() => setActiveTab(tab.id)}
             >
+              {tab.icon && <img src={tab.icon} alt="" width="14" height="14" style={{ display: "block" }} />}
               {tab.label}
             </button>
           ))}
@@ -726,6 +777,10 @@ export function ModelsSettingsPanel({
             </ul>
           )}
         </section>
+      )}
+
+      {activeTab === "openaiAccounts" && (
+        <LazyOpenAIAccountsPanel />
       )}
 
       {activeTab === "compositionParts" && (
@@ -970,6 +1025,8 @@ export function ModelsSettingsPanel({
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
           onTestCandidate={(modelId) => void testProvider(providerForm, modelId)}
+          oauthLoginStatus={oauthLoginStatus}
+          oauthLoggingIn={oauthLoggingIn}
         />
       )}
 
@@ -1000,6 +1057,8 @@ function ProviderEditorModal({
   onDelete,
   onRefreshModels,
   onTestCandidate,
+  oauthLoginStatus,
+  oauthLoggingIn,
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
@@ -1017,6 +1076,8 @@ function ProviderEditorModal({
   onDelete: () => void;
   onRefreshModels: () => void;
   onTestCandidate: (modelId: string) => void;
+  oauthLoginStatus: { isLoggedIn: boolean; message: string };
+  oauthLoggingIn: boolean;
 }) {
   const { t } = useTranslation();
   const isEditing = Boolean(form.id);
@@ -1190,6 +1251,36 @@ function ProviderEditorModal({
             </section>
 
             <section className="provider-form-section">
+              <h3 className="provider-form-section-title">{t("settings.models.provider.authMethod")}</h3>
+              <label className="mcp-field">
+                <span className="models-provider-label-row">
+                  <span className="mcp-field-label">{t("settings.models.provider.apiKey")}</span>
+                  {activePreset ? (
+                    <a
+                      className="models-provider-inline-link"
+                      href={activePreset.apiKeyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <LinkIcon size={12} />
+                      {t("settings.models.provider.createKey")}
+                    </a>
+                  ) : null}
+                </span>
+                <input
+                  className="mcp-field-input"
+                  type="password"
+                  value={form.apiKey ?? ""}
+                  placeholder={hasExistingApiKey ? "••••••" : undefined}
+                  onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
+                />
+                {hasExistingApiKey && !(form.apiKey ?? "").trim() ? (
+                  <span className="mcp-field-hint">{t("settings.models.provider.keepKey")}</span>
+                ) : null}
+              </label>
+            </section>
+
+            <section className="provider-form-section">
               <h3 className="provider-form-section-title">{t("settings.models.provider.connection")}</h3>
               <label className="mcp-field">
                 <span className="mcp-field-label">baseURL</span>
@@ -1232,33 +1323,6 @@ function ProviderEditorModal({
                   onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
                 />
                 <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
-              </label>
-
-              <label className="mcp-field">
-                <span className="models-provider-label-row">
-                  <span className="mcp-field-label">API key</span>
-                  {activePreset ? (
-                    <a
-                      className="models-provider-inline-link"
-                      href={activePreset.apiKeyUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <LinkIcon size={12} />
-                      {t("settings.models.provider.createKey")}
-                    </a>
-                  ) : null}
-                </span>
-                <input
-                  className="mcp-field-input"
-                  type="password"
-                  value={form.apiKey ?? ""}
-                  placeholder={hasExistingApiKey ? "••••••" : undefined}
-                  onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
-                />
-                {hasExistingApiKey && !(form.apiKey ?? "").trim() ? (
-                  <span className="mcp-field-hint">{t("settings.models.provider.keepKey")}</span>
-                ) : null}
               </label>
             </section>
 

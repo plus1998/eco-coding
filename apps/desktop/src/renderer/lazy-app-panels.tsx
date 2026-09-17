@@ -67,6 +67,10 @@ export const LazyModelsSettingsPanel = lazy(() =>
   import("./ModelsSettingsPanel").then((m) => ({ default: m.ModelsSettingsPanel })),
 );
 
+export const LazyOpenAIAccountsPanel = lazy(() =>
+  import("./components/OpenAIAccountsPanel").then((m) => ({ default: m.OpenAIAccountsPanel })),
+);
+
 export const LazyNotificationPreferencesPanel = lazy(() =>
   import("./NotificationPreferencesPanel").then((m) => ({ default: m.NotificationPreferencesPanel })),
 );

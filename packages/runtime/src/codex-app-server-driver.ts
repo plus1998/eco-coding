@@ -328,8 +328,9 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         "ResolvedModelRoute.upstreamModelId is required for Codex turn/start model (ThreadRuntimeConfig modelId; do not use primary.modelId eco alias).",
       );
     }
-    const modelProvider = buildCodexModelProviderSlug(ecoProviderId);
-    const codexGatewayModel = buildCodexGatewayModelAlias(ecoProviderId, turnModel, route.apiCompat);
+    const isBuiltInOpenAi = ecoProviderId === "openai";
+    const modelProvider = isBuiltInOpenAi ? undefined : buildCodexModelProviderSlug(ecoProviderId);
+    const codexGatewayModel = isBuiltInOpenAi ? turnModel : buildCodexGatewayModelAlias(ecoProviderId, turnModel, route.apiCompat);
     const cwd = input.worktreePath || input.workspacePath;
     const turnOptions = overrides.turnOptions ?? this.materializeTurnOptions(this.sessionMode);
     const prompt = overrides.prompt?.trim() || input.prompt;

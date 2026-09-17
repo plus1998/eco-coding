@@ -309,6 +309,7 @@ function ComposerRouteCompositionControls({
   onSelectSubagents,
   onSelectAuxiliaryModel,
   onSelectVisionModel,
+  coreKind,
 }: {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
@@ -316,9 +317,12 @@ function ComposerRouteCompositionControls({
   showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
+  coreKind?: string | undefined;
 } & CompositionControlHandlers) {
   const { t } = useTranslation();
-  const mainAgentConfigs = settings.mainAgentConfigs ?? [];
+  const mainAgentConfigs = (settings.mainAgentConfigs ?? []).filter(
+    (config) => config.id !== "__openai_official__" || coreKind === "codex",
+  );
   const mainAgentPrompts = (settings.mainAgentPrompts ?? []).filter(
     (prompt) => prompt.mode === "custom_append",
   );
@@ -336,7 +340,7 @@ function ComposerRouteCompositionControls({
   );
   const selection = runtimeConfig?.orchestrationSelection;
   const selectedMainAgentConfigId = selection?.mainAgentConfigId ?? "";
-  const mainAgentConfigId = mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId)
+  const mainAgentConfigId = (mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId) || selectedMainAgentConfigId === "__openai_official__")
     ? selectedMainAgentConfigId
     : "";
   const mainAgentInvalid = Boolean(invalidFields?.includes("mainAgent"));
@@ -429,7 +433,7 @@ function ComposerRouteCompositionControls({
           >
             {mainAgentConfigs.map((config) => (
               <option key={config.id} value={config.id}>
-                {config.name} ({config.modelRef.modelId})
+                {config.id === "__openai_official__" ? "🟢 " : ""}{config.name} ({config.modelRef.modelId})
               </option>
             ))}
           </ComposerFieldSelect>
