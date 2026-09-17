@@ -13,6 +13,11 @@ export function composerShowsRouteConfig(_coreKind: CoreKind): boolean {
   return true;
 }
 
+/** Built-in OpenAI subscription provider (auth.json) — only usable with the Codex kernel. */
+export function isBuiltInOpenAiProvider(provider: Pick<ProviderConfigView, "id" | "authMethod">): boolean {
+  return provider.id === "openai" && provider.authMethod === "auth_json";
+}
+
 export function resolveComposerModelAvailability(
   providers: readonly Pick<ProviderConfigView, "enabled">[],
   templateMainModel: ComposerModelOption | undefined,
@@ -22,9 +27,7 @@ export function resolveComposerModelAvailability(
     return "acp";
   }
   const hasEnabledProvider = providers.some((provider) => provider.enabled);
-  // Built-in OpenAI (auth.json) doesn't need a Gateway provider
-  const hasBuiltInOpenAi = templateMainModel?.providerId === "openai";
-  if (!hasEnabledProvider && !hasBuiltInOpenAi) {
+  if (!hasEnabledProvider) {
     return "no-provider";
   }
   if (!templateMainModel) {

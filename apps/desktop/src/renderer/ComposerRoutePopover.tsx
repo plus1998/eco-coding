@@ -86,6 +86,7 @@ interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
+  coreKind?: string | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onResetToGlobalSettings: () => void | Promise<void>;
@@ -100,6 +101,7 @@ interface ComposerRouteCardBodyProps extends CompositionControlHandlers {
   showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
+  coreKind?: string | undefined;
   onOpenFullSettings: () => void;
 }
 
@@ -112,6 +114,7 @@ export function ComposerRoutePopover({
   showOrchestration = true,
   invalidFields,
   orchestrationIssues,
+  coreKind,
   anchorRef,
   onClose,
   onResetToGlobalSettings,
@@ -237,6 +240,7 @@ export function ComposerRoutePopover({
         showOrchestration={showOrchestration}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
+        coreKind={coreKind}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
@@ -256,6 +260,7 @@ export function ComposerRouteCardBody({
   showOrchestration = true,
   invalidFields,
   orchestrationIssues,
+  coreKind,
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
@@ -274,6 +279,7 @@ export function ComposerRouteCardBody({
         showOrchestration={showOrchestration}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
+        coreKind={coreKind}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
@@ -340,7 +346,7 @@ function ComposerRouteCompositionControls({
   );
   const selection = runtimeConfig?.orchestrationSelection;
   const selectedMainAgentConfigId = selection?.mainAgentConfigId ?? "";
-  const mainAgentConfigId = (mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId) || selectedMainAgentConfigId === "__openai_official__")
+  const mainAgentConfigId = mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId)
     ? selectedMainAgentConfigId
     : "";
   const mainAgentInvalid = Boolean(invalidFields?.includes("mainAgent"));
@@ -433,7 +439,8 @@ function ComposerRouteCompositionControls({
           >
             {mainAgentConfigs.map((config) => (
               <option key={config.id} value={config.id}>
-                {config.id === "__openai_official__" ? "🟢 " : ""}{config.name} ({config.modelRef.modelId})
+                {config.id === "__openai_official__" ? "🟢 " : ""}
+                {config.name} ({config.modelRef.modelId})
               </option>
             ))}
           </ComposerFieldSelect>
