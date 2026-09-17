@@ -17009,7 +17009,7 @@ a.run-log-web-search-detail-result-url:focus-visible {
 .composer-file-inline {
   display: inline;
   vertical-align: baseline;
-  color: var(--text-primary);
+  color: var(--markdown-link);
   white-space: pre-wrap;
 }
 

@@ -29,6 +29,29 @@ function isAtomicChipElement(node: ChildNode): node is HTMLElement {
   return isSkillElement(node) || isFileElement(node);
 }
 
+type EditableChildRange = {
+  node: ChildNode;
+  start: number;
+  end: number;
+};
+
+function directChildRanges(root: HTMLElement): EditableChildRange[] {
+  const ranges: EditableChildRange[] = [];
+  let offset = 0;
+  const children = [...root.childNodes];
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    if (index > 0 && needsBlockSeparator(children[index - 1]!, child)) {
+      offset += 1;
+    }
+    const start = offset;
+    const end = start + serializedLength(child);
+    ranges.push({ node: child, start, end });
+    offset = end;
+  }
+  return ranges;
+}
+
 function skillTokenLength(node: HTMLElement): number {
   const name = node.dataset.skill;
   return name ? skillToken(name).length : 0;
@@ -197,6 +220,68 @@ export function setSelectionOffsets(root: HTMLElement, start: number, end: numbe
   range.setEnd(endPos.node, endPos.offset);
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+export function handleFileChipDeletion(
+  root: HTMLElement,
+  direction: "backward" | "forward",
+): "selected" | "deleted" | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+  const selectionNodes = [selection.anchorNode, selection.focusNode];
+  if (
+    selectionNodes.some((node) => !node || (node !== root && !root.contains(node)))
+  ) {
+    return null;
+  }
+
+  const offsets = getSelectionOffsets(root);
+  const start = Math.min(offsets.start, offsets.end);
+  const end = Math.max(offsets.start, offsets.end);
+  const serialized = serializeEditable(root);
+  const ranges = directChildRanges(root);
+
+  if (start !== end) {
+    const selectedFile = ranges.find(
+      ({ node, start: chipStart, end: chipEnd }) =>
+        isFileElement(node) &&
+        start === chipStart &&
+        end >= chipEnd &&
+        end <= serialized.length &&
+        serialized.slice(chipEnd, end).trim() === "",
+    );
+    if (!selectedFile) {
+      return null;
+    }
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return "deleted";
+  }
+
+  const adjacentFile = [...ranges]
+    .reverse()
+    .find(({ node, start: chipStart, end: chipEnd }) => {
+      if (!isFileElement(node)) {
+        return false;
+      }
+      if (direction === "forward") {
+        return start === chipStart;
+      }
+      return start === chipEnd ||
+        (start > chipEnd && serialized.slice(chipEnd, start).trim() === "");
+    });
+  if (!adjacentFile) {
+    return null;
+  }
+
+  const selectionEnd = direction === "backward" ? start : adjacentFile.end;
+  setSelectionOffsets(root, adjacentFile.start, selectionEnd);
+  return "selected";
 }
 
 function locatePosition(root: HTMLElement, target: number): { node: Node; offset: number } | null {

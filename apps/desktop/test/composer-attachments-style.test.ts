@@ -38,6 +38,11 @@ test("composer attachment chips match the mobile pending preview", () => {
   expect(remove).toContain("height: 24px");
 });
 
+test("composer file references use the same link color as sent prompt files", () => {
+  const chip = cssRule(".composer-file-inline");
+  expect(chip).toContain("color: var(--markdown-link)");
+});
+
 test("sent prompt images match the mobile gallery size", () => {
   const images = cssRule(".run-log-user-prompt-images img");
   expect(images).toContain("108px");
