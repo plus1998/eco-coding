@@ -870,6 +870,18 @@ export function clearCodexModelCatalogCache(): void {
   modelCatalogService?.clear();
 }
 
+/**
+ * Force the next global runtime prepare to cold-restart the shared app-server
+ * even when the config/catalog contents are unchanged. Account credentials
+ * (auth.json) and the account proxy are not part of the config fingerprint,
+ * so the fingerprint gate in prepareCodexRuntime cannot detect those changes
+ * on its own.
+ */
+export function invalidateGlobalCodexRuntimeFingerprints(): void {
+  lastPreparedModelCatalogFingerprint = "";
+  lastPreparedGlobalConfigFingerprint = "";
+}
+
 /** Queue a settings-driven refresh without interrupting active Codex turns. */
 export function scheduleCodexGlobalRuntimeRefresh(): void {
   desiredGlobalRuntimeRevision += 1;

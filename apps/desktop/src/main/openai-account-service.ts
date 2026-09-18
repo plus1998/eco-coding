@@ -264,6 +264,8 @@ export class OpenAIAccountService {
 
     try {
       const content = await fs.readFile(mainAuthPath, "utf-8");
+      // Skip a partially-written file — never corrupt the account copy.
+      JSON.parse(content);
       const destPath = this.authJsonPath(activeId);
       await fs.mkdir(this.accountDir(activeId), { recursive: true });
       await fs.writeFile(destPath, content, "utf-8");
@@ -357,10 +359,10 @@ export class OpenAIAccountService {
     const dir = this.accountDir(accountId);
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
 
-    // If this was the active account, clear the main auth.json
+    // If this was the active account, clear the active marker + main auth.json
     const activeId = await this.getActiveAccountId();
     if (activeId === accountId) {
-      await this.clearActiveAuth();
+      await this.setActiveAccount(null);
     }
   }
 

@@ -20,8 +20,10 @@ export interface CodexRuntimeLifecycleOptions {
 let nextDiagnosticGeneration = 1;
 
 // Module-level getter for the active OpenAI account proxy URL (set by index.ts)
-let accountProxyUrlGetter: (() => string | undefined) | undefined;
-export function setCodexAccountProxyUrlGetter(getter: (() => string | undefined) | undefined): void {
+let accountProxyUrlGetter: (() => string | undefined | Promise<string | undefined>) | undefined;
+export function setCodexAccountProxyUrlGetter(
+  getter: (() => string | undefined | Promise<string | undefined>) | undefined,
+): void {
   accountProxyUrlGetter = getter;
 }
 
@@ -135,7 +137,14 @@ export class CodexRuntimeLifecycle {
 
     // Resolve account proxy for Codex process
     let accountProxyHttp: string | undefined;
-    const rawProxy = accountProxyUrlGetter?.()?.trim();
+    let rawProxy: string | undefined;
+    try {
+      rawProxy = (await accountProxyUrlGetter?.())?.trim();
+    } catch (error) {
+      process.stderr.write(
+        `[eco-codex] account proxy getter failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
     if (rawProxy) {
       try {
         const parsed = new URL(rawProxy);

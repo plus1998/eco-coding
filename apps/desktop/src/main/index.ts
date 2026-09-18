@@ -522,6 +522,7 @@ import {
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
+import type { OpenAIAccount } from "./openai-account-service";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle, setCodexAccountProxyUrlGetter } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
@@ -536,6 +537,7 @@ import {
   registerResolvedCodexGatewayTurnRoute,
   resolveCodexExecutable,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
+  invalidateGlobalCodexRuntimeFingerprints,
   scheduleCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
@@ -4949,11 +4951,11 @@ function registerIpcHandlers(): void {
       }
       openaiAccountService = new OpenAIAccountService(app.getPath("userData"), codexExecutable);
       await openaiAccountService.initialize();
-      setCodexAccountProxyUrlGetter(() => {
-        const activeId = openaiAccountService.getActiveAccountId();
+      setCodexAccountProxyUrlGetter(async () => {
+        const activeId = await openaiAccountService.getActiveAccountId();
         if (!activeId) return undefined;
-        const account = openaiAccountService.listAccounts().find((a) => a.id === activeId);
-        return account?.proxyUrl?.trim() || undefined;
+        const accounts = await openaiAccountService.listAccounts();
+        return accounts.find((a: OpenAIAccount) => a.id === activeId)?.proxyUrl?.trim() || undefined;
       });
     }
     return openaiAccountService;
@@ -4971,7 +4973,12 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsDelete, async (payload: { accountId: string }) => {
     const svc = await getOpenAIAccountService();
+    const prevActiveId = await svc.getActiveAccountId();
     await svc.deleteAccount(payload.accountId);
+    if (prevActiveId === payload.accountId) {
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
     return { success: true };
   });
 
@@ -5062,7 +5069,14 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetActive, async (payload: { accountId: string | null }) => {
     const svc = await getOpenAIAccountService();
+    const prevActiveId = await svc.getActiveAccountId();
     await svc.setActiveAccount(payload.accountId);
+    // Credential changed in the main codex dir — the running app-server keeps
+    // the old auth.json in memory, so recycle it after the current turn idles.
+    if (prevActiveId !== payload.accountId) {
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
     return { success: true };
   });
 
@@ -5076,6 +5090,10 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetAuthJson, async (payload: { accountId: string; content: string }) => {
     const svc = await getOpenAIAccountService();
     const result = await svc.setAuthJson(payload.accountId, payload.content);
+    if (result.success && payload.accountId === (await svc.getActiveAccountId())) {
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
     return result;
   });
 
@@ -5087,7 +5105,19 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsUpdate, async (payload: { accountId: string; name: string; proxyUrl?: string }) => {
     const svc = await getOpenAIAccountService();
+    const prevAccount = (await svc.listAccounts()).find(
+      (a: OpenAIAccount) => a.id === payload.accountId,
+    );
     const result = await svc.updateAccount(payload.accountId, payload.name, payload.proxyUrl);
+    if (
+      prevAccount &&
+      (prevAccount.proxyUrl?.trim() ?? "") !== (payload.proxyUrl?.trim() ?? "") &&
+      payload.accountId === (await svc.getActiveAccountId())
+    ) {
+      // Proxy env vars are baked into the app-server at spawn time.
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
     return result;
   });
 

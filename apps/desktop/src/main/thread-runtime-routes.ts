@@ -34,7 +34,7 @@ export function resolveThreadRuntimeConfig(
       requestPath: "/v1",
       version: "v1",
       apiCompat: "openai_responses" as const,
-      defaultModel: "gpt-5.6-sol",
+      defaultModel: "gpt-5.6-luna",
       enabled: true,
       hasApiKey: false,
       apiKey: "",
