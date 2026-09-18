@@ -14,6 +14,7 @@ import {
   type AgentEvent,
   acpSessionIdToDelete,
   type CodexGatewayCatalogRoute,
+  type CodexTurnTokenUsageBreakdown,
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
@@ -34,6 +35,7 @@ import {
   normalizeSdkSubagentType,
   type PlanReadyPayload,
   parsePiUsage,
+  type ParsedUsage,
   probePiCoreAvailability,
   readFilesystemPath,
   resolveAcpHostUiFeatures,
@@ -539,6 +541,7 @@ import {
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -2383,6 +2386,15 @@ app.whenReady().then(async () => {
     scheduleThreadRunProjectionUpdated,
     onCodexThreadMapped: flushPendingCodexGatewayUsage,
     onCodexThreadAttributionRecorded: flushPendingCodexGatewayUsage,
+    onCodexTurnTokenUsage: ({ threadId, codexThreadId, turnId, appServerTokenUsage }) => {
+      void handleCodexAppServerTurnUsage({ threadId, codexThreadId, turnId, appServerTokenUsage }).catch(
+        (error) => {
+          process.stderr.write(
+            `[eco-codex] app-server turn usage billing failed thread=${threadId}: ${errorMessage(error)}\n`,
+          );
+        },
+      );
+    },
     onCodexContextUpdated: (resolution) => {
       void contextMonitor
         .updateOccupied(resolution.ecoThreadId, resolution.billingRole, resolution.contextOccupied, {
@@ -13160,6 +13172,116 @@ function flushPendingCodexGatewayUsage(codexThreadId: string): void {
       );
     });
   }
+}
+
+/**
+ * Bill Codex turns from app-server token usage for direct (non-gateway) routes.
+ *
+ * eco-gateway only sees traffic that goes through it. Built-in OpenAI (auth.json)
+ * and other direct routes bypass the gateway, so the app-server's per-turn
+ * `appServerTokenUsage` is the only ledger source for those turns. Gateway-routed
+ * turns keep billing from gateway usage events — the provider gate below keeps
+ * the two sources mutually exclusive.
+ */
+async function handleCodexAppServerTurnUsage(input: {
+  threadId: string;
+  codexThreadId: string;
+  turnId: string;
+  appServerTokenUsage: CodexTurnTokenUsageBreakdown;
+}): Promise<void> {
+  const { threadId, codexThreadId, turnId, appServerTokenUsage } = input;
+  const attribution = resolveCodexThreadAttribution(codexThreadMap, codexThreadId);
+  if (!attribution || attribution.ecoThreadId !== threadId) {
+    // Thread mapping not persisted yet; never guess attribution for billing.
+    process.stderr.write(
+      `[eco-codex] app-server turn usage skipped: missing attribution codexThread=${codexThreadId} thread=${threadId}\n`,
+    );
+    return;
+  }
+  const billingRole = normalizeTelemetryBillingRole(attribution.billingRole);
+  // Role routes only: resolveRuntimeRoutesForThread drops the built-in OpenAI route
+  // because it joins providers from the ProviderStore, which has no auth.json entry.
+  const roleRoute = resolveRoleRoutesForThread(threadId).find(
+    (candidate) =>
+      normalizeTelemetryBillingRole(candidate.role) === billingRole &&
+      candidate.providerId === "openai",
+  );
+  if (!roleRoute) {
+    process.stderr.write(
+      `[eco-codex] app-server turn usage skipped: no direct-openai role route role=${billingRole} thread=${threadId}\n`,
+    );
+    return;
+  }
+  // A real API-key OpenAI provider goes through eco-gateway; only the virtual
+  // built-in (auth.json) route is billed from app-server usage.
+  const storedOpenAi = providerStore
+    .listProvidersWithSecrets()
+    .find((provider) => provider.id === "openai");
+  if (storedOpenAi?.hasApiKey) {
+    return;
+  }
+  const usage: ParsedUsage = {
+    inputTokens: appServerTokenUsage.inputTokens,
+    outputTokens: appServerTokenUsage.outputTokens,
+    cacheReadTokens: appServerTokenUsage.cachedInputTokens,
+    cacheCreationTokens: 0,
+    ...(appServerTokenUsage.reasoningOutputTokens > 0
+      ? { reasoningTokens: appServerTokenUsage.reasoningOutputTokens }
+      : {}),
+    modelId: roleRoute.modelId,
+  };
+  if (
+    usage.inputTokens === 0 &&
+    usage.outputTokens === 0 &&
+    usage.cacheReadTokens === 0 &&
+    usage.cacheCreationTokens === 0
+  ) {
+    return;
+  }
+  const requestKey = `codex-turn-usage:${codexThreadId}:${turnId}`;
+  const runAttemptId = agentLifecycle.currentRunAttemptId(threadId);
+  const plannerAgentId = attribution.isSubagentThread
+    ? undefined
+    : agentLifecycle.usagePlannerAgentId(threadId);
+  noteUsageBillingObservation(threadId, {
+    source: "codex",
+    role: billingRole,
+    usage,
+    requestKey,
+    modelId: roleRoute.modelId,
+    ...(attribution.agentId ? { agentId: attribution.agentId } : {}),
+  });
+  const billingTask = processUsageBilling({
+    threadId,
+    role: billingRole,
+    source: "codex",
+    usage,
+    modelId: roleRoute.modelId,
+    providerId: "openai",
+    requestKey,
+    // The context meter is fed directly by thread/tokenUsage/updated.
+    updateContext: false,
+    ...(runAttemptId ? { runAttemptId } : {}),
+    ...(plannerAgentId ? { plannerAgentId } : {}),
+    ...(attribution.agentId ? { agentId: attribution.agentId } : {}),
+  }).then(
+    () => undefined,
+    (error) => {
+      throw error;
+    },
+  );
+  usageLedgerCoordinator.trackUsageUpdate(threadId, billingTask);
+  await billingTask;
+  logEcoDiag("codex.app_server_turn_usage", {
+    threadId: shortThreadId(threadId),
+    codexThreadId,
+    turnId,
+    role: billingRole,
+    modelId: roleRoute.modelId,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+  });
 }
 
 function resolveProxyUsageApiCompat(

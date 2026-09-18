@@ -27,8 +27,9 @@ import {
   type CodexThreadResumeResult,
   type CodexThreadStatusKind,
   type CodexToolPolicy,
-  type CodexWebSearchMode,
   CodexTurnRouteRegistry,
+  type CodexTurnTokenUsageBreakdown,
+  type CodexWebSearchMode,
   clearCodexSpawnPayloadQueueSync,
   collectCodexGatewayCatalogRoutes,
   DEFAULT_CODEX_TOOL_POLICY,
@@ -201,6 +202,16 @@ export interface CodexRuntimeRunDeps {
   /** Runs only after the root Eco -> Codex thread mapping has been persisted successfully. */
   onCodexThreadMapped?: (codexThreadId: string) => void;
   onCodexContextUpdated?: (resolution: CodexContextSnapshotResolution) => void;
+  /**
+   * Codex app-server per-turn token usage (terminal `turn/completed`). Used as
+   * the billing source for direct (non-gateway) routes such as built-in OpenAI.
+   */
+  onCodexTurnTokenUsage?: (input: {
+    threadId: string;
+    codexThreadId: string;
+    turnId: string;
+    appServerTokenUsage: CodexTurnTokenUsageBreakdown;
+  }) => void;
   onCodexTurnPlanUpdated?: NonNullable<
     ConstructorParameters<typeof CodexEventAdapter>[0]["onTurnPlanUpdated"]
   >;
@@ -363,6 +374,9 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
           config.resolveRunAttemptId?.(projectionEvent.threadId),
         ),
       );
+      // Pass the raw (un-normalized) event: projectionEvent renames
+      // run.attempt.* to request.* and would bypass the terminal-turn gate.
+      emitCodexTurnTokenUsage(config, event as ThreadRunEventInput);
       config.scheduleThreadRunProjectionUpdated(projectionEvent.threadId, {
         streaming: isCodexStreamingProjectionEvent(projectionEvent),
       });
@@ -389,6 +403,37 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
       onTurnPlanUpdated: config.onCodexTurnPlanUpdated,
     }),
     ...(config.onCodexPlanReady && { onPlanReady: config.onCodexPlanReady }),
+  });
+}
+
+/**
+ * Surface Codex app-server per-turn token usage on terminal turn events so the
+ * host can bill direct (non-gateway) routes. Gateway-routed turns are billed from
+ * gateway usage events instead; the host must gate on the route provider.
+ */
+function emitCodexTurnTokenUsage(config: CodexRuntimeRunDeps, event: ThreadRunEventInput): void {
+  if (
+    event.eventType !== "run.attempt.completed" &&
+    event.eventType !== "run.attempt.failed" &&
+    event.eventType !== "run.attempt.cancelled"
+  ) {
+    return;
+  }
+  const appServerTokenUsage = event.metadata?.appServerTokenUsage;
+  if (!appServerTokenUsage || typeof appServerTokenUsage !== "object") {
+    return;
+  }
+  const codexThreadId =
+    typeof event.metadata?.codexThreadId === "string" ? event.metadata.codexThreadId.trim() : "";
+  const turnId = typeof event.metadata?.turnId === "string" ? event.metadata.turnId.trim() : "";
+  if (!codexThreadId || !turnId) {
+    return;
+  }
+  config.onCodexTurnTokenUsage?.({
+    threadId: event.threadId,
+    codexThreadId,
+    turnId,
+    appServerTokenUsage: appServerTokenUsage as CodexTurnTokenUsageBreakdown,
   });
 }
 
