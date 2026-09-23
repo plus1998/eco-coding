@@ -141,13 +141,15 @@ export class CodexRuntimeLifecycle {
     try {
       rawProxy = (await accountProxyUrlGetter?.())?.trim();
     } catch (error) {
-      process.stderr.write(
-        `[eco-codex] account proxy getter failed: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      throw new Error("Configured OpenAI account proxy could not be loaded.", { cause: error });
     }
     if (rawProxy) {
       try {
         const parsed = new URL(rawProxy);
+        if (!["http:", "https:", "socks:", "socks4:", "socks5:", "socks5h:"].includes(parsed.protocol)) {
+          throw new Error("Unsupported proxy protocol.");
+        }
+        const proxyEndpoint = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
         if (parsed.protocol.startsWith("socks")) {
           // Bridge SOCKS → local HTTP for Codex (Rust doesn't support SOCKS natively)
           const { startSocksToHttpBridge } = await import("./openai-account-service");
@@ -157,8 +159,9 @@ export class CodexRuntimeLifecycle {
         } else {
           accountProxyHttp = rawProxy;
         }
+        process.stderr.write(`[eco-codex] account proxy configured endpoint=${proxyEndpoint}\n`);
       } catch (e) {
-        process.stderr.write(`[codex] Failed to resolve account proxy: ${e instanceof Error ? e.message : String(e)}\n`);
+        throw new Error("Configured OpenAI account proxy could not be initialized.", { cause: e });
       }
     }
 

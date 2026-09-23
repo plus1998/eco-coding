@@ -27,6 +27,8 @@ export interface OpenAIAccount {
   proxyUrl?: string;
   /** Whether this account has a valid auth.json. */
   isLoggedIn: boolean;
+  /** Local credential state. Remote revocation is reported by quota/request failures. */
+  authState: "missing" | "configured" | "expired";
   /** Last login time (ISO string) or undefined. */
   lastLogin?: string;
   createdAt: string;
@@ -73,6 +75,27 @@ interface StoredAccount {
 }
 
 const ACCOUNTS_FILE = "accounts.json";
+const ACCOUNT_ID_PATTERN = /^oa_[A-Za-z0-9_-]+$/;
+
+function decodeJwtExpiry(token: string): number | undefined {
+  const payload = token.split(".")[1];
+  if (!payload) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { exp?: unknown };
+    return typeof parsed.exp === "number" && Number.isFinite(parsed.exp) ? parsed.exp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function proxyEndpointForLog(proxyUrl: string): string {
+  try {
+    const parsed = new URL(proxyUrl);
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  } catch {
+    return "invalid-proxy-url";
+  }
+}
 
 function buildLoginEnv(codexHomeDir: string): NodeJS.ProcessEnv {
   return {
@@ -103,8 +126,19 @@ export function startSocksToHttpBridge(proxyUrl: string): Promise<{ port: number
     const server = http.createServer();
 
     server.on("connect", (req, clientSocket, head) => {
-      console.log(`[socks-bridge] CONNECT request: ${req.url}`);
-      const [targetHost, targetPort] = req.url.split(":");
+      const requestTarget = req.url;
+      if (!requestTarget) {
+        clientSocket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+        clientSocket.destroy();
+        return;
+      }
+      console.log(`[socks-bridge] CONNECT request: ${requestTarget}`);
+      const [targetHost, targetPort] = requestTarget.split(":");
+      if (!targetHost) {
+        clientSocket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+        clientSocket.destroy();
+        return;
+      }
       const port = targetPort ? parseInt(targetPort, 10) : 443;
 
       SocksClient.createConnection({
@@ -283,7 +317,20 @@ export class OpenAIAccountService {
   private async loadAccounts(): Promise<StoredAccount[]> {
     try {
       const content = await fs.readFile(this.accountsPath, "utf-8");
-      return JSON.parse(content) as StoredAccount[];
+      const parsed = JSON.parse(content) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (account): account is StoredAccount =>
+          typeof account === "object" &&
+          account !== null &&
+          "id" in account &&
+          typeof account.id === "string" &&
+          ACCOUNT_ID_PATTERN.test(account.id) &&
+          "name" in account &&
+          typeof account.name === "string" &&
+          "createdAt" in account &&
+          typeof account.createdAt === "string",
+      );
     } catch {
       return [];
     }
@@ -294,11 +341,45 @@ export class OpenAIAccountService {
   }
 
   private accountDir(accountId: string): string {
-    return path.join(this.accountsDir, accountId);
+    if (!ACCOUNT_ID_PATTERN.test(accountId)) {
+      throw new Error("Invalid OpenAI account id.");
+    }
+    const accountsRoot = path.resolve(this.accountsDir);
+    const resolved = path.resolve(accountsRoot, accountId);
+    if (path.dirname(resolved) !== accountsRoot) {
+      throw new Error("OpenAI account path escapes the accounts directory.");
+    }
+    return resolved;
   }
 
   private authJsonPath(accountId: string): string {
     return path.join(this.accountDir(accountId), "auth.json");
+  }
+
+  private async requireAccount(accountId: string): Promise<StoredAccount> {
+    this.accountDir(accountId);
+    const account = (await this.loadAccounts()).find((candidate) => candidate.id === accountId);
+    if (!account) {
+      throw new Error(`OpenAI account not found: ${accountId}`);
+    }
+    return account;
+  }
+
+  private async readAuthState(accountId: string): Promise<OpenAIAccount["authState"]> {
+    try {
+      const content = await fs.readFile(this.authJsonPath(accountId), "utf-8");
+      const auth = JSON.parse(content) as {
+        access_token?: unknown;
+        tokens?: { access_token?: unknown };
+      };
+      const accessToken = auth.tokens?.access_token ?? auth.access_token;
+      if (typeof accessToken !== "string" || !accessToken.trim()) return "missing";
+      const expiresAt = decodeJwtExpiry(accessToken);
+      if (expiresAt !== undefined && expiresAt * 1000 <= Date.now()) return "expired";
+      return "configured";
+    } catch {
+      return "missing";
+    }
   }
 
   /** List all accounts with their login status. */
@@ -307,7 +388,8 @@ export class OpenAIAccountService {
     const result: OpenAIAccount[] = [];
 
     for (const account of accounts) {
-      const isLoggedIn = await this.isAccountLoggedIn(account.id);
+      const authState = await this.readAuthState(account.id);
+      const isLoggedIn = authState === "configured";
       let lastLogin: string | undefined;
       if (isLoggedIn) {
         try {
@@ -321,10 +403,11 @@ export class OpenAIAccountService {
       result.push({
         id: account.id,
         name: account.name,
-        proxyUrl: account.proxyUrl,
         isLoggedIn,
-        lastLogin,
+        authState,
         createdAt: account.createdAt,
+        ...(account.proxyUrl ? { proxyUrl: account.proxyUrl } : {}),
+        ...(lastLogin ? { lastLogin } : {}),
       });
     }
 
@@ -338,20 +421,31 @@ export class OpenAIAccountService {
     await fs.mkdir(dir, { recursive: true });
 
     const accounts = await this.loadAccounts();
+    const normalizedProxyUrl = proxyUrl?.trim() || undefined;
+    const createdAt = new Date().toISOString();
     accounts.push({
       id,
       name: name.trim(),
-      proxyUrl: proxyUrl?.trim() || undefined,
-      createdAt: new Date().toISOString(),
+      createdAt,
+      ...(normalizedProxyUrl ? { proxyUrl: normalizedProxyUrl } : {}),
     });
     await this.saveAccounts(accounts);
 
-    return { id, name: name.trim(), proxyUrl: proxyUrl?.trim() || undefined, isLoggedIn: false, createdAt: new Date().toISOString() };
+    return {
+      id,
+      name: name.trim(),
+      isLoggedIn: false,
+      authState: "missing",
+      createdAt,
+      ...(normalizedProxyUrl ? { proxyUrl: normalizedProxyUrl } : {}),
+    };
   }
 
   /** Delete an account and its auth data. */
   async deleteAccount(accountId: string): Promise<void> {
+    await this.requireAccount(accountId);
     const accounts = await this.loadAccounts();
+    const activeId = await this.getActiveAccountId();
     const filtered = accounts.filter((a) => a.id !== accountId);
     await this.saveAccounts(filtered);
 
@@ -360,7 +454,6 @@ export class OpenAIAccountService {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
 
     // If this was the active account, clear the active marker + main auth.json
-    const activeId = await this.getActiveAccountId();
     if (activeId === accountId) {
       await this.setActiveAccount(null);
     }
@@ -368,22 +461,15 @@ export class OpenAIAccountService {
 
   /** Check if an account has a valid auth.json. */
   async isAccountLoggedIn(accountId: string): Promise<boolean> {
-    const authPath = this.authJsonPath(accountId);
-    try {
-      await fs.access(authPath);
-      const content = await fs.readFile(authPath, "utf-8");
-      const auth = JSON.parse(content);
-      const accessToken = auth.tokens?.access_token ?? auth.access_token;
-      return Boolean(accessToken);
-    } catch {
-      return false;
-    }
+    await this.requireAccount(accountId);
+    return (await this.readAuthState(accountId)) === "configured";
   }
 
   /** Start login for a specific account. */
   async startLogin(
     accountId: string,
   ): Promise<{ authUrl: string; result: Promise<OpenAIAccountLoginResult> } | null> {
+    await this.requireAccount(accountId);
     const codexHomeDir = this.accountDir(accountId);
     await fs.mkdir(codexHomeDir, { recursive: true });
 
@@ -433,7 +519,9 @@ export class OpenAIAccountService {
         "utf-8",
       );
       const id = content.trim();
-      return id || null;
+      if (!id || !ACCOUNT_ID_PATTERN.test(id)) return null;
+      const accounts = await this.loadAccounts();
+      return accounts.some((account) => account.id === id) ? id : null;
     } catch {
       return null;
     }
@@ -448,6 +536,8 @@ export class OpenAIAccountService {
       await this.clearActiveAuth();
       return;
     }
+
+    await this.requireAccount(accountId);
 
     // Copy auth.json from the account dir to the main codex dir
     const src = this.authJsonPath(accountId);
@@ -487,6 +577,7 @@ export class OpenAIAccountService {
 
   /** Manually set auth.json content for an account. */
   async setAuthJson(accountId: string, content: string): Promise<OpenAIAccountLoginResult> {
+    await this.requireAccount(accountId);
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(content);
@@ -523,6 +614,7 @@ export class OpenAIAccountService {
 
   /** Get the raw auth.json content for an account. */
   async getAuthJsonContent(accountId: string): Promise<string | null> {
+    await this.requireAccount(accountId);
     try {
       const content = await fs.readFile(this.authJsonPath(accountId), "utf-8");
       return content;
@@ -533,19 +625,31 @@ export class OpenAIAccountService {
 
   /** Update an account's name and/or proxy URL. */
   async updateAccount(accountId: string, name: string, proxyUrl?: string): Promise<{ success: boolean }> {
+    await this.requireAccount(accountId);
     const accounts = await this.loadAccounts();
     const idx = accounts.findIndex((a) => a.id === accountId);
     if (idx === -1) return { success: false };
 
-    accounts[idx].name = name.trim();
-    accounts[idx].proxyUrl = proxyUrl?.trim() || undefined;
+    const account = accounts[idx];
+    if (!account) return { success: false };
+    account.name = name.trim();
+    const normalizedProxyUrl = proxyUrl?.trim();
+    if (normalizedProxyUrl) account.proxyUrl = normalizedProxyUrl;
+    else delete account.proxyUrl;
     await this.saveAccounts(accounts);
 
     return { success: true };
   }
 
   /** Quota/usage data for an OpenAI account. */
-  async queryQuota(accountId: string): Promise<OpenAIAccountQuota | null> {
+  async getActiveProxyUrl(): Promise<string | undefined> {
+    const activeId = await this.getActiveAccountId();
+    if (!activeId) return undefined;
+    return (await this.requireAccount(activeId)).proxyUrl?.trim() || undefined;
+  }
+
+  async queryQuota(accountId: string): Promise<OpenAIAccountQuota> {
+    await this.requireAccount(accountId);
     const authPath = this.authJsonPath(accountId);
     let auth: {
       access_token?: string;
@@ -556,8 +660,8 @@ export class OpenAIAccountService {
       const content = await fs.readFile(authPath, "utf-8");
       auth = JSON.parse(content);
     } catch (e) {
-      console.error(`[openai-quota] Failed to read auth.json for ${accountId}:`, e);
-      return null;
+      console.error(`[openai-quota] Failed to read auth.json for ${accountId}.`);
+      throw new Error("OpenAI account auth.json could not be read.");
     }
 
     // Token can be at top level or nested under "tokens"
@@ -565,7 +669,7 @@ export class OpenAIAccountService {
     const chatgptAccountId = auth.account_id ?? auth.tokens?.account_id;
     if (!accessToken || !chatgptAccountId) {
       console.error(`[openai-quota] Missing access_token or account_id for ${accountId}`);
-      return null;
+      throw new Error("OpenAI account credentials are incomplete.");
     }
 
     // Get the account's proxy URL
@@ -574,7 +678,9 @@ export class OpenAIAccountService {
     const proxyUrl = account?.proxyUrl?.trim() || undefined;
 
     try {
-      console.log(`[openai-quota] Querying usage for account ${accountId}${proxyUrl ? ` via proxy ${proxyUrl}` : ""}`);
+      console.log(
+        `[openai-quota] Querying usage for account ${accountId}${proxyUrl ? ` via proxy ${proxyEndpointForLog(proxyUrl)}` : ""}`,
+      );
 
       let resp: { status: number; ok: boolean; json: () => Promise<unknown>; text: () => Promise<string> };
 
@@ -667,9 +773,9 @@ export class OpenAIAccountService {
 
       console.log(`[openai-quota] Response status: ${resp.status}`);
       if (!resp.ok) {
-        const body = await resp.text().catch(() => "");
-        console.error(`[openai-quota] Non-OK response: ${resp.status} ${body.slice(0, 200)}`);
-        return null;
+        await resp.text().catch(() => "");
+        console.error(`[openai-quota] Non-OK response for ${accountId}: ${resp.status}`);
+        throw new Error(`OpenAI quota request failed with status ${resp.status}.`);
       }
 
       const data = (await resp.json()) as {
@@ -723,8 +829,11 @@ export class OpenAIAccountService {
         fetchedAt: Date.now(),
       };
     } catch (e) {
-      console.error(`[openai-quota] Exception:`, e);
-      return null;
+      if (e instanceof Error && e.message.startsWith("OpenAI quota request failed with status")) {
+        throw e;
+      }
+      console.error(`[openai-quota] Request failed for ${accountId}.`);
+      throw new Error("OpenAI quota request failed.");
     }
   }
 }

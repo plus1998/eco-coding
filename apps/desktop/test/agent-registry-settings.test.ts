@@ -110,3 +110,30 @@ test("registry settings merge replaces three resource tables from store", () => 
   expect(merged.mainAgentPrompts.map((prompt) => prompt.id)).toEqual(["user.main.prompt"]);
   expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual(["user.subagents"]);
 });
+
+test("active OpenAI account adds the official model with medium reasoning by default", () => {
+  const base: ModelSettingsSnapshot = {
+    providers: [],
+    routeProfiles: [],
+    agentTemplates: [],
+    mainAgentConfigs: [],
+    mainAgentPrompts: [],
+    subagentOrchestrations: [],
+  };
+  const merged = mergeAgentRegistrySettings(
+    base,
+    {
+      listAgentTemplates: () => [],
+      listMainAgentConfigs: () => [],
+      listMainAgentPrompts: () => [],
+      listSubagentOrchestrations: () => [],
+    },
+    { openAiAccountActive: true },
+  );
+
+  expect(merged.mainAgentConfigs[0]?.modelRef).toEqual({
+    providerId: "openai",
+    modelId: "gpt-5.6-luna",
+    thinkingEffort: "medium",
+  });
+});

@@ -29,10 +29,9 @@ async function makeTempEcoDataDir(): Promise<string> {
 }
 
 test("resolveCodexHomeDir isolates CODEX_HOME under eco data dir", () => {
-  expect(resolveCodexHomeDir("/Users/me/Library/Application Support/Eco Coding")).toBe(
-    "/Users/me/Library/Application Support/Eco Coding/codex",
-  );
-  expect(resolveCodexHomeDir("/Users/me/Library/Application Support/Eco Coding")).not.toContain("/.codex");
+  const ecoDataDir = path.resolve("Users", "me", "Library", "Application Support", "Eco Coding");
+  expect(resolveCodexHomeDir(ecoDataDir)).toBe(path.join(ecoDataDir, "codex"));
+  expect(resolveCodexHomeDir(ecoDataDir)).not.toContain(`${path.sep}.codex`);
 });
 
 test("resolveEcoGatewayBaseUrl defaults to local eco-gateway port", () => {
@@ -70,12 +69,38 @@ test("buildCodexConfigToml maps enabled providers to eco_* model_providers", () 
   expect(toml).toContain("[tools.update_plan]");
   expect(toml).toContain("enabled = true");
   expect(toml).not.toContain("multi_agent = true");
-  expect(toml).toContain("[model_providers.eco_openai]");
-  expect(toml).toContain('name = "Eco Gateway (eco_openai)"');
+  expect(toml).not.toContain("[model_providers.eco_openai]");
+  expect(toml).not.toContain("eco_openai");
   expect(toml).not.toContain('name = "OpenAI"');
   expect(toml).not.toContain("eco_openrouter");
   expect(toml).not.toMatch(/api[_-]?key/i);
   expect(toml).not.toContain("sk-ant-");
+});
+
+test("buildCodexConfigToml leaves the built-in OpenAI provider on Codex's official route", () => {
+  const toml = buildCodexConfigToml({
+    ecoDataDir: "/data",
+    gatewayBaseUrl: "http://127.0.0.1:18765/v1",
+    providers: [{ id: "openai", name: "OpenAI", enabled: true }],
+  });
+
+  expect(toml).not.toContain("model_provider =");
+  expect(toml).not.toContain("[model_providers.eco_openai]");
+  expect(toml).not.toContain("http://127.0.0.1:18765/v1");
+});
+
+test("syncCodexConfigFromEcoProviders does not report built-in OpenAI as a Gateway provider", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const result = await syncCodexConfigFromEcoProviders({
+    ecoDataDir,
+    gatewayPort: 18765,
+    providers: [{ id: "openai", name: "OpenAI", enabled: true }],
+  });
+
+  expect(result.providerSlugs).toEqual([]);
+  expect(result.defaultProviderSlug).toBeUndefined();
+  const written = await fs.readFile(result.configPath, "utf8");
+  expect(written).not.toContain("eco_openai");
 });
 
 test("buildCodexConfigToml selects the Codex remote compaction protocol only explicitly", () => {

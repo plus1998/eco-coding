@@ -19,7 +19,7 @@ const OPENAI_OFFICIAL_MAIN_AGENT_CONFIG: MainAgentConfigResource = {
   id: "__openai_official__",
   name: "OpenAI Official",
   agentKey: "openai-official",
-  modelRef: { providerId: "openai", modelId: "gpt-5.6-luna" },
+  modelRef: { providerId: "openai", modelId: "gpt-5.6-luna", thinkingEffort: "medium" },
   tools: { allowed: [], disallowed: [] },
   skills: [],
   v4aTeachingEnabled: false,
@@ -39,6 +39,8 @@ const OPENAI_OFFICIAL_PROVIDER: ProviderConfigView = {
   enabled: true,
   hasApiKey: false,
   authMethod: "auth_json",
+  createdAt: "",
+  updatedAt: "",
 };
 
 export function mergeAgentRegistrySettings(

@@ -522,7 +522,7 @@ import {
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
-import type { OpenAIAccount } from "./openai-account-service";
+import type { OpenAIAccount, OpenAIAccountService } from "./openai-account-service";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle, setCodexAccountProxyUrlGetter } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
@@ -1336,6 +1336,7 @@ const codexGatewayUsagePending = new CodexGatewayUsagePendingBuffer({
   },
 });
 let agentLifecycle: AgentLifecycleService;
+let openaiAccountService: OpenAIAccountService | undefined;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -4880,7 +4881,7 @@ function registerIpcHandlers(): void {
       width: 900,
       height: 700,
       title: "OpenAI Login",
-      parent: mainWin,
+      ...(mainWin ? { parent: mainWin } : {}),
       modal: true,
       autoHideMenuBar: true,
       webPreferences: {
@@ -4941,25 +4942,35 @@ function registerIpcHandlers(): void {
 
   // ─── OpenAI Account Management ─────────────────────────────────────────────
 
-  let openaiAccountService: InstanceType<typeof import("./openai-account-service")["OpenAIAccountService"] | undefined>;
+  let openaiAccountServicePromise: Promise<OpenAIAccountService> | undefined;
   const getOpenAIAccountService = async () => {
-    if (!openaiAccountService) {
-      const { OpenAIAccountService } = await import("./openai-account-service");
-      const codexExecutable = resolveCodexExecutable();
-      if (!codexExecutable) {
-        throw new Error("Codex CLI not found");
-      }
-      openaiAccountService = new OpenAIAccountService(app.getPath("userData"), codexExecutable);
-      await openaiAccountService.initialize();
-      setCodexAccountProxyUrlGetter(async () => {
-        const activeId = await openaiAccountService.getActiveAccountId();
-        if (!activeId) return undefined;
-        const accounts = await openaiAccountService.listAccounts();
-        return accounts.find((a: OpenAIAccount) => a.id === activeId)?.proxyUrl?.trim() || undefined;
+    if (openaiAccountService) return openaiAccountService;
+    if (!openaiAccountServicePromise) {
+      openaiAccountServicePromise = (async () => {
+        const { OpenAIAccountService } = await import("./openai-account-service");
+        const codexExecutable = resolveCodexExecutable();
+        if (!codexExecutable) {
+          throw new Error("Codex CLI not found");
+        }
+        const service = new OpenAIAccountService(app.getPath("userData"), codexExecutable);
+        await service.initialize();
+        openaiAccountService = service;
+        return service;
+      })().finally(() => {
+        openaiAccountServicePromise = undefined;
       });
     }
-    return openaiAccountService;
+    return openaiAccountServicePromise;
   };
+
+  // Register before any composer request can start Codex. The getter itself awaits
+  // initialization, so a cold start cannot silently omit the active account proxy.
+  setCodexAccountProxyUrlGetter(async () => (await getOpenAIAccountService()).getActiveProxyUrl());
+  void getOpenAIAccountService().catch((error) => {
+    console.error(
+      `[openai-accounts] Initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsList, async () => {
     const svc = await getOpenAIAccountService();
@@ -5031,7 +5042,7 @@ function registerIpcHandlers(): void {
       width: 900,
       height: 700,
       title: "OpenAI Login",
-      parent: mainWin,
+      ...(mainWin ? { parent: mainWin } : {}),
       modal: true,
       autoHideMenuBar: true,
       webPreferences: {

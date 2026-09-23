@@ -510,7 +510,9 @@ const api = {
     Array<{
       id: string;
       name: string;
+      proxyUrl?: string;
       isLoggedIn: boolean;
+      authState: "missing" | "configured" | "expired";
       lastLogin?: string;
       createdAt: string;
     }>
@@ -523,6 +525,7 @@ const api = {
     name: string;
     proxyUrl?: string;
     isLoggedIn: boolean;
+    authState: "missing" | "configured" | "expired";
     createdAt: string;
   }> {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsCreate, { name, proxyUrl });

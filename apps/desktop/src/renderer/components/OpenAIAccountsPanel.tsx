@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, Check, Loader2, LogIn, FileUp, Search, X, Pencil, RefreshCw, MoreHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -8,6 +8,7 @@ interface OpenAIAccount {
   name: string;
   proxyUrl?: string;
   isLoggedIn: boolean;
+  authState: "missing" | "configured" | "expired";
   lastLogin?: string;
   createdAt: string;
 }
@@ -54,16 +55,17 @@ function formatResetTime(window: { usedPercent: number; limitWindowSeconds: numb
 
 export function OpenAIAccountsPanel() {
   const { t } = useTranslation();
+  const eco = window.eco;
   const [accounts, setAccounts] = useState<OpenAIAccount[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [loggingInId, setLoggingInId] = useState<string | null>(null);
   const [quotas, setQuotas] = useState<Record<string, AccountQuota>>({});
+  const [quotaErrors, setQuotaErrors] = useState<Record<string, true>>({});
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [quotaLoadingId, setQuotaLoadingId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   // Modal state
@@ -79,54 +81,65 @@ export function OpenAIAccountsPanel() {
   const [manualAuthContent, setManualAuthContent] = useState("");
 
   const refresh = useCallback(async () => {
+    if (!eco) return;
     try {
       const [list, active] = await Promise.all([
-        window.eco.openAIAccountsList(),
-        window.eco.openAIAccountsGetActive(),
+        eco.openAIAccountsList(),
+        eco.openAIAccountsGetActive(),
       ]);
       setAccounts(list);
       setActiveAccountId(active.activeAccountId);
     } catch {
       // ignore
     }
-  }, []);
+  }, [eco]);
 
   useEffect(() => {
+    if (!eco) return undefined;
     void refresh();
-    const unsub = window.eco.onCodexOauthLoginResult(async () => {
+    const unsub = eco.onCodexOauthLoginResult(async () => {
       await refresh();
     });
     return unsub;
-  }, [refresh]);
+  }, [eco, refresh]);
 
   const refreshQuotas = useCallback(async () => {
-    if (accounts.length === 0) return;
+    if (!eco || accounts.length === 0) return;
     setQuotaLoading(true);
     try {
       const now = Date.now();
       const loggedIn = accounts.filter((a) => a.isLoggedIn);
       const results = await Promise.all(
-        loggedIn.map(async (a) => {
+        loggedIn.map(async (a): Promise<{ id: string; quota?: AccountQuota; error?: true } | null> => {
           // Skip if cached within 30s
           const cached = quotas[a.id];
           if (cached && now - cached.fetchedAt < 30000) return null;
           try {
-            const q = await window.eco.openAIAccountsQueryQuota(a.id);
-            return q ? { id: a.id, quota: q } : null;
+            const quota = await eco.openAIAccountsQueryQuota(a.id);
+            return quota ? { id: a.id, quota } : { id: a.id, error: true };
           } catch {
-            return null;
+            return { id: a.id, error: true };
           }
         }),
       );
       const newQuotas: Record<string, AccountQuota> = { ...quotas };
+      const newErrors: Record<string, true> = { ...quotaErrors };
       for (const r of results) {
-        if (r) newQuotas[r.id] = r.quota;
+        if (!r) continue;
+        if (r.quota) {
+          newQuotas[r.id] = r.quota;
+          delete newErrors[r.id];
+        } else if (r.error) {
+          delete newQuotas[r.id];
+          newErrors[r.id] = true;
+        }
       }
       setQuotas(newQuotas);
+      setQuotaErrors(newErrors);
     } finally {
       setQuotaLoading(false);
     }
-  }, [accounts, quotas]);
+  }, [accounts, eco, quotaErrors, quotas]);
 
   // Filtered accounts
   const filteredAccounts = useMemo(() => {
@@ -137,22 +150,22 @@ export function OpenAIAccountsPanel() {
 
   const handleCreate = useCallback(async () => {
     const name = modalName.trim();
-    if (!name) return;
+    if (!eco || !name) return;
     setBusy(true);
     try {
       if (modalEditId) {
         // Edit mode: update existing account
-        await window.eco.openAIAccountsUpdate(modalEditId, name, modalProxy.trim() || undefined);
+        await eco.openAIAccountsUpdate(modalEditId, name, modalProxy.trim() || undefined);
         if (modalMode === "manual" && modalAuthJson.trim()) {
-          await window.eco.openAIAccountsSetAuthJson(modalEditId, modalAuthJson.trim());
+          await eco.openAIAccountsSetAuthJson(modalEditId, modalAuthJson.trim());
         }
       } else {
         // Create mode
-        const account = await window.eco.openAIAccountsCreate(name, modalProxy.trim() || undefined);
+        const account = await eco.openAIAccountsCreate(name, modalProxy.trim() || undefined);
         if (modalMode === "manual" && modalAuthJson.trim()) {
-          await window.eco.openAIAccountsSetAuthJson(account.id, modalAuthJson.trim());
+          await eco.openAIAccountsSetAuthJson(account.id, modalAuthJson.trim());
         } else if (modalMode === "login") {
-          await window.eco.openAIAccountsStartLogin(account.id);
+          await eco.openAIAccountsStartLogin(account.id);
         }
       }
       setModalOpen(false);
@@ -165,55 +178,58 @@ export function OpenAIAccountsPanel() {
     } finally {
       setBusy(false);
     }
-  }, [modalName, modalProxy, modalMode, modalAuthJson, modalEditId, refresh]);
+  }, [eco, modalName, modalProxy, modalMode, modalAuthJson, modalEditId, refresh]);
 
   const handleDelete = useCallback(
     async (accountId: string) => {
+      if (!eco) return;
       setBusy(true);
       try {
-        await window.eco.openAIAccountsDelete(accountId);
+        await eco.openAIAccountsDelete(accountId);
         await refresh();
       } finally {
         setBusy(false);
       }
     },
-    [refresh],
+    [eco, refresh],
   );
 
   const handleLogin = useCallback(async (accountId: string) => {
+    if (!eco) return;
     setLoggingInId(accountId);
     try {
-      await window.eco.openAIAccountsStartLogin(accountId);
+      await eco.openAIAccountsStartLogin(accountId);
     } finally {
       setLoggingInId(null);
     }
-  }, []);
+  }, [eco]);
 
   const handleSetActive = useCallback(
     async (accountId: string) => {
+      if (!eco) return;
       setBusy(true);
       try {
-        await window.eco.openAIAccountsSetActive(accountId);
+        await eco.openAIAccountsSetActive(accountId);
         await refresh();
       } finally {
         setBusy(false);
       }
     },
-    [refresh],
+    [eco, refresh],
   );
 
   const handleManualAuth = useCallback(async () => {
-    if (!manualAuthId || !manualAuthContent.trim()) return;
+    if (!eco || !manualAuthId || !manualAuthContent.trim()) return;
     setBusy(true);
     try {
-      await window.eco.openAIAccountsSetAuthJson(manualAuthId, manualAuthContent.trim());
+      await eco.openAIAccountsSetAuthJson(manualAuthId, manualAuthContent.trim());
       setManualAuthId(null);
       setManualAuthContent("");
       await refresh();
     } finally {
       setBusy(false);
     }
-  }, [manualAuthId, manualAuthContent, refresh]);
+  }, [eco, manualAuthId, manualAuthContent, refresh]);
 
   return (
     <section className="mcp-list-section">
@@ -265,7 +281,10 @@ export function OpenAIAccountsPanel() {
         </p>
       ) : (
         <ul className="mcp-server-list">
-          {filteredAccounts.map((account) => (
+          {filteredAccounts.map((account) => {
+            const accountQuota = quotas[account.id];
+            const primaryWindow = accountQuota?.rateLimit.primaryWindow;
+            return (
             <li
               key={account.id}
               className={`mcp-server-row mcp-server-row-grid ${activeAccountId === account.id ? "active" : ""}`}
@@ -279,28 +298,34 @@ export function OpenAIAccountsPanel() {
               <span className="mcp-server-meta account-quota-meta">
                 {quotaLoadingId === account.id ? (
                   <Loader2 size={14} className="mcp-spin" style={{ color: "var(--text-muted)" }} />
-                ) : quotas[account.id] ? (
+                ) : accountQuota ? (
                   <>
-                    <span className="account-quota-plan">{quotas[account.id].planType}</span>
-                    {quotas[account.id].rateLimit?.primaryWindow && (
-                      <span className={quotas[account.id].rateLimit.limitReached ? "account-quota-limited" : "account-quota-ok"}>
-                        {Math.round(quotas[account.id].rateLimit.primaryWindow.usedPercent)}%
+                    <span className="account-quota-plan">{accountQuota.planType}</span>
+                    {primaryWindow && (
+                      <span className={accountQuota.rateLimit.limitReached ? "account-quota-limited" : "account-quota-ok"}>
+                        {Math.round(primaryWindow.usedPercent)}%
                       </span>
                     )}
-                    {quotas[account.id].rateLimit?.primaryWindow && quotas[account.id].rateLimit.primaryWindow.resetAfterSeconds > 0 && (
+                    {primaryWindow && primaryWindow.resetAfterSeconds > 0 && (
                       <span className="account-quota-reset">
-                        {formatResetTime(quotas[account.id].rateLimit.primaryWindow)}
+                        {formatResetTime(primaryWindow)}
                       </span>
                     )}
-                    {quotas[account.id].resetCreditsAvailable > 0 && (
+                    {accountQuota.resetCreditsAvailable > 0 && (
                       <span className="account-quota-credits">
-                        {quotas[account.id].resetCreditsAvailable}x
+                        {accountQuota.resetCreditsAvailable}x
                       </span>
                     )}
                   </>
                 ) : (
                   <span className="account-quota-none">
-                    {account.isLoggedIn ? "—" : t("settings.openaiAccounts.notLoggedIn")}
+                    {quotaErrors[account.id]
+                      ? t("settings.openaiAccounts.quotaFailed")
+                      : account.authState === "expired"
+                        ? t("settings.openaiAccounts.expired")
+                        : account.isLoggedIn
+                          ? "-"
+                          : t("settings.openaiAccounts.notLoggedIn")}
                   </span>
                 )}
               </span>
@@ -321,15 +346,12 @@ export function OpenAIAccountsPanel() {
                 <button
                   type="button"
                   className="mcp-icon-button"
-                  ref={(el) => { menuAnchorRef.current = el; }}
-                  onClick={() => {
+                    onClick={(event) => {
                     if (menuOpenId === account.id) {
                       setMenuOpenId(null);
                     } else {
-                      const rect = menuAnchorRef.current?.getBoundingClientRect();
-                      if (rect) {
-                        setMenuPos({ top: rect.bottom + 4, left: rect.right - 160 });
-                      }
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setMenuPos({ top: rect.bottom + 4, left: rect.right - 160 });
                       setMenuOpenId(account.id);
                     }
                   }}
@@ -352,9 +374,24 @@ export function OpenAIAccountsPanel() {
                         if (cached && Date.now() - cached.fetchedAt < 30000) return;
                         setQuotaLoadingId(account.id);
                         try {
-                          const q = await window.eco.openAIAccountsQueryQuota(account.id);
-                          if (q) setQuotas((prev) => ({ ...prev, [account.id]: q }));
-                        } catch { /* ignore */ }
+                          if (!eco) return;
+                          const quota = await eco.openAIAccountsQueryQuota(account.id);
+                          if (quota) {
+                            setQuotas((prev) => ({ ...prev, [account.id]: quota }));
+                            setQuotaErrors((prev) => {
+                              const next = { ...prev };
+                              delete next[account.id];
+                              return next;
+                            });
+                          }
+                        } catch {
+                          setQuotas((prev) => {
+                            const next = { ...prev };
+                            delete next[account.id];
+                            return next;
+                          });
+                          setQuotaErrors((prev) => ({ ...prev, [account.id]: true }));
+                        }
                         finally { setQuotaLoadingId(null); }
                       }}
                       disabled={!account.isLoggedIn || quotaLoadingId === account.id}
@@ -385,7 +422,8 @@ export function OpenAIAccountsPanel() {
                         setModalAuthJson("");
                         setModalMode("login");
                         setModalOpen(true);
-                        const authContent = await window.eco.openAIAccountsGetAuthJson(account.id);
+                        if (!eco) return;
+                        const authContent = await eco.openAIAccountsGetAuthJson(account.id);
                         if (authContent) {
                           setModalAuthJson(authContent);
                           setModalMode("manual");
@@ -413,7 +451,8 @@ export function OpenAIAccountsPanel() {
                 )}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 
