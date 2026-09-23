@@ -18,7 +18,7 @@ import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { generateImagesToWorkspace, normalizeImageGenerationToolInput } from "./image-generation-client";
 import type { ImageGenerationStore } from "./image-generation-store";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Image-Control-Secret";
 
@@ -334,7 +334,7 @@ export class ImageGenerationMcpGateway {
   }
 }
 
-function imageGenerationToolDefinition(): Record<string, unknown> {
+function imageGenerationToolDefinition(): McpToolDefinition {
   return {
     name: ECO_IMAGE_GENERATION_TOOL,
     description:

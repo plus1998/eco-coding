@@ -3416,6 +3416,12 @@ abstract class AppLocalizations {
   /// **'No tool details'**
   String get threadNoToolDetails;
 
+  /// No description provided for @threadLoadMoreToolDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more details'**
+  String get threadLoadMoreToolDetails;
+
   /// No description provided for @threadRequestingDetails.
   ///
   /// In en, this message translates to:

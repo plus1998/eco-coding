@@ -5,8 +5,8 @@ import {
   discoverGatewayClientRoundCells,
   loadGatewayClientRoundCell,
 } from "../src/feed-replay/gateway-client-round-fixture";
-import { buildThreadRunProjectionViewModel } from "../src/renderer/thread-run-projection-view";
-import { buildThreadRunTurnFeedSections } from "../src/renderer/thread-run-turn-feed";
+import { buildThreadRunProjectionViewModel } from "../src/renderer/conversation-v2-projection-view";
+import { buildThreadRunTurnFeedSections } from "../src/renderer/conversation-v2-turn-feed";
 
 function hasClaudeResponsesCell(): boolean {
   return discoverGatewayClientRoundCells().has("claude/packy_responses");

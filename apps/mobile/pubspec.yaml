@@ -19,7 +19,8 @@ dependencies:
   web_socket_channel: ^3.0.2
   flutter_secure_storage: ^10.3.1
   shared_preferences: ^2.5.3
-  mobile_scanner: ^6.0.6
+  # 7.x uses Apple Vision on iOS; 6.x excludes arm64 Apple Silicon simulators.
+  mobile_scanner: ^7.4.2
   image_picker: ^1.1.2
   intl: ^0.20.2
   uuid: ^4.5.1
@@ -30,6 +31,8 @@ dependencies:
   adaptive_platform_ui: ^0.1.107
   record: ^6.2.1
   supabase_flutter: ^2.9.1
+  sqflite: 2.4.2+1
+  path: ^1.9.1
   webview_flutter: ^4.14.1
   markdown: ^7.3.1
   flutter_tts: ^4.2.2
@@ -37,9 +40,12 @@ dependencies:
   wakelock_plus: ^1.3.2
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  sqflite_common_ffi: ^2.3.6
 
 flutter:
   generate: true

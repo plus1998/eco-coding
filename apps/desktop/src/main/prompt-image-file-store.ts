@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PromptImageAttachment } from "../shared/ipc";
@@ -6,6 +7,10 @@ import type { PromptImageAttachment } from "../shared/ipc";
 const STORE_DIR_NAME = "prompt-images";
 const SPOOL_DIR_NAME = "spool";
 const MESSAGES_DIR_NAME = "messages";
+const OBJECTS_DIR_NAME = "objects";
+const CONTENT_REF_PREFIX = "sha256:";
+const DEFAULT_READ_CHUNK_BYTES = 64 * 1024;
+const DEFAULT_GC_GRACE_MS = 24 * 60 * 60 * 1000;
 /** Matches mobile remote uploads; desktop renderer still caps picks at 5 MB. */
 export const PROMPT_IMAGE_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -16,25 +21,158 @@ const MEDIA_TYPE_EXTENSION: Record<PromptImageAttachment["mediaType"], string> =
   "image/webp": "webp",
 };
 
+export interface PromptImageObjectGcResult {
+  scanned: number;
+  retainedReferenced: number;
+  retainedRecent: number;
+  removed: number;
+  dryRun: boolean;
+}
+
+export function isPromptImageContentRef(value: unknown): value is string {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value.trim());
+}
+
+/** Collect durable image references from a JSON-compatible V2 payload. */
+export function collectPromptImageContentRefs(
+  value: unknown,
+  refs: Set<string> = new Set<string>(),
+): Set<string> {
+  if (typeof value === "string") {
+    for (const match of value.matchAll(/sha256:[0-9a-f]{64}/g)) {
+      refs.add(match[0]);
+    }
+    return refs;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) collectPromptImageContentRefs(entry, refs);
+    return refs;
+  }
+  if (value && typeof value === "object") {
+    for (const entry of Object.values(value)) collectPromptImageContentRefs(entry, refs);
+  }
+  return refs;
+}
+
 export class PromptImageFileStore {
   private readonly rootDir: string;
 
-  constructor(userDataDir: string) {
-    this.rootDir = path.join(userDataDir, STORE_DIR_NAME);
+  constructor(userDataDir: string, options?: { rootDir?: string }) {
+    this.rootDir = path.resolve(options?.rootDir ?? path.join(userDataDir, STORE_DIR_NAME));
   }
 
   getRootDir(): string {
     return this.rootDir;
   }
 
+  /**
+   * Validate a legacy attachment before a maintenance migration writes its V2
+   * event. This is deliberately synchronous because the legacy migrator owns a
+   * synchronous SQLite transaction; validation never mutates the object store.
+   */
+  validateAttachmentForMigration(attachment: PromptImageAttachment): void {
+    const buffer = this.readAttachmentBytesForMigration(attachment);
+    assertImageByteLength(buffer.length);
+  }
+
+  /**
+   * Materialize a legacy attachment as a content-addressed object without
+   * retaining a local path or inline bytes in the V2 event. The source file is
+   * read but never moved, so a failed/restarted migration leaves its source
+   * backup intact.
+   */
+  persistAttachmentForMigration(attachment: PromptImageAttachment): PromptImageAttachment {
+    const buffer = this.readAttachmentBytesForMigration(attachment);
+    assertImageByteLength(buffer.length);
+    const contentRef = contentRefForBuffer(buffer);
+    const suppliedRef = attachment.contentRef?.trim();
+    if (suppliedRef && suppliedRef !== contentRef) {
+      throw new Error("Prompt image attachment contentRef does not match its bytes.");
+    }
+    const objectPath = this.contentObjectPath(contentRef, attachment.mediaType);
+    fsSync.mkdirSync(path.dirname(objectPath), { recursive: true });
+    if (fsSync.existsSync(objectPath)) {
+      const existing = fsSync.readFileSync(objectPath);
+      if (contentRefForBuffer(existing) !== contentRef) {
+        throw new Error("Prompt image content object hash mismatch.");
+      }
+    } else {
+      const tempPath = `${objectPath}.${randomUUID()}.tmp`;
+      try {
+        fsSync.writeFileSync(tempPath, buffer, { flag: "wx" });
+        fsSync.renameSync(tempPath, objectPath);
+      } catch (error) {
+        try {
+          fsSync.unlinkSync(tempPath);
+        } catch {
+          // Preserve the original write/rename error.
+        }
+        throw error;
+      }
+    }
+    return {
+      mediaType: attachment.mediaType,
+      contentRef,
+      byteLength: buffer.length,
+    };
+  }
+
   isManagedPath(candidate: string): boolean {
     const resolved = path.resolve(candidate.trim());
     const root = path.resolve(this.rootDir);
-    if (resolved === root) {
-      return true;
-    }
+    if (resolved === root) return true;
     const relative = path.relative(root, resolved);
     return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  }
+
+  /**
+   * Resolve a legacy attachment path against the configured maintenance root.
+   * Relative paths are accepted only inside that root; absolute paths must also
+   * remain inside it. Returning undefined keeps callers fail-closed without
+   * exposing the private storage root in a durable event.
+   */
+  resolveManagedPath(candidate: string): string | undefined {
+    const trimmed = candidate.trim();
+    if (!trimmed) return undefined;
+    const resolved = path.resolve(path.isAbsolute(trimmed) ? trimmed : path.join(this.rootDir, trimmed));
+    return this.isManagedPath(resolved) ? resolved : undefined;
+  }
+
+  /** Resolve an existing path without allowing a symlink to escape the root. */
+  private resolveManagedExistingPath(candidate: string): string | undefined {
+    const resolved = this.resolveManagedPath(candidate);
+    if (!resolved) return undefined;
+    try {
+      const realRoot = fsSync.realpathSync(this.rootDir);
+      const realPath = fsSync.realpathSync(resolved);
+      return isPathWithinRoot(realRoot, realPath) ? realPath : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Validate a historical non-image attachment without making it executable in
+   * the V2 prompt path. Its bytes stay in the source/native-fact audit; the
+   * rebuilt message receives only opaque metadata.
+   */
+  validateLegacyAttachmentForMigration(attachment: Record<string, unknown>): { byteLength?: number } {
+    const filePath = typeof attachment.path === "string" ? attachment.path.trim() : "";
+    if (filePath) {
+      const resolved = this.resolveManagedExistingPath(filePath);
+      if (!resolved) throw new Error("Legacy attachment path is outside the configured attachments root.");
+      const stat = fsSync.statSync(resolved);
+      if (!stat.isFile()) throw new Error("Legacy attachment path is not a regular file.");
+      return { byteLength: stat.size };
+    }
+    const inline = typeof attachment.data === "string" ? attachment.data.trim() : "";
+    if (inline) {
+      const buffer = decodeBase64(inline);
+      if (buffer.length <= 0) throw new Error("Legacy attachment data is empty.");
+      return { byteLength: buffer.length };
+    }
+    if (typeof attachment.id === "string" && attachment.id.trim()) return {};
+    throw new Error("Legacy attachment has no verifiable path, data, or id.");
   }
 
   async stageComposerImage(input: {
@@ -42,15 +180,13 @@ export class PromptImageFileStore {
     imageId: string;
     mediaType: PromptImageAttachment["mediaType"];
     dataBase64: string;
-  }): Promise<{ path: string }> {
+  }): Promise<{ path: string; contentRef: string; byteLength: number }> {
     const data = decodeBase64(input.dataBase64);
-    if (data.length > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
-      throw new Error("Image attachment exceeds 20 MB.");
-    }
+    assertImageByteLength(data.length);
     const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
     await this.writeFileAtomic(targetPath, data);
     await this.unlinkIfExists(this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType));
-    return { path: targetPath };
+    return this.describePersistedFile(targetPath, input.mediaType);
   }
 
   async beginComposerImageUpload(input: {
@@ -59,13 +195,9 @@ export class PromptImageFileStore {
     mediaType: PromptImageAttachment["mediaType"];
     totalBytes: number;
   }): Promise<{ path: string; receivedBytes: number; complete: boolean }> {
-    const totalBytes = Math.floor(input.totalBytes);
-    if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
-      throw new Error("Image upload totalBytes must be a positive integer.");
-    }
-    if (totalBytes > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
-      throw new Error("Image attachment exceeds 20 MB.");
-    }
+    const totalBytes = integerAtLeast(input.totalBytes, "Image upload totalBytes");
+    if (totalBytes <= 0) throw new Error("Image upload totalBytes must be positive.");
+    assertImageByteLength(totalBytes);
     const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
     const partialPath = this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
@@ -73,11 +205,13 @@ export class PromptImageFileStore {
     const existingFinal = await this.safeStatSize(targetPath);
     if (existingFinal === totalBytes) {
       await this.unlinkIfExists(partialPath);
-      return { path: targetPath, receivedBytes: totalBytes, complete: true };
+      return {
+        ...(await this.describePersistedFile(targetPath, input.mediaType)),
+        receivedBytes: totalBytes,
+        complete: true,
+      };
     }
-    if (existingFinal !== undefined) {
-      await this.unlinkIfExists(targetPath);
-    }
+    if (existingFinal !== undefined) await this.unlinkIfExists(targetPath);
 
     const existingPartial = await this.safeStatSize(partialPath);
     if (existingPartial !== undefined) {
@@ -88,7 +222,6 @@ export class PromptImageFileStore {
       }
       return { path: targetPath, receivedBytes: existingPartial, complete: false };
     }
-
     await fs.writeFile(partialPath, Buffer.alloc(0));
     return { path: targetPath, receivedBytes: 0, complete: false };
   }
@@ -100,26 +233,17 @@ export class PromptImageFileStore {
     offset: number;
     dataBase64: string;
   }): Promise<{ receivedBytes: number }> {
-    const offset = Math.floor(input.offset);
-    if (!Number.isFinite(offset) || offset < 0) {
-      throw new Error("Image upload offset must be a non-negative integer.");
-    }
+    const offset = integerAtLeast(input.offset, "Image upload offset");
     const chunk = decodeBase64(input.dataBase64);
-    if (chunk.length === 0) {
-      throw new Error("Image upload chunk is empty.");
-    }
+    if (chunk.length === 0) throw new Error("Image upload chunk is empty.");
+    assertImageByteLength(offset + chunk.length);
     const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
     const partialPath = this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType);
     const finalSize = await this.safeStatSize(targetPath);
-    if (finalSize !== undefined) {
-      return { receivedBytes: finalSize };
-    }
+    if (finalSize !== undefined) return { receivedBytes: finalSize };
     const current = (await this.safeStatSize(partialPath)) ?? 0;
     if (offset !== current) {
       throw new Error(`Image upload offset mismatch: expected ${current}, got ${offset}.`);
-    }
-    if (current + chunk.length > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
-      throw new Error("Image attachment exceeds 20 MB.");
     }
     await fs.mkdir(path.dirname(partialPath), { recursive: true });
     await fs.appendFile(partialPath, chunk);
@@ -131,57 +255,109 @@ export class PromptImageFileStore {
     imageId: string;
     mediaType: PromptImageAttachment["mediaType"];
     totalBytes: number;
-  }): Promise<{ path: string }> {
-    const totalBytes = Math.floor(input.totalBytes);
-    if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
-      throw new Error("Image upload totalBytes must be a positive integer.");
-    }
+  }): Promise<{ path: string; contentRef: string; byteLength: number }> {
+    const totalBytes = integerAtLeast(input.totalBytes, "Image upload totalBytes");
+    if (totalBytes <= 0) throw new Error("Image upload totalBytes must be positive.");
+    assertImageByteLength(totalBytes);
     const targetPath = this.spoolFilePath(input.contextKey, input.imageId, input.mediaType);
     const partialPath = this.partialSpoolFilePath(input.contextKey, input.imageId, input.mediaType);
     const finalSize = await this.safeStatSize(targetPath);
     if (finalSize === totalBytes) {
       await this.unlinkIfExists(partialPath);
-      return { path: targetPath };
+      return this.describePersistedFile(targetPath, input.mediaType);
     }
     const partialSize = await this.safeStatSize(partialPath);
     if (partialSize !== totalBytes) {
-      throw new Error(
-        `Image upload incomplete: expected ${totalBytes} bytes, got ${partialSize ?? 0}.`,
-      );
+      throw new Error(`Image upload incomplete: expected ${totalBytes} bytes, got ${partialSize ?? 0}.`);
     }
     await fs.rename(partialPath, targetPath);
-    return { path: targetPath };
+    return this.describePersistedFile(targetPath, input.mediaType);
   }
 
   async releasePaths(paths: readonly string[]): Promise<void> {
     for (const rawPath of paths) {
       const filePath = rawPath.trim();
-      if (!filePath || !this.isManagedPath(filePath)) {
-        continue;
-      }
+      if (!filePath || !this.isManagedPath(filePath)) continue;
       await this.unlinkIfExists(filePath);
       await this.unlinkIfExists(`${filePath}.partial`);
     }
   }
 
+  /**
+   * Remove content-addressed objects that have no durable V2 reference.
+   *
+   * A grace period is mandatory by default: a producer can write the object
+   * before its event/command transaction commits, so an immediate sweep must
+   * never race that write sequence. Callers should pass the refs observed from
+   * every durable V2 input and use dryRun for maintenance previews.
+   */
+  async sweepUnreferencedContentObjects(input: {
+    referencedContentRefs: Iterable<string>;
+    minAgeMs?: number;
+    dryRun?: boolean;
+  }): Promise<PromptImageObjectGcResult> {
+    const referenced = new Set(
+      [...input.referencedContentRefs]
+        .map((value) => value.trim())
+        .filter((value) => isPromptImageContentRef(value)),
+    );
+    const graceMs =
+      input.minAgeMs === undefined
+        ? DEFAULT_GC_GRACE_MS
+        : integerAtLeast(input.minAgeMs, "Image object GC minAgeMs");
+    const dryRun = input.dryRun === true;
+    const result: PromptImageObjectGcResult = {
+      scanned: 0,
+      retainedReferenced: 0,
+      retainedRecent: 0,
+      removed: 0,
+      dryRun,
+    };
+    const objectsDir = path.join(this.rootDir, OBJECTS_DIR_NAME);
+    let entries: Array<{ name: string; isFile(): boolean }>;
+    try {
+      entries = await fs.readdir(objectsDir, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return result;
+      throw error;
+    }
+    const cutoff = Date.now() - graceMs;
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const match = /^([0-9a-f]{64})\.(jpg|png|gif|webp)$/.exec(entry.name);
+      if (!match) continue;
+      result.scanned += 1;
+      const contentRef = `${CONTENT_REF_PREFIX}${match[1]}`;
+      if (referenced.has(contentRef)) {
+        result.retainedReferenced += 1;
+        continue;
+      }
+      const filePath = path.join(objectsDir, entry.name);
+      const stat = await fs.stat(filePath);
+      if (stat.mtimeMs > cutoff) {
+        result.retainedRecent += 1;
+        continue;
+      }
+      if (!dryRun) {
+        await this.unlinkIfExists(filePath);
+      }
+      result.removed += 1;
+    }
+    return result;
+  }
+
   async deleteSpoolContext(contextKey: string): Promise<void> {
-    const directory = this.spoolContextDir(contextKey);
-    await this.removeDirectoryIfExists(directory);
+    await this.removeDirectoryIfExists(this.spoolContextDir(contextKey));
   }
 
   async deleteThreadMessages(threadId: string): Promise<void> {
-    const directory = path.join(this.rootDir, MESSAGES_DIR_NAME, sanitizeSegment(threadId));
-    await this.removeDirectoryIfExists(directory);
+    await this.removeDirectoryIfExists(path.join(this.rootDir, MESSAGES_DIR_NAME, sanitizeSegment(threadId)));
   }
 
   async deleteMessageActivity(threadId: string, activityLineId: string): Promise<void> {
-    const directory = path.join(
-      this.rootDir,
-      MESSAGES_DIR_NAME,
-      sanitizeSegment(threadId),
-      sanitizeSegment(activityLineId),
+    await this.removeDirectoryIfExists(
+      path.join(this.rootDir, MESSAGES_DIR_NAME, sanitizeSegment(threadId), sanitizeSegment(activityLineId)),
     );
-    await this.removeDirectoryIfExists(directory);
   }
 
   async persistMessageAttachments(
@@ -191,44 +367,50 @@ export class PromptImageFileStore {
   ): Promise<PromptImageAttachment[]> {
     const persisted: PromptImageAttachment[] = [];
     for (const [index, attachment] of attachments.entries()) {
-      const mediaType = attachment.mediaType;
-      const imageId = `img_${index}_${randomUUID()}`;
-      const targetPath = this.messageFilePath(threadId, activityLineId, imageId, mediaType);
+      const suppliedRef = attachment.contentRef?.trim();
+      const imageId = `img_${index}_${stableAttachmentKey({
+        threadId,
+        activityLineId,
+        index,
+        ...(suppliedRef ? { contentRef: suppliedRef } : {}),
+        ...(attachment.data ? { data: attachment.data } : {}),
+      })}`;
+      const targetPath = this.messageFilePath(threadId, activityLineId, imageId, attachment.mediaType);
       const sourcePath = attachment.path?.trim();
-      if (sourcePath && this.isManagedPath(sourcePath)) {
+      let sourceMoved = false;
+      const managedSourcePath = sourcePath ? this.resolveManagedExistingPath(sourcePath) : undefined;
+      if (managedSourcePath) {
         try {
-          await this.moveOrCopy(sourcePath, targetPath);
-          persisted.push({ mediaType, path: targetPath });
-          continue;
+          await this.moveOrCopy(managedSourcePath, targetPath);
+          sourceMoved = true;
         } catch (error) {
-          // Composer draft cleanup may race-delete spool files after the renderer
-          // already captured path-only attachments; fall back to inline data when present.
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            throw error;
-          }
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
       }
-      const data = attachment.data?.trim();
-      if (!data) {
-        throw new Error("Prompt image attachment is missing both path and data.");
+      if (!sourceMoved && !(await this.fileExists(targetPath))) {
+        const data = attachment.data?.trim();
+        if (data) {
+          await this.writeFileAtomic(targetPath, decodeBase64(data));
+        } else if (suppliedRef) {
+          await this.copyContentObjectToPath(suppliedRef, attachment.mediaType, targetPath);
+        } else {
+          throw new Error("Prompt image attachment is missing path, contentRef, and data.");
+        }
       }
-      await this.writeFileAtomic(targetPath, decodeBase64(data));
-      persisted.push({ mediaType, path: targetPath });
+      const descriptor = await this.describePersistedFile(targetPath, attachment.mediaType);
+      if (suppliedRef && descriptor.contentRef !== suppliedRef) {
+        throw new Error("Prompt image attachment contentRef does not match its bytes.");
+      }
+      if (attachment.byteLength !== undefined && attachment.byteLength !== descriptor.byteLength) {
+        throw new Error("Prompt image attachment byteLength does not match its bytes.");
+      }
+      persisted.push({ mediaType: attachment.mediaType, ...descriptor });
     }
     return persisted;
   }
 
   async readAttachmentData(attachment: PromptImageAttachment): Promise<string> {
-    const inline = attachment.data?.trim();
-    if (inline) {
-      return inline;
-    }
-    const filePath = attachment.path?.trim();
-    if (!filePath || !this.isManagedPath(filePath)) {
-      throw new Error("Prompt image attachment is missing readable data.");
-    }
-    const buffer = await fs.readFile(filePath);
-    return buffer.toString("base64");
+    return (await this.readAttachmentBytes(attachment)).toString("base64");
   }
 
   async resolveAttachmentsForRuntime(
@@ -240,18 +422,151 @@ export class PromptImageFileStore {
         mediaType: attachment.mediaType,
         data: await this.readAttachmentData(attachment),
         ...(attachment.path ? { path: attachment.path } : {}),
+        ...(attachment.contentRef ? { contentRef: attachment.contentRef } : {}),
+        ...(attachment.byteLength !== undefined ? { byteLength: attachment.byteLength } : {}),
       });
     }
     return resolved;
   }
 
-  collectAttachmentPaths(attachments: readonly PromptImageAttachment[] | undefined): string[] {
-    if (!attachments?.length) {
-      return [];
+  async hasReadableContentRef(attachment: PromptImageAttachment): Promise<boolean> {
+    const contentRef = attachment.contentRef?.trim();
+    if (!contentRef || !isPromptImageContentRef(contentRef)) return false;
+    try {
+      await this.readContentObject(contentRef, attachment.mediaType);
+      return true;
+    } catch {
+      return false;
     }
+  }
+
+  async readAttachmentChunk(input: {
+    contentRef: string;
+    mediaType: PromptImageAttachment["mediaType"];
+    offset: number;
+    maxBytes?: number;
+  }): Promise<{
+    contentRef: string;
+    mediaType: PromptImageAttachment["mediaType"];
+    offset: number;
+    nextOffset: number;
+    totalBytes: number;
+    complete: boolean;
+    data: string;
+  }> {
+    const contentRef = requireContentRef(input.contentRef);
+    const offset = integerAtLeast(input.offset, "Image read offset");
+    const requestedMaxBytes =
+      input.maxBytes === undefined
+        ? DEFAULT_READ_CHUNK_BYTES
+        : integerAtLeast(input.maxBytes, "Image read maxBytes");
+    if (requestedMaxBytes <= 0) throw new Error("Image read maxBytes must be positive.");
+    const maxBytes = Math.min(DEFAULT_READ_CHUNK_BYTES, requestedMaxBytes);
+    const buffer = await this.readContentObject(contentRef, input.mediaType);
+    if (offset > buffer.length) throw new Error(`Image read offset exceeds content length: ${offset}.`);
+    const nextOffset = Math.min(buffer.length, offset + maxBytes);
+    return {
+      contentRef,
+      mediaType: input.mediaType,
+      offset,
+      nextOffset,
+      totalBytes: buffer.length,
+      complete: nextOffset >= buffer.length,
+      data: buffer.subarray(offset, nextOffset).toString("base64"),
+    };
+  }
+
+  collectAttachmentPaths(attachments: readonly PromptImageAttachment[] | undefined): string[] {
+    if (!attachments?.length) return [];
     return attachments
       .map((attachment) => attachment.path?.trim() ?? "")
       .filter((filePath) => filePath.length > 0 && this.isManagedPath(filePath));
+  }
+
+  private async readAttachmentBytes(attachment: PromptImageAttachment): Promise<Buffer> {
+    const contentRef = attachment.contentRef?.trim();
+    if (contentRef) {
+      if (!isPromptImageContentRef(contentRef)) throw new Error("Prompt image contentRef is invalid.");
+      return this.readContentObject(contentRef, attachment.mediaType);
+    }
+    const filePath = attachment.path?.trim();
+    const resolvedPath = filePath ? this.resolveManagedExistingPath(filePath) : undefined;
+    if (resolvedPath) return fs.readFile(resolvedPath);
+    const inline = attachment.data?.trim();
+    if (inline) return decodeBase64(inline);
+    throw new Error("Prompt image attachment is missing readable data.");
+  }
+
+  private readAttachmentBytesForMigration(attachment: PromptImageAttachment): Buffer {
+    const contentRef = attachment.contentRef?.trim();
+    if (contentRef) {
+      if (!isPromptImageContentRef(contentRef)) throw new Error("Prompt image contentRef is invalid.");
+      const buffer = fsSync.readFileSync(this.contentObjectPath(contentRef, attachment.mediaType));
+      if (contentRefForBuffer(buffer) !== contentRef) {
+        throw new Error("Prompt image content object hash mismatch.");
+      }
+      return buffer;
+    }
+    const filePath = attachment.path?.trim();
+    if (filePath) {
+      const resolvedPath = this.resolveManagedExistingPath(filePath);
+      if (!resolvedPath) {
+        throw new Error(
+          "Legacy prompt image path is outside the configured attachments root or is unreadable.",
+        );
+      }
+      return fsSync.readFileSync(resolvedPath);
+    }
+    const inline = attachment.data?.trim();
+    if (inline) return decodeBase64(inline);
+    throw new Error("Prompt image attachment is missing readable data.");
+  }
+
+  private async describePersistedFile(
+    filePath: string,
+    mediaType: PromptImageAttachment["mediaType"],
+  ): Promise<{ path: string; contentRef: string; byteLength: number }> {
+    const buffer = await fs.readFile(filePath);
+    assertImageByteLength(buffer.length);
+    const contentRef = contentRefForBuffer(buffer);
+    const objectPath = this.contentObjectPath(contentRef, mediaType);
+    if (!(await this.fileExists(objectPath))) {
+      await this.writeFileAtomic(objectPath, buffer);
+    } else if (contentRefForBuffer(await fs.readFile(objectPath)) !== contentRef) {
+      throw new Error("Prompt image content object hash mismatch.");
+    }
+    return { path: filePath, contentRef, byteLength: buffer.length };
+  }
+
+  private async copyContentObjectToPath(
+    contentRef: string,
+    mediaType: PromptImageAttachment["mediaType"],
+    targetPath: string,
+  ): Promise<void> {
+    await this.writeFileAtomic(
+      targetPath,
+      await this.readContentObject(requireContentRef(contentRef), mediaType),
+    );
+  }
+
+  private async readContentObject(
+    contentRef: string,
+    mediaType: PromptImageAttachment["mediaType"],
+  ): Promise<Buffer> {
+    const normalized = requireContentRef(contentRef);
+    const buffer = await fs.readFile(this.contentObjectPath(normalized, mediaType));
+    assertImageByteLength(buffer.length);
+    if (contentRefForBuffer(buffer) !== normalized)
+      throw new Error("Prompt image content object hash mismatch.");
+    return buffer;
+  }
+
+  private contentObjectPath(contentRef: string, mediaType: PromptImageAttachment["mediaType"]): string {
+    return path.join(
+      this.rootDir,
+      OBJECTS_DIR_NAME,
+      `${contentRef.slice(CONTENT_REF_PREFIX.length)}.${MEDIA_TYPE_EXTENSION[mediaType]}`,
+    );
   }
 
   private spoolContextDir(contextKey: string): string {
@@ -282,9 +597,7 @@ export class PromptImageFileStore {
       const stat = await fs.stat(filePath);
       return stat.isFile() ? stat.size : undefined;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return undefined;
-      }
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }
   }
@@ -304,6 +617,16 @@ export class PromptImageFileStore {
     );
   }
 
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      const stat = await fs.stat(filePath);
+      return stat.isFile();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
   private async writeFileAtomic(filePath: string, data: Buffer): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const tempPath = `${filePath}.${randomUUID()}.tmp`;
@@ -316,9 +639,7 @@ export class PromptImageFileStore {
     try {
       await fs.rename(sourcePath, targetPath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EXDEV") {
-        throw error;
-      }
+      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
       const data = await fs.readFile(sourcePath);
       await this.writeFileAtomic(targetPath, data);
       await this.unlinkIfExists(sourcePath);
@@ -329,9 +650,7 @@ export class PromptImageFileStore {
     try {
       await fs.unlink(filePath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
 
@@ -339,43 +658,86 @@ export class PromptImageFileStore {
     try {
       await fs.rm(directory, { recursive: true, force: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
 }
 
 export function isPromptImageAttachmentRecord(value: unknown): value is PromptImageAttachment {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   if (
     record.mediaType !== "image/jpeg" &&
     record.mediaType !== "image/png" &&
     record.mediaType !== "image/gif" &&
     record.mediaType !== "image/webp"
-  ) {
+  )
     return false;
-  }
   const data = typeof record.data === "string" ? record.data.trim() : "";
   const filePath = typeof record.path === "string" ? record.path.trim() : "";
-  return data.length > 0 || filePath.length > 0;
+  const contentRef = typeof record.contentRef === "string" ? record.contentRef.trim() : "";
+  return data.length > 0 || filePath.length > 0 || isPromptImageContentRef(contentRef);
+}
+
+function stableAttachmentKey(input: {
+  threadId: string;
+  activityLineId: string;
+  index: number;
+  contentRef?: string;
+  data?: string;
+}): string {
+  const material =
+    input.contentRef?.trim() || (input.data ? contentRefForBuffer(decodeBase64(input.data)) : "unknown");
+  return createHash("sha256")
+    .update(`${input.threadId}\u0000${input.activityLineId}\u0000${input.index}\u0000${material}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+function contentRefForBuffer(buffer: Buffer): string {
+  return `${CONTENT_REF_PREFIX}${createHash("sha256").update(buffer).digest("hex")}`;
+}
+
+function isPathWithinRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function assertImageByteLength(byteLength: number): void {
+  if (!Number.isSafeInteger(byteLength) || byteLength <= 0 || byteLength > PROMPT_IMAGE_UPLOAD_MAX_BYTES) {
+    throw new Error("Image attachment has an invalid byte length.");
+  }
+}
+
+function requireContentRef(value: string): string {
+  const normalized = value.trim();
+  if (!isPromptImageContentRef(normalized)) throw new Error("Prompt image contentRef is invalid.");
+  return normalized;
+}
+
+function integerAtLeast(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be a non-negative integer.`);
+  return value;
 }
 
 function sanitizeSegment(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error("Prompt image storage key is required.");
-  }
+  if (!trimmed) throw new Error("Prompt image storage key is required.");
   return trimmed.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 180);
 }
 
 function decodeBase64(value: string): Buffer {
   const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error("Prompt image data is required.");
+  if (!trimmed) throw new Error("Prompt image data is required.");
+  const normalized = trimmed.replace(/\s+/g, "");
+  if (
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) ||
+    normalized.length % 4 === 1 ||
+    (normalized.includes("=") && normalized.length % 4 !== 0)
+  ) {
+    throw new Error("Prompt image data must be valid base64.");
   }
-  return Buffer.from(trimmed, "base64");
+  const buffer = Buffer.from(normalized, "base64");
+  if (buffer.length === 0) throw new Error("Prompt image data is empty.");
+  return buffer;
 }

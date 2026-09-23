@@ -772,6 +772,9 @@ test("CodexAppServerDriver runAsk / runPlan send turn/start with model", async (
     expect((turnStart?.params?.collaborationMode as { mode?: string })?.mode).toBe(
       mode === "plan" ? "plan" : "default",
     );
+    if (mode === "plan") {
+      expect(turnStart?.params?.sandboxPolicy).toEqual({ type: "readOnly" });
+    }
     driver.dispose();
   }
 });

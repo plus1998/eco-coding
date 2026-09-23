@@ -7,7 +7,7 @@ import {
   MIN_TIMING_MS_FOR_RATE,
   resolveLedgerEventTiming,
 } from "../src/shared/ledger-event-timing";
-import type { ThreadRunProjectionRequestSpan } from "../src/shared/thread-run-projection";
+import type { ThreadRunProjectionRequestSpan } from "../src/shared/conversation-v2-projection";
 
 const T0 = "2026-01-01T00:00:00.000Z";
 const T_FIRST = "2026-01-01T00:00:02.000Z";

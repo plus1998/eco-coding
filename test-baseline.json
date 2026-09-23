@@ -1,0 +1,14 @@
+{
+  "updatedAt": "2026-09-17",
+  "suite": "bun test --path-ignore-patterns=apps/desktop/e2e/**",
+  "howToRun": "node scripts/test-gate.mjs",
+  "why": [
+    "清单为空＝全量套件当前全绿（5161 pass / 16 skip / 0 fail）。机制保留：",
+    "闸门仍然把「已知失败」当作显式输入而不是静默跳过，任何新增失败都必须先修，或写清原因后列进来。",
+    "列进来的条目每次运行都会逐条打印；修好之后会显示「绿(已成历史)」并要求从本文件删除（--strict 直接失败）。",
+    "上一版 14 条已全部清零，处理方式记在 docs/plans/feed-regression-test-plan.md 4.17：",
+    "其中 9 条是期望值过期（用例跟不上实现），5 条是真缺陷（macOS /var 符号链接误判、生命周期事件乱认请求、两次全局实例污染）。",
+    "4.19（语料 6→9 会话 + 真库审计）打出的 5 个真缺陷已全部修掉，套件仍全绿（5161 pass），因此清单保持为空。"
+  ],
+  "knownFailures": {}
+}

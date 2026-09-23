@@ -4,10 +4,10 @@ import '../../core/models/html_host_models.dart';
 import '../../core/models/image_display_models.dart';
 import '../../core/models/image_generation_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/conversation_v2_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/utils/thread_session_menu_visibility.dart';
-import '../../core/utils/thread_todo_live.dart';
 import 'html_host_artifacts.dart';
 import 'image_display_artifacts.dart';
 import 'thread_providers.dart';
@@ -42,10 +42,7 @@ class ThreadSessionMenuCards {
   );
 }
 
-Future<T> _safeMenuCardsLoad<T>(
-  Future<T> Function() load,
-  T fallback,
-) async {
+Future<T> _safeMenuCardsLoad<T>(Future<T> Function() load, T fallback) async {
   try {
     return await load();
   } catch (_) {
@@ -62,22 +59,18 @@ final threadSessionMenuCardsProvider = FutureProvider.autoDispose
       if (threadId.isEmpty) return ThreadSessionMenuCards.empty;
 
       final session = ref.watch(
-        threadSessionProvider(threadId).select(
-          (state) => (projection: state.runProjection),
+        threadSessionProvider(
+          threadId,
+        ).select((state) => (projection: state.runProjection)),
+      );
+      final todos = ref.watch(
+        conversationV2SessionProvider(threadId).select(
+          (state) => state.todos.map(_coderTodoFromV2).toList(growable: false),
         ),
       );
 
       ref.listen(ecoEventsProvider, (_, next) {
         next.whenData((event) {
-          final todos = threadTodoListFromLiveEvent(
-            threadId: threadId,
-            envelopeThreadId: event.threadId,
-            payload: event.payload,
-          );
-          if (todos != null) {
-            ref.invalidateSelf();
-            return;
-          }
           if (event.kind == 'thread.plan') {
             ref.invalidateSelf();
           }
@@ -96,7 +89,7 @@ final threadSessionMenuCardsProvider = FutureProvider.autoDispose
       final rpc = ref.watch(desktopRpcProvider);
       if (rpc == null) {
         return ThreadSessionMenuCards(
-          showProgress: false,
+          showProgress: threadMenuShouldShowProgress(todos),
           showPlan: false,
           showImageDisplay: fromProjectionDisplay.isNotEmpty,
           showImageGeneration: false,
@@ -109,6 +102,7 @@ final threadSessionMenuCardsProvider = FutureProvider.autoDispose
       final loaded = await _loadMenuCardsRemote(
         rpc: rpc,
         threadId: threadId,
+        todos: todos,
         fromProjectionDisplay: fromProjectionDisplay,
         fromProjectionHtml: fromProjectionHtml,
       );
@@ -118,13 +112,10 @@ final threadSessionMenuCardsProvider = FutureProvider.autoDispose
 Future<ThreadSessionMenuCards> _loadMenuCardsRemote({
   required DesktopRpc rpc,
   required String threadId,
+  required List<CoderTodoItem> todos,
   required List<ImageDisplayArtifact> fromProjectionDisplay,
   required List<HtmlHostArtifact> fromProjectionHtml,
 }) async {
-  final todos = await _safeMenuCardsLoad(
-    () => rpc.listThreadTodos(threadId),
-    const <CoderTodoItem>[],
-  );
   final approvedPlan = await _safeMenuCardsLoad(
     () => rpc.getApprovedPlan(threadId),
     null,
@@ -162,3 +153,13 @@ Future<ThreadSessionMenuCards> _loadMenuCardsRemote({
     htmlHostArtifacts: htmlHost,
   );
 }
+
+CoderTodoItem _coderTodoFromV2(ConversationV2Todo todo) => CoderTodoItem(
+  id: todo.todoId,
+  threadId: todo.conversationId,
+  title: todo.title,
+  detail: todo.detail,
+  status: todo.status,
+  position: todo.position,
+  updatedAt: todo.updatedAt,
+);

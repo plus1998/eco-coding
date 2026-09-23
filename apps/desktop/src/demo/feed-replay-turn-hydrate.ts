@@ -1,10 +1,10 @@
-import { buildThreadRunProjectionDetail } from "../main/thread-run-projection-detail";
+import { buildThreadRunProjectionDetail } from "../main/legacy-feed-replay-detail";
 import type {
   ThreadRunProjectionDetailResult,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
-} from "../shared/thread-run-projection";
-import { resolveProjectionDetailMergedAgent } from "../shared/thread-run-projection";
+} from "../shared/conversation-v2-projection";
+import { resolveProjectionDetailMergedAgent } from "../shared/conversation-v2-projection";
 
 export interface DemoFeedReplayHydrateOptions {
   /** Codex rpc-log replay has no runAttemptId on events; merge full timeline process rows instead. */

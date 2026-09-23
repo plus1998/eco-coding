@@ -1,4 +1,4 @@
-import type { ThreadRunProjectionRequestSpan } from "./thread-run-projection";
+import type { ThreadRunProjectionRequestSpan } from "./conversation-v2-projection";
 
 export type RequestSpanLedgerUsageSource = "sdk" | "proxy" | "codex" | "pi";
 

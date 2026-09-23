@@ -469,7 +469,11 @@ export async function pushAccountConfigSnapshot(
     p_secrets: input.secrets,
   });
   if (error) {
-    if (error.code === "40001" || error.message.includes(SETTINGS_SYNC_CONFLICT_CODE)) {
+    if (
+      error.code === "PT409" ||
+      error.code === "40001" ||
+      error.message.includes(SETTINGS_SYNC_CONFLICT_CODE)
+    ) {
       throw new SettingsSyncConflictError();
     }
     throw new Error(error.message);

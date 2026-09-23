@@ -54,6 +54,7 @@ export type CodexThreadRunEventType =
   | "run.attempt.started"
   | "run.attempt.completed"
   | "run.attempt.failed"
+  | "run.attempt.cancelled"
   | "message.delta"
   | "message.final"
   | "thinking.delta"

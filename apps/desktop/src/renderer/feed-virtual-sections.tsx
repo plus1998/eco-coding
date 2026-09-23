@@ -7,8 +7,8 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import type { ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
-import { isProjectionUserPromptItem } from "./thread-run-projection-view";
+import type { ThreadRunTurnFeedSection } from "./conversation-v2-turn-feed";
+import { isProjectionUserPromptItem } from "./conversation-v2-projection-view";
 
 /** Below this count, mount everything — virtualization overhead is not worth it. */
 export const FEED_VIRTUALIZE_MIN_SECTIONS = 12;

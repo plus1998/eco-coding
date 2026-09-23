@@ -30,6 +30,12 @@ export interface RunAttemptRecord {
   metadata?: Record<string, unknown>;
 }
 
+export interface RunAttemptCommandDispatch {
+  principalId: string;
+  clientCommandId: string;
+  dispatchId: string;
+}
+
 export interface AgentInstanceRecord {
   threadId: string;
   agentId: string;

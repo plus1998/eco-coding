@@ -27,8 +27,8 @@ import {
   type CodexThreadResumeResult,
   type CodexThreadStatusKind,
   type CodexToolPolicy,
-  type CodexWebSearchMode,
   CodexTurnRouteRegistry,
+  type CodexWebSearchMode,
   clearCodexSpawnPayloadQueueSync,
   collectCodexGatewayCatalogRoutes,
   DEFAULT_CODEX_TOOL_POLICY,
@@ -172,7 +172,7 @@ export interface CodexRuntimeRunDeps {
     | Promise<readonly CodexMcpServerForConfigSync[]>;
   threadMap: CodexThreadMap;
   resolveRunAttemptId?: (ecoThreadId: string) => string | undefined;
-  appendThreadRunEvent: (event: ThreadRunEventInput) => void;
+  appendConversationRuntimeEvent: (event: ThreadRunEventInput) => void;
   /**
    * Emit feed projection. Pass `{ streaming: true }` for delta events so the
    * scheduler throttles streaming projections instead of debouncing away all
@@ -357,7 +357,7 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
         config.scheduleThreadRunProjectionUpdated(projectionEvent.threadId, { streaming: false });
         return;
       }
-      config.appendThreadRunEvent(
+      config.appendConversationRuntimeEvent(
         bindCodexThreadRunEventAttempt(
           projectionEvent,
           config.resolveRunAttemptId?.(projectionEvent.threadId),

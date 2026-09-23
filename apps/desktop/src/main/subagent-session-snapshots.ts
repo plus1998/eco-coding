@@ -8,6 +8,7 @@ export function buildSubagentSessionTimings(
   return records.map((row) => ({
     agentId: row.agentId,
     role: row.role,
+    phase: row.phase,
     status: row.status,
     startedAt: row.startedAt,
     lastActiveAt: row.lastActiveAt,

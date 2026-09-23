@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   applyCodexTurnPlanProgress,
   coderTodosFromCodexTurnPlan,
@@ -18,6 +19,13 @@ const sqliteAvailable = await (async () => {
     return false;
   }
 })();
+
+async function createLegacyStore(dbPath: string) {
+  return createConversationStore(dbPath, {
+    freshStorageMode: "legacy_compat",
+    requiredStorageMode: "legacy_compat",
+  });
+}
 
 test("Codex turn plan maps native statuses and preserves ids by normalized step text", () => {
   const first = coderTodosFromCodexTurnPlan(
@@ -126,7 +134,7 @@ test("Codex turn plan applies an authoritative replacement and emits the persist
 test.skipIf(!sqliteAvailable)("Codex turn plan snapshots persist in the existing todo store", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-plan-progress-"));
   const dbPath = path.join(dir, "eco.sqlite");
-  const store = await createConversationStore(dbPath);
+  const store = await createLegacyStore(dbPath);
   const now = "2026-08-09T00:00:00.000Z";
   const thread: ThreadSummary = {
     id: "thr_persisted_plan",
@@ -153,7 +161,16 @@ test.skipIf(!sqliteAvailable)("Codex turn plan snapshots persist in the existing
   });
 
   expect(store.listCoderTodos(thread.id)).toEqual(emitted[0]);
-  const reopened = await createConversationStore(dbPath);
+  const inspectionDb = new DatabaseSync(dbPath);
+  expect(
+    (
+      inspectionDb
+        .prepare(`SELECT COUNT(*) AS count FROM thread_coder_todos WHERE thread_id = ?`)
+        .get(thread.id) as { count: number }
+    ).count,
+  ).toBe(0);
+  inspectionDb.close();
+  const reopened = await createLegacyStore(dbPath);
   expect(reopened.listCoderTodos(thread.id)).toMatchObject([
     { title: "Persist progress", status: "running", position: 0 },
   ]);

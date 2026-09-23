@@ -88,6 +88,57 @@ export function sanitizeDeepSeekResponsesCustomTools(
   return { ...body, tools: filtered as ResponsesRequest["tools"] };
 }
 
+/**
+ * LongCat's native Responses endpoint accepts the standard `message` input
+ * item but rejects Codex's multi-agent-only `agent_message` item.  Codex emits
+ * the latter for a child-agent handoff. Plain-text handoffs are representable
+ * as a user message. If Codex attaches opaque encrypted content, the complete
+ * item is left untouched so we fail closed instead of changing its meaning.
+ */
+export function sanitizeLongCatResponsesAgentMessages(
+  body: ResponsesRequest,
+  providerBaseUrl: string,
+): { body: ResponsesRequest; converted: number; encrypted: number } {
+  if (!isLongCatResponsesProvider(providerBaseUrl) || !Array.isArray(body.input)) {
+    return { body, converted: 0, encrypted: 0 };
+  }
+  let converted = 0;
+  let encrypted = 0;
+  const input = body.input.map((item) => {
+    if (!isRecord(item) || item.type !== "agent_message") {
+      return item;
+    }
+    if (typeof item.encrypted_content === "string" && item.encrypted_content.length > 0) {
+      encrypted += 1;
+      return item;
+    }
+    const content = item.content;
+    if (!Array.isArray(content) || content.length === 0) {
+      return item;
+    }
+    if (content.some((part) => isRecord(part) && part.type === "encrypted_content")) {
+      encrypted += 1;
+      return item;
+    }
+    converted += 1;
+    return {
+      type: "message",
+      role: "user",
+      content,
+    };
+  });
+  return converted > 0 ? { body: { ...body, input }, converted, encrypted } : { body, converted, encrypted };
+}
+
+function isLongCatResponsesProvider(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host === "api.longcat.chat" || host.endsWith(".longcat.chat");
+  } catch {
+    return false;
+  }
+}
+
 /** Official OpenAI hosts need `include: reasoning.encrypted_content`; third parties often stall on it. */
 export function isOfficialOpenAIResponsesBaseUrl(baseUrl: string): boolean {
   try {
@@ -140,7 +191,20 @@ export async function forwardResponsesPassthrough(
   lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
   const deepSeekSanitized = sanitizeDeepSeekResponsesCustomTools(responsesBody, route.upstreamModelId);
-  const softFail = sanitizeThirdPartyResponsesSoftFailFields(deepSeekSanitized, route.provider.baseUrl);
+  const longCatSanitized = sanitizeLongCatResponsesAgentMessages(deepSeekSanitized, route.provider.baseUrl);
+  if (longCatSanitized.converted > 0) {
+    onLog(
+      `responses LongCat agent_message sanitize provider=${route.provider.id} ` +
+        `converted=${longCatSanitized.converted} encrypted=${longCatSanitized.encrypted}`,
+    );
+  }
+  if (longCatSanitized.encrypted > 0) {
+    onLog(
+      `responses LongCat encrypted agent_message remains unsupported ` +
+        `provider=${route.provider.id} encrypted=${longCatSanitized.encrypted}`,
+    );
+  }
+  const softFail = sanitizeThirdPartyResponsesSoftFailFields(longCatSanitized.body, route.provider.baseUrl);
   if (softFail.dropped.length > 0) {
     onLog(`responses soft-fail sanitize provider=${route.provider.id} dropped=${softFail.dropped.join(",")}`);
   }
@@ -220,10 +284,7 @@ export async function forwardResponsesPassthrough(
       onUsage,
       onLog,
     });
-    tryEmitLogicalCompleted(
-      lifecycle,
-      providerRequestId ?? parsedJsonUsage?.responseId,
-    );
+    tryEmitLogicalCompleted(lifecycle, providerRequestId ?? parsedJsonUsage?.responseId);
     return new Response(text, {
       status: 200,
       headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {

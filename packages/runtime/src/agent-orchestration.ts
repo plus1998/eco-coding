@@ -566,7 +566,9 @@ function buildSdkAgentDefinition(
       tools,
       disallowedTools,
       mcpServers,
-      networkWebSearch: toolPolicy.network?.webSearch,
+      ...(toolPolicy.network?.webSearch === undefined
+        ? {}
+        : { networkWebSearch: toolPolicy.network.webSearch }),
       integratedWebSearch,
     });
     tools = applied.tools;

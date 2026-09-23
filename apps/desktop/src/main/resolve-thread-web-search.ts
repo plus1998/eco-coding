@@ -25,7 +25,7 @@ export function resolveThreadWebSearchPlan(input: {
     networkWebSearch: input.networkWebSearch,
     supportsNativeWebSearch: resolveSupportsNativeWebSearch(input.plannerManualSpec),
     integratedEnabled: input.integratedSettings.enabled,
-    integratedApiKey: input.integratedApiKey,
+    ...(input.integratedApiKey === undefined ? {} : { integratedApiKey: input.integratedApiKey }),
   });
   if (context.backend === "integrated") {
     return {

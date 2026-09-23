@@ -14,7 +14,7 @@ import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { ImageViewReadError, type ImageViewReadFailureCode, readImageViewFile } from "./image-view-reader";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Image-View-Control-Secret";
 
@@ -256,7 +256,7 @@ function mcpErrorResult(message: string, code: string): Record<string, unknown> 
   };
 }
 
-function imageViewToolDefinition(): Record<string, unknown> {
+function imageViewToolDefinition(): McpToolDefinition {
   return {
     name: ECO_IMAGE_VIEW_TOOL,
     description:

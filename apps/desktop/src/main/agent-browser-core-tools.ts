@@ -316,7 +316,9 @@ const TOOL_DEFINITIONS: Record<
   },
 };
 
-export function agentBrowserCoreToolsCatalog(): Array<Record<string, unknown>> {
+import type { McpToolDefinition } from "./mcp-streamable-http";
+
+export function agentBrowserCoreToolsCatalog(): McpToolDefinition[] {
   return AGENT_BROWSER_CORE_TOOL_NAMES.map((name) => {
     const def = TOOL_DEFINITIONS[name];
     return {

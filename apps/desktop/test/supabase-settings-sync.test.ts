@@ -225,6 +225,28 @@ test("pushAccountConfigSnapshot sends settings and complete secret snapshot to o
   expect(row.revision).toBe(5);
 });
 
+test("pushAccountConfigSnapshot maps PostgREST PT409 to a settings conflict", async () => {
+  const client = {
+    async rpc() {
+      return {
+        data: null,
+        error: { code: "PT409", message: SETTINGS_SYNC_CONFLICT_CODE },
+      };
+    },
+  };
+
+  await expect(
+    pushAccountConfigSnapshot(client as never, {
+      payload: emptyEcoSyncedSettingsPayload(),
+      expectedRevision: 4,
+      secrets: [],
+    }),
+  ).rejects.toMatchObject({
+    name: "SettingsSyncConflictError",
+    code: SETTINGS_SYNC_CONFLICT_CODE,
+  });
+});
+
 test("recordFailedVaultClaimAttempt locks after max attempts", async () => {
   const updates: Array<Record<string, unknown>> = [];
   const claim: VaultClaimRow = {
@@ -784,25 +806,25 @@ test("syncAccountConfig reconcile preserves local secrets when settings already 
   expect(result.needsUserChoice).toBeUndefined();
 });
 
-test("MobileRemoteEventPublisher throttles context notifications", async () => {
+test("MobileRemoteEventPublisher throttles V2 projection extras notifications", async () => {
   const delivered: EventCenterJsonRpcNotification[] = [];
   const publisher = new MobileRemoteEventPublisher({
     deliver: (notification) => {
       delivered.push(notification);
     },
-    contextUsageThrottleMs: 30,
+    projectionExtrasThrottleMs: 30,
   });
 
   const envelope = {
-    kind: "thread.context",
+    kind: "conversation.projection_extras",
     threadId: "thr_1",
-    payload: { type: "context", threadId: "thr_1" },
+    payload: { conversationId: "thr_1", revision: 1 },
   } as EventCenterEnvelope;
   const n1 = { jsonrpc: "2.0", method: "eco.event", params: envelope } as EventCenterJsonRpcNotification;
   const n2 = {
     jsonrpc: "2.0",
     method: "eco.event",
-    params: { ...envelope, payload: { type: "context", threadId: "thr_1", seq: 2 } },
+    params: { ...envelope, payload: { conversationId: "thr_1", revision: 2 } },
   } as EventCenterJsonRpcNotification;
 
   publisher.publish(envelope, n1);
@@ -811,9 +833,8 @@ test("MobileRemoteEventPublisher throttles context notifications", async () => {
   await Bun.sleep(50);
   expect(delivered).toHaveLength(1);
   expect((delivered[0]!.params as EventCenterEnvelope).payload).toEqual({
-    type: "context",
-    threadId: "thr_1",
-    seq: 2,
+    conversationId: "thr_1",
+    revision: 2,
   });
   publisher.reset();
 });
@@ -1371,9 +1392,7 @@ test("computeDomainSyncStatuses tracks personalization domain", async () => {
     hasVaultKey: true,
     domainSyncTimes: { personalization: "2026-01-02T00:00:00.000Z" },
   });
-  expect(neverSynced.find((entry) => entry.domain === "personalization")?.state).toBe(
-    "never_synced",
-  );
+  expect(neverSynced.find((entry) => entry.domain === "personalization")?.state).toBe("never_synced");
 
   const synced = computeDomainSyncStatuses({
     localPayload: local,
@@ -1422,7 +1441,11 @@ test("domainPayloadEqual compares integrated web search under proxyBridge", asyn
   const left = {
     ...base,
     proxyBridge: {
-      integratedWebSearch: { enabled: true, provider: "doubao" as const, approvalMode: "always_allow" as const },
+      integratedWebSearch: {
+        enabled: true,
+        provider: "doubao" as const,
+        approvalMode: "always_allow" as const,
+      },
     },
   };
   const right = {

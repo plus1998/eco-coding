@@ -1961,6 +1961,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadNoToolDetails => 'No tool details';
 
   @override
+  String get threadLoadMoreToolDetails => 'Load more details';
+
+  @override
   String get threadRequestingDetails => 'Requesting details...';
 
   @override

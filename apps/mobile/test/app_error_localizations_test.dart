@@ -5,8 +5,7 @@ import 'package:eco_mobile/core/models/asr_models.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:riverpod/riverpod.dart';
-import 'package:state_notifier/state_notifier.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   final en = lookupAppLocalizations(const Locale('en'));
@@ -108,9 +107,6 @@ void main() {
     }
 
     expect(thrown, isA<StateNotifierListenerError>());
-    expect(
-      localizedAppError(thrown!, zh),
-      '请先与 Desktop 配对后再打开 Realtime 通道。',
-    );
+    expect(localizedAppError(thrown!, zh), '请先与 Desktop 配对后再打开 Realtime 通道。');
   });
 }

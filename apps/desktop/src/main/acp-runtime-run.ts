@@ -15,6 +15,7 @@ import { definedProps } from "@eco/shared";
 import type { WorktreePlan } from "@eco/workspace";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
+import type { PreparedConversationCommandDispatch } from "./conversation-command-dispatch";
 import type { RequestAttemptResult } from "./request-retry";
 import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
 import {
@@ -34,6 +35,7 @@ export interface AcpThreadStartRunInput {
   restorePrompt?: string;
   /** Set only when this run recorded a new user bubble. */
   recordedUserActivityLineId?: string;
+  runtimeDispatch?: PreparedConversationCommandDispatch;
 }
 
 export interface AcpRuntimeOrchestrationDeps {
@@ -47,6 +49,7 @@ export interface AcpRuntimeOrchestrationDeps {
     signal: AbortSignal,
     run: () => Promise<RequestAttemptResult>,
     retryIndex?: number,
+    runtimeDispatch?: PreparedConversationCommandDispatch,
   ) => Promise<RequestAttemptResult>;
   consumeEvents: (input: {
     events: AsyncIterable<AgentEvent>;
@@ -201,6 +204,7 @@ export function toAcpThreadStartRunInput(input: {
   continuation?: boolean;
   restorePrompt?: string;
   recordedUserActivityLineId?: string;
+  runtimeDispatch?: PreparedConversationCommandDispatch;
 }): AcpThreadStartRunInput {
   return {
     thread: input.thread,
@@ -212,6 +216,7 @@ export function toAcpThreadStartRunInput(input: {
     ...(input.recordedUserActivityLineId
       ? { recordedUserActivityLineId: input.recordedUserActivityLineId }
       : {}),
+    ...(input.runtimeDispatch ? { runtimeDispatch: input.runtimeDispatch } : {}),
   };
 }
 
@@ -351,8 +356,12 @@ export async function startAcpThreadRunWithDriver(
         controller.signal,
         () => runOnce(),
         attemptsUsed - 1,
+        attemptsUsed === 1 ? input.runtimeDispatch : undefined,
       );
       if (result.ok) {
+        break;
+      }
+      if (input.runtimeDispatch) {
         break;
       }
       if (
@@ -388,11 +397,16 @@ export async function startAcpThreadRunWithDriver(
       );
     }
     if (decision.kind === "unstarted") {
+      const reason = isAcpLoadSessionFailure(decision.reason)
+        ? deps.loadSessionFailedMessage(decision.reason)
+        : decision.reason;
+      if (input.runtimeDispatch) {
+        deps.markInterrupted(input.thread.id, reason);
+        return;
+      }
       await deps.discardUnstartedTurn({
         threadId: input.thread.id,
-        reason: isAcpLoadSessionFailure(decision.reason)
-          ? deps.loadSessionFailedMessage(decision.reason)
-          : decision.reason,
+        reason,
         restorePrompt: input.restorePrompt ?? input.prompt,
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
         ...(input.recordedUserActivityLineId

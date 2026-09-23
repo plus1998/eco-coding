@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityLogView } from "../src/renderer/ActivityLogView";
+import { ConversationV2ProjectionActivityLogView as ActivityLogView } from "../src/renderer/ActivityLogView";
 import { FeedErrorCard } from "../src/renderer/FeedErrorCard";
 import type {
   ThreadRunProjectionSnapshot,

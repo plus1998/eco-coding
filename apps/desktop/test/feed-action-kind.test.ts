@@ -102,6 +102,18 @@ test("formatActionLine done includes basename target", () => {
   );
 });
 
+test("formatActionLine uses the generic browser label for tools the catalogs do not name", () => {
+  const known = resolveActionKind({ toolName: "mcp__eco_agent_browser__agent_browser_click" });
+  expect(formatActionLine({ resolved: known, phase: "done" }, tZh)).toBe("浏览器点击");
+  // `agent_browser_eval` has no `activity.named.*` entry; the old dynamic key would
+  // have rendered the raw key instead of a label.
+  const unknown = resolveActionKind({ toolName: "mcp__eco_agent_browser__agent_browser_eval" });
+  expect(unknown.kind).toBe("browser");
+  expect(formatActionLine({ resolved: unknown, phase: "running" }, tZh)).toBe("浏览器操作");
+  expect(formatActionLine({ resolved: unknown, phase: "done" }, tZh)).toBe("浏览器操作");
+  expect(formatActionLine({ resolved: unknown, phase: "done" }, tEn)).toBe("Browser action");
+});
+
 test("formatActionLine read appends lineRange to the basename", () => {
   const resolved = resolveActionKind({ toolName: "Read" });
   expect(

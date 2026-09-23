@@ -23,12 +23,30 @@ function createDeps() {
   return { deps, calls };
 }
 
-test("parseThreadCancelRequest accepts legacy thread id string", () => {
-  expect(parseThreadCancelRequest("thread-1")).toEqual({ threadId: "thread-1" });
+test("parseThreadCancelRequest rejects the retired legacy thread id string", () => {
+  expect(parseThreadCancelRequest("thread-1")).toBeNull();
 });
 
-test("parseThreadCancelRequest accepts object with threadId only", () => {
-  expect(parseThreadCancelRequest({ threadId: "thread-1" })).toEqual({ threadId: "thread-1" });
+test("parseThreadCancelRequest rejects an incomplete V1-shaped object", () => {
+  expect(parseThreadCancelRequest({ threadId: "thread-1" })).toBeNull();
+});
+
+test("parseThreadCancelRequest accepts a complete V2 command envelope", () => {
+  expect(
+    parseThreadCancelRequest({
+      principalId: "user-1",
+      clientCommandId: "cancel-1",
+      threadId: "thread-1",
+      expectedHistoryRevision: 3,
+      worktreeDisposition: "keep",
+    }),
+  ).toEqual({
+    principalId: "user-1",
+    clientCommandId: "cancel-1",
+    threadId: "thread-1",
+    expectedHistoryRevision: 3,
+    worktreeDisposition: "keep",
+  });
 });
 
 test("takePendingCancelDisposition consumes map entry once", () => {

@@ -5,8 +5,13 @@ import { INTEGRATION_IDS } from "../src/shared/integrations";
 const indexSource = fs.readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
 const piSessionSource = fs.readFileSync(new URL("../src/main/pi-mcp-session.ts", import.meta.url), "utf8");
 
-test("INTEGRATION_IDS stays browser and imageGeneration only", () => {
-  expect(INTEGRATION_IDS).toEqual(["browser", "imageGeneration"]);
+test("the image view is not an integration switch", () => {
+  // The integration list is the switches the settings panel offers; `computerUse` joined it
+  // after this test was written. What the test is about is that the image *view* is not one
+  // of them, so it asks that question instead of freezing the list's contents.
+  expect(INTEGRATION_IDS).not.toContain("imageView");
+  expect(INTEGRATION_IDS).toContain("browser");
+  expect(INTEGRATION_IDS).toContain("imageGeneration");
 });
 
 test("image view injection is always-on and not an integration switch", () => {

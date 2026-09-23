@@ -127,7 +127,11 @@ export function buildForcedPlanDelegationTask(input: { plan: string; additionalM
     sections.push("", "<additional_user_message>", additionalMessage, "</additional_user_message>");
   }
 
-  sections.push("", "完成实现与必要验证，并将最终结果返回给主代理。不要再委派其他代理。");
+  sections.push(
+    "",
+    "严格按获批计划列出的步骤和约束执行；计划是唯一任务范围。计划给出精确命令或唯一工具动作时，直接按原文执行，不要先做无关的环境检查、目录/文件浏览或额外验证。计划没有要求额外验证时，不要自行追加检查。",
+    "完成计划明确要求的步骤后，立即将实际结果返回给主代理。不要再委派其他代理。",
+  );
   return sections.join("\n");
 }
 
@@ -143,9 +147,9 @@ export function buildForcedPlanDelegationContract(input: { agentKey: string; dis
     "",
     `你必须在本次回合调用 Agent 工具，把实现工作委派给子代理「${label}」(agentKey: ${input.agentKey}) 一次。`,
     "- 只允许委派给该子代理，并且只能委派一次。",
-    "- 你不得自己修改文件（不得使用 Write/Edit/Bash 等工具改动工作区），也不得委派给其他子代理。",
+    "- 计划执行由该子代理负责。你不得自己调用 Bash、读写文件或运行其他工具，也不得委派给其他子代理。",
     "- 委派任务的正文由系统注入：调用 Agent 工具时，任务描述写「执行已批准的计划」即可，不要复制或概述计划内容。",
-    "- 委派完成后，读取子代理返回的最终结果，做工作区验收，再向用户给出最终答复。",
+    "- 子代理返回后，根据其执行结果和证据向用户答复。只有获批计划明确要求主代理验收时，才执行对应的验收步骤；不得自行追加工作区检查、git status/diff 或其他命令。",
   ].join("\n");
 }
 

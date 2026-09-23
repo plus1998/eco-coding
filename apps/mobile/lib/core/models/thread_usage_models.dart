@@ -31,22 +31,22 @@ class ThreadRoleContextSnapshot {
     this.segments = const [],
   });
 
-  factory ThreadRoleContextSnapshot.fromJson(
-    Map<String, dynamic> json,
-  ) => ThreadRoleContextSnapshot(
-    role: json['role'] as String? ?? 'planner',
-    occupied: (json['occupied'] as num?)?.toInt() ?? 0,
-    limit: (json['limit'] as num?)?.toInt() ?? 0,
-    occupancyPct: (json['occupancyPct'] as num?)?.toInt() ?? 0,
-    limitsResolved: json['limitsResolved'] as bool? ?? false,
-    modelId: json['modelId'] as String?,
-    segments: (json['segments'] as List<dynamic>? ?? [])
-        .map(
-          (entry) =>
-              ContextBreakdownSegment.fromJson(entry as Map<String, dynamic>),
-        )
-        .toList(),
-  );
+  factory ThreadRoleContextSnapshot.fromJson(Map<String, dynamic> json) =>
+      ThreadRoleContextSnapshot(
+        role: json['role'] as String? ?? 'planner',
+        occupied: (json['occupied'] as num?)?.toInt() ?? 0,
+        limit: (json['limit'] as num?)?.toInt() ?? 0,
+        occupancyPct: (json['occupancyPct'] as num?)?.toInt() ?? 0,
+        limitsResolved: json['limitsResolved'] as bool? ?? false,
+        modelId: json['modelId'] as String?,
+        segments: (json['segments'] as List<dynamic>? ?? [])
+            .map(
+              (entry) => ContextBreakdownSegment.fromJson(
+                entry as Map<String, dynamic>,
+              ),
+            )
+            .toList(),
+      );
 
   final String role;
   final int occupied;
@@ -69,23 +69,23 @@ class ThreadContextInstanceSnapshot {
     this.segments = const [],
   });
 
-  factory ThreadContextInstanceSnapshot.fromJson(
-    Map<String, dynamic> json,
-  ) => ThreadContextInstanceSnapshot(
-    agentId: json['agentId'] as String? ?? '',
-    role: json['role'] as String? ?? 'coder',
-    occupied: (json['occupied'] as num?)?.toInt() ?? 0,
-    limit: (json['limit'] as num?)?.toInt() ?? 0,
-    occupancyPct: (json['occupancyPct'] as num?)?.toInt() ?? 0,
-    limitsResolved: json['limitsResolved'] as bool? ?? false,
-    modelId: json['modelId'] as String?,
-    segments: (json['segments'] as List<dynamic>? ?? [])
-        .map(
-          (entry) =>
-              ContextBreakdownSegment.fromJson(entry as Map<String, dynamic>),
-        )
-        .toList(),
-  );
+  factory ThreadContextInstanceSnapshot.fromJson(Map<String, dynamic> json) =>
+      ThreadContextInstanceSnapshot(
+        agentId: json['agentId'] as String? ?? '',
+        role: json['role'] as String? ?? 'coder',
+        occupied: (json['occupied'] as num?)?.toInt() ?? 0,
+        limit: (json['limit'] as num?)?.toInt() ?? 0,
+        occupancyPct: (json['occupancyPct'] as num?)?.toInt() ?? 0,
+        limitsResolved: json['limitsResolved'] as bool? ?? false,
+        modelId: json['modelId'] as String?,
+        segments: (json['segments'] as List<dynamic>? ?? [])
+            .map(
+              (entry) => ContextBreakdownSegment.fromJson(
+                entry as Map<String, dynamic>,
+              ),
+            )
+            .toList(),
+      );
 
   final String agentId;
   final String role;
@@ -238,25 +238,4 @@ class ThreadBillingSnapshot {
   final int cacheReadTokens;
   final int cacheCreationTokens;
   final List<ThreadBillingModelSnapshot> byModel;
-}
-
-class ThreadUsageSnapshotResult {
-  const ThreadUsageSnapshotResult({this.billing, this.context});
-
-  factory ThreadUsageSnapshotResult.fromJson(Map<String, dynamic> json) =>
-      ThreadUsageSnapshotResult(
-        billing: json['billing'] is Map<String, dynamic>
-            ? ThreadBillingSnapshot.fromJson(
-                json['billing'] as Map<String, dynamic>,
-              )
-            : null,
-        context: json['context'] is Map<String, dynamic>
-            ? ThreadContextSnapshot.fromJson(
-                json['context'] as Map<String, dynamic>,
-              )
-            : null,
-      );
-
-  final ThreadBillingSnapshot? billing;
-  final ThreadContextSnapshot? context;
 }

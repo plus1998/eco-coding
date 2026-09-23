@@ -36,8 +36,11 @@ test("known application IPC errors localize without raw Chinese in en-US", () =>
 });
 
 test("ACP follow-up IPC errors localize without raw Chinese in en-US", () => {
+  // ACP steering no longer refuses: `coreUsesInterruptForSteer` turns a mid-turn steer into
+  // interrupt + resume, so "Cursor ACP 不支持中断当前轮次插入后续消息…" is a message the app no
+  // longer produces and it was removed from the catalog with it. The remaining errors are the
+  // ones the path can still raise.
   const messages = [
-    "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
     "Cursor ACP 未声明图片输入能力，无法发送附件。",
     "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。",
   ];

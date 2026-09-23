@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   ActivityLogView,
   formatRunLogTurnHeading,
+  ConversationV2ProjectionActivityLogView as ProjectionActivityLogView,
   ProjectionSubagentDetailFeed,
   ProjectionToolGroupEntry,
   resolveActiveSubagentDurationMs,
@@ -12,10 +13,10 @@ import {
   splitThinkingCarouselLines,
 } from "../src/renderer/ActivityLogView";
 import { formatDuration, iconForToolName, reasoningSummaryLabel } from "../src/renderer/activity-log";
+import { buildThreadRunProjectionViewModel } from "../src/renderer/conversation-v2-projection-view";
 import { i18n } from "../src/renderer/i18n";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
-import { buildThreadRunProjectionViewModel } from "../src/renderer/thread-run-projection-view";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
   ThreadRunProjectionAgent,
@@ -286,7 +287,7 @@ test("desktop feed disables overflow-anchor so tail tables cannot pull the scrol
 
 test("ActivityLogView waits for thread stop before exposing final output copy", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         timeline: [
@@ -306,9 +307,9 @@ test("ActivityLogView waits for thread stop before exposing final output copy", 
   expect(html).toContain("run-log-active-tail");
 });
 
-test("ActivityLogView shows the original thinking loader before the first response event", () => {
+test("ActivityLogView does not show thinking before a request starts", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         timeline: [
@@ -324,15 +325,12 @@ test("ActivityLogView shows the original thinking loader before the first respon
     }),
   );
 
-  expect(html).toContain('class="run-log-thinking streaming empty"');
-  expect(html).toContain("run-log-active-tail");
-  expect(html).toContain('class="run-log-thinking-header"');
-  expect(html).toContain("正在思考");
-  expect(html).not.toContain("run-log-thinking-icon");
-  expect(html).not.toContain('aria-label="会话进行中"');
+  expect(html).not.toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain("run-log-conversation-tail");
+  expect(html).not.toContain("正在思考");
 });
 
-test("ActivityLogView shows thinking immediately while the first projection event is pending", () => {
+test("ActivityLogView does not show thinking while the first request event is pending", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       thread: {
@@ -349,17 +347,15 @@ test("ActivityLogView shows thinking immediately while the first projection even
   );
 
   expect(html).toContain("检查当前实现");
-  expect(html).toContain('class="run-log-thinking streaming empty"');
-  expect(html).toContain("run-log-active-tail");
-  expect(html).toContain("正在思考");
-  expect(html).not.toContain("run-log-thinking-icon");
-  expect(html).not.toContain('aria-label="会话进行中"');
+  expect(html).not.toContain('class="run-log-thinking streaming empty"');
+  expect(html).not.toContain("run-log-active-tail");
+  expect(html).not.toContain("正在思考");
   expect(html).not.toContain("run-log-projection-loading");
 });
 
 test("ActivityLogView hides the conversation tail while a request is waiting for its first token", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         requestSpans: [requestSpan({ requestId: "req-waiting", status: "waiting_first_token" })],
@@ -388,6 +384,54 @@ test("ActivityLogView hides the conversation tail while a request is waiting for
   expect(html).not.toContain("run-log-conversation-tail");
 });
 
+test("ActivityLogView removes the waiting indicator after the first stream output", () => {
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [
+          requestSpan({
+            requestId: "req-streaming",
+            status: "streaming",
+            firstTokenAt: "2026-01-01T00:00:02.000Z",
+          }),
+        ],
+        timeline: [
+          item({
+            id: "request-started-streaming",
+            sequence: 1,
+            eventType: "request.started",
+            requestId: "req-streaming",
+            text: "",
+          }),
+          item({
+            id: "empty-stream-placeholder",
+            sequence: 2,
+            eventType: "message.delta",
+            requestId: "req-streaming",
+            role: "planner",
+            text: "",
+            streamKey: "stream:req-streaming",
+          }),
+          item({
+            id: "first-stream-output",
+            sequence: 3,
+            eventType: "message.delta",
+            requestId: "req-streaming",
+            role: "planner",
+            text: "首个输出",
+            streamKey: "stream:req-streaming",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("首个输出");
+  expect(html).not.toContain('class="run-log-thinking streaming empty"');
+  expect(html).not.toContain("正在思考");
+});
+
 test("ActivityLogView keeps first-turn thinking spacing stable before request startup", () => {
   const runningAttempt = {
     attemptId: "attempt-first-message",
@@ -409,7 +453,7 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
     requestSpans: ThreadRunProjectionRequestSpan[],
   ) =>
     renderToStaticMarkup(
-      createElement(ActivityLogView, {
+      createElement(ProjectionActivityLogView, {
         projection: projection({
           status: "running",
           attempts: [runningAttempt],
@@ -435,20 +479,19 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
     [requestSpan({ requestId: "req-first-message", status: "waiting_first_token" })],
   );
 
-  // Waiting indicator is deferred to the active-tail; process stays empty under the
-  // 处理中 divider so padding does not stack above "正在思考". Active-tail and
-  // in-process siblings share --codex-feed-gap-process (see feed spacing contract).
+  // Before request.started there is no loading indicator. Once the request span
+  // enters waiting_first_token, the indicator is deferred to the active-tail.
   expect(beforeRequest).toContain("run-log-turn-process-inner is-empty");
   expect(afterRequest).toContain("run-log-turn-process-inner is-empty");
-  expect(beforeRequest).toContain("run-log-active-tail");
+  expect(beforeRequest).toContain("run-log-conversation-tail");
   expect(afterRequest).toContain("run-log-active-tail");
-  expect(beforeRequest).toContain("正在思考");
+  expect(beforeRequest).not.toContain("正在思考");
   expect(afterRequest).toContain("正在思考");
 });
 
 test("ActivityLogView suppresses the thinking indicator while a tool row is the latest content", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         requestSpans: [requestSpan({ requestId: "req-waiting", status: "waiting_first_token" })],
@@ -483,12 +526,13 @@ test("ActivityLogView suppresses the thinking indicator while a tool row is the 
   // the「正在思考」line must not render beneath it.
   expect(html).toContain("config.ts");
   expect(html).not.toContain("正在思考");
-  expect(html).toContain("run-log-conversation-tail");
+  expect(html).not.toContain("run-log-active-tail");
+  expect(html).not.toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView replaces answered clarification waiting with its question and answer", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         timeline: [
@@ -521,7 +565,7 @@ test("ActivityLogView replaces answered clarification waiting with its question 
 
 test("ActivityLogView hides the plan execution transition and its empty processed section", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         attempts: [
@@ -555,7 +599,7 @@ test("ActivityLogView hides the plan execution transition and its empty processe
 
 test("ActivityLogView renders prompt images above the user text", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         timeline: [
           item({
@@ -582,7 +626,7 @@ test("ActivityLogView renders prompt images above the user text", () => {
 
 test("ActivityLogView exposes final output copy after thread stops", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -601,9 +645,59 @@ test("ActivityLogView exposes final output copy after thread stops", () => {
   expect(html).toContain("会话停止后的最终输出。");
 });
 
+test("ActivityLogView does not resurrect thinking for a terminal V2 projection", () => {
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, {
+      thread: {
+        id: "thread-terminal-summary",
+        title: "已完成的会话",
+        prompt: "检查当前实现",
+        workspacePath: "/tmp/project",
+        status: "completed",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:05.000Z",
+        message: "已完成",
+      },
+      projection: projection({
+        status: "completed",
+        requestSpans: [requestSpan({ requestId: "req-stale", status: "waiting_first_token" })],
+        timeline: [
+          item({
+            id: "stale-user-prompt",
+            sequence: 1,
+            eventType: "thread.status",
+            role: "user",
+            text: "检查当前实现",
+            metadata: { liveType: "thread.user_prompt" },
+          }),
+          item({
+            id: "stale-request-started",
+            sequence: 2,
+            eventType: "request.started",
+            requestId: "req-stale",
+            text: "",
+          }),
+          item({
+            id: "final-agent-message",
+            sequence: 3,
+            eventType: "message.final",
+            role: "planner",
+            text: "已经完成。",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已经完成。");
+  expect(html).toContain('aria-label="复制消息"');
+  expect(html).not.toContain("正在思考");
+  expect(html).not.toContain("run-log-active-tail");
+});
+
 test("ActivityLogView separates a completed attempt process from its final output", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         attempts: [
@@ -649,7 +743,7 @@ test("ActivityLogView separates a completed attempt process from its final outpu
 
 test("ActivityLogView labels a manually cancelled attempt with its elapsed time", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "idle",
         attempts: [
@@ -681,7 +775,7 @@ test("ActivityLogView labels a manually cancelled attempt with its elapsed time"
 
 test("ActivityLogView labels an unexpectedly failed attempt with its elapsed time", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "failed",
         attempts: [
@@ -713,7 +807,7 @@ test("ActivityLogView labels an unexpectedly failed attempt with its elapsed tim
 
 test("ActivityLogView does not duplicate turn headings for skeleton subagent cards", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         attempts: [
@@ -770,7 +864,7 @@ test("ActivityLogView does not duplicate turn headings for skeleton subagent car
 
 test("ActivityLogView keeps block spacing between a completed turn and the next user prompt", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         attempts: [
@@ -863,7 +957,7 @@ test("run-log feed spacing contract keeps process rhythm on --codex-feed-gap-pro
 
 test("ActivityLogView keeps a running attempt process expanded without final output", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         attempts: [
           {
@@ -896,7 +990,7 @@ test("ActivityLogView keeps a running attempt process expanded without final out
 
 test("ActivityLogView collapses completed thinking behind a deep-thinking summary", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "completed",
@@ -937,7 +1031,7 @@ test("ActivityLogView collapses completed thinking behind a deep-thinking summar
 
 test("ActivityLogView appends turn-style duration to completed thinking summary", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "completed",
@@ -966,7 +1060,7 @@ test("ActivityLogView appends turn-style duration to completed thinking summary"
 test("ActivityLogView appends live duration while thinking streams", () => {
   const startedAt = new Date(Date.now() - 4_500).toISOString();
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "running",
@@ -996,7 +1090,7 @@ test("ActivityLogView appends live duration while thinking streams", () => {
 
 test("ActivityLogView expands streaming thinking with live body text", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "running",
@@ -1028,7 +1122,7 @@ test("ActivityLogView expands streaming thinking with live body text", () => {
 
 test("ActivityLogView collapses multiple completed thinking items by default", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       thinkingDisplayMode: "collapsed",
       projection: projection({
         status: "completed",
@@ -1073,7 +1167,7 @@ test("ActivityLogView collapses multiple completed thinking items by default", (
 
 test("ActivityLogView keeps a running file write action as the only loading state", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         requestSpans: [requestSpan({ requestId: "req_write", status: "streaming" })],
         timeline: [
@@ -1103,7 +1197,7 @@ test("ActivityLogView keeps a running file write action as the only loading stat
 
 test("ActivityLogView keeps loading in collapsed running tool groups without a separate tail", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         requestSpans: [requestSpan({ requestId: "req_tools", status: "streaming" })],
         timeline: [
@@ -1183,7 +1277,7 @@ test("ActivityLogView switches command groups from live action back to completed
   });
 
   const runningHtml = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({ timeline: [...completedCommands, runningCommand] }),
     }),
   );
@@ -1192,7 +1286,7 @@ test("ActivityLogView switches command groups from live action back to completed
   expect(runningHtml).not.toContain("已运行 6 条命令");
 
   const completedHtml = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -1220,7 +1314,7 @@ test("ActivityLogView switches command groups from live action back to completed
 
 test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   const tipOnlyHtml = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         timeline: [
           item({
@@ -1244,7 +1338,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   expect(tipOnlyHtml.match(/run-log-thinking streaming empty/g)?.length).toBe(1);
 
   const streamingHtml = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         timeline: [
           item({
@@ -1294,7 +1388,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   expect(streamingHtml).not.toContain("run-log-thinking-icon");
 
   const replacedHtml = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         timeline: [
           item({
@@ -1325,7 +1419,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   expect(replacedHtml).toContain("run-log-active-tail");
 
   const completedHtml = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -1360,7 +1454,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
 
 test("ActivityLogView keeps empty waiting and reasoning summary mutually exclusive in one active-tail", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         timeline: [
@@ -1434,7 +1528,7 @@ test("reasoningSummaryLabel separates adjacent bold summary stage titles", () =>
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         timeline: [],
         agents: [
@@ -1713,7 +1807,7 @@ test("ProjectionSubagentDetailFeed renders four runtime metric cards with billin
 
 test("ActivityLogView summarizes Bash with adjacent file tools", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -1758,7 +1852,7 @@ test("ActivityLogView summarizes Bash with adjacent file tools", () => {
 
 test("ActivityLogView renders imageView as a standalone collapsed preview", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -1797,7 +1891,7 @@ test("ActivityLogView renders imageView as a standalone collapsed preview", () =
 
 test("ActivityLogView upgrades persisted imageView gaps instead of rendering unknown payload", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -1831,7 +1925,7 @@ test("ActivityLogView upgrades persisted imageView gaps instead of rendering unk
 
 test("ActivityLogView shimmers a running imageView and hides waiting thinking", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         requestSpans: [requestSpan({ requestId: "req_image", status: "streaming" })],
@@ -1878,7 +1972,7 @@ test("ActivityLogView shimmers a running imageView and hides waiting thinking", 
 
 test("ActivityLogView hides waiting thinking while context compaction is running", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         requestSpans: [requestSpan({ requestId: "req_compact", status: "streaming" })],
@@ -1914,7 +2008,7 @@ test("ActivityLogView hides waiting thinking while context compaction is running
 
 test("ActivityLogView hides waiting thinking while an MCP tool is running", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         requestSpans: [requestSpan({ requestId: "req_mcp", status: "streaming" })],
@@ -1957,7 +2051,7 @@ test("ActivityLogView hides waiting thinking while an MCP tool is running", () =
 
 test("ActivityLogView hides waiting thinking while a file tool is running", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         requestSpans: [requestSpan({ requestId: "req_write_think", status: "streaming" })],
@@ -2000,7 +2094,7 @@ test("ActivityLogView hides waiting thinking while a file tool is running", () =
 
 test("ActivityLogView renders Eco MCP view_image as the image preview, not a web search", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -2032,7 +2126,7 @@ test("ActivityLogView renders Eco MCP view_image as the image preview, not a web
 
 test("ActivityLogView labels PI mcp proxy discovery as searching MCP tools", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -2063,7 +2157,7 @@ test("ActivityLogView labels PI mcp proxy discovery as searching MCP tools", () 
 
 test("ActivityLogView labels running PI mcp proxy discovery as searching MCP tools", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         timeline: [
@@ -2092,7 +2186,7 @@ test("ActivityLogView labels running PI mcp proxy discovery as searching MCP too
 
 test("ActivityLogView still labels a real PI mcp tool call as MCP", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -2127,7 +2221,7 @@ test("ActivityLogView collapses a single completed tool behind the shared summar
 
   for (const toolCase of cases) {
     const html = renderToStaticMarkup(
-      createElement(ActivityLogView, {
+      createElement(ProjectionActivityLogView, {
         projection: projection({
           status: "completed",
           timeline: [
@@ -2326,7 +2420,7 @@ test("ProjectionToolGroupEntry shows concrete details for grouped tool children"
 
 test("ActivityLogView summarizes a failed Edit as an edit, not a command", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "failed",
         timeline: [
@@ -2404,7 +2498,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
     ],
   });
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: failedProjection,
     }),
   );
@@ -2446,7 +2540,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
 test("failed Bash action uses the completed command style plus a status dot", () => {
   const renderCommand = (status: "completed" | "failed") =>
     renderToStaticMarkup(
-      createElement(ActivityLogView, {
+      createElement(ProjectionActivityLogView, {
         projection: projection({
           timeline: [
             item({
@@ -2563,7 +2657,9 @@ test("ActivityLogView aggregates a group that mixes commands with a failed image
     ],
   });
 
-  const html = renderToStaticMarkup(createElement(ActivityLogView, { projection: mixedProjection }));
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, { projection: mixedProjection }),
+  );
 
   // The group title summarizes every tool call it holds; one failed image view must
   // never retitle a group of commands.
@@ -2591,7 +2687,7 @@ test("ActivityLogView aggregates a group that mixes commands with a failed image
 
 test("ActivityLogView keeps a lone failed tool's own copy as the group title", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -3066,7 +3162,7 @@ test("SubagentTaskDrawer renders grouped subagent tool calls in its standalone p
 
 test("ActivityLogView summarizes task progress tools without calling them subagents", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [
@@ -3108,7 +3204,7 @@ test("ActivityLogView summarizes task progress tools without calling them subage
 
 test("ActivityLogView does not add a separate status for a stale running action", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         requestSpans: [
           requestSpan({
@@ -3144,7 +3240,7 @@ test("ActivityLogView does not add a separate status for a stale running action"
 
 test("ActivityLogView does not show inline loading for orphan running actions while thread continues", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "running",
         timeline: [
@@ -3178,7 +3274,7 @@ test("ActivityLogView does not show inline loading for orphan running actions wh
 
 test("ActivityLogView does not leave inline loading on orphan running actions after the thread ends", () => {
   const html = renderToStaticMarkup(
-    createElement(ActivityLogView, {
+    createElement(ProjectionActivityLogView, {
       projection: projection({
         status: "completed",
         timeline: [

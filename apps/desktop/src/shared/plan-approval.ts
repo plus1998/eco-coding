@@ -36,22 +36,24 @@ function parsePlanExecutionTarget(raw: unknown): PlanExecutionTarget | undefined
 }
 
 export function parseThreadApprovePlanPayload(payload: unknown): ThreadApprovePlanRequest {
-  if (typeof payload === "string") {
-    const threadId = payload.trim();
-    if (!threadId) {
-      throw new Error("Thread id is required.");
-    }
-    return { threadId };
-  }
-
   if (!payload || typeof payload !== "object") {
-    throw new Error("Thread id is required.");
+    throw new Error("Invalid plan approval command envelope.");
   }
 
   const record = payload as Record<string, unknown>;
+  const principalId = typeof record.principalId === "string" ? record.principalId.trim() : "";
+  const clientCommandId =
+    typeof record.clientCommandId === "string" ? record.clientCommandId.trim() : "";
   const threadId = typeof record.threadId === "string" ? record.threadId.trim() : "";
-  if (!threadId) {
-    throw new Error("Thread id is required.");
+  const expectedHistoryRevision = record.expectedHistoryRevision;
+  if (
+    !principalId ||
+    !clientCommandId ||
+    !threadId ||
+    !Number.isInteger(expectedHistoryRevision) ||
+    (expectedHistoryRevision as number) < 0
+  ) {
+    throw new Error("Invalid plan approval command envelope.");
   }
   const runtimeConfig = isThreadRuntimeConfig(record.runtimeConfig)
     ? (record.runtimeConfig as ThreadRuntimeConfigInput)
@@ -59,10 +61,40 @@ export function parseThreadApprovePlanPayload(payload: unknown): ThreadApprovePl
   const executionTarget = parsePlanExecutionTarget(record.executionTarget);
 
   return {
+    principalId,
+    clientCommandId,
     threadId,
+    expectedHistoryRevision: expectedHistoryRevision as number,
     ...(typeof record.plan === "string" ? { plan: record.plan } : {}),
     ...(typeof record.analysis === "string" ? { analysis: record.analysis } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),
     ...(executionTarget ? { executionTarget } : {}),
+  };
+}
+
+export function parseThreadDismissPlanPayload(payload: unknown): import("./ipc").ThreadDismissPlanRequest {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid plan dismissal command envelope.");
+  }
+  const record = payload as Record<string, unknown>;
+  const principalId = typeof record.principalId === "string" ? record.principalId.trim() : "";
+  const clientCommandId =
+    typeof record.clientCommandId === "string" ? record.clientCommandId.trim() : "";
+  const threadId = typeof record.threadId === "string" ? record.threadId.trim() : "";
+  const expectedHistoryRevision = record.expectedHistoryRevision;
+  if (
+    !principalId ||
+    !clientCommandId ||
+    !threadId ||
+    !Number.isInteger(expectedHistoryRevision) ||
+    (expectedHistoryRevision as number) < 0
+  ) {
+    throw new Error("Invalid plan dismissal command envelope.");
+  }
+  return {
+    principalId,
+    clientCommandId,
+    threadId,
+    expectedHistoryRevision: expectedHistoryRevision as number,
   };
 }

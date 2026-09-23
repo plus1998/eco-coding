@@ -38,6 +38,10 @@ const browserStateStoreSource = readFileSync(
   "utf8",
 );
 const appSource = readFileSync(fileURLToPath(new URL("../src/renderer/App.tsx", import.meta.url)), "utf8");
+const lazyAppPanelsSource = readFileSync(
+  fileURLToPath(new URL("../src/renderer/lazy-app-panels.tsx", import.meta.url)),
+  "utf8",
+);
 const stylesSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/styles.css", import.meta.url)),
   "utf8",
@@ -76,7 +80,11 @@ test("browser layer uses imperative pool driven by allGuestInstances", () => {
   expect(browserWebviewLayerSource).toContain("BrowserWebviewPersistentHost");
   expect(browserWebviewLayerSource).not.toContain("BrowserWebviewGuest");
   expect(browserWebviewLayerSource).not.toContain("browser-webview-park");
-  expect(appSource).toContain("<BrowserWebviewLayer");
+  // The layer is mounted by App through the lazy wrapper that resolves to it: the renderer
+  // defers the panel chunk, and the mount point is what this assertion is about.
+  expect(appSource).toContain("<LazyBrowserWebviewLayer");
+  expect(lazyAppPanelsSource).toContain('import("./BrowserWebviewLayer")');
+  expect(lazyAppPanelsSource).toContain("m.BrowserWebviewLayer");
 });
 
 test("webview pool is the sole DOM owner — no React lifecycle destroy", () => {

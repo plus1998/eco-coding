@@ -16,19 +16,33 @@ void main() {
     );
   }
 
-  testWidgets('shows existing content immediately and paces only new arrivals', (
+  testWidgets(
+    'shows existing content immediately and paces only new arrivals',
+    (tester) async {
+      await tester.pumpWidget(app('首批', streaming: true));
+      expect(find.text('首批'), findsOneWidget);
+
+      // 新增文本逐字输出，已有部分不重放。
+      await tester.pumpWidget(app('首批这是第二批', streaming: true));
+      expect(find.text('首批'), findsOneWidget);
+      await tester.pump(pacedStreamInterval);
+      expect(find.text('首批这'), findsOneWidget);
+      await tester.pump(pacedStreamInterval);
+      expect(find.text('首批这是'), findsOneWidget);
+    },
+  );
+
+  testWidgets('reuses one ticker across repeated streaming updates', (
     tester,
   ) async {
-    await tester.pumpWidget(app('首批', streaming: true));
-    expect(find.text('首批'), findsOneWidget);
+    await tester.pumpWidget(app('a', streaming: true));
+    for (final text in ['ab', 'abc', 'abcd', 'abcde']) {
+      await tester.pumpWidget(app(text, streaming: true));
+      await tester.pump(pacedStreamInterval);
+    }
 
-    // 新增文本逐字输出，已有部分不重放。
-    await tester.pumpWidget(app('首批这是第二批', streaming: true));
-    expect(find.text('首批'), findsOneWidget);
-    await tester.pump(pacedStreamInterval);
-    expect(find.text('首批这'), findsOneWidget);
-    await tester.pump(pacedStreamInterval);
-    expect(find.text('首批这是'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(find.text('abcde'), findsOneWidget);
   });
 
   testWidgets('does not replay existing content when re-entering the page', (
@@ -49,9 +63,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(app('开始', streaming: true));
-    await tester.pumpWidget(
-      app('开始这是一段最终文本', streaming: false),
-    );
+    await tester.pumpWidget(app('开始这是一段最终文本', streaming: false));
     await tester.pump();
     expect(find.text('开始这是一段最终文本'), findsOneWidget);
   });

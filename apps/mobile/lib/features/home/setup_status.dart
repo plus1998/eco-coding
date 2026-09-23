@@ -166,8 +166,8 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     if (!loggedIn || !deviceRegistered) {
       return SetupStepState.pending;
     }
-    if (effectiveSelectedDesktopId == null ||
-        effectiveSelectedDesktopId!.isEmpty) {
+    final selectedDesktopId = effectiveSelectedDesktopId;
+    if (selectedDesktopId == null || selectedDesktopId.isEmpty) {
       return SetupStepState.inProgress;
     }
     return SetupStepState.done;

@@ -3,7 +3,7 @@ export { resolveFileChangeCardDisplay } from "./file-change";
 
 import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/runtime/agent-mission";
 import { shortenModelId } from "@eco/runtime/usage";
-import { ecoAgentBrowserToolSuffix } from "./browser";
+import { ecoAgentBrowserToolSuffix, NAMED_AGENT_BROWSER_TOOL_SUFFIXES } from "./browser";
 import { isEcoComputerUseToolName } from "./computer-use";
 import { type ActionKindTranslate, formatActionLine, resolveActionKind } from "./feed-action-kind";
 import { isEcoImageDisplayToolName } from "./image-display-tool";
@@ -141,15 +141,7 @@ const NAMED_ECO_TOOL_SUFFIXES = new Set([
   "computer_use",
   "view_image",
   "display_image",
-  "agent_browser_open",
-  "agent_browser_snapshot",
-  "agent_browser_click",
-  "agent_browser_fill",
-  "agent_browser_screenshot",
-  "agent_browser_get_url",
-  "agent_browser_tab_list",
-  "agent_browser_tab_new",
-  "agent_browser_tab_switch",
+  ...NAMED_AGENT_BROWSER_TOOL_SUFFIXES,
 ]);
 
 export function isMcpToolName(tool: string): boolean {

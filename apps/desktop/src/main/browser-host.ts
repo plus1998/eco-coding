@@ -465,6 +465,11 @@ export class BrowserHost {
     const revealSurfaced = Boolean(
       this.revealBrowserId && instances.some((instance) => instance.id === this.revealBrowserId),
     );
+    // One-shot user "switch to this page" intent: only advertise it while that page exists,
+    // otherwise the renderer keeps re-opening a tab (and focusing) a closed browser on every emit.
+    const activateSurfaced = Boolean(
+      this.activateBrowserId && guestInstances.some((instance) => instance.id === this.activateBrowserId),
+    );
     return {
       uiScopeId: this.uiScopeId,
       instances,
@@ -492,7 +497,9 @@ export class BrowserHost {
       agentBrowserAvailable: resolved.available,
       ...(resolved.reason ? { agentBrowserUnavailableReason: resolved.reason } : {}),
       ...(revealSurfaced && this.revealBrowserId ? { revealBrowserId: this.revealBrowserId } : {}),
-      ...(this.activateBrowserId ? { activateBrowserId: this.activateBrowserId } : {}),
+      ...(activateSurfaced && this.activateBrowserId
+        ? { activateBrowserId: this.activateBrowserId }
+        : {}),
     };
   }
 
@@ -925,6 +932,9 @@ export class BrowserHost {
     browser.detachedUrl = undefined;
     this.pendingGuestByBrowserId.delete(browser.id);
     scope.browsers.delete(browser.id);
+    if (this.activateBrowserId === browser.id) {
+      this.activateBrowserId = undefined;
+    }
   }
 
   setVisible(visible: boolean, browserId?: string): BrowserViewState {
@@ -1171,7 +1181,7 @@ export class BrowserHost {
             }
             if (mouse.type === "mouseMoved") {
               const dragging =
-                this.agentPointerDragging.has(targetId) || (mouse.buttons & 1) === 1;
+                this.agentPointerDragging.has(targetId) || ((mouse.buttons ?? 0) & 1) === 1;
               if (dragging) {
                 this.agentPointerDragging.add(targetId);
               }

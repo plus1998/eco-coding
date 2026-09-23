@@ -648,6 +648,7 @@
   "threadProjectionUnavailable": "Run projection is not ready",
   "threadNoSubagentDetails": "No subagent details",
   "threadNoToolDetails": "No tool details",
+  "threadLoadMoreToolDetails": "Load more details",
   "threadRequestingDetails": "Requesting details...",
   "threadDetailsFailed": "Details request failed",
   "threadNoDetailsResponse": "No details response received",

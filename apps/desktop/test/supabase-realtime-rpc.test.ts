@@ -5,6 +5,7 @@ import {
   ECO_RPC_METHODS,
   wrapEcoRpcForBroadcast,
 } from "@eco/shared";
+import { DesktopEventCenter } from "../src/main/event-center";
 import {
   bindingCanInvoke,
   bindingHasEventsRead,
@@ -12,6 +13,7 @@ import {
   invokeTargetsDesktop,
   SupabaseRealtimeRpc,
 } from "../src/main/supabase-realtime-rpc";
+import { IPC_CHANNELS } from "../src/shared/ipc";
 
 test("extractEcoRpcFromBroadcastPayload unwraps nested and flat envelopes", () => {
   const message = {
@@ -147,6 +149,133 @@ test("SupabaseRealtimeRpc rejects invoke addressed to another desktop", async ()
   await realtime.stop();
 });
 
+test("SupabaseRealtimeRpc carries a V2 command through EventCenter and returns its envelope", async () => {
+  const callbacks = new Map<string, (status: string, error?: Error) => void>();
+  const broadcastHandlers = new Map<string, (payload: unknown) => void>();
+  const sent: unknown[] = [];
+  const center = new DesktopEventCenter();
+  center.registerCommand(IPC_CHANNELS.conversationHead, (args) => {
+    expect(args).toEqual(["thread_1"]);
+    return {
+      protocolVersion: 2,
+      storeEpoch: "epoch_1",
+      conversationId: "thread_1",
+      lastSeq: 9,
+      historyRevision: 0,
+    };
+  });
+  const client = createRealtimeClient(callbacks, async () => "ok", broadcastHandlers, sent);
+  const realtime = new SupabaseRealtimeRpc({ client: client as never, eventCenter: center });
+  const userId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const desktopDeviceId = "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const mobileDeviceId = "c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const bindingId = "d3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const startPromise = realtime.start({ userId, deviceId: desktopDeviceId });
+  await Bun.sleep(0);
+  callbacks.get(`eco:user:${userId}`)?.("SUBSCRIBED");
+  await startPromise;
+  const syncPromise = realtime.syncBindings([
+    {
+      id: bindingId,
+      userId,
+      desktopDeviceId,
+      mobileDeviceId,
+      capabilities: ["rpc:invoke"],
+      createdAt: "2030-01-01T00:00:00.000Z",
+      revokedAt: null,
+    },
+  ]);
+  await Bun.sleep(0);
+  callbacks.get(`eco:bind:${bindingId}`)?.("SUBSCRIBED");
+  await syncPromise;
+
+  broadcastHandlers.get(`eco:bind:${bindingId}`)?.({
+    payload: wrapEcoRpcForBroadcast({
+      jsonrpc: ECO_JSON_RPC_VERSION,
+      id: "conversation_head_1",
+      method: ECO_RPC_METHODS.invoke,
+      params: {
+        desktopDeviceId,
+        channel: IPC_CHANNELS.conversationHead,
+        args: ["thread_1"],
+      },
+    }),
+  });
+  for (let attempt = 0; attempt < 20 && sent.length === 0; attempt += 1) {
+    await Bun.sleep(1);
+  }
+
+  expect(sent).toHaveLength(1);
+  expect(extractEcoRpcFromBroadcastPayload(sent[0])).toEqual({
+    jsonrpc: ECO_JSON_RPC_VERSION,
+    id: "conversation_head_1",
+    result: {
+      channel: IPC_CHANNELS.conversationHead,
+      result: {
+        protocolVersion: 2,
+        storeEpoch: "epoch_1",
+        conversationId: "thread_1",
+        lastSeq: 9,
+        historyRevision: 0,
+      },
+    },
+  });
+  await realtime.stop();
+});
+
+test("SupabaseRealtimeRpc clears request timeout state when broadcast send throws", async () => {
+  const callbacks = new Map<string, (status: string, error?: Error) => void>();
+  const realtime = new SupabaseRealtimeRpc({
+    client: createRealtimeClient(
+      callbacks,
+      async () => "ok",
+      new Map(),
+      [],
+      async () => {
+        throw new Error("socket closed during send");
+      },
+    ) as never,
+    eventCenter: {} as never,
+    requestTimeoutMs: 10,
+  });
+  const userId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const desktopDeviceId = "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const bindingId = "d3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const startPromise = realtime.start({ userId, deviceId: desktopDeviceId });
+  await Bun.sleep(0);
+  callbacks.get(`eco:user:${userId}`)?.("SUBSCRIBED");
+  await startPromise;
+  const syncPromise = realtime.syncBindings([
+    {
+      id: bindingId,
+      userId,
+      desktopDeviceId,
+      mobileDeviceId: "c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+      capabilities: ["rpc:invoke"],
+      createdAt: "2030-01-01T00:00:00.000Z",
+      revokedAt: null,
+    },
+  ]);
+  await Bun.sleep(0);
+  callbacks.get(`eco:bind:${bindingId}`)?.("SUBSCRIBED");
+  await syncPromise;
+
+  await expect(
+    realtime.sendOnBinding(
+      bindingId,
+      {
+        jsonrpc: ECO_JSON_RPC_VERSION,
+        id: "send_failure_1",
+        method: ECO_RPC_METHODS.ping,
+        params: {},
+      },
+      { timeoutMs: 10 },
+    ),
+  ).rejects.toThrow("socket closed during send");
+  await Bun.sleep(30);
+  await realtime.stop();
+});
+
 test("SupabaseRealtimeRpc start waits for presence subscription and tracking", async () => {
   const callbacks = new Map<string, (status: string, error?: Error) => void>();
   let trackCalls = 0;
@@ -229,6 +358,7 @@ function createRealtimeClient(
   track: () => Promise<string>,
   broadcastHandlers = new Map<string, (payload: unknown) => void>(),
   sent: unknown[] = [],
+  sendImpl: (payload: unknown) => Promise<string> = async () => "ok",
 ) {
   return {
     channel(topic: string) {
@@ -245,7 +375,7 @@ function createRealtimeClient(
         },
         async send(payload: unknown) {
           sent.push(payload);
-          return "ok";
+          return sendImpl(payload);
         },
         track,
         presenceState() {

@@ -1,4 +1,4 @@
-import type MarkdownIt from "markdown-it";
+import type { MarkdownIt, StateCore, Token } from "markdown-it";
 
 /** Minimal markdown-it token shape used by HTML container stitching. */
 export interface HtmlStitchToken {
@@ -67,7 +67,7 @@ export function isHtmlContainerClose(html: string, tag: string): boolean {
 export function stitchHtmlContainerTokens<T extends HtmlStitchToken>(
   tokens: T[],
   md: MarkdownIt,
-  env: unknown = {},
+  env: Record<string, unknown> = {},
 ): T[] {
   const out = tokens.slice();
   let i = 0;
@@ -106,7 +106,8 @@ export function stitchHtmlContainerTokens<T extends HtmlStitchToken>(
     }
 
     const middle = out.slice(i + 1, found);
-    const middleHtml = middle.length > 0 ? md.renderer.render(middle, md.options, env) : "";
+    const middleHtml =
+      middle.length > 0 ? md.renderer.render(middle as unknown as Token[], md.options, env) : "";
     const close = out[found];
     token.content = `${token.content}${middleHtml}${close?.content ?? ""}`;
     if (token.map && close?.map) {
@@ -119,7 +120,7 @@ export function stitchHtmlContainerTokens<T extends HtmlStitchToken>(
 }
 
 export function installHtmlContainerStitch(md: MarkdownIt): void {
-  md.core.ruler.after("inline", "eco_stitch_html_containers", (state) => {
+  md.core.ruler.after("inline", "eco_stitch_html_containers", (state: StateCore) => {
     state.tokens = stitchHtmlContainerTokens(state.tokens, md, state.env);
   });
 }

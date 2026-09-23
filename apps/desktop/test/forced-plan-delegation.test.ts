@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildForcedPlanDelegationContract,
   buildForcedPlanDelegationTask,
   listPlanDelegationAgents,
   planDelegationAgentCanExecutePlan,
@@ -15,6 +16,13 @@ const WRITE_TOOLS = {
 
 const PLAN = "1. 修改 A\n2. 验证 B";
 
+test("forced plan parent contract prevents validation work outside the approved plan", () => {
+  const contract = buildForcedPlanDelegationContract({ agentKey: "coder", displayName: "Coder" });
+  expect(contract).toContain("你不得自己调用 Bash、读写文件或运行其他工具");
+  expect(contract).toContain("只有获批计划明确要求主代理验收时，才执行对应的验收步骤");
+  expect(contract).toContain("不得自行追加工作区检查、git status/diff 或其他命令");
+});
+
 test("buildForcedPlanDelegationTask embeds the plan verbatim", () => {
   expect(buildForcedPlanDelegationTask({ plan: PLAN })).toBe(
     [
@@ -24,7 +32,8 @@ test("buildForcedPlanDelegationTask embeds the plan verbatim", () => {
       PLAN,
       "</approved_plan>",
       "",
-      "完成实现与必要验证，并将最终结果返回给主代理。不要再委派其他代理。",
+      "严格按获批计划列出的步骤和约束执行；计划是唯一任务范围。计划给出精确命令或唯一工具动作时，直接按原文执行，不要先做无关的环境检查、目录/文件浏览或额外验证。计划没有要求额外验证时，不要自行追加检查。",
+      "完成计划明确要求的步骤后，立即将实际结果返回给主代理。不要再委派其他代理。",
     ].join("\n"),
   );
 });

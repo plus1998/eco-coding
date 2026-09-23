@@ -98,8 +98,13 @@ test("ACP Cursor row stays selectable when last probe failed", () => {
     "zh-CN",
   );
 
+  // The row is selectable because the reason is no longer a blocker, and the reason travels
+  // as the row's tooltip (`title`, plus the hover tooltip the pointer user sees) instead of
+  // being printed inside the row.
   expect(markup).toContain("未找到 Cursor Agent CLI。");
   expect(markup).not.toContain("先开启 Cursor 并完成配置检查。");
+  expect(markup).toMatch(/title="未找到 Cursor Agent CLI。"/);
+  expect(markup).not.toMatch(/menuitemradio[\s\S]*Cursor[\s\S]*disabled/);
 });
 
 test("locked ACP thread heading shows ACP tag when acpCoreVisible is false", async () => {

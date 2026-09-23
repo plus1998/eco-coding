@@ -1,14 +1,7 @@
 import type { SkillInfo } from "../shared/skills";
 import { getMaterialIconUrl, resolveMaterialIconName } from "./material-file-icon";
-import {
-  formatSkillDisplayName,
-  parsePromptSegments,
-  skillToken,
-} from "./composer-skills";
-import {
-  fileAttachmentToken,
-  workspaceFileReferenceBasename,
-} from "./workspace-file-reference";
+import { formatSkillDisplayName, parsePromptSegments, skillToken } from "./composer-skills";
+import { fileAttachmentToken, workspaceFileReferenceBasename } from "./workspace-file-reference";
 
 const SKILL_SELECTOR = "[data-skill]";
 const FILE_SELECTOR = "[data-file-path]";
@@ -107,7 +100,8 @@ function serializeNode(node: ChildNode): string {
     return skillToken(node.dataset.skill!);
   }
   if (isFileElement(node)) {
-    return fileAttachmentToken(node.dataset.filePath!);
+    const filePath = (node as HTMLElement).dataset.filePath;
+    return filePath ? fileAttachmentToken(filePath) : "";
   }
   if (isBlockElement(node)) {
     return serializeChildren(node);

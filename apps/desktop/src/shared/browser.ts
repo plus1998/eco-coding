@@ -239,6 +239,8 @@ export interface BrowserViewState {
   /**
    * When set, renderer should force-switch the task panel to this browser tab
    * (even from non-browser tabs). Set by explicit user-initiated browser opens.
+   * One-shot: the renderer switches once per new id, and main stops advertising it
+   * as soon as that page closes — a stale id re-opens a tab for a dead browser.
    */
   activateBrowserId?: string;
 }
@@ -453,6 +455,22 @@ function windowsPathToFileUrl(input: string): string | null {
   return `file:///${escaped}`;
 }
 
+/**
+ * Convert a POSIX absolute path to a file:// URL, or return null if not one.
+ * `//host/share` is protocol-relative rather than a local path, so it is rejected.
+ */
+function posixPathToFileUrl(input: string): string | null {
+  if (!input.startsWith("/") || input.startsWith("//")) {
+    return null;
+  }
+  if (/[\x00-\x1f\x7f]/u.test(input)) {
+    return null;
+  }
+  // Encode per segment so spaces / `#` / `?` inside a name stay path characters.
+  const escaped = input.split("/").map(encodeURIComponent).join("/");
+  return `file://${escaped}`;
+}
+
 export function resolveBrowserNavigateTarget(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -463,6 +481,7 @@ export function resolveBrowserNavigateTarget(raw: string): string | undefined {
     (isBrowserHtmlDataUrl(trimmed) ? trimmed : undefined) ??
     (isBrowserPreviewFileUrl(trimmed) ? trimmed : undefined) ??
     (windowsPathToFileUrl(trimmed) ?? undefined) ??
+    (posixPathToFileUrl(trimmed) ?? undefined) ??
     (trimmed === "about:blank" ? "about:blank" : undefined)
   );
 }
@@ -583,6 +602,30 @@ export function isEcoAgentBrowserToolName(toolName: string | undefined): boolean
     name.includes("mcp__eco_ab_") ||
     name.includes("agent_browser_")
   );
+}
+
+/**
+ * Browser tool suffixes that have their own label in the i18n catalogs.
+ * Everything else (a newly added browser tool, for example) must fall back to the
+ * generic browser label: building `activity.named.${suffix}` for a name the catalogs
+ * do not know renders the raw key in the Feed. Keep in sync with
+ * `activity.named.agent_browser_*`.
+ */
+export const NAMED_AGENT_BROWSER_TOOL_SUFFIXES = new Set([
+  "agent_browser_open",
+  "agent_browser_snapshot",
+  "agent_browser_click",
+  "agent_browser_fill",
+  "agent_browser_screenshot",
+  "agent_browser_get_url",
+  "agent_browser_tab_list",
+  "agent_browser_tab_new",
+  "agent_browser_tab_switch",
+]);
+
+/** Whether the catalogs name this browser tool suffix. */
+export function hasNamedAgentBrowserLabel(suffix: string): boolean {
+  return NAMED_AGENT_BROWSER_TOOL_SUFFIXES.has(suffix.trim().toLowerCase());
 }
 
 /** Bare tool segment after `mcp__server__`, or the original when not MCP-shaped. */

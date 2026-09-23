@@ -1,10 +1,6 @@
 import { formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
 import { buildUsageSnapshotForRole } from "./billing-orchestration";
-import {
-  type BillingSnapshotSelectionPolicy,
-  resolveBillingSnapshotSelectionOptions,
-} from "./billing-snapshot-selection-policy";
 import { readBillingRole, readRouteRole } from "./proxy-usage-pending-settlement";
 import {
   buildSubagentContextObservationInput,
@@ -20,11 +16,7 @@ import type {
 import type { UsageContextService } from "./usage-context-effects";
 import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
 import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import {
-  recordLegacySdkRunBilling,
-  recordLegacySingleUsageBilling,
-  type UsageLegacyBillingAccumulator,
-} from "./usage-legacy-billing";
+import type { UsageLegacyBillingAccumulator } from "./usage-legacy-billing";
 
 export interface UsageBillingUpdatedEvent {
   threadId: string;
@@ -42,12 +34,12 @@ export interface UsageBillingEffectsServices {
   context: UsageContextService;
   usageLedger: Pick<
     UsageLedgerCoordinator,
-    "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow" | "registerProxyPendingAttribution"
+    "appendEvents" | "resolveV2BillingSnapshot" | "reconcileShadow" | "registerProxyPendingAttribution"
   > &
     Partial<Pick<UsageLedgerCoordinator, "persistSubagentBillingEntries">>;
-  accumulator: UsageLegacyBillingAccumulator;
+  /** Legacy-only test/compatibility seam. V2 production billing never reads it. */
+  accumulator?: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordContextObservation" | "recordSdkUsage">;
-  billingSnapshotSelection?: BillingSnapshotSelectionPolicy;
   emitUsageUpdated(event: UsageBillingUpdatedEvent): void;
   schedulePersistThreadMetrics(threadId: string): void;
 }
@@ -141,25 +133,8 @@ export async function applySingleUsageBillingEffects(
   }
   services.usageLedger.persistSubagentBillingEntries?.(input.threadId);
 
-  const legacyBilling = recordLegacySingleUsageBilling(services.accumulator, {
-    threadId: input.threadId,
-    artifacts,
-    ...(input.agentId && { agentId: input.agentId }),
-    ...(input.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: input.sourceReportedCostUsd }),
-    ...(input.reconciliationOnly && { reconciliationOnly: true }),
-    ...(input.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
-  });
-  const selectionOptions = resolveBillingSnapshotSelectionOptions({
-    ...(services.billingSnapshotSelection && { policy: services.billingSnapshotSelection }),
-    ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
-  });
-  const billingSelection = services.usageLedger.resolveBillingSnapshot(
-    input.threadId,
-    legacyBilling.snapshot,
-    selectionOptions,
-  );
-  const billing = billingSelection.snapshot;
-  services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
+  const billing = services.usageLedger.resolveV2BillingSnapshot(input.threadId, artifacts.plannerModelLabel);
+  services.usageLedger.reconcileShadow(input.threadId, billing);
 
   const snapshot = buildUsageSnapshotForRole({
     usage: artifacts.parsedUsage,
@@ -251,25 +226,8 @@ export async function applySdkRunBillingEffects(
   }
   services.usageLedger.persistSubagentBillingEntries?.(input.threadId);
 
-  const legacyBilling = recordLegacySdkRunBilling(services.accumulator, {
-    threadId: input.threadId,
-    role: input.role,
-    requestKey: input.requestKey,
-    models: input.models,
-    ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
-    ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
-  });
-  const selectionOptions = resolveBillingSnapshotSelectionOptions({
-    ...(services.billingSnapshotSelection && { policy: services.billingSnapshotSelection }),
-    ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
-  });
-  const billingSelection = services.usageLedger.resolveBillingSnapshot(
-    input.threadId,
-    legacyBilling,
-    selectionOptions,
-  );
-  const billing = billingSelection.snapshot;
-  services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
+  const billing = services.usageLedger.resolveV2BillingSnapshot(input.threadId, input.plannerModelLabel);
+  services.usageLedger.reconcileShadow(input.threadId, billing);
 
   const snapshot = buildUsageSnapshotForRole({
     usage: input.contextUsage,

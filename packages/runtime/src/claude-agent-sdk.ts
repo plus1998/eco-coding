@@ -39,10 +39,10 @@ import type {
   EcoSdkResumeOptions,
   EcoSdkSessionOptions,
 } from "./index";
-import { forkClaudeSessionAt } from "./runtime-session-compat.js";
 import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
 
 export {
+  findClaudeSessionByRecoveryTitle,
   forkClaudeSessionAt,
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "./runtime-session-compat.js";

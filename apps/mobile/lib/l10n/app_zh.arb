@@ -603,6 +603,7 @@
   "threadProjectionUnavailable": "运行投影尚未就绪",
   "threadNoSubagentDetails": "暂无子代理详情",
   "threadNoToolDetails": "暂无工具详情",
+  "threadLoadMoreToolDetails": "加载更多详情",
   "threadRequestingDetails": "正在请求详情…",
   "threadDetailsFailed": "详情请求失败",
   "threadNoDetailsResponse": "未收到详情响应",

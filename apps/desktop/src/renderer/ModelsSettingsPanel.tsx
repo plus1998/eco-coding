@@ -151,11 +151,7 @@ export function ModelsSettingsPanel({
     { id: "orchestration", label: t("settings.models.runtimeConfigTab.subagent") },
   ];
   const resolvedInitialTab =
-    mode === "providerSettings"
-      ? "providers"
-      : initialTab === "providers"
-        ? "subagents"
-        : initialTab;
+    mode === "providerSettings" ? "providers" : initialTab === "providers" ? "subagents" : initialTab;
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
   const [runtimeConfigTab, setRuntimeConfigTab] = useState<RuntimeConfigTab>(() =>
     pendingCreateMainConfig ? "mainConfig" : "defaults",
@@ -1151,8 +1147,8 @@ function ProviderEditorModal({
                 <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
                 <ProviderPresetTabs
                   presets={MAINSTREAM_PROVIDER_PRESETS}
-                  activePresetId={selectedPresetId ?? undefined}
-                  disabled={busy}
+                  {...(selectedPresetId === null ? {} : { activePresetId: selectedPresetId })}
+                  {...(busy === undefined ? {} : { disabled: busy })}
                   onSelectManual={() => setSelectedPresetId(null)}
                   onSelectPreset={(preset) => {
                     setSelectedPresetId(preset.id);
@@ -1297,7 +1293,9 @@ function ProviderEditorModal({
                           setForm((current) => ({ ...current, upstreamProxyUrl: event.target.value }))
                         }
                       />
-                      <span className="mcp-field-hint">{t("settings.models.provider.upstreamProxyHint")}</span>
+                      <span className="mcp-field-hint">
+                        {t("settings.models.provider.upstreamProxyHint")}
+                      </span>
                     </label>
                     <label className="mcp-field">
                       <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>

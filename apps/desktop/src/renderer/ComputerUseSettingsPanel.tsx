@@ -1,10 +1,7 @@
 import { AlertTriangle, CheckCircle, ChevronDown, Info, Monitor } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  ComputerUseActionApprovalMode,
-  ComputerUseSettingsSnapshot,
-} from "../shared/computer-use";
+import type { ComputerUseActionApprovalMode, ComputerUseSettingsSnapshot } from "../shared/computer-use";
 import { PACKAGED_SCREEN_RECORDING_APP_LABEL } from "../shared/computer-use-screen-host";
 
 interface ComputerUseDoctorResult {
@@ -42,8 +39,7 @@ function resolveScreenRecordingAppLabel(explicit?: string): string {
   if (explicit?.trim()) {
     return explicit.trim();
   }
-  const fromPreload =
-    typeof window !== "undefined" ? window.eco?.screenRecordingAppLabel?.trim() : undefined;
+  const fromPreload = typeof window !== "undefined" ? window.eco?.screenRecordingAppLabel?.trim() : undefined;
   if (fromPreload) {
     return fromPreload;
   }
@@ -138,11 +134,14 @@ export function ComputerUseSettingsPanel({
         return;
       }
       const hintScreenApp = resolveScreenRecordingAppLabel(result.screenRecordingAppLabel);
-      const hint = computerUseDoctorHint(t, {
-        platform: hostPlatform,
-        missing: result.missing,
-        screenApp: hintScreenApp,
-      });
+      const hint = computerUseDoctorHint(
+        (key, options) => (options === undefined ? t(key) : t(key, options)),
+        {
+          platform: hostPlatform,
+          ...(result.missing === undefined ? {} : { missing: result.missing }),
+          screenApp: hintScreenApp,
+        },
+      );
       const remediating = result.onboardingLaunched || Boolean(result.screenPromptOpened);
       if (remediating) {
         setDoctorStatus({
@@ -173,7 +172,8 @@ export function ComputerUseSettingsPanel({
   }
 
   const unavailableText = t("settings.computerUse.statusUnavailable", { reason: unavailableReason });
-  const status = doctorStatus ?? (unavailable ? { kind: "error" as const, text: unavailableText } : undefined);
+  const status =
+    doctorStatus ?? (unavailable ? { kind: "error" as const, text: unavailableText } : undefined);
 
   return (
     <div className="browser-settings">
@@ -228,7 +228,11 @@ export function ComputerUseSettingsPanel({
               }
               role="status"
             >
-              {status.kind === "ok" ? <CheckCircle size={14} aria-hidden /> : <AlertTriangle size={14} aria-hidden />}
+              {status.kind === "ok" ? (
+                <CheckCircle size={14} aria-hidden />
+              ) : (
+                <AlertTriangle size={14} aria-hidden />
+              )}
               <p>{status.text}</p>
             </div>
           ) : null}

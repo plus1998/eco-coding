@@ -1,19 +1,18 @@
 import { expect, test } from "bun:test";
 import type { AcpAgentDriver } from "@eco/runtime";
 import type { WorktreePlan } from "@eco/workspace";
-import type { RequestAttemptResult } from "../src/main/request-retry";
 import {
   ACP_MAX_ATTEMPTS,
+  type AcpRuntimeOrchestrationDeps,
+  type AcpThreadStartRunInput,
   MAX_ACP_AUTORETRIES,
   resolveAcprAutoRetry,
   startAcpThreadRunWithDriver,
-  type AcpRuntimeOrchestrationDeps,
-  type AcpThreadStartRunInput,
 } from "../src/main/acp-runtime-run";
+import type { RequestAttemptResult } from "../src/main/request-retry";
 import { consumeSdkRunEvents, type SdkRunEventLike } from "../src/main/sdk-run-event-loop";
 
-const KEEPALIVE_ERROR =
-  "Error: RetriableError: [internal] HTTP/2 keepalive ping timed out after 5000ms";
+const KEEPALIVE_ERROR = "Error: RetriableError: [internal] HTTP/2 keepalive ping timed out after 5000ms";
 
 /** Unstarted retriable failure result (the keepalive ping timeout case). */
 const retriableUnstarted: RequestAttemptResult = {
@@ -70,9 +69,7 @@ test("resolveAcprAutoRetry gates on unstarted retriable failures only", () => {
   ).toBe(true);
 });
 
-type FakeTerminalPayload =
-  | { status: "completed" }
-  | { status: "failed"; error: string; unstarted?: boolean };
+type FakeTerminalPayload = { status: "completed" } | { status: "failed"; error: string; unstarted?: boolean };
 
 type FakeDriver = {
   run(input: { threadId: string; signal?: AbortSignal }): AsyncGenerator<SdkRunEventLike, void, unknown>;
@@ -99,11 +96,7 @@ function terminalEvent(
 function makeFakeDriver(terminals: FakeTerminalPayload[]): AcpAgentDriver {
   const state = { runs: 0, disposed: 0 };
   const fake = {
-    run(input: { threadId: string; signal?: AbortSignal }): AsyncGenerator<
-      SdkRunEventLike,
-      void,
-      unknown
-    > {
+    run(input: { threadId: string; signal?: AbortSignal }): AsyncGenerator<SdkRunEventLike, void, unknown> {
       const index = state.runs;
       state.runs += 1;
       const payload: SdkRunEventLike["payload"] = input.signal?.aborted
@@ -224,10 +217,58 @@ test("auto-retries once on unstarted keepalive failure, then completes", async (
   expect((driver as unknown as { state: { disposed: number } }).state.disposed).toBe(0);
 });
 
-test("exhausts retries then falls back to discardUnstartedTurn", async () => {
+test("a durable command dispatch never issues an ACP automatic retry", async () => {
   const driver = makeFakeDriver([
     { status: "failed", error: KEEPALIVE_ERROR, unstarted: true },
+    { status: "completed" },
   ]);
+  const calls: Calls = {
+    runOnce: 0,
+    retryIndices: [],
+    notify: [],
+    markInterrupted: [],
+    discard: undefined,
+    decision: undefined,
+  };
+  const deps = makeDeps(calls, driver);
+  const originalRunOnce = deps.runThreadRequestOnce;
+  deps.runThreadRequestOnce = async (...args) => {
+    expect(args[5]).toEqual({
+      plannedAttemptId: "attempt_command_1",
+      commandDispatch: {
+        principalId: "principal_1",
+        clientCommandId: "command_1",
+        dispatchId: "dispatch_1",
+      },
+    });
+    return originalRunOnce(...args);
+  };
+
+  await startAcpThreadRunWithDriver(
+    makeInput({
+      runtimeDispatch: {
+        plannedAttemptId: "attempt_command_1",
+        commandDispatch: {
+          principalId: "principal_1",
+          clientCommandId: "command_1",
+          dispatchId: "dispatch_1",
+        },
+      },
+    }),
+    deps,
+    driver,
+  );
+
+  expect(calls.runOnce).toBe(1);
+  expect(calls.retryIndices).toEqual([0]);
+  expect(calls.notify).toEqual([]);
+  expect(calls.discard).toBeUndefined();
+  expect(calls.markInterrupted).toEqual([KEEPALIVE_ERROR]);
+  expect((driver as unknown as { state: { runs: number } }).state.runs).toBe(1);
+});
+
+test("exhausts retries then falls back to discardUnstartedTurn", async () => {
+  const driver = makeFakeDriver([{ status: "failed", error: KEEPALIVE_ERROR, unstarted: true }]);
   const calls: Calls = {
     runOnce: 0,
     retryIndices: [],
@@ -296,9 +337,7 @@ test("does not retry failures with turn progress (blocked + manual retry)", asyn
 
 test("aborted run (steer landed in the gap) is never retried", async () => {
   const controller = new AbortController();
-  const driver = makeFakeDriver([
-    { status: "failed", error: KEEPALIVE_ERROR, unstarted: true },
-  ]);
+  const driver = makeFakeDriver([{ status: "failed", error: KEEPALIVE_ERROR, unstarted: true }]);
   const calls: Calls = {
     runOnce: 0,
     retryIndices: [],

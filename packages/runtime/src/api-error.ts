@@ -195,6 +195,14 @@ export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadAp
 export function formatApiErrorUserMessage(info: ThreadApiErrorInfo): string {
   const code = info.code?.toLowerCase();
   const status = info.statusCode;
+  const normalized = info.message.toLowerCase();
+
+  if (
+    normalized.includes("unsupported input item type: agent_message") ||
+    normalized.includes("unsupported content part type: encrypted_content")
+  ) {
+    return "当前 Provider 不支持 Codex 子代理的加密 agent_message；请改用 PI/Claude 或支持 Codex Multi-Agent 的 Responses Provider。";
+  }
 
   if (code === "upstream_error" || (status === 502 && !info.message)) {
     return "上游模型服务暂时不可用，请稍后重试或切换 Provider。";
@@ -228,14 +236,14 @@ export function formatApiErrorUserMessage(info: ThreadApiErrorInfo): string {
     return "上游模型请求失败，请稍后重试。";
   }
 
-  const normalized = raw.toLowerCase();
-  if (normalized.includes("upstream request failed")) {
+  const normalizedRaw = raw.toLowerCase();
+  if (normalizedRaw.includes("upstream request failed")) {
     return "上游模型服务暂时不可用，请稍后重试或切换 Provider。";
   }
-  if (normalized.includes("model not found")) {
+  if (normalizedRaw.includes("model not found")) {
     return "模型不存在或无权访问，请检查 Provider 配置与模型 ID。";
   }
-  if (normalized.includes("rate limit") || normalized.includes("too many requests")) {
+  if (normalizedRaw.includes("rate limit") || normalizedRaw.includes("too many requests")) {
     return "上游模型请求过于频繁，请稍后重试或切换 Provider。";
   }
 

@@ -24,18 +24,18 @@ import {
   feedSkeletonTimelineIds,
   patchThreadFeedSkeletonFromEvent,
   shouldPatchAgentTimelineForFeedSkeleton,
-} from "../main/thread-feed-skeleton-patch";
+} from "../main/legacy-feed-skeleton-patch";
 import {
   mapRunAttemptsForFeedSkeleton,
   type ThreadFeedSkeletonRecord,
-} from "../main/thread-feed-skeleton-store";
-import { isFeedMainTimelineEvent } from "../main/thread-feed-timeline-items";
+} from "../main/legacy-feed-skeleton-store";
+import { isFeedMainTimelineEvent } from "../main/legacy-feed-skeleton-timeline-items";
 import { isMetricsOnlyThreadRunEvent } from "../main/thread-run-event-normalizer";
-import { buildThreadRunProjection } from "../main/thread-run-projection";
-import { trimProjectionForFeed } from "../main/thread-run-projection-feed";
+import { buildThreadRunProjection } from "../main/conversation-v2-runtime-projection";
+import { trimProjectionForFeed } from "../main/legacy-feed-replay-projection";
 import type { AgentInstanceRecord } from "../main/usage-ledger";
-import type { RuntimeAgentRole, ThreadRunEvent, ThreadSummary } from "../shared/ipc";
-import type { ThreadRunProjectionAgent, ThreadRunProjectionAttempt } from "../shared/thread-run-projection";
+import type { RuntimeAgentRole, ThreadRunEvent, ThreadRunEventInput, ThreadSummary } from "../shared/ipc";
+import type { ThreadRunProjectionAgent, ThreadRunProjectionAttempt } from "../shared/conversation-v2-projection";
 import type { ConversationRoundFixture, RpcLogEntry } from "./conversation-round-fixture";
 import { evaluateFixtureScenarioChecklist, loadConversationRoundFixture } from "./conversation-round-fixture";
 
@@ -103,7 +103,13 @@ export async function replayConversationRound(
 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "eco-conversation-round-"));
   const dbPath = path.join(tempDir, "eco-coding.sqlite");
-  const store = await createConversationStore(dbPath);
+  // Feed replay is a V2 writer fixture. Its local skeleton is an in-memory
+  // comparison artifact and must not cause the temporary database to create or
+  // use the retired V1 conversation tables.
+  const store = await createConversationStore(dbPath, {
+    freshStorageMode: "v2_only",
+    requiredStorageMode: "v2_only",
+  });
 
   const thread: ThreadSummary = {
     id: ecoThreadId,
@@ -118,6 +124,7 @@ export async function replayConversationRound(
   store.saveThread(thread);
 
   const persistedEvents: ThreadRunEvent[] = [];
+  const replayRunIds = new Set<string>();
   let skeletonRecord: ThreadFeedSkeletonRecord | undefined;
   let lifecycleObservedAt = replayedEvents[0]?.observedAt ?? "1970-01-01T00:00:00.000Z";
   const subagentLifecycle = createReplayCodexSubagentLifecycle(store, () => lifecycleObservedAt);
@@ -126,10 +133,42 @@ export async function replayConversationRound(
     lifecycleObservedAt = rawEvent.observedAt;
     const normalized = normalizeCodexThreadRunEventForProjection(rawEvent);
     const threadId = normalized.threadId?.trim() || ecoThreadId;
-    const persisted = store.appendThreadRunEvent({
-      ...normalized,
-      threadId,
-    });
+    // Replays exercise the same native V2 provider boundary as live SDK events.
+    // The legacy appendThreadRunEvent bridge is intentionally reserved for
+    // migration/compatibility tests and must not be used by production helpers.
+    const runtimeRunAttemptId = normalized.runAttemptId?.trim() || replayRunAttemptId(normalized, threadId);
+    const runtimeEvent = runtimeRunAttemptId
+      ? { ...normalized, threadId, runAttemptId: runtimeRunAttemptId }
+      : { ...normalized, threadId };
+    if (runtimeRunAttemptId && !replayRunIds.has(runtimeRunAttemptId)) {
+      replayRunIds.add(runtimeRunAttemptId);
+      store.upsertRunAttempt({
+        threadId,
+        attemptId: runtimeRunAttemptId,
+        phase: "execution",
+        retryIndex: 0,
+        status: "running",
+        startedAt: normalized.observedAt,
+      });
+    }
+    store.appendConversationRuntimeEvent(runtimeEvent);
+    // The writer returns the provider envelope with the receipt sequence. Feed
+    // projection/replay must consume the canonical V2 source-index row instead,
+    // because that is the sequence and body that a restarted reader will see.
+    const persisted: ThreadRunEvent =
+      store.listConversationRuntimeSources(threadId).find((candidate) => candidate.id === runtimeEvent.id) ??
+      ({ ...runtimeEvent, sequence: runtimeEvent.sequence ?? persistedEvents.length + 1 } as ThreadRunEvent);
+    if (runtimeRunAttemptId && isTerminalReplayRunEvent(normalized.eventType)) {
+      store.upsertRunAttempt({
+        threadId,
+        attemptId: runtimeRunAttemptId,
+        phase: "execution",
+        retryIndex: 0,
+        status: replayRunStatus(normalized.eventType),
+        startedAt: normalized.observedAt,
+        endedAt: normalized.observedAt,
+      });
+    }
     applyCodexSubagentLifecycleEvent(persisted, subagentLifecycle);
     persistedEvents.push(persisted);
     skeletonRecord = maintainSkeletonRecord(store, skeletonRecord, persisted, ecoThreadId);
@@ -174,6 +213,27 @@ export async function replayConversationRound(
     turnPlanUpdates,
     scenarioSignals,
   };
+}
+
+function replayRunAttemptId(event: ThreadRunEventInput, threadId: string): string | undefined {
+  const needsRun =
+    event.eventType.startsWith("message.") ||
+    event.eventType.startsWith("thinking.") ||
+    event.eventType.startsWith("tool.") ||
+    event.eventType.startsWith("run.");
+  if (!needsRun || event.role === "user") return undefined;
+  const request = event.requestId?.trim() || event.streamKey?.trim() || "main";
+  return `replay_run_${threadId}_${request}`;
+}
+
+function isTerminalReplayRunEvent(eventType: string): boolean {
+  return eventType === "run.completed" || eventType === "run.failed" || eventType === "run.cancelled";
+}
+
+function replayRunStatus(eventType: string): "completed" | "failed" | "cancelled" {
+  if (eventType === "run.failed") return "failed";
+  if (eventType === "run.cancelled") return "cancelled";
+  return "completed";
 }
 
 export function writeConversationRoundExpected(
@@ -306,8 +366,11 @@ function maintainSkeletonRecord(
   threadId: string,
 ): ThreadFeedSkeletonRecord | undefined {
   if (event.eventType.startsWith("agent.")) {
-    store.deleteThreadFeedSkeleton(threadId);
-    return undefined;
+    // Agent lifecycle is already represented by the V2 agent registry. Keep the
+    // current V2 skeleton while the registry changes; the next structural event
+    // will patch/rebuild it from the canonical V2 source index. Deleting here
+    // would make a replay depend on the tail after the last agent event.
+    return existing;
   }
 
   const runAttempts = store.listRunAttempts(threadId);
@@ -348,7 +411,7 @@ function maintainSkeletonRecord(
         status: "idle",
         attempts: runAttempts,
         agents: agentRecords,
-        events: store.listThreadRunEvents(threadId),
+        events: store.listThreadRunEventsForProjection(threadId),
         historyComplete: true,
       }),
     );

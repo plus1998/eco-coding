@@ -1,4 +1,4 @@
-import type { ThreadRunProjectionRequestSpan } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionRequestSpan } from "../shared/conversation-v2-projection";
 import { estimateTextTokens } from "../shared/token-estimate";
 import { resolvePrefillWindowMs } from "../shared/ledger-event-timing";
 import { resolveRateNumeratorTokens } from "../shared/request-span-usage";

@@ -9,7 +9,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:eco_mobile/core/models/git_models.dart';
 import 'package:eco_mobile/core/models/image_view_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
-import 'package:eco_mobile/core/models/thread_run_projection.dart';
+import 'package:eco_mobile/core/models/conversation_v2_projection_models.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/preferences/thinking_display_preferences.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
@@ -22,8 +22,10 @@ import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/subagent_projection_feed.dart';
 import 'package:eco_mobile/core/widgets/eco_markdown.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
-import 'package:eco_mobile/features/threads/thread_session_screen.dart';
 
+/// Test-only adapter for the legacy projection fixture shape. Production detail
+/// loading is V2-only; these fixtures exercise the Feed's scoped timeline rules
+/// without importing the retired session screen helpers.
 List<ActivityFeedEntry> _toolActions(List<ActivityFeedEntry> entries) => [
   for (final entry in entries)
     if (entry.kind == ActivityFeedKind.action)
@@ -31,6 +33,235 @@ List<ActivityFeedEntry> _toolActions(List<ActivityFeedEntry> entries) => [
     else if (entry.kind == ActivityFeedKind.actionGroup)
       ...entry.actionChildren,
 ];
+
+ThreadRunProjectionSnapshot _projectionDetailSnapshot({
+  required String threadId,
+  required ThreadRunProjectionSnapshot? base,
+  required List<ThreadRunProjectionTimelineItem> timeline,
+  bool normalizeItems = true,
+}) {
+  return ThreadRunProjectionSnapshot(
+    threadId: base?.threadId ?? threadId,
+    status: base?.status ?? '',
+    generatedAt: base?.generatedAt ?? '',
+    sourceEventCount: timeline.isNotEmpty ? timeline.length : 0,
+    agents: const [],
+    timeline: normalizeItems
+        ? timeline.map(_projectionDetailTimelineItem).toList()
+        : timeline,
+    requestSpans: base?.requestSpans ?? const [],
+    attempts: base?.attempts ?? const [],
+  );
+}
+
+/// Legacy tool-detail mapper: keep agent-scoped tool/message items visible in
+/// the shared feed builder by projecting them onto main scope.
+ThreadRunProjectionTimelineItem _projectionDetailTimelineItem(
+  ThreadRunProjectionTimelineItem item,
+) {
+  if (item.scope == 'main') return item;
+  return ThreadRunProjectionTimelineItem(
+    id: item.id,
+    sequence: item.sequence,
+    eventType: item.eventType,
+    scope: 'main',
+    text: item.text,
+    at: item.at,
+    role: item.role,
+    agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
+    requestId: item.requestId,
+    streamKey: item.streamKey,
+    metadata: item.metadata,
+  );
+}
+
+/// Desktop-aligned subagent detail rules:
+/// - mission is shown once as a leading user bubble
+/// - `@mission` envelopes / lifecycle events are suppressed
+/// - agent-scope `message.user` follow-ups become user bubbles
+/// - duplicate mission prompts are suppressed
+ThreadRunProjectionTimelineItem? _projectionAgentDetailTimelineItem(
+  ThreadRunProjectionTimelineItem item,
+  String missionDisplay,
+) {
+  if (item.eventType == 'agent.started' ||
+      item.eventType == 'agent.stopped' ||
+      item.eventType == 'agent.abandoned') {
+    return null;
+  }
+  if (item.eventType == 'thinking.final' && item.text.trim().isEmpty) {
+    return null;
+  }
+  if (isSubagentMissionEnvelope(item.text)) {
+    return null;
+  }
+  if (_isProjectionSubagentPromptItem(item)) {
+    final text = resolveMissionDisplayText(item.text).trim();
+    if (text.isEmpty) return null;
+    if (missionDisplay.isNotEmpty && text == missionDisplay) return null;
+    return ThreadRunProjectionTimelineItem(
+      id: item.id,
+      sequence: item.sequence,
+      eventType: 'thread.status',
+      scope: 'main',
+      text: text,
+      at: item.at,
+      role: 'user',
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      requestId: item.requestId,
+      streamKey: item.streamKey,
+      metadata: {...?item.metadata, 'liveType': 'thread.user_prompt'},
+    );
+  }
+  if (item.scope == 'main') return item;
+  return ThreadRunProjectionTimelineItem(
+    id: item.id,
+    sequence: item.sequence,
+    eventType: item.eventType,
+    scope: 'main',
+    text: item.text,
+    at: item.at,
+    role: item.role,
+    agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
+    requestId: item.requestId,
+    streamKey: item.streamKey,
+    metadata: item.metadata,
+  );
+}
+
+bool _isProjectionSubagentPromptItem(ThreadRunProjectionTimelineItem item) {
+  final liveType = item.metadata?['liveType'];
+  return item.scope == 'agent' &&
+      liveType == 'message.user' &&
+      item.text.trim().isNotEmpty;
+}
+
+List<ThreadRunProjectionTimelineItem> _normalizeAgentDetailTimeline(
+  List<ThreadRunProjectionTimelineItem> timeline, {
+  required String missionDisplay,
+}) {
+  final mapped = <ThreadRunProjectionTimelineItem>[];
+  for (final item in timeline) {
+    final next = _projectionAgentDetailTimelineItem(item, missionDisplay);
+    if (next != null) mapped.add(next);
+  }
+
+  // Match desktop: put follow-up prompt bubbles before their request.started.
+  final ordered = <ThreadRunProjectionTimelineItem>[];
+  for (var index = 0; index < mapped.length; index += 1) {
+    final item = mapped[index];
+    final next = index + 1 < mapped.length ? mapped[index + 1] : null;
+    final itemLiveType = item.metadata?['liveType'];
+    final nextLiveType = next?.metadata?['liveType'];
+    if (item.eventType == 'request.started' &&
+        item.requestId != null &&
+        item.requestId!.isNotEmpty &&
+        next != null &&
+        next.requestId == item.requestId &&
+        nextLiveType == 'thread.user_prompt' &&
+        itemLiveType != 'thread.user_prompt') {
+      ordered.add(next);
+      ordered.add(item);
+      index += 1;
+      continue;
+    }
+    ordered.add(item);
+  }
+
+  if (missionDisplay.isEmpty) return ordered;
+  return [
+    ThreadRunProjectionTimelineItem(
+      id: 'subagent-mission-prompt',
+      sequence: -1,
+      eventType: 'thread.status',
+      scope: 'main',
+      text: missionDisplay,
+      at: ordered.isNotEmpty ? ordered.first.at : '',
+      role: 'user',
+      metadata: const {'liveType': 'thread.user_prompt'},
+    ),
+    ...ordered,
+  ];
+}
+
+List<ActivityFeedEntry> buildProjectionDetailEntries({
+  required String threadId,
+  required ThreadRunProjectionSnapshot? base,
+  required List<ThreadRunProjectionTimelineItem> cachedTimeline,
+  required ThreadRunProjectionDetailResult? detail,
+  required AppLocalizations l10n,
+  String? missionText,
+  bool injectMainThreadUserPrompts = true,
+  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
+}) {
+  final timeline = _mergeProjectionDetailTimeline(
+    cachedTimeline,
+    detail?.timeline ?? const [],
+  );
+  final missionDisplay = resolveMissionDisplayText(missionText ?? '').trim();
+
+  if (!injectMainThreadUserPrompts) {
+    final normalized = _normalizeAgentDetailTimeline(
+      timeline,
+      missionDisplay: missionDisplay,
+    );
+    final detailProjection = _projectionDetailSnapshot(
+      threadId: threadId,
+      base: base,
+      timeline: normalized,
+      normalizeItems: false,
+    );
+    return buildActivityFeed(
+      threadPrompt: '',
+      threadId: threadId,
+      runProjection: detailProjection,
+      l10n: l10n,
+      thinkingDisplayMode: thinkingDisplayMode,
+    );
+  }
+
+  // Tool rows expand a scoped timeline, not a chat turn.
+  final detailProjection = _projectionDetailSnapshot(
+    threadId: threadId,
+    base: base,
+    timeline: timeline,
+  );
+  return buildActivityFeed(
+    threadPrompt: '',
+    threadId: threadId,
+    runProjection: detailProjection,
+    l10n: l10n,
+    groupTurns: false,
+    groupActions: false,
+    thinkingDisplayMode: thinkingDisplayMode,
+  );
+}
+
+List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
+  List<ThreadRunProjectionTimelineItem> cached,
+  List<ThreadRunProjectionTimelineItem> fresh,
+) {
+  if (cached.isEmpty) return fresh;
+  if (fresh.isEmpty) return cached;
+  final byId = <String, ThreadRunProjectionTimelineItem>{
+    for (final item in cached) item.id: item,
+  };
+  for (final item in fresh) {
+    byId[item.id] = item;
+  }
+  final merged = byId.values.toList();
+  merged.sort((left, right) {
+    final sequenceDelta = left.sequence.compareTo(right.sequence);
+    if (sequenceDelta != 0) return sequenceDelta;
+    final atDelta = left.at.compareTo(right.at);
+    if (atDelta != 0) return atDelta;
+    return left.id.compareTo(right.id);
+  });
+  return merged;
+}
 
 ThreadRunProjectionTimelineItem _toolTimelineItem({
   required String id,
@@ -348,18 +579,18 @@ void main() {
     );
   });
 
-  testWidgets('ActivityFeedList does not page earlier history when the Feed is a full skeleton', (
-    tester,
-  ) async {
-    final scrollController = ScrollController();
-    addTearDown(scrollController.dispose);
-    var loadCount = 0;
+  testWidgets(
+    'ActivityFeedList does not page earlier history when the Feed is a full skeleton',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      var loadCount = 0;
 
-    await tester.pumpWidget(
-      _localizedMaterialApp(
-        theme: buildEcoDarkTheme(),
-        home: Scaffold(
-          body: ActivityFeedList(
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
               entries: const [
                 ActivityFeedEntry(
                   id: 'assistant-1',
@@ -373,15 +604,16 @@ void main() {
                 loadCount += 1;
               },
             ),
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
+      );
+      await tester.pump();
+      await tester.pump();
 
-    expect(loadCount, 0);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-  });
+      expect(loadCount, 0);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    },
+  );
 
   testWidgets('ActivityFeedList keeps its viewport after prepending history', (
     tester,
@@ -537,11 +769,31 @@ void main() {
         ),
         isFalse,
       );
+      expect(feed.any((entry) => entry.text.contains('Hugging Face')), isTrue);
+    },
+  );
+
+  test(
+    'thread session keeps a populated V2 feed instead of optimistic prompt',
+    () {
+      const v2User = ActivityFeedEntry(
+        id: 'message-v2-user',
+        kind: ActivityFeedKind.user,
+        text: 'V2_LONGCAT_E2E_20260922_0007：只回复 OK',
+      );
+      final display = resolveThreadSessionDisplayFeedEntries(
+        feedEntries: const [v2User],
+        threadId: 'thread-v2',
+        threadPrompt: 'hi 你能做什么',
+        isRunning: false,
+      );
+
+      expect(display, hasLength(1));
+      expect(display.single.id, 'message-v2-user');
+      expect(display.single.text, contains('V2_LONGCAT_E2E_20260922_0007'));
       expect(
-        feed.any(
-          (entry) => entry.text.contains('Hugging Face'),
-        ),
-        isTrue,
+        display.any((entry) => entry.id.startsWith('optimistic-user-')),
+        isFalse,
       );
     },
   );
@@ -925,6 +1177,67 @@ void main() {
       'grep-1',
     ]);
   });
+
+  test('re-sorting a row keeps the facts the Feed reads off it', () {
+    // The Feed rebuilds rows when it sorts them into turns and when it folds them into
+    // groups. Every field has to survive that rebuild: a row that lost its provider role
+    // would stop being comparable with the desktop Feed, and one that lost its tool event
+    // would stop reporting whether the call finished.
+    const row = ActivityFeedEntry(
+      id: 'read-1',
+      kind: ActivityFeedKind.action,
+      text: 'lib/feed.dart',
+      actionIcon: ActivityActionIcon.read,
+      lifecycle: ToolActionLifecycle.completed,
+      toolEventType: 'tool.completed',
+      toolUseId: 'call_1',
+      role: 'tool',
+      sequence: 1,
+    );
+
+    final moved = row.withSequence(9);
+    expect(moved.sequence, 9);
+    expect(moved.role, 'tool');
+    expect(moved.toolEventType, 'tool.completed');
+    expect(moved.toolUseId, 'call_1');
+
+    final renamed = row.withIdAtSequence(
+      id: 'renamed',
+      at: '2026-01-01T00:00:00.000Z',
+      sequence: 3,
+    );
+    expect(renamed.id, 'renamed');
+    expect(renamed.role, 'tool');
+    expect(renamed.toolEventType, 'tool.completed');
+    expect(renamed.toolUseId, 'call_1');
+  });
+
+  test(
+    'a folded thinking row stands at its last block and keeps its author',
+    () {
+      final grouped = groupConsecutiveThinkingEntries(const [
+        ActivityFeedEntry(
+          id: 'thinking-1',
+          kind: ActivityFeedKind.thinking,
+          text: 'first',
+          role: 'planner',
+          at: '2026-01-01T00:00:01.000Z',
+        ),
+        ActivityFeedEntry(
+          id: 'thinking-2',
+          kind: ActivityFeedKind.thinking,
+          text: 'second',
+          role: 'planner',
+          at: '2026-01-01T00:00:05.000Z',
+        ),
+      ]);
+
+      expect(grouped, hasLength(1));
+      expect(grouped.single.text, 'first\n\nsecond');
+      expect(grouped.single.role, 'planner');
+      expect(grouped.single.at, '2026-01-01T00:00:05.000Z');
+    },
+  );
 
   test('groupActivityFeedActionEntries wraps isolated actions', () {
     final grouped = groupActivityFeedActionEntries(const [
@@ -1503,10 +1816,9 @@ void main() {
         ),
       );
 
-      expect(
-        feed.map((entry) => entry.kind).toList(),
-        [ActivityFeedKind.assistant],
-      );
+      expect(feed.map((entry) => entry.kind).toList(), [
+        ActivityFeedKind.assistant,
+      ]);
       expect(
         feed.any((entry) => entry.kind == ActivityFeedKind.reasoningStage),
         isFalse,
@@ -2067,83 +2379,79 @@ void main() {
     expect(feed.single.turnStatus, 'failed');
   });
 
-  test(
-    'skeleton subagent cards stay in the same turn as the attempt final',
-    () {
-      final feed = buildActivityFeed(
-        threadPrompt: '',
-        threadId: 't1',
-        runProjection: ThreadRunProjectionSnapshot.fromJson({
-          'thread': {
-            'threadId': 't1',
+  test('skeleton subagent cards stay in the same turn as the attempt final', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot.fromJson({
+        'thread': {
+          'threadId': 't1',
+          'status': 'completed',
+          'generatedAt': '2026-01-01T00:01:00.000Z',
+        },
+        'sourceEventCount': 3,
+        'attempts': [
+          {
+            'attemptId': 'attempt-1',
+            'phase': 'execution',
+            'retryIndex': 0,
             'status': 'completed',
-            'generatedAt': '2026-01-01T00:01:00.000Z',
+            'startedAt': '2026-01-01T00:00:00.000Z',
+            'endedAt': '2026-01-01T00:00:45.000Z',
           },
-          'sourceEventCount': 3,
-          'attempts': [
-            {
-              'attemptId': 'attempt-1',
-              'phase': 'execution',
-              'retryIndex': 0,
-              'status': 'completed',
-              'startedAt': '2026-01-01T00:00:00.000Z',
-              'endedAt': '2026-01-01T00:00:45.000Z',
-            },
-          ],
-          'timeline': [
-            {
-              'id': 'user',
-              'sequence': 1,
-              'eventType': 'thread.status',
-              'scope': 'main',
-              'role': 'user',
-              'text': '帮我改代码',
-              'at': '2026-01-01T00:00:00.000Z',
-              'metadata': {'liveType': 'thread.user_prompt'},
-            },
-            {
-              'id': 'final',
-              'sequence': 4,
-              'eventType': 'message.final',
-              'scope': 'main',
-              'role': 'planner',
-              'runAttemptId': 'attempt-1',
-              'text': '全部完成。',
-              'at': '2026-01-01T00:00:45.000Z',
-            },
-          ],
-          'agents': [
-            {
-              'agentId': 'agent_coder_1',
-              'role': 'coder',
-              'kind': 'subagent',
-              'status': 'completed',
-              'startedAt': '2026-01-01T00:00:05.500Z',
-              'endedAt': '2026-01-01T00:00:40.000Z',
-              'durationMs': 34500,
-              'runAttemptId': 'attempt-1',
-              'parentToolUseId': 'toolu_agent',
-              'delegationPrompt': '改路由',
-              // Skeleton Feed clears agent process timelines → sequence falls to 0.
-              'timeline': <Map<String, Object>>[],
-            },
-          ],
-        }),
-      );
+        ],
+        'timeline': [
+          {
+            'id': 'user',
+            'sequence': 1,
+            'eventType': 'thread.status',
+            'scope': 'main',
+            'role': 'user',
+            'text': '帮我改代码',
+            'at': '2026-01-01T00:00:00.000Z',
+            'metadata': {'liveType': 'thread.user_prompt'},
+          },
+          {
+            'id': 'final',
+            'sequence': 4,
+            'eventType': 'message.final',
+            'scope': 'main',
+            'role': 'planner',
+            'runAttemptId': 'attempt-1',
+            'text': '全部完成。',
+            'at': '2026-01-01T00:00:45.000Z',
+          },
+        ],
+        'agents': [
+          {
+            'agentId': 'agent_coder_1',
+            'role': 'coder',
+            'kind': 'subagent',
+            'status': 'completed',
+            'startedAt': '2026-01-01T00:00:05.500Z',
+            'endedAt': '2026-01-01T00:00:40.000Z',
+            'durationMs': 34500,
+            'runAttemptId': 'attempt-1',
+            'parentToolUseId': 'toolu_agent',
+            'delegationPrompt': '改路由',
+            // Skeleton Feed clears agent process timelines → sequence falls to 0.
+            'timeline': <Map<String, Object>>[],
+          },
+        ],
+      }),
+    );
 
-      expect(feed.map((entry) => entry.kind).toList(), [
-        ActivityFeedKind.user,
-        ActivityFeedKind.turn,
-      ]);
-      final turn = feed[1];
-      expect(turn.id, 'turn:attempt-1#after:1');
-      expect(
-        turn.processEntries.map((entry) => entry.kind).toList(),
-        [ActivityFeedKind.subagentMission],
-      );
-      expect(turn.finalOutput?.text, '全部完成。');
-    },
-  );
+    expect(feed.map((entry) => entry.kind).toList(), [
+      ActivityFeedKind.user,
+      ActivityFeedKind.turn,
+    ]);
+    final turn = feed[1];
+    expect(turn.id, 'turn:attempt-1#after:1');
+    expect(turn.processEntries.map((entry) => entry.kind).toList(), [
+      ActivityFeedKind.subagentMission,
+    ]);
+    expect(turn.finalOutput?.text, '全部完成。');
+  });
 
   test(
     'mid-turn user prompt splits same attempt so steered output appears after the prompt',
@@ -3441,37 +3749,36 @@ void main() {
     expect(mission?.prompt, 'check auth flow');
   });
 
-  test('isLegacyBashApprovalActivityText matches approval transition variants', () {
-    const noise = [
-      '辅助模型已允许 Bash：npm test',
-      '辅助模型已允许 Read：/etc/hosts',
-      '辅助模型已允许：npm test',
-      '已允许 Bash：npm test',
-      '已允许：npm test',
-      '已允许本次 Bash：npm test',
-      '已允许本次 Read：/etc/hosts',
-      '已允许本次图片创建',
-      '已允许打开浏览器：https://example.com',
-      '已允许打开内置浏览器',
-      '已拒绝 Bash：涉及生产环境',
-      '已拒绝 Read：/outside/secret.txt',
-      '已拒绝：风险较高',
-      'Bash 已拒绝：涉及生产环境',
-      '等待确认 Bash：npm test',
-      '等待确认 Read：/etc/hosts',
-    ];
-    for (final line in noise) {
-      expect(isLegacyBashApprovalActivityText(line), isTrue, reason: line);
-    }
-    const kept = [
-      '已允许，继续执行。',
-      '等待确认 npm test && npm run lint',
-      '正在执行测试命令。',
-    ];
-    for (final line in kept) {
-      expect(isLegacyBashApprovalActivityText(line), isFalse, reason: line);
-    }
-  });
+  test(
+    'isLegacyBashApprovalActivityText matches approval transition variants',
+    () {
+      const noise = [
+        '辅助模型已允许 Bash：npm test',
+        '辅助模型已允许 Read：/etc/hosts',
+        '辅助模型已允许：npm test',
+        '已允许 Bash：npm test',
+        '已允许：npm test',
+        '已允许本次 Bash：npm test',
+        '已允许本次 Read：/etc/hosts',
+        '已允许本次图片创建',
+        '已允许打开浏览器：https://example.com',
+        '已允许打开内置浏览器',
+        '已拒绝 Bash：涉及生产环境',
+        '已拒绝 Read：/outside/secret.txt',
+        '已拒绝：风险较高',
+        'Bash 已拒绝：涉及生产环境',
+        '等待确认 Bash：npm test',
+        '等待确认 Read：/etc/hosts',
+      ];
+      for (final line in noise) {
+        expect(isLegacyBashApprovalActivityText(line), isTrue, reason: line);
+      }
+      const kept = ['已允许，继续执行。', '等待确认 npm test && npm run lint', '正在执行测试命令。'];
+      for (final line in kept) {
+        expect(isLegacyBashApprovalActivityText(line), isFalse, reason: line);
+      }
+    },
+  );
 
   test('approval transition text never surfaces as feed assistant lines', () {
     final feed = buildActivityFeed(
@@ -3530,15 +3837,11 @@ void main() {
       feed.any(
         (entry) =>
             entry.kind == ActivityFeedKind.assistant &&
-            (entry.text.contains('辅助模型已允许') ||
-                entry.text.contains('已拒绝 Bash')),
+            (entry.text.contains('辅助模型已允许') || entry.text.contains('已拒绝 Bash')),
       ),
       isFalse,
     );
-    expect(
-      feed.any((entry) => entry.text.contains('正在执行测试命令。')),
-      isTrue,
-    );
+    expect(feed.any((entry) => entry.text.contains('正在执行测试命令。')), isTrue);
   });
 
   test('bash approval merges into the same action row by toolUseId', () {
@@ -3906,74 +4209,73 @@ void main() {
     ]);
   });
 
-  testWidgets(
-    'grouped fileChange child rows keep formatActionLine labels',
-    (tester) async {
-      final scrollController = ScrollController();
-      addTearDown(scrollController.dispose);
-      final entries = groupActivityFeedActionEntries(const [
-        ActivityFeedEntry(
-          id: 'edit-1',
-          kind: ActivityFeedKind.action,
-          text: 'lib/feed.dart',
-          toolName: 'Edit',
-          actionIcon: ActivityActionIcon.edit,
-          lifecycle: ToolActionLifecycle.completed,
-          fileChange: FileChangeCardDisplay(
-            fileName: 'feed.dart',
-            path: 'lib/feed.dart',
-            additions: 1,
-            deletions: 0,
-            previewLines: [
-              FileChangePreviewLine(
-                kind: FileChangePreviewLineKind.add,
-                text: 'new value',
-              ),
-            ],
-          ),
-        ),
-        ActivityFeedEntry(
-          id: 'edit-2',
-          kind: ActivityFeedKind.action,
-          text: 'lib/other.dart',
-          toolName: 'Edit',
-          actionIcon: ActivityActionIcon.edit,
-          lifecycle: ToolActionLifecycle.completed,
-          fileChange: FileChangeCardDisplay(
-            fileName: 'other.dart',
-            path: 'lib/other.dart',
-            additions: 1,
-            deletions: 0,
-            previewLines: [
-              FileChangePreviewLine(
-                kind: FileChangePreviewLineKind.add,
-                text: 'other value',
-              ),
-            ],
-          ),
-        ),
-      ]);
-
-      await tester.pumpWidget(
-        _localizedMaterialApp(
-          theme: buildEcoDarkTheme(),
-          home: Scaffold(
-            body: ActivityFeedList(
-              entries: entries,
-              scrollController: scrollController,
+  testWidgets('grouped fileChange child rows keep formatActionLine labels', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    final entries = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'edit-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/feed.dart',
+        toolName: 'Edit',
+        actionIcon: ActivityActionIcon.edit,
+        lifecycle: ToolActionLifecycle.completed,
+        fileChange: FileChangeCardDisplay(
+          fileName: 'feed.dart',
+          path: 'lib/feed.dart',
+          additions: 1,
+          deletions: 0,
+          previewLines: [
+            FileChangePreviewLine(
+              kind: FileChangePreviewLineKind.add,
+              text: 'new value',
             ),
+          ],
+        ),
+      ),
+      ActivityFeedEntry(
+        id: 'edit-2',
+        kind: ActivityFeedKind.action,
+        text: 'lib/other.dart',
+        toolName: 'Edit',
+        actionIcon: ActivityActionIcon.edit,
+        lifecycle: ToolActionLifecycle.completed,
+        fileChange: FileChangeCardDisplay(
+          fileName: 'other.dart',
+          path: 'lib/other.dart',
+          additions: 1,
+          deletions: 0,
+          previewLines: [
+            FileChangePreviewLine(
+              kind: FileChangePreviewLineKind.add,
+              text: 'other value',
+            ),
+          ],
+        ),
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: entries,
+            scrollController: scrollController,
           ),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.textContaining('已编辑').first);
-      await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('已编辑').first);
+    await tester.pumpAndSettle();
 
-      expect(find.text('编辑了 feed.dart'), findsOneWidget);
-      expect(find.text('feed.dart'), findsNothing);
-    },
-  );
+    expect(find.text('编辑了 feed.dart'), findsOneWidget);
+    expect(find.text('feed.dart'), findsNothing);
+  });
 
   testWidgets('ActivityFeedList expands file changes inline', (tester) async {
     final scrollController = ScrollController();
@@ -4208,6 +4510,84 @@ void main() {
 
     expect(find.textContaining('读取了'), findsNWidgets(2));
     expect(find.textContaining('Use read or an allowlisted'), findsWidgets);
+  });
+
+  testWidgets('V2 tool details request continuation only after loading more', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    var loadCount = 0;
+    String? requestedCursor;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'v2-tool-detail-loader',
+                kind: ActivityFeedKind.action,
+                text: 'Read source',
+                actionIcon: ActivityActionIcon.read,
+                lifecycle: ToolActionLifecycle.completed,
+                toolUseId: 'tool_v2_1',
+                runAttemptId: 'run_v2_1',
+              ),
+            ],
+            scrollController: scrollController,
+            loadToolDetailPage: (_, {String? cursor}) async {
+              loadCount += 1;
+              requestedCursor = cursor;
+              if (cursor == null) {
+                return const ActivityFeedToolDetailPage(
+                  entries: [
+                    ActivityFeedEntry(
+                      id: 'v2-detail-page-1',
+                      kind: ActivityFeedKind.assistant,
+                      text: 'first detail page',
+                    ),
+                  ],
+                  hasMore: true,
+                  nextCursor: 'cursor-page-2',
+                );
+              }
+              return const ActivityFeedToolDetailPage(
+                entries: [
+                  ActivityFeedEntry(
+                    id: 'v2-detail-page-2',
+                    kind: ActivityFeedKind.assistant,
+                    text: 'second detail page',
+                  ),
+                ],
+                hasMore: false,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 0);
+    await tester.tap(find.textContaining('Read source').first);
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 1);
+    expect(requestedCursor, isNull);
+    expect(find.text('first detail page'), findsOneWidget);
+    expect(find.text('second detail page'), findsNothing);
+    expect(find.text('加载更多详情'), findsOneWidget);
+
+    await tester.tap(find.text('加载更多详情'));
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 2);
+    expect(requestedCursor, 'cursor-page-2');
+    expect(find.text('first detail page'), findsOneWidget);
+    expect(find.text('second detail page'), findsOneWidget);
+    expect(find.text('加载更多详情'), findsNothing);
   });
 
   testWidgets(
@@ -5391,6 +5771,59 @@ void main() {
       expect(find.byType(TextField), findsNothing);
     },
   );
+
+  testWidgets('ActivityFeedList exposes V2 retry on failed request rows', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    String? retriedEntryId;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'user-retry',
+                kind: ActivityFeedKind.user,
+                text: 'retry prompt',
+                sequence: 1,
+                activityLineId: 'user-retry',
+                historyRevision: 7,
+              ),
+              ActivityFeedEntry(
+                id: 'turn-retry',
+                kind: ActivityFeedKind.turn,
+                text: '',
+                running: true,
+                runAttemptId: 'run-retry',
+                processEntries: [
+                  ActivityFeedEntry(
+                    id: 'request-error',
+                    kind: ActivityFeedKind.error,
+                    text: '【连接失败】HTTP 503',
+                    sequence: 3,
+                  ),
+                ],
+              ),
+            ],
+            scrollController: scrollController,
+            onRetryFailedRequest: (entry) async {
+              retriedEntryId = entry.id;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('【连接失败】HTTP 503'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(retriedEntryId, 'request-error');
+  });
 
   testWidgets('ActivityFeedList shrinkWrap grows until constrained', (
     tester,

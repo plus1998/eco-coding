@@ -1,4 +1,5 @@
 import type { IpcChannel, TerminalStreamEvent, ThreadLiveEvent } from "./ipc";
+import type { ConversationSyncEffect } from "@eco/shared";
 
 export const EVENT_CENTER_PROTOCOL_VERSION = 1 as const;
 export const EVENT_CENTER_JSON_RPC_VERSION = "2.0" as const;
@@ -23,7 +24,8 @@ export type EventCenterEventKind =
   | "thread.todo"
   | "thread.usage"
   | "thread.context"
-  | "thread.projection"
+  | "conversation.sync_effect"
+  | "conversation.projection_extras"
   | "settings.updated"
   | "workspace.terminal"
   | "workspace.package_json_changed"
@@ -125,7 +127,14 @@ export interface EventCenterPayloadMap {
   "thread.todo": ThreadLiveEvent;
   "thread.usage": ThreadLiveEvent;
   "thread.context": ThreadLiveEvent;
-  "thread.projection": ThreadLiveEvent;
+  "conversation.sync_effect": {
+    conversationId: string;
+    storeEpoch: string;
+    effect: ConversationSyncEffect;
+  };
+  "conversation.projection_extras": {
+    conversationId: string;
+  };
   "settings.updated": ThreadLiveEvent;
   "workspace.terminal": TerminalStreamEvent;
   "workspace.package_json_changed": EventCenterPackageJsonChangedPayload;
@@ -232,9 +241,6 @@ export function classifyThreadLiveEventForCenter(event: ThreadLiveEvent): Thread
   if (event.type === "settings.updated") {
     return "settings.updated";
   }
-  if (event.type === "thread.run_projection_updated" || event.projection) {
-    return "thread.projection";
-  }
   if (isThreadPlanLiveEvent(event)) {
     return "thread.plan";
   }
@@ -247,7 +253,7 @@ export function classifyThreadLiveEventForCenter(event: ThreadLiveEvent): Thread
   if (event.followUp || event.type.startsWith("thread.follow_up.")) {
     return "thread.follow_up";
   }
-  if (event.todoList || event.type === "thread.todos_updated") {
+  if (event.type === "thread.todos_updated") {
     return "thread.todo";
   }
   if (event.usage || event.billing || event.type === "thread.usage_updated") {

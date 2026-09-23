@@ -13,6 +13,44 @@ import 'eco_realtime.dart';
 
 typedef JsonMap = Map<String, dynamic>;
 
+/// Converts a JSON-RPC error into the app exception used by the transport.
+///
+/// Desktop V2 errors keep their stable domain code in `error.data` so callers
+/// can distinguish an incompatible protocol from a transient RPC failure.
+EcoCenterException ecoCenterExceptionFromRpcError(dynamic error) {
+  final errorMap = _stringKeyedMap(error);
+  final data = _stringKeyedMap(errorMap?['data']);
+  final rawDomainCode = data?['conversationCode'];
+  final domainCode = rawDomainCode is String && rawDomainCode.trim().isNotEmpty
+      ? rawDomainCode
+      : null;
+  final rawRpcCode = errorMap?['code'];
+  final rpcCode = rawRpcCode is int ? rawRpcCode : null;
+  final message = errorMap?['message'];
+
+  if (message is String) {
+    return EcoCenterException.native(
+      message,
+      code: rpcCode,
+      domainCode: domainCode,
+      domainData: data,
+    );
+  }
+  return EcoCenterException.app(EcoCenterErrorKind.rpcFailed, code: rpcCode);
+}
+
+Map<String, dynamic>? _stringKeyedMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is! Map) return null;
+  final result = <String, dynamic>{};
+  for (final entry in value.entries) {
+    if (entry.key is String) {
+      result[entry.key as String] = entry.value;
+    }
+  }
+  return result;
+}
+
 /// Edge Function names (Track A). Documented in `supabase/README.md`.
 abstract final class EcoSupabaseFunctions {
   static const deviceRegister = 'device-register';
@@ -543,10 +581,7 @@ class EcoCenterClient {
     await _ensureUserAccessToken();
     final response = await client.functions.invoke(
       EcoSupabaseFunctions.deviceDisable,
-      body: {
-        'deviceId': trimmed,
-        'kind': 'desktop',
-      },
+      body: {'deviceId': trimmed, 'kind': 'desktop'},
     );
     final data = _requireFunctionJson(response);
     final device = PublicDevice.fromJson(_asJsonMap(data['device']));
@@ -719,6 +754,13 @@ class EcoCenterClient {
     }
     final id = 'mobile_req_${++_rpcCounter}';
     final completer = Completer<dynamic>();
+    // Disconnect may reject this completer while _sendRpc is still awaiting,
+    // before invoke attaches its normal await below. Observe the same Future
+    // immediately so that early rejection is not reported as an uncaught zone
+    // error; invoke still awaits this Future and receives the original error.
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
     _pendingInvokes[id] = completer;
 
     final request = buildEcoInvokeRequest(
@@ -762,6 +804,10 @@ class EcoCenterClient {
     }
     final id = 'ping_${++_rpcCounter}';
     final completer = Completer<dynamic>();
+    // Keep disconnect errors observed even if _sendRpc has not returned yet.
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
     _pendingInvokes[id] = completer;
     try {
       await _sendRpc(buildEcoPingRequest(id));
@@ -928,10 +974,7 @@ class EcoCenterClient {
       if (error is EcoCenterException) rethrow;
       final message = _exceptionMessage(error);
       final recovery = recoveryForSessionRefreshFailure(message);
-      throw EcoCenterException.native(
-        message,
-        recovery: recovery,
-      );
+      throw EcoCenterException.native(message, recovery: recovery);
     }
   }
 
@@ -1376,19 +1419,7 @@ class EcoCenterClient {
     if (pending == null) return;
 
     if (message.containsKey('error')) {
-      final error = message['error'];
-      final errorMap = error is Map ? Map<String, dynamic>.from(error) : null;
-      pending.completeError(
-        errorMap?['message'] is String
-            ? EcoCenterException.native(
-                errorMap!['message'] as String,
-                code: errorMap['code'] as int?,
-              )
-            : EcoCenterException.app(
-                EcoCenterErrorKind.rpcFailed,
-                code: errorMap?['code'] as int?,
-              ),
-      );
+      pending.completeError(ecoCenterExceptionFromRpcError(message['error']));
       return;
     }
 

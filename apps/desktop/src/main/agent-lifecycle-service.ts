@@ -1,13 +1,17 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type {
   AgentInstanceRecord,
+  RunAttemptCommandDispatch,
   RunAttemptPhase,
   RunAttemptRecord,
   RunAttemptStatus,
 } from "./usage-ledger";
 
 export interface AgentLifecycleStore {
-  upsertRunAttempt(record: RunAttemptRecord): void;
+  upsertRunAttempt(
+    record: RunAttemptRecord,
+    commandDispatch?: RunAttemptCommandDispatch,
+  ): void;
   upsertAgentInstance(record: AgentInstanceRecord): void;
   listAgentInstances?(threadId: string): AgentInstanceRecord[];
 }
@@ -47,7 +51,14 @@ export class AgentLifecycleService {
     private readonly options: AgentLifecycleServiceOptions = {},
   ) {}
 
-  startRunAttempt(input: { threadId: string; phase: RunAttemptPhase; retryIndex: number }): RunAttemptRecord {
+  startRunAttempt(input: {
+    threadId: string;
+    phase: RunAttemptPhase;
+    retryIndex: number;
+    attemptId?: string;
+    metadata?: Record<string, unknown>;
+    commandDispatch?: RunAttemptCommandDispatch;
+  }): RunAttemptRecord {
     const state = this.getOrCreateThread(input.threadId);
     if (state.currentAttempt) {
       this.finishRunAttempt(input.threadId, "failed");
@@ -56,15 +67,16 @@ export class AgentLifecycleService {
     const now = this.now();
     const attempt: RunAttemptRecord = {
       threadId: input.threadId,
-      attemptId: this.createAttemptId(input),
+      attemptId: input.attemptId?.trim() || this.createAttemptId(input),
       phase: input.phase,
       retryIndex: input.retryIndex,
       status: "running",
       startedAt: now,
+      ...(input.metadata && { metadata: input.metadata }),
     };
+    this.store.upsertRunAttempt(attempt, input.commandDispatch);
     state.currentAttempt = attempt;
     state.currentPlannerAgentId = `planner:${attempt.attemptId}`;
-    this.store.upsertRunAttempt(attempt);
     this.store.upsertAgentInstance({
       threadId: input.threadId,
       agentId: state.currentPlannerAgentId,
@@ -276,6 +288,7 @@ export class AgentLifecycleService {
       retryIndex: attempt.retryIndex,
       status: "running",
       startedAt: now,
+      ...(attempt.metadata && { metadata: attempt.metadata }),
     };
     state.currentAttempt = nextAttempt;
     this.store.upsertRunAttempt(nextAttempt);

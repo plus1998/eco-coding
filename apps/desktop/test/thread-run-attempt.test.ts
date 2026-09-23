@@ -9,7 +9,18 @@ import {
 import type { RunAttemptPhase, RunAttemptStatus } from "../src/main/usage-ledger";
 
 function createHarness() {
-  const starts: Array<{ threadId: string; phase: RunAttemptPhase; retryIndex: number }> = [];
+  const starts: Array<{
+    threadId: string;
+    phase: RunAttemptPhase;
+    retryIndex: number;
+    attemptId?: string;
+    metadata?: Record<string, unknown>;
+    commandDispatch?: {
+      principalId: string;
+      clientCommandId: string;
+      dispatchId: string;
+    };
+  }> = [];
   const finishes: Array<{ threadId: string; status: Exclude<RunAttemptStatus, "running"> }> = [];
   const settlements: Array<{
     threadId: string;
@@ -49,6 +60,36 @@ test("runThreadRequestWithLifecycle passes attempt context to runOnce", async ()
   });
 
   expect(contexts).toEqual([{ threadId: "thr_ctx", runAttemptId: "attempt_0", phase: "execution" }]);
+});
+
+test("runThreadRequestWithLifecycle forwards prepared command dispatch identity", async () => {
+  const harness = createHarness();
+  const commandDispatch = {
+    principalId: "principal_1",
+    clientCommandId: "command_1",
+    dispatchId: "dispatch_1",
+  };
+  await runThreadRequestWithLifecycle({
+    threadId: "thr_command",
+    phase: "continuation",
+    attemptId: "attempt_planned",
+    metadata: { commandDispatch },
+    commandDispatch,
+    runOnce: async () => ({ ok: true }),
+    lifecycle: harness.lifecycle,
+    settlements: harness.settlementQueue,
+  });
+
+  expect(harness.starts).toEqual([
+    {
+      threadId: "thr_command",
+      phase: "continuation",
+      retryIndex: 0,
+      attemptId: "attempt_planned",
+      metadata: { commandDispatch },
+      commandDispatch,
+    },
+  ]);
 });
 
 test("runThreadRequestWithLifecycle settles completed attempts", async () => {

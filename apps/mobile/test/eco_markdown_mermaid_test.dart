@@ -5,7 +5,6 @@ import 'package:eco_mobile/core/widgets/eco_markdown.dart';
 import 'package:eco_mobile/core/widgets/eco_markdown_table.dart';
 import 'package:eco_mobile/core/widgets/eco_mermaid_block.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -188,7 +187,9 @@ const x = 1
     expect(find.byType(Table), findsOneWidget);
   });
 
-  testWidgets('EcoMarkdown table tap opens a bottom sheet preview', (tester) async {
+  testWidgets('EcoMarkdown table tap opens a bottom sheet preview', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildEcoDarkTheme(),
@@ -243,9 +244,7 @@ const x = 1
         ],
         supportedLocales: AppLocalizations.supportedLocales,
         home: const Scaffold(
-          body: SingleChildScrollView(
-            child: EcoMarkdown(text: wideTable),
-          ),
+          body: SingleChildScrollView(child: EcoMarkdown(text: wideTable)),
         ),
       ),
     );
@@ -258,7 +257,9 @@ const x = 1
     expect(find.byType(InteractiveViewer), findsOneWidget);
 
     // Pinch-zoom / pan replaces landscape rotate for wide tables.
-    final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    final viewer = tester.widget<InteractiveViewer>(
+      find.byType(InteractiveViewer),
+    );
     expect(viewer.constrained, isFalse);
     expect(viewer.maxScale, greaterThan(1));
 

@@ -1,4 +1,17 @@
-﻿import { contextBridge, ipcRenderer, webUtils } from "electron";
+﻿import type {
+  ConversationBootstrap,
+  ConversationCapabilities,
+  ConversationDetailItem,
+  ConversationDetailsPage,
+  ConversationHead,
+  ConversationMessage,
+  ConversationMessagesPage,
+  ConversationRun,
+  ConversationSendMessageResult,
+  ConversationSyncPage,
+  ConversationToolsPage,
+} from "@eco/shared";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
   type AgentTemplate,
@@ -24,6 +37,7 @@ import {
   type BackgroundTerminalTask,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
+  type BrowserAgentPresenceEvent,
   type BrowserCloseRequest,
   type BrowserFocusRequest,
   type BrowserNavigateRequest,
@@ -33,7 +47,6 @@ import {
   type BrowserSetUiScopeRequest,
   type BrowserSetVisibleRequest,
   type BrowserViewState,
-  type BrowserAgentPresenceEvent,
   type CandidateModelInput,
   type CandidateModelView,
   type CenterServerAccountAuthResult,
@@ -59,13 +72,14 @@ import {
   type CenterServerTestConnectionResult,
   type CenterServerVaultClaimView,
   type CenterServerVaultStatus,
+  type ClarificationDismissPayload,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
-  type CoderTodoItem,
   type ComposerDraftDeleteRequest,
   type ComposerDraftDeleteResult,
   type ComposerDraftRecord,
   type ComposerDraftSaveRequest,
+  type ConversationV2ProjectionExtras,
   type CoreAvailabilitySnapshot,
   type CursorAgentsListResult,
   type CursorModelOption,
@@ -91,18 +105,20 @@ import {
   type GitPushResult,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
+  type ImageDisplayArtifact,
+  type ImageDisplayArtifactReadRequest,
+  type ImageDisplayReadResult,
   type ImageGenerationArtifact,
   type ImageGenerationArtifactReadRequest,
   type ImageGenerationArtifactReadResult,
   type ImageGenerationProfileSaveInput,
   type ImageGenerationProfileSnapshot,
   type ImageGenerationSettingsSnapshot,
-  type ImageDisplayArtifact,
-  type ImageDisplayArtifactReadRequest,
-  type ImageDisplayReadResult,
+  type ImageRevealInFolderRequest,
   type ImageViewReadRequest,
   type ImageViewReadResult,
-  type ImageRevealInFolderRequest,
+  type IntegratedWebSearchSettingsSaveInput,
+  type IntegratedWebSearchSettingsSnapshot,
   type IntegrationAvailabilitySnapshot,
   IPC_CHANNELS,
   type IpcChannel,
@@ -125,6 +141,8 @@ import {
   type ProjectMcpSettingsSnapshot,
   type ProjectOrchestrationSettingsSnapshot,
   type ProjectSkillsSettingsSnapshot,
+  type PromptImageAttachment,
+  type PromptImageReadChunkResult,
   type PromptImageReleaseRequest,
   type PromptImageStageRequest,
   type PromptImageStageResult,
@@ -132,8 +150,6 @@ import {
   type ProviderConfigView,
   type ProviderDeleteResult,
   type ProxyBridgeSettingsSnapshot,
-  type IntegratedWebSearchSettingsSaveInput,
-  type IntegratedWebSearchSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
   type RouteProfileInput,
@@ -164,7 +180,6 @@ import {
   type TestProviderConnectionResult,
   type TestRoleRoutesRequest,
   type TestRoleRoutesResult,
-  type ThreadActivityLine,
   type ThreadAppliedDiffResult,
   type ThreadApprovalNotificationRequest,
   type ThreadApprovalNotificationResult,
@@ -174,9 +189,10 @@ import {
   type ThreadClarificationNotificationResult,
   type ThreadCompletionNotificationRequest,
   type ThreadCompletionNotificationResult,
-  type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadDeleteRequest,
   type ThreadDeleteResult,
+  type ThreadDismissPlanRequest,
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEditingRequest,
   type ThreadFollowUpEditingResult,
@@ -189,23 +205,15 @@ import {
   type ThreadFollowUpReorderRequest,
   type ThreadFollowUpUpdateRequest,
   type ThreadPendingPlan,
-  type ThreadProjectionFocusReport,
   type ThreadRetryFromMessageRequest,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewriteFromMessageRequest,
   type ThreadRollbackResult,
-  type ThreadRunProjectionDetailRequest,
-  type ThreadRunProjectionDetailResult,
-  type ThreadRunProjectionSnapshot,
   type ThreadSessionBootstrapResult,
   type ThreadStartRequest,
   type ThreadStartResult,
-  type ThreadSubagentMetricsSummary,
-  type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUpdateRuntimeConfigRequest,
-  type ThreadUsageLedgerEventView,
-  type ThreadUsageSnapshotResult,
   type ThreadUserMessageEditGetRequest,
   type ThreadUserMessageEditGetResult,
   type WorkflowSettingsSnapshot,
@@ -388,7 +396,9 @@ const api = {
   openContainingFolder(filePath: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenContainingFolder, filePath);
   },
-  getAssociatedApps(filePath: string): Promise<Array<{ name: string; bundleId: string; iconBase64?: string }>> {
+  getAssociatedApps(
+    filePath: string,
+  ): Promise<Array<{ name: string; bundleId: string; iconBase64?: string }>> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetAssociatedApps, filePath);
   },
   openFileWithApp(filePath: string, bundleId: string): Promise<void> {
@@ -469,6 +479,10 @@ const api = {
   },
   killTerminal(sessionId: string): Promise<{ killed: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.terminalKill, { sessionId });
+  },
+  /** Plain-text system clipboard contents, read in the main process (the renderer has no clipboard-read). */
+  readClipboardText(): Promise<string> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clipboardReadText);
   },
   onTerminalEvent(callback: (event: TerminalStreamEvent) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
@@ -1046,9 +1060,6 @@ const api = {
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);
   },
-  continueThread(request: ThreadContinueRequest): Promise<ThreadContinueResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadContinue, request);
-  },
   enqueueThreadFollowUp(request: ThreadFollowUpEnqueueRequest): Promise<ThreadFollowUpMutationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpEnqueue, request);
   },
@@ -1075,7 +1086,7 @@ const api = {
   reorderThreadFollowUps(request: ThreadFollowUpReorderRequest): Promise<ThreadFollowUpListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpReorder, request);
   },
-  cancelThread(request: ThreadCancelRequest | string): Promise<void> {
+  cancelThread(request: ThreadCancelRequest): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadCancel, request);
   },
   rollbackToThread(threadId: string): Promise<ThreadRollbackResult> {
@@ -1093,23 +1104,14 @@ const api = {
   getApprovedPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetApprovedPlan, threadId);
   },
-  getThreadUsageSnapshot(threadId: string): Promise<ThreadUsageSnapshotResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadGetUsageSnapshot, threadId);
-  },
-  listUsageLedgerEvents(threadId: string): Promise<ThreadUsageLedgerEventView[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadUsageLedgerEventsList, threadId);
-  },
   getPendingClarification(threadId: string): Promise<ClarificationRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationGetPending, threadId);
-  },
-  listThreadTodos(threadId: string): Promise<CoderTodoItem[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadTodoList, threadId);
   },
   submitClarification(payload: ClarificationSubmitPayload): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationSubmit, payload);
   },
-  dismissClarification(toolUseId: string): Promise<{ ok: true }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.clarificationDismiss, toolUseId);
+  dismissClarification(payload: ClarificationDismissPayload): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clarificationDismiss, payload);
   },
   getPendingBashApproval(threadId: string): Promise<BashApprovalRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.bashApprovalGetPending, threadId);
@@ -1123,8 +1125,8 @@ const api = {
   approvePlan(request: ThreadApprovePlanRequest): Promise<{ thread?: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadApprovePlan, request);
   },
-  dismissPlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadDismissPlan, threadId);
+  dismissPlan(request: ThreadDismissPlanRequest): Promise<{ thread?: ThreadSummary }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadDismissPlan, request);
   },
   getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.worktreeGetStatus, threadId);
@@ -1153,17 +1155,120 @@ const api = {
   releasePromptImages(request: PromptImageReleaseRequest): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.promptImageRelease, request);
   },
+  readPromptImageChunk(request: {
+    contextKey: string;
+    contentRef: string;
+    mediaType: PromptImageAttachment["mediaType"];
+    offset: number;
+    maxBytes?: number;
+  }): Promise<PromptImageReadChunkResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.promptImageReadChunk, request);
+  },
   sessionBootstrap(threadId: string): Promise<ThreadSessionBootstrapResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSessionBootstrap, threadId);
   },
-  deleteThread(threadId: string): Promise<ThreadDeleteResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadDelete, threadId);
+  conversationV2Capabilities(): Promise<ConversationCapabilities> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationCapabilities);
+  },
+  conversationV2Bootstrap(
+    conversationId: string,
+    options?: { pageSize?: number; maxBytes?: number },
+  ): Promise<ConversationBootstrap> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationBootstrap, {
+      conversationId,
+      ...options,
+    });
+  },
+  conversationV2Projection(conversationId: string): Promise<ConversationV2ProjectionExtras> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationProjection, { conversationId });
+  },
+  conversationV2MessagesPage(
+    conversationId: string,
+    options?: { beforeCursor?: string; limit?: number; maxBytes?: number },
+  ): Promise<ConversationMessagesPage> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationMessagesPage, {
+      conversationId,
+      ...options,
+    });
+  },
+  conversationV2DetailsPage(
+    conversationId: string,
+    runId: string,
+    options?: {
+      cursor?: string;
+      limit?: number;
+      maxBytes?: number;
+      toolCallId?: string;
+      agentInstanceId?: string;
+    },
+  ): Promise<ConversationDetailsPage> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationDetailsPage, {
+      conversationId,
+      runId,
+      ...options,
+    });
+  },
+  conversationV2ToolsPage(
+    conversationId: string,
+    runId: string,
+    options?: {
+      cursor?: string;
+      limit?: number;
+      maxBytes?: number;
+      toolCallId?: string;
+      agentInstanceId?: string;
+    },
+  ): Promise<ConversationToolsPage> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationToolsPage, {
+      conversationId,
+      runId,
+      ...options,
+    });
+  },
+  conversationV2Sync(request: {
+    conversationId: string;
+    storeEpoch: string;
+    afterSeq: number;
+    throughSeq?: number;
+    maxEvents?: number;
+    maxBytes?: number;
+  }): Promise<ConversationSyncPage> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationSync, request);
+  },
+  conversationV2Head(conversationId: string): Promise<ConversationHead> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationHead, conversationId);
+  },
+  conversationV2MessageGet(
+    conversationId: string,
+    messageId: string,
+  ): Promise<ConversationMessage | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationMessageGet, { conversationId, messageId });
+  },
+  conversationV2RunGet(conversationId: string, runId: string): Promise<ConversationRun | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationRunGet, { conversationId, runId });
+  },
+  conversationV2DetailGet(
+    conversationId: string,
+    itemId: string,
+  ): Promise<ConversationDetailItem | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationDetailGet, { conversationId, itemId });
+  },
+  conversationV2SendMessage(request: {
+    principalId: string;
+    conversationId: string;
+    clientCommandId: string;
+    text: string;
+    turnId?: string;
+    messageId?: string;
+    attachments?: PromptImageAttachment[];
+  }): Promise<ConversationSendMessageResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.conversationSendMessage, request);
+  },
+  deleteThread(request: ThreadDeleteRequest): Promise<ThreadDeleteResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadDelete, request);
   },
   regenerateThreadTitle(threadId: string): Promise<{ ok: true; regenerated: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRegenerateTitle, threadId);
-  },
-  listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
   },
   getUserMessageEdit(request: ThreadUserMessageEditGetRequest): Promise<ThreadUserMessageEditGetResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUserMessageEditGet, request);
@@ -1173,25 +1278,6 @@ const api = {
   },
   retryThreadFromMessage(request: ThreadRetryFromMessageRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRetryFromMessage, request);
-  },
-  getThreadRunProjection(
-    threadIdOrRequest: string | { threadId: string; mode?: "feed" | "full" },
-  ): Promise<ThreadRunProjectionSnapshot | undefined> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionGet, threadIdOrRequest);
-  },
-  getThreadRunProjectionDetail(
-    request: ThreadRunProjectionDetailRequest,
-  ): Promise<ThreadRunProjectionDetailResult | undefined> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionDetailGet, request);
-  },
-  reportThreadProjectionFocus(report: ThreadProjectionFocusReport): Promise<{ ok: true }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadProjectionFocusReport, report);
-  },
-  listSubagentSessions(threadId: string): Promise<ThreadSubagentSessionTiming[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentSessionsList, threadId);
-  },
-  listSubagentMetrics(threadId: string): Promise<ThreadSubagentMetricsSummary[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentMetricsList, threadId);
   },
   getStorageUsage(): Promise<StorageUsageSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.storageGetUsage);

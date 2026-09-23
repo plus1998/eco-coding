@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:eco_mobile/core/models/eco_types.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
-import 'package:eco_mobile/core/models/thread_run_projection.dart';
-import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/network/desktop_rpc.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/providers/app_providers.dart';
@@ -14,7 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('thread session pulls incremental projection after reconnect', () async {
+  test('thread session reconnect never calls retired projection RPCs', () async {
     final statuses = StreamController<CenterServerConnectionStatus>.broadcast();
     final events = StreamController<EcoEventEnvelope>.broadcast();
     final rpc = _TrackingDesktopRpc();
@@ -24,172 +22,35 @@ void main() {
         selectedDesktopIdProvider.overrideWith((ref) => 'desktop_1'),
         connectionStatusProvider.overrideWith((ref) => statuses.stream),
         ecoEventsProvider.overrideWith((ref) => events.stream),
-        // These cases exercise what happens around reconnects, not the Realtime
-        // bind gate itself (desktop_bind_ready_test.dart covers that). Without
-        // this the gate waits 12s for a bind channel the fake client never has,
-        // so bootstrap returns before issuing any projection RPC.
         desktopBindReadyOverrideProvider.overrideWithValue(true),
       ],
     );
+    final subscription = container.listen(
+      threadSessionProvider('thr_1'),
+      (_, _) {},
+      fireImmediately: true,
+    );
     addTearDown(() async {
+      subscription.close();
       container.dispose();
       await statuses.close();
       await events.close();
     });
-    var subscription = container.listen(
-      threadSessionProvider('thr_1'),
-      (_, _) {},
-      fireImmediately: true,
-    );
-    addTearDown(subscription.close);
 
-    await _waitUntil(() => rpc.projectionRequests.length == 1);
-
-    events.add(
-      const EcoEventEnvelope(
-        id: 'lifecycle_1',
-        kind: 'thread.stream',
-        source: 'desktop_1',
-        occurredAt: '2026-01-01T00:00:01.000Z',
-        threadId: 'thr_1',
-        payload: {
-          'threadId': 'thr_1',
-          'type': 'tool.started',
-          'message': 'working',
-        },
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    expect(rpc.projectionRequests, hasLength(1));
+    await _waitUntil(() => rpc.sessionBootstrapRequests >= 1);
+    expect(container.read(threadSessionProvider('thr_1')).thread?.id, 'thr_1');
+    expect(rpc.retiredProjectionCalls, 0);
 
     statuses.add(
-      const CenterServerConnectionStatus(state: EcoConnectionState.connecting),
+      const CenterServerConnectionStatus(state: EcoConnectionState.disconnected),
     );
     statuses.add(
       const CenterServerConnectionStatus(state: EcoConnectionState.connected),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(rpc.projectionRequests, hasLength(1));
-
-    statuses.add(
-      const CenterServerConnectionStatus(
-        state: EcoConnectionState.disconnected,
-      ),
-    );
-    statuses.add(
-      const CenterServerConnectionStatus(state: EcoConnectionState.connecting),
-    );
-    statuses.add(
-      const CenterServerConnectionStatus(state: EcoConnectionState.connected),
-    );
-    await _waitUntil(() => rpc.projectionRequests.length == 2);
-
-    // A transport-level drop (status disconnected → connected) re-bootstraps the
-    // whole session: the client cannot know which events it missed while the
-    // channel was gone, so it asks for the full projection (afterSequence null)
-    // instead of patching onto a base that may be arbitrarily stale.
-    expect(rpc.projectionRequests[1].afterSequence, isNull);
-    expect(rpc.projectionRequests[1].historyRevision, isNull);
-
-    events.add(
-      const EcoEventEnvelope(
-        id: 'presence_1',
-        kind: presenceDeviceEventKind,
-        source: 'center-server',
-        occurredAt: '2026-01-01T00:00:02.000Z',
-        payload: {
-          'onlineDeviceIds': ['desktop_1'],
-        },
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(rpc.projectionRequests, hasLength(2));
-
-    events.add(
-      const EcoEventEnvelope(
-        id: 'presence_2',
-        kind: presenceDeviceEventKind,
-        source: 'center-server',
-        occurredAt: '2026-01-01T00:00:03.000Z',
-        payload: {'onlineDeviceIds': <String>[]},
-      ),
-    );
-    events.add(
-      const EcoEventEnvelope(
-        id: 'presence_3',
-        kind: presenceDeviceEventKind,
-        source: 'center-server',
-        occurredAt: '2026-01-01T00:00:04.000Z',
-        payload: {
-          'onlineDeviceIds': ['desktop_1'],
-        },
-      ),
-    );
-    await _waitUntil(() => rpc.projectionRequests.length == 3);
-    // Desktop presence offline → online still takes the cheap path: the center
-    // channel never dropped, so the client just tops up from its own cursor.
-    expect(rpc.projectionRequests[2].afterSequence, 9);
-    expect(rpc.projectionRequests[2].historyRevision, 4);
-
-    subscription.close();
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    subscription = container.listen(
-      threadSessionProvider('thr_1'),
-      (_, _) {},
-      fireImmediately: true,
-    );
-    await _waitUntil(() => rpc.projectionRequests.length == 4);
-    expect(rpc.projectionRequests[3].afterSequence, isNull);
-    expect(rpc.projectionRequests[3].historyRevision, isNull);
+    await _waitUntil(() => rpc.sessionBootstrapRequests >= 2);
+    expect(rpc.retiredProjectionCalls, 0);
+    expect(container.read(threadSessionProvider('thr_1')).runProjection, isNull);
   });
-
-  test(
-    'thread session pulls when the first desktop connection follows a failed bootstrap',
-    () async {
-      final statuses =
-          StreamController<CenterServerConnectionStatus>.broadcast();
-      final events = StreamController<EcoEventEnvelope>.broadcast();
-      final rpc = _TrackingDesktopRpc(failFirstProjection: true);
-      final container = ProviderContainer(
-        overrides: [
-          desktopRpcProvider.overrideWithValue(rpc),
-          selectedDesktopIdProvider.overrideWith((ref) => 'desktop_1'),
-          connectionStatusProvider.overrideWith((ref) => statuses.stream),
-          ecoEventsProvider.overrideWith((ref) => events.stream),
-          // See the first case: the Realtime bind gate is not under test here.
-          desktopBindReadyOverrideProvider.overrideWithValue(true),
-        ],
-      );
-      final subscription = container.listen(
-        threadSessionProvider('thr_1'),
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(() async {
-        subscription.close();
-        container.dispose();
-        await statuses.close();
-        await events.close();
-      });
-
-      await _waitUntil(() => rpc.projectionRequests.length == 1);
-      events.add(
-        const EcoEventEnvelope(
-          id: 'presence_first_online',
-          kind: presenceDeviceEventKind,
-          source: 'center-server',
-          occurredAt: '2026-01-01T00:00:01.000Z',
-          payload: {
-            'onlineDeviceIds': ['desktop_1'],
-          },
-        ),
-      );
-
-      await _waitUntil(() => rpc.projectionRequests.length == 2);
-      expect(rpc.projectionRequests[1].afterSequence, isNull);
-      expect(rpc.projectionRequests[1].historyRevision, isNull);
-    },
-  );
 
   test(
     'composer recovery lookup failure does not replace the thread session',
@@ -321,22 +182,13 @@ void main() {
   );
 }
 
-class _ProjectionRequest {
-  const _ProjectionRequest({this.afterSequence, this.historyRevision});
-
-  final int? afterSequence;
-  final int? historyRevision;
-}
-
 class _TrackingDesktopRpc extends DesktopRpc {
-  _TrackingDesktopRpc({
-    this.failFirstProjection = false,
-    this.failComposerDraft = false,
-  }) : super(EcoCenterClient(store: CredentialStore()), 'desktop_1');
+  _TrackingDesktopRpc({this.failComposerDraft = false})
+    : super(EcoCenterClient(store: CredentialStore()), 'desktop_1');
 
-  final bool failFirstProjection;
   final bool failComposerDraft;
-  final projectionRequests = <_ProjectionRequest>[];
+  var sessionBootstrapRequests = 0;
+  var retiredProjectionCalls = 0;
   final composerDraftRequests = <String>[];
   final composerDraftDeletes = <({String contextKey, String revision})>[];
   ComposerDraftRecord? composerDraft;
@@ -346,72 +198,8 @@ class _TrackingDesktopRpc extends DesktopRpc {
 
   @override
   Future<ThreadSessionBootstrapResult> sessionBootstrap(String threadId) async {
+    sessionBootstrapRequests += 1;
     return const ThreadSessionBootstrapResult(thread: _thread);
-  }
-
-  @override
-  Future<ThreadRunProjectionSnapshot?> getRunProjection(
-    String threadId, {
-    String mode = 'full',
-    int? afterSequence,
-    int? historyRevision,
-  }) async {
-    projectionRequests.add(
-      _ProjectionRequest(
-        afterSequence: afterSequence,
-        historyRevision: historyRevision,
-      ),
-    );
-    if (failFirstProjection && projectionRequests.length == 1) {
-      throw StateError('desktop offline');
-    }
-    if (projectionRequests.length == 1) {
-      return const ThreadRunProjectionSnapshot(
-        threadId: 'thr_1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        agents: [
-          ThreadRunProjectionAgent(
-            agentId: 'agent_1',
-            role: 'coder',
-            kind: 'subagent',
-            status: 'active',
-            startedAt: '2026-01-01T00:00:00.000Z',
-            durationMs: 1,
-            timeline: [
-              ThreadRunProjectionTimelineItem(
-                id: 'agent_message_9',
-                sequence: 9,
-                eventType: 'message.final',
-                scope: 'agent',
-                text: 'agent cached',
-                at: '2026-01-01T00:00:00.000Z',
-              ),
-            ],
-          ),
-        ],
-        sourceEventCount: 1,
-        historyRevision: 4,
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'message_7',
-            sequence: 7,
-            eventType: 'message.final',
-            scope: 'main',
-            text: 'cached',
-            at: '2026-01-01T00:00:00.000Z',
-          ),
-        ],
-      );
-    }
-    return const ThreadRunProjectionSnapshot(
-      threadId: 'thr_1',
-      status: 'running',
-      generatedAt: '2026-01-01T00:00:01.000Z',
-      agents: [],
-      sourceEventCount: 1,
-      historyRevision: 4,
-    );
   }
 
   @override
@@ -440,10 +228,6 @@ class _TrackingDesktopRpc extends DesktopRpc {
   @override
   Future<List<ThreadPendingFollowUp>> followUpList(String threadId) async => [];
 
-  @override
-  Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(
-    String threadId,
-  ) async => const ThreadUsageSnapshotResult();
 }
 
 const _thread = ThreadSummary(

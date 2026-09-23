@@ -4,7 +4,7 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
-import { isProjectionUserPromptItem } from "./thread-run-projection-view";
+import { isProjectionUserPromptItem } from "./conversation-v2-projection-view";
 
 export type CutProjectionForRewriteInput = {
   activityLineId: string;

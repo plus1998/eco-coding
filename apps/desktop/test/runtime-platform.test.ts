@@ -26,6 +26,9 @@ describe("runtime-platform", () => {
 
   test("getRuntimePlatformLabel localizes the unknown platform fallback", async () => {
     const previousNavigator = globalThis.navigator;
+    // Restored in the `finally`: the renderer's language is process-wide, and leaving it
+    // in English failed every later file that asserts a Chinese string.
+    const previousLanguage = i18n.resolvedLanguage ?? i18n.language;
     await i18n.changeLanguage("en-US");
     Object.defineProperty(globalThis, "navigator", {
       configurable: true,
@@ -39,6 +42,9 @@ describe("runtime-platform", () => {
         configurable: true,
         value: previousNavigator,
       });
+      if (i18n.language !== previousLanguage) {
+        await i18n.changeLanguage(previousLanguage);
+      }
     }
   });
 });

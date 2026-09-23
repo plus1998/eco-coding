@@ -238,11 +238,11 @@ function appendSubagentMissionAttributedEvent(
     parentToolUseId?: string;
   },
 ): void {
-  if (typeof store.appendThreadRunEvent !== "function") {
+  if (typeof store.appendConversationRuntimeEvent !== "function") {
     return;
   }
   try {
-    store.appendThreadRunEvent(
+    store.appendConversationRuntimeEvent(
       buildSubagentMissionAttributedRunEvent({
         ...input,
         observedAt: new Date().toISOString(),
@@ -270,11 +270,11 @@ function appendSubagentLifecycleEvent(
     delegationSummary?: string;
   },
 ): void {
-  if (typeof store.appendThreadRunEvent !== "function") {
+  if (typeof store.appendConversationRuntimeEvent !== "function") {
     return;
   }
   try {
-    store.appendThreadRunEvent(
+    store.appendConversationRuntimeEvent(
       buildSubagentLifecycleRunEvent({
         ...input,
         observedAt: new Date().toISOString(),

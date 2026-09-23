@@ -1,11 +1,12 @@
-import type { CoreKind } from "@eco/runtime/core-runtime";
 import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime/acp-prompt";
-import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
+import type { CoreKind } from "@eco/runtime/core-runtime";
 import {
   listPlanDelegationAgents,
   type PlanDelegationAgentOption,
   type PlanExecutionTarget,
 } from "@eco/runtime/forced-plan-delegation";
+import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
+import { type ConversationSyncEffect, type ConversationTodo, stableHash } from "@eco/shared";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import {
   Activity,
@@ -73,10 +74,9 @@ import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import { type BashReviewMode, normalizeBashReviewMode } from "../shared/bash-review-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import type { BrowserSettingsSnapshot } from "../shared/browser";
-import type { ComputerUseSettingsSnapshot } from "../shared/computer-use";
-import type { IntegrationId } from "../shared/integrations";
 import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
 import { deriveSkillsEnabled, type ProjectSkillsSettingsSnapshot } from "../shared/composer-skills-settings";
+import type { ComputerUseSettingsSnapshot } from "../shared/computer-use";
 import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
   HOME_PROJECT_DISPLAY_NAME,
@@ -87,10 +87,10 @@ import {
   pathToName,
   resolveProjectName,
 } from "../shared/home-project";
-import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
 import type { HtmlHostArtifact } from "../shared/html-host";
-import { openPublishedHtmlInBrowser } from "./browser-link";
+import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
+import type { IntegrationId } from "../shared/integrations";
 import {
   type AppMenuCommand,
   type AsrProfileSaveInput,
@@ -108,14 +108,13 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerSyncDomain,
   type ClarificationRequest,
-  type EcoConnectDeepLink,
-  parseEcoConnectDeepLink,
   type CoderTodoItem,
   type CoreAvailabilitySnapshot,
   type CursorAgentsListResult,
   type CursorModelOption,
   deriveMcpServersEnabled,
   deriveSubagentEnabledFromSnapshot,
+  type EcoConnectDeepLink,
   type FollowUpDeliveryMode,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
@@ -123,6 +122,8 @@ import {
   type ImageDisplayArtifact,
   type ImageGenerationArtifact,
   type ImageGenerationSettingsSnapshot,
+  type IntegratedWebSearchSettingsSaveInput,
+  type IntegratedWebSearchSettingsSnapshot,
   type IntegrationAvailabilitySnapshot,
   type LinkAgentsSkillsResult,
   listEnabledGlobalMcpServerKeys,
@@ -138,9 +139,9 @@ import {
   type ProjectIntegrationsSettingsSnapshot,
   type ProjectMcpSettingsSnapshot,
   type ProjectOrchestrationSettingsSnapshot,
+  type PromptImageAttachment,
   type ProxyBridgeSettingsSnapshot,
-  type IntegratedWebSearchSettingsSaveInput,
-  type IntegratedWebSearchSettingsSnapshot,
+  parseEcoConnectDeepLink,
   type ResolvedOrchestrationSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -152,26 +153,20 @@ import {
   type SubagentSelection,
   type TerminalSessionView,
   type ThreadActivityRewindTarget,
-  type ThreadBillingSnapshot,
-  type ThreadContextSnapshot,
   type ThreadLiveEvent,
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
-  type ThreadRunProjectionDetailKind,
-  type ThreadRunProjectionSnapshot,
   type ThreadRuntimeConfig,
   type ThreadStatus,
   type ThreadSubagentMetricsSummary,
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
-  type ThreadUsageSnapshot,
   type VisionModelSelection,
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import type { AppLocalePreference } from "../shared/locale";
-import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import {
   defaultNotificationSettings,
   type NotificationSettingsSnapshot,
@@ -218,6 +213,7 @@ import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
 import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
+import { buildConversationV2OnlyProjection } from "./ActivityLogView";
 import type { PendingMainAgentConfigCreateSeed } from "./AgentCompositionResourcesSection";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
@@ -242,10 +238,14 @@ import {
   taskPanelMaxWidthForPane,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
-import { isStalePendingBashApprovalError, shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
+import {
+  isStalePendingBashApprovalError,
+  shouldClearPendingBashApproval,
+  shouldClearPendingPlanApproval,
+} from "./approval-ui-state";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
-import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT, openPublishedHtmlInBrowser } from "./browser-link";
 import { browserStateStore, useBrowserInstanceIds } from "./browser-state-store";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
@@ -297,9 +297,39 @@ import {
   filterSkillsForSlash,
   parseSlashQuery,
 } from "./composer-skills";
-import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
+import {
+  buildThreadRunProjectionViewModel,
+  isProjectionUserPromptItem,
+  isThreadAutoCompactSuspended,
+  isThreadContextCompactionInFlight,
+  isThreadPromptCacheInvalidated,
+  projectionItemToDetailBlock,
+  type ThreadRunProjectionMainFeedEntry,
+} from "./conversation-v2-projection-view";
+import {
+  applyConversationV2Effect,
+  applyConversationV2Effects,
+  type ConversationV2RendererState,
+  catchUpConversationV2RendererState,
+  conversationV2ToolRunIdsForHydration,
+  installConversationV2Bootstrap,
+  installConversationV2ProjectionExtras,
+  mergeConversationV2OlderPage,
+  mergeConversationV2ToolPage,
+} from "./conversation-v2-renderer-state";
+import { FeedStatusDivider } from "./FeedStatusDivider";
+import { FullAccessNotice } from "./FullAccessNotice";
 import { dispatchFeedScrollToAnchor } from "./feed-virtual-sections";
 import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
+import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import {
+  advanceImageGalleryQueue,
+  appendImageGalleryItems,
+  type ImageGalleryQueueItem,
+  imageGalleryDisplayItem,
+  imageGalleryGenerationItem,
+} from "./image-gallery-float-state";
+import { ImageLightbox } from "./image-lightbox";
 import {
   LazyActivityLogView,
   LazyAsrSettingsPanel,
@@ -325,25 +355,7 @@ import {
   LazyTerminalPanel,
   SuspensePanel,
 } from "./lazy-app-panels";
-import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
-import {
-  advanceImageGalleryQueue,
-  appendImageGalleryItems,
-  imageGalleryDisplayItem,
-  imageGalleryGenerationItem,
-  type ImageGalleryQueueItem,
-} from "./image-gallery-float-state";
-import { ImageLightbox } from "./image-lightbox";
-import {
-  applyLocalStreamUpdatesToProjection,
-  clearLocalStreamUpdates,
-  publishLocalStreamUpdate,
-  takeLocalStreamUpdates,
-  useLocalStreamProjection,
-} from "./local-stream-projection";
 import type { ModelsSettingsTab } from "./ModelsSettingsPanel";
-import { FullAccessNotice } from "./FullAccessNotice";
-import { FeedStatusDivider } from "./FeedStatusDivider";
 import {
   diagnoseOrchestrationSnapshotReadiness,
   invalidOrchestrationFieldsFromIssues,
@@ -369,7 +381,6 @@ import {
   readStoredPromptCacheTipPreferences,
 } from "./prompt-cache-tip-preferences";
 import type { RequestFailureRetryTarget } from "./request-failure-retry";
-import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SettingsSyncControl } from "./SettingsSyncControl";
@@ -439,15 +450,6 @@ import {
   removeRecordKeys,
 } from "./thread-projection-cache-policy";
 import {
-  buildThreadRunProjectionViewModel,
-  isProjectionUserPromptItem,
-  isThreadAutoCompactSuspended,
-  isThreadContextCompactionInFlight,
-  isThreadPromptCacheInvalidated,
-  projectionItemToDetailBlock,
-  type ThreadRunProjectionMainFeedEntry,
-} from "./thread-run-projection-view";
-import {
   persistTokenSpeedPreferences,
   readStoredTokenSpeedPreferences,
   type TokenSpeedPreferences,
@@ -477,6 +479,7 @@ import "./styles.css";
 import "./theme-overrides.css";
 
 const TASK_PANEL_WIDTH_STORAGE_KEY = "eco.task-panel.width";
+const CONVERSATION_V2_PENDING_EVENT_LIMIT = 512;
 
 function readTaskPanelWidth(): number {
   try {
@@ -504,13 +507,23 @@ function saveTaskPanelWidth(width: number): void {
   }
 }
 
+const EXPECTED_NOTIFICATION_NOOP_REASONS = new Set([
+  "unsupported",
+  "preference_disabled",
+  "thread_not_found",
+  "thread_not_completed",
+  "notification_content_unavailable",
+  "approval_not_pending",
+  "clarification_not_pending",
+]);
+
 function reportDesktopNotification(
   request: Promise<{ shown: boolean; reason?: string }>,
   notificationLabel: string,
 ): void {
   void request.then(
     (result) => {
-      if (!result.shown) {
+      if (!result.shown && (!result.reason || !EXPECTED_NOTIFICATION_NOOP_REASONS.has(result.reason))) {
         console.error(`[eco] ${notificationLabel} notification was not shown: ${result.reason}`);
       }
     },
@@ -596,9 +609,7 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
 };
 
 /** Sidebar presence: green online, yellow reconnecting, red offline. */
-function sidebarCenterPresenceDotKind(
-  state: CenterServerConnectionState,
-): "online" | "pending" | "error" {
+function sidebarCenterPresenceDotKind(state: CenterServerConnectionState): "online" | "pending" | "error" {
   if (state === "connected") {
     return "online";
   }
@@ -1291,14 +1302,7 @@ function App() {
             id: "integratedWebSearch",
             label: t("settings.integratedWebSearch.title"),
             icon: Search,
-            keywords: [
-              "web search",
-              "tavily",
-              "brave",
-              "doubao",
-              "网络搜索",
-              "Integrated Web Search",
-            ],
+            keywords: ["web search", "tavily", "brave", "doubao", "网络搜索", "Integrated Web Search"],
           },
         ],
       },
@@ -1324,15 +1328,7 @@ function App() {
             id: "proxy",
             label: t("settings.proxy"),
             icon: Globe2,
-            keywords: [
-              "proxy",
-              "代理",
-              "socks5",
-              "http",
-              "upgrade",
-              "升级",
-              "outbound",
-            ],
+            keywords: ["proxy", "代理", "socks5", "http", "upgrade", "升级", "outbound"],
           },
         ],
       },
@@ -1476,6 +1472,9 @@ function App() {
   const [isStarting, setIsStarting] = useState(false);
   const [planActionBusy, setPlanActionBusy] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
+  const threadDeleteCommandsRef = useRef(
+    new Map<string, { clientCommandId: string; expectedHistoryRevision: number }>(),
+  );
   const [pendingPlansByThread, setPendingPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
   const pendingPlansByThreadRef = useRef<Record<string, ThreadPendingPlan>>({});
   const [planDelegationMessagesByThread, setPlanDelegationMessagesByThread] = useState<
@@ -1514,46 +1513,168 @@ function App() {
   }, []);
   const showAppMessageSuccessRef = useRef(showAppMessageSuccess);
   showAppMessageSuccessRef.current = showAppMessageSuccess;
-  const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
-    Record<string, ThreadSubagentSessionTiming[]>
+  const [conversationV2ByThread, setConversationV2ByThread] = useState<
+    Record<string, ConversationV2RendererState>
   >({});
-  const [subagentMetricsByThread, setSubagentMetricsByThread] = useState<
-    Record<string, ThreadSubagentMetricsSummary[]>
-  >({});
-  const [runProjectionByThread, setRunProjectionByThread] = useState<
-    Record<string, ThreadRunProjectionSnapshot>
-  >({});
-  const runProjectionByThreadRef = useRef(runProjectionByThread);
-  runProjectionByThreadRef.current = runProjectionByThread;
-  const pendingRewriteHistoryRevisionByThreadRef = useRef(new Map<string, number>());
+  const conversationV2ByThreadRef = useRef(conversationV2ByThread);
+  conversationV2ByThreadRef.current = conversationV2ByThread;
+  const conversationV2PendingEventsRef = useRef(new Map<string, ConversationSyncEffect[]>());
+  const conversationV2PendingOverflowRef = useRef(new Set<string>());
+  const conversationV2LoadingThreadsRef = useRef(new Set<string>());
+  const conversationV2LoadGenerationRef = useRef(new Map<string, number>());
+  const conversationV2RecoveryRequestsRef = useRef(new Set<string>());
+  const conversationV2RecoveryInFlightRef = useRef(new Set<string>());
+  const conversationV2DuplicateVerificationInFlightRef = useRef(new Set<string>());
+  const conversationV2ProjectionExtrasInFlightRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const readSnapshot = () =>
+      Object.fromEntries(
+        Object.entries(conversationV2ByThreadRef.current).map(([threadId, state]) => [
+          threadId,
+          {
+            storeEpoch: state.storeEpoch,
+            appliedSeq: state.appliedSeq,
+            historyRevision: state.historyRevision,
+            messageCount: state.messages.size,
+            runCount: state.runs.size,
+            toolCount: state.tools.size,
+            bufferedEffectSeqs: (conversationV2PendingEventsRef.current.get(threadId) ?? []).map(
+              (effect) => effect.seq,
+            ),
+            loading: conversationV2LoadingThreadsRef.current.has(threadId),
+            recoveryRequested: conversationV2RecoveryRequestsRef.current.has(threadId),
+            recoveryInFlight: conversationV2RecoveryInFlightRef.current.has(threadId),
+          },
+        ]),
+      );
+    window.__ecoConversationV2RendererSnapshot = readSnapshot;
+    return () => {
+      if (window.__ecoConversationV2RendererSnapshot === readSnapshot) {
+        delete window.__ecoConversationV2RendererSnapshot;
+      }
+    };
+  }, []);
+  const [conversationV2RecoveryVersion, setConversationV2RecoveryVersion] = useState(0);
+  const queueConversationV2Recovery = useCallback((threadId: string) => {
+    if (conversationV2RecoveryRequestsRef.current.has(threadId)) {
+      return;
+    }
+    conversationV2RecoveryRequestsRef.current.add(threadId);
+    setConversationV2RecoveryVersion((version) => version + 1);
+  }, []);
+  const bufferConversationV2Event = useCallback(
+    (threadId: string, effect: ConversationSyncEffect) => {
+      const pending = conversationV2PendingEventsRef.current.get(threadId) ?? [];
+      if (pending.length < CONVERSATION_V2_PENDING_EVENT_LIMIT) {
+        pending.push(effect);
+        conversationV2PendingEventsRef.current.set(threadId, pending);
+      } else {
+        conversationV2PendingOverflowRef.current.add(threadId);
+      }
+      if (!conversationV2LoadingThreadsRef.current.has(threadId)) {
+        queueConversationV2Recovery(threadId);
+      }
+    },
+    [queueConversationV2Recovery],
+  );
+  const nextConversationV2LoadGeneration = useCallback((threadId: string) => {
+    const next = (conversationV2LoadGenerationRef.current.get(threadId) ?? 0) + 1;
+    conversationV2LoadGenerationRef.current.set(threadId, next);
+    return next;
+  }, []);
+  const mergeConversationV2LoadedState = useCallback(
+    (threadId: string, recovered: ConversationV2RendererState): boolean => {
+      const latest = conversationV2ByThreadRef.current[threadId];
+      const base =
+        latest && latest.storeEpoch === recovered.storeEpoch && latest.appliedSeq > recovered.appliedSeq
+          ? latest
+          : recovered;
+      const pending = conversationV2PendingEventsRef.current.get(threadId) ?? [];
+      let merged = base;
+      try {
+        for (const effect of [...pending].sort((left, right) => left.seq - right.seq)) {
+          merged = applyConversationV2Effect(merged, effect);
+        }
+      } catch (error) {
+        console.warn("[eco] conversation V2 renderer buffered effect deferred:", error);
+        queueConversationV2Recovery(threadId);
+        return false;
+      }
+      setConversationV2ByThread((current) => {
+        const currentState = current[threadId];
+        if (
+          currentState &&
+          currentState.storeEpoch === merged.storeEpoch &&
+          currentState.appliedSeq > merged.appliedSeq
+        ) {
+          return current;
+        }
+        return { ...current, [threadId]: merged };
+      });
+      // IPC can deliver several committed effects in the same macrotask. React has not
+      // rendered the first setState yet when the next notification arrives, so the ref
+      // must advance synchronously or the second effect is folded against a stale seq
+      // and is incorrectly reported as a gap.
+      const currentRefState = conversationV2ByThreadRef.current[threadId];
+      if (
+        !currentRefState ||
+        currentRefState.storeEpoch !== merged.storeEpoch ||
+        currentRefState.appliedSeq <= merged.appliedSeq
+      ) {
+        conversationV2ByThreadRef.current = {
+          ...conversationV2ByThreadRef.current,
+          [threadId]: merged,
+        };
+      }
+      const retained = pending.filter((effect) => effect.seq > merged.appliedSeq);
+      if (retained.length > 0) {
+        conversationV2PendingEventsRef.current.set(threadId, retained);
+      } else {
+        conversationV2PendingEventsRef.current.delete(threadId);
+      }
+      return conversationV2PendingOverflowRef.current.delete(threadId) || retained.length > 0;
+    },
+    [queueConversationV2Recovery],
+  );
+  const refreshConversationV2ProjectionExtras = useCallback((threadId: string) => {
+    const api = window.eco;
+    const current = conversationV2ByThreadRef.current[threadId];
+    if (
+      !current ||
+      typeof api?.conversationV2Projection !== "function" ||
+      conversationV2ProjectionExtrasInFlightRef.current.has(threadId)
+    ) {
+      return;
+    }
+    conversationV2ProjectionExtrasInFlightRef.current.add(threadId);
+    void api
+      .conversationV2Projection(threadId)
+      .then((extras) => {
+        const latest = conversationV2ByThreadRef.current[threadId];
+        if (!latest || latest.storeEpoch !== current.storeEpoch) {
+          return;
+        }
+        const next = installConversationV2ProjectionExtras(latest, extras);
+        setConversationV2ByThread((states) => {
+          const state = states[threadId];
+          if (!state || state.storeEpoch !== next.storeEpoch || state.appliedSeq !== next.appliedSeq) {
+            return state && state.appliedSeq > next.appliedSeq ? states : { ...states, [threadId]: next };
+          }
+          return { ...states, [threadId]: next };
+        });
+      })
+      .catch((error: unknown) => {
+        console.warn("[eco] conversation V2 projection extras refresh failed:", error);
+      })
+      .finally(() => {
+        conversationV2ProjectionExtrasInFlightRef.current.delete(threadId);
+      });
+  }, []);
   const recentlyViewedThreadIdsRef = useRef<string[]>([]);
   const projectionEvictTimersRef = useRef(new Map<string, number>());
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
-  const applyThreadRunProjectionUpdate = useCallback(
-    (
-      threadId: string,
-      current: ThreadRunProjectionSnapshot | undefined,
-      incoming: ThreadRunProjectionSnapshot,
-      options?: { preserveHistory?: boolean },
-    ): ThreadRunProjectionSnapshot => {
-      const pendingRevision = pendingRewriteHistoryRevisionByThreadRef.current.get(threadId);
-      if (pendingRevision !== undefined) {
-        const incomingRevision =
-          typeof incoming.historyRevision === "number" && Number.isFinite(incoming.historyRevision)
-            ? incoming.historyRevision
-            : 0;
-        if (incomingRevision < pendingRevision) {
-          return current ?? incoming;
-        }
-        pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
-        // Hard replace so merge cannot reattach pre-rewrite ghosts under the same revision.
-        return incoming;
-      }
-      return mergeThreadRunProjectionUpdate(current, incoming, options);
-    },
-    [],
-  );
   const syncActivityFeedBootRef = useRef<() => void>(() => {});
   const tryAdvanceActivityFeedBootRef = useRef<() => void>(() => {});
   const [feedProjectionSettledByThread, setFeedProjectionSettledByThread] = useState<Record<string, boolean>>(
@@ -1612,21 +1733,22 @@ function App() {
       }
 
       const needsBoot = Boolean(nextThreadId && !options?.immediate);
-      if (!needsBoot) {
+      if (!needsBoot || !nextThreadId) {
         feedThreadIdRef.current = nextThreadId;
         setFeedThreadId(nextThreadId);
         syncActivityFeedBootForThread(nextThreadId);
         return;
       }
 
-      beginActivityFeedBoot(nextThreadId);
+      const bootThreadId = nextThreadId;
+      beginActivityFeedBoot(bootThreadId);
       pendingFeedThreadSwitchFrameRef.current = window.requestAnimationFrame(() => {
         pendingFeedThreadSwitchFrameRef.current = undefined;
-        if (selectedThreadIdRef.current !== nextThreadId) {
+        if (selectedThreadIdRef.current !== bootThreadId) {
           return;
         }
-        feedThreadIdRef.current = nextThreadId;
-        setFeedThreadId(nextThreadId);
+        feedThreadIdRef.current = bootThreadId;
+        setFeedThreadId(bootThreadId);
         tryAdvanceActivityFeedBootRef.current();
       });
     },
@@ -1662,11 +1784,6 @@ function App() {
     },
     [applyFeedThreadSelection, commitSidebarThreadSelection],
   );
-  const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
-  const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
-  const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
-  const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
-  const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
@@ -1742,20 +1859,17 @@ function App() {
   const imageGalleryEnqueuedRef = useRef<Set<string>>(new Set());
   const activeThreadIdRef = useRef<string | undefined>(undefined);
 
-  const enqueueImageGalleryItems = useCallback(
-    (items: ImageGalleryQueueItem[]) => {
-      const fresh = items.filter((item) => !imageGalleryEnqueuedRef.current.has(item.key));
-      if (fresh.length === 0) {
-        return;
-      }
-      for (const item of fresh) {
-        imageGalleryEnqueuedRef.current.add(item.key);
-      }
-      setImageGalleryQueue((current) => appendImageGalleryItems(current, fresh));
-      setImageGalleryOpen(true);
-    },
-    [],
-  );
+  const enqueueImageGalleryItems = useCallback((items: ImageGalleryQueueItem[]) => {
+    const fresh = items.filter((item) => !imageGalleryEnqueuedRef.current.has(item.key));
+    if (fresh.length === 0) {
+      return;
+    }
+    for (const item of fresh) {
+      imageGalleryEnqueuedRef.current.add(item.key);
+    }
+    setImageGalleryQueue((current) => appendImageGalleryItems(current, fresh));
+    setImageGalleryOpen(true);
+  }, []);
 
   const advanceImageGallery = useCallback(() => {
     setImageGalleryQueue((current) => advanceImageGalleryQueue(current));
@@ -1794,6 +1908,8 @@ function App() {
   taskDrawerOpenRef.current = taskDrawerOpen;
   const taskPanelActiveTabRef = useRef(taskPanelActiveTab);
   taskPanelActiveTabRef.current = taskPanelActiveTab;
+  /** Last `activateBrowserId` already turned into a tab switch — main keeps the field set. */
+  const handledActivateBrowserIdRef = useRef<string | undefined>(undefined);
   const taskPanelUiByThreadRef = useRef<Record<string, TaskPanelSessionUiState>>({});
   const taskPanelUiThreadIdRef = useRef<string | undefined>(undefined);
   /** After startThread from landing, keep live panel tabs (browsers opened before first send). */
@@ -1973,7 +2089,6 @@ function App() {
     void initializationResult.then(() => notifyRendererReady());
 
     let threadListRefreshTimer: number | undefined;
-    let runProjectionFullRefreshTimer: number | undefined;
     const ensureThreadListed = (threadId: string) => {
       setThreads((current) => {
         if (current.some((thread) => thread.id === threadId)) {
@@ -1989,57 +2104,6 @@ function App() {
         return current;
       });
     };
-    const scheduleSelectedRunProjectionFullRefresh = (threadId: string) => {
-      if (
-        selectedThreadIdRef.current !== threadId ||
-        typeof window.eco?.getThreadRunProjection !== "function"
-      ) {
-        return;
-      }
-      if (runProjectionFullRefreshTimer !== undefined) {
-        window.clearTimeout(runProjectionFullRefreshTimer);
-      }
-      runProjectionFullRefreshTimer = window.setTimeout(() => {
-        runProjectionFullRefreshTimer = undefined;
-        if (
-          selectedThreadIdRef.current !== threadId ||
-          typeof window.eco?.getThreadRunProjection !== "function"
-        ) {
-          return;
-        }
-        void window.eco.getThreadRunProjection({ threadId, mode: "feed" }).then((projection) => {
-          if (!projection || selectedThreadIdRef.current !== threadId) {
-            return;
-          }
-          setRunProjectionByThread((current) => ({
-            ...current,
-            [threadId]: applyThreadRunProjectionUpdate(threadId, current[threadId], projection),
-          }));
-        });
-      }, 300);
-    };
-    const promoteAndClearLocalStreamUpdates = (threadId: string) => {
-      const updates = takeLocalStreamUpdates(threadId);
-      if (updates.length === 0) {
-        return;
-      }
-      setRunProjectionByThread((current) => {
-        const existing = current[threadId];
-        if (!existing) {
-          return current;
-        }
-        return {
-          ...current,
-          [threadId]: applyLocalStreamUpdatesToProjection(
-            existing,
-            // Promote as settled finals so empty/partial streams do not linger as
-            // forever-streaming「正在思考」/ narrative deltas after the turn ends.
-            updates.map((update) => ({ ...update, streaming: false })),
-          ),
-        };
-      });
-    };
-
     const openPendingNotificationThread = async (requestedThreadId?: string) => {
       const pendingThreadId = await eco.consumePendingThreadOpen();
       const threadId = requestedThreadId?.trim() || pendingThreadId;
@@ -2135,6 +2199,77 @@ function App() {
     };
 
     const unsubscribe = window.eco.onThreadEvent((event) => {
+      const conversationEvent = readConversationV2SyncEvent(event);
+      if (conversationEvent) {
+        const threadId = conversationEvent.conversationId;
+        const existing = conversationV2ByThreadRef.current[threadId];
+        if (!existing || existing.storeEpoch !== conversationEvent.storeEpoch) {
+          if (threadId === selectedThreadIdRef.current) {
+            bufferConversationV2Event(threadId, conversationEvent.effect);
+          }
+          return;
+        }
+        if (
+          conversationEvent.effect.seq <= existing.appliedSeq &&
+          !existing.effectHashes.has(conversationEvent.effect.seq)
+        ) {
+          const verificationKey = `${threadId}:${conversationEvent.storeEpoch}:${conversationEvent.effect.seq}`;
+          if (!conversationV2DuplicateVerificationInFlightRef.current.has(verificationKey)) {
+            conversationV2DuplicateVerificationInFlightRef.current.add(verificationKey);
+            void verifyConversationV2DuplicateEffect(threadId, existing, conversationEvent.effect)
+              .catch((error: unknown) => {
+                console.warn("[eco] conversation V2 duplicate effect verification failed:", error);
+                queueConversationV2Recovery(threadId);
+              })
+              .finally(() => {
+                conversationV2DuplicateVerificationInFlightRef.current.delete(verificationKey);
+              });
+          }
+          return;
+        }
+        let nextAppliedSeq: number;
+        try {
+          nextAppliedSeq = applyConversationV2Effect(existing, conversationEvent.effect).appliedSeq;
+        } catch (error) {
+          // A gap/conflict is recoverable by an authoritative bootstrap and
+          // range sync. Queue that side effect outside any state updater so
+          // React may replay state updates without starting duplicate reads.
+          console.warn("[eco] conversation V2 renderer effect deferred:", error);
+          if (threadId === selectedThreadIdRef.current) {
+            bufferConversationV2Event(threadId, conversationEvent.effect);
+          }
+          return;
+        }
+        const appliedState = applyConversationV2Effect(existing, conversationEvent.effect);
+        // Keep the imperative cursor in lockstep with the durable notification stream.
+        // Multiple IPC notifications may arrive before React commits the prior state.
+        const currentRefState = conversationV2ByThreadRef.current[threadId];
+        if (
+          !currentRefState ||
+          currentRefState.storeEpoch !== appliedState.storeEpoch ||
+          currentRefState.appliedSeq <= appliedState.appliedSeq
+        ) {
+          conversationV2ByThreadRef.current = {
+            ...conversationV2ByThreadRef.current,
+            [threadId]: appliedState,
+          };
+        }
+        setConversationV2ByThread((current) => {
+          const latest = current[threadId];
+          if (!latest || latest.storeEpoch !== conversationEvent.storeEpoch) {
+            return current;
+          }
+          if (latest.appliedSeq >= nextAppliedSeq) {
+            return current;
+          }
+          return {
+            ...current,
+            [threadId]: appliedState,
+          };
+        });
+        refreshConversationV2ProjectionExtras(threadId);
+        return;
+      }
       if (!isThreadLiveEvent(event)) {
         return;
       }
@@ -2148,14 +2283,15 @@ function App() {
 
       ensureThreadListed(event.threadId);
 
-      if (event.type === "thread.local_stream_updated" && event.localStream) {
-        publishLocalStreamUpdate(event.localStream);
-        return;
-      }
-
       if (event.type === "thread.deleted") {
-        clearLocalStreamUpdates(event.threadId);
         clearThreadClientState(event.threadId);
+        conversationV2PendingEventsRef.current.delete(event.threadId);
+        conversationV2PendingOverflowRef.current.delete(event.threadId);
+        conversationV2LoadGenerationRef.current.delete(event.threadId);
+        conversationV2RecoveryRequestsRef.current.delete(event.threadId);
+        conversationV2RecoveryInFlightRef.current.delete(event.threadId);
+        conversationV2LoadingThreadsRef.current.delete(event.threadId);
+        setConversationV2ByThread((current) => removeRecordKey(current, event.threadId));
         setTitleGeneratingThreadIds((current) => {
           if (!current.has(event.threadId)) {
             return current;
@@ -2175,7 +2311,6 @@ function App() {
         event.type === "thread.blocked" ||
         event.type === "thread.unstarted_turn_discarded"
       ) {
-        promoteAndClearLocalStreamUpdates(event.threadId);
       }
 
       if (event.type === "thread.unstarted_turn_discarded") {
@@ -2207,26 +2342,6 @@ function App() {
         );
       }
 
-      if (event.type === "thread.run_projection_updated" && event.projection) {
-        const preserveHistory = userDetachedFromBottomRef.current;
-        setRunProjectionByThread((current) => {
-          const merged = applyThreadRunProjectionUpdate(
-            event.threadId,
-            current[event.threadId],
-            event.projection!,
-            {
-              preserveHistory,
-            },
-          );
-          return {
-            ...current,
-            [event.threadId]: merged,
-          };
-        });
-        scheduleSelectedRunProjectionFullRefresh(event.threadId);
-        return;
-      }
-
       if (event.titleGenerating !== undefined) {
         setTitleGeneratingThreadIds((current) => {
           const next = new Set(current);
@@ -2255,14 +2370,8 @@ function App() {
         return;
       }
 
-      if (event.todoList) {
-        setTodosByThread((current) => ({
-          ...current,
-          [event.threadId]: event.todoList ?? [],
-        }));
-        if (event.type === "thread.todos_updated") {
-          return;
-        }
+      if (event.type === "thread.todos_updated") {
+        return;
       }
 
       if (shouldUpdateThreadSummaryFromLiveEvent(event.type)) {
@@ -2279,9 +2388,7 @@ function App() {
               status: statusFromLiveEvent(event.type, thread.status),
               updatedAt: new Date().toISOString(),
               ...(cancelling ? { cancelling: true } : {}),
-              ...(typeof event.followUpQueuePaused === "boolean"
-                ? { followUpQueuePaused: event.followUpQueuePaused || undefined }
-                : {}),
+              ...(event.followUpQueuePaused === true ? { followUpQueuePaused: true } : {}),
             };
           }),
         );
@@ -2291,7 +2398,7 @@ function App() {
             thread.id === event.threadId
               ? {
                   ...thread,
-                  followUpQueuePaused: event.followUpQueuePaused || undefined,
+                  ...(event.followUpQueuePaused === true ? { followUpQueuePaused: true } : {}),
                   updatedAt: new Date().toISOString(),
                 }
               : thread,
@@ -2306,7 +2413,6 @@ function App() {
           void fetchApprovedPlanForThread(event.threadId);
         }
       } else if (event.type === "thread.completed") {
-        promoteAndClearLocalStreamUpdates(event.threadId);
         clearPendingPlanForThread(event.threadId);
         const activelyViewed = isThreadActivelyViewed(
           selectedThreadIdRef.current,
@@ -2488,50 +2594,6 @@ function App() {
         }
       }
 
-      if (event.type === "thread.usage_updated" && event.usage) {
-        const roleKey = String(event.role ?? "planner");
-        setUsageByThread((current) => ({
-          ...current,
-          [event.threadId]: {
-            ...(current[event.threadId] ?? {}),
-            [roleKey]: event.usage!,
-          },
-        }));
-        if (event.billing) {
-          setBillingByThread((current) => ({
-            ...current,
-            [event.threadId]: event.billing!,
-          }));
-        }
-        const modelId = event.modelId ?? event.usage.modelId;
-        if (modelId && !isEcoSdkModelAlias(modelId)) {
-          setModelByThread((current) => ({
-            ...current,
-            [event.threadId]: {
-              ...(current[event.threadId] ?? {}),
-              [roleKey]: modelId.trim(),
-            },
-          }));
-        }
-        return;
-      }
-
-      if (event.type === "thread.context_updated" && event.context) {
-        setContextByThread((current) => ({
-          ...current,
-          [event.threadId]: event.context!,
-        }));
-        return;
-      }
-
-      if (event.type === "thread.subagent_timing_updated" && event.subagentSessions) {
-        setSubagentTimingsByThread((current) => ({
-          ...current,
-          [event.threadId]: event.subagentSessions!,
-        }));
-        return;
-      }
-
       if (
         (event.type === "thread.awaiting_plan" ||
           event.type === "thread.execution_failed" ||
@@ -2556,9 +2618,6 @@ function App() {
       if (threadListRefreshTimer !== undefined) {
         window.clearTimeout(threadListRefreshTimer);
       }
-      if (runProjectionFullRefreshTimer !== undefined) {
-        window.clearTimeout(runProjectionFullRefreshTimer);
-      }
       unsubscribe();
       unsubscribeThreadOpen();
     };
@@ -2567,69 +2626,110 @@ function App() {
   const selectedThreadStatus = threads.find((thread) => thread.id === selectedThreadId)?.status;
 
   useEffect(() => {
+    if (conversationV2RecoveryVersion === 0) {
+      return;
+    }
+    const requestedThreadIds = [...conversationV2RecoveryRequestsRef.current];
+    conversationV2RecoveryRequestsRef.current.clear();
+    for (const threadId of requestedThreadIds) {
+      if (
+        threadId !== selectedThreadIdRef.current ||
+        conversationV2RecoveryInFlightRef.current.has(threadId) ||
+        conversationV2LoadingThreadsRef.current.has(threadId)
+      ) {
+        continue;
+      }
+      conversationV2RecoveryInFlightRef.current.add(threadId);
+      conversationV2LoadingThreadsRef.current.add(threadId);
+      const loadGeneration = nextConversationV2LoadGeneration(threadId);
+      let installed = false;
+      let retryAfterLoad = false;
+      void loadConversationV2RendererState(threadId)
+        .then((recovered) => {
+          if (
+            !recovered ||
+            selectedThreadIdRef.current !== threadId ||
+            conversationV2LoadGenerationRef.current.get(threadId) !== loadGeneration
+          ) {
+            return;
+          }
+          installed = true;
+          retryAfterLoad = mergeConversationV2LoadedState(threadId, recovered);
+        })
+        .catch((recoveryError) => {
+          console.warn("[eco] conversation V2 renderer recovery failed:", recoveryError);
+        })
+        .finally(() => {
+          conversationV2LoadingThreadsRef.current.delete(threadId);
+          conversationV2RecoveryInFlightRef.current.delete(threadId);
+          if (
+            installed &&
+            (retryAfterLoad ||
+              (conversationV2PendingEventsRef.current.get(threadId)?.length ?? 0) > 0 ||
+              conversationV2PendingOverflowRef.current.has(threadId))
+          ) {
+            queueConversationV2Recovery(threadId);
+          }
+        });
+    }
+  }, [conversationV2RecoveryVersion]);
+
+  useEffect(() => {
     if (!selectedThreadId || !window.eco) {
       return;
     }
 
     let cancelled = false;
 
-    if (typeof window.eco.getThreadRunProjection === "function") {
-      void window.eco
-        .getThreadRunProjection({ threadId: selectedThreadId, mode: "feed" })
-        .then((projection) => {
-          if (cancelled) {
+    if (
+      typeof window.eco.conversationV2Bootstrap === "function" &&
+      !conversationV2LoadingThreadsRef.current.has(selectedThreadId)
+    ) {
+      conversationV2LoadingThreadsRef.current.add(selectedThreadId);
+      const loadGeneration = nextConversationV2LoadGeneration(selectedThreadId);
+      let installed = false;
+      let retryAfterLoad = false;
+      void loadConversationV2RendererState(selectedThreadId)
+        .then((state) => {
+          if (
+            cancelled ||
+            !state ||
+            conversationV2LoadGenerationRef.current.get(selectedThreadId) !== loadGeneration
+          ) {
             return;
           }
-          if (!projection) {
-            return;
-          }
-          setRunProjectionByThread((current) => ({
-            ...current,
-            [selectedThreadId]: applyThreadRunProjectionUpdate(
-              selectedThreadId,
-              current[selectedThreadId],
-              projection,
-            ),
-          }));
-        })
-        .finally(() => {
-          if (cancelled) {
-            return;
-          }
+          installed = true;
+          retryAfterLoad = mergeConversationV2LoadedState(selectedThreadId, state);
           setFeedProjectionSettledByThread((current) =>
             current[selectedThreadId] === true ? current : { ...current, [selectedThreadId]: true },
           );
+        })
+        .catch((error) => {
+          // V2 is the durable renderer boundary. A missing/incompatible stream is
+          // surfaced as an explicit failure; it must not silently revive the legacy
+          // projection as a page correctness source.
+          setFeedProjectionSettledByThread((current) =>
+            current[selectedThreadId] === true ? current : { ...current, [selectedThreadId]: true },
+          );
+          setError(errorMessage(error));
+          console.error("[eco] conversation V2 renderer bootstrap unavailable:", error);
+        })
+        .finally(() => {
+          conversationV2LoadingThreadsRef.current.delete(selectedThreadId);
+          if (
+            installed &&
+            (retryAfterLoad ||
+              (conversationV2PendingEventsRef.current.get(selectedThreadId)?.length ?? 0) > 0 ||
+              conversationV2PendingOverflowRef.current.has(selectedThreadId))
+          ) {
+            queueConversationV2Recovery(selectedThreadId);
+          }
         });
-    } else {
-      setFeedProjectionSettledByThread((current) =>
-        current[selectedThreadId] === true ? current : { ...current, [selectedThreadId]: true },
-      );
     }
 
-    // Preload may be stale until Electron restarts; skip rather than throw.
-    if (typeof window.eco.listSubagentSessions === "function") {
-      void window.eco.listSubagentSessions(selectedThreadId).then((sessions) => {
-        if (cancelled) {
-          return;
-        }
-        setSubagentTimingsByThread((current) => ({
-          ...current,
-          [selectedThreadId]: sessions,
-        }));
-      });
-    }
-
-    if (typeof window.eco.listSubagentMetrics === "function") {
-      void window.eco.listSubagentMetrics(selectedThreadId).then((metrics) => {
-        if (cancelled) {
-          return;
-        }
-        setSubagentMetricsByThread((current) => ({
-          ...current,
-          [selectedThreadId]: metrics,
-        }));
-      });
-    }
+    // Do not hydrate the V2 Feed from the legacy projection, subagent-session
+    // snapshot, or metrics RPCs. Those values are either derived from the V2
+    // state above or intentionally absent until their V2 read model lands.
 
     if (window.eco) {
       void Promise.all([
@@ -2685,38 +2785,54 @@ function App() {
           }));
         });
       }
-      void window.eco.listThreadTodos(selectedThreadId).then((todos) => {
-        if (cancelled) {
-          return;
-        }
-        setTodosByThread((current) => ({
-          ...current,
-          [selectedThreadId]: todos,
-        }));
-      });
-      void window.eco.getThreadUsageSnapshot(selectedThreadId).then((snapshot) => {
-        if (cancelled) {
-          return;
-        }
-        if (snapshot.billing) {
-          setBillingByThread((current) => ({
-            ...current,
-            [selectedThreadId]: snapshot.billing!,
-          }));
-        }
-        if (snapshot.context) {
-          setContextByThread((current) => ({
-            ...current,
-            [selectedThreadId]: snapshot.context!,
-          }));
-        }
-      });
     }
 
     return () => {
       cancelled = true;
     };
   }, [selectedThreadId, selectedThreadStatus]);
+
+  useEffect(() => {
+    const api = window.eco;
+    if (!selectedThreadId || !api || typeof api.conversationV2Head !== "function") {
+      return;
+    }
+    let cancelled = false;
+    const checkHead = () => {
+      const threadId = selectedThreadIdRef.current;
+      if (cancelled || !threadId || conversationV2LoadingThreadsRef.current.has(threadId)) {
+        return;
+      }
+      const local = conversationV2ByThreadRef.current[threadId];
+      if (!local) return;
+      void api
+        .conversationV2Head(threadId)
+        .then((head) => {
+          if (cancelled || selectedThreadIdRef.current !== threadId) return;
+          if (
+            head.conversationId !== threadId ||
+            head.storeEpoch !== local.storeEpoch ||
+            head.lastSeq < local.appliedSeq ||
+            head.lastSeq > local.appliedSeq
+          ) {
+            queueConversationV2Recovery(threadId);
+          }
+        })
+        .catch((error) => {
+          console.debug("[eco] conversation V2 renderer head check failed:", error);
+        });
+    };
+    const interval = window.setInterval(checkHead, 10_000);
+    const unsubscribeFocus = subscribeToWindowFocus((focused) => {
+      if (focused) checkHead();
+    });
+    checkHead();
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      unsubscribeFocus();
+    };
+  }, [selectedThreadId, queueConversationV2Recovery]);
 
   const cancelProjectionCacheEviction = useCallback((threadId: string) => {
     const timer = projectionEvictTimersRef.current.get(threadId);
@@ -2727,24 +2843,24 @@ function App() {
     projectionEvictTimersRef.current.delete(threadId);
   }, []);
 
-  const evictInactiveThreadProjectionCaches = useCallback((threadId: string) => {
-    cancelProjectionCacheEviction(threadId);
-    clearLocalStreamUpdates(threadId);
-    pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
-    activityFeedRevealedThreadIdsRef.current.delete(threadId);
-    setRunProjectionByThread((current) => removeRecordKeys(current, [threadId]));
-    setFeedProjectionSettledByThread((current) => removeRecordKeys(current, [threadId]));
-    setSubagentTimingsByThread((current) => removeRecordKeys(current, [threadId]));
-    setSubagentMetricsByThread((current) => removeRecordKeys(current, [threadId]));
-    setUsageByThread((current) => removeRecordKeys(current, [threadId]));
-    setBillingByThread((current) => removeRecordKeys(current, [threadId]));
-    setContextByThread((current) => removeRecordKeys(current, [threadId]));
-    setModelByThread((current) => removeRecordKeys(current, [threadId]));
-    setTodosByThread((current) => removeRecordKeys(current, [threadId]));
-    setImageArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
-    setImageDisplayArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
-    setHtmlHostArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
-  }, [cancelProjectionCacheEviction]);
+  const evictInactiveThreadProjectionCaches = useCallback(
+    (threadId: string) => {
+      cancelProjectionCacheEviction(threadId);
+      activityFeedRevealedThreadIdsRef.current.delete(threadId);
+      conversationV2PendingEventsRef.current.delete(threadId);
+      conversationV2PendingOverflowRef.current.delete(threadId);
+      conversationV2LoadGenerationRef.current.delete(threadId);
+      conversationV2RecoveryRequestsRef.current.delete(threadId);
+      conversationV2RecoveryInFlightRef.current.delete(threadId);
+      conversationV2LoadingThreadsRef.current.delete(threadId);
+      setConversationV2ByThread((current) => removeRecordKeys(current, [threadId]));
+      setFeedProjectionSettledByThread((current) => removeRecordKeys(current, [threadId]));
+      setImageArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
+      setImageDisplayArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
+      setHtmlHostArtifactsByThread((current) => removeRecordKeys(current, [threadId]));
+    },
+    [cancelProjectionCacheEviction],
+  );
 
   useEffect(() => {
     if (selectedThreadId) {
@@ -2752,14 +2868,6 @@ function App() {
         recentlyViewedThreadIdsRef.current,
         selectedThreadId,
       );
-    }
-
-    if (typeof window.eco?.reportThreadProjectionFocus === "function") {
-      void window.eco.reportThreadProjectionFocus({
-        ...(selectedThreadId ? { selectedThreadId } : {}),
-        ...(feedThreadId ? { feedThreadId } : {}),
-        recentlyViewedThreadIds: recentlyViewedThreadIdsRef.current,
-      });
     }
   }, [feedThreadId, selectedThreadId]);
 
@@ -2781,7 +2889,6 @@ function App() {
     }
 
     const cachedThreadIds = [
-      ...Object.keys(runProjectionByThreadRef.current),
       ...Object.keys(imageArtifactsByThreadRef.current),
       ...Object.keys(imageDisplayArtifactsByThreadRef.current),
       ...Object.keys(htmlHostArtifactsByThreadRef.current),
@@ -2975,7 +3082,11 @@ function App() {
       // basename is a custom name persisted from an older version.
       merged.set(normalizeProjectPath(project.path), {
         ...project,
-        name: resolveProjectName(project.path, customProjectNames[project.path] ?? project.name, homeProjectPath).name,
+        name: resolveProjectName(
+          project.path,
+          customProjectNames[project.path] ?? project.name,
+          homeProjectPath,
+        ).name,
       });
     }
     if (workspace) {
@@ -3000,7 +3111,11 @@ function App() {
         );
         merged.set(workspacePathKey, {
           path: thread.workspacePath,
-          name: resolveProjectName(thread.workspacePath, customProjectNames[thread.workspacePath], homeProjectPath).name,
+          name: resolveProjectName(
+            thread.workspacePath,
+            customProjectNames[thread.workspacePath],
+            homeProjectPath,
+          ).name,
           importedAt,
         });
       }
@@ -3180,9 +3295,7 @@ function App() {
         artifact.images.length > 0
       ) {
         enqueueImageGalleryItems(
-          artifact.images.map((_image, imageIndex) =>
-            imageGalleryGenerationItem(artifact.id, imageIndex),
-          ),
+          artifact.images.map((_image, imageIndex) => imageGalleryGenerationItem(artifact.id, imageIndex)),
         );
       }
     });
@@ -4603,14 +4716,26 @@ function App() {
     activeThread &&
       shouldComposerUseFollowUpQueue({
         status: activeThread.status,
-        editingFollowUpId,
-        followUpQueuePaused: activeThread.followUpQueuePaused,
+        ...(editingFollowUpId !== undefined ? { editingFollowUpId } : {}),
+        ...(activeThread.followUpQueuePaused !== undefined
+          ? { followUpQueuePaused: activeThread.followUpQueuePaused }
+          : {}),
       }),
   );
   const showBashApproval = Boolean(pendingBashApproval);
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
-  const persistedRunProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
-  const runProjection = useLocalStreamProjection(persistedRunProjection);
+  const activeConversationV2 = activeThread ? conversationV2ByThread[activeThread.id] : undefined;
+  const v2RunProjection = useMemo(
+    () =>
+      activeConversationV2
+        ? buildConversationV2OnlyProjection(activeConversationV2, activeThread)
+        : undefined,
+    [activeConversationV2, activeThread],
+  );
+  // V2 is the only renderer projection source. A missing V2 state is a visible
+  // bootstrap/recovery condition; it never falls back to a legacy projection or
+  // local stream overlay.
+  const runProjection = v2RunProjection;
   const runProjectionRef = useRef(runProjection);
   runProjectionRef.current = runProjection;
   const displayProjection = runProjection;
@@ -4722,9 +4847,7 @@ function App() {
     // Send handoff must keep spool files until main persists them into message storage.
     const releaseAttachments = options?.releaseAttachments !== false;
     void window.eco
-      .deleteComposerDraft(
-        releaseAttachments ? contextKey : { contextKey, releaseAttachments: false },
-      )
+      .deleteComposerDraft(releaseAttachments ? contextKey : { contextKey, releaseAttachments: false })
       .catch((caught) => {
         console.error("[eco] composer draft delete failed", caught);
       });
@@ -4892,11 +5015,19 @@ function App() {
 
   const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
   const queuedFollowUps = useMemo(() => queuedThreadFollowUps(activeFollowUps), [activeFollowUps]);
-  const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
-  const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
-  const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
-  const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
-  const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
+  const activeSubagentTimings = activeConversationV2?.projectionExtras?.subagentTimings;
+  const activeSubagentMetrics = activeConversationV2?.projectionExtras?.subagentMetrics;
+  const coderTodos = activeConversationV2 ? conversationV2TodosToCoderTodos(activeConversationV2) : [];
+  const threadModelByRole = useMemo(() => {
+    const models: Record<string, string> = {};
+    for (const metric of activeSubagentMetrics ?? []) {
+      const modelId = metric.modelId?.trim();
+      if (modelId && metric.role) {
+        models[metric.role] = modelId;
+      }
+    }
+    return models;
+  }, [activeSubagentMetrics]);
   const activeRuntimeAgentDisplayNames = useMemo(
     () => buildRuntimeAgentDisplayNames(settings, activeThread?.runtimeConfig),
     [settings, activeThread?.runtimeConfig],
@@ -5294,11 +5425,15 @@ function App() {
           setSelectedSubagentAgentId(undefined);
         }
       }
-      // User-initiated browser open: always switch to the browser tab.
+      // User-initiated browser open: switch to the browser tab — but only once per intent.
+      // Main keeps `activateBrowserId` set for the page's lifetime, so re-switching on every
+      // later emit would drag the user off whatever tab they opened next (files / file viewer).
       if (state.activateBrowserId && currentProjectPath) {
         const tabId = browserTaskTabId(state.activateBrowserId);
+        const isNewActivation = handledActivateBrowserIdRef.current !== state.activateBrowserId;
+        handledActivateBrowserIdRef.current = state.activateBrowserId;
         setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-        if (taskDrawerOpenRef.current) {
+        if (taskDrawerOpenRef.current && isNewActivation) {
           setTaskPanelActiveTab(tabId);
           setSelectedSubagentAgentId(undefined);
         }
@@ -5676,15 +5811,19 @@ function App() {
     if (!activeThread) {
       return undefined;
     }
-    const rawBilling = billingByThread[activeThread.id];
+    const rawBilling = activeConversationV2?.projectionExtras?.billing;
     const billing = rawBilling ? enrichBillingDisplaySource(rawBilling, activeThread.status) : undefined;
     return buildThreadUsageSummary({
       ...(billing && { billing }),
-      ...(contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] }),
-      ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
+      ...(activeConversationV2?.projectionExtras?.ledgerEvents && {
+        ledgerEvents: activeConversationV2.projectionExtras.ledgerEvents,
+      }),
+      ...(activeConversationV2?.projectionExtras?.context
+        ? { context: activeConversationV2.projectionExtras.context }
+        : {}),
       ...(activeThread.hostUiFeatures && { hostUiFeatures: activeThread.hostUiFeatures }),
     });
-  }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
+  }, [activeConversationV2, activeThread]);
   const canEditComposerConfig =
     !activeThread ||
     (threadAcceptsInput && activeThread.status !== "running" && activeThread.status !== "queued");
@@ -5779,7 +5918,7 @@ function App() {
     }
     const merged: Record<string, string> = { ...configured };
     for (const [role, live] of Object.entries(threadModelByRole ?? {})) {
-      const displayModelId = pickDisplayModelId(live, configured[role]);
+      const displayModelId = live.trim() || configured[role];
       if (displayModelId) {
         merged[role] = displayModelId;
       }
@@ -6194,37 +6333,6 @@ function App() {
     [clampActivityFeedOverscroll, flushActivityFeedLayoutScroll, scheduleActivityFeedLayoutScroll],
   );
 
-  const loadProjectionDetail = useCallback(async (kind: ThreadRunProjectionDetailKind, key: string) => {
-    const threadId = selectedThreadIdRef.current;
-    if (!threadId || typeof window.eco?.getThreadRunProjectionDetail !== "function") return;
-    let afterSequence: number | undefined;
-    while (true) {
-      const detail = await window.eco.getThreadRunProjectionDetail({
-        threadId,
-        kind,
-        key,
-        limit: 500,
-        ...(afterSequence !== undefined ? { afterSequence } : {}),
-      });
-      if (!detail || selectedThreadIdRef.current !== threadId) return;
-      setRunProjectionByThread((current) => {
-        const projection = current[threadId];
-        if (!projection || projection.historyRevision !== (runProjectionRef.current?.historyRevision ?? 0)) {
-          return current;
-        }
-        return {
-          ...current,
-          [threadId]: mergeThreadRunProjectionDetail(projection, detail),
-        };
-      });
-      if (!detail.hasMore) return;
-      if (detail.nextAfterSequence === undefined || detail.nextAfterSequence === afterSequence) {
-        throw new Error("Projection detail pagination did not advance");
-      }
-      afterSequence = detail.nextAfterSequence;
-    }
-  }, []);
-
   const tryAdvanceActivityFeedBoot = useCallback(() => {
     const threadId = selectedThreadIdRef.current;
     if (!threadId || activityFeedBootReadyRef.current) {
@@ -6597,21 +6705,46 @@ function App() {
     }
   }
 
+  function handleOpenProjectRowDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleOpenProjectRowDrop(event: ReactDragEvent<HTMLElement>) {
+    if (!window.eco || !Array.from(event.dataTransfer.types).includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    for (const file of Array.from(event.dataTransfer.files)) {
+      const path = window.eco.getPathForFile(file);
+      if (!path) {
+        continue;
+      }
+      void handleOpenProjectFromDrop(path).catch(() => {
+        // handleOpenProjectFromDrop already surfaced the error in the sidebar.
+      });
+      return;
+    }
+  }
+
   async function resyncThreadSummaryAfterWaitForRun(threadId: string): Promise<void> {
     if (!window.eco) {
       return;
     }
     try {
       const [summary, threads] = await Promise.all([
-        typeof window.eco.getThread === "function" ? window.eco.getThread(threadId) : Promise.resolve(undefined),
+        typeof window.eco.getThread === "function"
+          ? window.eco.getThread(threadId)
+          : Promise.resolve(undefined),
         typeof window.eco.listThreads === "function" ? window.eco.listThreads() : Promise.resolve(undefined),
       ]);
       if (threads) {
         setThreads(threads);
       } else if (summary) {
-        setThreads((current) =>
-          current.map((thread) => (thread.id === summary.id ? summary : thread)),
-        );
+        setThreads((current) => current.map((thread) => (thread.id === summary.id ? summary : thread)));
       }
       await refreshThreadState(threadId);
     } catch {
@@ -6623,27 +6756,7 @@ function App() {
     if (!window.eco) {
       return;
     }
-    const [
-      projection,
-      subagentSessions,
-      subagentMetrics,
-      plan,
-      approvedPlan,
-      clarification,
-      bashApproval,
-      followUps,
-      todos,
-      usageSnapshot,
-    ] = await Promise.all([
-      typeof window.eco.getThreadRunProjection === "function"
-        ? window.eco.getThreadRunProjection({ threadId, mode: "feed" })
-        : Promise.resolve(undefined),
-      typeof window.eco.listSubagentSessions === "function"
-        ? window.eco.listSubagentSessions(threadId)
-        : Promise.resolve(undefined),
-      typeof window.eco.listSubagentMetrics === "function"
-        ? window.eco.listSubagentMetrics(threadId)
-        : Promise.resolve(undefined),
+    const [plan, approvedPlan, clarification, bashApproval, followUps] = await Promise.all([
       window.eco.getPendingPlan(threadId),
       typeof window.eco.getApprovedPlan === "function"
         ? window.eco.getApprovedPlan(threadId)
@@ -6655,24 +6768,8 @@ function App() {
       typeof window.eco.listThreadFollowUps === "function"
         ? window.eco.listThreadFollowUps(threadId)
         : Promise.resolve({ followUps: [] }),
-      window.eco.listThreadTodos(threadId),
-      window.eco.getThreadUsageSnapshot(threadId),
     ]);
-
-    if (projection) {
-      setRunProjectionByThread((current) => ({
-        ...current,
-        [threadId]: applyThreadRunProjectionUpdate(threadId, current[threadId], projection),
-      }));
-    } else {
-      setRunProjectionByThread((current) => removeRecordKey(current, threadId));
-    }
-    if (subagentSessions) {
-      setSubagentTimingsByThread((current) => ({ ...current, [threadId]: subagentSessions }));
-    }
-    if (subagentMetrics) {
-      setSubagentMetricsByThread((current) => ({ ...current, [threadId]: subagentMetrics }));
-    }
+    refreshConversationV2ProjectionExtras(threadId);
     if (plan) {
       upsertPendingPlanForThread(threadId, plan);
     } else {
@@ -6694,17 +6791,7 @@ function App() {
       clearPendingBashApprovalForThread(threadId);
     }
     setFollowUpsByThread((current) => ({ ...current, [threadId]: sortThreadFollowUps(followUps.followUps) }));
-    setTodosByThread((current) => ({ ...current, [threadId]: todos }));
-    if (usageSnapshot.billing) {
-      setBillingByThread((current) => ({ ...current, [threadId]: usageSnapshot.billing! }));
-    } else {
-      setBillingByThread((current) => removeRecordKey(current, threadId));
-    }
-    if (usageSnapshot.context) {
-      setContextByThread((current) => ({ ...current, [threadId]: usageSnapshot.context! }));
-    } else {
-      setContextByThread((current) => removeRecordKey(current, threadId));
-    }
+    refreshConversationV2ProjectionExtras(threadId);
   }
 
   const restorePrompt = useCallback(
@@ -6739,8 +6826,9 @@ function App() {
   async function rewriteUserMessage(input: {
     activityLineId: string;
     prompt: string;
-    attachments: import("../shared/ipc").PromptImageAttachment[];
+    attachments: PromptImageAttachment[];
     expectedHistoryRevision: number;
+    runtimeConfig?: ThreadRuntimeConfig;
   }) {
     if (!activeThread) {
       throw new Error(t("activity.editUnavailable", { defaultValue: "未选择会话，无法编辑此消息" }));
@@ -6749,30 +6837,23 @@ function App() {
       throw new Error(t("activity.editUnavailable", { defaultValue: "当前版本不支持消息编辑" }));
     }
     const threadId = activeThread.id;
-    const nextHistoryRevision = input.expectedHistoryRevision + 1;
-    pendingRewriteHistoryRevisionByThreadRef.current.set(threadId, nextHistoryRevision);
-    clearLocalStreamUpdates(threadId);
-    setRunProjectionByThread((current) => {
-      const existing = current[threadId];
-      if (!existing) {
-        return current;
-      }
-      return {
-        ...current,
-        [threadId]: cutThreadRunProjectionForUserMessageRewrite(existing, {
-          activityLineId: input.activityLineId,
-          nextPrompt: input.prompt,
-          historyRevision: nextHistoryRevision,
-        }),
-      };
-    });
     try {
       const result = await window.eco.rewriteThreadFromMessage({
+        principalId: "desktop-local",
+        clientCommandId: `history_rewrite_${stableHash({
+          threadId,
+          activityLineId: input.activityLineId,
+          prompt: input.prompt,
+          attachments: input.attachments,
+          expectedHistoryRevision: input.expectedHistoryRevision,
+          ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
+        })}`,
         threadId,
         activityLineId: input.activityLineId,
         prompt: input.prompt,
         attachments: input.attachments,
         expectedHistoryRevision: input.expectedHistoryRevision,
+        ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
       });
       setThreads((current) =>
         current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
@@ -6780,6 +6861,7 @@ function App() {
       clearPendingPlanForThread(threadId);
       clearPendingClarificationForThread(threadId);
       clearPendingBashApprovalForThread(threadId);
+      queueConversationV2Recovery(threadId);
       try {
         await refreshThreadState(threadId);
       } catch (caught) {
@@ -6793,7 +6875,7 @@ function App() {
       requestActivityFeedForceScroll();
       return result;
     } catch (caught) {
-      pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
+      queueConversationV2Recovery(threadId);
       try {
         await refreshThreadState(threadId);
       } catch {
@@ -6801,6 +6883,55 @@ function App() {
       }
       throw caught;
     }
+  }
+
+  async function sendConversationV2Continuation(input: {
+    thread: ThreadSummary;
+    prompt: string;
+    runtimeConfig: ThreadRuntimeConfig;
+    attachments?: PromptImageAttachment[];
+    commandScope: string;
+    historyRevision?: number;
+  }): Promise<ThreadSummary | undefined> {
+    const eco = window.eco;
+    if (
+      !eco ||
+      typeof eco.conversationV2SendMessage !== "function" ||
+      typeof eco.updateThreadRuntimeConfig !== "function"
+    ) {
+      throw new Error("Conversation V2 sending is unavailable; refusing legacy continuation.");
+    }
+    const configured = await eco.updateThreadRuntimeConfig(
+      await buildV2CommandEnvelope(input.thread.id, "runtime-config", {
+        runtimeConfig: input.runtimeConfig,
+      }),
+    );
+    setThreads((current) =>
+      current.map((thread) => (thread.id === configured.thread.id ? configured.thread : thread)),
+    );
+    const clientCommandId = `conversation_send_${input.commandScope}_${stableHash({
+      threadId: input.thread.id,
+      prompt: input.prompt,
+      attachments: input.attachments ?? [],
+      runtimeConfig: input.runtimeConfig,
+      historyRevision: input.historyRevision ?? displayProjection?.historyRevision ?? 0,
+    })}`;
+    await eco.conversationV2SendMessage({
+      principalId: "desktop-local",
+      conversationId: input.thread.id,
+      clientCommandId,
+      text: input.prompt,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    });
+    const updated = await eco.getThread(input.thread.id);
+    if (updated) {
+      setThreads((current) => current.map((thread) => (thread.id === updated.id ? updated : thread)));
+    }
+    clearPendingPlanForThread(input.thread.id);
+    clearPendingClarificationForThread(input.thread.id);
+    clearPendingBashApprovalForThread(input.thread.id);
+    await refreshThreadState(input.thread.id);
+    return updated ?? configured.thread;
   }
 
   async function retryFailedRequest(target: RequestFailureRetryTarget) {
@@ -6821,27 +6952,18 @@ function App() {
     setError(undefined);
     requestActivityFeedForceScroll();
     if (useRewrite) {
-      const nextHistoryRevision = historyRevision + 1;
-      pendingRewriteHistoryRevisionByThreadRef.current.set(threadId, nextHistoryRevision);
-      clearLocalStreamUpdates(threadId);
-      setRunProjectionByThread((current) => {
-        const existing = current[threadId];
-        if (!existing) {
-          return current;
-        }
-        return {
-          ...current,
-          [threadId]: cutThreadRunProjectionForUserMessageRewrite(existing, {
-            activityLineId: target.activityLineId,
-            nextPrompt: target.prompt,
-            historyRevision: nextHistoryRevision,
-          }),
-        };
-      });
     }
     setIsStarting(true);
     try {
       const result = await window.eco.retryThreadFromMessage({
+        principalId: "desktop-local",
+        clientCommandId: `history_retry_${stableHash({
+          threadId,
+          activityLineId: target.activityLineId,
+          prompt: target.prompt,
+          hasImages: target.hasImages,
+          expectedHistoryRevision: historyRevision,
+        })}`,
         threadId,
         activityLineId: target.activityLineId,
         prompt: target.prompt,
@@ -6854,6 +6976,7 @@ function App() {
       clearPendingPlanForThread(threadId);
       clearPendingClarificationForThread(threadId);
       clearPendingBashApprovalForThread(threadId);
+      queueConversationV2Recovery(threadId);
       try {
         await refreshThreadState(threadId);
       } catch (caught) {
@@ -6867,7 +6990,7 @@ function App() {
       requestActivityFeedForceScroll();
     } catch (caught) {
       if (useRewrite) {
-        pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
+        queueConversationV2Recovery(threadId);
         try {
           await refreshThreadState(threadId);
         } catch {
@@ -6880,12 +7003,39 @@ function App() {
     }
   }
 
+  async function buildV2CommandEnvelope<T extends Record<string, unknown>>(
+    threadId: string,
+    operation: string,
+    payload: T,
+  ): Promise<
+    T & { principalId: string; clientCommandId: string; threadId: string; expectedHistoryRevision: number }
+  > {
+    if (!window.eco) {
+      throw new Error("Desktop API is unavailable.");
+    }
+    const head = await window.eco.conversationV2Head(threadId);
+    return {
+      ...payload,
+      principalId: "desktop-local",
+      clientCommandId: `command_${operation}_${stableHash({
+        threadId,
+        operation,
+        ...payload,
+        expectedHistoryRevision: head.historyRevision,
+      })}`,
+      threadId,
+      expectedHistoryRevision: head.historyRevision,
+    };
+  }
+
   async function releaseThreadFollowUpEditingLock(threadId: string) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       return;
     }
     try {
-      await window.eco.setThreadFollowUpEditing({ threadId });
+      await window.eco.setThreadFollowUpEditing(
+        await buildV2CommandEnvelope(threadId, "editing-release", {}),
+      );
     } catch {
       // Best-effort unlock; drain resumes on the main process when the lock clears.
     }
@@ -6910,8 +7060,9 @@ function App() {
     setError(undefined);
     try {
       await window.eco.setThreadFollowUpEditing({
-        threadId: followUp.threadId,
-        followUpId: followUp.id,
+        ...(await buildV2CommandEnvelope(followUp.threadId, "editing-acquire", {
+          followUpId: followUp.id,
+        })),
       });
       if (selectedThreadIdRef.current !== followUp.threadId) {
         await releaseThreadFollowUpEditingLock(followUp.threadId);
@@ -6957,7 +7108,9 @@ function App() {
     return () => {
       const threadId = editingFollowUpThreadIdRef.current ?? selectedThreadIdRef.current;
       if (editingFollowUpIdRef.current && threadId) {
-        void window.eco?.setThreadFollowUpEditing?.({ threadId }).catch(() => undefined);
+        void buildV2CommandEnvelope(threadId, "editing-release", {})
+          .then((request) => window.eco?.setThreadFollowUpEditing?.(request))
+          .catch(() => undefined);
       }
     };
   }, []);
@@ -6996,8 +7149,7 @@ function App() {
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
     const messagePrompt =
-      promptForSend.trim() ||
-      (attachments?.length ? (t("app.imagePrompt") || ACP_IMAGE_ONLY_PROMPT) : "");
+      promptForSend.trim() || (attachments?.length ? t("app.imagePrompt") || ACP_IMAGE_ONLY_PROMPT : "");
 
     if (composerFollowUpMode && activeThread) {
       if (editingFollowUpId) {
@@ -7007,12 +7159,13 @@ function App() {
         }
         setFollowUpBusy(true);
         try {
-          const result = await window.eco.updateThreadFollowUp({
-            threadId: activeThread.id,
-            followUpId: editingFollowUpId,
-            prompt: messagePrompt,
-            ...(attachments && { attachments }),
-          });
+          const result = await window.eco.updateThreadFollowUp(
+            await buildV2CommandEnvelope(activeThread.id, "update", {
+              followUpId: editingFollowUpId,
+              prompt: messagePrompt,
+              ...(attachments && { attachments }),
+            }),
+          );
           setFollowUpsByThread((current) => ({
             ...current,
             [activeThread.id]: sortThreadFollowUps(result.followUps),
@@ -7046,12 +7199,13 @@ function App() {
           activeThread.coreKind,
           options?.followUpDeliveryMode ?? defaultDelivery,
         );
-        const result = await window.eco.enqueueThreadFollowUp({
-          threadId: activeThread.id,
-          prompt: messagePrompt,
-          ...(attachments && { attachments }),
-          followUpDeliveryMode: deliveryMode,
-        });
+        const result = await window.eco.enqueueThreadFollowUp(
+          await buildV2CommandEnvelope(activeThread.id, "enqueue", {
+            prompt: messagePrompt,
+            ...(attachments && { attachments }),
+            followUpDeliveryMode: deliveryMode,
+          }),
+        );
         setFollowUpsByThread((current) => ({
           ...current,
           [activeThread.id]: sortThreadFollowUps(result.followUps),
@@ -7101,26 +7255,29 @@ function App() {
     requestActivityFeedForceScroll();
     try {
       if (continuable && activeThread) {
-        const result = await window.eco.continueThread({
-          threadId: activeThread.id,
-          prompt: messagePrompt,
-          runtimeConfig: runtimeConfigForSend,
-          ...(rewindTarget && { rewindTarget }),
-          ...(attachments && { attachments }),
-        });
-        setThreads((current) =>
-          current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
-        );
-        clearPendingPlanForThread(result.thread.id);
-        requestActivityFeedForceScroll();
-        try {
-          await refreshThreadState(result.thread.id);
-        } catch (caught) {
-          setError(t("app.sentSyncFailed", { detail: errorMessage(caught) }));
+        if (rewindTarget) {
+          const result = await rewriteUserMessage({
+            activityLineId: rewindTarget.activityLineId,
+            prompt: messagePrompt,
+            attachments: attachments ?? [],
+            expectedHistoryRevision: displayProjection?.historyRevision ?? 0,
+            runtimeConfig: runtimeConfigForSend,
+          });
+          setThreads((current) =>
+            current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+          );
+        } else {
+          await sendConversationV2Continuation({
+            thread: activeThread,
+            prompt: messagePrompt,
+            runtimeConfig: runtimeConfigForSend,
+            ...(attachments ? { attachments } : {}),
+            commandScope: "composer",
+          });
         }
+        requestActivityFeedForceScroll();
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
-        promptCacheBaselineByThreadRef.current[activeThread.id] =
-          result.thread.runtimeConfig ?? runtimeConfigForSend;
+        promptCacheBaselineByThreadRef.current[activeThread.id] = runtimeConfigForSend;
         setPromptCacheBaselineVersion((v) => v + 1);
       } else {
         const result = await window.eco.startThread({
@@ -7137,10 +7294,6 @@ function App() {
         ]);
         adoptLandingThreadSelection(result.thread.id);
         clearPendingPlanForThread(result.thread.id);
-        setTodosByThread((current) => ({
-          ...current,
-          [result.thread.id]: [],
-        }));
         if (result.thread.status === "blocked") {
           setError(result.thread.message?.trim() || t("app.configureOrchestration"));
         }
@@ -7180,7 +7333,9 @@ function App() {
     const nonQueued = previous.filter((item) => item.status !== "queued");
     setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: [...reordered, ...nonQueued] }));
     try {
-      const result = await window.eco.reorderThreadFollowUps({ threadId: activeThread.id, followUpIds });
+      const result = await window.eco.reorderThreadFollowUps(
+        await buildV2CommandEnvelope(activeThread.id, "reorder", { followUpIds }),
+      );
       setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: result.followUps }));
     } catch (caught) {
       setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: previous }));
@@ -7196,10 +7351,9 @@ function App() {
     setError(undefined);
     setFollowUpCancelBusyId(followUp.id);
     try {
-      const result = await window.eco.cancelThreadFollowUp({
-        threadId: followUp.threadId,
-        followUpId: followUp.id,
-      });
+      const result = await window.eco.cancelThreadFollowUp(
+        await buildV2CommandEnvelope(followUp.threadId, "cancel", { followUpId: followUp.id }),
+      );
       setFollowUpsByThread((current) => ({
         ...current,
         [followUp.threadId]: sortThreadFollowUps(result.followUps),
@@ -7222,17 +7376,16 @@ function App() {
     setError(undefined);
     setFollowUpQueuePauseBusy(true);
     try {
-      const result = await window.eco.setThreadFollowUpQueuePaused({
-        threadId: activeThread.id,
-        paused,
-      });
+      const result = await window.eco.setThreadFollowUpQueuePaused(
+        await buildV2CommandEnvelope(activeThread.id, "queue-paused", { paused }),
+      );
       setThreads((current) =>
         current.map((thread) =>
           thread.id === result.thread.id
             ? {
                 ...thread,
                 ...result.thread,
-                followUpQueuePaused: result.paused || undefined,
+                ...(result.paused === true ? { followUpQueuePaused: true } : {}),
               }
             : thread,
         ),
@@ -7252,10 +7405,9 @@ function App() {
     setError(undefined);
     setFollowUpEscalateBusyId(followUp.id);
     try {
-      const result = await window.eco.escalateThreadFollowUp({
-        threadId: followUp.threadId,
-        followUpId: followUp.id,
-      });
+      const result = await window.eco.escalateThreadFollowUp(
+        await buildV2CommandEnvelope(followUp.threadId, "escalate", { followUpId: followUp.id }),
+      );
       setFollowUpsByThread((current) => ({
         ...current,
         [followUp.threadId]: sortThreadFollowUps(result.followUps),
@@ -7290,7 +7442,15 @@ function App() {
     setPlanActionBusy(true);
     try {
       const result = await window.eco.approvePlan({
+        principalId: "desktop-local",
+        clientCommandId: `plan_resolve_${stableHash({
+          threadId,
+          resolution: "approve",
+          executionTarget,
+          expectedHistoryRevision: displayProjection?.historyRevision ?? 0,
+        })}`,
         threadId,
+        expectedHistoryRevision: displayProjection?.historyRevision ?? 0,
         executionTarget,
       });
       if (planToRemember) {
@@ -7319,11 +7479,24 @@ function App() {
   }
 
   async function submitClarificationAnswers(answers: { toolUseId: string; selections: string[][] }) {
-    if (!window.eco) return;
+    if (!window.eco || !activeThread) return;
     setClarificationBusy(true);
     setError(undefined);
     try {
-      await window.eco.submitClarification(answers);
+      const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
+      await window.eco.submitClarification({
+        principalId: "desktop-local",
+        clientCommandId: `clarification_resolve_${stableHash({
+          threadId: activeThread.id,
+          toolUseId: answers.toolUseId,
+          resolution: "submit",
+          selections: answers.selections,
+          expectedHistoryRevision,
+        })}`,
+        threadId: activeThread.id,
+        ...answers,
+        expectedHistoryRevision,
+      });
       if (activeThread) {
         clearPendingClarificationForThread(activeThread.id);
       }
@@ -7339,7 +7512,19 @@ function App() {
     setClarificationBusy(true);
     setError(undefined);
     try {
-      await window.eco.dismissClarification(pendingClarification.toolUseId);
+      const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
+      await window.eco.dismissClarification({
+        principalId: "desktop-local",
+        clientCommandId: `clarification_resolve_${stableHash({
+          threadId: pendingClarification.threadId,
+          toolUseId: pendingClarification.toolUseId,
+          resolution: "dismiss",
+          expectedHistoryRevision,
+        })}`,
+        threadId: pendingClarification.threadId,
+        toolUseId: pendingClarification.toolUseId,
+        expectedHistoryRevision,
+      });
       clearPendingClarificationForThread(pendingClarification.threadId);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -7354,9 +7539,19 @@ function App() {
     setError(undefined);
     try {
       await window.eco.resolveBashApproval({
+        principalId: "desktop-local",
+        clientCommandId: `approval_resolve_${stableHash({
+          threadId: pendingBashApproval.threadId,
+          toolUseId: pendingBashApproval.toolUseId,
+          decision: resolution.decision,
+          feedback: resolution.feedback?.trim() || null,
+          expectedHistoryRevision: displayProjection?.historyRevision ?? 0,
+        })}`,
+        threadId: pendingBashApproval.threadId,
         toolUseId: pendingBashApproval.toolUseId,
         decision: resolution.decision,
         ...(resolution.feedback ? { feedback: resolution.feedback } : {}),
+        expectedHistoryRevision: displayProjection?.historyRevision ?? 0,
       });
       clearPendingBashApprovalForThread(pendingBashApproval.threadId);
       if (typeof window.eco.getPendingBashApproval === "function") {
@@ -7388,7 +7583,17 @@ function App() {
     setError(undefined);
     setPlanActionBusy(true);
     try {
-      const result = await window.eco.dismissPlan(activeThread.id);
+      const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
+      const result = await window.eco.dismissPlan({
+        principalId: "desktop-local",
+        clientCommandId: `plan_resolve_${stableHash({
+          threadId: activeThread.id,
+          resolution: "dismiss",
+          expectedHistoryRevision,
+        })}`,
+        threadId: activeThread.id,
+        expectedHistoryRevision,
+      });
       const updatedThread = result.thread;
       if (updatedThread) {
         setThreads((current) =>
@@ -7414,7 +7619,16 @@ function App() {
       current.map((thread) => (thread.id === threadId ? { ...thread, cancelling: true } : thread)),
     );
     try {
-      await window.eco.cancelThread({ threadId });
+      const head = await window.eco.conversationV2Head(threadId);
+      await window.eco.cancelThread({
+        principalId: "desktop-local",
+        clientCommandId: `run_cancel_${stableHash({
+          threadId,
+          expectedHistoryRevision: head.historyRevision,
+        })}`,
+        threadId,
+        expectedHistoryRevision: head.historyRevision,
+      });
       setStopConfirm(undefined);
     } catch (caught) {
       setThreads((current) =>
@@ -7913,10 +8127,9 @@ function App() {
         }
         setFollowUpBusy(true);
         try {
-          const result = await window.eco.enqueueThreadFollowUp({
-            threadId: activeThread.id,
-            prompt,
-          });
+          const result = await window.eco.enqueueThreadFollowUp(
+            await buildV2CommandEnvelope(activeThread.id, "enqueue", { prompt }),
+          );
           setFollowUpsByThread((current) => ({
             ...current,
             [activeThread.id]: sortThreadFollowUps(result.followUps),
@@ -7931,15 +8144,12 @@ function App() {
       if (isContinuableThreadStatus(activeThread.status)) {
         setIsStarting(true);
         try {
-          const result = await window.eco.continueThread({
-            threadId: activeThread.id,
+          await sendConversationV2Continuation({
+            thread: activeThread,
             prompt,
             runtimeConfig: runtimeConfigForSend,
+            commandScope: "git_conflict",
           });
-          setThreads((current) =>
-            current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
-          );
-          await refreshThreadState(result.thread.id);
         } catch (caught) {
           setError(errorMessage(caught));
           if (isWaitForRunError(caught)) {
@@ -7988,10 +8198,11 @@ function App() {
     setIsSavingSettings(true);
     setError(undefined);
     try {
-      const result = await window.eco.updateThreadRuntimeConfig({
-        threadId: activeThread.id,
-        runtimeConfig: next,
-      });
+      const result = await window.eco.updateThreadRuntimeConfig(
+        await buildV2CommandEnvelope(activeThread.id, "runtime-config", {
+          runtimeConfig: next,
+        }),
+      );
       setThreads((current) =>
         current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
       );
@@ -8791,7 +9002,6 @@ function App() {
     commitSidebarThreadSelection(undefined);
     applyFeedThreadSelection(undefined, { immediate: true });
     setComposerRuntimeConfig(null);
-    setTodosByThread({});
     setFollowUpsByThread({});
   }
 
@@ -8818,10 +9028,20 @@ function App() {
         const next = existing
           ? withoutHome.map((item) =>
               item.path === path
-                ? { ...item, name: resolveProjectName(item.path, customProjectNames[item.path], homePath).name }
+                ? {
+                    ...item,
+                    name: resolveProjectName(item.path, customProjectNames[item.path], homePath).name,
+                  }
                 : item,
             )
-          : [{ path, name: resolveProjectName(path, customProjectNames[path], homePath).name, importedAt: new Date().toISOString() }, ...withoutHome].slice(0, 12);
+          : [
+              {
+                path,
+                name: resolveProjectName(path, customProjectNames[path], homePath).name,
+                importedAt: new Date().toISOString(),
+              },
+              ...withoutHome,
+            ].slice(0, 12);
         window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
         return next;
       });
@@ -9031,7 +9251,6 @@ function App() {
 
   function clearThreadClientState(threadId: string) {
     cancelProjectionCacheEviction(threadId);
-    clearLocalStreamUpdates(threadId);
     removeComposerDraft(`thread:${threadId}`);
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
     setUnreadThreadIds((current) => {
@@ -9056,14 +9275,6 @@ function App() {
       setFeedThreadId(undefined);
       syncActivityFeedBootForThread(undefined);
     }
-    setRunProjectionByThread((current) => removeRecordKey(current, threadId));
-    setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
-    setSubagentMetricsByThread((current) => removeRecordKey(current, threadId));
-    setUsageByThread((current) => removeRecordKey(current, threadId));
-    setBillingByThread((current) => removeRecordKey(current, threadId));
-    setContextByThread((current) => removeRecordKey(current, threadId));
-    setModelByThread((current) => removeRecordKey(current, threadId));
-    setTodosByThread((current) => removeRecordKey(current, threadId));
     setFollowUpsByThread((current) => removeRecordKey(current, threadId));
     clearPendingPlanForThread(threadId);
     setApprovedPlansByThread((current) => removeRecordKey(current, threadId));
@@ -9084,7 +9295,25 @@ function App() {
     }
     setDeletingThreadId(thread.id);
     try {
-      await window.eco.deleteThread(thread.id);
+      let command = threadDeleteCommandsRef.current.get(thread.id);
+      if (!command) {
+        const head = await window.eco.conversationV2Head(thread.id);
+        command = {
+          expectedHistoryRevision: head.historyRevision,
+          clientCommandId: `thread_delete_${stableHash({
+            threadId: thread.id,
+            expectedHistoryRevision: head.historyRevision,
+          })}`,
+        };
+        threadDeleteCommandsRef.current.set(thread.id, command);
+      }
+      await window.eco.deleteThread({
+        principalId: "desktop-local",
+        clientCommandId: command.clientCommandId,
+        threadId: thread.id,
+        expectedHistoryRevision: command.expectedHistoryRevision,
+      });
+      threadDeleteCommandsRef.current.delete(thread.id);
       clearThreadClientState(thread.id);
       setPinnedThreadIds((current) => {
         if (!current.has(thread.id)) {
@@ -9181,6 +9410,8 @@ function App() {
             id: attachment.id,
             mediaType: attachment.mediaType,
             path: staged.path,
+            contentRef: staged.contentRef,
+            byteLength: staged.byteLength,
             previewUrl: attachment.previewUrl,
           });
           continue;
@@ -9253,9 +9484,7 @@ function App() {
       return;
     }
     if (failed > 0) {
-      setComposerImageNotice(
-        t("app.fileDropPartial", { ok: resolvedPaths.length, failed }),
-      );
+      setComposerImageNotice(t("app.fileDropPartial", { ok: resolvedPaths.length, failed }));
     } else {
       setComposerImageNotice(undefined);
     }
@@ -9574,109 +9803,113 @@ function App() {
           onPointerCancel={handleTaskPanelResizePointerEnd}
           onKeyDown={handleTaskPanelResizeKeyDown}
         />
-                <SuspensePanel>
-<LazySubagentTaskDrawer
-          open={taskPanelLayoutOpen}
-          surfaceActive={taskPanelOpen && !taskPanelExiting}
-          fullscreen={taskPanelFullscreenOpen}
-          cards={activeSubagentCards}
-          {...(taskPanelPlan && { plan: taskPanelPlan })}
-          activeTab={taskPanelActiveTab}
-          openTabIds={openTaskPanelTabIds}
-          {...(runProjection && { projection: runProjection })}
-          {...(activeThread && { threadStatus: activeThread.status })}
-          agentDisplayNames={activeRuntimeAgentDisplayNames}
-          agentThemes={activeRuntimeAgentThemes}
-          backgroundTasks={backgroundTerminalTasks}
-          imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
-          onSelectImageArtifact={openImageGenerationArtifact}
-          imageDisplayArtifacts={
-            activeThread ? (imageDisplayArtifactsByThread[activeThread.id] ?? []) : []
-          }
-          onSelectImageDisplayArtifact={openImageDisplayArtifact}
-          {...(reviewDiff && { reviewDiff })}
-          reviewLoading={reviewDiffLoading}
-          {...(reviewDiffError && { reviewError: reviewDiffError })}
-          {...(reviewSelectedPath && { reviewSelectedPath })}
-          onSelectAgent={(agentId) => {
-            setTaskPanelActiveTab(agentId);
-            setSelectedSubagentAgentId(agentId);
-          }}
-          onSelectPlan={() => {
-            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID));
-            setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-          }}
-          onCloseTab={closeTaskPanelTab}
-          onSelectBackgroundTasks={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID),
-            );
-            setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-          }}
-          onSelectReview={() => {
-            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID));
-            setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-            void refreshReviewDiff();
-          }}
-          workspacePath={currentProjectPath ?? ""}
-          {...(fileTarget && { fileTarget })}
-          onSelectFiles={() => {
-            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID));
-            setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-          }}
-          onSelectFileViewer={() => {
-            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID));
-            setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-          }}
-          onSelectBrowser={(browserId) => {
-            if (browserId) {
-              selectBrowserTaskTab(browserId);
-              return;
-            }
-            openBrowserTaskPanel();
-          }}
-          onViewedFileChange={(target) => {
-            fileReferenceRequestIdRef.current = Math.max(fileReferenceRequestIdRef.current, target.requestId);
-            setFileTarget(target);
-          }}
-          onOpenTerminal={() => {
-            toggleTerminalForCurrentProject();
-            dismissTaskPanel();
-          }}
-          onShowHome={() => {
-            setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-          }}
-          onSelectReviewPath={setReviewSelectedPath}
-          onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
-          onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
-          sshBookmarks={sshBookmarks}
-          onSshBookmarksChange={setSshBookmarks}
-          onSelectSshBookmarks={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_SSH_BOOKMARKS_TAB_ID),
-            );
-            setTaskPanelActiveTab(TASK_PANEL_SSH_BOOKMARKS_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
-          }}
-          onConnectSshBookmark={(bookmark) => void connectSshBookmark(bookmark)}
-          centerServerSyncVisible={centerServerSyncVisible}
-          onSyncDomain={async (domain, mode) => {
-            const result = await syncCenterServerConfigDomain(domain, mode);
-            if (domain === "sshBookmarks") {
-              const next = await window.eco?.getSshBookmarks?.();
-              if (next) {
-                setSshBookmarks(next);
+        <SuspensePanel>
+          <LazySubagentTaskDrawer
+            open={taskPanelLayoutOpen}
+            surfaceActive={taskPanelOpen && !taskPanelExiting}
+            fullscreen={taskPanelFullscreenOpen}
+            cards={activeSubagentCards}
+            v2Only={Boolean(activeConversationV2)}
+            {...(taskPanelPlan && { plan: taskPanelPlan })}
+            activeTab={taskPanelActiveTab}
+            openTabIds={openTaskPanelTabIds}
+            {...(runProjection && { projection: runProjection })}
+            {...(activeThread && { threadStatus: activeThread.status })}
+            agentDisplayNames={activeRuntimeAgentDisplayNames}
+            agentThemes={activeRuntimeAgentThemes}
+            backgroundTasks={backgroundTerminalTasks}
+            imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
+            onSelectImageArtifact={openImageGenerationArtifact}
+            imageDisplayArtifacts={activeThread ? (imageDisplayArtifactsByThread[activeThread.id] ?? []) : []}
+            onSelectImageDisplayArtifact={openImageDisplayArtifact}
+            {...(reviewDiff && { reviewDiff })}
+            reviewLoading={reviewDiffLoading}
+            {...(reviewDiffError && { reviewError: reviewDiffError })}
+            {...(reviewSelectedPath && { reviewSelectedPath })}
+            onSelectAgent={(agentId) => {
+              setTaskPanelActiveTab(agentId);
+              setSelectedSubagentAgentId(agentId);
+            }}
+            onSelectPlan={() => {
+              setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID));
+              setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+            }}
+            onCloseTab={closeTaskPanelTab}
+            onSelectBackgroundTasks={() => {
+              setOpenTaskPanelTabIds((current) =>
+                addOpenTaskPanelTab(current, TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID),
+              );
+              setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+            }}
+            onSelectReview={() => {
+              setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID));
+              setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+              void refreshReviewDiff();
+            }}
+            workspacePath={currentProjectPath ?? ""}
+            {...(fileTarget && { fileTarget })}
+            onSelectFiles={() => {
+              setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID));
+              setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+            }}
+            onSelectFileViewer={() => {
+              setOpenTaskPanelTabIds((current) =>
+                addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID),
+              );
+              setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+            }}
+            onSelectBrowser={(browserId) => {
+              if (browserId) {
+                selectBrowserTaskTab(browserId);
+                return;
               }
-            }
-            return result;
-          }}
-        />
+              openBrowserTaskPanel();
+            }}
+            onViewedFileChange={(target) => {
+              fileReferenceRequestIdRef.current = Math.max(
+                fileReferenceRequestIdRef.current,
+                target.requestId,
+              );
+              setFileTarget(target);
+            }}
+            onOpenTerminal={() => {
+              toggleTerminalForCurrentProject();
+              dismissTaskPanel();
+            }}
+            onShowHome={() => {
+              setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+            }}
+            onSelectReviewPath={setReviewSelectedPath}
+            onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
+            onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
+            sshBookmarks={sshBookmarks}
+            onSshBookmarksChange={setSshBookmarks}
+            onSelectSshBookmarks={() => {
+              setOpenTaskPanelTabIds((current) =>
+                addOpenTaskPanelTab(current, TASK_PANEL_SSH_BOOKMARKS_TAB_ID),
+              );
+              setTaskPanelActiveTab(TASK_PANEL_SSH_BOOKMARKS_TAB_ID);
+              setSelectedSubagentAgentId(undefined);
+            }}
+            onConnectSshBookmark={(bookmark) => void connectSshBookmark(bookmark)}
+            centerServerSyncVisible={centerServerSyncVisible}
+            onSyncDomain={async (domain, mode) => {
+              const result = await syncCenterServerConfigDomain(domain, mode);
+              if (domain === "sshBookmarks") {
+                const next = await window.eco?.getSshBookmarks?.();
+                if (next) {
+                  setSshBookmarks(next);
+                }
+              }
+              return result;
+            }}
+          />
         </SuspensePanel>
       </motion.aside>
     ) : null;
@@ -10486,46 +10719,61 @@ function App() {
               }
             }}
           />
-          <button type="button" className="sidebar-action" onClick={startNewChat}>
-            <MessageCirclePlus size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
-            {t("nav.newThread")}
-          </button>
-          <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
-            {isOpening ? (
-              <LoaderCircle size={ICON_SIZE.md} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
-            ) : (
-              <FolderOpen size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
-            )}
-            {isOpening ? t("nav.opening") : t("nav.openProject")}
-          </button>
-
-          <div className="sidebar-section sidebar-section-grow">
-            <ProjectSidebarTree
-              projectTree={projectTree}
-              currentProjectPath={currentProjectPath}
-              activeThreadId={selectedThreadId}
-              revealTarget={sidebarRevealTarget}
-              unreadThreadIds={unreadThreadIds}
-              pinnedThreadIds={pinnedThreadIds}
-              onSwitchProject={switchProject}
-              onSelectThread={selectThread}
-              onToggleProjectCollapsed={toggleProjectCollapsed}
-              onExpandProjectThreads={expandProjectThreads}
-              onReorderProjects={reorderProjects}
-              onOpenProjectPath={handleOpenProjectFromDrop}
-              onPinProject={pinProject}
-              onUnpinProject={unpinProject}
-              onRemoveProject={removeProject}
-              onRenameProject={setCustomProjectName}
-              onResetProjectName={(path) => setCustomProjectName(path, undefined)}
-              customProjectNames={customProjectNames}
-              onPinThread={pinThread}
-              onUnpinThread={unpinThread}
-              deletingThreadId={deletingThreadId}
-              onDeleteThread={(thread) => void deleteThread(thread)}
-              pendingBashApprovalThreadIds={new Set(Object.keys(pendingBashApprovalsByThread))}
-              pendingPlanThreadIds={new Set(Object.keys(pendingPlansByThread))}
-            />
+          {/* "新对话" and "打开项目" read as one list; the list itself scrolls so the
+              open-project row travels with the projects instead of staying pinned. */}
+          <div className="sidebar-nav-list">
+            <button type="button" className="sidebar-action" onClick={startNewChat}>
+              <MessageCirclePlus size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+              {t("nav.newThread")}
+            </button>
+            <div className="sidebar-section sidebar-section-grow">
+              <button
+                type="button"
+                className="sidebar-action muted"
+                onClick={openWorkspace}
+                disabled={isOpening}
+                onDragOver={handleOpenProjectRowDragOver}
+                onDrop={handleOpenProjectRowDrop}
+              >
+                {isOpening ? (
+                  <LoaderCircle
+                    size={ICON_SIZE.md}
+                    strokeWidth={ICON_STROKE}
+                    className="spinning"
+                    aria-hidden
+                  />
+                ) : (
+                  <FolderOpen size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+                )}
+                {isOpening ? t("nav.opening") : t("nav.openProject")}
+              </button>
+              <ProjectSidebarTree
+                projectTree={projectTree}
+                currentProjectPath={currentProjectPath}
+                activeThreadId={selectedThreadId}
+                revealTarget={sidebarRevealTarget}
+                unreadThreadIds={unreadThreadIds}
+                pinnedThreadIds={pinnedThreadIds}
+                onSwitchProject={switchProject}
+                onSelectThread={selectThread}
+                onToggleProjectCollapsed={toggleProjectCollapsed}
+                onExpandProjectThreads={expandProjectThreads}
+                onReorderProjects={reorderProjects}
+                onOpenProjectPath={handleOpenProjectFromDrop}
+                onPinProject={pinProject}
+                onUnpinProject={unpinProject}
+                onRemoveProject={removeProject}
+                onRenameProject={setCustomProjectName}
+                onResetProjectName={(path) => setCustomProjectName(path, undefined)}
+                customProjectNames={customProjectNames}
+                onPinThread={pinThread}
+                onUnpinThread={unpinThread}
+                deletingThreadId={deletingThreadId}
+                onDeleteThread={(thread) => void deleteThread(thread)}
+                pendingBashApprovalThreadIds={new Set(Object.keys(pendingBashApprovalsByThread))}
+                pendingPlanThreadIds={new Set(Object.keys(pendingPlansByThread))}
+              />
+            </div>
           </div>
 
           <div className="sidebar-settings">
@@ -10712,10 +10960,7 @@ function App() {
               <div className="codex-main-left-column">
                 <div ref={scrollBodyRef} className="codex-main-scroll-body">
                   <div
-                    className={[
-                      "codex-chat-shell",
-                      showLanding ? "is-landing" : "is-conversation",
-                    ]
+                    className={["codex-chat-shell", showLanding ? "is-landing" : "is-conversation"]
                       .filter(Boolean)
                       .join(" ")}
                     style={
@@ -10748,7 +10993,9 @@ function App() {
                               referencedSkillNames={referencedSkillNames}
                               linking={skillsLinking}
                               {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
-                              {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
+                              {...(composerCoreKind === "claude" && {
+                                onLinkAgents: linkProjectAgentsSkills,
+                              })}
                             />
                           ) : null}
                         </div>
@@ -10776,40 +11023,37 @@ function App() {
                               aria-busy={!activityFeedBootReady}
                             >
                               {activityFeedBootReady ? (
-                                                                <SuspensePanel>
-<LazyActivityLogView
-                                  {...(activeThread && { thread: activeThread })}
-                                  {...(displayProjection && { projection: displayProjection })}
-                                  {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
-                                  {...(activeThread &&
-                                    billingByThread[activeThread.id] && {
-                                      billing: billingByThread[activeThread.id],
+                                <SuspensePanel>
+                                  <LazyActivityLogView
+                                    {...(activeThread && { thread: activeThread })}
+                                    {...(activeThread &&
+                                      conversationV2ByThread[activeThread.id] && {
+                                        conversationV2: conversationV2ByThread[activeThread.id],
+                                      })}
+                                    onRestorePrompt={restorePrompt}
+                                    onLoadUserMessageEdit={loadUserMessageEdit}
+                                    onRewriteUserMessage={rewriteUserMessage}
+                                    onRetryFailedRequest={retryFailedRequest}
+                                    onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                                    {...(Object.keys(activityModelByRole).length > 0 && {
+                                      modelByRole: activityModelByRole,
                                     })}
-                                  onRestorePrompt={restorePrompt}
-                                  onLoadUserMessageEdit={loadUserMessageEdit}
-                                  onRewriteUserMessage={rewriteUserMessage}
-                                  onRetryFailedRequest={retryFailedRequest}
-                                  onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                                  onLoadProjectionDetail={loadProjectionDetail}
-                                  {...(Object.keys(activityModelByRole).length > 0 && {
-                                    modelByRole: activityModelByRole,
-                                  })}
-                                  agentDisplayNames={activeRuntimeAgentDisplayNames}
-                                  agentThemes={activeRuntimeAgentThemes}
-                                  {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
-                                  onOpenSubagent={openSubagentTaskDrawer}
-                                  onOpenImageGenerationTool={openImageGenerationTool}
-                                  onOpenImageDisplayTool={openImageDisplayTool}
-                                  onOpenImageDisplayArtifact={openImageDisplayArtifact}
-                                  thinkingDisplayMode={thinkingDisplayPreferences.mode}
-                                  {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                                  {...(subagentTimings && { subagentTimings })}
-                                  {...(subagentMetrics && { subagentMetrics })}
-                                  {...(activeThread &&
-                                    contextByThread[activeThread.id] && {
-                                      context: contextByThread[activeThread.id],
+                                    agentDisplayNames={activeRuntimeAgentDisplayNames}
+                                    agentThemes={activeRuntimeAgentThemes}
+                                    {...(taskDrawerOpen &&
+                                      selectedSubagentAgentId && { selectedSubagentAgentId })}
+                                    onOpenSubagent={openSubagentTaskDrawer}
+                                    onOpenImageGenerationTool={openImageGenerationTool}
+                                    onOpenImageDisplayTool={openImageDisplayTool}
+                                    onOpenImageDisplayArtifact={openImageDisplayArtifact}
+                                    thinkingDisplayMode={thinkingDisplayPreferences.mode}
+                                    {...(activeSubagentTimings && {
+                                      subagentTimings: activeSubagentTimings,
                                     })}
-                                />
+                                    {...(activeSubagentMetrics && {
+                                      subagentMetrics: activeSubagentMetrics,
+                                    })}
+                                  />
                                 </SuspensePanel>
                               ) : null}
                               <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
@@ -10820,10 +11064,14 @@ function App() {
                                 className="activity-feed-scroll-jump is-visible"
                                 onClick={handleActivityFeedScrollJump}
                                 aria-label={
-                                  activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
+                                  activityFeedScrollJump === "top"
+                                    ? t("app.scrollTop")
+                                    : t("app.scrollBottom")
                                 }
                                 title={
-                                  activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
+                                  activityFeedScrollJump === "top"
+                                    ? t("app.scrollTop")
+                                    : t("app.scrollBottom")
                                 }
                               >
                                 {activityFeedScrollJump === "top" ? (
@@ -10853,20 +11101,20 @@ function App() {
                       className="codex-terminal-project-slot"
                       hidden={!isCurrentProject}
                     >
-                                            <SuspensePanel>
-<LazyTerminalPanel
-                        workspacePath={workspacePath}
-                        workspaceLabel={workspaceLabel}
-                        state={terminalState}
-                        isCurrentProject={isCurrentProject}
-                        onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
-                        onSessionExit={handleTerminalSessionExit}
-                        sessionPresentations={terminalSessionPresentations}
-                        {...(isCurrentProject && {
-                          injectedSessionId: injectedTerminalSessionId,
-                          onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
-                        })}
-                      />
+                      <SuspensePanel>
+                        <LazyTerminalPanel
+                          workspacePath={workspacePath}
+                          workspaceLabel={workspaceLabel}
+                          state={terminalState}
+                          isCurrentProject={isCurrentProject}
+                          onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
+                          onSessionExit={handleTerminalSessionExit}
+                          sessionPresentations={terminalSessionPresentations}
+                          {...(isCurrentProject && {
+                            injectedSessionId: injectedTerminalSessionId,
+                            onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
+                          })}
+                        />
                       </SuspensePanel>
                     </div>
                   );
@@ -10948,9 +11196,7 @@ function App() {
                     activeThread ? (imageDisplayArtifactsByThread[activeThread.id] ?? []) : []
                   }
                   onOpenImageDisplayArtifact={openImageDisplayArtifact}
-                  htmlHostArtifacts={
-                    activeThread ? (htmlHostArtifactsByThread[activeThread.id] ?? []) : []
-                  }
+                  htmlHostArtifacts={activeThread ? (htmlHostArtifactsByThread[activeThread.id] ?? []) : []}
                   onOpenHtmlHostArtifact={openHtmlHostArtifact}
                   {...(projectWorkspace && { workspace: projectWorkspace })}
                   {...(currentProjectPath && { workspacePath: currentProjectPath })}
@@ -11119,335 +11365,602 @@ function App() {
 
           <div className="settings-main">
             <div className="settings-content">
-            <SuspensePanel>
-              {settingsSection === "preferences" && (
-                <LazyNotificationPreferencesPanel
-                  settings={notificationSettings}
-                  onSave={saveNotificationSettingsSnapshot}
-                  localePreference={localePreference}
-                  onLocalePreferenceChange={setLocalePreference}
-                  cacheBreakTipsEnabled={promptCacheTipPreferences.enabled}
-                  onCacheBreakTipsEnabledChange={(enabled) => setPromptCacheTipPreferences({ enabled })}
-                  followUpDeliveryMode={workflowSettings.followUpDeliveryMode ?? "steer"}
-                  onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
-                  defaultBashReviewMode={normalizeBashReviewMode(workflowSettings.defaultBashReviewMode)}
-                  onDefaultBashReviewModeChange={saveDefaultBashReviewMode}
-                  showBilling={workflowSettings.showBilling !== false}
-                  onShowBillingChange={saveShowBilling}
-                  tokenSpeedMode={tokenSpeedPreferences.mode}
-                  onTokenSpeedModeChange={(mode) => setTokenSpeedPreferences({ mode })}
-                  thinkingDisplayMode={thinkingDisplayPreferences.mode}
-                  onThinkingDisplayModeChange={(mode) => {
-                    startTransition(() => {
-                      setThinkingDisplayPreferences({ mode });
-                    });
-                  }}
-                  upstreamUserAgent={proxyBridgeSettings?.upstreamUserAgent}
-                  upstreamUserAgentSaving={isSavingProxyBridgeSettings}
-                  onUpstreamUserAgentChange={(value) => {
-                    const next: ProxyBridgeSettingsSnapshot = {
-                      ...(proxyBridgeSettings ?? {}),
-                    };
-                    if (value) {
-                      next.upstreamUserAgent = value;
-                    } else {
-                      delete next.upstreamUserAgent;
-                    }
-                    void saveProxyBridgeSettings(next);
-                  }}
-                />
-              )}
+              <SuspensePanel>
+                {settingsSection === "preferences" && (
+                  <LazyNotificationPreferencesPanel
+                    settings={notificationSettings}
+                    onSave={saveNotificationSettingsSnapshot}
+                    localePreference={localePreference}
+                    onLocalePreferenceChange={setLocalePreference}
+                    cacheBreakTipsEnabled={promptCacheTipPreferences.enabled}
+                    onCacheBreakTipsEnabledChange={(enabled) => setPromptCacheTipPreferences({ enabled })}
+                    followUpDeliveryMode={workflowSettings.followUpDeliveryMode ?? "steer"}
+                    onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
+                    defaultBashReviewMode={normalizeBashReviewMode(workflowSettings.defaultBashReviewMode)}
+                    onDefaultBashReviewModeChange={saveDefaultBashReviewMode}
+                    showBilling={workflowSettings.showBilling !== false}
+                    onShowBillingChange={saveShowBilling}
+                    tokenSpeedMode={tokenSpeedPreferences.mode}
+                    onTokenSpeedModeChange={(mode) => setTokenSpeedPreferences({ mode })}
+                    thinkingDisplayMode={thinkingDisplayPreferences.mode}
+                    onThinkingDisplayModeChange={(mode) => {
+                      startTransition(() => {
+                        setThinkingDisplayPreferences({ mode });
+                      });
+                    }}
+                    upstreamUserAgent={proxyBridgeSettings?.upstreamUserAgent}
+                    upstreamUserAgentSaving={isSavingProxyBridgeSettings}
+                    onUpstreamUserAgentChange={(value) => {
+                      const next: ProxyBridgeSettingsSnapshot = {
+                        ...(proxyBridgeSettings ?? {}),
+                      };
+                      if (value) {
+                        next.upstreamUserAgent = value;
+                      } else {
+                        delete next.upstreamUserAgent;
+                      }
+                      void saveProxyBridgeSettings(next);
+                    }}
+                  />
+                )}
 
-              {settingsSection === "general" && (
-                <LazyGeneralSettingsPanel
-                  theme={appTheme}
-                  onThemeChange={setAppTheme}
-                  typography={typographyPreferences}
-                  onTypographyChange={setTypographyPreferences}
-                />
-              )}
+                {settingsSection === "general" && (
+                  <LazyGeneralSettingsPanel
+                    theme={appTheme}
+                    onThemeChange={setAppTheme}
+                    typography={typographyPreferences}
+                    onTypographyChange={setTypographyPreferences}
+                  />
+                )}
 
-              {settingsSection === "personalization" && (
-                <LazyPersonalizationSettingsPanel
-                  settings={personalizationSettings}
-                  onSave={savePersonalizationSettingsSnapshot}
-                  centerServerSyncVisible={centerServerSyncVisible}
-                  onSyncDomain={syncCenterServerConfigDomain}
-                />
-              )}
-
-              {settingsSection === "storage" && <LazyStorageSettingsPanel />}
-
-              {settingsSection === "browser" && (
-                <LazyBrowserSettingsPanel settings={browserSettings} onSave={saveBrowserSettingsSnapshot} />
-              )}
-
-              {settingsSection === "computerUse" &&
-                (() => {
-                  const computerUseAvailability = integrationAvailability.integrations.find(
-                    (item) => item.id === "computerUse",
-                  );
-                  return (
-                    <LazyComputerUseSettingsPanel
-                      settings={computerUseSettings}
-                      {...(computerUseAvailability ? { availability: computerUseAvailability } : {})}
-                      onSave={saveComputerUseSettingsSnapshot}
-                      onRunDoctor={runComputerUseDoctor}
-                      onCheckPermissionStatus={checkComputerUsePermissionStatus}
-                    />
-                  );
-                })()}
-
-              {settingsSection === "imageGeneration" && (
-                <LazyImageGenerationSettingsPanel
-                  settings={imageGenerationSettings}
-                  onChange={(snapshot) => {
-                    setImageGenerationSettings(snapshot);
-                    void window.eco?.getIntegrationAvailability().then(setIntegrationAvailability);
-                  }}
-                  onError={setError}
-                  centerServerSyncVisible={centerServerSyncVisible}
-                  onSyncDomain={syncCenterServerConfigDomain}
-                />
-              )}
-
-              {settingsSection === "skills" && (
-                <LazySkillsSettingsPanel
-                  {...(skillsSnapshot && { snapshot: skillsSnapshot })}
-                  loading={isLoadingSkills}
-                  onRefresh={() => void refreshSkillsList()}
-                  onUninstall={uninstallSkill}
-                  onLoadCatalogLeaderboard={loadSkillsCatalogLeaderboard}
-                  onSearchCatalog={searchSkillsCatalog}
-                  onInstallCatalog={installCatalogSkill}
-                />
-              )}
-
-              {settingsSection === "defaultAgent" && (
-                <LazyDefaultAgentSettingsPanel
-                  defaultCoreKind={workflowSettings.defaultCoreKind ?? "claude"}
-                  codexAvailable={coreAvailability?.codex.available !== false}
-                  {...(coreAvailability?.codex.reason && {
-                    codexUnavailableReason: coreAvailability.codex.reason,
-                  })}
-                  piAvailable={coreAvailability?.pi.available !== false}
-                  {...(coreAvailability?.pi.reason && {
-                    piUnavailableReason: coreAvailability.pi.reason,
-                  })}
-                  cursorAvailable={coreAvailability?.cursor.available === true}
-                  {...(coreAvailability?.cursor.reason && {
-                    cursorUnavailableReason: coreAvailability.cursor.reason,
-                  })}
-                  cursorProbeLoading={cursorProbeLoading || acpEnableInFlight}
-                  busy={isSavingSettings}
-                  onChange={(coreKind) => {
-                    if (coreKind === "acp") {
-                      void (async () => {
-                        setAcpEnableInFlight(true);
-                        try {
-                          const availability = await refreshCoreAvailability({ reportError: true });
-                          if (availability?.cursor.available !== true) {
-                            return;
-                          }
-                          await saveDefaultCoreKind("acp");
-                        } finally {
-                          setAcpEnableInFlight(false);
-                        }
-                      })();
-                      return;
-                    }
-                    void saveDefaultCoreKind(coreKind);
-                  }}
-                  acpCursorModelId={workflowSettings.acpCursorModelId}
-                  acpCursorApiKey={workflowSettings.acpCursorApiKey}
-                  cursorModels={cursorModels}
-                  cursorModelsLoading={cursorModelsLoading}
-                  {...(cursorModelsError && { cursorModelsError })}
-                  onAcpCursorModelChange={(modelId) => void saveAcpCursorModelId(modelId)}
-                  onAcpCursorApiKeyChange={(apiKey) => void saveAcpCursorApiKey(apiKey)}
-                  onRefreshCursorModels={refreshCursorModels}
-                  centerServerSyncVisible={centerServerSyncVisible}
-                  onSyncDomain={syncCenterServerConfigDomain}
-                />
-              )}
-
-              {settingsSection === "contextWindow" && (
-                <LazyContextWindowSettingsPanel
-                  contextWindowLimitTokens={workflowSettings.contextWindowLimitTokens}
-                  maxOutputLimitTokens={workflowSettings.maxOutputLimitTokens}
-                  onChangeContextWindow={saveContextWindowLimit}
-                  onChangeMaxOutput={saveMaxOutputLimit}
-                />
-              )}
-
-              {settingsSection === "mcp" && (
-                <LazyMcpSettingsPanel
-                  servers={mcpSettings.servers}
-                  busy={isSavingSettings}
-                  onSave={saveMcpServer}
-                  onDelete={deleteMcpServer}
-                  onCheck={checkMcpServer}
-                />
-              )}
-
-              {settingsSection === "centerServer" && (
-                <LazyCenterServerSettingsPanel
-                  snapshot={centerServerSettings}
-                  busy={isSavingSettings}
-                  onSave={saveCenterServerSettings}
-                  onTestConnection={testCenterServerConnection}
-                  onSignUp={signUpCenterServer}
-                  onSignIn={signInCenterServer}
-                  onCreatePairing={createCenterServerPairing}
-                  onListBindings={listCenterServerBindings}
-                  onListPresence={listCenterServerPresence}
-                  onRevokeBinding={revokeCenterServerBinding}
-                  onConnect={connectCenterServer}
-                  onDisconnect={disconnectCenterServer}
-                  onRemoveConnection={removeCenterServerConnection}
-                  onGetVaultStatus={getCenterServerVaultStatus}
-                  onGetSyncStatus={getCenterServerSyncStatus}
-                  onUnlockVaultWithPassword={unlockCenterServerVaultWithPassword}
-                  onWrapVaultWithPassword={wrapCenterServerVaultWithPassword}
-                  onRequestVaultClaim={requestCenterServerVaultClaim}
-                  onListPendingVaultClaims={listCenterServerPendingVaultClaims}
-                  onApproveVaultClaim={approveCenterServerVaultClaim}
-                  onSubmitVaultClaimCode={submitCenterServerVaultClaimCode}
-                  onCancelVaultClaim={cancelCenterServerVaultClaim}
-                  ecoConnectLink={ecoConnectLink}
-                  onEcoConnectLinkDismiss={() => setEcoConnectLink(undefined)}
-                />
-              )}
-
-              {settingsSection === "asr" && (
-                <LazyAsrSettingsPanel
-                  snapshot={asrProfiles}
-                  busy={asrBusy}
-                  {...(asrSettingsLoadError !== undefined ? { loadError: asrSettingsLoadError } : {})}
-                  onSave={saveAsrProfile}
-                  onDelete={deleteAsrProfile}
-                  onActivate={activateAsrProfile}
-                  onInputDeviceChange={saveAsrInputDevice}
-                  centerServerSyncVisible={centerServerSyncVisible}
-                  onSyncDomain={syncCenterServerConfigDomain}
-                />
-              )}
-
-              {settingsSection === "integratedWebSearch" &&
-                (integratedWebSearchSettings ? (
-                  <LazyIntegratedWebSearchSettingsPanel
-                    settings={integratedWebSearchSettings}
-                    busy={isSavingIntegratedWebSearchSettings}
-                    onSave={(next) => void saveIntegratedWebSearchSettings(next)}
+                {settingsSection === "personalization" && (
+                  <LazyPersonalizationSettingsPanel
+                    settings={personalizationSettings}
+                    onSave={savePersonalizationSettingsSnapshot}
                     centerServerSyncVisible={centerServerSyncVisible}
                     onSyncDomain={syncCenterServerConfigDomain}
                   />
-                ) : (
-                  <p className="settings-empty-hint">{t("settings.integratedWebSearch.loading")}</p>
-                ))}
+                )}
 
-              {settingsSection === "providers" && (
-                <LazyModelsSettingsPanel
-                  settings={settings}
-                  mode="providerSettings"
-                  busy={isSavingSettings}
-                  onSettingsChange={setSettings}
-                  onSavingChange={setIsSavingSettings}
-                  onRequestCreateMainAgentConfig={(seed) => {
-                    setPendingCreateMainConfig(seed);
-                    setSettingsSection("orchestrationComponents");
-                  }}
-                  centerServerSyncVisible={centerServerSyncVisible}
-                  onSyncDomain={syncCenterServerConfigDomain}
-                />
-              )}
+                {settingsSection === "storage" && <LazyStorageSettingsPanel />}
 
-              {settingsSection === "proxy" &&
-                (proxyBridgeSettings ? (
-                  <LazyProxySettingsPanel
-                    settings={proxyBridgeSettings}
-                    busy={isSavingProxyBridgeSettings}
-                    onSave={(next) => {
-                      const merged: ProxyBridgeSettingsSnapshot = { ...(proxyBridgeSettings ?? {}) };
-                      merged.enabled = next.enabled === undefined ? true : next.enabled;
-                      // 键存在与否表示是否修改：关闭开关时保留已保存 URL。
-                      if (next.upstreamProxyUrl !== undefined) {
-                        if (next.upstreamProxyUrl) {
-                          merged.upstreamProxyUrl = next.upstreamProxyUrl;
-                        } else {
-                          delete merged.upstreamProxyUrl;
-                        }
+                {settingsSection === "browser" && (
+                  <LazyBrowserSettingsPanel settings={browserSettings} onSave={saveBrowserSettingsSnapshot} />
+                )}
+
+                {settingsSection === "computerUse" &&
+                  (() => {
+                    const computerUseAvailability = integrationAvailability.integrations.find(
+                      (item) => item.id === "computerUse",
+                    );
+                    return (
+                      <LazyComputerUseSettingsPanel
+                        settings={computerUseSettings}
+                        {...(computerUseAvailability ? { availability: computerUseAvailability } : {})}
+                        onSave={saveComputerUseSettingsSnapshot}
+                        onRunDoctor={runComputerUseDoctor}
+                        onCheckPermissionStatus={checkComputerUsePermissionStatus}
+                      />
+                    );
+                  })()}
+
+                {settingsSection === "imageGeneration" && (
+                  <LazyImageGenerationSettingsPanel
+                    settings={imageGenerationSettings}
+                    onChange={(snapshot) => {
+                      setImageGenerationSettings(snapshot);
+                      void window.eco?.getIntegrationAvailability().then(setIntegrationAvailability);
+                    }}
+                    onError={setError}
+                    centerServerSyncVisible={centerServerSyncVisible}
+                    onSyncDomain={syncCenterServerConfigDomain}
+                  />
+                )}
+
+                {settingsSection === "skills" && (
+                  <LazySkillsSettingsPanel
+                    {...(skillsSnapshot && { snapshot: skillsSnapshot })}
+                    loading={isLoadingSkills}
+                    onRefresh={() => void refreshSkillsList()}
+                    onUninstall={uninstallSkill}
+                    onLoadCatalogLeaderboard={loadSkillsCatalogLeaderboard}
+                    onSearchCatalog={searchSkillsCatalog}
+                    onInstallCatalog={installCatalogSkill}
+                  />
+                )}
+
+                {settingsSection === "defaultAgent" && (
+                  <LazyDefaultAgentSettingsPanel
+                    defaultCoreKind={workflowSettings.defaultCoreKind ?? "claude"}
+                    codexAvailable={coreAvailability?.codex.available !== false}
+                    {...(coreAvailability?.codex.reason && {
+                      codexUnavailableReason: coreAvailability.codex.reason,
+                    })}
+                    piAvailable={coreAvailability?.pi.available !== false}
+                    {...(coreAvailability?.pi.reason && {
+                      piUnavailableReason: coreAvailability.pi.reason,
+                    })}
+                    cursorAvailable={coreAvailability?.cursor.available === true}
+                    {...(coreAvailability?.cursor.reason && {
+                      cursorUnavailableReason: coreAvailability.cursor.reason,
+                    })}
+                    cursorProbeLoading={cursorProbeLoading || acpEnableInFlight}
+                    busy={isSavingSettings}
+                    onChange={(coreKind) => {
+                      if (coreKind === "acp") {
+                        void (async () => {
+                          setAcpEnableInFlight(true);
+                          try {
+                            const availability = await refreshCoreAvailability({ reportError: true });
+                            if (availability?.cursor.available !== true) {
+                              return;
+                            }
+                            await saveDefaultCoreKind("acp");
+                          } finally {
+                            setAcpEnableInFlight(false);
+                          }
+                        })();
+                        return;
                       }
-                      void saveProxyBridgeSettings(merged);
+                      void saveDefaultCoreKind(coreKind);
+                    }}
+                    acpCursorModelId={workflowSettings.acpCursorModelId}
+                    acpCursorApiKey={workflowSettings.acpCursorApiKey}
+                    cursorModels={cursorModels}
+                    cursorModelsLoading={cursorModelsLoading}
+                    {...(cursorModelsError && { cursorModelsError })}
+                    onAcpCursorModelChange={(modelId) => void saveAcpCursorModelId(modelId)}
+                    onAcpCursorApiKeyChange={(apiKey) => void saveAcpCursorApiKey(apiKey)}
+                    onRefreshCursorModels={refreshCursorModels}
+                    centerServerSyncVisible={centerServerSyncVisible}
+                    onSyncDomain={syncCenterServerConfigDomain}
+                  />
+                )}
+
+                {settingsSection === "contextWindow" && (
+                  <LazyContextWindowSettingsPanel
+                    contextWindowLimitTokens={workflowSettings.contextWindowLimitTokens}
+                    maxOutputLimitTokens={workflowSettings.maxOutputLimitTokens}
+                    onChangeContextWindow={saveContextWindowLimit}
+                    onChangeMaxOutput={saveMaxOutputLimit}
+                  />
+                )}
+
+                {settingsSection === "mcp" && (
+                  <LazyMcpSettingsPanel
+                    servers={mcpSettings.servers}
+                    busy={isSavingSettings}
+                    onSave={saveMcpServer}
+                    onDelete={deleteMcpServer}
+                    onCheck={checkMcpServer}
+                  />
+                )}
+
+                {settingsSection === "centerServer" && (
+                  <LazyCenterServerSettingsPanel
+                    snapshot={centerServerSettings}
+                    busy={isSavingSettings}
+                    onSave={saveCenterServerSettings}
+                    onTestConnection={testCenterServerConnection}
+                    onSignUp={signUpCenterServer}
+                    onSignIn={signInCenterServer}
+                    onCreatePairing={createCenterServerPairing}
+                    onListBindings={listCenterServerBindings}
+                    onListPresence={listCenterServerPresence}
+                    onRevokeBinding={revokeCenterServerBinding}
+                    onConnect={connectCenterServer}
+                    onDisconnect={disconnectCenterServer}
+                    onRemoveConnection={removeCenterServerConnection}
+                    onGetVaultStatus={getCenterServerVaultStatus}
+                    onGetSyncStatus={getCenterServerSyncStatus}
+                    onUnlockVaultWithPassword={unlockCenterServerVaultWithPassword}
+                    onWrapVaultWithPassword={wrapCenterServerVaultWithPassword}
+                    onRequestVaultClaim={requestCenterServerVaultClaim}
+                    onListPendingVaultClaims={listCenterServerPendingVaultClaims}
+                    onApproveVaultClaim={approveCenterServerVaultClaim}
+                    onSubmitVaultClaimCode={submitCenterServerVaultClaimCode}
+                    onCancelVaultClaim={cancelCenterServerVaultClaim}
+                    ecoConnectLink={ecoConnectLink}
+                    onEcoConnectLinkDismiss={() => setEcoConnectLink(undefined)}
+                  />
+                )}
+
+                {settingsSection === "asr" && (
+                  <LazyAsrSettingsPanel
+                    snapshot={asrProfiles}
+                    busy={asrBusy}
+                    {...(asrSettingsLoadError !== undefined ? { loadError: asrSettingsLoadError } : {})}
+                    onSave={saveAsrProfile}
+                    onDelete={deleteAsrProfile}
+                    onActivate={activateAsrProfile}
+                    onInputDeviceChange={saveAsrInputDevice}
+                    centerServerSyncVisible={centerServerSyncVisible}
+                    onSyncDomain={syncCenterServerConfigDomain}
+                  />
+                )}
+
+                {settingsSection === "integratedWebSearch" &&
+                  (integratedWebSearchSettings ? (
+                    <LazyIntegratedWebSearchSettingsPanel
+                      settings={integratedWebSearchSettings}
+                      busy={isSavingIntegratedWebSearchSettings}
+                      onSave={(next) => void saveIntegratedWebSearchSettings(next)}
+                      centerServerSyncVisible={centerServerSyncVisible}
+                      onSyncDomain={syncCenterServerConfigDomain}
+                    />
+                  ) : (
+                    <p className="settings-empty-hint">{t("settings.integratedWebSearch.loading")}</p>
+                  ))}
+
+                {settingsSection === "providers" && (
+                  <LazyModelsSettingsPanel
+                    settings={settings}
+                    mode="providerSettings"
+                    busy={isSavingSettings}
+                    onSettingsChange={setSettings}
+                    onSavingChange={setIsSavingSettings}
+                    onRequestCreateMainAgentConfig={(seed) => {
+                      setPendingCreateMainConfig(seed);
+                      setSettingsSection("orchestrationComponents");
                     }}
                     centerServerSyncVisible={centerServerSyncVisible}
                     onSyncDomain={syncCenterServerConfigDomain}
                   />
-                ) : (
-                  <p className="settings-empty-hint">{t("settings.proxy.loading")}</p>
-                ))}
+                )}
 
-              {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
-                (proxyBridgeSettings ? (
-                  <LazyModelsSettingsPanel
-                    settings={settings}
-                    mcpServers={mcpSettings.servers}
-                    skillsSnapshot={skillsSnapshot}
-                    initialTab={
-                      settingsSection === "orchestrationComponents" ? "compositionParts" : "subagents"
-                    }
-                    mode="agentBuilder"
-                    hideCategoryTabs
-                    heading={
-                      settingsSection === "orchestrationComponents"
-                        ? t("settings.orchestrationComponents")
-                        : t("settings.agentLibrary")
-                    }
-                    busy={isSavingSettings}
-                    {...(effectiveDefaultOrchestrationSelection && {
-                      defaultOrchestrationSelection: effectiveDefaultOrchestrationSelection,
-                    })}
-                    {...(workflowSettings.defaultAuxiliaryModel && {
-                      defaultAuxiliaryModel: workflowSettings.defaultAuxiliaryModel,
-                    })}
-                    {...(workflowSettings.defaultVisionModel && {
-                      defaultVisionModel: workflowSettings.defaultVisionModel,
-                    })}
-                    {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
-                    onPendingCreateMainConfigConsumed={() => setPendingCreateMainConfig(undefined)}
-                    onSettingsChange={setSettings}
-                    onSavingChange={setIsSavingSettings}
-                    onDefaultOrchestrationSelectionChange={(selection) =>
-                      void saveDefaultOrchestrationSelection(selection)
-                    }
-                    onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
-                    onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
-                    {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
-                      ? {
-                          centerServerSyncVisible,
-                          onSyncDomain: syncCenterServerConfigDomain,
+                {settingsSection === "proxy" &&
+                  (proxyBridgeSettings ? (
+                    <LazyProxySettingsPanel
+                      settings={proxyBridgeSettings}
+                      busy={isSavingProxyBridgeSettings}
+                      onSave={(next) => {
+                        const merged: ProxyBridgeSettingsSnapshot = { ...(proxyBridgeSettings ?? {}) };
+                        merged.enabled = next.enabled === undefined ? true : next.enabled;
+                        // 键存在与否表示是否修改：关闭开关时保留已保存 URL。
+                        if (next.upstreamProxyUrl !== undefined) {
+                          if (next.upstreamProxyUrl) {
+                            merged.upstreamProxyUrl = next.upstreamProxyUrl;
+                          } else {
+                            delete merged.upstreamProxyUrl;
+                          }
                         }
-                      : {})}
-                  />
-                ) : (
-                  <p className="settings-empty-hint">{t("settings.loadingModels")}</p>
-                ))}
+                        void saveProxyBridgeSettings(merged);
+                      }}
+                      centerServerSyncVisible={centerServerSyncVisible}
+                      onSyncDomain={syncCenterServerConfigDomain}
+                    />
+                  ) : (
+                    <p className="settings-empty-hint">{t("settings.proxy.loading")}</p>
+                  ))}
 
-              {settingsSection === "git" && (
-                <LazyGitSettingsPanel
-                  settings={gitSettings}
-                  onSave={saveGitSettingsSnapshot}
-                  centerServerSyncVisible={centerServerSyncVisible}
-                  onSyncDomain={syncCenterServerConfigDomain}
-                />
-              )}
-            </SuspensePanel>
+                {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
+                  (proxyBridgeSettings ? (
+                    <LazyModelsSettingsPanel
+                      settings={settings}
+                      mcpServers={mcpSettings.servers}
+                      skillsSnapshot={skillsSnapshot}
+                      initialTab={
+                        settingsSection === "orchestrationComponents" ? "compositionParts" : "subagents"
+                      }
+                      mode="agentBuilder"
+                      hideCategoryTabs
+                      heading={
+                        settingsSection === "orchestrationComponents"
+                          ? t("settings.orchestrationComponents")
+                          : t("settings.agentLibrary")
+                      }
+                      busy={isSavingSettings}
+                      {...(effectiveDefaultOrchestrationSelection && {
+                        defaultOrchestrationSelection: effectiveDefaultOrchestrationSelection,
+                      })}
+                      {...(workflowSettings.defaultAuxiliaryModel && {
+                        defaultAuxiliaryModel: workflowSettings.defaultAuxiliaryModel,
+                      })}
+                      {...(workflowSettings.defaultVisionModel && {
+                        defaultVisionModel: workflowSettings.defaultVisionModel,
+                      })}
+                      {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
+                      onPendingCreateMainConfigConsumed={() => setPendingCreateMainConfig(undefined)}
+                      onSettingsChange={setSettings}
+                      onSavingChange={setIsSavingSettings}
+                      onDefaultOrchestrationSelectionChange={(selection) =>
+                        void saveDefaultOrchestrationSelection(selection)
+                      }
+                      onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
+                      onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
+                      {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
+                        ? {
+                            centerServerSyncVisible,
+                            onSyncDomain: syncCenterServerConfigDomain,
+                          }
+                        : {})}
+                    />
+                  ) : (
+                    <p className="settings-empty-hint">{t("settings.loadingModels")}</p>
+                  ))}
+
+                {settingsSection === "git" && (
+                  <LazyGitSettingsPanel
+                    settings={gitSettings}
+                    onSave={saveGitSettingsSnapshot}
+                    centerServerSyncVisible={centerServerSyncVisible}
+                    onSyncDomain={syncCenterServerConfigDomain}
+                  />
+                )}
+              </SuspensePanel>
             </div>
           </div>
         </div>
       )}
     </main>
   );
+}
+
+async function loadConversationV2RendererState(
+  conversationId: string,
+): Promise<ConversationV2RendererState | undefined> {
+  const api = window.eco;
+  if (
+    !api ||
+    typeof api.conversationV2Bootstrap !== "function" ||
+    typeof api.conversationV2Projection !== "function"
+  ) {
+    return undefined;
+  }
+  const capabilities = await api.conversationV2Capabilities();
+  if (
+    capabilities.protocolVersion !== 2 ||
+    capabilities.eventSchemaVersion !== 1 ||
+    capabilities.effectVersion !== 1 ||
+    !Number.isSafeInteger(capabilities.maxEvents) ||
+    capabilities.maxEvents <= 0 ||
+    !Number.isSafeInteger(capabilities.maxBytes) ||
+    capabilities.maxBytes <= 0 ||
+    typeof capabilities.storeEpoch !== "string" ||
+    !capabilities.storeEpoch.trim()
+  ) {
+    throw new Error("Conversation V2 renderer capabilities are unsupported.");
+  }
+  const bootstrap = await api.conversationV2Bootstrap(conversationId, {
+    pageSize: 60,
+    maxBytes: capabilities.maxBytes,
+  });
+  if (
+    bootstrap.protocolVersion !== 2 ||
+    bootstrap.conversationId !== conversationId ||
+    bootstrap.storeEpoch !== capabilities.storeEpoch
+  ) {
+    throw new Error("Conversation V2 renderer bootstrap belongs to another stream.");
+  }
+  let state = installConversationV2Bootstrap(bootstrap);
+  const syncThrough = (current: ConversationV2RendererState, throughSeq: number) =>
+    catchUpConversationV2RendererState(
+      current,
+      throughSeq,
+      (afterSeq, requestedThroughSeq) =>
+        api.conversationV2Sync({
+          conversationId,
+          storeEpoch: current.storeEpoch,
+          afterSeq,
+          throughSeq: requestedThroughSeq,
+          maxEvents: capabilities.maxEvents,
+          maxBytes: capabilities.maxBytes,
+        }),
+      capabilities.maxEvents,
+    );
+  while (true) {
+    const head = await api.conversationV2Head(conversationId);
+    if (
+      head.protocolVersion !== 2 ||
+      head.conversationId !== conversationId ||
+      head.storeEpoch !== state.storeEpoch ||
+      !Number.isSafeInteger(head.lastSeq) ||
+      !Number.isSafeInteger(head.historyRevision) ||
+      head.lastSeq < 0 ||
+      head.historyRevision < 0 ||
+      head.lastSeq < state.appliedSeq ||
+      head.historyRevision < state.historyRevision
+    ) {
+      throw new Error("Conversation V2 renderer head changed during recovery.");
+    }
+    if (head.lastSeq <= state.appliedSeq) {
+      break;
+    }
+    state = await syncThrough(state, head.lastSeq);
+    if (state.appliedSeq < head.lastSeq) {
+      throw new Error("Conversation V2 renderer did not close the sync range.");
+    }
+  }
+  state = await loadConversationV2OlderHistory(
+    api,
+    state,
+    conversationId,
+    capabilities.maxBytes,
+    syncThrough,
+  );
+  state = await loadConversationV2ToolSummaries(
+    api,
+    state,
+    conversationId,
+    capabilities.maxBytes,
+    syncThrough,
+  );
+  const projectionExtras = await api.conversationV2Projection(conversationId);
+  return installConversationV2ProjectionExtras(state, projectionExtras);
+}
+
+function conversationV2TodosToCoderTodos(state: ConversationV2RendererState): CoderTodoItem[] {
+  const todos: ConversationTodo[] = [...state.todos.values()];
+  return todos
+    .sort((left, right) => left.position - right.position || left.todoId.localeCompare(right.todoId))
+    .map((todo) => ({
+      id: todo.todoId,
+      threadId: todo.conversationId,
+      title: todo.title,
+      detail: todo.detail,
+      status: todo.status,
+      position: todo.position,
+      updatedAt: todo.updatedAt,
+    }));
+}
+
+/** Messages per older-history page. The Feed holds the whole conversation, not one window. */
+const CONVERSATION_V2_HISTORY_PAGE_SIZE = 100;
+
+/**
+ * Reads the conversation's history backwards until the client holds all of it.
+ *
+ * `bootstrap()` answers with the newest window and a cursor for the rest. Stopping there
+ * leaves a migrated conversation's older turns — their messages, runs and tool calls — out
+ * of the Feed entirely: the reader sees the last page of a long conversation as if the rest
+ * had never been recorded. The legacy chain it replaces loaded the whole event log, so the
+ * V2 read side has to hand over the same history before it can own the Feed.
+ */
+async function loadConversationV2OlderHistory(
+  api: NonNullable<Window["eco"]>,
+  initial: ConversationV2RendererState,
+  conversationId: string,
+  maxBytes: number,
+  syncThrough: (
+    state: ConversationV2RendererState,
+    throughSeq: number,
+  ) => Promise<ConversationV2RendererState>,
+): Promise<ConversationV2RendererState> {
+  let state = initial;
+  const seenCursors = new Set<string>();
+  while (state.hasOlder) {
+    const cursor = state.olderCursor;
+    if (!cursor || seenCursors.has(cursor)) {
+      // A store that keeps answering with the same cursor would page forever; the client
+      // cannot invent a cursor to escape it, so the read fails loudly instead of hanging.
+      throw new Error("Conversation V2 renderer history page repeated its cursor.");
+    }
+    seenCursors.add(cursor);
+    const page = await api.conversationV2MessagesPage(conversationId, {
+      beforeCursor: cursor,
+      limit: CONVERSATION_V2_HISTORY_PAGE_SIZE,
+      maxBytes,
+    });
+    state = await syncThrough(state, page.readSeq);
+    state = mergeConversationV2OlderPage(state, page);
+  }
+  return state;
+}
+
+/**
+ * Tool summaries are paged independently from messages. Follow each run's
+ * opaque cursor so the V2 Feed still contains every durable tool row without
+ * making bootstrap carry an unbounded response.
+ */
+async function loadConversationV2ToolSummaries(
+  api: NonNullable<Window["eco"]>,
+  initial: ConversationV2RendererState,
+  conversationId: string,
+  maxBytes: number,
+  syncThrough: (
+    state: ConversationV2RendererState,
+    throughSeq: number,
+  ) => Promise<ConversationV2RendererState>,
+): Promise<ConversationV2RendererState> {
+  if (typeof api.conversationV2ToolsPage !== "function") {
+    throw new Error("Conversation V2 tool-summary paging is unavailable.");
+  }
+  let state = initial;
+  // A migrated store can retain a durable tool row whose run read model is
+  // absent (for example after a partial legacy repair). Bootstrap still
+  // returns that orphan row, so page by the union of known runs and tool run
+  // ids instead of silently dropping the rest of an orphan run's pages.
+  const runIds = conversationV2ToolRunIdsForHydration(state);
+  for (const runId of runIds) {
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    while (true) {
+      const page = await api.conversationV2ToolsPage(conversationId, runId, {
+        ...(cursor ? { cursor } : {}),
+        limit: 100,
+        maxBytes,
+      });
+      state = await syncThrough(state, page.readSeq);
+      state = mergeConversationV2ToolPage(state, page);
+      if (!page.hasMore) break;
+      const nextCursor = page.nextCursor?.trim();
+      if (!nextCursor || seenCursors.has(nextCursor)) {
+        throw new Error(`Conversation V2 tool-summary page repeated its cursor for run ${runId}.`);
+      }
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+  }
+  return state;
+}
+
+async function verifyConversationV2DuplicateEffect(
+  conversationId: string,
+  state: ConversationV2RendererState,
+  effect: ConversationSyncEffect,
+): Promise<void> {
+  const api = window.eco;
+  if (!api) {
+    throw new Error("Conversation V2 renderer API is unavailable.");
+  }
+  const page = await api.conversationV2Sync({
+    conversationId,
+    storeEpoch: state.storeEpoch,
+    afterSeq: effect.seq - 1,
+    throughSeq: effect.seq,
+    maxEvents: 1,
+    maxBytes: 512 * 1024,
+  });
+  const authoritative = page.effects.find((candidate) => candidate.seq === effect.seq);
+  if (
+    page.protocolVersion !== 2 ||
+    page.conversationId !== conversationId ||
+    page.storeEpoch !== state.storeEpoch ||
+    !authoritative ||
+    authoritative.effectHash !== effect.effectHash
+  ) {
+    throw new Error(`Conversation V2 renderer duplicate verification failed at sequence ${effect.seq}.`);
+  }
+}
+
+function readConversationV2SyncEvent(
+  event: unknown,
+): { conversationId: string; storeEpoch: string; effect: ConversationSyncEffect } | undefined {
+  if (typeof event !== "object" || event === null) {
+    return undefined;
+  }
+  const candidate = event as {
+    conversationId?: unknown;
+    storeEpoch?: unknown;
+    effect?: unknown;
+  };
+  if (
+    typeof candidate.conversationId !== "string" ||
+    typeof candidate.storeEpoch !== "string" ||
+    !candidate.conversationId.trim() ||
+    !candidate.storeEpoch.trim() ||
+    typeof candidate.effect !== "object" ||
+    candidate.effect === null
+  ) {
+    return undefined;
+  }
+  const effect = candidate.effect as Partial<ConversationSyncEffect>;
+  if (
+    typeof effect.seq !== "number" ||
+    !Number.isInteger(effect.seq) ||
+    effect.seq <= 0 ||
+    effect.effectVersion !== 1 ||
+    typeof effect.effectHash !== "string" ||
+    typeof effect.effect !== "object" ||
+    effect.effect === null
+  ) {
+    return undefined;
+  }
+  return {
+    conversationId: candidate.conversationId,
+    storeEpoch: candidate.storeEpoch,
+    effect: effect as ConversationSyncEffect,
+  };
 }
 
 function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
@@ -11522,9 +12035,7 @@ function FollowUpQueuePanel({
           disabled={pauseBusy}
           onClick={() => onTogglePause(!queuePaused)}
           title={queuePaused ? t("thread.followUpQueueResume") : t("thread.followUpQueuePause")}
-          aria-label={
-            queuePaused ? t("thread.followUpQueueResumeAria") : t("thread.followUpQueuePauseAria")
-          }
+          aria-label={queuePaused ? t("thread.followUpQueueResumeAria") : t("thread.followUpQueuePauseAria")}
         >
           {pauseBusy ? (
             <Activity size={12} aria-hidden />

@@ -98,6 +98,15 @@ export interface ProviderConfigSecret extends ProviderConfigView {
 
 const DEFAULT_ROUTE_PROFILE_ID = "default";
 
+function rollbackProviderTransaction(db: DatabaseSyncType): void {
+  try {
+    db.exec("ROLLBACK");
+  } catch {
+    // SQLite may already have rolled back after a fatal storage error. Preserve
+    // the original provider transaction failure.
+  }
+}
+
 export async function createProviderStore(dbPath: string): Promise<ProviderStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
@@ -266,7 +275,7 @@ export class ProviderStore {
       this.db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
       this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      rollbackProviderTransaction(this.db);
       throw error;
     }
   }
@@ -322,7 +331,7 @@ export class ProviderStore {
       this.db.prepare("DELETE FROM route_profiles").run();
       this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      rollbackProviderTransaction(this.db);
       throw error;
     }
     for (const profile of profiles) {
@@ -453,9 +462,7 @@ export class ProviderStore {
     if (!columns.some((column) => column.name === "upstream_proxy_url")) {
       this.db.exec(`ALTER TABLE provider_configs ADD COLUMN upstream_proxy_url TEXT NOT NULL DEFAULT ''`);
     }
-    this.db.exec(
-      `UPDATE provider_configs SET upstream_proxy_url = '' WHERE upstream_proxy_url IS NULL`,
-    );
+    this.db.exec(`UPDATE provider_configs SET upstream_proxy_url = '' WHERE upstream_proxy_url IS NULL`);
   }
 
   private migrateRoleRoutesToProfiles(): void {
@@ -659,7 +666,9 @@ export class ProviderStore {
       candidateColumns.length > 0 &&
       !candidateColumns.some((column) => column.name === "manual_supports_native_web_search")
     ) {
-      this.db.exec("ALTER TABLE provider_candidate_models ADD COLUMN manual_supports_native_web_search INTEGER");
+      this.db.exec(
+        "ALTER TABLE provider_candidate_models ADD COLUMN manual_supports_native_web_search INTEGER",
+      );
     }
   }
 

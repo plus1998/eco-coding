@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityLogView } from "../src/renderer/ActivityLogView";
+import { ConversationV2ProjectionActivityLogView as ActivityLogView } from "../src/renderer/ActivityLogView";
 import { i18n } from "../src/renderer/i18n";
 import type {
   ThreadRunProjectionRequestSpan,
@@ -61,7 +61,11 @@ function renderFeed(projectionSnapshot: ThreadRunProjectionSnapshot): string {
   return renderToStaticMarkup(createElement(ActivityLogView, { projection: projectionSnapshot }));
 }
 
-function mcpToolPair(offsetMs: number, useId: string, sequenceBase: number): ThreadRunProjectionTimelineItem[] {
+function mcpToolPair(
+  offsetMs: number,
+  useId: string,
+  sequenceBase: number,
+): ThreadRunProjectionTimelineItem[] {
   const at = iso(offsetMs);
   return [
     item({
@@ -71,7 +75,9 @@ function mcpToolPair(offsetMs: number, useId: string, sequenceBase: number): Thr
       role: "tool",
       text: "Tool: mcp__eco__inspect",
       at,
-      metadata: { tool: { name: "mcp__eco__inspect", detail: "inspect", status: "started", toolUseId: useId } },
+      metadata: {
+        tool: { name: "mcp__eco__inspect", detail: "inspect", status: "started", toolUseId: useId },
+      },
     }),
     item({
       id: `tool-${useId}-done`,
@@ -110,11 +116,7 @@ test("settling tool group keeps the 正在思考 tail suppressed during the mini
   // minimum-visible window, so the tail must not show a second current state.
   const html = renderFeed(
     projection(
-      [
-        promptItem(1, iso(-10_000)),
-        ...mcpToolPair(-50, "u1", 2),
-        activeRequest("next", iso(0), 4),
-      ],
+      [promptItem(1, iso(-10_000)), ...mcpToolPair(-50, "u1", 2), activeRequest("next", iso(0), 4)],
       [{ requestId: "next", status: "waiting_first_token", startedAt: iso(0) }],
     ),
   );
@@ -123,10 +125,9 @@ test("settling tool group keeps the 正在思考 tail suppressed during the mini
   expect(html).not.toContain("正在思考");
 });
 
-test("settled tool group as the latest content keeps the 正在思考 tail suppressed", () => {
-  // Both MCP tools settled long ago: the aggregate row is the latest content, so it
-  // is the tail state itself — the「正在思考」line must not render beneath it. The
-  // tail keeps a neutral conversation status node instead.
+test("waiting request after a settled tool group stays in the same active slot", () => {
+  // Both MCP tools settled long ago. A later waiting request is still represented
+  // by the latest tool slot; do not append a second「正在思考」row beneath it.
   const html = renderFeed(
     projection(
       [
@@ -139,9 +140,9 @@ test("settled tool group as the latest content keeps the 正在思考 tail suppr
     ),
   );
   expect(html).toContain("已调用 2 个 MCP 工具");
-  expect(html).toContain("run-log-active-tail");
+  expect(html).not.toContain("run-log-active-tail");
+  expect(html).not.toContain("run-log-conversation-tail");
   expect(html).not.toContain("正在思考");
-  expect(html).toContain("run-log-conversation-tail");
 });
 
 test("thinking tail still returns after the latest content is a message, not a tool", () => {

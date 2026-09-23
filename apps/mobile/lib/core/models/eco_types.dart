@@ -264,6 +264,8 @@ class EcoCenterException implements Exception {
     this.recovery,
     this.kind,
     this.nativeMessage,
+    this.domainCode,
+    this.domainData,
   });
 
   EcoCenterException.app(
@@ -281,11 +283,15 @@ class EcoCenterException implements Exception {
     String nativeMessage, {
     int? code,
     CenterServerAuthRecovery? recovery,
+    String? domainCode,
+    Map<String, dynamic>? domainData,
   }) : this(
          nativeMessage,
          code: code,
          recovery: recovery,
          nativeMessage: nativeMessage,
+         domainCode: domainCode,
+         domainData: domainData,
        );
 
   final String message;
@@ -293,6 +299,8 @@ class EcoCenterException implements Exception {
   final CenterServerAuthRecovery? recovery;
   final EcoCenterErrorKind? kind;
   final String? nativeMessage;
+  final String? domainCode;
+  final Map<String, dynamic>? domainData;
 
   @override
   String toString() => message;

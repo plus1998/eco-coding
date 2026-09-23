@@ -16,13 +16,41 @@ import '../../core/models/skill_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
-import '../../core/models/thread_run_projection.dart';
+import '../../core/models/conversation_v2_projection_models.dart';
+import '../../core/models/conversation_v2_models.dart';
 import '../../core/network/desktop_rpc.dart';
+import '../../core/storage/conversation_v2_cache.dart';
+import '../../core/sync/conversation_v2_session.dart';
+import '../../core/sync/conversation_v2_sync_engine.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/desktop_bind_ready.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/conversation_v2_hash.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
+
+final conversationV2CacheProvider = Provider<ConversationV2Cache?>((ref) {
+  final client = ref.watch(ecoCenterClientProvider);
+  ref.watch(credentialsProvider);
+  final fromState = ref.watch(selectedDesktopIdProvider);
+  final desktopId = (fromState != null && fromState.isNotEmpty)
+      ? fromState
+      : client.credentials.selectedDesktopId;
+  if (desktopId == null || desktopId.isEmpty) return null;
+  final accountId = client.credentials.userId?.trim() ?? '';
+  if (accountId.isEmpty) return null;
+  // sqflite defaults to singleInstance per path. Keep one owner for the
+  // shared native handle; a per-session close can otherwise invalidate every
+  // other conversation and the durable command store.
+  final cache = ConversationV2Cache(
+    accountId: accountId,
+    desktopDeviceId: desktopId,
+  );
+  ref.onDispose(() {
+    unawaited(cache.close());
+  });
+  return cache;
+});
 
 final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final client = ref.watch(ecoCenterClientProvider);
@@ -33,8 +61,183 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
       ? fromState
       : client.credentials.selectedDesktopId;
   if (desktopId == null || desktopId.isEmpty) return null;
-  return DesktopRpc(client, desktopId);
+  return DesktopRpc(
+    client,
+    desktopId,
+    threadDeleteCommandStore: ref.watch(conversationV2CacheProvider),
+  );
 });
+
+/// V2 is the source of truth for the ordered message window. The older
+/// projection remains available for tool/process detail widgets during the
+/// transition, but it no longer owns message ordering.
+final conversationV2SessionProvider = StateNotifierProvider.autoDispose
+    .family<
+      ConversationV2SessionController,
+      ConversationV2SessionState,
+      String
+    >((ref, conversationId) {
+      final rpc = ref.watch(desktopRpcProvider);
+      final credentials = ref.watch(credentialsProvider).valueOrNull;
+      final accountId = credentials?.userId?.trim() ?? '';
+      final sharedCache = ref.watch(conversationV2CacheProvider);
+      final enabled =
+          rpc != null && accountId.isNotEmpty && sharedCache != null;
+      final cache =
+          sharedCache ??
+          ConversationV2Cache(
+            accountId: 'unavailable',
+            desktopDeviceId: 'unavailable',
+          );
+      final remote = rpc == null
+          ? _UnavailableConversationV2Remote()
+          : DesktopRpcConversationV2Remote(rpc);
+      final controller = ConversationV2SessionController(
+        conversationId: conversationId,
+        cache: cache,
+        remote: remote,
+        actions: rpc == null
+            ? null
+            : ConversationV2InteractionActions(
+                resolveBash: (toolUseId, decision, {feedback}) => ref
+                    .read(threadSessionProvider(conversationId).notifier)
+                    .resolveBash(toolUseId, decision, feedback: feedback),
+                approvePlan: () => ref
+                    .read(threadSessionProvider(conversationId).notifier)
+                    .approvePlan(),
+                dismissPlan: () => ref
+                    .read(threadSessionProvider(conversationId).notifier)
+                    .dismissPlan(),
+                submitClarification: (toolUseId, selections) => ref
+                    .read(threadSessionProvider(conversationId).notifier)
+                    .submitClarification(toolUseId, selections),
+                dismissClarification: (toolUseId) => ref
+                    .read(threadSessionProvider(conversationId).notifier)
+                    .dismissClarification(toolUseId),
+              ),
+        enabled: enabled,
+        closeCacheOnClose: sharedCache == null,
+      );
+      ref.listen(ecoEventsProvider, (_, next) {
+        next.whenData((event) {
+          if (event.kind == 'conversation.projection_extras') {
+            final rawPayload = event.payload;
+            if (rawPayload is Map &&
+                rawPayload['conversationId'] == conversationId) {
+              unawaited(controller.reloadProjectionExtras());
+            }
+            return;
+          }
+          if (event.kind != 'conversation.sync_effect') return;
+          final rawPayload = event.payload;
+          if (rawPayload is! Map) return;
+          final payload = Map<String, dynamic>.from(rawPayload);
+          if (payload['conversationId'] != conversationId) {
+            return;
+          }
+          // The sync engine accepts the full event envelope. The provider
+          // listener receives the envelope fields separately, so passing only
+          // `event.payload` silently drops every V2 push before it reaches
+          // sequence validation.
+          unawaited(
+            controller.acceptPushEnvelope({
+              'kind': event.kind,
+              'payload': payload,
+            }),
+          );
+        });
+      });
+      ref.listen(connectionStatusProvider, (_, next) {
+        next.whenData((status) {
+          if (status.state == EcoConnectionState.connected) {
+            unawaited(controller.refresh());
+          }
+        });
+      });
+      unawaited(controller.start());
+      ref.onDispose(() {
+        unawaited(controller.close());
+      });
+      return controller;
+    });
+
+class _UnavailableConversationV2Remote implements ConversationV2Remote {
+  Never _unavailable() => throw StateError('Desktop is not available.');
+
+  @override
+  Future<ConversationV2Capabilities> capabilities() async => _unavailable();
+
+  @override
+  Future<ConversationV2Bootstrap> bootstrap(
+    String conversationId, {
+    int pageSize = 30,
+    int maxBytes = 512 * 1024,
+  }) async => _unavailable();
+
+  @override
+  Future<ConversationV2MessagePage> messagesPage(
+    String conversationId, {
+    String? beforeCursor,
+    int limit = 30,
+    int maxBytes = 512 * 1024,
+  }) async => _unavailable();
+
+  @override
+  Future<ConversationV2DetailPage> detailsPage(
+    String conversationId,
+    String runId, {
+    String? cursor,
+    String? toolCallId,
+    String? agentInstanceId,
+    int limit = 50,
+    int maxBytes = 512 * 1024,
+  }) async => _unavailable();
+
+  @override
+  Future<ConversationV2ToolsPage> toolsPage(
+    String conversationId,
+    String runId, {
+    String? cursor,
+    String? toolCallId,
+    String? agentInstanceId,
+    int limit = 50,
+    int maxBytes = 512 * 1024,
+  }) async => _unavailable();
+
+  @override
+  Future<ConversationV2Head> head(String conversationId) async =>
+      _unavailable();
+
+  @override
+  Future<ConversationV2SyncPage> sync(
+    String conversationId,
+    String storeEpoch,
+    int afterSeq, {
+    int? throughSeq,
+    int maxEvents = 200,
+    int maxBytes = 512 * 1024,
+  }) async => _unavailable();
+
+  @override
+  Future<ConversationV2Message?> messageGet(
+    String conversationId,
+    String messageId,
+  ) async => _unavailable();
+
+  @override
+  Future<ConversationV2ProjectionExtras> projectionExtras(
+    String conversationId,
+  ) async => _unavailable();
+
+  @override
+  Future<ConversationV2SendMessageResult> sendMessage({
+    required String principalId,
+    required String conversationId,
+    required String clientCommandId,
+    required String text,
+    List<dynamic>? attachments,
+  }) async => _unavailable();
+}
 
 /// Pre-seed [threadSessionProvider] when handing off from the landing composer
 /// so the session page does not flash a full-screen loading spinner.
@@ -300,6 +503,7 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
 
     ref.listen(ecoEventsProvider, (previous, next) {
       next.whenData((event) {
+        if (event.kind == 'conversation.sync_effect') return;
         final payload = event.payload;
         if (payload is! Map<String, dynamic>) return;
         final live = ThreadLiveEvent.fromJson(payload);
@@ -686,7 +890,8 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
               eventCancelling: live.cancelling,
             )
           : thread.cancelling,
-      followUpQueuePaused: live.followUpQueuePaused ?? thread.followUpQueuePaused,
+      followUpQueuePaused:
+          live.followUpQueuePaused ?? thread.followUpQueuePaused,
     );
     final nextList = List<ThreadSummary>.of(current)..[index] = next;
     return nextList;
@@ -1269,9 +1474,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   bool _centerConnectionWasInterrupted = false;
   bool _selectedDesktopWasOffline = false;
   bool _projectionSynchronized = false;
-  Future<ThreadRunProjectionSnapshot?>? _projectionRequestInFlight;
   Future<ThreadSummary?>? _threadLoadInFlight;
-  final _loadedProjectionDetailKeys = <String>{};
 
   String get _composerDraftContextKey => 'thread:$threadId';
 
@@ -1357,22 +1560,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
     _markProjectionSyncStarted();
     try {
-      final projection = await _requestProjection(trackSyncState: false);
-      _projectionSynchronized = true;
-      if (projection == null) {
-        if (rethrowOnError) {
-          throw StateError(
-            'Desktop returned no Feed projection after rewrite.',
-          );
-        }
-        return;
-      }
-      if (!mounted) {
-        return;
-      }
-      state = state.copyWith(
-        runProjection: _pickNewerProjection(state.runProjection, projection),
+      final controller = ref.read(
+        conversationV2SessionProvider(threadId).notifier,
       );
+      final v2State = ref.read(conversationV2SessionProvider(threadId));
+      if (v2State.syncState == ConversationV2SyncState.uninitialized) {
+        await controller.start();
+      } else {
+        await controller.refresh();
+      }
+      _projectionSynchronized = true;
     } catch (error) {
       if (rethrowOnError) rethrow;
     } finally {
@@ -1381,6 +1578,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   }
 
   Future<void> acceptRewrittenThread(ThreadSummary thread) async {
+    await _acceptHistoryCommandThread(thread);
+  }
+
+  Future<void> acceptRetriedThread(ThreadSummary thread) async {
+    await _acceptHistoryCommandThread(thread);
+  }
+
+  Future<void> _acceptHistoryCommandThread(ThreadSummary thread) async {
     if (!mounted) return;
     state = state.copyWith(
       thread: thread,
@@ -1395,91 +1600,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         .read(threadListProvider.notifier)
         .upsertThread(thread, countAsNew: false);
     await recoverProjection(rethrowOnError: true);
-  }
-
-  Future<ThreadRunProjectionSnapshot?> _requestProjection({
-    bool initial = false,
-    bool trackSyncState = true,
-  }) async {
-    final pending = _projectionRequestInFlight;
-    if (pending != null) {
-      return pending;
-    }
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) {
-      return null;
-    }
-    if (trackSyncState) {
-      _markProjectionSyncStarted();
-    }
-    final request = rpc.getRunProjection(
-      threadId,
-      mode: 'feed',
-      afterSequence: initial
-          ? null
-          : _projectionCachedAfterSequence(state.runProjection),
-      historyRevision: initial ? null : state.runProjection?.historyRevision,
-    );
-    _projectionRequestInFlight = request;
-    try {
-      return await request;
-    } finally {
-      if (identical(_projectionRequestInFlight, request)) {
-        _projectionRequestInFlight = null;
-      }
-      if (trackSyncState) {
-        _markProjectionSyncFinished(settled: true);
-      }
-    }
-  }
-
-  Future<ThreadRunProjectionDetailResult?> loadProjectionDetail({
-    required String kind,
-    required String key,
-  }) async {
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) {
-      throw const AppErrorCodeException(
-        AppErrorCode.threadProjectionNoPcSelected,
-      );
-    }
-    final detailKey = '$kind:$key';
-    var afterSequence = _loadedProjectionDetailKeys.contains(detailKey)
-        ? _projectionDetailCachedAfterSequence(state.runProjection, kind, key)
-        : null;
-    ThreadRunProjectionDetailResult? latest;
-    try {
-      while (true) {
-        final detail = await rpc.getRunProjectionDetail(
-          threadId: threadId,
-          kind: kind,
-          key: key,
-          afterSequence: afterSequence,
-          limit: 500,
-        );
-        if (!mounted || detail == null) {
-          return latest;
-        }
-        latest = _appendProjectionDetailPage(latest, detail);
-        state = state.copyWith(
-          runProjection: mergeThreadRunProjectionDetailResult(
-            state.runProjection,
-            detail,
-          ),
-        );
-        final nextAfterSequence = detail.nextAfterSequence;
-        if (!detail.hasMore) {
-          _loadedProjectionDetailKeys.add(detailKey);
-          return latest;
-        }
-        if (nextAfterSequence == null || nextAfterSequence == afterSequence) {
-          throw StateError('Projection detail pagination did not advance');
-        }
-        afterSequence = nextAfterSequence;
-      }
-    } catch (error, stackTrace) {
-      Error.throwWithStackTrace(error, stackTrace);
-    }
   }
 
   Future<void> _init() async {
@@ -1560,10 +1680,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         projectionSynchronizing: true,
       );
     } else if (!state.projectionSynchronizing) {
-      state = state.copyWith(
-        loading: true,
-        projectionSynchronizing: true,
-      );
+      state = state.copyWith(loading: true, projectionSynchronizing: true);
     }
 
     // Wait for Realtime bind before any Desktop RPC — keeps the boot overlay
@@ -1581,12 +1698,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
 
     try {
-      final results = await Future.wait([
-        rpc.sessionBootstrap(threadId),
-        _requestProjection(initial: true),
-      ]);
-      final bootstrap = results[0] as ThreadSessionBootstrapResult;
-      final projection = results[1] as ThreadRunProjectionSnapshot?;
+      // Session bootstrap supplies chrome and pending interactions. The ordered
+      // feed, billing, context and subagent facts are owned by the V2 session
+      // provider and never come from a legacy projection RPC.
+      final bootstrap = await rpc.sessionBootstrap(threadId);
       _projectionSynchronized = true;
       final thread =
           bootstrap.thread ?? cachedThread ?? await rpc.getThread(threadId);
@@ -1602,12 +1717,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         followUps: loadedFollowUps,
         thread: thread ?? state.thread,
         titleGenerating: thread?.titleGenerating ?? state.titleGenerating,
-        runProjection: _pickNewerProjection(state.runProjection, projection),
-        subagentSessions: state.subagentSessions.isNotEmpty
-            ? state.subagentSessions
-            : bootstrap.subagentSessions,
-        billing: state.billing ?? bootstrap.usage.billing,
-        contextSnapshot: state.contextSnapshot ?? bootstrap.usage.context,
+        runProjection: null,
+        subagentSessions: const [],
+        billing: null,
+        contextSnapshot: null,
         composerRestore: state.composerRestore,
         loading: false,
         projectionSettled: true,
@@ -1622,16 +1735,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       if (thread?.status == 'awaiting_plan' && bootstrap.pendingPlan == null) {
         _loadPendingPlanFromRpc();
       }
-      _loadUsageDeferred();
       unawaited(_refreshComposerDraftFromRpc());
     } catch (error) {
       if (!mounted) return;
       if (isTransientDesktopBindError(error)) {
         _centerConnectionWasInterrupted = true;
-        state = state.copyWith(
-          loading: false,
-          projectionSynchronizing: true,
-        );
+        state = state.copyWith(loading: false, projectionSynchronizing: true);
         return;
       }
       state = state.copyWith(
@@ -1643,6 +1752,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   }
 
   void _handleEvent(EcoEventEnvelope event) {
+    if (event.kind == 'conversation.sync_effect' ||
+        event.kind == 'conversation.projection_extras') {
+      // Conversation V2 owns the ordered feed and projection extras. The
+      // legacy session parser must never consume these notifications.
+      return;
+    }
     final payload = event.payload;
     if (payload is! Map<String, dynamic>) return;
     if (_handleSelectedDesktopPresenceEvent(event, payload)) {
@@ -1677,57 +1792,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
     if (live.composerRestore != null) {
       state = state.copyWith(composerRestore: live.composerRestore);
-    }
-
-    if (live.billing != null) {
-      state = state.copyWith(billing: live.billing);
-    } else if (live.type == 'thread.usage_updated') {
-      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((
-        usage,
-      ) {
-        if (!mounted) return;
-        state = state.copyWith(
-          billing: usage.billing ?? state.billing,
-          contextSnapshot: usage.context ?? state.contextSnapshot,
-        );
-      });
-    }
-
-    if (live.contextSnapshot != null) {
-      state = state.copyWith(contextSnapshot: live.contextSnapshot);
-    } else if (event.kind == 'thread.context' ||
-        live.type == 'thread.context_updated') {
-      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((
-        usage,
-      ) {
-        if (!mounted) return;
-        if (usage.context != null) {
-          state = state.copyWith(contextSnapshot: usage.context);
-        }
-      });
-    }
-
-    if (live.type == 'thread.run_projection_updated') {
-      if (live.projection != null) {
-        state = state.copyWith(
-          runProjection: _pickNewerProjection(
-            state.runProjection,
-            live.projection,
-          ),
-        );
-      }
-    }
-    if (live.type == 'thread.subagent_timing_updated') {
-      if (live.subagentSessions != null) {
-        state = state.copyWith(subagentSessions: live.subagentSessions);
-      } else {
-        ref.read(desktopRpcProvider)?.listSubagentSessions(threadId).then((
-          sessions,
-        ) {
-          if (!mounted) return;
-          state = state.copyWith(subagentSessions: sessions);
-        });
-      }
     }
 
     final updatedTitle = live.title?.trim();
@@ -1855,7 +1919,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   void applyThreadSummary(ThreadSummary thread) {
     state = state.copyWith(thread: thread);
-    ref.read(threadListProvider.notifier).upsertThread(thread, countAsNew: false);
+    ref
+        .read(threadListProvider.notifier)
+        .upsertThread(thread, countAsNew: false);
   }
 
   Future<void> _refreshComposerDraftFromRpc() async {
@@ -1927,20 +1993,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     return rpc.getThread(threadId);
   }
 
-  void _loadUsageDeferred() {
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) return;
-    unawaited(
-      rpc.getThreadUsageSnapshot(threadId).then((usage) {
-        if (!mounted) return;
-        state = state.copyWith(
-          billing: usage.billing ?? state.billing,
-          contextSnapshot: usage.context ?? state.contextSnapshot,
-        );
-      }),
-    );
-  }
-
   Future<void> refreshPending() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
@@ -1958,18 +2010,57 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       clearClarification: bootstrap.pendingClarification == null,
       followUps: bootstrap.followUps,
       thread: thread ?? state.thread,
-      billing: bootstrap.usage.billing ?? state.billing,
-      contextSnapshot: bootstrap.usage.context ?? state.contextSnapshot,
+      clearBilling: true,
+      clearContext: true,
+    );
+    unawaited(
+      ref
+          .read(conversationV2SessionProvider(threadId).notifier)
+          .reloadProjectionExtras(),
     );
   }
 
   Future<void> approvePlan() async {
-    await ref.read(desktopRpcProvider)?.approvePlan(threadId);
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    final principalId = ref
+        .read(credentialsProvider)
+        .valueOrNull
+        ?.userId
+        ?.trim();
+    if (principalId == null || principalId.isEmpty) {
+      throw StateError('A signed-in principal is required to approve a plan.');
+    }
+    final expectedHistoryRevision = state.runProjection?.historyRevision ?? 0;
+    await rpc.approvePlan(
+      principalId: principalId,
+      clientCommandId:
+          'plan_resolve_${conversationV2StableHash({'threadId': threadId, 'resolution': 'approve', 'expectedHistoryRevision': expectedHistoryRevision})}',
+      threadId: threadId,
+      expectedHistoryRevision: expectedHistoryRevision,
+    );
     state = state.copyWith(clearPlan: true);
   }
 
   Future<void> dismissPlan() async {
-    await ref.read(desktopRpcProvider)?.dismissPlan(threadId);
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    final principalId = ref
+        .read(credentialsProvider)
+        .valueOrNull
+        ?.userId
+        ?.trim();
+    if (principalId == null || principalId.isEmpty) {
+      throw StateError('A signed-in principal is required to dismiss a plan.');
+    }
+    final expectedHistoryRevision = state.runProjection?.historyRevision ?? 0;
+    await rpc.dismissPlan(
+      principalId: principalId,
+      clientCommandId:
+          'plan_resolve_${conversationV2StableHash({'threadId': threadId, 'resolution': 'dismiss', 'expectedHistoryRevision': expectedHistoryRevision})}',
+      threadId: threadId,
+      expectedHistoryRevision: expectedHistoryRevision,
+    );
     state = state.copyWith(clearPlan: true);
   }
 
@@ -1992,18 +2083,28 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       state = state.copyWith(clearBash: true);
       return;
     }
-    try {
-      await rpc.resolveBashApproval(
-        toolUseId: toolUseId,
-        decision: decision,
-        feedback: feedback,
+    final principalId = ref
+        .read(credentialsProvider)
+        .valueOrNull
+        ?.userId
+        ?.trim();
+    if (principalId == null || principalId.isEmpty) {
+      throw StateError(
+        'A signed-in principal is required to resolve a Bash approval.',
       );
-    } catch (error) {
-      // Old desktop hosts still throw; treat as discardable stale card.
-      if (!isStalePendingBashApprovalError(error)) {
-        rethrow;
-      }
     }
+    final expectedHistoryRevision = state.runProjection?.historyRevision ?? 0;
+    final normalizedFeedback = feedback?.trim();
+    await rpc.resolveBashApproval(
+      principalId: principalId,
+      clientCommandId:
+          'approval_resolve_${conversationV2StableHash({'threadId': threadId, 'toolUseId': toolUseId, 'decision': decision, 'feedback': normalizedFeedback == null || normalizedFeedback.isEmpty ? null : normalizedFeedback, 'expectedHistoryRevision': expectedHistoryRevision})}',
+      threadId: threadId,
+      toolUseId: toolUseId,
+      decision: decision,
+      feedback: normalizedFeedback,
+      expectedHistoryRevision: expectedHistoryRevision,
+    );
     if (!mounted) return;
     BashApprovalRequest? next;
     try {
@@ -2016,20 +2117,34 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (next != null && next.toolUseId == toolUseId) {
       next = null;
     }
-    state = state.copyWith(
-      pendingBash: next,
-      clearBash: next == null,
-    );
+    state = state.copyWith(pendingBash: next, clearBash: next == null);
   }
 
   Future<void> submitClarification(
     String toolUseId,
     List<List<String>> selections,
   ) async {
-    await ref
-        .read(desktopRpcProvider)
-        ?.submitClarification(toolUseId: toolUseId, selections: selections);
     final rpc = ref.read(desktopRpcProvider);
+    final principalId = ref
+        .read(credentialsProvider)
+        .valueOrNull
+        ?.userId
+        ?.trim();
+    if (principalId == null || principalId.isEmpty) {
+      throw StateError(
+        'A signed-in principal is required to resolve a clarification.',
+      );
+    }
+    final expectedHistoryRevision = state.runProjection?.historyRevision ?? 0;
+    await rpc?.submitClarification(
+      principalId: principalId,
+      clientCommandId:
+          'clarification_resolve_${conversationV2StableHash({'threadId': threadId, 'toolUseId': toolUseId, 'resolution': 'submit', 'selections': selections, 'expectedHistoryRevision': expectedHistoryRevision})}',
+      threadId: threadId,
+      toolUseId: toolUseId,
+      selections: selections,
+      expectedHistoryRevision: expectedHistoryRevision,
+    );
     if (rpc == null) {
       state = state.copyWith(clearClarification: true);
       return;
@@ -2044,14 +2159,32 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   Future<void> dismissClarification(String toolUseId) async {
     final rpc = ref.read(desktopRpcProvider);
-    await rpc?.dismissClarification(toolUseId);
+    final principalId = ref
+        .read(credentialsProvider)
+        .valueOrNull
+        ?.userId
+        ?.trim();
+    if (principalId == null || principalId.isEmpty) {
+      throw StateError(
+        'A signed-in principal is required to resolve a clarification.',
+      );
+    }
+    final expectedHistoryRevision = state.runProjection?.historyRevision ?? 0;
+    await rpc?.dismissClarification(
+      principalId: principalId,
+      clientCommandId:
+          'clarification_resolve_${conversationV2StableHash({'threadId': threadId, 'toolUseId': toolUseId, 'resolution': 'dismiss', 'expectedHistoryRevision': expectedHistoryRevision})}',
+      threadId: threadId,
+      toolUseId: toolUseId,
+      expectedHistoryRevision: expectedHistoryRevision,
+    );
     if (!mounted) return;
     state = state.copyWith(clearClarification: true);
   }
 }
 
-/// Cross-device race: PC already resolved; mobile still shows the card.
-/// Old hosts throw; new hosts return ok — both paths should discard the UI.
+/// Legacy compatibility helper retained for older error surfaces outside the
+/// V2 approval command path.
 @visibleForTesting
 bool isStalePendingBashApprovalError(Object error) {
   final message = error is EcoCenterException
@@ -2066,71 +2199,6 @@ bool isStalePendingBashApprovalError(Object error) {
       trimmed.contains('pendingApprovalNotFound');
 }
 
-ThreadRunProjectionSnapshot? _pickNewerProjection(
-  ThreadRunProjectionSnapshot? current,
-  ThreadRunProjectionSnapshot? incoming,
-) {
-  if (current == null) return incoming;
-  if (incoming == null) return current;
-  if (current.historyRevision != incoming.historyRevision) {
-    return mergeThreadRunProjectionSnapshots(current, incoming);
-  }
-  final incomingIsNewer =
-      incoming.generatedAt.compareTo(current.generatedAt) >= 0 ||
-      incoming.sourceEventCount >= current.sourceEventCount;
-  if (incomingIsNewer) {
-    return mergeThreadRunProjectionSnapshots(current, incoming);
-  }
-  return current;
-}
-
-int? _projectionDetailCachedAfterSequence(
-  ThreadRunProjectionSnapshot? projection,
-  String kind,
-  String key,
-) {
-  if (projection == null) return null;
-  Iterable<ThreadRunProjectionTimelineItem> timeline;
-  if (kind == 'agent') {
-    final agent = projection.agents
-        .where((candidate) => candidate.agentId == key)
-        .firstOrNull;
-    timeline = agent?.timeline ?? const [];
-  } else if (kind == 'tool') {
-    timeline = [
-      ...projection.timeline,
-      for (final agent in projection.agents) ...agent.timeline,
-    ].where((item) => _projectionTimelineToolUseId(item) == key);
-  } else {
-    return null;
-  }
-  int? maxSequence;
-  for (final item in timeline) {
-    if (maxSequence == null || item.sequence > maxSequence) {
-      maxSequence = item.sequence;
-    }
-  }
-  return maxSequence;
-}
-
-String? _projectionTimelineToolUseId(ThreadRunProjectionTimelineItem item) {
-  final tool = item.metadata?['tool'];
-  if (tool is Map<String, dynamic>) {
-    final toolUseId = (tool['toolUseId'] as String?)?.trim();
-    if (toolUseId != null && toolUseId.isNotEmpty) {
-      return toolUseId;
-    }
-  }
-  final bashApproval = item.metadata?['bashApproval'];
-  if (bashApproval is Map<String, dynamic>) {
-    final toolUseId = (bashApproval['toolUseId'] as String?)?.trim();
-    if (toolUseId != null && toolUseId.isNotEmpty) {
-      return toolUseId;
-    }
-  }
-  return null;
-}
-
 List<ThreadPendingFollowUp> _mergeThreadFollowUps(
   List<ThreadPendingFollowUp> base,
   List<ThreadPendingFollowUp> overlay,
@@ -2140,43 +2208,6 @@ List<ThreadPendingFollowUp> _mergeThreadFollowUps(
     merged = mergeThreadFollowUp(merged, followUp);
   }
   return merged;
-}
-
-ThreadRunProjectionDetailResult _appendProjectionDetailPage(
-  ThreadRunProjectionDetailResult? current,
-  ThreadRunProjectionDetailResult page,
-) {
-  if (current == null) {
-    return page;
-  }
-  return ThreadRunProjectionDetailResult(
-    threadId: page.threadId,
-    kind: page.kind,
-    key: page.key,
-    generatedAt: page.generatedAt,
-    sourceEventCount: page.sourceEventCount,
-    hasMore: page.hasMore,
-    hasEarlier: page.hasEarlier,
-    nextAfterSequence: page.nextAfterSequence,
-    previousBeforeSequence: page.previousBeforeSequence,
-    agent: page.agent ?? current.agent,
-    timeline: [...current.timeline, ...page.timeline],
-  );
-}
-
-int? _projectionCachedAfterSequence(ThreadRunProjectionSnapshot? projection) {
-  if (projection == null) return null;
-  int? maxSequence;
-  final timeline = [
-    ...projection.timeline,
-    for (final agent in projection.agents) ...agent.timeline,
-  ];
-  for (final item in timeline) {
-    if (maxSequence == null || item.sequence > maxSequence) {
-      maxSequence = item.sequence;
-    }
-  }
-  return maxSequence;
 }
 
 bool _isThreadListLiveEvent(ThreadLiveEvent live) {

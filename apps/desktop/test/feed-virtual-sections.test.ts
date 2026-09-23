@@ -5,7 +5,7 @@ import {
   isThreadPromptAnchorId,
   listUserMessageAnchorsFromSections,
 } from "../src/renderer/feed-virtual-sections";
-import type { ThreadRunTurnFeedSection } from "../src/renderer/thread-run-turn-feed";
+import type { ThreadRunTurnFeedSection } from "../src/renderer/conversation-v2-turn-feed";
 
 function timelineEntry(id: string, text = "hi"): ThreadRunTurnFeedSection {
   return {

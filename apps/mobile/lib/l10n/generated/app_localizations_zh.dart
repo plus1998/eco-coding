@@ -1868,6 +1868,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNoToolDetails => '暂无工具详情';
 
   @override
+  String get threadLoadMoreToolDetails => '加载更多详情';
+
+  @override
   String get threadRequestingDetails => '正在请求详情…';
 
   @override

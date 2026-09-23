@@ -1,0 +1,51 @@
+name: Desktop tests
+
+# The desktop (bun) suite is the only net under the Feed and the conversation store,
+# and it had no CI job at all: `bun test` ran on developer machines and nowhere else,
+# which is how 40 failures — half of them order-dependent — sat on `main` while the
+# suite looked usable. This job runs the suite through the gate script, which names
+# every known failure on each run and fails on any failure that is not already listed
+# in test-baseline.json (that list is empty as of 2026-09-17).
+#
+# Local equivalent: `node scripts/test-gate.mjs`
+# The Flutter suite is a separate toolchain and has its own workflow
+# (.github/workflows/mobile-tests.yml).
+on:
+  push:
+    branches:
+      - main
+      - beta
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Bun test (desktop + packages)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Bundle pi-mcp-adapter vendor
+        run: bun run --cwd packages/runtime bundle:pi-mcp-adapter
+
+      - name: Desktop suite through the gate (strict)
+        # `--strict` also fails when a listed known failure starts passing, now that the list
+        # is empty (see docs/plans/feed-regression-test-plan.md 4.17).
+        run: node scripts/test-gate.mjs --strict
+
+      - name: Type check the desktop app
+        # Keep this blocking: the V2-only storage boundary spans main, preload, renderer and
+        # shared protocol types, so a stale or incompatible type is a release failure.
+        run: bunx tsc --noEmit -p apps/desktop/tsconfig.json

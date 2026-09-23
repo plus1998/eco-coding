@@ -445,12 +445,16 @@ class _ConnectionStatusNoticeState
   }
 
   void _showNotice(String message, {required Duration duration}) {
-    final messenger = _scaffoldMessengerKey.currentState;
-    messenger
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: duration),
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = _scaffoldMessengerKey.currentState;
+      if (messenger == null || !messenger.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(message), duration: duration),
+        );
+    });
   }
 }
 

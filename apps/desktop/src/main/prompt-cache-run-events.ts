@@ -13,7 +13,7 @@ import type { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-epis
 
 export interface PromptCacheRunEventWriter {
   getThread(threadId: string): unknown;
-  appendThreadRunEvent(event: ThreadRunEventInput): void;
+  appendConversationRuntimeEvent(event: ThreadRunEventInput): void;
   scheduleProjectionUpdated(threadId: string): void;
   emitThreadEvent(threadId: string, type: string, message: string): void;
   resolveCurrentRunAttemptId(threadId: string): string | undefined;
@@ -61,7 +61,7 @@ export function createPromptCacheRunEventEmitter(
         },
       };
       try {
-        writer.appendThreadRunEvent({
+        writer.appendConversationRuntimeEvent({
           id: `tre:${threadId}:context-cache-config-drift:${unique}`,
           threadId,
           eventType: "context.cache_config_drift",
@@ -96,7 +96,7 @@ export function createPromptCacheRunEventEmitter(
         },
       };
       try {
-        writer.appendThreadRunEvent({
+        writer.appendConversationRuntimeEvent({
           id: `tre:${threadId}:context-cache-invalidated:${unique}`,
           threadId,
           eventType: "context.cache_invalidated",
@@ -143,7 +143,7 @@ export function createPromptCacheRunEventEmitter(
         },
       };
       try {
-        writer.appendThreadRunEvent({
+        writer.appendConversationRuntimeEvent({
           id: `tre:${threadId}:cache-hit-dropped:${unique}`,
           threadId,
           eventType: "billing.cache_hit_dropped",

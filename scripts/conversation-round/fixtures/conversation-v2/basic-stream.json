@@ -1,0 +1,119 @@
+{
+  "protocolVersion": 2,
+  "eventSchemaVersion": 1,
+  "effectVersion": 1,
+  "description": "Queued user message, cumulative answer replacement, finalization, and late terminal run state.",
+  "events": [
+    {
+      "conversationId": "fixture-conversation",
+      "eventId": "fixture-user-accepted",
+      "sourceEventKey": "fixture:user:1",
+      "type": "message.accepted",
+      "occurredAt": "2026-09-14T00:00:00.001Z",
+      "turnId": "fixture-turn-1",
+      "messageId": "fixture-user-message",
+      "payload": {
+        "role": "user",
+        "channel": "answer",
+        "body": "请总结这段内容",
+        "status": "queued"
+      }
+    },
+    {
+      "conversationId": "fixture-conversation",
+      "eventId": "fixture-run-started",
+      "sourceEventKey": "fixture:run:1:started",
+      "type": "run.started",
+      "occurredAt": "2026-09-14T00:00:00.010Z",
+      "turnId": "fixture-turn-1",
+      "runId": "fixture-run-1",
+      "payload": {
+        "status": "running",
+        "timingQuality": "recorded"
+      }
+    },
+    {
+      "conversationId": "fixture-conversation",
+      "eventId": "fixture-answer-created",
+      "sourceEventKey": "fixture:answer:created",
+      "type": "message.created",
+      "occurredAt": "2026-09-14T00:00:00.020Z",
+      "turnId": "fixture-turn-1",
+      "runId": "fixture-run-1",
+      "messageId": "fixture-answer-message",
+      "payload": {
+        "role": "assistant",
+        "channel": "answer",
+        "body": "这段内容",
+        "status": "streaming"
+      }
+    },
+    {
+      "conversationId": "fixture-conversation",
+      "eventId": "fixture-answer-replaced",
+      "sourceEventKey": "fixture:answer:replaced",
+      "type": "message.replaced",
+      "occurredAt": "2026-09-14T00:00:00.030Z",
+      "turnId": "fixture-turn-1",
+      "runId": "fixture-run-1",
+      "messageId": "fixture-answer-message",
+      "payload": {
+        "baseContentVersion": 0,
+        "nextContentVersion": 1,
+        "body": "这段内容的摘要是：状态必须从同一事实源恢复。"
+      }
+    },
+    {
+      "conversationId": "fixture-conversation",
+      "eventId": "fixture-answer-finalized",
+      "sourceEventKey": "fixture:answer:finalized",
+      "type": "message.finalized",
+      "occurredAt": "2026-09-14T00:00:00.040Z",
+      "turnId": "fixture-turn-1",
+      "runId": "fixture-run-1",
+      "messageId": "fixture-answer-message",
+      "payload": {
+        "status": "final"
+      }
+    },
+    {
+      "conversationId": "fixture-conversation",
+      "eventId": "fixture-run-completed",
+      "sourceEventKey": "fixture:run:1:completed",
+      "type": "run.completed",
+      "occurredAt": "2026-09-14T00:00:00.050Z",
+      "turnId": "fixture-turn-1",
+      "runId": "fixture-run-1",
+      "payload": {
+        "status": "completed",
+        "timingQuality": "recorded"
+      }
+    }
+  ],
+  "expected": {
+    "headSeq": 6,
+    "messages": [
+      {
+        "messageId": "fixture-user-message",
+        "createdSeq": 1,
+        "versionSeq": 1,
+        "contentVersion": 0,
+        "status": "queued",
+        "body": "请总结这段内容"
+      },
+      {
+        "messageId": "fixture-answer-message",
+        "createdSeq": 3,
+        "versionSeq": 5,
+        "contentVersion": 1,
+        "status": "final",
+        "body": "这段内容的摘要是：状态必须从同一事实源恢复。"
+      }
+    ],
+    "run": {
+      "runId": "fixture-run-1",
+      "status": "completed",
+      "versionSeq": 6
+    }
+  }
+}

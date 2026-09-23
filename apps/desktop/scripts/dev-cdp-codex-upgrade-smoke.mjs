@@ -48,6 +48,30 @@ async function waitForThread(page, threadId, expectedStatuses, waitMs) {
   return last;
 }
 
+async function waitForV2MessageMarker(page, threadId, markerText, waitMs) {
+  const startedAt = Date.now();
+  let last;
+  while (Date.now() - startedAt < waitMs) {
+    last = await page.evaluate(async (id) => {
+      const [thread, pageResult] = await Promise.all([
+        window.eco.getThread(id),
+        window.eco.conversationV2MessagesPage?.(id, { limit: 200 }),
+      ]);
+      return { thread, pageResult };
+    }, threadId);
+    const messages = last?.pageResult?.messages ?? [];
+    const text = messages.map((message) => String(message?.body ?? "")).join("\n");
+    if (text.includes(markerText)) {
+      return { ...last, text };
+    }
+    await page.waitForTimeout(500);
+  }
+  return {
+    ...last,
+    text: (last?.pageResult?.messages ?? []).map((message) => String(message?.body ?? "")).join("\n"),
+  };
+}
+
 const browser = await chromium.connectOverCDP(cdpUrl);
 const page = browser.contexts()[0]?.pages()?.[0];
 if (!page) {
@@ -83,7 +107,9 @@ const template = await page.evaluate(async () => {
         thread.status !== "running" &&
         thread.status !== "queued",
     ) ??
-    threads.find((thread) => thread.runtimeConfig && thread.status !== "running" && thread.status !== "queued")
+    threads.find(
+      (thread) => thread.runtimeConfig && thread.status !== "running" && thread.status !== "queued",
+    )
   );
 });
 
@@ -174,8 +200,8 @@ try {
       },
       prompt: [
         "You are in a long-running agent turn.",
-        "First reply with a short sentence acknowledging you are waiting for a mid-turn follow-up.",
-        "Do not finish the task until you receive a follow-up containing STEER_INJECT.",
+        "Run the shell command `sleep 12` immediately; do not finish or reply before that command completes.",
+        "After the command completes, wait for a follow-up containing STEER_INJECT.",
         "When you receive STEER_INJECT, reply exactly with the marker that follows it and stop.",
       ].join(" "),
     },
@@ -202,22 +228,28 @@ try {
     const enqueue =
       (await page.evaluate(
         async ({ threadId, prompt }) => {
+          const projection = await window.eco.getThreadRunProjection?.(threadId);
+          const head = await window.eco.conversationV2Head?.(threadId);
+          const expectedHistoryRevision = Number.isSafeInteger(projection?.historyRevision)
+            ? projection.historyRevision
+            : Number.isSafeInteger(head?.historyRevision)
+              ? head.historyRevision
+              : 0;
+          const envelope = {
+            principalId: "desktop-local",
+            clientCommandId: `smoke_followup_${threadId}_${Date.now()}`,
+            threadId,
+            prompt,
+            expectedHistoryRevision,
+            followUpDeliveryMode: "steer",
+          };
           if (typeof window.eco.enqueueThreadFollowUp === "function") {
-            return window.eco.enqueueThreadFollowUp({
-              threadId,
-              prompt,
-              followUpDeliveryMode: "steer",
-            });
+            return window.eco.enqueueThreadFollowUp(envelope);
           }
           if (typeof window.eco.enqueueFollowUp === "function") {
-            return window.eco.enqueueFollowUp({
-              threadId,
-              prompt,
-              followUpDeliveryMode: "steer",
-            });
+            return window.eco.enqueueFollowUp(envelope);
           }
-          // Fallback: continueThread may queue/steer depending on settings
-          return window.eco.continueThread({ threadId, prompt });
+          throw new Error("Conversation V2 follow-up queue is unavailable.");
         },
         {
           threadId: base.thread.id,
@@ -225,10 +257,10 @@ try {
         },
       )) ?? null;
 
-    const result = await waitForThread(page, base.thread.id, ["completed"], timeoutMs);
-    const blob = JSON.stringify(result?.projection ?? result?.thread ?? {});
+    const result = await waitForV2MessageMarker(page, base.thread.id, steerMarker, timeoutMs);
+    const blob = `${result?.text ?? ""}\n${JSON.stringify(result?.projection ?? result?.thread ?? {})}`;
     if (result?.thread?.status === "completed" && blob.includes(steerMarker)) {
-      pass("mid_turn_steer", { threadId: base.thread.id, enqueue });
+      pass("mid_turn_steer", { threadId: base.thread.id, enqueue, v2MessageMarker: true });
     } else {
       fail("mid_turn_steer", {
         status: result?.thread?.status,
@@ -278,7 +310,7 @@ try {
   fail("bash_approval", error);
 }
 
-// --- 6) Composer UI: Codex core + MCP/subagent triggers ---
+// --- 6) Composer UI: Codex core + configured integration/subagent triggers ---
 try {
   await page.getByRole("button", { name: /新对话/ }).click({ timeout: 15_000 });
   await page.waitForTimeout(600);
@@ -300,10 +332,13 @@ try {
     .locator('button.composer-agents-trigger[aria-label*="子代理"]');
   const mcpLabel = (await mcpTrigger.count()) ? await mcpTrigger.getAttribute("aria-label") : null;
   const subLabel = (await subagentTrigger.count()) ? await subagentTrigger.getAttribute("aria-label") : null;
-  if (mcpLabel && subLabel) {
-    pass("composer_ui_codex_mcp_subagent", { mcpLabel, subLabel });
+  // MCP is configuration-dependent; the subagent roster is always the required
+  // V2 composer surface. A missing MCP button means no MCP server is enabled,
+  // not that the V2 composer is broken.
+  if (subLabel) {
+    pass("composer_ui_codex_subagent", { mcpLabel, subLabel });
   } else {
-    fail("composer_ui_codex_mcp_subagent", { mcpLabel, subLabel });
+    fail("composer_ui_codex_subagent", { mcpLabel, subLabel });
   }
 } catch (error) {
   fail("composer_ui_codex_mcp_subagent", error);

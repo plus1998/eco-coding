@@ -1,6 +1,6 @@
 import type { ThreadUsageLedgerEventView } from "./ipc";
 import { createRequestSpanLedgerRowMatcher } from "./request-span-usage";
-import type { ThreadRunProjectionRequestSpan } from "./thread-run-projection";
+import type { ThreadRunProjectionRequestSpan } from "./conversation-v2-projection";
 
 /**
  * Minimum generation window (ms) before publishing a per-row rate.

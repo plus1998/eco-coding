@@ -26,7 +26,8 @@ async function openFileDefault(filePath: string): Promise<void> {
   const ecoApi = window.eco;
   if (!ecoApi) return;
 
-  // HTML files: open in built-in browser (same as WorkspaceFilePreview)
+  // HTML files: open the on-disk file in the built-in browser (main converts the
+  // absolute path to a file:// URL). Other files: system default program.
   if (isHtmlFile(filePath)) {
     await ecoApi.browserOpen?.({ url: filePath, reveal: true, activate: true });
     return;

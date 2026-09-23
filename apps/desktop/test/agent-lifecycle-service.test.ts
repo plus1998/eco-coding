@@ -82,6 +82,34 @@ test("AgentLifecycleService records run attempts and planner agent lifecycle", (
   expect(service.usagePlannerAgentId("thr_lifecycle")).toBe("planner:attempt_execution_0");
 });
 
+test("AgentLifecycleService persists a caller-planned command attempt identity", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  const commandDispatch = {
+    principalId: "principal_1",
+    clientCommandId: "command_1",
+    dispatchId: "dispatch_1",
+  };
+
+  const attempt = service.startRunAttempt({
+    threadId: "thr_command",
+    phase: "continuation",
+    retryIndex: 0,
+    attemptId: "attempt_planned",
+    metadata: { commandDispatch },
+    commandDispatch,
+  });
+
+  expect(attempt).toMatchObject({
+    attemptId: "attempt_planned",
+    metadata: { commandDispatch },
+  });
+  expect(store.getAttempt("thr_command", "attempt_planned")).toMatchObject({
+    status: "running",
+    metadata: { commandDispatch },
+  });
+});
+
 test("AgentLifecycleService requires explicit parent tool use for interleaved subagents", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);

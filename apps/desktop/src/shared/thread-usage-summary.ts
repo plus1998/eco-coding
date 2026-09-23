@@ -7,6 +7,7 @@ import type {
   ThreadRoleContextSnapshot,
   ThreadStatus,
   ThreadUsageSnapshot,
+  ThreadUsageLedgerEventView,
 } from "./ipc";
 import { AGENT_ROLES } from "./ipc";
 import { pickDisplayContextTokens } from "./thread-continuation";
@@ -15,6 +16,7 @@ const ROLE_ORDER = new Map<string, number>(AGENT_ROLES.map((role, index) => [rol
 
 export interface ThreadUsageSummaryInput {
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   context?: ThreadContextSnapshot;
   hostUiFeatures?: AcpHostUiFeatures;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
@@ -22,6 +24,7 @@ export interface ThreadUsageSummaryInput {
 
 export interface ThreadUsageSummaryOutput {
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   context?: ThreadContextSnapshot;
   contextTokens?: number;
 }
@@ -79,6 +82,7 @@ export function buildThreadUsageSummary(input: ThreadUsageSummaryInput): ThreadU
 
   return {
     ...(showBilling && input.billing ? { billing: input.billing } : {}),
+    ...(showBilling && input.ledgerEvents ? { ledgerEvents: input.ledgerEvents } : {}),
     ...(context && { context }),
     ...(showContext && contextTokens > 0 && { contextTokens }),
   };

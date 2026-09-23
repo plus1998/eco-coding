@@ -247,6 +247,33 @@ export class ThreadLiveRequestRegistry {
     return byRole[byRole.length - 1]!.logicalRequestId;
   }
 
+  /**
+   * The request a scope names, only when the scope leaves no choice.
+   *
+   * Lifecycle events use this instead of `resolve`: a `request.retry_scheduled` is
+   * attributed to the span it retries, so picking one of two overlapping same-role requests
+   * on a hunch cancels the *other* request's span — which is a user-visible lie about which
+   * request was retried. Stream events keep `resolve`, where overlapping calls are expected
+   * and the in-flight one is the one being written to.
+   */
+  resolveUnique(threadId: string, input: { role?: string; agentId?: string }): string | undefined {
+    const entries = this.activeByThread.get(threadId);
+    if (!entries || entries.length === 0) {
+      return undefined;
+    }
+    const agentId = input.agentId?.trim();
+    if (agentId) {
+      const byAgent = entries.filter((entry) => entry.agentId === agentId);
+      return byAgent.length === 1 ? byAgent[0]!.logicalRequestId : undefined;
+    }
+    const role = input.role?.trim();
+    if (!role) {
+      return undefined;
+    }
+    const byRole = entries.filter((entry) => entry.role === role && !entry.agentId);
+    return byRole.length === 1 ? byRole[0]!.logicalRequestId : undefined;
+  }
+
   hasActiveRequestId(threadId: string, logicalRequestId: string): boolean {
     const trimmed = logicalRequestId.trim();
     if (!trimmed) {

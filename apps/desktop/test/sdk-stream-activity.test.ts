@@ -1,10 +1,44 @@
 import { expect, test } from "bun:test";
-import { SdkStreamActivityBridge, toThreadLocalStreamUpdate } from "../src/main/sdk-stream-activity";
+import { SdkStreamActivityBridge } from "../src/main/sdk-stream-activity";
 
-test("emits every SDK text update locally while throttling the remote stream", async () => {
+type CapturedActivity = {
+  type: string;
+  message: string;
+  role: string;
+  stream: boolean;
+  agentId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+function captureActivity(emitted: CapturedActivity[]) {
+  return (
+    _threadId: string,
+    type: string,
+    message: string,
+    role: string,
+    stream: boolean,
+    agentId?: string,
+    extras?: { metadata?: Record<string, unknown> },
+  ) => {
+    emitted.push({
+      type,
+      message,
+      role,
+      stream,
+      ...(agentId && { agentId }),
+      ...(extras?.metadata && { metadata: extras.metadata }),
+    });
+  };
+}
+
+function sdkBlockKey(activity: CapturedActivity): string | undefined {
+  const key = activity.metadata?.sdkStreamBlockKey;
+  return typeof key === "string" ? key : undefined;
+}
+
+test("throttles durable V2 stream updates while retaining the latest text", async () => {
   const bridge = new SdkStreamActivityBridge();
   const remote: string[] = [];
-  const local: string[] = [];
   const emit = (_threadId: string, _type: string, message: string, _role: string, stream: boolean) => {
     if (stream && message) {
       remote.push(message);
@@ -25,13 +59,7 @@ test("emits every SDK text update locally while throttling the remote stream", a
     },
     emit,
     undefined,
-    {
-      onLocalStreamUpdate(update) {
-        if (update.stream && update.message) {
-          local.push(update.message);
-        }
-      },
-    },
+    undefined,
   );
 
   for (const text of ["逐", "字", "输", "出", "正", "常"]) {
@@ -50,26 +78,19 @@ test("emits every SDK text update locally while throttling the remote stream", a
       },
       emit,
       undefined,
-      {
-        onLocalStreamUpdate(update) {
-          if (update.stream && update.message) {
-            local.push(update.message);
-          }
-        },
-      },
+      undefined,
     );
   }
 
-  expect(local).toEqual(["逐", "逐字", "逐字输", "逐字输出", "逐字输出正", "逐字输出正常"]);
   expect(remote).toEqual([]);
 
   await Bun.sleep(60);
   expect(remote).toEqual(["逐字输出正常"]);
 });
 
-test("copies thinking extras.reasoningDisplay onto the local stream overlay payload", () => {
+test("persists summary thinking display metadata in the durable V2 event", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: ReturnType<typeof toThreadLocalStreamUpdate>[] = [];
+  let metadata: Record<string, unknown> | undefined;
 
   bridge.handleEvent(
     "thr_think_stamp",
@@ -84,32 +105,23 @@ test("copies thinking extras.reasoningDisplay onto the local stream overlay payl
         stream_block_key: "pi-thinking:sess:m1:c0",
       },
     },
-    () => undefined,
-    undefined,
-    {
-      onLocalStreamUpdate(update) {
-        local.push(toThreadLocalStreamUpdate(update, "2026-01-01T00:00:01.000Z"));
-      },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      metadata = extras?.metadata;
+    },
+  );
+  bridge.flushPendingAndReset(
+    "thr_think_stamp",
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      metadata = extras?.metadata;
     },
   );
 
-  expect(local).toEqual([
-    {
-      threadId: "thr_think_stamp",
-      streamKey: expect.any(String),
-      text: "定位入口",
-      role: "thinking",
-      channel: "thinking",
-      streaming: true,
-      observedAt: "2026-01-01T00:00:01.000Z",
-      reasoningDisplay: "summary",
-    },
-  ]);
+  expect(metadata).toMatchObject({ reasoningDisplay: "summary" });
 });
 
-test("copies raw thinking extras onto the local stream overlay payload", () => {
+test("persists raw thinking display metadata in the durable V2 event", () => {
   const bridge = new SdkStreamActivityBridge();
-  let overlay: ReturnType<typeof toThreadLocalStreamUpdate> | undefined;
+  let metadata: Record<string, unknown> | undefined;
 
   bridge.handleEvent(
     "thr_think_raw",
@@ -124,17 +136,18 @@ test("copies raw thinking extras onto the local stream overlay payload", () => {
         stream_block_key: "pi-thinking:sess:m1:c0",
       },
     },
-    () => undefined,
-    undefined,
-    {
-      onLocalStreamUpdate(update) {
-        overlay = toThreadLocalStreamUpdate(update, "2026-01-01T00:00:01.000Z");
-      },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      metadata = extras?.metadata;
+    },
+  );
+  bridge.flushPendingAndReset(
+    "thr_think_raw",
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      metadata = extras?.metadata;
     },
   );
 
-  expect(overlay?.channel).toBe("thinking");
-  expect(overlay?.reasoningDisplay).toBe("raw");
+  expect(metadata).toMatchObject({ reasoningDisplay: "raw" });
 });
 
 test("resolves pi mcp proxy calls into canonical eco tool names", () => {
@@ -284,6 +297,7 @@ test("emits structured SDK tool metadata with tool started activity", () => {
       agentId: "agent_weather",
       tool: {
         name: "WebFetch",
+        status: "started",
         detail: "https://weather.example/guangzhou",
         toolUseId: "toolu_fetch_1",
       },
@@ -338,11 +352,23 @@ test("preserves useful TaskCreate and TaskUpdate input in tool metadata", () => 
   expect(emitted).toEqual([
     {
       message: "Tool: TaskCreate · 补充流事件测试",
-      tool: { name: "TaskCreate", detail: "补充流事件测试", toolUseId: "task_create" },
+      tool: {
+        name: "TaskCreate",
+        detail: "补充流事件测试",
+        toolUseId: "task_create",
+        // Tool activity carries the lifecycle the Feed draws its verb from; the SDK
+        // metadata for a started tool reports it (see `toolStatusToLifecycle`).
+        status: "started",
+      },
     },
     {
       message: "Tool: TaskUpdate · #3 · 进行中",
-      tool: { name: "TaskUpdate", detail: "#3 · 进行中", toolUseId: "task_update" },
+      tool: {
+        name: "TaskUpdate",
+        detail: "#3 · 进行中",
+        toolUseId: "task_update",
+        status: "started",
+      },
     },
   ]);
 });
@@ -425,6 +451,7 @@ test("perserves SendMessage resume payload in structured tool metadata", () => {
       message: "Tool: SendMessage · → a897f866… · 继续实现 App 权限与测试",
       tool: {
         name: "SendMessage",
+        status: "started",
         detail: "→ a897f866… · 继续实现 App 权限与测试",
         toolUseId: "call_j2MzFPzR3u69seK4QBDbAOaS",
         sendMessage: {
@@ -488,6 +515,7 @@ test("preserves Read line range in structured tool metadata", () => {
 
   expect(emitted[0]?.tool).toEqual({
     name: "Read",
+    status: "started",
     detail: "ActivityLogView.tsx:L120-159",
     toolUseId: "toolu_read_1",
     readTarget: {
@@ -521,6 +549,7 @@ test("preserves Bash description in structured tool metadata", () => {
 
   expect(emitted[0]?.tool).toEqual({
     name: "Bash",
+    status: "started",
     detail: "npm test",
     toolUseId: "toolu_bash_1",
     description: "Run unit tests",
@@ -552,6 +581,7 @@ test("preserves full Bash command detail in structured metadata", () => {
 
   expect(emitted[0]?.tool).toEqual({
     name: "Bash",
+    status: "started",
     detail: longCommand,
     toolUseId: "toolu_bash_long",
   });
@@ -916,6 +946,7 @@ test("emits structured SDK tool metadata without parsing display text", () => {
       role: "tool",
       tool: {
         name: "Skill",
+        status: "started",
         detail: "读取 pdf 技能",
       },
     },
@@ -953,6 +984,7 @@ test("emits Skill detail for alternate SDK skill input keys", () => {
       message: "读取 frontend-design 技能",
       tool: {
         name: "Skill",
+        status: "started",
         detail: "读取 frontend-design 技能",
       },
     },
@@ -1469,30 +1501,11 @@ test("flushPendingAndReset finalizes open narrative text instead of dropping it"
   expect(emitted.some((item) => item.message === "keep me" && item.stream === false)).toBe(true);
 });
 
-test("keeps unkeyed ACP thinking and text on separate stream identities", () => {
+test("keeps unkeyed ACP thinking and text on separate durable V2 identities", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{
-    role: string;
-    text: string;
-    streamKey: string;
-    streaming: boolean;
-  }> = [];
-  const remote: Array<{ role: string; message: string; stream: boolean }> = [];
-
-  const emit = (_threadId: string, _type: string, message: string, role: string, stream: boolean) => {
-    remote.push({ role, message, stream });
-  };
-  const options = {
-    activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
-      local.push({
-        role: update.role,
-        text: update.message,
-        streamKey: update.streamKey,
-        streaming: update.stream,
-      });
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_acp" };
 
   const send = (payload: Record<string, unknown>) => {
     bridge.handleEvent(
@@ -1509,58 +1522,46 @@ test("keeps unkeyed ACP thinking and text on separate stream identities", () => 
   send({ type: "eco_stream", text: "正" });
   send({ type: "eco_stream", text: "文" });
   send({ type: "eco_stream", blockKind: "thinking", text: "再想" });
+  bridge.flushPendingAndReset("thr_acp", emit);
 
   const thinkingKeys = [
-    ...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey)),
+    ...new Set(
+      emitted
+        .filter((item) => item.role === "thinking")
+        .map(sdkBlockKey)
+        .filter((key): key is string => Boolean(key)),
+    ),
   ];
   const messageKeys = [
-    ...new Set(local.filter((item) => item.role === "planner").map((item) => item.streamKey)),
+    ...new Set(
+      emitted
+        .filter((item) => item.role === "planner")
+        .map(sdkBlockKey)
+        .filter((key): key is string => Boolean(key)),
+    ),
   ];
   expect(thinkingKeys).toHaveLength(2);
   expect(messageKeys).toHaveLength(1);
   expect(thinkingKeys[0]).not.toBe(messageKeys[0]);
   expect(thinkingKeys[1]).not.toBe(thinkingKeys[0]);
 
-  const firstThinking = local.filter((item) => item.streamKey === thinkingKeys[0]);
-  expect(firstThinking.at(-1)).toMatchObject({ text: "想一下", streaming: false });
+  const firstThinking = emitted.filter((item) => sdkBlockKey(item) === thinkingKeys[0]);
+  expect(firstThinking.at(-1)).toMatchObject({ message: "想一下", stream: false });
 
-  const body = local.filter((item) => item.streamKey === messageKeys[0]);
-  expect(body.map((item) => item.text)).toContain("正文");
-  expect(body.every((item) => !item.text.includes("想"))).toBe(true);
+  const body = emitted.filter((item) => sdkBlockKey(item) === messageKeys[0]);
+  expect(body.map((item) => item.message)).toContain("正文");
+  expect(body.every((item) => !item.message.includes("想"))).toBe(true);
 
-  const secondThinking = local.filter((item) => item.streamKey === thinkingKeys[1]);
-  expect(secondThinking[0]?.text).toBe("再想");
-  expect(secondThinking.every((item) => !item.text.includes("正文"))).toBe(true);
-
-  expect(
-    remote.some((item) => item.role === "thinking" && item.message === "想一下" && item.stream === false),
-  ).toBe(true);
+  const secondThinking = emitted.filter((item) => sdkBlockKey(item) === thinkingKeys[1]);
+  expect(secondThinking[0]?.message).toBe("再想");
+  expect(secondThinking.every((item) => !item.message.includes("正文"))).toBe(true);
 });
 
-test("finalizes unkeyed ACP thinking when a tool starts and opens a new block after", () => {
+test("finalizes unkeyed ACP thinking when a tool starts and opens a new durable block after", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{
-    role: string;
-    text: string;
-    streamKey: string;
-    streaming: boolean;
-  }> = [];
-  const remote: Array<{ type: string; role: string; message: string; stream: boolean }> = [];
-
-  const emit = (_threadId: string, type: string, message: string, role: string, stream: boolean) => {
-    remote.push({ type, role, message, stream });
-  };
-  const options = {
-    activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
-      local.push({
-        role: update.role,
-        text: update.message,
-        streamKey: update.streamKey,
-        streaming: update.stream,
-      });
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_acp" };
 
   const sendThinking = (text: string) => {
     bridge.handleEvent(
@@ -1595,39 +1596,38 @@ test("finalizes unkeyed ACP thinking when a tool starts and opens a new block af
     options,
   );
   sendThinking("再想");
+  bridge.flushPendingAndReset("thr_acp_tool", emit);
 
   const thinkingKeys = [
-    ...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey)),
+    ...new Set(
+      emitted
+        .filter((item) => item.role === "thinking")
+        .map(sdkBlockKey)
+        .filter((key): key is string => Boolean(key)),
+    ),
   ];
   expect(thinkingKeys).toHaveLength(2);
 
-  const firstThinking = local.filter((item) => item.streamKey === thinkingKeys[0]);
-  expect(firstThinking.at(-1)).toMatchObject({ text: "想一下", streaming: false });
+  const firstThinking = emitted.filter((item) => sdkBlockKey(item) === thinkingKeys[0]);
+  expect(firstThinking.at(-1)).toMatchObject({ message: "想一下", stream: false });
 
-  const toolIndex = remote.findIndex((item) => item.type === "tool.started");
-  const thinkingFinalIndex = remote.findIndex(
+  const toolIndex = emitted.findIndex((item) => item.type === "tool.started");
+  const thinkingFinalIndex = emitted.findIndex(
     (item) => item.role === "thinking" && item.message === "想一下" && item.stream === false,
   );
   expect(thinkingFinalIndex).toBeGreaterThanOrEqual(0);
   expect(thinkingFinalIndex).toBeLessThan(toolIndex);
 
-  const secondThinking = local.filter((item) => item.streamKey === thinkingKeys[1]);
-  expect(secondThinking[0]?.text).toBe("再想");
-  expect(secondThinking.every((item) => !item.text.includes("想一下"))).toBe(true);
+  const secondThinking = emitted.filter((item) => sdkBlockKey(item) === thinkingKeys[1]);
+  expect(secondThinking[0]?.message).toBe("再想");
+  expect(secondThinking.every((item) => !item.message.includes("想一下"))).toBe(true);
 });
 
 test("does not finalize keyed thinking streams on tool.started", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{ text: string; streaming: boolean }> = [];
-
-  const options = {
-    activityAgentId: "agent_pi",
-    onLocalStreamUpdate(update: { role: string; message: string; stream: boolean }) {
-      if (update.role === "thinking") {
-        local.push({ text: update.message, streaming: update.stream });
-      }
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_pi" };
 
   bridge.handleEvent(
     "thr_keyed",
@@ -1641,7 +1641,7 @@ test("does not finalize keyed thinking streams on tool.started", () => {
         stream_block_key: "pi-thinking:sess:m1:c0",
       },
     },
-    () => undefined,
+    emit,
     undefined,
     options,
   );
@@ -1657,25 +1657,22 @@ test("does not finalize keyed thinking streams on tool.started", () => {
         input: { path: "config.ts" },
       },
     },
-    () => undefined,
+    emit,
     undefined,
     options,
   );
 
-  expect(local.at(-1)).toMatchObject({ text: "定位入口", streaming: true });
+  expect(emitted.filter((item) => item.role === "thinking").at(-1)).toMatchObject({
+    message: "定位入口",
+    stream: true,
+  });
 });
 
-test("ACP thought chunks with the same messageId stay one thinking block", () => {
+test("ACP thought chunks with the same messageId stay one durable thinking block", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{ text: string; streamKey: string; streaming: boolean }> = [];
-  const options = {
-    activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
-      if (update.role === "thinking") {
-        local.push({ text: update.message, streamKey: update.streamKey, streaming: update.stream });
-      }
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_acp" };
   const send = (text: string, messageId: string) => {
     bridge.handleEvent(
       "thr_acp_msgid",
@@ -1684,7 +1681,7 @@ test("ACP thought chunks with the same messageId stay one thinking block", () =>
         role: "planner",
         payload: { type: "eco_stream", blockKind: "thinking", text, messageId },
       },
-      () => undefined,
+      emit,
       undefined,
       options,
     );
@@ -1692,23 +1689,19 @@ test("ACP thought chunks with the same messageId stay one thinking block", () =>
 
   send("Thinking ", "msg_thought_1");
   send("hard", "msg_thought_1");
+  bridge.flushPendingAndReset("thr_acp_msgid", emit);
 
-  const keys = [...new Set(local.map((item) => item.streamKey))];
+  const thinking = emitted.filter((item) => item.role === "thinking");
+  const keys = [...new Set(thinking.map(sdkBlockKey).filter((key): key is string => Boolean(key)))];
   expect(keys).toHaveLength(1);
-  expect(local.at(-1)).toMatchObject({ text: "Thinking hard", streaming: true });
+  expect(thinking.at(-1)).toMatchObject({ message: "Thinking hard", stream: false });
 });
 
-test("ACP thought chunks with different messageIds open a new thinking block", () => {
+test("ACP thought chunks with different messageIds open a new durable thinking block", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{ text: string; streamKey: string; streaming: boolean }> = [];
-  const options = {
-    activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
-      if (update.role === "thinking") {
-        local.push({ text: update.message, streamKey: update.streamKey, streaming: update.stream });
-      }
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_acp" };
   const send = (text: string, messageId: string) => {
     bridge.handleEvent(
       "thr_acp_msgid_split",
@@ -1717,7 +1710,7 @@ test("ACP thought chunks with different messageIds open a new thinking block", (
         role: "planner",
         payload: { type: "eco_stream", blockKind: "thinking", text, messageId },
       },
-      () => undefined,
+      emit,
       undefined,
       options,
     );
@@ -1725,27 +1718,23 @@ test("ACP thought chunks with different messageIds open a new thinking block", (
 
   send("Thinking hard", "msg_thought_1");
   send("A separate thought", "msg_thought_2");
+  bridge.flushPendingAndReset("thr_acp_msgid_split", emit);
 
-  const keys = [...new Set(local.map((item) => item.streamKey))];
+  const thinking = emitted.filter((item) => item.role === "thinking");
+  const keys = [...new Set(thinking.map(sdkBlockKey).filter((key): key is string => Boolean(key)))];
   expect(keys).toHaveLength(2);
-  const first = local.filter((item) => item.streamKey === keys[0]);
-  expect(first.at(-1)).toMatchObject({ text: "Thinking hard", streaming: false });
-  const second = local.filter((item) => item.streamKey === keys[1]);
-  expect(second[0]?.text).toBe("A separate thought");
-  expect(second.every((item) => !item.text.includes("Thinking hard"))).toBe(true);
+  const first = thinking.filter((item) => sdkBlockKey(item) === keys[0]);
+  expect(first.at(-1)).toMatchObject({ message: "Thinking hard", stream: false });
+  const second = thinking.filter((item) => sdkBlockKey(item) === keys[1]);
+  expect(second[0]?.message).toBe("A separate thought");
+  expect(second.every((item) => !item.message.includes("Thinking hard"))).toBe(true);
 });
 
-test("ACP thought chunk without messageId then with messageId stays one block", () => {
+test("ACP thought chunk without messageId then with messageId stays one durable block", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{ text: string; streamKey: string }> = [];
-  const options = {
-    activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string }) {
-      if (update.role === "thinking") {
-        local.push({ text: update.message, streamKey: update.streamKey });
-      }
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_acp" };
   const send = (text: string, messageId?: string) => {
     bridge.handleEvent(
       "thr_acp_msgid_adopt",
@@ -1759,7 +1748,7 @@ test("ACP thought chunk without messageId then with messageId stays one block", 
           ...(messageId && { messageId }),
         },
       },
-      () => undefined,
+      emit,
       undefined,
       options,
     );
@@ -1767,23 +1756,19 @@ test("ACP thought chunk without messageId then with messageId stays one block", 
 
   send("Thinking ");
   send("hard", "msg_thought_1");
+  bridge.flushPendingAndReset("thr_acp_msgid_adopt", emit);
 
-  const keys = [...new Set(local.map((item) => item.streamKey))];
+  const thinking = emitted.filter((item) => item.role === "thinking");
+  const keys = [...new Set(thinking.map(sdkBlockKey).filter((key): key is string => Boolean(key)))];
   expect(keys).toHaveLength(1);
-  expect(local.at(-1)?.text).toBe("Thinking hard");
+  expect(thinking.at(-1)?.message).toBe("Thinking hard");
 });
 
-test("ACP thought with the same messageId after a tool opens a new block", () => {
+test("ACP thought with the same messageId after a tool opens a new durable block", () => {
   const bridge = new SdkStreamActivityBridge();
-  const local: Array<{ text: string; streamKey: string; streaming: boolean }> = [];
-  const options = {
-    activityAgentId: "agent_acp",
-    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
-      if (update.role === "thinking") {
-        local.push({ text: update.message, streamKey: update.streamKey, streaming: update.stream });
-      }
-    },
-  };
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
+  const options = { activityAgentId: "agent_acp" };
   const send = (text: string) => {
     bridge.handleEvent(
       "thr_acp_msgid_tool",
@@ -1792,7 +1777,7 @@ test("ACP thought with the same messageId after a tool opens a new block", () =>
         role: "planner",
         payload: { type: "eco_stream", blockKind: "thinking", text, messageId: "msg_thought_1" },
       },
-      () => undefined,
+      emit,
       undefined,
       options,
     );
@@ -1811,19 +1796,21 @@ test("ACP thought with the same messageId after a tool opens a new block", () =>
         input: { path: "config.ts" },
       },
     },
-    () => undefined,
+    emit,
     undefined,
     options,
   );
   send("再想");
+  bridge.flushPendingAndReset("thr_acp_msgid_tool", emit);
 
-  const keys = [...new Set(local.map((item) => item.streamKey))];
+  const thinking = emitted.filter((item) => item.role === "thinking");
+  const keys = [...new Set(thinking.map(sdkBlockKey).filter((key): key is string => Boolean(key)))];
   expect(keys).toHaveLength(2);
-  expect(local.filter((item) => item.streamKey === keys[0]).at(-1)).toMatchObject({
-    text: "想一下",
-    streaming: false,
+  expect(thinking.filter((item) => sdkBlockKey(item) === keys[0]).at(-1)).toMatchObject({
+    message: "想一下",
+    stream: false,
   });
-  expect(local.filter((item) => item.streamKey === keys[1])[0]?.text).toBe("再想");
+  expect(thinking.filter((item) => sdkBlockKey(item) === keys[1])[0]?.message).toBe("再想");
 });
 
 test("finalized ACP thinking keeps thinkingStartedAt from the first chunk", () => {
@@ -1876,10 +1863,10 @@ test("finalized ACP thinking keeps thinkingStartedAt from the first chunk", () =
   expect(typeof finals[0]?.metadata?.thinkingStartedAt).toBe("string");
 });
 
-test("unkeyed narrative streamKeys are isolated per runAttemptId", () => {
+test("unkeyed narrative streams are isolated per runAttemptId in the durable tail", () => {
   const bridge = new SdkStreamActivityBridge();
-  const keys: string[] = [];
-  const emit = () => {};
+  const emitted: CapturedActivity[] = [];
+  const emit = captureActivity(emitted);
   const capture = (runAttemptId: string, text: string) => {
     bridge.handleEvent(
       "thr_attempt",
@@ -1890,20 +1877,15 @@ test("unkeyed narrative streamKeys are isolated per runAttemptId", () => {
       },
       emit,
       undefined,
-      {
-        onLocalStreamUpdate(update) {
-          keys.push(update.streamKey);
-        },
-        runAttemptId,
-      },
+      { runAttemptId },
     );
   };
 
   capture("attempt_a", "第一轮");
   capture("attempt_b", "第二轮");
+  bridge.flushPendingAndReset("thr_attempt", emit);
 
-  const unique = [...new Set(keys)];
-  expect(unique).toHaveLength(2);
-  expect(unique[0]).toContain(":attempt:attempt_a:block:message:0");
-  expect(unique[1]).toContain(":attempt:attempt_b:block:message:0");
+  expect(emitted.filter((item) => item.stream === false).map((item) => item.message)).toEqual(
+    expect.arrayContaining(["第一轮", "第二轮"]),
+  );
 });

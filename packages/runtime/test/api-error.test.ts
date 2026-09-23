@@ -43,6 +43,25 @@ test("parseSdkApiErrorAttribute maps model_not_found", () => {
   expect(formatApiErrorUserMessage(parsed!)).toBe("模型不存在或无权访问，请检查 Provider 配置与模型 ID。");
 });
 
+test("formatApiErrorUserMessage exposes Codex encrypted agent handoff incompatibility", () => {
+  expect(
+    formatApiErrorUserMessage({
+      code: "upstream_error",
+      statusCode: 400,
+      message: "unsupported input item type: agent_message",
+    }),
+  ).toBe(
+    "当前 Provider 不支持 Codex 子代理的加密 agent_message；请改用 PI/Claude 或支持 Codex Multi-Agent 的 Responses Provider。",
+  );
+  expect(
+    formatApiErrorUserMessage({
+      code: "invalid_request",
+      statusCode: 400,
+      message: "unsupported content part type: encrypted_content",
+    }),
+  ).toContain("Codex 子代理");
+});
+
 test("formatApiErrorUserMessage maps HTTP 529 overload structurally", () => {
   expect(
     formatApiErrorUserMessage({

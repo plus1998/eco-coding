@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type {
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionTimelineItem,
-} from "../shared/thread-run-projection";
+} from "../shared/conversation-v2-projection";
 import { i18n } from "./i18n";
 import { useTokenSpeedDisplayMode } from "./token-speed-preferences";
 import {

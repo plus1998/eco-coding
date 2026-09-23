@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { i18n } from "../src/renderer/i18n";
 import {
   canEscalateThreadFollowUp,
   formatThreadFollowUpPreview,
@@ -13,6 +12,7 @@ import {
   coreSupportsFollowUpEscalate,
   resolveFollowUpDeliveryModeForCore,
 } from "../src/shared/thread-follow-up-core";
+import { withTestLanguage } from "./support/test-language";
 
 function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): ThreadPendingFollowUp {
   return {
@@ -74,8 +74,12 @@ test("mergeThreadFollowUp replaces existing records by id", () => {
   expect(mergeThreadFollowUp([original], updated)).toEqual([updated]);
 });
 
-test("formatThreadFollowUpPreview localizes image and empty defaults", async () => {
-  await i18n.changeLanguage("en-US");
+// One test needs localized previews in English. Switching the renderer's language is
+// process-wide, so it is restored after every test in this file: leaving it switched made
+// seven unrelated Feed assertions fail only in a full run.
+withTestLanguage("en-US");
+
+test("formatThreadFollowUpPreview localizes image and empty defaults", () => {
   const preview = formatThreadFollowUpPreview(
     followUp("with-image", {
       prompt: "a".repeat(140),

@@ -7,31 +7,27 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/app_error.dart';
+import '../../core/models/conversation_v2_models.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/image_display_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
-import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/acp_host_ui_features.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/thinking_display_provider.dart';
-import '../../core/preferences/thinking_display_preferences.dart';
 import '../../core/widgets/activity_feed_auto_read_listener.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
-import '../../core/utils/activity_display.dart';
-import '../../core/utils/agent_mission.dart';
+import '../../core/utils/conversation_v2_hash.dart';
 import '../../core/utils/prompt_image_attachment.dart';
 import '../../core/utils/prompt_image_upload.dart';
-import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
 import '../../core/platform/session_wake_lock.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
-import '../../l10n/generated/app_localizations.dart';
 import '../approvals/approval_sheets.dart';
 import '../approvals/bash_approval_panel.dart';
 import '../approvals/plan_approval_panel.dart';
@@ -42,6 +38,9 @@ import '../composer/workspace_changes_pill.dart';
 import '../projects/project_providers.dart';
 import 'activity_feed.dart';
 import 'activity_feed_scroll_coordinator.dart';
+import 'conversation_v2_activity_feed.dart';
+import '../../core/sync/conversation_v2_session.dart';
+import 'conversation_v2_projection.dart';
 import 'image_display_artifacts.dart';
 import 'image_display_floating_gallery.dart';
 import 'thread_menu_sheets.dart';
@@ -88,6 +87,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   bool _followUpQueuePauseBusy = false;
   double _lastKeyboardInset = 0;
   String? _deferredComposerRestoreRevision;
+  bool _active = true;
 
   bool get _isLanding => widget.threadId == threadSessionNewPathSegment;
 
@@ -108,6 +108,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ref.read(runtimeConfigProvider.notifier).state = thread?.runtimeConfig;
       _scheduleImageDisplayArtifactsRefresh();
     });
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
   }
 
   @override
@@ -176,6 +182,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   void deactivate() {
+    _active = false;
+    _imageDisplayListEpoch += 1;
     if (_editingFollowUpId != null) {
       final rpc = ref.read(desktopRpcProvider);
       if (rpc != null) {
@@ -199,12 +207,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   }
 
   void _scheduleImageDisplayArtifactsRefresh() {
-    if (_isLanding) return;
+    if (!_active || _isLanding) return;
     final epoch = ++_imageDisplayListEpoch;
     unawaited(_refreshImageDisplayArtifacts(epoch));
   }
 
   Future<void> _refreshImageDisplayArtifacts(int epoch) async {
+    if (!_active) return;
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
     try {
@@ -233,14 +242,43 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     _imageDisplayGalleryController.reveal(artifactId: artifactId);
   }
 
+  /// Legacy lifecycle clock: `thread.*` events own queued/approval transitions.
   bool _isRunning(ThreadSummary? thread) {
     if (thread == null) return false;
     return thread.status == 'running' || thread.status == 'queued';
   }
 
+  /// Whether the V2 stream is trustworthy enough to own the run state.
+  bool _v2OwnsRunState(ConversationV2SessionState v2) {
+    return v2.syncState == ConversationV2SyncState.catchingUp ||
+        v2.syncState == ConversationV2SyncState.live;
+  }
+
+  /// Joins the two clocks the session state arrives on.
+  ///
+  /// The Feed renders from the V2 event stream while the running status arrives
+  /// on the legacy `thread.*` channel, and the two are applied independently.
+  /// Leaving the running state early makes the composer switch back to send
+  /// while the Feed is still printing the answer, so the session may only leave
+  /// it once both agree: the lifecycle reports a terminal status *and* V2 has no
+  /// active run (whose `run.completed` is emitted after the final message in the
+  /// same ordered stream).
+  bool _isSessionRunning(
+    ThreadSummary? thread, [
+    ConversationV2SessionState? v2,
+  ]) {
+    final ConversationV2SessionState v2State =
+        v2 ?? ref.read(conversationV2SessionProvider(widget.threadId));
+    return resolveSessionRunning(
+      lifecycleRunning: _isRunning(thread),
+      v2StreamTrusted: _v2OwnsRunState(v2State),
+      runs: v2State.runs,
+    );
+  }
+
   bool _shouldKeepScreenAwake(ThreadSummary? thread) {
     // Landing send (_starting) must also keep the screen on until handoff.
-    return _starting || (!_isLanding && _isRunning(thread));
+    return _starting || (!_isLanding && _isSessionRunning(thread));
   }
 
   void _syncSessionWakeLock([ThreadSummary? thread]) {
@@ -285,6 +323,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ),
       ),
     );
+    final conversationV2 = ref.watch(
+      conversationV2SessionProvider(widget.threadId),
+    );
+    final conversationV2ContentReady =
+        conversationV2.syncState != ConversationV2SyncState.uninitialized &&
+        conversationV2.syncState != ConversationV2SyncState.bootstrapping;
     final runtimeConfig =
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
@@ -309,15 +353,17 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final changesLoading = ref.watch(
       workspacePillLoadingProvider(workspacePath),
     );
-    final isRunning = _isRunning(thread);
+    final isRunning = _isSessionRunning(thread, conversationV2);
     _syncSessionWakeLock(thread);
     final stopping = _stopBusy || (thread?.cancelling == true);
     final sessionContentBooting = isSessionContentBooting(
-      hasError: session.error != null,
-      projectionReady: session.projectionReady,
-      projectionSettled: session.projectionSettled,
-      projectionSynchronizing: session.projectionSynchronizing,
-      loading: session.loading,
+      hasError: session.error != null && !conversationV2ContentReady,
+      projectionReady: session.projectionReady || conversationV2ContentReady,
+      projectionSettled:
+          session.projectionSettled || conversationV2ContentReady,
+      projectionSynchronizing:
+          session.projectionSynchronizing && !conversationV2ContentReady,
+      loading: session.loading && !conversationV2ContentReady,
       thread: thread,
     );
     final showLanding =
@@ -325,21 +371,35 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         !session.loading &&
         session.error == null &&
         !isRunning &&
-        !session.projectionReady;
-    final isAwaitingPlan =
-        thread != null && session.pendingPlan?.threadId == thread.id;
+        !session.projectionReady &&
+        !conversationV2ContentReady;
+    final followUpMode = shouldComposerUseFollowUpQueue(
+      // `isRunning` is the joined clock: while a V2 run is still active the
+      // composer must keep queueing instead of starting a new turn, even if the
+      // lifecycle status already reported its terminal value.
+      status: isRunning ? 'running' : thread?.status,
+      editingFollowUpId: _editingFollowUpId,
+      followUpQueuePaused: thread?.followUpQueuePaused ?? false,
+    );
+    // Once V2 has started, interaction state is read from V2 detail items as
+    // well. Do not let a stale legacy bootstrap row resurrect an approval or
+    // clarification after V2 has already resolved it.
+    final useConversationV2Interactions =
+        conversationV2.syncState != ConversationV2SyncState.uninitialized;
+    final pendingBash = useConversationV2Interactions
+        ? conversationV2.pendingBash
+        : session.pendingBash;
+    final pendingPlan = useConversationV2Interactions
+        ? conversationV2.pendingPlan
+        : session.pendingPlan;
+    final pendingClarification = useConversationV2Interactions
+        ? conversationV2.pendingClarification
+        : session.pendingClarification;
+    final isAwaitingPlan = thread != null && pendingPlan?.threadId == thread.id;
     final canStopThread = isRunning || isAwaitingPlan;
     final planFailureMessage = isAwaitingPlan
         ? extractPlanFailureMessage(thread.message)
         : null;
-    final followUpMode = shouldComposerUseFollowUpQueue(
-      status: thread?.status,
-      editingFollowUpId: _editingFollowUpId,
-      followUpQueuePaused: thread?.followUpQueuePaused ?? false,
-    );
-    final pendingBash = session.pendingBash;
-    final pendingPlan = session.pendingPlan;
-    final pendingClarification = session.pendingClarification;
     final showBashApproval =
         pendingBash != null && pendingBash.threadId == thread?.id;
     final showPlanApproval =
@@ -347,9 +407,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final showClarification =
         pendingClarification != null &&
         pendingClarification.threadId == thread?.id;
-    final queuedFollowUps = queuedThreadFollowUps(
-      session.followUps,
-    );
+    final queuedFollowUps = queuedThreadFollowUps(session.followUps);
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
@@ -359,9 +417,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           !isProjectionFeedReady(previousProjection) &&
           isProjectionFeedReady(nextProjection);
       if (projectionBecameReady) {
-        ref.read(threadSessionRevealedProvider.notifier).update(
-          (revealed) => {...revealed, widget.threadId},
-        );
+        ref
+            .read(threadSessionRevealedProvider.notifier)
+            .update((revealed) => {...revealed, widget.threadId});
         _scrollCoordinator.forceScrollToEnd();
       }
       if (!identical(previousProjection, nextProjection)) {
@@ -389,7 +447,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       if (_stopBusy) {
         final liveThread = next.thread;
         if (liveThread == null ||
-            (!_isRunning(liveThread) && liveThread.cancelling != true)) {
+            (!_isSessionRunning(liveThread) && liveThread.cancelling != true)) {
           setState(() => _stopBusy = false);
         }
       }
@@ -455,242 +513,282 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         }
       },
       child: Scaffold(
-      resizeToAvoidBottomInset: false,
-      extendBodyBehindAppBar: true,
-      backgroundColor: ecoColors(context).bgFeed,
-      appBar: buildThreadSessionAppBar(
-        context,
-        ref,
-        title: thread?.title ?? '',
-        prompt: thread?.prompt ?? '',
-        workspacePath: workspacePath,
-        threadId: widget.threadId,
-        projectName: projectName,
-        runtimeConfig: runtimeConfig,
-        isRunning: isRunning,
-        titleGenerating: session.titleGenerating,
-        gitStatus: gitStatus,
-        onRevealImageDisplay: imageDisplayArtifacts.isEmpty
-            ? null
-            : () => _imageDisplayGalleryController.reveal(
-                artifactId: imageDisplayArtifacts.last.id,
-              ),
-      ),
-      body: ThreadSessionConversationLayout(
-        floatingComposer: floatingComposer,
-        floatingOverlayBuilder: imageDisplayArtifacts.isEmpty
-            ? null
-            : (controlsBottomInset) => ImageDisplayFloatingGallery(
-                artifacts: imageDisplayArtifacts,
-                controller: _imageDisplayGalleryController,
-                bottomInset: controlsBottomInset,
-                loadBytes: _loadImageDisplayArtifactBytes,
-              ),
-        foreground: sessionContentBooting
-            ? SessionContentBootLoading(
-                semanticLabel: context.l10n.feedOpening,
-                continueFromLaunchSplash: false,
-              )
-            : null,
-        feedBuilder: (context, feedBottomInset, controlsBottomInset) =>
-            session.error != null
-            ? Center(
-                child: Text(localizedAppError(session.error!, context.l10n)),
-              )
-            : showLanding
-            ? Padding(
-                padding: EdgeInsets.fromLTRB(
-                  32,
-                  sessionContentTopPadding(context),
-                  32,
-                  32 + feedBottomInset,
+        resizeToAvoidBottomInset: false,
+        extendBodyBehindAppBar: true,
+        backgroundColor: ecoColors(context).bgFeed,
+        appBar: buildThreadSessionAppBar(
+          context,
+          ref,
+          title: thread?.title ?? '',
+          prompt: thread?.prompt ?? '',
+          workspacePath: workspacePath,
+          threadId: widget.threadId,
+          projectName: projectName,
+          runtimeConfig: runtimeConfig,
+          isRunning: isRunning,
+          titleGenerating: session.titleGenerating,
+          gitStatus: gitStatus,
+          onRevealImageDisplay: imageDisplayArtifacts.isEmpty
+              ? null
+              : () => _imageDisplayGalleryController.reveal(
+                  artifactId: imageDisplayArtifacts.last.id,
                 ),
-                child: Align(
-                  alignment: Alignment.center,
-                  child: Text(
-                    landingHero,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
+        ),
+        body: ThreadSessionConversationLayout(
+          floatingComposer: floatingComposer,
+          floatingOverlayBuilder: imageDisplayArtifacts.isEmpty
+              ? null
+              : (controlsBottomInset) => ImageDisplayFloatingGallery(
+                  artifacts: imageDisplayArtifacts,
+                  controller: _imageDisplayGalleryController,
+                  bottomInset: controlsBottomInset,
+                  loadBytes: _loadImageDisplayArtifactBytes,
+                ),
+          foreground: sessionContentBooting
+              ? SessionContentBootLoading(
+                  semanticLabel: context.l10n.feedOpening,
+                  continueFromLaunchSplash: false,
+                )
+              : null,
+          feedBuilder: (context, feedBottomInset, controlsBottomInset) =>
+              session.error != null && !conversationV2ContentReady
+              ? Center(
+                  child: Text(localizedAppError(session.error!, context.l10n)),
+                )
+              : showLanding
+              ? Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    32,
+                    sessionContentTopPadding(context),
+                    32,
+                    32 + feedBottomInset,
+                  ),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      landingHero,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w600, height: 1.35),
                     ),
                   ),
+                )
+              : _ThreadSessionFeedPane(
+                  threadId: widget.threadId,
+                  scrollController: _scrollController,
+                  scrollCoordinator: _scrollCoordinator,
+                  isRunning: isRunning,
+                  stopping: stopping,
+                  feedBottomInset: feedBottomInset,
+                  controlsBottomInset: controlsBottomInset,
+                  onOpenImageDisplayArtifact: _revealImageDisplayGallery,
                 ),
-              )
-            : _ThreadSessionFeedPane(
-                threadId: widget.threadId,
-                scrollController: _scrollController,
-                scrollCoordinator: _scrollCoordinator,
-                isRunning: isRunning,
-                stopping: stopping,
-                feedBottomInset: feedBottomInset,
-                controlsBottomInset: controlsBottomInset,
-                onOpenImageDisplayArtifact: _revealImageDisplayGallery,
-              ),
-        composer: IgnorePointer(
-          ignoring: sessionContentBooting,
-          child: Opacity(
-            opacity: sessionContentBooting ? 0 : 1,
-            child: AnimatedPadding(
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: ComposerDockShell(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 280),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.96, end: 1).animate(
-                      CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    ),
-                    alignment: Alignment.bottomCenter,
-                    child: child,
+          composer: IgnorePointer(
+            ignoring: sessionContentBooting,
+            child: Opacity(
+              opacity: sessionContentBooting ? 0 : 1,
+              child: AnimatedPadding(
+                duration: const Duration(milliseconds: 100),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewInsetsOf(context).bottom,
+                ),
+                child: ComposerDockShell(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.96, end: 1).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            ),
+                          ),
+                          alignment: Alignment.bottomCenter,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: showBashApproval
+                        ? BashApprovalPanel(
+                            key: ValueKey('bash-${pendingBash.toolUseId}'),
+                            request: pendingBash,
+                            busy: _bashApprovalBusy,
+                            onResolve: ({required decision, feedback}) async {
+                              setState(() => _bashApprovalBusy = true);
+                              try {
+                                if (useConversationV2Interactions) {
+                                  await ref
+                                      .read(
+                                        conversationV2SessionProvider(
+                                          widget.threadId,
+                                        ).notifier,
+                                      )
+                                      .resolveBash(
+                                        pendingBash.toolUseId,
+                                        decision,
+                                        feedback: feedback,
+                                      );
+                                } else {
+                                  await ref
+                                      .read(
+                                        threadSessionProvider(
+                                          widget.threadId,
+                                        ).notifier,
+                                      )
+                                      .resolveBash(
+                                        pendingBash.toolUseId,
+                                        decision,
+                                        feedback: feedback,
+                                      );
+                                }
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _bashApprovalBusy = false);
+                                }
+                              }
+                            },
+                            onSkip: () async {
+                              setState(() => _bashApprovalBusy = true);
+                              try {
+                                if (useConversationV2Interactions) {
+                                  await ref
+                                      .read(
+                                        conversationV2SessionProvider(
+                                          widget.threadId,
+                                        ).notifier,
+                                      )
+                                      .resolveBash(
+                                        pendingBash.toolUseId,
+                                        'denied',
+                                      );
+                                } else {
+                                  await ref
+                                      .read(
+                                        threadSessionProvider(
+                                          widget.threadId,
+                                        ).notifier,
+                                      )
+                                      .resolveBash(
+                                        pendingBash.toolUseId,
+                                        'denied',
+                                      );
+                                }
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _bashApprovalBusy = false);
+                                }
+                              }
+                            },
+                          )
+                        : showPlanApproval
+                        ? PlanApprovalPanel(
+                            key: ValueKey('plan-${pendingPlan.threadId}'),
+                            plan: pendingPlan,
+                            busy: _planActionBusy,
+                            failureMessage: planFailureMessage,
+                            onApprove: () async {
+                              setState(() => _planActionBusy = true);
+                              try {
+                                await _handlePlanApproval(approve: true);
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _planActionBusy = false);
+                                }
+                              }
+                            },
+                            onDismiss: () async {
+                              setState(() => _planActionBusy = true);
+                              try {
+                                await _handlePlanApproval(approve: false);
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _planActionBusy = false);
+                                }
+                              }
+                            },
+                          )
+                        : showClarification
+                        ? ClarificationDockPanel(
+                            key: ValueKey(
+                              'clarification-${pendingClarification.toolUseId}',
+                            ),
+                            request: pendingClarification,
+                            busy: _clarificationBusy,
+                            onSubmit: (selections) => _submitClarification(
+                              pendingClarification,
+                              selections,
+                            ),
+                            onDismiss: () =>
+                                _dismissClarification(pendingClarification),
+                          )
+                        : SessionComposer(
+                            key: const ValueKey('session-composer'),
+                            controller: _promptController,
+                            attachments: _attachments,
+                            runtimeConfig: runtimeConfig,
+                            threadId: widget.threadId,
+                            isRunning: isRunning,
+                            canStopThread: canStopThread,
+                            followUpMode: followUpMode,
+                            sendBusy: _followUpBusy || _sendBusy,
+                            stopBusy: stopping,
+                            hasActivity:
+                                session.projectionReady ||
+                                conversationV2ContentReady,
+                            inputHint: _editingFollowUpId != null
+                                ? context.l10n.threadEditGuidanceHint
+                                : (showLanding
+                                      ? composerLandingPlaceholder(context.l10n)
+                                      : null),
+                            recoveryNotice:
+                                session.composerRestore != null &&
+                                    _deferredComposerRestoreRevision ==
+                                        session.composerRestore!.revision
+                                ? session.composerRestore!.reason
+                                : null,
+                            onRestoreDraft:
+                                session.composerRestore != null &&
+                                    _deferredComposerRestoreRevision ==
+                                        session.composerRestore!.revision
+                                ? () => _applyComposerRestore(
+                                    session.composerRestore!,
+                                    overwrite: true,
+                                  )
+                                : null,
+                            billing: conversationV2ContentReady
+                                ? conversationV2.projectionExtras?.billing
+                                : session.billing,
+                            contextSnapshot: conversationV2ContentReady
+                                ? conversationV2.projectionExtras?.context
+                                : session.contextSnapshot,
+                            threadStatus: thread?.status,
+                            workspacePath: workspacePath,
+                            coreKind: thread?.coreKind,
+                            hostUiFeatures:
+                                thread?.hostUiFeatures ??
+                                AcpHostUiFeatures.showAll,
+                            onPickImage: _pickImage,
+                            onRemoveAttachment: (index) =>
+                                setState(() => _attachments.removeAt(index)),
+                            onSend: () => _sendMessage(runtimeConfig),
+                            onStop: () => _stopThread(),
+                            onRuntimeConfigChanged: (config) {
+                              ref.read(runtimeConfigProvider.notifier).state =
+                                  config;
+                            },
+                          ),
                   ),
-                );
-              },
-              child: showBashApproval
-                  ? BashApprovalPanel(
-                      key: ValueKey('bash-${pendingBash.toolUseId}'),
-                      request: pendingBash,
-                      busy: _bashApprovalBusy,
-                      onResolve: ({required decision, feedback}) async {
-                        setState(() => _bashApprovalBusy = true);
-                        try {
-                          await ref
-                              .read(
-                                threadSessionProvider(widget.threadId).notifier,
-                              )
-                              .resolveBash(
-                                pendingBash.toolUseId,
-                                decision,
-                                feedback: feedback,
-                              );
-                        } finally {
-                          if (mounted) {
-                            setState(() => _bashApprovalBusy = false);
-                          }
-                        }
-                      },
-                      onSkip: () async {
-                        setState(() => _bashApprovalBusy = true);
-                        try {
-                          await ref
-                              .read(
-                                threadSessionProvider(widget.threadId).notifier,
-                              )
-                              .resolveBash(pendingBash.toolUseId, 'denied');
-                        } finally {
-                          if (mounted) {
-                            setState(() => _bashApprovalBusy = false);
-                          }
-                        }
-                      },
-                    )
-                  : showPlanApproval
-                  ? PlanApprovalPanel(
-                      key: ValueKey('plan-${pendingPlan.threadId}'),
-                      plan: pendingPlan,
-                      busy: _planActionBusy,
-                      failureMessage: planFailureMessage,
-                      onApprove: () async {
-                        setState(() => _planActionBusy = true);
-                        try {
-                          await _handlePlanApproval(approve: true);
-                        } finally {
-                          if (mounted) {
-                            setState(() => _planActionBusy = false);
-                          }
-                        }
-                      },
-                      onDismiss: () async {
-                        setState(() => _planActionBusy = true);
-                        try {
-                          await _handlePlanApproval(approve: false);
-                        } finally {
-                          if (mounted) {
-                            setState(() => _planActionBusy = false);
-                          }
-                        }
-                      },
-                    )
-                  : showClarification
-                  ? ClarificationDockPanel(
-                      key: ValueKey(
-                        'clarification-${pendingClarification.toolUseId}',
-                      ),
-                      request: pendingClarification,
-                      busy: _clarificationBusy,
-                      onSubmit: (selections) => _submitClarification(
-                        pendingClarification,
-                        selections,
-                      ),
-                      onDismiss: () =>
-                          _dismissClarification(pendingClarification),
-                    )
-                  : SessionComposer(
-                      key: const ValueKey('session-composer'),
-                      controller: _promptController,
-                      attachments: _attachments,
-                      runtimeConfig: runtimeConfig,
-                      threadId: widget.threadId,
-                      isRunning: isRunning,
-                      canStopThread: canStopThread,
-                      followUpMode: followUpMode,
-                      sendBusy: _followUpBusy || _sendBusy,
-                      stopBusy: stopping,
-                      hasActivity: session.projectionReady,
-                      inputHint: _editingFollowUpId != null
-                          ? context.l10n.threadEditGuidanceHint
-                          : (showLanding
-                                ? composerLandingPlaceholder(context.l10n)
-                                : null),
-                      recoveryNotice:
-                          session.composerRestore != null &&
-                              _deferredComposerRestoreRevision ==
-                                  session.composerRestore!.revision
-                          ? session.composerRestore!.reason
-                          : null,
-                      onRestoreDraft:
-                          session.composerRestore != null &&
-                              _deferredComposerRestoreRevision ==
-                                  session.composerRestore!.revision
-                          ? () => _applyComposerRestore(
-                              session.composerRestore!,
-                              overwrite: true,
-                            )
-                          : null,
-                      billing: session.billing,
-                      contextSnapshot: session.contextSnapshot,
-                      threadStatus: thread?.status,
-                      workspacePath: workspacePath,
-                      coreKind: thread?.coreKind,
-                      hostUiFeatures:
-                          thread?.hostUiFeatures ?? AcpHostUiFeatures.showAll,
-                      onPickImage: _pickImage,
-                      onRemoveAttachment: (index) =>
-                          setState(() => _attachments.removeAt(index)),
-                      onSend: () => _sendMessage(runtimeConfig),
-                      onStop: () => _stopThread(),
-                      onRuntimeConfigChanged: (config) {
-                        ref.read(runtimeConfigProvider.notifier).state = config;
-                      },
-                    ),
-            ),
-          ),
+                ),
+              ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -1067,9 +1165,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (_clarificationBusy) return;
     setState(() => _clarificationBusy = true);
     try {
-      await ref
-          .read(threadSessionProvider(widget.threadId).notifier)
-          .submitClarification(request.toolUseId, selections);
+      final v2 = ref.read(conversationV2SessionProvider(widget.threadId));
+      if (v2.syncState != ConversationV2SyncState.uninitialized) {
+        await ref
+            .read(conversationV2SessionProvider(widget.threadId).notifier)
+            .submitClarification(request.toolUseId, selections);
+      } else {
+        await ref
+            .read(threadSessionProvider(widget.threadId).notifier)
+            .submitClarification(request.toolUseId, selections);
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1087,9 +1192,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (_clarificationBusy) return;
     setState(() => _clarificationBusy = true);
     try {
-      await ref
-          .read(threadSessionProvider(widget.threadId).notifier)
-          .dismissClarification(request.toolUseId);
+      final v2 = ref.read(conversationV2SessionProvider(widget.threadId));
+      if (v2.syncState != ConversationV2SyncState.uninitialized) {
+        await ref
+            .read(conversationV2SessionProvider(widget.threadId).notifier)
+            .dismissClarification(request.toolUseId);
+      } else {
+        await ref
+            .read(threadSessionProvider(widget.threadId).notifier)
+            .dismissClarification(request.toolUseId);
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1318,7 +1430,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (rpc == null) return;
     final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
     final followUpMode = shouldComposerUseFollowUpQueue(
-      status: thread?.status,
+      status: _isSessionRunning(thread) ? 'running' : thread?.status,
       editingFollowUpId: _editingFollowUpId,
       followUpQueuePaused: thread?.followUpQueuePaused ?? false,
     );
@@ -1383,7 +1495,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
               ? null
               : await stagePromptImageAttachments(
                   rpc: rpc,
-                  contextKey: composerDraftContextKey(threadId: widget.threadId),
+                  contextKey: composerDraftContextKey(
+                    threadId: widget.threadId,
+                  ),
                   attachments: List.of(_attachments),
                   onUpdate: (next) {
                     if (!mounted) return;
@@ -1394,15 +1508,27 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                     });
                   },
                 );
-          final updatedThread = await rpc.continueThread(
+          final credentials = ref.read(credentialsProvider).valueOrNull;
+          final v2Controller = ref.read(
+            conversationV2SessionProvider(widget.threadId).notifier,
+          );
+          final principalId = credentials?.userId?.trim() ?? '';
+          if (principalId.isEmpty || !v2Controller.enabled) {
+            throw StateError(
+              'Conversation V2 is unavailable; refusing legacy continuation.',
+            );
+          }
+          await rpc.updateRuntimeConfig(
             threadId: widget.threadId,
-            prompt: prompt,
-            attachments: stagedAttachments,
             runtimeConfig: sendRuntimeConfig,
           );
-          ref
-              .read(threadListProvider.notifier)
-              .upsertThread(updatedThread, countAsNew: false);
+          await v2Controller.sendMessage(
+            principalId: principalId,
+            text: prompt,
+            attachments: stagedAttachments
+                ?.map((attachment) => attachment.toWireJson())
+                .toList(),
+          );
           FocusManager.instance.primaryFocus?.unfocus();
           _promptController.clear();
           if (mounted) {
@@ -1435,7 +1561,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       await rpc.cancelThread(widget.threadId);
       if (!mounted) return;
       final live = ref.read(threadSessionProvider(widget.threadId)).thread;
-      if (live == null || (!live.cancelling && !_isRunning(live))) {
+      if (live == null || (!live.cancelling && !_isSessionRunning(live))) {
         setState(() => _stopBusy = false);
       }
     } catch (error) {
@@ -1449,12 +1575,26 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   }
 
   Future<void> _handlePlanApproval({required bool approve}) async {
-    final notifier = ref.read(threadSessionProvider(widget.threadId).notifier);
     try {
-      if (approve) {
-        await notifier.approvePlan();
+      final v2 = ref.read(conversationV2SessionProvider(widget.threadId));
+      if (v2.syncState != ConversationV2SyncState.uninitialized) {
+        final notifier = ref.read(
+          conversationV2SessionProvider(widget.threadId).notifier,
+        );
+        if (approve) {
+          await notifier.approvePlan();
+        } else {
+          await notifier.dismissPlan();
+        }
       } else {
-        await notifier.dismissPlan();
+        final notifier = ref.read(
+          threadSessionProvider(widget.threadId).notifier,
+        );
+        if (approve) {
+          await notifier.approvePlan();
+        } else {
+          await notifier.dismissPlan();
+        }
       }
     } catch (error) {
       if (mounted) {
@@ -1536,12 +1676,10 @@ class _ActivityFeedView extends ConsumerWidget {
     final threadStatus = ref.watch(
       threadSessionProvider(threadId).select((state) => state.thread?.status),
     );
-    final runProjection = ref.watch(
-      threadSessionProvider(threadId).select((state) => state.runProjection),
+    final threadCoreKind = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.thread?.coreKind),
     );
-    final subagentSessions = ref.watch(
-      threadSessionProvider(threadId).select((state) => state.subagentSessions),
-    );
+    final conversationV2 = ref.watch(conversationV2SessionProvider(threadId));
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final runtimeConfig = ref.watch(
       threadSessionProvider(
@@ -1553,66 +1691,49 @@ class _ActivityFeedView extends ConsumerWidget {
         : resolveThreadOrchestrationSnapshot(modelSettings, runtimeConfig);
     final themeSource = SubagentThemeSource.fromSnapshot(snapshot);
     final thinkingDisplayMode = ref.watch(thinkingDisplayModeProvider);
+    final v2Projection = buildConversationV2Projection(
+      conversationId: threadId,
+      messages: conversationV2.messages,
+      runs: conversationV2.runs,
+      tools: conversationV2.tools,
+      agents: conversationV2.agents,
+      projectionExtras: conversationV2.projectionExtras,
+      hasEarlier: conversationV2.hasOlder,
+      historyRevision: conversationV2.historyRevision,
+    );
+    // Once the V2 controller has started, its state owns the ordered message
+    // window even when that window is empty or failed. Falling back based on
+    // entry count would hide migration/sync failures behind the legacy
+    // projection and could display stale or incomplete history as current.
     final feedEntries = buildActivityFeed(
       threadPrompt: threadPrompt,
       threadId: threadId,
-      runProjection: runProjection,
-      subagentSessions: subagentSessions,
+      runProjection: v2Projection,
+      subagentSessions:
+          conversationV2.projectionExtras?.subagentTimings ?? const [],
       l10n: context.l10n,
       thinkingDisplayMode: thinkingDisplayMode,
     );
-    final projectionReady = isProjectionFeedReady(runProjection);
-    final optimisticPrompt = threadPrompt?.trim() ?? '';
-    final List<ActivityFeedEntry> displayFeedEntries;
-    if (projectionReady) {
-      displayFeedEntries =
-          shouldAppendPendingAgentThinking(
-            isRunning: isRunning,
-            entries: feedEntries,
-          )
-          ? [
-              ...feedEntries,
-              const ActivityFeedEntry(
-                id: 'pending-agent',
-                kind: ActivityFeedKind.thinking,
-                text: '',
-                streaming: true,
-              ),
-            ]
-          : feedEntries;
-    } else if (optimisticPrompt.isNotEmpty || isRunning) {
-      displayFeedEntries = [
-        if (optimisticPrompt.isNotEmpty)
-          ActivityFeedEntry(
-            id: 'optimistic-user-$threadId',
-            kind: ActivityFeedKind.user,
-            text: optimisticPrompt,
-          ),
-        if (shouldAppendPendingAgentThinking(
-          isRunning: isRunning,
-          entries: const [],
-        ))
-          const ActivityFeedEntry(
-            id: 'pending-agent',
-            kind: ActivityFeedKind.thinking,
-            text: '',
-            streaming: true,
-          ),
-      ];
-    } else {
-      displayFeedEntries = const [];
-    }
+    final displayFeedEntries = resolveThreadSessionDisplayFeedEntries(
+      feedEntries: feedEntries,
+      threadId: threadId,
+      threadPrompt: threadPrompt,
+      isRunning: isRunning,
+    );
 
     if (displayFeedEntries.isEmpty) {
+      final emptyStateText = conversationV2.error != null
+          ? localizedAppError(conversationV2.error!, context.l10n)
+          : isRunning
+          ? (stopping
+                ? context.l10n.threadStopping
+                : context.l10n.threadProjectionLoading)
+          : context.l10n.threadProjectionUnavailable;
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
-            isRunning
-                ? (stopping
-                      ? context.l10n.threadStopping
-                      : context.l10n.threadProjectionLoading)
-                : context.l10n.threadProjectionUnavailable,
+            emptyStateText,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: ecoColors(context).textMuted,
             ),
@@ -1626,126 +1747,390 @@ class _ActivityFeedView extends ConsumerWidget {
       threadId: threadId,
       entries: displayFeedEntries,
       child: ActivityFeedList(
-      entries: displayFeedEntries,
-      scrollController: scrollController,
-      scrollCoordinator: scrollCoordinator,
-      themeSource: themeSource,
-      thinkingDefaultExpanded: thinkingDisplayMode.defaultExpanded,
-      stopping: stopping,
-      showMessageCopyAndTime: isThreadStoppedForMessageMeta(
-        threadStatus ?? (isRunning ? 'running' : 'idle'),
-      ),
-      scrollJumpBottomInset: controlsBottomInset,
-      padding: EdgeInsets.fromLTRB(
-        threadSessionFeedHorizontalPadding,
-        sessionContentTopPadding(context),
-        threadSessionFeedHorizontalPadding,
-        feedBottomInset,
-      ),
-      onOpenAgentDetail: (entry) =>
-          unawaited(_openAgentProjectionDetail(context, ref, threadId, entry)),
-      loadToolDetail: (entry) =>
-          _loadToolProjectionDetail(context, ref, threadId, entry),
-      loadTurnDetail: (entry) =>
-          _loadTurnProjectionDetail(ref, threadId, entry),
-      loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
-      onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
-      onLoadUserMessageEdit: (activityLineId) async {
-        final rpc = ref.read(desktopRpcProvider);
-        if (rpc == null) {
-          throw const AppErrorCodeException(
-            AppErrorCode.threadProjectionNoPcSelected,
-          );
-        }
-        return rpc.getUserMessageEdit(
-          threadId: threadId,
-          activityLineId: activityLineId,
-        );
-      },
-      onRewriteUserMessage:
-          ({
-            required activityLineId,
-            required prompt,
-            required attachments,
-            required expectedHistoryRevision,
-          }) async {
-            final rpc = ref.read(desktopRpcProvider);
-            if (rpc == null) {
-              throw const AppErrorCodeException(
-                AppErrorCode.threadProjectionNoPcSelected,
-              );
-            }
-            final staged = attachments.isEmpty
-                ? attachments
-                : await stagePromptImageAttachments(
-                    rpc: rpc,
-                    contextKey: composerDraftContextKey(threadId: threadId),
-                    attachments: attachments,
-                    onUpdate: (_) {},
-                  );
-            final thread = await rpc.rewriteThreadFromMessage(
-              threadId: threadId,
-              activityLineId: activityLineId,
-              prompt: prompt,
-              attachments: staged,
-              expectedHistoryRevision: expectedHistoryRevision,
+        entries: displayFeedEntries,
+        scrollController: scrollController,
+        scrollCoordinator: scrollCoordinator,
+        themeSource: themeSource,
+        thinkingDefaultExpanded: thinkingDisplayMode.defaultExpanded,
+        stopping: stopping,
+        showMessageCopyAndTime: isThreadStoppedForMessageMeta(
+          isRunning ? 'running' : (threadStatus ?? 'idle'),
+        ),
+        scrollJumpBottomInset: controlsBottomInset,
+        padding: EdgeInsets.fromLTRB(
+          threadSessionFeedHorizontalPadding,
+          sessionContentTopPadding(context),
+          threadSessionFeedHorizontalPadding,
+          feedBottomInset,
+        ),
+        onOpenAgentDetail: (entry) => unawaited(
+          _openConversationV2AgentDetail(context, ref, threadId, entry),
+        ),
+        loadToolDetail: (entry) =>
+            _loadConversationV2ToolDetail(context, ref, threadId, entry),
+        loadToolDetailPage: (entry, {String? cursor}) =>
+            _loadConversationV2ToolDetailPage(
+              context,
+              ref,
+              threadId,
+              entry,
+              cursor: cursor,
+            ),
+        loadTurnDetail: (entry) =>
+            _loadConversationV2TurnDetail(ref, threadId, entry),
+        loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
+        onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
+        onLoadUserMessageEdit: (activityLineId) async {
+          final rpc = ref.read(desktopRpcProvider);
+          if (rpc == null) {
+            throw const AppErrorCodeException(
+              AppErrorCode.threadProjectionNoPcSelected,
             );
-            await ref
-                .read(threadSessionProvider(threadId).notifier)
-                .acceptRewrittenThread(thread);
-          },
-      hasEarlier: false,
+          }
+          return rpc.getUserMessageEdit(
+            threadId: threadId,
+            activityLineId: activityLineId,
+          );
+        },
+        onRewriteUserMessage:
+            ({
+              required activityLineId,
+              required prompt,
+              required attachments,
+              required expectedHistoryRevision,
+            }) async {
+              final rpc = ref.read(desktopRpcProvider);
+              if (rpc == null) {
+                throw const AppErrorCodeException(
+                  AppErrorCode.threadProjectionNoPcSelected,
+                );
+              }
+              final staged = attachments.isEmpty
+                  ? attachments
+                  : await stagePromptImageAttachments(
+                      rpc: rpc,
+                      contextKey: composerDraftContextKey(threadId: threadId),
+                      attachments: attachments,
+                      onUpdate: (_) {},
+                    );
+              final principalId = ref
+                  .read(credentialsProvider)
+                  .valueOrNull
+                  ?.userId
+                  ?.trim();
+              if (principalId == null || principalId.isEmpty) {
+                throw StateError(
+                  'A signed-in principal is required to rewrite conversation history.',
+                );
+              }
+              final wireAttachments = staged
+                  .map((attachment) => attachment.toWireJson())
+                  .toList();
+              final thread = await rpc.rewriteThreadFromMessage(
+                principalId: principalId,
+                clientCommandId:
+                    'history_rewrite_${conversationV2StableHash({'threadId': threadId, 'activityLineId': activityLineId, 'prompt': prompt, 'attachments': wireAttachments, 'expectedHistoryRevision': expectedHistoryRevision})}',
+                threadId: threadId,
+                activityLineId: activityLineId,
+                prompt: prompt,
+                attachments: staged,
+                expectedHistoryRevision: expectedHistoryRevision,
+              );
+              await ref
+                  .read(threadSessionProvider(threadId).notifier)
+                  .acceptRewrittenThread(thread);
+            },
+        onRetryFailedRequest:
+            _mobileSupportsOneClickRequestRetry(
+                  threadCoreKind,
+                  displayFeedEntries,
+                ) &&
+                displayFeedEntries.any(
+                  (entry) => entry.kind == ActivityFeedKind.user,
+                )
+            ? (entry) async {
+                final user = _latestRetryUserPrompt(displayFeedEntries, entry);
+                if (user == null || user.text.trim().isEmpty) {
+                  throw StateError('找不到可重试的用户消息。');
+                }
+                final rpc = ref.read(desktopRpcProvider);
+                if (rpc == null) {
+                  throw const AppErrorCodeException(
+                    AppErrorCode.threadProjectionNoPcSelected,
+                  );
+                }
+                final principalId = ref
+                    .read(credentialsProvider)
+                    .valueOrNull
+                    ?.userId
+                    ?.trim();
+                if (principalId == null || principalId.isEmpty) {
+                  throw StateError(
+                    'A signed-in principal is required to retry a conversation request.',
+                  );
+                }
+                final activityLineId = user.activityLineId?.trim();
+                final prompt = user.text.trim();
+                final hasImages = user.attachments.isNotEmpty;
+                final expectedHistoryRevision = conversationV2.historyRevision;
+                if (threadCoreKind == 'claude') {
+                  final rewindTarget = user.rewindTarget;
+                  final userMessageId = rewindTarget?.userMessageId?.trim();
+                  if (rewindTarget == null ||
+                      rewindTarget.activityLineId.trim().isEmpty ||
+                      userMessageId == null ||
+                      userMessageId.isEmpty) {
+                    throw StateError('Claude 重试缺少可验证的 provider userMessageId。');
+                  }
+                  final staged = user.attachments.isEmpty
+                      ? user.attachments
+                      : await stagePromptImageAttachments(
+                          rpc: rpc,
+                          contextKey: composerDraftContextKey(
+                            threadId: threadId,
+                          ),
+                          attachments: user.attachments,
+                          onUpdate: (_) {},
+                        );
+                  final wireAttachments = staged
+                      .map((attachment) => attachment.toWireJson())
+                      .toList();
+                  final thread = await rpc.rewriteThreadFromMessage(
+                    principalId: principalId,
+                    clientCommandId:
+                        'history_rewrite_${conversationV2StableHash({'threadId': threadId, 'activityLineId': rewindTarget.activityLineId, 'userMessageId': userMessageId, 'prompt': prompt, 'attachments': wireAttachments, 'expectedHistoryRevision': expectedHistoryRevision})}',
+                    threadId: threadId,
+                    activityLineId: rewindTarget.activityLineId,
+                    prompt: prompt,
+                    attachments: staged,
+                    expectedHistoryRevision: expectedHistoryRevision,
+                  );
+                  await ref
+                      .read(threadSessionProvider(threadId).notifier)
+                      .acceptRewrittenThread(thread);
+                  return;
+                }
+                final thread = await rpc.retryThreadFromMessage(
+                  principalId: principalId,
+                  clientCommandId:
+                      'history_retry_${conversationV2StableHash({'threadId': threadId, 'activityLineId': activityLineId, 'prompt': prompt, 'hasImages': hasImages, 'expectedHistoryRevision': expectedHistoryRevision})}',
+                  threadId: threadId,
+                  activityLineId: activityLineId,
+                  prompt: prompt,
+                  hasImages: hasImages,
+                  expectedHistoryRevision: expectedHistoryRevision,
+                );
+                await ref
+                    .read(threadSessionProvider(threadId).notifier)
+                    .acceptRetriedThread(thread);
+              }
+            : null,
+        hasEarlier: conversationV2.hasOlder,
+        onLoadEarlier: () => ref
+            .read(conversationV2SessionProvider(threadId).notifier)
+            .loadOlder(),
       ),
     );
   }
 }
 
-Future<void> _openAgentProjectionDetail(
+bool _mobileSupportsOneClickRequestRetry(
+  String? coreKind,
+  List<ActivityFeedEntry> entries,
+) {
+  if (coreKind == 'acp' || coreKind == 'codex') return true;
+  if (coreKind != 'claude') return false;
+  final userEntries = entries
+      .where((entry) => entry.kind == ActivityFeedKind.user)
+      .toList(growable: false);
+  return userEntries.isNotEmpty &&
+      userEntries.every((entry) {
+        final target = entry.rewindTarget;
+        return target != null &&
+            target.activityLineId.trim().isNotEmpty &&
+            target.userMessageId?.trim().isNotEmpty == true;
+      });
+}
+
+ActivityFeedEntry? _latestRetryUserPrompt(
+  List<ActivityFeedEntry> entries,
+  ActivityFeedEntry failure,
+) {
+  ActivityFeedEntry? latest;
+  final failureSequence = failure.sequence;
+  for (final entry in entries) {
+    if (entry.kind != ActivityFeedKind.user) continue;
+    if (failureSequence > 0 && entry.sequence > failureSequence) continue;
+    latest = entry;
+  }
+  if (latest != null) return latest;
+  for (final entry in entries.reversed) {
+    if (entry.kind == ActivityFeedKind.user) return entry;
+  }
+  return null;
+}
+
+Future<void> _openConversationV2AgentDetail(
   BuildContext context,
   WidgetRef ref,
   String threadId,
   ActivityFeedEntry entry,
 ) async {
   final agentId = entry.agentId?.trim();
-  if (agentId == null || agentId.isEmpty) {
+  final runId = entry.runAttemptId?.trim();
+  if (agentId == null || agentId.isEmpty || runId == null || runId.isEmpty) {
     return;
   }
-  final loadFuture = ref
-      .read(threadSessionProvider(threadId).notifier)
-      .loadProjectionDetail(kind: 'agent', key: agentId);
+  final future = ref
+      .read(conversationV2SessionProvider(threadId).notifier)
+      .loadAllDetails(runId, agentId: agentId);
   if (!context.mounted) return;
-  final missionSource = entry.missionPrompt?.trim().isNotEmpty == true
-      ? entry.missionPrompt!
-      : entry.text;
-  final projection = ref.read(threadSessionProvider(threadId)).runProjection;
-  final agent = projection == null
-      ? null
-      : findProjectionAgentById(projection, agentId);
-  final role = agent?.role.trim().isNotEmpty == true
-      ? agent!.role
-      : entry.subagentRole ?? '';
-  final title = resolveSubagentDetailTitle(
-    roleLabel: resolveSubagentRunDisplayTitle(role, context.l10n),
-    nickname: agent?.nickname,
-    taskName: agent?.taskName ?? entry.taskName,
-  );
-  await _showProjectionDetailSheet(
+  await showEcoModalBottomSheet<void>(
     context: context,
-    ref: ref,
-    threadId: threadId,
-    loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
-    loadFuture: loadFuture,
-    emptyText: context.l10n.threadNoSubagentDetails,
-    title: title,
-    missionText: resolveMissionDisplayText(missionSource),
-    injectMainThreadUserPrompts: false,
-    timelineBuilder: (projection) {
-      final agent = projection == null
-          ? null
-          : findProjectionAgentById(projection, agentId);
-      return agent?.timeline ?? const [];
-    },
+    isScrollControlled: true,
+    enableDrag: false,
+    backgroundColor: Colors.transparent,
+    builder: (context) => _ConversationV2AgentDetailSheet(
+      threadId: threadId,
+      agentId: agentId,
+      runId: runId,
+      title: entry.taskName ?? entry.subagentRole ?? agentId,
+      future: future,
+    ),
   );
+}
+
+Future<void> _loadConversationV2TurnDetail(
+  WidgetRef ref,
+  String threadId,
+  ActivityFeedEntry entry,
+) async {
+  final runId = entry.runAttemptId?.trim();
+  if (runId == null || runId.isEmpty) return;
+  // Turn rows already contain the V2 tool summaries. Fetching the bounded
+  // detail page here warms the cache for the child disclosures without
+  // reviving the legacy projection as a second source of truth.
+  await ref
+      .read(conversationV2SessionProvider(threadId).notifier)
+      .loadDetails(runId);
+}
+
+class _ConversationV2AgentDetailSheet extends StatefulWidget {
+  const _ConversationV2AgentDetailSheet({
+    required this.threadId,
+    required this.agentId,
+    required this.runId,
+    required this.title,
+    required this.future,
+  });
+
+  final String threadId;
+  final String agentId;
+  final String runId;
+  final String title;
+  final Future<ConversationV2DetailPage> future;
+
+  @override
+  State<_ConversationV2AgentDetailSheet> createState() =>
+      _ConversationV2AgentDetailSheetState();
+}
+
+class _ConversationV2AgentDetailSheetState
+    extends State<_ConversationV2AgentDetailSheet> {
+  final _scrollController = ScrollController();
+  late final _scrollCoordinator = ActivityFeedScrollCoordinator(
+    _scrollController,
+  );
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: ColoredBox(
+            color: ecoColors(context).bgFeed,
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewPaddingOf(context).bottom + 8,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(
+                      EcoIcons.agent,
+                      color: ecoColors(context).textSecondary,
+                    ),
+                    title: Text(widget.title),
+                    trailing: IconButton(
+                      tooltip: context.l10n.commonClose,
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: ecoColors(context).textMuted,
+                      ),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                  ),
+                  Divider(height: 1, color: ecoColors(context).borderSubtle),
+                  Expanded(
+                    child: FutureBuilder<ConversationV2DetailPage>(
+                      future: widget.future,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState != ConnectionState.done) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(context.l10n.threadDetailsFailed),
+                          );
+                        }
+                        final page = snapshot.data;
+                        if (page == null) {
+                          return Center(
+                            child: Text(context.l10n.threadNoDetailsResponse),
+                          );
+                        }
+                        final entries = buildConversationV2ToolDetailFeed(
+                          page,
+                          runId: widget.runId,
+                        );
+                        if (entries.isEmpty) {
+                          return Center(
+                            child: Text(context.l10n.threadZeroDetails),
+                          );
+                        }
+                        return ActivityFeedList(
+                          entries: entries,
+                          scrollController: _scrollController,
+                          scrollCoordinator: _scrollCoordinator,
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                          showScrollJumpButton: false,
+                          showMessageCopyAndTime: false,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<ImageViewReadData> _loadImageViewForEntry(
@@ -1771,609 +2156,59 @@ Future<ImageViewReadData> _loadImageViewForEntry(
   return rpc.readImageView(path);
 }
 
-Future<List<ActivityFeedEntry>> _loadToolProjectionDetail(
+Future<List<ActivityFeedEntry>> _loadConversationV2ToolDetail(
   BuildContext context,
   WidgetRef ref,
   String threadId,
   ActivityFeedEntry entry,
 ) async {
-  final toolUseId = entry.toolUseId?.trim();
-  if (toolUseId == null || toolUseId.isEmpty) {
+  final runId = entry.runAttemptId?.trim();
+  final toolCallId = entry.toolUseId?.trim();
+  if (runId == null ||
+      runId.isEmpty ||
+      toolCallId == null ||
+      toolCallId.isEmpty) {
     return const [];
   }
-  final baseProjection = ref
-      .read(threadSessionProvider(threadId))
-      .runProjection;
-  final cachedTimeline = _projectionToolDetailItems(baseProjection, toolUseId);
-  final detail = await ref
-      .read(threadSessionProvider(threadId).notifier)
-      .loadProjectionDetail(kind: 'tool', key: toolUseId);
+  final page = await ref
+      .read(conversationV2SessionProvider(threadId).notifier)
+      .loadDetails(runId, toolCallId: toolCallId);
   if (!context.mounted) return const [];
-  return buildProjectionDetailEntries(
-    threadId: threadId,
-    base: ref.read(threadSessionProvider(threadId)).runProjection,
-    cachedTimeline: cachedTimeline,
-    detail: detail,
-    l10n: context.l10n,
-    thinkingDisplayMode: ref.read(thinkingDisplayModeProvider),
+  return buildConversationV2ToolDetailFeed(
+    page,
+    runId: runId,
+    toolCallId: toolCallId,
   );
 }
 
-Future<void> _loadTurnProjectionDetail(
+Future<ActivityFeedToolDetailPage> _loadConversationV2ToolDetailPage(
+  BuildContext context,
   WidgetRef ref,
   String threadId,
-  ActivityFeedEntry entry,
-) async {
-  final attemptId = entry.runAttemptId?.trim();
-  if (attemptId == null || attemptId.isEmpty) return;
-  await ref
-      .read(threadSessionProvider(threadId).notifier)
-      .loadProjectionDetail(kind: 'turn', key: attemptId);
-}
-
-typedef _ProjectionDetailTimelineBuilder =
-    List<ThreadRunProjectionTimelineItem> Function(
-      ThreadRunProjectionSnapshot? projection,
-    );
-
-Future<void> _showProjectionDetailSheet({
-  required BuildContext context,
-  required WidgetRef ref,
-  required String threadId,
-  required ActivityFeedImageViewLoader loadImageView,
-  required Future<ThreadRunProjectionDetailResult?> loadFuture,
-  required String emptyText,
-  required _ProjectionDetailTimelineBuilder timelineBuilder,
-  String? title,
-  String? missionText,
-  bool injectMainThreadUserPrompts = true,
-}) {
-  return showEcoModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    enableDrag: false,
-    backgroundColor: Colors.transparent,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+  ActivityFeedEntry entry, {
+  String? cursor,
+}) async {
+  final runId = entry.runAttemptId?.trim();
+  final toolCallId = entry.toolUseId?.trim();
+  if (runId == null ||
+      runId.isEmpty ||
+      toolCallId == null ||
+      toolCallId.isEmpty) {
+    return const ActivityFeedToolDetailPage(entries: [], hasMore: false);
+  }
+  final page = await ref
+      .read(conversationV2SessionProvider(threadId).notifier)
+      .loadDetails(runId, cursor: cursor, toolCallId: toolCallId);
+  if (!context.mounted) {
+    return const ActivityFeedToolDetailPage(entries: [], hasMore: false);
+  }
+  return ActivityFeedToolDetailPage(
+    entries: buildConversationV2ToolDetailFeed(
+      page,
+      runId: runId,
+      toolCallId: toolCallId,
     ),
-    builder: (context) => Align(
-      alignment: Alignment.bottomCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
-        ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          child: ColoredBox(
-            color: ecoColors(context).bgFeed,
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewPaddingOf(context).bottom + 8,
-              ),
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final projection = ref.watch(
-                    threadSessionProvider(
-                      threadId,
-                    ).select((state) => state.runProjection),
-                  );
-                  return _ProjectionDetailSheet(
-                    threadId: threadId,
-                    emptyText: emptyText,
-                    loadFuture: loadFuture,
-                    loadImageView: loadImageView,
-                    baseProjection: projection,
-                    cachedTimeline: timelineBuilder(projection),
-                    title: title,
-                    missionText: missionText,
-                    injectMainThreadUserPrompts: injectMainThreadUserPrompts,
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
   );
 }
-
-ThreadRunProjectionSnapshot _projectionDetailSnapshot({
-  required String threadId,
-  required ThreadRunProjectionSnapshot? base,
-  required List<ThreadRunProjectionTimelineItem> timeline,
-  bool normalizeItems = true,
-}) {
-  return ThreadRunProjectionSnapshot(
-    threadId: base?.threadId ?? threadId,
-    status: base?.status ?? '',
-    generatedAt: base?.generatedAt ?? '',
-    sourceEventCount: timeline.isNotEmpty ? timeline.length : 0,
-    agents: const [],
-    timeline: normalizeItems
-        ? timeline.map(_projectionDetailTimelineItem).toList()
-        : timeline,
-    requestSpans: base?.requestSpans ?? const [],
-    attempts: base?.attempts ?? const [],
-  );
-}
-
-/// Legacy tool-detail mapper: keep agent-scoped tool/message items visible in
-/// the shared feed builder by projecting them onto main scope.
-ThreadRunProjectionTimelineItem _projectionDetailTimelineItem(
-  ThreadRunProjectionTimelineItem item,
-) {
-  if (item.scope == 'main') return item;
-  return ThreadRunProjectionTimelineItem(
-    id: item.id,
-    sequence: item.sequence,
-    eventType: item.eventType,
-    scope: 'main',
-    text: item.text,
-    at: item.at,
-    role: item.role,
-    agentId: item.agentId,
-    runAttemptId: item.runAttemptId,
-    requestId: item.requestId,
-    streamKey: item.streamKey,
-    metadata: item.metadata,
-  );
-}
-
-/// Desktop-aligned subagent detail rules:
-/// - mission is shown once as a leading user bubble
-/// - `@mission` envelopes / lifecycle events are suppressed
-/// - agent-scope `message.user` follow-ups become user bubbles
-/// - duplicate mission prompts are suppressed
-ThreadRunProjectionTimelineItem? _projectionAgentDetailTimelineItem(
-  ThreadRunProjectionTimelineItem item,
-  String missionDisplay,
-) {
-  if (item.eventType == 'agent.started' ||
-      item.eventType == 'agent.stopped' ||
-      item.eventType == 'agent.abandoned') {
-    return null;
-  }
-  if (item.eventType == 'thinking.final' && item.text.trim().isEmpty) {
-    return null;
-  }
-  if (isSubagentMissionEnvelope(item.text)) {
-    return null;
-  }
-  if (_isProjectionSubagentPromptItem(item)) {
-    final text = resolveMissionDisplayText(item.text).trim();
-    if (text.isEmpty) return null;
-    if (missionDisplay.isNotEmpty && text == missionDisplay) return null;
-    return ThreadRunProjectionTimelineItem(
-      id: item.id,
-      sequence: item.sequence,
-      eventType: 'thread.status',
-      scope: 'main',
-      text: text,
-      at: item.at,
-      role: 'user',
-      agentId: item.agentId,
-      runAttemptId: item.runAttemptId,
-      requestId: item.requestId,
-      streamKey: item.streamKey,
-      metadata: {...?item.metadata, 'liveType': 'thread.user_prompt'},
-    );
-  }
-  if (item.scope == 'main') return item;
-  return ThreadRunProjectionTimelineItem(
-    id: item.id,
-    sequence: item.sequence,
-    eventType: item.eventType,
-    scope: 'main',
-    text: item.text,
-    at: item.at,
-    role: item.role,
-    agentId: item.agentId,
-    runAttemptId: item.runAttemptId,
-    requestId: item.requestId,
-    streamKey: item.streamKey,
-    metadata: item.metadata,
-  );
-}
-
-bool _isProjectionSubagentPromptItem(ThreadRunProjectionTimelineItem item) {
-  final liveType = item.metadata?['liveType'];
-  return item.scope == 'agent' &&
-      liveType == 'message.user' &&
-      item.text.trim().isNotEmpty;
-}
-
-List<ThreadRunProjectionTimelineItem> _normalizeAgentDetailTimeline(
-  List<ThreadRunProjectionTimelineItem> timeline, {
-  required String missionDisplay,
-}) {
-  final mapped = <ThreadRunProjectionTimelineItem>[];
-  for (final item in timeline) {
-    final next = _projectionAgentDetailTimelineItem(item, missionDisplay);
-    if (next != null) mapped.add(next);
-  }
-
-  // Match desktop: put follow-up prompt bubbles before their request.started.
-  final ordered = <ThreadRunProjectionTimelineItem>[];
-  for (var index = 0; index < mapped.length; index += 1) {
-    final item = mapped[index];
-    final next = index + 1 < mapped.length ? mapped[index + 1] : null;
-    final itemLiveType = item.metadata?['liveType'];
-    final nextLiveType = next?.metadata?['liveType'];
-    if (item.eventType == 'request.started' &&
-        item.requestId != null &&
-        item.requestId!.isNotEmpty &&
-        next != null &&
-        next.requestId == item.requestId &&
-        nextLiveType == 'thread.user_prompt' &&
-        itemLiveType != 'thread.user_prompt') {
-      ordered.add(next);
-      ordered.add(item);
-      index += 1;
-      continue;
-    }
-    ordered.add(item);
-  }
-
-  if (missionDisplay.isEmpty) return ordered;
-  return [
-    ThreadRunProjectionTimelineItem(
-      id: 'subagent-mission-prompt',
-      sequence: -1,
-      eventType: 'thread.status',
-      scope: 'main',
-      text: missionDisplay,
-      at: ordered.isNotEmpty ? ordered.first.at : '',
-      role: 'user',
-      metadata: const {'liveType': 'thread.user_prompt'},
-    ),
-    ...ordered,
-  ];
-}
-
-List<ThreadRunProjectionTimelineItem> _projectionToolDetailItems(
-  ThreadRunProjectionSnapshot? projection,
-  String toolUseId,
-) {
-  if (projection == null) return const [];
-  final items = [
-    ...projection.timeline,
-    for (final agent in projection.agents) ...agent.timeline,
-  ].where((item) => _projectionToolUseId(item) == toolUseId).toList();
-  items.sort((left, right) {
-    final sequenceDelta = left.sequence.compareTo(right.sequence);
-    if (sequenceDelta != 0) return sequenceDelta;
-    final atDelta = left.at.compareTo(right.at);
-    if (atDelta != 0) return atDelta;
-    return left.id.compareTo(right.id);
-  });
-  return items;
-}
-
-String? _projectionToolUseId(ThreadRunProjectionTimelineItem item) {
-  final tool = readProjectionToolMetadata(item.metadata);
-  final toolUseId = tool?.toolUseId?.trim();
-  if (toolUseId != null && toolUseId.isNotEmpty) {
-    return toolUseId;
-  }
-  final bashApproval = readBashApprovalMetadata(item.metadata);
-  final approvalToolUseId = bashApproval?.toolUseId.trim();
-  if (approvalToolUseId != null && approvalToolUseId.isNotEmpty) {
-    return approvalToolUseId;
-  }
-  return null;
-}
-
-class _ProjectionDetailSheet extends ConsumerStatefulWidget {
-  const _ProjectionDetailSheet({
-    required this.threadId,
-    required this.emptyText,
-    required this.loadFuture,
-    required this.loadImageView,
-    required this.baseProjection,
-    required this.cachedTimeline,
-    this.title,
-    this.missionText,
-    this.injectMainThreadUserPrompts = true,
-  });
-
-  final String threadId;
-  final String emptyText;
-  final Future<ThreadRunProjectionDetailResult?> loadFuture;
-  final ActivityFeedImageViewLoader loadImageView;
-  final ThreadRunProjectionSnapshot? baseProjection;
-  final List<ThreadRunProjectionTimelineItem> cachedTimeline;
-  final String? title;
-  final String? missionText;
-  final bool injectMainThreadUserPrompts;
-
-  @override
-  ConsumerState<_ProjectionDetailSheet> createState() =>
-      _ProjectionDetailSheetState();
-}
-
-class _ProjectionDetailSheetState
-    extends ConsumerState<_ProjectionDetailSheet> {
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    final thinkingDisplayMode = ref.watch(thinkingDisplayModeProvider);
-    final title = widget.title?.trim() ?? '';
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 8, 4),
-          child: Row(
-            children: [
-              if (title.isNotEmpty) ...[
-                Icon(EcoIcons.agent, size: 18, color: eco.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: eco.textPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ] else
-                const Spacer(),
-              IconButton(
-                tooltip: context.l10n.commonClose,
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: eco.textMuted,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-            ],
-          ),
-        ),
-        Divider(height: 1, color: eco.borderSubtle),
-        FutureBuilder<ThreadRunProjectionDetailResult?>(
-          future: widget.loadFuture,
-          builder: (context, snapshot) {
-            final loading = snapshot.connectionState != ConnectionState.done;
-            final entries = buildProjectionDetailEntries(
-              threadId: widget.threadId,
-              base: widget.baseProjection,
-              cachedTimeline: widget.cachedTimeline,
-              detail: snapshot.data,
-              l10n: context.l10n,
-              missionText: widget.missionText,
-              injectMainThreadUserPrompts: widget.injectMainThreadUserPrompts,
-              thinkingDisplayMode: thinkingDisplayMode,
-            );
-            Widget body;
-            if (entries.isEmpty && loading) {
-              body = _ProjectionDetailStatusList(
-                scrollController: _scrollController,
-                title: context.l10n.threadRequestingDetails,
-                loading: true,
-              );
-            } else if (entries.isEmpty) {
-              if (snapshot.hasError) {
-                body = _ProjectionDetailStatusList(
-                  scrollController: _scrollController,
-                  title: context.l10n.threadDetailsFailed,
-                  detail: localizedAppError(snapshot.error!, context.l10n),
-                );
-              } else {
-                final detail = snapshot.data;
-                body = _ProjectionDetailStatusList(
-                  scrollController: _scrollController,
-                  title: detail == null
-                      ? context.l10n.threadNoDetailsResponse
-                      : detail.timeline.isEmpty
-                      ? context.l10n.threadZeroDetails
-                      : widget.emptyText,
-                  detail: detail == null
-                      ? context.l10n.threadDetailsUnparseable
-                      : detail.timeline.isEmpty
-                      ? context.l10n.threadDetailsComplete(
-                          detail.kind,
-                          detail.key,
-                        )
-                      : null,
-                );
-              }
-            } else {
-              body = Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Stack(
-                  children: [
-                    ActivityFeedList(
-                      entries: entries,
-                      scrollController: _scrollController,
-                      expandUserPrompts: true,
-                      thinkingDefaultExpanded:
-                          thinkingDisplayMode.defaultExpanded,
-                      shrinkWrap: true,
-                      showScrollJumpButton: false,
-                      loadImageView: widget.loadImageView,
-                      padding: const EdgeInsets.fromLTRB(
-                        threadSessionFeedHorizontalPadding,
-                        12,
-                        threadSessionFeedHorizontalPadding,
-                        8,
-                      ),
-                    ),
-                    if (loading)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        child: LinearProgressIndicator(
-                          minHeight: 2,
-                          color: eco.accent,
-                          backgroundColor: Colors.transparent,
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }
-            return ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: _projectionDetailMaxBodyHeight(context),
-              ),
-              child: body,
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-double _projectionDetailMaxBodyHeight(BuildContext context) =>
-    MediaQuery.sizeOf(context).height * 0.66;
-
-class _ProjectionDetailStatusList extends StatelessWidget {
-  const _ProjectionDetailStatusList({
-    required this.scrollController,
-    required this.title,
-    this.detail,
-    this.loading = false,
-  });
-
-  final ScrollController scrollController;
-  final String title;
-  final String? detail;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return ListView(
-      controller: scrollController,
-      shrinkWrap: true,
-      primary: false,
-      padding: const EdgeInsets.all(24),
-      children: [
-        const SizedBox(height: 32),
-        if (loading) ...[
-          Center(
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: eco.accent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: eco.textMuted),
-        ),
-        if (detail != null && detail!.trim().isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            detail!,
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-List<ActivityFeedEntry> buildProjectionDetailEntries({
-  required String threadId,
-  required ThreadRunProjectionSnapshot? base,
-  required List<ThreadRunProjectionTimelineItem> cachedTimeline,
-  required ThreadRunProjectionDetailResult? detail,
-  required AppLocalizations l10n,
-  String? missionText,
-  bool injectMainThreadUserPrompts = true,
-  ThinkingDisplayMode thinkingDisplayMode = defaultThinkingDisplayMode,
-}) {
-  final timeline = _mergeProjectionDetailTimeline(
-    cachedTimeline,
-    detail?.timeline ?? const [],
-  );
-  final missionDisplay = resolveMissionDisplayText(missionText ?? '').trim();
-
-  if (!injectMainThreadUserPrompts) {
-    final normalized = _normalizeAgentDetailTimeline(
-      timeline,
-      missionDisplay: missionDisplay,
-    );
-    final detailProjection = _projectionDetailSnapshot(
-      threadId: threadId,
-      base: base,
-      timeline: normalized,
-      normalizeItems: false,
-    );
-    return buildActivityFeed(
-      threadPrompt: '',
-      threadId: threadId,
-      runProjection: detailProjection,
-      l10n: l10n,
-      thinkingDisplayMode: thinkingDisplayMode,
-    );
-  }
-
-  // Tool rows expand a scoped timeline, not a chat turn.
-  final detailProjection = _projectionDetailSnapshot(
-    threadId: threadId,
-    base: base,
-    timeline: timeline,
-  );
-  return buildActivityFeed(
-    threadPrompt: '',
-    threadId: threadId,
-    runProjection: detailProjection,
-    l10n: l10n,
-    groupTurns: false,
-    groupActions: false,
-    thinkingDisplayMode: thinkingDisplayMode,
-  );
-}
-
-List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
-  List<ThreadRunProjectionTimelineItem> cached,
-  List<ThreadRunProjectionTimelineItem> fresh,
-) {
-  if (cached.isEmpty) return fresh;
-  if (fresh.isEmpty) return cached;
-  final byId = <String, ThreadRunProjectionTimelineItem>{
-    for (final item in cached) item.id: item,
-  };
-  for (final item in fresh) {
-    byId[item.id] = item;
-  }
-  final merged = byId.values.toList();
-  merged.sort((left, right) {
-    final sequenceDelta = left.sequence.compareTo(right.sequence);
-    if (sequenceDelta != 0) return sequenceDelta;
-    final atDelta = left.at.compareTo(right.at);
-    if (atDelta != 0) return atDelta;
-    return left.id.compareTo(right.id);
-  });
-  return merged;
-}
-

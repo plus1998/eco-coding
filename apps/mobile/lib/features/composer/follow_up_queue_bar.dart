@@ -156,7 +156,7 @@ class FollowUpQueueBar extends StatelessWidget {
                         padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
                         buildDefaultDragHandles: false,
                         itemCount: followUps.length,
-                        onReorder: (oldIndex, newIndex) {
+                        onReorderItem: (oldIndex, newIndex) {
                           if (editingFollowUpId != null) {
                             return;
                           }
@@ -177,7 +177,8 @@ class FollowUpQueueBar extends StatelessWidget {
                               onEscalate: onEscalate,
                               onEdit: onEdit,
                               onDelete: onDelete,
-                              dragHandle: followUps[index].id == editingFollowUpId
+                              dragHandle:
+                                  followUps[index].id == editingFollowUpId
                                   ? Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 5,

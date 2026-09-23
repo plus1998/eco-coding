@@ -38,3 +38,25 @@ test("exposes image view reads as a read-only RPC command", () => {
     ok: false,
   });
 });
+
+test("scopes prompt image reads to an explicit composer or conversation context", () => {
+  expect(
+    validateRemoteCommandArgs("prompt-image:read-chunk", [
+      {
+        contextKey: "thread:thread_1",
+        contentRef: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        mediaType: "image/png",
+        offset: 0,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("prompt-image:read-chunk", [
+      {
+        contentRef: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        mediaType: "image/png",
+        offset: 0,
+      },
+    ]),
+  ).toMatchObject({ ok: false });
+});

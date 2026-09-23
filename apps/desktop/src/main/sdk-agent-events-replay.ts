@@ -17,7 +17,7 @@ import {
   readAgentSubagentType,
 } from "@eco/runtime";
 import type { ThreadRunEvent, ThreadSummary } from "../shared/ipc";
-import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionSnapshot } from "../shared/conversation-v2-projection";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { createContextLifecycleService } from "./context-lifecycle-service";
 import type { ContextMonitorSnapshot } from "./context-window-monitor";
@@ -30,8 +30,8 @@ import {
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { createSubagentSessionHooks } from "./subagent-session-hooks";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
-import { buildThreadRunProjection } from "./thread-run-projection";
-import { trimProjectionForFeed } from "./thread-run-projection-feed";
+import { buildThreadRunProjection } from "./conversation-v2-runtime-projection";
+import { trimProjectionForFeed } from "./legacy-feed-replay-projection";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 
@@ -312,7 +312,13 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
 }): Promise<SdkAgentEventsReplayResult> {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "eco-sdk-live-replay-"));
   const dbPath = path.join(tempDir, "eco-coding.sqlite");
-  const store = await createConversationStore(dbPath);
+  // Replay exercises the same V2 runtime writer as the desktop process. Keep
+  // the temporary database V2-only so this maintenance fixture cannot
+  // accidentally recreate the legacy conversation tables.
+  const store = await createConversationStore(dbPath, {
+    freshStorageMode: "v2_only",
+    requiredStorageMode: "v2_only",
+  });
   const lifecycle = new AgentLifecycleService(store);
   const metricsRegistry = new SubagentMetricsRegistry(store);
   const liveRequestRegistry = new ThreadLiveRequestRegistry();

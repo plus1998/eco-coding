@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { i18n } from "../src/renderer/i18n";
 import {
   createProjectTerminalState,
   createTerminalTab,
@@ -9,11 +8,13 @@ import {
   resolveTerminalTabForInjectedSession,
   saveTerminalWorkspaceState,
 } from "../src/renderer/terminal-panel-storage";
+import { withTestLanguage } from "./support/test-language";
 
 const storage = new Map<string, string>();
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en-US");
+withTestLanguage("en-US");
+
+beforeEach(() => {
   storage.clear();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,

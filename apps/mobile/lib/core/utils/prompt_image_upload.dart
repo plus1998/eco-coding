@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../models/thread_models.dart';
 import '../network/desktop_rpc.dart';
@@ -20,6 +21,16 @@ Future<List<PromptImageAttachment>> stagePromptImageAttachments({
     final attachment = next[i];
     final stagedPath = attachment.path?.trim() ?? '';
     if (stagedPath.isNotEmpty) {
+      if (attachment.contentRef?.trim().isNotEmpty != true) {
+        next[i] = attachment.copyWith(
+          uploadFailed: true,
+          clearUploadProgress: true,
+        );
+        onUpdate(List.of(next));
+        throw StateError(
+          'Image attachment is staged without a durable content reference.',
+        );
+      }
       next[i] = attachment.copyWith(
         clearUploadProgress: true,
         uploadFailed: false,
@@ -28,18 +39,42 @@ Future<List<PromptImageAttachment>> stagePromptImageAttachments({
       continue;
     }
 
-    final imageId =
-        (attachment.id?.trim().isNotEmpty ?? false)
-            ? attachment.id!.trim()
-            : 'img_${DateTime.now().microsecondsSinceEpoch}_$i';
-    final bytes = base64Decode(attachment.data);
-    if (bytes.isEmpty || bytes.length > kPromptImageUploadMaxBytes) {
+    final contentRef = attachment.contentRef?.trim() ?? '';
+    late final Uint8List sourceBytes;
+    try {
+      sourceBytes = contentRef.isNotEmpty
+          ? await rpc.downloadPromptImage(
+              contextKey: contextKey,
+              contentRef: contentRef,
+              mediaType: attachment.mediaType,
+            )
+          : base64Decode(attachment.data);
+    } catch (_) {
       next[i] = attachment.copyWith(
         uploadFailed: true,
         clearUploadProgress: true,
       );
       onUpdate(List.of(next));
-      throw StateError('Image attachment is empty or exceeds 20 MB.');
+      rethrow;
+    }
+    final imageId = (attachment.id?.trim().isNotEmpty ?? false)
+        ? attachment.id!.trim()
+        : 'img_${DateTime.now().microsecondsSinceEpoch}_$i';
+    final bytes = sourceBytes;
+    if (bytes.isEmpty ||
+        bytes.length > kPromptImageUploadMaxBytes ||
+        (attachment.byteLength != null &&
+            attachment.byteLength != bytes.length)) {
+      next[i] = attachment.copyWith(
+        uploadFailed: true,
+        clearUploadProgress: true,
+      );
+      onUpdate(List.of(next));
+      throw StateError(
+        attachment.byteLength != null && attachment.byteLength != bytes.length
+            ? 'Image attachment byte length does not match its durable metadata.'
+            : 'Image attachment is empty or exceeds 20 MB.',
+      );
     }
 
     next[i] = attachment.copyWith(
@@ -50,19 +85,24 @@ Future<List<PromptImageAttachment>> stagePromptImageAttachments({
     onUpdate(List.of(next));
 
     try {
-      final path = await rpc.uploadPromptImageChunked(
+      final uploaded = await rpc.uploadPromptImageChunkedWithMetadata(
         contextKey: contextKey,
         imageId: imageId,
         mediaType: attachment.mediaType,
         bytes: bytes,
         onProgress: (sent, total) {
           final progress = total <= 0 ? 0.0 : (sent / total).clamp(0.0, 1.0);
-          next[i] = next[i].copyWith(uploadProgress: progress, uploadFailed: false);
+          next[i] = next[i].copyWith(
+            uploadProgress: progress,
+            uploadFailed: false,
+          );
           onUpdate(List.of(next));
         },
       );
       next[i] = next[i].copyWith(
-        path: path,
+        path: uploaded.path,
+        contentRef: uploaded.contentRef,
+        byteLength: uploaded.byteLength,
         uploadProgress: 1,
         uploadFailed: false,
       );
@@ -71,10 +111,7 @@ Future<List<PromptImageAttachment>> stagePromptImageAttachments({
       next[i] = next[i].copyWith(clearUploadProgress: true);
       onUpdate(List.of(next));
     } catch (_) {
-      next[i] = next[i].copyWith(
-        uploadFailed: true,
-        clearUploadProgress: true,
-      );
+      next[i] = next[i].copyWith(uploadFailed: true, clearUploadProgress: true);
       onUpdate(List.of(next));
       rethrow;
     }

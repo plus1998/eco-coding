@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../models/acp_models.dart';
 import '../models/asr_models.dart';
+import '../models/conversation_v2_models.dart';
 import '../models/git_models.dart';
 import '../models/html_host_models.dart';
 import '../models/image_display_models.dart';
@@ -13,15 +14,34 @@ import '../models/mcp_models.dart';
 import '../models/project_orchestration_settings.dart';
 import '../models/skill_models.dart';
 import '../models/thread_models.dart';
-import '../models/thread_run_projection.dart';
-import '../models/thread_usage_models.dart';
 import '../network/eco_center_client.dart';
+import '../storage/conversation_v2_cache.dart';
+import '../utils/conversation_v2_hash.dart';
+
+class PromptImageUploadResult {
+  const PromptImageUploadResult({
+    required this.path,
+    required this.contentRef,
+    required this.byteLength,
+  });
+
+  final String path;
+  final String contentRef;
+  final int byteLength;
+}
 
 class DesktopRpc {
-  DesktopRpc(this._client, this.desktopDeviceId);
+  DesktopRpc(
+    this._client,
+    this.desktopDeviceId, {
+    ConversationV2ThreadDeleteCommandStore? threadDeleteCommandStore,
+  }) : _threadDeleteCommandStore = threadDeleteCommandStore;
 
   final EcoCenterClient _client;
   final String desktopDeviceId;
+  final ConversationV2ThreadDeleteCommandStore? _threadDeleteCommandStore;
+  final Map<String, ConversationV2PendingThreadDelete>
+  _pendingThreadDeleteCommands = {};
 
   Future<AsrStatus> getAsrStatus() async {
     final result = await _client.invoke<dynamic>(
@@ -236,7 +256,9 @@ class DesktopRpc {
 
       if (hasChunkFields) {
         final chunkOffset = payload['offset'];
-        final expectedOffset = chunkOffset is num ? chunkOffset.toInt() : offset;
+        final expectedOffset = chunkOffset is num
+            ? chunkOffset.toInt()
+            : offset;
         if (expectedOffset != offset) {
           throw const ImageViewReadException(
             ImageViewReadFailureCode.invalidResponse,
@@ -295,9 +317,8 @@ class DesktopRpc {
     return result
         .whereType<Map>()
         .map(
-          (entry) => ImageDisplayArtifact.fromJson(
-            Map<String, dynamic>.from(entry),
-          ),
+          (entry) =>
+              ImageDisplayArtifact.fromJson(Map<String, dynamic>.from(entry)),
         )
         .where((artifact) => artifact.id.isNotEmpty)
         .toList(growable: false);
@@ -373,7 +394,9 @@ class DesktopRpc {
           (entry) =>
               HtmlHostArtifact.fromJson(Map<String, dynamic>.from(entry)),
         )
-        .where((artifact) => artifact.id.isNotEmpty || artifact.pageId.isNotEmpty)
+        .where(
+          (artifact) => artifact.id.isNotEmpty || artifact.pageId.isNotEmpty,
+        )
         .toList(growable: false);
   }
 
@@ -386,6 +409,217 @@ class DesktopRpc {
     return result
         .map((e) => ThreadSummary.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<ConversationV2Capabilities> conversationV2Capabilities() async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:capabilities',
+      const [],
+    );
+    return ConversationV2Capabilities.fromJson(result);
+  }
+
+  Future<ConversationV2Bootstrap> conversationV2Bootstrap(
+    String conversationId, {
+    int pageSize = 30,
+    int maxBytes = 512 * 1024,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:bootstrap',
+      [
+        {
+          'conversationId': conversationId,
+          'pageSize': pageSize,
+          'maxBytes': maxBytes,
+        },
+      ],
+    );
+    return ConversationV2Bootstrap.fromJson(result);
+  }
+
+  Future<ConversationV2ProjectionExtras> conversationV2Projection(
+    String conversationId,
+  ) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:projection',
+      [
+        {'conversationId': conversationId},
+      ],
+    );
+    return ConversationV2ProjectionExtras.fromJson(result);
+  }
+
+  Future<ConversationV2MessagePage> conversationV2MessagesPage(
+    String conversationId, {
+    String? beforeCursor,
+    int limit = 30,
+    int maxBytes = 512 * 1024,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:messages-page',
+      [
+        {
+          'conversationId': conversationId,
+          ...?(beforeCursor == null ? null : {'beforeCursor': beforeCursor}),
+          'limit': limit,
+          'maxBytes': maxBytes,
+        },
+      ],
+    );
+    return ConversationV2MessagePage.fromJson(result);
+  }
+
+  Future<ConversationV2DetailPage> conversationV2DetailsPage(
+    String conversationId,
+    String runId, {
+    String? cursor,
+    String? toolCallId,
+    String? agentInstanceId,
+    int limit = 50,
+    int maxBytes = 512 * 1024,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:details-page',
+      [
+        {
+          'conversationId': conversationId,
+          'runId': runId,
+          ...?(cursor == null ? null : {'cursor': cursor}),
+          ...?(toolCallId == null ? null : {'toolCallId': toolCallId}),
+          ...?(agentInstanceId == null
+              ? null
+              : {'agentInstanceId': agentInstanceId}),
+          'limit': limit,
+          'maxBytes': maxBytes,
+        },
+      ],
+    );
+    return ConversationV2DetailPage.fromJson(result);
+  }
+
+  Future<ConversationV2ToolsPage> conversationV2ToolsPage(
+    String conversationId,
+    String runId, {
+    String? cursor,
+    String? toolCallId,
+    String? agentInstanceId,
+    int limit = 50,
+    int maxBytes = 512 * 1024,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:tools-page',
+      [
+        {
+          'conversationId': conversationId,
+          'runId': runId,
+          ...?(cursor == null ? null : {'cursor': cursor}),
+          ...?(toolCallId == null ? null : {'toolCallId': toolCallId}),
+          ...?(agentInstanceId == null
+              ? null
+              : {'agentInstanceId': agentInstanceId}),
+          'limit': limit,
+          'maxBytes': maxBytes,
+        },
+      ],
+    );
+    return ConversationV2ToolsPage.fromJson(result);
+  }
+
+  Future<ConversationV2Head> conversationV2Head(String conversationId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:head',
+      [conversationId],
+    );
+    return ConversationV2Head.fromJson(result);
+  }
+
+  Future<dynamic> conversationV2MessageGet(
+    String conversationId,
+    String messageId,
+  ) async {
+    return _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:message-get',
+      [
+        {'conversationId': conversationId, 'messageId': messageId},
+      ],
+    );
+  }
+
+  Future<dynamic> conversationV2RunGet(
+    String conversationId,
+    String runId,
+  ) async {
+    return _client.invoke<dynamic>(desktopDeviceId, 'conversation:run-get', [
+      {'conversationId': conversationId, 'runId': runId},
+    ]);
+  }
+
+  Future<dynamic> conversationV2DetailGet(
+    String conversationId,
+    String itemId,
+  ) async {
+    return _client.invoke<dynamic>(desktopDeviceId, 'conversation:detail-get', [
+      {'conversationId': conversationId, 'itemId': itemId},
+    ]);
+  }
+
+  Future<ConversationV2SyncPage> conversationV2Sync(
+    String conversationId,
+    String storeEpoch,
+    int afterSeq, {
+    int? throughSeq,
+    int maxEvents = 200,
+    int maxBytes = 512 * 1024,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:sync',
+      [
+        {
+          'conversationId': conversationId,
+          'storeEpoch': storeEpoch,
+          'afterSeq': afterSeq,
+          ...?(throughSeq == null ? null : {'throughSeq': throughSeq}),
+          'maxEvents': maxEvents,
+          'maxBytes': maxBytes,
+        },
+      ],
+    );
+    return ConversationV2SyncPage.fromJson(result);
+  }
+
+  Future<dynamic> conversationV2SendMessage({
+    required String principalId,
+    required String conversationId,
+    required String clientCommandId,
+    required String text,
+    String? turnId,
+    String? messageId,
+    List<dynamic>? attachments,
+  }) async {
+    return _client.invoke<dynamic>(
+      desktopDeviceId,
+      'conversation:send-message',
+      [
+        {
+          'principalId': principalId,
+          'conversationId': conversationId,
+          'clientCommandId': clientCommandId,
+          'text': text,
+          ...?(turnId == null ? null : {'turnId': turnId}),
+          ...?(messageId == null ? null : {'messageId': messageId}),
+          ...?(attachments == null ? null : {'attachments': attachments}),
+        },
+      ],
+    );
   }
 
   Future<ThreadListInitialResult> listInitialThreads() async {
@@ -474,6 +708,27 @@ class DesktopRpc {
     void Function(int sentBytes, int totalBytes)? onProgress,
     int maxChunkAttempts = 3,
   }) async {
+    final result = await uploadPromptImageChunkedWithMetadata(
+      contextKey: contextKey,
+      imageId: imageId,
+      mediaType: mediaType,
+      bytes: bytes,
+      onProgress: onProgress,
+      maxChunkAttempts: maxChunkAttempts,
+      allowLegacyResponse: true,
+    );
+    return result.path;
+  }
+
+  Future<PromptImageUploadResult> uploadPromptImageChunkedWithMetadata({
+    required String contextKey,
+    required String imageId,
+    required String mediaType,
+    required Uint8List bytes,
+    void Function(int sentBytes, int totalBytes)? onProgress,
+    int maxChunkAttempts = 3,
+    bool allowLegacyResponse = false,
+  }) async {
     if (bytes.isEmpty) {
       throw StateError('Prompt image bytes are empty.');
     }
@@ -505,8 +760,24 @@ class DesktopRpc {
 
     var beginResult = await begin();
     if (beginResult['complete'] == true && beginResult['path'] is String) {
+      if (beginResult['contentRef'] is! String ||
+          beginResult['byteLength'] is! num) {
+        if (!allowLegacyResponse) {
+          throw StateError('Invalid prompt image upload begin metadata.');
+        }
+        onProgress?.call(totalBytes, totalBytes);
+        return PromptImageUploadResult(
+          path: beginResult['path'] as String,
+          contentRef: '',
+          byteLength: totalBytes,
+        );
+      }
       onProgress?.call(totalBytes, totalBytes);
-      return beginResult['path'] as String;
+      return PromptImageUploadResult(
+        path: beginResult['path'] as String,
+        contentRef: beginResult['contentRef'] as String,
+        byteLength: (beginResult['byteLength'] as num).toInt(),
+      );
     }
 
     var offset = beginResult['receivedBytes'] is num
@@ -545,7 +816,9 @@ class DesktopRpc {
           final payload = Map<String, dynamic>.from(result);
           final received = payload['receivedBytes'];
           if (received is! num) {
-            throw StateError('Prompt image upload chunk missing receivedBytes.');
+            throw StateError(
+              'Prompt image upload chunk missing receivedBytes.',
+            );
           }
           offset = received.toInt();
           onProgress?.call(offset, totalBytes);
@@ -554,9 +827,26 @@ class DesktopRpc {
           if (attempt >= maxChunkAttempts) rethrow;
           // Re-sync offset from desktop before retrying (breakpoint resume).
           beginResult = await begin();
-          if (beginResult['complete'] == true && beginResult['path'] is String) {
+          if (beginResult['complete'] == true &&
+              beginResult['path'] is String) {
+            if (beginResult['contentRef'] is! String ||
+                beginResult['byteLength'] is! num) {
+              if (!allowLegacyResponse) {
+                throw StateError('Invalid prompt image upload begin metadata.');
+              }
+              onProgress?.call(totalBytes, totalBytes);
+              return PromptImageUploadResult(
+                path: beginResult['path'] as String,
+                contentRef: '',
+                byteLength: totalBytes,
+              );
+            }
             onProgress?.call(totalBytes, totalBytes);
-            return beginResult['path'] as String;
+            return PromptImageUploadResult(
+              path: beginResult['path'] as String,
+              contentRef: beginResult['contentRef'] as String,
+              byteLength: (beginResult['byteLength'] as num).toInt(),
+            );
           }
           offset = beginResult['receivedBytes'] is num
               ? (beginResult['receivedBytes'] as num).toInt()
@@ -582,8 +872,91 @@ class DesktopRpc {
     if (finish is! Map || finish['path'] is! String) {
       throw StateError('Invalid prompt image upload finish response.');
     }
+    if (finish['contentRef'] is! String || finish['byteLength'] is! num) {
+      if (!allowLegacyResponse) {
+        throw StateError('Invalid prompt image upload finish metadata.');
+      }
+      onProgress?.call(totalBytes, totalBytes);
+      return PromptImageUploadResult(
+        path: finish['path'] as String,
+        contentRef: '',
+        byteLength: totalBytes,
+      );
+    }
     onProgress?.call(totalBytes, totalBytes);
-    return finish['path'] as String;
+    return PromptImageUploadResult(
+      path: finish['path'] as String,
+      contentRef: finish['contentRef'] as String,
+      byteLength: (finish['byteLength'] as num).toInt(),
+    );
+  }
+
+  Future<Uint8List> downloadPromptImage({
+    required String contextKey,
+    required String contentRef,
+    required String mediaType,
+    int maxChunkBytes = 64 * 1024,
+  }) async {
+    if (contentRef.trim().isEmpty) {
+      throw StateError('Prompt image contentRef is empty.');
+    }
+    var offset = 0;
+    var totalBytes = -1;
+    final chunks = <int>[];
+    while (totalBytes < 0 || offset < totalBytes) {
+      final result = await _client.invoke<dynamic>(
+        desktopDeviceId,
+        'prompt-image:read-chunk',
+        [
+          {
+            'contextKey': contextKey,
+            'contentRef': contentRef,
+            'mediaType': mediaType,
+            'offset': offset,
+            'maxBytes': maxChunkBytes,
+          },
+        ],
+        deadlineMs: 60000,
+      );
+      if (result is! Map) {
+        throw StateError('Invalid prompt image read response.');
+      }
+      final payload = Map<String, dynamic>.from(result);
+      if (payload['contentRef'] != contentRef ||
+          payload['mediaType'] != mediaType) {
+        throw StateError('Prompt image read response identity mismatch.');
+      }
+      final responseOffset = payload['offset'];
+      final nextOffset = payload['nextOffset'];
+      final responseTotal = payload['totalBytes'];
+      final data = payload['data'];
+      if (responseOffset is! num ||
+          nextOffset is! num ||
+          responseTotal is! num ||
+          data is! String ||
+          responseOffset.toInt() != offset) {
+        throw StateError('Prompt image read response is malformed.');
+      }
+      final bytes = base64Decode(data);
+      final next = nextOffset.toInt();
+      final total = responseTotal.toInt();
+      if (total <= 0 ||
+          next < offset ||
+          next > total ||
+          bytes.length != next - offset) {
+        throw StateError('Prompt image read response has invalid bounds.');
+      }
+      chunks.addAll(bytes);
+      offset = next;
+      totalBytes = total;
+      if (payload['complete'] == true && offset != totalBytes) {
+        throw StateError('Prompt image read marked complete before EOF.');
+      }
+      if (bytes.isEmpty && offset < totalBytes) {
+        throw StateError('Prompt image read made no progress.');
+      }
+    }
+    return Uint8List.fromList(chunks);
   }
 
   Future<ThreadSummary> startThread({
@@ -610,34 +983,88 @@ class DesktopRpc {
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
   }
 
-  Future<ThreadSummary> continueThread({
-    required String threadId,
-    required String prompt,
-    List<PromptImageAttachment>? attachments,
-    ThreadRuntimeConfigInput? runtimeConfig,
-  }) async {
-    final result = await _client.invoke<Map<String, dynamic>>(
-      desktopDeviceId,
-      'thread:continue',
-      [
-        {
-          'threadId': threadId,
-          'prompt': prompt,
-          if (attachments != null && attachments.isNotEmpty)
-            'attachments': attachments.map((a) => a.toWireJson()).toList(),
-          if (runtimeConfig != null) 'runtimeConfig': runtimeConfig.toJson(),
-        },
-      ],
-    );
-    return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
-  }
-
   Future<void> cancelThread(String threadId) async {
-    await _client.invoke(desktopDeviceId, 'thread:cancel', [threadId]);
+    final normalizedThreadId = threadId.trim();
+    if (normalizedThreadId.isEmpty) {
+      throw ArgumentError.value(threadId, 'threadId', 'Thread id is required.');
+    }
+    final principalId = _client.credentials.userId?.trim() ?? '';
+    if (principalId.isEmpty) {
+      throw StateError('Authenticated user id is required to cancel a thread.');
+    }
+    final head = await conversationV2Head(normalizedThreadId);
+    final expectedHistoryRevision = head.historyRevision;
+    await _client.invoke(desktopDeviceId, 'thread:cancel', [
+      {
+        'principalId': principalId,
+        'clientCommandId':
+            'run_cancel_${conversationV2StableHash({
+              'threadId': normalizedThreadId,
+              'expectedHistoryRevision': expectedHistoryRevision,
+            })}',
+        'threadId': normalizedThreadId,
+        'expectedHistoryRevision': expectedHistoryRevision,
+      },
+    ]);
   }
 
   Future<void> deleteThread(String threadId) async {
-    await _client.invoke(desktopDeviceId, 'thread:delete', [threadId]);
+    final normalizedThreadId = threadId.trim();
+    if (normalizedThreadId.isEmpty) {
+      throw ArgumentError.value(threadId, 'threadId', 'Thread id is required.');
+    }
+    final principalId = _client.credentials.userId?.trim() ?? '';
+    if (principalId.isEmpty) {
+      throw StateError('Authenticated user id is required to delete a thread.');
+    }
+    var command =
+        _pendingThreadDeleteCommands[normalizedThreadId] ??
+        await _threadDeleteCommandStore?.pendingThreadDelete(
+          normalizedThreadId,
+        );
+    if (command != null && command.principalId != principalId) {
+      throw StateError(
+        'Pending thread delete belongs to a different authenticated user.',
+      );
+    }
+    if (command == null) {
+      final head = await conversationV2Head(normalizedThreadId);
+      final expectedHistoryRevision = head.historyRevision;
+      command = ConversationV2PendingThreadDelete(
+        principalId: principalId,
+        clientCommandId:
+            'thread_delete_${conversationV2StableHash({'threadId': normalizedThreadId, 'expectedHistoryRevision': expectedHistoryRevision})}',
+        threadId: normalizedThreadId,
+        expectedHistoryRevision: expectedHistoryRevision,
+        createdAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await _threadDeleteCommandStore?.putPendingThreadDelete(command);
+      _pendingThreadDeleteCommands[normalizedThreadId] = command;
+    } else {
+      _pendingThreadDeleteCommands[normalizedThreadId] = command;
+    }
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'thread:delete',
+      [
+        {
+          'principalId': command.principalId,
+          'clientCommandId': command.clientCommandId,
+          'threadId': normalizedThreadId,
+          'expectedHistoryRevision': command.expectedHistoryRevision,
+        },
+      ],
+    );
+    if (result['ok'] != true) {
+      throw StateError('Desktop rejected the thread delete command.');
+    }
+    await _threadDeleteCommandStore?.removePendingThreadDelete(
+      normalizedThreadId,
+      command.clientCommandId,
+    );
+    if (_pendingThreadDeleteCommands[normalizedThreadId] == command) {
+      _pendingThreadDeleteCommands.remove(normalizedThreadId);
+    }
   }
 
   Future<({bool ok, bool regenerated})> regenerateThreadTitle(
@@ -652,17 +1079,6 @@ class DesktopRpc {
       ok: result['ok'] == true,
       regenerated: result['regenerated'] == true,
     );
-  }
-
-  Future<List<ThreadActivityLine>> activityList(String threadId) async {
-    final result = await _client.invoke<List<dynamic>>(
-      desktopDeviceId,
-      'thread:activity-list',
-      [threadId],
-    );
-    return result
-        .map((e) => ThreadActivityLine.fromJson(e as Map<String, dynamic>))
-        .toList();
   }
 
   Future<ThreadUserMessageEditGetResult> getUserMessageEdit({
@@ -683,6 +1099,8 @@ class DesktopRpc {
   }
 
   Future<ThreadSummary> rewriteThreadFromMessage({
+    required String principalId,
+    required String clientCommandId,
     required String threadId,
     required String activityLineId,
     required String prompt,
@@ -695,6 +1113,8 @@ class DesktopRpc {
       'thread:rewrite-from-message',
       [
         {
+          'principalId': principalId,
+          'clientCommandId': clientCommandId,
           'threadId': threadId,
           'activityLineId': activityLineId,
           'prompt': prompt,
@@ -719,6 +1139,8 @@ class DesktopRpc {
   }
 
   Future<ThreadSummary> retryThreadFromMessage({
+    required String principalId,
+    required String clientCommandId,
     required String threadId,
     required String prompt,
     required int expectedHistoryRevision,
@@ -731,6 +1153,8 @@ class DesktopRpc {
       'thread:retry-from-message',
       [
         {
+          'principalId': principalId,
+          'clientCommandId': clientCommandId,
           'threadId': threadId,
           'prompt': prompt,
           'expectedHistoryRevision': expectedHistoryRevision,
@@ -748,101 +1172,6 @@ class DesktopRpc {
       throw StateError('Desktop returned no retried thread.');
     }
     return ThreadSummary.fromJson(thread);
-  }
-
-  Future<ThreadRunProjectionSnapshot?> getRunProjection(
-    String threadId, {
-    String mode = 'full',
-    int? afterSequence,
-    int? historyRevision,
-  }) async {
-    // Remote registry accepts a single string arg; encode feed mode in the string.
-    final arg = _encodeRunProjectionArg(
-      threadId,
-      mode: mode,
-      afterSequence: afterSequence,
-      historyRevision: historyRevision,
-    );
-    final result = await _client.invoke<dynamic>(
-      desktopDeviceId,
-      'thread:run-projection-get',
-      [arg],
-    );
-    if (result is! Map<String, dynamic>) return null;
-    return ThreadRunProjectionSnapshot.fromJson(
-      result,
-      includeToolOutputPreview: mode != 'feed',
-    );
-  }
-
-  Future<ThreadRunProjectionDetailResult?> getRunProjectionDetail({
-    required String threadId,
-    required String kind,
-    required String key,
-    int? afterSequence,
-    int? beforeSequence,
-    bool tail = false,
-    int? limit,
-    bool includeToolOutputPreview = true,
-  }) async {
-    final request = <String, dynamic>{
-      'threadId': threadId,
-      'kind': kind,
-      'key': key,
-    };
-    if (afterSequence != null) {
-      request['afterSequence'] = afterSequence;
-    }
-    if (beforeSequence != null) {
-      request['beforeSequence'] = beforeSequence;
-    }
-    if (tail) {
-      request['tail'] = true;
-    }
-    if (limit != null) {
-      request['limit'] = limit;
-    }
-    final result = await _client.invoke<dynamic>(
-      desktopDeviceId,
-      'thread:run-projection-detail-get',
-      [request],
-    );
-    if (result is! Map<String, dynamic>) return null;
-    return ThreadRunProjectionDetailResult.fromJson(
-      result,
-      includeToolOutputPreview: includeToolOutputPreview,
-    );
-  }
-
-  Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(
-    String threadId,
-  ) async {
-    final result = await _client.invoke<dynamic>(
-      desktopDeviceId,
-      'thread:get-usage-snapshot',
-      [threadId],
-    );
-    if (result is! Map<String, dynamic>) {
-      return const ThreadUsageSnapshotResult();
-    }
-    return ThreadUsageSnapshotResult.fromJson(result);
-  }
-
-  Future<List<ThreadSubagentSessionTiming>> listSubagentSessions(
-    String threadId,
-  ) async {
-    final result = await _client.invoke<List<dynamic>>(
-      desktopDeviceId,
-      'thread:subagent-sessions-list',
-      [threadId],
-    );
-    return result
-        .map(
-          (entry) => ThreadSubagentSessionTiming.fromJson(
-            entry as Map<String, dynamic>,
-          ),
-        )
-        .toList();
   }
 
   Future<ThreadPendingPlan?> getPendingPlan(String threadId) async {
@@ -865,14 +1194,36 @@ class DesktopRpc {
     return ThreadPendingPlan.fromJson(result as Map<String, dynamic>);
   }
 
-  Future<void> approvePlan(String threadId) async {
+  Future<void> approvePlan({
+    required String principalId,
+    required String clientCommandId,
+    required String threadId,
+    required int expectedHistoryRevision,
+  }) async {
     await _client.invoke(desktopDeviceId, 'thread:approve-plan', [
-      {'threadId': threadId},
+      {
+        'principalId': principalId,
+        'clientCommandId': clientCommandId,
+        'threadId': threadId,
+        'expectedHistoryRevision': expectedHistoryRevision,
+      },
     ]);
   }
 
-  Future<void> dismissPlan(String threadId) async {
-    await _client.invoke(desktopDeviceId, 'thread:dismiss-plan', [threadId]);
+  Future<void> dismissPlan({
+    required String principalId,
+    required String clientCommandId,
+    required String threadId,
+    required int expectedHistoryRevision,
+  }) async {
+    await _client.invoke(desktopDeviceId, 'thread:dismiss-plan', [
+      {
+        'principalId': principalId,
+        'clientCommandId': clientCommandId,
+        'threadId': threadId,
+        'expectedHistoryRevision': expectedHistoryRevision,
+      },
+    ]);
   }
 
   Future<BashApprovalRequest?> getPendingBashApproval(String threadId) async {
@@ -886,16 +1237,24 @@ class DesktopRpc {
   }
 
   Future<void> resolveBashApproval({
+    required String principalId,
+    required String clientCommandId,
+    required String threadId,
     required String toolUseId,
     required String decision,
+    required int expectedHistoryRevision,
     String? feedback,
   }) async {
     await _client.invoke(desktopDeviceId, 'bash-approval:resolve', [
       {
+        'principalId': principalId,
+        'clientCommandId': clientCommandId,
+        'threadId': threadId,
         'toolUseId': toolUseId,
         'decision': decision,
         if (feedback != null && feedback.trim().isNotEmpty)
           'feedback': feedback.trim(),
+        'expectedHistoryRevision': expectedHistoryRevision,
       },
     ]);
   }
@@ -911,16 +1270,41 @@ class DesktopRpc {
   }
 
   Future<void> submitClarification({
+    required String principalId,
+    required String clientCommandId,
+    required String threadId,
     required String toolUseId,
     required List<List<String>> selections,
+    required int expectedHistoryRevision,
   }) async {
     await _client.invoke(desktopDeviceId, 'clarification:submit', [
-      {'toolUseId': toolUseId, 'selections': selections},
+      {
+        'principalId': principalId,
+        'clientCommandId': clientCommandId,
+        'threadId': threadId,
+        'toolUseId': toolUseId,
+        'selections': selections,
+        'expectedHistoryRevision': expectedHistoryRevision,
+      },
     ]);
   }
 
-  Future<void> dismissClarification(String toolUseId) async {
-    await _client.invoke(desktopDeviceId, 'clarification:dismiss', [toolUseId]);
+  Future<void> dismissClarification({
+    required String principalId,
+    required String clientCommandId,
+    required String threadId,
+    required String toolUseId,
+    required int expectedHistoryRevision,
+  }) async {
+    await _client.invoke(desktopDeviceId, 'clarification:dismiss', [
+      {
+        'principalId': principalId,
+        'clientCommandId': clientCommandId,
+        'threadId': threadId,
+        'toolUseId': toolUseId,
+        'expectedHistoryRevision': expectedHistoryRevision,
+      },
+    ]);
   }
 
   Future<List<ThreadPendingFollowUp>> followUpList(String threadId) async {
@@ -935,20 +1319,54 @@ class DesktopRpc {
         .toList();
   }
 
+  Future<Map<String, dynamic>> _v2CommandEnvelope({
+    required String threadId,
+    required String operation,
+    required Map<String, dynamic> payload,
+  }) async {
+    final normalizedThreadId = threadId.trim();
+    if (normalizedThreadId.isEmpty) {
+      throw ArgumentError.value(threadId, 'threadId', 'Thread id is required.');
+    }
+    final principalId = _client.credentials.userId?.trim() ?? '';
+    if (principalId.isEmpty) {
+      throw StateError('Authenticated user id is required for V2 mutations.');
+    }
+    final head = await conversationV2Head(normalizedThreadId);
+    final expectedHistoryRevision = head.historyRevision;
+    return {
+      'principalId': principalId,
+      'clientCommandId':
+          'command_${operation}_${conversationV2StableHash({
+            'threadId': normalizedThreadId,
+            'operation': operation,
+            ...payload,
+            'expectedHistoryRevision': expectedHistoryRevision,
+          })}',
+      'threadId': normalizedThreadId,
+      ...payload,
+      'expectedHistoryRevision': expectedHistoryRevision,
+    };
+  }
+
   Future<void> followUpEnqueue({
     required String threadId,
     required String prompt,
     List<PromptImageAttachment>? attachments,
   }) async {
-    await _client.invoke(desktopDeviceId, 'thread:follow-up-enqueue', [
-      {
-        'threadId': threadId,
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'enqueue',
+      payload: {
         'prompt': prompt,
         if (attachments != null && attachments.isNotEmpty)
           'attachments': attachments
               .map((attachment) => attachment.toWireJson())
               .toList(),
       },
+    );
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-enqueue', [
+      request,
     ]);
   }
 
@@ -956,8 +1374,13 @@ class DesktopRpc {
     required String threadId,
     required String followUpId,
   }) async {
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'cancel',
+      payload: {'followUpId': followUpId},
+    );
     await _client.invoke(desktopDeviceId, 'thread:follow-up-cancel', [
-      {'threadId': threadId, 'followUpId': followUpId},
+      request,
     ]);
   }
 
@@ -965,8 +1388,13 @@ class DesktopRpc {
     required String threadId,
     required String followUpId,
   }) async {
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'escalate',
+      payload: {'followUpId': followUpId},
+    );
     await _client.invoke(desktopDeviceId, 'thread:follow-up-escalate', [
-      {'threadId': threadId, 'followUpId': followUpId},
+      request,
     ]);
   }
 
@@ -974,11 +1402,16 @@ class DesktopRpc {
     required String threadId,
     required List<String> followUpIds,
   }) async {
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'reorder',
+      payload: {'followUpIds': followUpIds},
+    );
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-reorder',
       [
-        {'threadId': threadId, 'followUpIds': followUpIds},
+        request,
       ],
     );
     final followUps = result['followUps'] as List<dynamic>? ?? [];
@@ -996,9 +1429,10 @@ class DesktopRpc {
     required String prompt,
     List<PromptImageAttachment>? attachments,
   }) async {
-    await _client.invoke(desktopDeviceId, 'thread:follow-up-update', [
-      {
-        'threadId': threadId,
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'update',
+      payload: {
         'followUpId': followUpId,
         'prompt': prompt,
         if (attachments != null && attachments.isNotEmpty)
@@ -1006,6 +1440,9 @@ class DesktopRpc {
               .map((attachment) => attachment.toWireJson())
               .toList(),
       },
+    );
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-update', [
+      request,
     ]);
   }
 
@@ -1013,14 +1450,18 @@ class DesktopRpc {
     required String threadId,
     String? followUpId,
   }) async {
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: followUpId == null ? 'editing-release' : 'editing-acquire',
+      payload: {
+        ...?followUpId == null ? null : {'followUpId': followUpId},
+      },
+    );
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-editing',
       [
-        {
-          'threadId': threadId,
-          if (followUpId != null) 'followUpId': followUpId,
-        },
+        request,
       ],
     );
     return result['editing'] as bool? ?? false;
@@ -1030,11 +1471,16 @@ class DesktopRpc {
     required String threadId,
     required bool paused,
   }) async {
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'queue-paused',
+      payload: {'paused': paused},
+    );
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-queue-paused',
       [
-        {'threadId': threadId, 'paused': paused},
+        request,
       ],
     );
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
@@ -1044,11 +1490,16 @@ class DesktopRpc {
     required String threadId,
     required ThreadRuntimeConfigInput runtimeConfig,
   }) async {
+    final request = await _v2CommandEnvelope(
+      threadId: threadId,
+      operation: 'runtime-config',
+      payload: {'runtimeConfig': runtimeConfig.toJson()},
+    );
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:update-runtime-config',
       [
-        {'threadId': threadId, 'runtimeConfig': runtimeConfig.toJson()},
+        request,
       ],
     );
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
@@ -1461,17 +1912,6 @@ class DesktopRpc {
     return GitFetchResult.fromJson(result);
   }
 
-  Future<List<CoderTodoItem>> listThreadTodos(String threadId) async {
-    final result = await _client.invoke<List<dynamic>>(
-      desktopDeviceId,
-      'thread:todo-list',
-      [threadId],
-    );
-    return result
-        .map((entry) => CoderTodoItem.fromJson(entry as Map<String, dynamic>))
-        .toList();
-  }
-
   Future<PackageScriptsListResult> listPackageScripts(
     String workspacePath,
   ) async {
@@ -1550,24 +1990,4 @@ class DesktopRpc {
       ],
     );
   }
-}
-
-String _encodeRunProjectionArg(
-  String threadId, {
-  required String mode,
-  int? afterSequence,
-  int? historyRevision,
-}) {
-  if (mode != 'feed') {
-    return threadId;
-  }
-  if (afterSequence == null && historyRevision == null) {
-    return 'feed:$threadId';
-  }
-  final encodedThreadId = Uri.encodeComponent(threadId);
-  final query = <String>[
-    if (afterSequence != null) 'afterSequence=$afterSequence',
-    if (historyRevision != null) 'historyRevision=$historyRevision',
-  ].join('&');
-  return 'feed:$encodedThreadId?$query';
 }

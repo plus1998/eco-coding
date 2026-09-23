@@ -80,7 +80,15 @@ export class IntegratedWebSearchSettingsStore {
     if (!this.secretCodec.isAvailable()) {
       throw new Error("Integrated Web Search API key is stored but local secret storage is unavailable.");
     }
-    const decrypted = this.secretCodec.decrypt(stored.encryptedApiKey).trim();
+    let decrypted: string;
+    try {
+      decrypted = this.secretCodec.decrypt(stored.encryptedApiKey).trim();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Integrated Web Search API Key 解密失败，请在设置中重新输入并保存。原始错误：${reason}`,
+      );
+    }
     return decrypted || undefined;
   }
 

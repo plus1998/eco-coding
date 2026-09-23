@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   approvedPlanFilePath,
   formatApprovedPlanDocument,
   isWorktreeGitCwdError,
   parseApprovedPlanDocument,
   resolveWorktreePathHint,
+  verifyApprovedPlanArtifact,
+  writeApprovedPlanSnapshot,
 } from "../src/main/worktree-lifecycle";
 
 describe("isWorktreeGitCwdError", () => {
@@ -56,6 +61,28 @@ describe("approved plan snapshot", () => {
     });
 
     expect(parseApprovedPlanDocument(doc)?.plan).toBe(plan);
+  });
+
+  test("atomically writes a deterministic artifact and detects later content drift", async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "eco-plan-artifact-"));
+    const artifact = await writeApprovedPlanSnapshot(workspacePath, "thread/unsafe", {
+      userPrompt: "fix export",
+      analysis: "missing handler",
+      plan: "1. add route",
+    });
+    expect(artifact).toEqual({
+      absolutePath: path.join(workspacePath, ".eco", "approved-plans", "thread-unsafe.md"),
+      relativePath: ".eco/approved-plans/thread-unsafe.md",
+      contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(
+      verifyApprovedPlanArtifact({ workspacePath, threadId: "thread/unsafe", ...artifact }),
+    ).toEqual({ ok: true });
+
+    await fs.writeFile(artifact.absolutePath, "tampered\n", "utf8");
+    expect(
+      verifyApprovedPlanArtifact({ workspacePath, threadId: "thread/unsafe", ...artifact }),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining("content hash") });
   });
 });
 

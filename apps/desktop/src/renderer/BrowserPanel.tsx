@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, ExternalLink, Globe, LoaderCircle, RefreshCw } f
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type BrowserViewState, normalizeBrowserNavigateUrl } from "../shared/browser";
+import { useBrowserInstanceIds } from "./browser-state-store";
 import { BrowserWebviewViewportMarker } from "./BrowserWebviewViewportMarker";
 
 const ICON_SIZE = 15;
@@ -23,6 +24,8 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
   const [state, setState] = useState<BrowserViewState | undefined>();
   const [address, setAddress] = useState("");
   const addressInputId = useId();
+  /** Main drops a closed browser from its guest list — never focus a page that is gone. */
+  const liveBrowserIds = useBrowserInstanceIds();
 
   const instance = state?.instances.find((item) => item.id === browserId);
   const displayUrl = instance?.url ?? state?.url ?? "about:blank";
@@ -39,7 +42,7 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
   }, [browserId]);
 
   useEffect(() => {
-    if (!active) {
+    if (!active || !liveBrowserIds.includes(browserId)) {
       return;
     }
     void window.eco?.browserFocus?.({ browserId, reveal: true });
@@ -50,7 +53,7 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
         setAddress(url === "about:blank" ? "" : url);
       }
     });
-  }, [active, browserId]);
+  }, [active, browserId, liveBrowserIds]);
 
   useEffect(() => {
     const unsubscribe = window.eco?.onBrowserStateChanged?.((next) => {

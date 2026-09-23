@@ -29,16 +29,16 @@ import {
   shouldRebuildFeedSkeletonForEmptyTimeline,
   shouldRebuildFeedSkeletonForOrphanAgentEvents,
   shouldRebuildFeedSkeletonForTruncatedUserPrompts,
-} from "../src/main/thread-feed-skeleton-detectors.ts";
+} from "../src/main/legacy-feed-skeleton-detectors.ts";
 import {
   createThreadFeedSkeletonRecord,
   feedSkeletonTimelineIds,
   patchThreadFeedSkeletonFromEvent,
-} from "../src/main/thread-feed-skeleton-patch.ts";
-import { mapRunAttemptsForFeedSkeleton } from "../src/main/thread-feed-skeleton-store.ts";
-import { isFeedMainTimelineEvent } from "../src/main/thread-feed-timeline-items.ts";
-import { buildThreadRunProjection } from "../src/main/thread-run-projection.ts";
-import { trimProjectionForFeed } from "../src/main/thread-run-projection-feed.ts";
+} from "../src/main/legacy-feed-skeleton-patch.ts";
+import { mapRunAttemptsForFeedSkeleton } from "../src/main/legacy-feed-skeleton-store.ts";
+import { isFeedMainTimelineEvent } from "../src/main/legacy-feed-skeleton-timeline-items.ts";
+import { buildThreadRunProjection } from "../src/main/conversation-v2-runtime-projection.ts";
+import { trimProjectionForFeed } from "../src/main/legacy-feed-replay-projection.ts";
 
 const argv = process.argv.slice(2);
 const dbPath = argv.find((arg) => !arg.startsWith("--"));

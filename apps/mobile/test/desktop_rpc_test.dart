@@ -7,9 +7,364 @@ import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/network/desktop_rpc.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
+import 'package:eco_mobile/core/storage/conversation_v2_cache.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'conversation V2 RPC preserves every route and paging envelope',
+    () async {
+      final client = _ConversationV2EcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      final capabilities = await rpc.conversationV2Capabilities();
+      expect(capabilities.storeEpoch, 'epoch_1');
+      expect(client.lastCall?.channel, 'conversation:capabilities');
+      expect(client.lastCall?.args, isEmpty);
+
+      final bootstrap = await rpc.conversationV2Bootstrap(
+        'thread_1',
+        pageSize: 17,
+        maxBytes: 4096,
+      );
+      expect(bootstrap.snapshotSeq, 8);
+      expect(client.lastCall?.channel, 'conversation:bootstrap');
+      expect(client.lastCall?.args, const [
+        {'conversationId': 'thread_1', 'pageSize': 17, 'maxBytes': 4096},
+      ]);
+
+      final extras = await rpc.conversationV2Projection('thread_1');
+      expect(extras.requestSpans.single.requestId, 'request_1');
+      expect(extras.subagentTimings.single.agentId, 'agent_1');
+      expect(extras.billing?.inputTokens, 11);
+      expect(extras.context?.occupied, 42);
+      expect(client.lastCall?.channel, 'conversation:projection');
+      expect(client.lastCall?.args, const [
+        {'conversationId': 'thread_1'},
+      ]);
+
+      final messages = await rpc.conversationV2MessagesPage(
+        'thread_1',
+        beforeCursor: 'cursor_before',
+        limit: 11,
+        maxBytes: 2048,
+      );
+      expect(messages.readSeq, 8);
+      expect(client.lastCall?.channel, 'conversation:messages-page');
+      expect(client.lastCall?.args, const [
+        {
+          'conversationId': 'thread_1',
+          'beforeCursor': 'cursor_before',
+          'limit': 11,
+          'maxBytes': 2048,
+        },
+      ]);
+
+      final details = await rpc.conversationV2DetailsPage(
+        'thread_1',
+        'run_1',
+        cursor: 'detail_cursor',
+        toolCallId: 'tool_1',
+        agentInstanceId: 'agent_instance_1',
+        limit: 13,
+        maxBytes: 1024,
+      );
+      expect(details.items.single.toJson(), {
+        'itemId': 'detail_1',
+        'conversationId': 'thread_1',
+        'runId': 'run_1',
+        'agentId': 'agent_role_1',
+        'agentInstanceId': 'agent_instance_1',
+        'parentAgentInstanceId': 'parent_instance_1',
+        'parentAgentId': 'parent_role_1',
+        'parentToolCallId': 'parent_tool_1',
+        'toolCallId': 'tool_1',
+        'type': 'tool.output',
+        'createdSeq': 7,
+        'versionSeq': 8,
+        'content': '',
+        'ref': '',
+      });
+      expect(client.lastCall?.channel, 'conversation:details-page');
+      expect(client.lastCall?.args, const [
+        {
+          'conversationId': 'thread_1',
+          'runId': 'run_1',
+          'cursor': 'detail_cursor',
+          'toolCallId': 'tool_1',
+          'agentInstanceId': 'agent_instance_1',
+          'limit': 13,
+          'maxBytes': 1024,
+        },
+      ]);
+
+      final tools = await rpc.conversationV2ToolsPage(
+        'thread_1',
+        'run_1',
+        cursor: 'tool_cursor',
+        toolCallId: 'tool_1',
+        agentInstanceId: 'agent_instance_1',
+        limit: 7,
+        maxBytes: 1536,
+      );
+      expect(tools.totalCount, 1);
+      expect(tools.tools.single.toolCallId, 'tool_1');
+      expect(client.lastCall?.channel, 'conversation:tools-page');
+      expect(client.lastCall?.args, const [
+        {
+          'conversationId': 'thread_1',
+          'runId': 'run_1',
+          'cursor': 'tool_cursor',
+          'toolCallId': 'tool_1',
+          'agentInstanceId': 'agent_instance_1',
+          'limit': 7,
+          'maxBytes': 1536,
+        },
+      ]);
+
+      final head = await rpc.conversationV2Head('thread_1');
+      expect(head.lastSeq, 8);
+      expect(client.lastCall?.channel, 'conversation:head');
+      expect(client.lastCall?.args, const ['thread_1']);
+
+      final sync = await rpc.conversationV2Sync(
+        'thread_1',
+        'epoch_1',
+        4,
+        throughSeq: 8,
+        maxEvents: 23,
+        maxBytes: 8192,
+      );
+      expect(sync.throughSeq, 8);
+      expect(client.lastCall?.channel, 'conversation:sync');
+      expect(client.lastCall?.args, const [
+        {
+          'conversationId': 'thread_1',
+          'storeEpoch': 'epoch_1',
+          'afterSeq': 4,
+          'throughSeq': 8,
+          'maxEvents': 23,
+          'maxBytes': 8192,
+        },
+      ]);
+    },
+  );
+
+  test(
+    'conversation V2 send forwards the complete idempotent command envelope',
+    () async {
+      final client = _ConversationV2EcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      final result = await rpc.conversationV2SendMessage(
+        principalId: 'user_1',
+        conversationId: 'thread_1',
+        clientCommandId: 'command_1',
+        text: 'hello',
+        turnId: 'turn_1',
+        messageId: 'message_1',
+        attachments: const [
+          {'mediaType': 'image/png', 'path': '/tmp/image.png'},
+        ],
+      );
+
+      expect(result, {
+        'protocolVersion': 2,
+        'conversationId': 'thread_1',
+        'clientCommandId': 'command_1',
+        'messageId': 'message_1',
+        'turnId': 'turn_1',
+        'acceptedSeq': 9,
+        'status': 'accepted',
+      });
+      expect(client.lastCall?.channel, 'conversation:send-message');
+      expect(client.lastCall?.args, const [
+        {
+          'principalId': 'user_1',
+          'conversationId': 'thread_1',
+          'clientCommandId': 'command_1',
+          'text': 'hello',
+          'turnId': 'turn_1',
+          'messageId': 'message_1',
+          'attachments': [
+            {'mediaType': 'image/png', 'path': '/tmp/image.png'},
+          ],
+        },
+      ]);
+    },
+  );
+
+  test(
+    'thread delete retries the same complete command envelope without rereading head',
+    () async {
+      final store = _MemoryThreadDeleteCommandStore();
+      final firstClient = _ThreadDeleteEcoCenterClient(failFirstDelete: true);
+      final firstRpc = DesktopRpc(
+        firstClient,
+        'desktop_1',
+        threadDeleteCommandStore: store,
+      );
+
+      await expectLater(firstRpc.deleteThread('thread_1'), throwsStateError);
+      final firstDelete = firstClient.deleteCalls.single;
+      expect(firstClient.headCalls, 1);
+      expect(await store.pendingThreadDelete('thread_1'), isNotNull);
+
+      final restartedClient = _ThreadDeleteEcoCenterClient();
+      final restartedRpc = DesktopRpc(
+        restartedClient,
+        'desktop_1',
+        threadDeleteCommandStore: store,
+      );
+      await restartedRpc.deleteThread('thread_1');
+
+      expect(restartedClient.headCalls, 0);
+      expect(restartedClient.deleteCalls.single, firstDelete);
+      expect(await store.pendingThreadDelete('thread_1'), isNull);
+      expect(firstDelete, {
+        'principalId': 'user_1',
+        'clientCommandId': startsWith('thread_delete_'),
+        'threadId': 'thread_1',
+        'expectedHistoryRevision': 4,
+      });
+
+      await restartedRpc.deleteThread('thread_1');
+      expect(restartedClient.headCalls, 1);
+      expect(restartedClient.deleteCalls, hasLength(2));
+    },
+  );
+
+  test(
+    'thread delete fails before reading head when principal is missing',
+    () async {
+      final client = _ThreadDeleteEcoCenterClient(userId: null);
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      await expectLater(rpc.deleteThread('thread_1'), throwsStateError);
+
+      expect(client.headCalls, 0);
+      expect(client.deleteCalls, isEmpty);
+    },
+  );
+
+  test(
+    'clarification resolution forwards the complete command envelope',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      await rpc.submitClarification(
+        principalId: 'user_1',
+        clientCommandId: 'clarification_submit_1',
+        threadId: 'thread_1',
+        toolUseId: 'tool_1',
+        selections: const [
+          ['A'],
+        ],
+        expectedHistoryRevision: 7,
+      );
+      expect(client.channel, 'clarification:submit');
+      expect(client.args, const [
+        {
+          'principalId': 'user_1',
+          'clientCommandId': 'clarification_submit_1',
+          'threadId': 'thread_1',
+          'toolUseId': 'tool_1',
+          'selections': [
+            ['A'],
+          ],
+          'expectedHistoryRevision': 7,
+        },
+      ]);
+
+      await rpc.dismissClarification(
+        principalId: 'user_1',
+        clientCommandId: 'clarification_dismiss_1',
+        threadId: 'thread_1',
+        toolUseId: 'tool_1',
+        expectedHistoryRevision: 7,
+      );
+      expect(client.channel, 'clarification:dismiss');
+      expect(client.args, const [
+        {
+          'principalId': 'user_1',
+          'clientCommandId': 'clarification_dismiss_1',
+          'threadId': 'thread_1',
+          'toolUseId': 'tool_1',
+          'expectedHistoryRevision': 7,
+        },
+      ]);
+    },
+  );
+
+  test(
+    'Bash approval resolution forwards the complete command envelope',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      await rpc.resolveBashApproval(
+        principalId: 'user_1',
+        clientCommandId: 'approval_1',
+        threadId: 'thread_1',
+        toolUseId: 'tool_1',
+        decision: 'approved_for_session',
+        feedback: '  proceed  ',
+        expectedHistoryRevision: 9,
+      );
+
+      expect(client.channel, 'bash-approval:resolve');
+      expect(client.args, const [
+        {
+          'principalId': 'user_1',
+          'clientCommandId': 'approval_1',
+          'threadId': 'thread_1',
+          'toolUseId': 'tool_1',
+          'decision': 'approved_for_session',
+          'feedback': 'proceed',
+          'expectedHistoryRevision': 9,
+        },
+      ]);
+    },
+  );
+
+  test('plan resolution forwards the complete command envelope', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.approvePlan(
+      principalId: 'user_1',
+      clientCommandId: 'plan_approve_1',
+      threadId: 'thread_1',
+      expectedHistoryRevision: 11,
+    );
+    expect(client.channel, 'thread:approve-plan');
+    expect(client.args, const [
+      {
+        'principalId': 'user_1',
+        'clientCommandId': 'plan_approve_1',
+        'threadId': 'thread_1',
+        'expectedHistoryRevision': 11,
+      },
+    ]);
+
+    await rpc.dismissPlan(
+      principalId: 'user_1',
+      clientCommandId: 'plan_dismiss_1',
+      threadId: 'thread_1',
+      expectedHistoryRevision: 12,
+    );
+    expect(client.channel, 'thread:dismiss-plan');
+    expect(client.args, const [
+      {
+        'principalId': 'user_1',
+        'clientCommandId': 'plan_dismiss_1',
+        'threadId': 'thread_1',
+        'expectedHistoryRevision': 12,
+      },
+    ]);
+  });
+
   test('startThread forwards the ACP runtime core', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -117,18 +472,6 @@ void main() {
     expect(models.last.displayName, 'Codex 5.3');
   });
 
-  test('getRunProjection encodes feed mode in a single string arg', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
-
-    final projection = await rpc.getRunProjection('thr_1', mode: 'feed');
-
-    expect(client.desktopDeviceId, 'desktop_1');
-    expect(client.channel, 'thread:run-projection-get');
-    expect(client.args, ['feed:thr_1']);
-    expect(projection?.threadId, 'thr_1');
-  });
-
   test(
     'loads a user message edit capability with the stable activity id',
     () async {
@@ -158,6 +501,8 @@ void main() {
       final rpc = DesktopRpc(client, 'desktop_1');
 
       final thread = await rpc.rewriteThreadFromMessage(
+        principalId: 'user_1',
+        clientCommandId: 'history_rewrite_1',
         threadId: 'thr_1',
         activityLineId: 'activity_1',
         prompt: 'replacement',
@@ -168,6 +513,8 @@ void main() {
       expect(client.channel, 'thread:rewrite-from-message');
       expect(client.args, [
         {
+          'principalId': 'user_1',
+          'clientCommandId': 'history_rewrite_1',
           'threadId': 'thr_1',
           'activityLineId': 'activity_1',
           'prompt': 'replacement',
@@ -178,6 +525,35 @@ void main() {
       expect(thread.id, 'thr_1');
     },
   );
+
+  test('retries a failed request with the V2 command envelope', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final thread = await rpc.retryThreadFromMessage(
+      principalId: 'user_1',
+      clientCommandId: 'history_retry_1',
+      threadId: 'thr_1',
+      activityLineId: 'activity_1',
+      prompt: 'retry prompt',
+      hasImages: true,
+      expectedHistoryRevision: 7,
+    );
+
+    expect(client.channel, 'thread:retry-from-message');
+    expect(client.args, [
+      {
+        'principalId': 'user_1',
+        'clientCommandId': 'history_retry_1',
+        'threadId': 'thr_1',
+        'prompt': 'retry prompt',
+        'expectedHistoryRevision': 7,
+        'activityLineId': 'activity_1',
+        'hasImages': true,
+      },
+    ]);
+    expect(thread.id, 'thr_1');
+  });
 
   test('reads an approved plan through desktop RPC', () async {
     final client = _RecordingEcoCenterClient();
@@ -277,86 +653,6 @@ void main() {
     },
   );
 
-  test(
-    'getRunProjection encodes feed afterSequence in the string arg',
-    () async {
-      final client = _RecordingEcoCenterClient();
-      final rpc = DesktopRpc(client, 'desktop_1');
-
-      await rpc.getRunProjection('thr:1', mode: 'feed', afterSequence: 42);
-
-      expect(client.channel, 'thread:run-projection-get');
-      expect(client.args, ['feed:thr%3A1?afterSequence=42']);
-    },
-  );
-
-  test('getRunProjection encodes the incremental history revision', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
-
-    await rpc.getRunProjection(
-      'thr:1',
-      mode: 'feed',
-      afterSequence: 42,
-      historyRevision: 3,
-    );
-
-    expect(client.args, ['feed:thr%3A1?afterSequence=42&historyRevision=3']);
-  });
-
-  test('getRunProjectionDetail sends object request', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
-
-    final detail = await rpc.getRunProjectionDetail(
-      threadId: 'thr_1',
-      kind: 'agent',
-      key: 'agent_1',
-      afterSequence: 4,
-      limit: 20,
-    );
-
-    expect(client.channel, 'thread:run-projection-detail-get');
-    expect(client.args, [
-      {
-        'threadId': 'thr_1',
-        'kind': 'agent',
-        'key': 'agent_1',
-        'afterSequence': 4,
-        'limit': 20,
-      },
-    ]);
-    expect(detail?.kind, 'agent');
-    expect(detail?.key, 'agent_1');
-  });
-
-  test('getRunProjectionDetail sends earlier Feed page request', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
-
-    await rpc.getRunProjectionDetail(
-      threadId: 'thr_1',
-      kind: 'main',
-      key: 'thr_1',
-      beforeSequence: 101,
-      tail: true,
-      limit: 100,
-      includeToolOutputPreview: false,
-    );
-
-    expect(client.channel, 'thread:run-projection-detail-get');
-    expect(client.args, [
-      {
-        'threadId': 'thr_1',
-        'kind': 'main',
-        'key': 'thr_1',
-        'beforeSequence': 101,
-        'tail': true,
-        'limit': 100,
-      },
-    ]);
-  });
-
   test('getBackgroundTerminalTask parses task progress', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -420,10 +716,7 @@ void main() {
 
     expect(client.channel, 'git:save-commit-model-preference');
     expect(client.args, [
-      {
-        'candidateModelId': 'candidate_1',
-        'mainAgentConfigId': 'main_1',
-      },
+      {'candidateModelId': 'candidate_1', 'mainAgentConfigId': 'main_1'},
     ]);
   });
 
@@ -573,71 +866,86 @@ void main() {
     expect(acquired, isTrue);
     expect(client.channel, 'thread:follow-up-editing');
     expect(client.args, [
-      {'threadId': 'thr_1', 'followUpId': 'fup_1'},
+      {
+        'principalId': 'user_1',
+        'clientCommandId': startsWith('command_editing-acquire_'),
+        'threadId': 'thr_1',
+        'followUpId': 'fup_1',
+        'expectedHistoryRevision': 0,
+      },
     ]);
 
     final released = await rpc.followUpSetEditing(threadId: 'thr_1');
 
     expect(released, isFalse);
     expect(client.args, [
-      {'threadId': 'thr_1'},
-    ]);
-  });
-
-  test('uploadPromptImageChunked stages bytes with resume and progress', () async {
-    final client = _ChunkedUploadEcoCenterClient(failFirstChunkOnce: true);
-    final rpc = DesktopRpc(client, 'desktop_1');
-    final bytes = Uint8List.fromList(List<int>.generate(90 * 1024, (i) => i % 256));
-    final progress = <(int, int)>[];
-
-    final path = await rpc.uploadPromptImageChunked(
-      contextKey: 'thread:thr_1',
-      imageId: 'img_1',
-      mediaType: 'image/png',
-      bytes: bytes,
-      onProgress: (sent, total) => progress.add((sent, total)),
-    );
-
-    expect(path, endsWith('img_1.png'));
-    expect(client.channels, contains('prompt-image:upload-begin'));
-    expect(client.channels, contains('prompt-image:upload-chunk'));
-    expect(client.channels, contains('prompt-image:upload-finish'));
-    expect(client.chunkAttempts, greaterThan(1)); // retried after forced failure
-    expect(progress.first.$1, 0);
-    expect(progress.last, (bytes.length, bytes.length));
-    expect(client.assembled, bytes);
-  });
-
-  test('continueThread sends path-only wire attachments', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
-
-    await rpc.continueThread(
-      threadId: 'thr_1',
-      prompt: 'see image',
-      attachments: const [
-        PromptImageAttachment(
-          mediaType: 'image/png',
-          data: 'YWJj',
-          path: r'C:\eco\prompt-images\spool\thread_thr_1\img.png',
-        ),
-      ],
-    );
-
-    expect(client.channel, 'thread:continue');
-    expect(client.args, [
       {
+        'principalId': 'user_1',
+        'clientCommandId': startsWith('command_editing-release_'),
         'threadId': 'thr_1',
-        'prompt': 'see image',
-        'attachments': [
-          {
-            'mediaType': 'image/png',
-            'path': r'C:\eco\prompt-images\spool\thread_thr_1\img.png',
-          },
-        ],
+        'expectedHistoryRevision': 0,
       },
     ]);
   });
+
+  test(
+    'uploadPromptImageChunked stages bytes with resume and progress',
+    () async {
+      final client = _ChunkedUploadEcoCenterClient(failFirstChunkOnce: true);
+      final rpc = DesktopRpc(client, 'desktop_1');
+      final bytes = Uint8List.fromList(
+        List<int>.generate(90 * 1024, (i) => i % 256),
+      );
+      final progress = <(int, int)>[];
+
+      final path = await rpc.uploadPromptImageChunked(
+        contextKey: 'thread:thr_1',
+        imageId: 'img_1',
+        mediaType: 'image/png',
+        bytes: bytes,
+        onProgress: (sent, total) => progress.add((sent, total)),
+      );
+
+      expect(path, endsWith('img_1.png'));
+      expect(client.channels, contains('prompt-image:upload-begin'));
+      expect(client.channels, contains('prompt-image:upload-chunk'));
+      expect(client.channels, contains('prompt-image:upload-finish'));
+      expect(
+        client.chunkAttempts,
+        greaterThan(1),
+      ); // retried after forced failure
+      expect(progress.first.$1, 0);
+      expect(progress.last, (bytes.length, bytes.length));
+      expect(client.assembled, bytes);
+    },
+  );
+
+  test(
+    'downloadPromptImage forwards the context key with the durable reference',
+    () async {
+      final client = _PromptImageDownloadEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      final bytes = await rpc.downloadPromptImage(
+        contextKey: 'thread:thr_1',
+        contentRef:
+            'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        mediaType: 'image/png',
+      );
+
+      expect(bytes, [1, 2, 3]);
+      expect(client.args, [
+        {
+          'contextKey': 'thread:thr_1',
+          'contentRef':
+              'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'mediaType': 'image/png',
+          'offset': 0,
+          'maxBytes': 64 * 1024,
+        },
+      ]);
+    },
+  );
 }
 
 class _RecordingEcoCenterClient extends EcoCenterClient {
@@ -650,6 +958,10 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
   Object? imageViewResponse;
 
   @override
+  AppCredentials get credentials =>
+      AppCredentials(supabaseUrl: '', userId: 'user_1');
+
+  @override
   Future<T> invoke<T>(
     String desktopDeviceId,
     String channel,
@@ -660,6 +972,16 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
     this.channel = channel;
     this.args = args;
     this.deadlineMs = deadlineMs;
+    if (channel == 'conversation:head') {
+      return {
+            'protocolVersion': 2,
+            'storeEpoch': 'epoch_1',
+            'conversationId': 'thr_1',
+            'lastSeq': 8,
+            'historyRevision': 0,
+          }
+          as T;
+    }
     if (channel == 'composer-draft:get') {
       return {
             'contextKey': 'thread:thr_1',
@@ -727,18 +1049,6 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
     if (channel == 'composer-draft:delete') {
       return {'ok': true, 'deleted': true} as T;
     }
-    if (channel == 'thread:run-projection-detail-get') {
-      return {
-            'threadId': 'thr_1',
-            'kind': 'agent',
-            'key': 'agent_1',
-            'generatedAt': '2026-01-01T00:00:00.000Z',
-            'timeline': [],
-            'sourceEventCount': 1,
-            'hasMore': false,
-          }
-          as T;
-    }
     if (channel == 'cursor:models-list') {
       return [
             {
@@ -775,6 +1085,21 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
               'id': 'thr_1',
               'title': 'Thread',
               'prompt': 'replacement',
+              'workspacePath': '/tmp/project',
+              'status': 'running',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+              'message': 'running',
+            },
+          }
+          as T;
+    }
+    if (channel == 'thread:retry-from-message') {
+      return {
+            'thread': {
+              'id': 'thr_1',
+              'title': 'Thread',
+              'prompt': 'retry prompt',
               'workspacePath': '/tmp/project',
               'status': 'running',
               'createdAt': '2026-01-01T00:00:00.000Z',
@@ -881,6 +1206,254 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
   }
 }
 
+class _ConversationV2EcoCenterClient extends EcoCenterClient {
+  _ConversationV2EcoCenterClient() : super(store: CredentialStore());
+
+  ({String channel, List<dynamic> args})? lastCall;
+
+  @override
+  Future<T> invoke<T>(
+    String desktopDeviceId,
+    String channel,
+    List<dynamic> args, {
+    int? deadlineMs,
+  }) async {
+    expect(desktopDeviceId, 'desktop_1');
+    lastCall = (channel: channel, args: args);
+    final response = switch (channel) {
+      'conversation:capabilities' => {
+        'protocolVersion': 2,
+        'eventSchemaVersion': 1,
+        'effectVersion': 1,
+        'maxEvents': 200,
+        'maxBytes': 524288,
+        'storeEpoch': 'epoch_1',
+      },
+      'conversation:bootstrap' => {
+        'protocolVersion': 2,
+        'storeEpoch': 'epoch_1',
+        'conversationId': 'thread_1',
+        'snapshotSeq': 8,
+        'historyRevision': 0,
+        'messages': <dynamic>[],
+        'runs': <dynamic>[],
+        'tools': <dynamic>[],
+        'agents': <dynamic>[],
+        'olderCursor': null,
+        'hasOlder': false,
+      },
+      'conversation:projection' => {
+        'requestSpans': [
+          {
+            'requestId': 'request_1',
+            'status': 'completed',
+            'startedAt': '2026-01-01T00:00:00.000Z',
+            'firstTokenAt': '2026-01-01T00:00:00.100Z',
+            'endedAt': '2026-01-01T00:00:01.000Z',
+          },
+        ],
+        'billing': {
+          'plannerTokenCostUsd': 0.1,
+          'ecoCostUsd': 0.05,
+          'savedUsd': 0.05,
+          'savedPct': 50,
+          'pricingResolved': true,
+          'totalTokens': {
+            'input': 11,
+            'output': 7,
+            'cacheRead': 3,
+            'cacheCreation': 1,
+          },
+          'byModel': <dynamic>[],
+        },
+        'context': {
+          'occupied': 42,
+          'limit': 100,
+          'occupancyPct': 42,
+          'limitsResolved': true,
+          'segments': <dynamic>[],
+          'roles': <dynamic>[],
+          'instances': <dynamic>[],
+        },
+        'subagentTimings': [
+          {
+            'agentId': 'agent_1',
+            'role': 'coder',
+            'status': 'active',
+            'startedAt': '2026-01-01T00:00:00.000Z',
+            'lastActiveAt': '2026-01-01T00:00:01.000Z',
+            'accumulatedMs': 1000,
+            'durationMs': 1000,
+          },
+        ],
+      },
+      'conversation:messages-page' => {
+        'protocolVersion': 2,
+        'storeEpoch': 'epoch_1',
+        'conversationId': 'thread_1',
+        'readSeq': 8,
+        'historyRevision': 0,
+        'messages': <dynamic>[],
+        'runs': <dynamic>[],
+        'tools': <dynamic>[],
+        'agents': <dynamic>[],
+        'nextCursor': null,
+        'hasMore': false,
+      },
+      'conversation:details-page' => {
+        'protocolVersion': 2,
+        'storeEpoch': 'epoch_1',
+        'conversationId': 'thread_1',
+        'readSeq': 8,
+        'historyRevision': 0,
+        'items': [
+          {
+            'itemId': 'detail_1',
+            'conversationId': 'thread_1',
+            'runId': 'run_1',
+            'agentId': 'agent_role_1',
+            'agentInstanceId': 'agent_instance_1',
+            'parentAgentInstanceId': 'parent_instance_1',
+            'parentAgentId': 'parent_role_1',
+            'parentToolCallId': 'parent_tool_1',
+            'toolCallId': 'tool_1',
+            'type': 'tool.output',
+            'createdSeq': 7,
+            'versionSeq': 8,
+            'content': '',
+            'ref': '',
+          },
+        ],
+        'nextCursor': null,
+        'hasMore': false,
+      },
+      'conversation:tools-page' => {
+        'protocolVersion': 2,
+        'storeEpoch': 'epoch_1',
+        'conversationId': 'thread_1',
+        'runId': 'run_1',
+        'readSeq': 8,
+        'historyRevision': 0,
+        'tools': [
+          {
+            'toolCallId': 'tool_1',
+            'conversationId': 'thread_1',
+            'runId': 'run_1',
+            'name': 'Read',
+            'status': 'completed',
+            'createdSeq': 6,
+            'versionSeq': 8,
+          },
+        ],
+        'totalCount': 1,
+        'nextCursor': null,
+        'hasMore': false,
+      },
+      'conversation:head' => {
+        'protocolVersion': 2,
+        'storeEpoch': 'epoch_1',
+        'conversationId': 'thread_1',
+        'lastSeq': 8,
+        'historyRevision': 0,
+      },
+      'conversation:sync' => {
+        'protocolVersion': 2,
+        'storeEpoch': 'epoch_1',
+        'conversationId': 'thread_1',
+        'fromSeq': 5,
+        'throughSeq': 8,
+        'headSeq': 8,
+        'hasMore': false,
+        'effects': <dynamic>[],
+      },
+      'conversation:send-message' => {
+        'protocolVersion': 2,
+        'conversationId': 'thread_1',
+        'clientCommandId': 'command_1',
+        'messageId': 'message_1',
+        'turnId': 'turn_1',
+        'acceptedSeq': 9,
+        'status': 'accepted',
+      },
+      _ => throw StateError('unexpected channel $channel'),
+    };
+    return response as T;
+  }
+}
+
+class _ThreadDeleteEcoCenterClient extends EcoCenterClient {
+  _ThreadDeleteEcoCenterClient({
+    this.userId = 'user_1',
+    this.failFirstDelete = false,
+  }) : super(store: CredentialStore());
+
+  final String? userId;
+  final bool failFirstDelete;
+  int headCalls = 0;
+  final List<Map<String, dynamic>> deleteCalls = [];
+
+  @override
+  AppCredentials get credentials =>
+      AppCredentials(supabaseUrl: '', userId: userId);
+
+  @override
+  Future<T> invoke<T>(
+    String desktopDeviceId,
+    String channel,
+    List<dynamic> args, {
+    int? deadlineMs,
+  }) async {
+    expect(desktopDeviceId, 'desktop_1');
+    if (channel == 'conversation:head') {
+      headCalls += 1;
+      return {
+            'protocolVersion': 2,
+            'storeEpoch': 'epoch_1',
+            'conversationId': 'thread_1',
+            'lastSeq': 8,
+            'historyRevision': 4,
+          }
+          as T;
+    }
+    if (channel == 'thread:delete') {
+      final request = Map<String, dynamic>.from(args.single as Map);
+      deleteCalls.add(request);
+      if (failFirstDelete && deleteCalls.length == 1) {
+        throw StateError('simulated lost delete response');
+      }
+      return {'ok': true, 'alreadyDeleted': deleteCalls.length > 1} as T;
+    }
+    throw StateError('unexpected channel $channel');
+  }
+}
+
+class _MemoryThreadDeleteCommandStore
+    implements ConversationV2ThreadDeleteCommandStore {
+  final Map<String, ConversationV2PendingThreadDelete> _commands = {};
+
+  @override
+  Future<ConversationV2PendingThreadDelete?> pendingThreadDelete(
+    String threadId,
+  ) async => _commands[threadId];
+
+  @override
+  Future<void> putPendingThreadDelete(
+    ConversationV2PendingThreadDelete command,
+  ) async {
+    _commands[command.threadId] = command;
+  }
+
+  @override
+  Future<void> removePendingThreadDelete(
+    String threadId,
+    String clientCommandId,
+  ) async {
+    if (_commands[threadId]?.clientCommandId == clientCommandId) {
+      _commands.remove(threadId);
+    }
+  }
+}
+
 class _ChunkedUploadEcoCenterClient extends EcoCenterClient {
   _ChunkedUploadEcoCenterClient({this.failFirstChunkOnce = false})
     : super(store: CredentialStore());
@@ -925,12 +1498,37 @@ class _ChunkedUploadEcoCenterClient extends EcoCenterClient {
     if (channel == 'prompt-image:upload-finish') {
       final total = (payload['totalBytes'] as num).toInt();
       expect(assembledBuilder.length, total);
-      return {
-            'path': r'C:\eco\prompt-images\spool\thread_thr_1\img_1.png',
-          }
+      return {'path': r'C:\eco\prompt-images\spool\thread_thr_1\img_1.png'}
           as T;
     }
     throw StateError('unexpected channel $channel');
   }
 }
 
+class _PromptImageDownloadEcoCenterClient extends EcoCenterClient {
+  _PromptImageDownloadEcoCenterClient() : super(store: CredentialStore());
+
+  List<dynamic>? args;
+
+  @override
+  Future<T> invoke<T>(
+    String desktopDeviceId,
+    String channel,
+    List<dynamic> args, {
+    int? deadlineMs,
+  }) async {
+    expect(channel, 'prompt-image:read-chunk');
+    this.args = args;
+    return {
+          'contentRef':
+              'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'mediaType': 'image/png',
+          'offset': 0,
+          'nextOffset': 3,
+          'totalBytes': 3,
+          'complete': true,
+          'data': base64Encode([1, 2, 3]),
+        }
+        as T;
+  }
+}

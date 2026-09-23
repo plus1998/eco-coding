@@ -65,8 +65,8 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
   test("claude packy_responses replay uses one turn section and closes subagent lifecycle", async () => {
     const cell = loadGatewayClientRoundCell({ client: "claude", profileId: "packy_responses" });
     const result = await replayGatewayClientRoundCellFeed(cell);
-    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
-    const { buildThreadRunTurnFeedSections } = await import("../src/renderer/thread-run-turn-feed");
+    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/conversation-v2-projection-view");
+    const { buildThreadRunTurnFeedSections } = await import("../src/renderer/conversation-v2-turn-feed");
     const vm = buildThreadRunProjectionViewModel(result.projection, {
       id: result.threadId,
       prompt: cell.prompt,
@@ -92,7 +92,7 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
     expect(
       hydrated.agents.some((agent) => agent.timeline.some((item) => item.text.includes("SMOKE_CHILD"))),
     ).toBe(true);
-    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
+    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/conversation-v2-projection-view");
     const vm = buildThreadRunProjectionViewModel(hydrated, {
       id: result.threadId,
       prompt: cell.prompt,
@@ -123,7 +123,7 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
     expect(
       hydrated.agents.some((agent) => agent.timeline.some((item) => item.text.includes("SMOKE_CHILD"))),
     ).toBe(true);
-    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
+    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/conversation-v2-projection-view");
     const vm = buildThreadRunProjectionViewModel(hydrated, {
       id: result.threadId,
       prompt: cell.prompt,
@@ -160,8 +160,8 @@ describe.skipIf(!hasAnyClientRoundCells())("gateway client-round feed replay", (
     const hydrated = hydrateDemoFeedReplayTurnDetails(result.projection, result.fullProjection, {
       codex: true,
     });
-    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/thread-run-projection-view");
-    const { buildThreadRunTurnFeedSections } = await import("../src/renderer/thread-run-turn-feed");
+    const { buildThreadRunProjectionViewModel } = await import("../src/renderer/conversation-v2-projection-view");
+    const { buildThreadRunTurnFeedSections } = await import("../src/renderer/conversation-v2-turn-feed");
     const vm = buildThreadRunProjectionViewModel(hydrated, {
       id: result.threadId,
       prompt: cell.prompt,

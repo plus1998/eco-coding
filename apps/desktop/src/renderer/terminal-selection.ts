@@ -20,6 +20,7 @@ interface SelectionManagerRuntime {
   viewportRowToAbsolute(row: number): number;
   markCurrentSelectionDirty(): void;
   requestRender(): void;
+  copyToClipboard(text: string): Promise<void>;
   selectionChangedEmitter: { fire: () => void };
 }
 
@@ -94,6 +95,22 @@ export async function copyTerminalSelection(terminal: GhosttyTerminalType): Prom
   return copyTextToClipboard(text);
 }
 
+/**
+ * Paste clipboard text into the terminal.
+ * `Terminal.paste` adds bracketed-paste markers when the running app asked for them.
+ */
+export async function pasteClipboardIntoTerminal(
+  terminal: GhosttyTerminalType,
+  readClipboardText: () => Promise<string>,
+): Promise<boolean> {
+  const text = await readClipboardText();
+  if (!text) {
+    return false;
+  }
+  terminal.paste(text);
+  return true;
+}
+
 function resolveShiftClickAnchor(
   manager: SelectionManagerRuntime,
   terminal: GhosttyTerminalType,
@@ -114,6 +131,7 @@ function resolveShiftClickAnchor(
  * Enhance ghostty-web selection:
  * - full-buffer selectAll
  * - Shift+click / Shift+drag to extend selection from the existing anchor (or cursor)
+ * - no implicit clipboard write on selection end (copy needs an explicit gesture)
  */
 export function installTerminalSelectionEnhancements(terminal: GhosttyTerminalType): () => void {
   const manager = getSelectionManager(terminal);
@@ -126,6 +144,12 @@ export function installTerminalSelectionEnhancements(terminal: GhosttyTerminalTy
   manager.selectAll = () => {
     selectAllTerminalText(terminal);
   };
+
+  // ghostty-web copies to the system clipboard on every mouseup / dblclick that ends a
+  // selection. Selecting is a read gesture, so silence the implicit write and keep the
+  // highlight: Eco copies only through the terminal context menu or Ctrl/Cmd+C.
+  const originalCopyToClipboard = manager.copyToClipboard;
+  manager.copyToClipboard = async () => undefined;
 
   const onMouseDownCapture = (event: MouseEvent) => {
     if (event.button !== 0 || !event.shiftKey) {
@@ -164,6 +188,7 @@ export function installTerminalSelectionEnhancements(terminal: GhosttyTerminalTy
   return () => {
     canvas.removeEventListener("mousedown", onMouseDownCapture, true);
     manager.selectAll = originalSelectAll;
+    manager.copyToClipboard = originalCopyToClipboard;
   };
 }
 

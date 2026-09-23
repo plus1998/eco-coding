@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import {
   buildEcoJsonRpcRequest,
   createAgentEvent,
+  decodeConversationCursor,
   ECO_RPC_METHODS,
+  encodeConversationCursor,
   getRemoteCommandDefinition,
   hasCapabilities,
   isEcoInvokeParams,
@@ -40,6 +42,23 @@ test("creates timestamped agent events", () => {
   expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("round-trips the independent Conversation V2 tool cursor", () => {
+  const encoded = encodeConversationCursor({
+    kind: "tools",
+    storeEpoch: "epoch_1",
+    historyRevision: 3,
+    createdSeq: 42,
+    id: "tool_42",
+  });
+  expect(decodeConversationCursor(encoded, "tools")).toEqual({
+    kind: "tools",
+    storeEpoch: "epoch_1",
+    historyRevision: 3,
+    createdSeq: 42,
+    id: "tool_42",
+  });
+});
+
 test("registers explicit remote command definitions", () => {
   expect(isRemoteCommandChannel("thread:list")).toBe(true);
   expect(isRemoteCommandChannel("thread:list-initial")).toBe(true);
@@ -65,9 +84,9 @@ test("registers explicit remote command definitions", () => {
       "thread:retry-from-message",
       "thread:user-message-edit-get",
       "thread:rewrite-from-message",
-      "thread:run-projection-get",
-      "thread:run-projection-detail-get",
-      "thread:subagent-sessions-list",
+      "conversation:capabilities",
+      "conversation:bootstrap",
+      "conversation:projection",
     ]),
   );
 
@@ -90,7 +109,15 @@ test("validates remote command args", () => {
     ok: false,
   });
   expect(
-    validateRemoteCommandArgs("thread:follow-up-cancel", [{ threadId: "thr_1", followUpId: "fup_1" }]),
+    validateRemoteCommandArgs("thread:follow-up-cancel", [
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_cancel_1",
+        threadId: "thr_1",
+        followUpId: "fup_1",
+        expectedHistoryRevision: 3,
+      },
+    ]),
   ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:follow-up-cancel", ["fup_1"])).toMatchObject({
     ok: false,
@@ -105,7 +132,17 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("composer-draft:delete", ["thread:thr_1"])).toMatchObject({
     ok: false,
   });
-  expect(validateRemoteCommandArgs("thread:delete", ["thr_1"])).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:delete", [
+      {
+        principalId: "user_1",
+        clientCommandId: "delete_1",
+        threadId: "thr_1",
+        expectedHistoryRevision: 3,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:delete", [{ threadId: "thr_1" }])).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"])).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("thread:user-message-edit-get", [
@@ -115,6 +152,8 @@ test("validates remote command args", () => {
   expect(
     validateRemoteCommandArgs("thread:rewrite-from-message", [
       {
+        principalId: "user_1",
+        clientCommandId: "rewrite_1",
         threadId: "thr_1",
         activityLineId: "act_1",
         prompt: "hello",
@@ -126,8 +165,93 @@ test("validates remote command args", () => {
   expect(
     validateRemoteCommandArgs("thread:rewrite-from-message", [{ threadId: "thr_1", prompt: "x" }]),
   ).toMatchObject({ ok: false });
-  expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"])).toEqual({ ok: true });
-  expect(validateRemoteCommandArgs("thread:run-projection-get", ["feed:thr_1"])).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:retry-from-message", [
+      {
+        principalId: "user_1",
+        clientCommandId: "retry_1",
+        threadId: "thr_1",
+        prompt: "retry",
+        expectedHistoryRevision: 3,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:retry-from-message", [
+      { threadId: "thr_1", prompt: "retry", expectedHistoryRevision: 3 },
+    ]),
+  ).toMatchObject({ ok: false });
+  expect(
+    validateRemoteCommandArgs("thread:cancel", [
+      {
+        principalId: "user_1",
+        clientCommandId: "cancel_1",
+        threadId: "thr_1",
+        expectedHistoryRevision: 3,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:cancel", ["thr_1"])).toMatchObject({ ok: false });
+  expect(
+    validateRemoteCommandArgs("thread:cancel", [
+      { principalId: "user_1", clientCommandId: "cancel_1", threadId: "thr_1" },
+    ]),
+  ).toMatchObject({ ok: false });
+  expect(
+    validateRemoteCommandArgs("thread:approve-plan", [
+      {
+        principalId: "user_1",
+        clientCommandId: "plan_1",
+        threadId: "thr_1",
+        expectedHistoryRevision: 4,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:dismiss-plan", [
+      {
+        principalId: "user_1",
+        clientCommandId: "plan_2",
+        threadId: "thr_1",
+        expectedHistoryRevision: 4,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("clarification:submit", [
+      {
+        principalId: "user_1",
+        clientCommandId: "clarification_1",
+        threadId: "thr_1",
+        toolUseId: "tool_1",
+        selections: [["A"]],
+        expectedHistoryRevision: 4,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("clarification:dismiss", [
+      {
+        principalId: "user_1",
+        clientCommandId: "clarification_2",
+        threadId: "thr_1",
+        toolUseId: "tool_1",
+        expectedHistoryRevision: 4,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("bash-approval:resolve", [
+      {
+        principalId: "user_1",
+        clientCommandId: "approval_1",
+        threadId: "thr_1",
+        toolUseId: "tool_1",
+        decision: "approved",
+        expectedHistoryRevision: 4,
+      },
+    ]),
+  ).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("project-orchestration-settings:save", [
       {
@@ -140,44 +264,93 @@ test("validates remote command args", () => {
       },
     ]),
   ).toEqual({ ok: true });
-  expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1", "feed"])).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("thread:run-projection-get", [{ threadId: "thr_1", mode: "feed" }]),
-  ).toMatchObject({ ok: false });
-  expect(
-    validateRemoteCommandArgs("thread:run-projection-detail-get", [
-      { threadId: "thr_1", kind: "agent", key: "agent_1" },
+    validateRemoteCommandArgs("thread:follow-up-escalate", [
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_escalate_1",
+        threadId: "thr_1",
+        followUpId: "fup_1",
+        expectedHistoryRevision: 3,
+      },
     ]),
   ).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("thread:run-projection-detail-get", [{ threadId: "thr_1", kind: "agent" }]),
-  ).toMatchObject({ ok: false });
-  expect(validateRemoteCommandArgs("thread:get-usage-snapshot", ["thr_1"])).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:follow-up-escalate", [{ threadId: "thr_1", followUpId: "fup_1" }]),
-  ).toEqual({ ok: true });
-  expect(
     validateRemoteCommandArgs("thread:follow-up-update", [
-      { threadId: "thr_1", followUpId: "fup_1", prompt: "updated" },
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_update_1",
+        threadId: "thr_1",
+        followUpId: "fup_1",
+        prompt: "updated",
+        expectedHistoryRevision: 3,
+      },
     ]),
   ).toEqual({ ok: true });
   expect(isRemoteCommandChannel("thread:follow-up-editing")).toBe(true);
   expect(
-    validateRemoteCommandArgs("thread:follow-up-editing", [{ threadId: "thr_1", followUpId: "fup_1" }]),
+    validateRemoteCommandArgs("thread:follow-up-editing", [
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_editing_1",
+        threadId: "thr_1",
+        followUpId: "fup_1",
+        expectedHistoryRevision: 3,
+      },
+    ]),
   ).toEqual({ ok: true });
-  expect(validateRemoteCommandArgs("thread:follow-up-editing", [{ threadId: "thr_1" }])).toEqual({
-    ok: true,
-  });
+  expect(
+    validateRemoteCommandArgs("thread:follow-up-editing", [
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_editing_release_1",
+        threadId: "thr_1",
+        expectedHistoryRevision: 3,
+      },
+    ]),
+  ).toEqual({ ok: true });
   expect(isRemoteCommandChannel("thread:follow-up-queue-paused")).toBe(true);
   expect(
-    validateRemoteCommandArgs("thread:follow-up-queue-paused", [{ threadId: "thr_1", paused: true }]),
+    validateRemoteCommandArgs("thread:follow-up-queue-paused", [
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_pause_1",
+        threadId: "thr_1",
+        paused: true,
+        expectedHistoryRevision: 3,
+      },
+    ]),
   ).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("thread:follow-up-queue-paused", [{ threadId: "thr_1", paused: false }]),
+    validateRemoteCommandArgs("thread:follow-up-queue-paused", [
+      {
+        principalId: "user_1",
+        clientCommandId: "follow_up_resume_1",
+        threadId: "thr_1",
+        paused: false,
+        expectedHistoryRevision: 3,
+      },
+    ]),
   ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:follow-up-queue-paused", [{ threadId: "thr_1" }])).toMatchObject({
     ok: false,
   });
+  expect(
+    validateRemoteCommandArgs("thread:update-runtime-config", [
+      {
+        principalId: "user_1",
+        clientCommandId: "runtime_config_1",
+        threadId: "thr_1",
+        runtimeConfig: { sessionMode: "agent" },
+        expectedHistoryRevision: 3,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:update-runtime-config", [
+      { threadId: "thr_1", runtimeConfig: { sessionMode: "agent" } },
+    ]),
+  ).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("center-server:sign-in", [])).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("candidate-model:list", ["provider-1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("candidate-model:list", [])).toMatchObject({ ok: false });
@@ -233,7 +406,7 @@ test("registers git remote command definitions", () => {
   expect(validateRemoteCommandArgs("git:fetch", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
   expect(isRemoteCommandChannel("git:pull")).toBe(true);
   expect(validateRemoteCommandArgs("git:pull", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
-  expect(isRemoteCommandChannel("thread:todo-list")).toBe(true);
+  expect(isRemoteCommandChannel("thread:todo-list")).toBe(false);
   expect(isRemoteCommandChannel("workspace:list-package-scripts")).toBe(true);
   expect(isRemoteCommandChannel("workspace:save-package-script-args")).toBe(true);
   expect(isRemoteCommandChannel("workspace:start-package-script")).toBe(true);

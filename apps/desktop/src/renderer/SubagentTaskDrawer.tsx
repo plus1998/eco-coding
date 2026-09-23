@@ -27,7 +27,6 @@ import type {
   ImageGenerationArtifact,
   ThreadPendingPlan,
   ThreadRunProjectionSnapshot,
-  ThreadRunProjectionTimelineItem,
   ThreadStatus,
   WorkspaceDiffResult,
 } from "../shared/ipc";
@@ -43,7 +42,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { SshBookmarksPanel } from "./SshBookmarksPanel";
-import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
+import type { ThreadRunProjectionSubagentCard } from "./conversation-v2-projection-view";
 import { useEcoWorkspaceFileDiffLoader, WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
 import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
@@ -101,15 +100,6 @@ function TaskBrowserTabIcon({ faviconUrl, label }: { faviconUrl?: string; label:
 }
 
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
-
-type SubagentDetailState = {
-  threadId: string;
-  agentId: string;
-  agent: ThreadRunProjectionSubagentCard["agent"];
-  timeline: ThreadRunProjectionTimelineItem[];
-  hasEarlier: boolean;
-  beforeSequence?: number;
-};
 
 const emptyRequestSpansById = new Map<string, ProjectionRequestSpan>();
 
@@ -278,36 +268,8 @@ function useStableSubagentRequestSpansById(
   return snapshot.spansById;
 }
 
-function mergeDetailTimeline(
-  current: readonly ThreadRunProjectionTimelineItem[],
-  incoming: readonly ThreadRunProjectionTimelineItem[],
-): ThreadRunProjectionTimelineItem[] {
-  const byId = new Map(current.map((item) => [item.id, item]));
-  for (const item of incoming) {
-    byId.set(item.id, item);
-  }
-  return [...byId.values()].sort(
-    (left, right) => left.sequence - right.sequence || left.at.localeCompare(right.at),
-  );
-}
-
-function detailTimelineNeedsMerge(
-  current: readonly ThreadRunProjectionTimelineItem[],
-  incoming: readonly ThreadRunProjectionTimelineItem[],
-): boolean {
-  if (incoming.length === 0) {
-    return false;
-  }
-  const currentById = new Map(current.map((item) => [item.id, item]));
-  return incoming.some((item) => {
-    const existing = currentById.get(item.id);
-    return !existing || existing.sequence !== item.sequence || existing.text !== item.text;
-  });
-}
-
 function SubagentProjectionDetail({
   card,
-  projection,
   requestSpansById,
   threadActive,
 }: {
@@ -315,208 +277,16 @@ function SubagentProjectionDetail({
   projection?: ThreadRunProjectionSnapshot;
   requestSpansById: Map<string, ProjectionRequestSpan>;
   threadActive: boolean;
+  v2Only?: boolean;
 }) {
-  const { t } = useTranslation();
-  const threadId = projection?.thread.threadId;
-  const [detail, setDetail] = useState<SubagentDetailState>();
-  const [loading, setLoading] = useState(false);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [error, setError] = useState<string>();
-  const detailRef = useRef<SubagentDetailState | undefined>(undefined);
-  const refreshInFlightRef = useRef(false);
-  const feedSequence = useMemo(() => {
-    if (!projection) return undefined;
-    let maximum: number | undefined;
-    for (const item of [...projection.timeline, ...projection.agents.flatMap((agent) => agent.timeline)]) {
-      maximum = maximum === undefined ? item.sequence : Math.max(maximum, item.sequence);
-    }
-    return maximum;
-  }, [projection]);
-  const detailSequence = detail?.timeline.at(-1)?.sequence;
-
-  useEffect(() => {
-    detailRef.current = detail;
-  }, [detail]);
-
-  useEffect(() => {
-    if (!threadId || !window.eco?.getThreadRunProjectionDetail) {
-      setDetail(undefined);
-      setError(threadId ? t("task.detailUnavailable") : undefined);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(undefined);
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId,
-        kind: "agent",
-        key: card.agent.agentId,
-        tail: true,
-        limit: 500,
-      })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result?.agent) {
-          setDetail(undefined);
-          setError(t("task.detailNotFound"));
-          return;
-        }
-        setDetail({
-          threadId,
-          agentId: card.agent.agentId,
-          agent: result.agent,
-          timeline: mergeDetailTimeline(card.agent.timeline, result.timeline),
-          hasEarlier: result.hasEarlier === true,
-          ...(result.previousBeforeSequence !== undefined
-            ? { beforeSequence: result.previousBeforeSequence }
-            : {}),
-        });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setDetail(undefined);
-          setError(cause instanceof Error ? cause.message : String(cause));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [card.agent.agentId, threadId]);
-
-  useEffect(() => {
-    void detailSequence;
-    void feedSequence;
-    const current = detailRef.current;
-    if (
-      !threadId ||
-      !current ||
-      current.threadId !== threadId ||
-      current.agentId !== card.agent.agentId ||
-      refreshInFlightRef.current ||
-      !window.eco?.getThreadRunProjectionDetail
-    ) {
-      return;
-    }
-    if (detailTimelineNeedsMerge(current.timeline, card.agent.timeline)) {
-      const timeline = mergeDetailTimeline(current.timeline, card.agent.timeline);
-      setDetail((previous) =>
-        previous && previous.threadId === threadId && previous.agentId === card.agent.agentId
-          ? {
-              ...previous,
-              agent: { ...previous.agent, ...card.agent, timeline },
-              timeline,
-            }
-          : previous,
-      );
-    }
-    const afterSequence = current.timeline.at(-1)?.sequence;
-    if (afterSequence === undefined) {
-      return;
-    }
-    refreshInFlightRef.current = true;
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId,
-        kind: "agent",
-        key: card.agent.agentId,
-        afterSequence,
-        limit: 500,
-      })
-      .then((result) => {
-        if (!result?.agent || result.timeline.length === 0) return;
-        const resultAgent = result.agent;
-        setDetail((previous) =>
-          previous && previous.threadId === threadId && previous.agentId === card.agent.agentId
-            ? {
-                ...previous,
-                agent: resultAgent,
-                timeline: mergeDetailTimeline(previous.timeline, result.timeline),
-              }
-            : previous,
-        );
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => {
-        refreshInFlightRef.current = false;
-      });
-  }, [card.agent.agentId, card.agent.timeline, detailSequence, feedSequence, threadId]);
-
-  const loadEarlier = useCallback(() => {
-    const current = detailRef.current;
-    if (
-      !current?.hasEarlier ||
-      current.beforeSequence === undefined ||
-      !window.eco?.getThreadRunProjectionDetail
-    ) {
-      return;
-    }
-    setLoadingEarlier(true);
-    setError(undefined);
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId: current.threadId,
-        kind: "agent",
-        key: current.agentId,
-        beforeSequence: current.beforeSequence,
-        tail: true,
-        limit: 500,
-      })
-      .then((result) => {
-        if (!result?.agent) {
-          setError(t("task.earlierFailed"));
-          return;
-        }
-        const resultAgent = result.agent;
-        setDetail((previous) =>
-          previous
-            ? {
-                ...previous,
-                agent: resultAgent,
-                timeline: mergeDetailTimeline(result.timeline, previous.timeline),
-                hasEarlier: result.hasEarlier === true,
-                ...(result.previousBeforeSequence !== undefined
-                  ? { beforeSequence: result.previousBeforeSequence }
-                  : {}),
-              }
-            : previous,
-        );
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setLoadingEarlier(false));
-  }, []);
-
-  const resolvedAgent = detail ? { ...card.agent, ...detail.agent, timeline: detail.timeline } : card.agent;
-
   return (
-    <>
-      {detail?.hasEarlier ? (
-        <button
-          type="button"
-          className="task-panel-load-earlier"
-          disabled={loadingEarlier}
-          onClick={loadEarlier}
-        >
-          {loadingEarlier ? t("task.loadingEarlier") : t("task.loadEarlier")}
-        </button>
-      ) : null}
-      {loading ? <div className="subagent-task-detail-status">{t("task.loadingFull")}</div> : null}
-      {error ? <div className="subagent-task-detail-status is-error">{error}</div> : null}
-      <ProjectionSubagentDetailFeed
-        agent={resolvedAgent}
-        missionText={card.missionText}
-        requestSpansById={requestSpansById}
-        threadActive={threadActive}
-        {...(card.promptImages && { images: card.promptImages })}
-      />
-    </>
+    <ProjectionSubagentDetailFeed
+      agent={card.agent}
+      missionText={card.missionText}
+      requestSpansById={requestSpansById}
+      threadActive={threadActive}
+      {...(card.promptImages && { images: card.promptImages })}
+    />
   );
 }
 
@@ -869,6 +639,7 @@ export function SubagentTaskDrawer({
   fullscreen,
   cards,
   projection,
+  v2Only = false,
   plan,
   activeTab,
   openTabIds,
@@ -917,6 +688,8 @@ export function SubagentTaskDrawer({
   fullscreen: boolean;
   cards: readonly ThreadRunProjectionSubagentCard[];
   projection?: ThreadRunProjectionSnapshot;
+  /** When true, agent detail is already complete in the V2 renderer state. */
+  v2Only?: boolean;
   plan?: ThreadPendingPlan;
   activeTab: TaskPanelActiveTab;
   openTabIds: readonly TaskPanelActiveTab[];
@@ -1493,6 +1266,7 @@ export function SubagentTaskDrawer({
                 {...(projection && { projection })}
                 requestSpansById={requestSpansById}
                 threadActive={isThreadActive(threadStatus ?? projection?.thread.status)}
+                v2Only={v2Only}
               />
             </div>
           </div>

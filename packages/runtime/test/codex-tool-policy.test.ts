@@ -175,6 +175,17 @@ test("ask sessionMode forces readOnly even if orchestration is workspace-write",
   expect(effective.sandboxPolicy).toBe("readOnly");
 });
 
+test("plan sessionMode always forces readOnly even if orchestration grants full access", () => {
+  const effective = resolveEffectiveTurnSandbox({
+    sessionMode: "plan",
+    orchestrationPolicy: normalizeEcoToolPolicy({
+      sandboxMode: "danger-full-access",
+      approvalPolicy: "never",
+    }),
+  });
+  expect(effective).toEqual({ sandboxPolicy: "readOnly", approvalPolicy: "never" });
+});
+
 test("agent sessionMode uses orchestration danger-full-access", () => {
   const effective = resolveEffectiveTurnSandbox({
     sessionMode: "agent",

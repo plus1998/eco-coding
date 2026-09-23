@@ -8,12 +8,13 @@ import {
 } from "@eco/runtime";
 import { repairActivityText } from "../shared/activity-text";
 import type { AgentRole } from "../shared/ipc";
+import type { ThreadRunEventInput } from "../shared/thread-run-events";
 import { resolveActivityAgentId, shouldOmitAcpRootActivityAgentId } from "./activity-agent-id";
 import type { AgentLifecycleService } from "./agent-lifecycle-service";
 import type { ContextLifecycleService } from "./context-lifecycle-service";
 import type { ConversationStore } from "./conversation-store";
 import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliation";
-import { type SdkLocalStreamUpdate, SdkStreamActivityBridge } from "./sdk-stream-activity";
+import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { getThreadSubagentLaunchRegistry } from "./subagent-launch-registry-store";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import {
@@ -64,7 +65,6 @@ export interface SdkStreamActivityIngestionDeps {
       detail?: string;
     },
   ) => void;
-  onLocalStreamUpdate?: (update: SdkLocalStreamUpdate & { observedAt: string }) => void;
   onBrowserToolStarted?: (input: { threadId: string; payload: Record<string, unknown> }) => void;
   buildBashApprovalMetadata?: ThreadRunEventLivePersistDeps["buildBashApprovalMetadata"];
   createEventId?: ThreadRunEventLivePersistDeps["createEventId"];
@@ -78,6 +78,10 @@ export interface SdkStreamActivityIngestionDeps {
     stream: boolean,
     extras?: ThreadRunEventLivePersistExtras,
   ) => void;
+}
+
+function appendRuntimeEvent(store: ConversationStore, event: ThreadRunEventInput): void {
+  store.appendConversationRuntimeEvent(event);
 }
 
 type ThreadRunEventLivePersistDeps = Parameters<typeof createThreadRunEventLivePersister>[0];
@@ -243,7 +247,8 @@ export function createSdkStreamActivityIngestion(
         role,
         parentToolUseId,
       });
-      deps.store.appendThreadRunEvent(
+      appendRuntimeEvent(
+        deps.store,
         buildSubagentLifecycleRunEvent({
           threadId,
           agentId,
@@ -258,7 +263,8 @@ export function createSdkStreamActivityIngestion(
         }),
       );
       if (prompt) {
-        deps.store.appendThreadRunEvent(
+        appendRuntimeEvent(
+          deps.store,
           buildSubagentMissionAttributedRunEvent({
             threadId,
             agentId,
@@ -284,7 +290,8 @@ export function createSdkStreamActivityIngestion(
     }
     deps.metricsRegistry.onSubagentStop(threadId, { agentId, role });
     deps.store.markSubagentSessionStopped(threadId, agentId);
-    deps.store.appendThreadRunEvent(
+    appendRuntimeEvent(
+      deps.store,
       buildSubagentLifecycleRunEvent({
         threadId,
         agentId,
@@ -342,7 +349,8 @@ export function createSdkStreamActivityIngestion(
     }
     deps.metricsRegistry.onSubagentStop(threadId, { agentId: input.agentId, role });
     deps.store.markSubagentSessionStopped(threadId, input.agentId);
-    deps.store.appendThreadRunEvent(
+    appendRuntimeEvent(
+      deps.store,
       buildSubagentLifecycleRunEvent({
         threadId,
         agentId: input.agentId,
@@ -364,7 +372,11 @@ export function createSdkStreamActivityIngestion(
     event: AgentEventLike,
     observedAt: string,
   ): boolean {
-    if (event.type !== "agent.completed" || !isRecord(event.payload) || event.payload.type !== "agent_output") {
+    if (
+      event.type !== "agent.completed" ||
+      !isRecord(event.payload) ||
+      event.payload.type !== "agent_output"
+    ) {
       return false;
     }
     const failed =
@@ -375,8 +387,12 @@ export function createSdkStreamActivityIngestion(
     const parentToolUseId =
       typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id.trim() : undefined;
     const outputAgentId =
-      (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) || event.agentId?.trim() || "";
-    const linked = parentToolUseId ? resolveSubagentInstanceByParentToolUseId(threadId, parentToolUseId) : undefined;
+      (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) ||
+      event.agentId?.trim() ||
+      "";
+    const linked = parentToolUseId
+      ? resolveSubagentInstanceByParentToolUseId(threadId, parentToolUseId)
+      : undefined;
     const existing =
       (outputAgentId
         ? deps.store.listAgentInstances(threadId).find((row) => row.agentId === outputAgentId)
@@ -392,7 +408,7 @@ export function createSdkStreamActivityIngestion(
           ? event.payload.subagent_type
           : typeof event.role === "string"
             ? event.role
-            : existing?.role ?? "";
+            : (existing?.role ?? "");
     const role =
       normalizeSdkSubagentType(rawRole) ??
       (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
@@ -529,14 +545,13 @@ export function createSdkStreamActivityIngestion(
     // ACP root turns stamp a per-run UUID that never becomes an Eco agent Card —
     // drop it so thread-run events stay `scope: main` and the Feed skeleton tracks them.
     // (`resolveActivityAgentId` already omits, but `?? streamAttributedAgentId` would reintroduce it.)
-    const activityAgentId =
-      shouldOmitAcpRootActivityAgentId({
-        coreKind,
-        eventAgentId: event.agentId,
-        parentToolUseId: sdkParentToolUseId,
-      })
-        ? undefined
-        : resolvedActivityAgentId;
+    const activityAgentId = shouldOmitAcpRootActivityAgentId({
+      coreKind: coreKind ?? null,
+      eventAgentId: event.agentId ?? null,
+      parentToolUseId: sdkParentToolUseId ?? null,
+    })
+      ? undefined
+      : resolvedActivityAgentId;
 
     const logicalRequestId = readSdkEventLogicalRequestId(event);
     if (logicalRequestId) {
@@ -619,12 +634,6 @@ export function createSdkStreamActivityIngestion(
         ...(activityAgentId && { activityAgentId }),
         ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
         ...(runAttemptId && { runAttemptId }),
-        ...(deps.onLocalStreamUpdate
-          ? {
-              onLocalStreamUpdate: (update: SdkLocalStreamUpdate) =>
-                deps.onLocalStreamUpdate!({ ...update, observedAt }),
-            }
-          : {}),
       },
     );
   }
@@ -725,8 +734,7 @@ export function piCompactionStatusInput(event: AgentEventLike): {
   const tokensBefore = typeof payload.tokensBefore === "number" ? payload.tokensBefore : undefined;
   const tokensAfter =
     typeof payload.estimatedTokensAfter === "number" ? payload.estimatedTokensAfter : undefined;
-  const failedDetail =
-    typeof payload.message === "string" && payload.message ? payload.message : undefined;
+  const failedDetail = typeof payload.message === "string" && payload.message ? payload.message : undefined;
   const delta =
     stage === "completed" && tokensBefore !== undefined && tokensAfter !== undefined
       ? `${formatContextLimit(tokensBefore)} → ${formatContextLimit(tokensAfter)}`

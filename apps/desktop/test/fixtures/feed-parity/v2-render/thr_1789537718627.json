@@ -1,0 +1,1647 @@
+{
+  "feed": [
+    {
+      "text": "<text#9274c509ef:len62>",
+      "role": "user",
+      "at": "2026-09-16T05:48:38.630Z",
+      "callId": null
+    },
+    {
+      "text": "<text#75c4977d2d:len33>",
+      "role": "thinking",
+      "at": "2026-09-16T05:48:42.593Z",
+      "callId": null
+    },
+    {
+      "text": "<text#c1bbd241d3:len64>",
+      "role": "planner",
+      "at": "2026-09-16T05:48:43.908Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:48:45.613Z",
+      "callId": "call_46x3RRPnjt7n4wRWG3B36ldi|fc_00b88f6d680f909b016aaa2dbcbc7c87d0915165fe33867466",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:48:45.623Z",
+      "callId": "call_bwmq1DQRVxrBrVmCuDIZBIpI|fc_00b88f6d680f909b016aaa2dbcbc8c87d09e164cc925775e1f",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:48:45.629Z",
+      "callId": "call_r41yq4rvNS4z2GI7I09crTg5|fc_00b88f6d680f909b016aaa2dbcbc9487d0abd890e27633ea5a",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#6fd594f61b:len36>",
+      "role": "thinking",
+      "at": "2026-09-16T05:49:08.923Z",
+      "callId": null
+    },
+    {
+      "text": "<text#543228639b:len87>",
+      "role": "planner",
+      "at": "2026-09-16T05:49:09.467Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:14.360Z",
+      "callId": "call_djcp95JkGQWo3cvUlHHPOgzR|fc_00b88f6d680f909b016aaa2dd99b2c87d0a949be46e0417f62",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:14.369Z",
+      "callId": "call_FlYjdDSKg9mMa2YuBUZ58yVT|fc_00b88f6d680f909b016aaa2dd99b3c87d0be073cc73111b797",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:14.372Z",
+      "callId": "call_Da74s098B3hfzMQBs4p7NwfN|fc_00b88f6d680f909b016aaa2dd99b4487d0b5a5836a7a7c4852",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:14.375Z",
+      "callId": "call_SW0IZoTOD5ugSb3xJawlG3Tj|fc_00b88f6d680f909b016aaa2dd99b4c87d0a41b9a68634e1021",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:14.379Z",
+      "callId": "call_25zLTTDCWCb3vvN7sj4yEtfI|fc_00b88f6d680f909b016aaa2dd99b5487d0a871f2b1744e46ac",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#08d861ac5f:len43>",
+      "role": "thinking",
+      "at": "2026-09-16T05:49:25.908Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:29.803Z",
+      "callId": "call_Soo405HPWeDGbAP51QNo3JFg|fc_00b88f6d680f909b016aaa2de90a0c87d08163fe082b2068c5",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:29.812Z",
+      "callId": "call_qvkWf44tNGv5XWdrXgh7Qzot|fc_00b88f6d680f909b016aaa2de90a2487d099edbddb8ad81e47",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:29.819Z",
+      "callId": "call_KS3xKIMls2hlVFrAtYrsDW1h|fc_00b88f6d680f909b016aaa2de90a3087d0ba06d9cca0fe91ec",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:29.823Z",
+      "callId": "call_EbACd4MtjNFGbXjVqU5ecw7C|fc_00b88f6d680f909b016aaa2de90a3c87d0ab93aab773013d85",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#313cbd0412:len52>",
+      "role": "thinking",
+      "at": "2026-09-16T05:49:33.860Z",
+      "callId": null
+    },
+    {
+      "text": "<text#add9d86e37:len133>",
+      "role": "planner",
+      "at": "2026-09-16T05:49:34.778Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:39.825Z",
+      "callId": "call_c2Jq8E7XpPsvdaFykhLneaDK|fc_00b88f6d680f909b016aaa2df31ca887d083e945d93c81fb0d",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:39.847Z",
+      "callId": "call_qMonp7Qfv0jWg1EqiHE8MXaT|fc_00b88f6d680f909b016aaa2df31cc087d0bb7475135e93f587",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:39.852Z",
+      "callId": "call_79YdGxotpsI8KRWQdWCIezN7|fc_00b88f6d680f909b016aaa2df31ccc87d0a7a1ed1b347ab22c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:39.858Z",
+      "callId": "call_HWSbSKU0fGQm2ao4V65Slhah|fc_00b88f6d680f909b016aaa2df31cd487d0a9eeb73aeedae289",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:39.863Z",
+      "callId": "call_D3t0Bv3MIQjiCUhXuXCCEJlm|fc_00b88f6d680f909b016aaa2df31cdc87d089fab39c55e5dc1e",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#64684d6b1a:len37>",
+      "role": "thinking",
+      "at": "2026-09-16T05:49:45.781Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:51.069Z",
+      "callId": "call_dEu8jJRbXK8dShoYbei7rpWu|fc_00b88f6d680f909b016aaa2dfe596487d09492015570b0c50e",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:51.086Z",
+      "callId": "call_dehXlqDd673j59IfWhRWGsWN|fc_00b88f6d680f909b016aaa2dfe597887d0bdea039498a45188",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:51.097Z",
+      "callId": "call_Bpk2Kzr9FbeO5XgJGAa4TbjC|fc_00b88f6d680f909b016aaa2dfe598087d0afae53e9e58ec2de",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:51.112Z",
+      "callId": "call_Frp71P3sKxZR9Tyejkr66cp2|fc_00b88f6d680f909b016aaa2dfe598887d081c2cb34b4941e58",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:49:51.120Z",
+      "callId": "call_vTjnTywwDBSdNmDoTdyYf8o4|fc_00b88f6d680f909b016aaa2dfe599087d0a797002fe5d2c552",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#d76558e8ad:len41>",
+      "role": "thinking",
+      "at": "2026-09-16T05:49:57.037Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:01.820Z",
+      "callId": "call_9tO0YWGzBJvabZ3ZrhCaSMy6|fc_00b88f6d680f909b016aaa2e0905d887d08cb93c63fce8f690",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:01.826Z",
+      "callId": "call_MxKfXx4qiG3DhK1CnrTMwL2Z|fc_00b88f6d680f909b016aaa2e0905e887d0b2da1a069f5fca3c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:01.832Z",
+      "callId": "call_IaFRvASrXXMrFult48TQ0t5T|fc_00b88f6d680f909b016aaa2e0905f087d0b398b0baa12982d9",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:01.838Z",
+      "callId": "call_h37lGQe8no6hriEXGVWUW1tk|fc_00b88f6d680f909b016aaa2e0905f487d0a81a617587951831",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:01.845Z",
+      "callId": "call_phFENFi3IwO3ZpiPPZRWQ1QT|fc_00b88f6d680f909b016aaa2e0905fc87d0ae18cf896b165677",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#59878ab509:len39>",
+      "role": "thinking",
+      "at": "2026-09-16T05:50:10.143Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:15.918Z",
+      "callId": "call_ufxL2RmG5CHSM4jJjlNnHt2s|fc_00b88f6d680f909b016aaa2e16301887d08c8b358a525b518c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:15.936Z",
+      "callId": "call_wCMprEGqXkJkFAf1BNQ4VFf6|fc_00b88f6d680f909b016aaa2e16303087d0aa8dcef09dd4077b",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:15.952Z",
+      "callId": "call_XOvdSg03p3OrfBeBH0fNl8n7|fc_00b88f6d680f909b016aaa2e16303887d0a802745d1e0a7005",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:15.959Z",
+      "callId": "call_dqb4ZAp48LGk8wlZHgLX6mOV|fc_00b88f6d680f909b016aaa2e16304087d0af588134d5ef2cf3",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:15.967Z",
+      "callId": "call_T0P1mPpRQyNaN71YCxLnHPKJ|fc_00b88f6d680f909b016aaa2e16304487d09f8cccf4f2173c1e",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#c63365181f:len44>",
+      "role": "thinking",
+      "at": "2026-09-16T05:50:22.929Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:27.375Z",
+      "callId": "call_4kit0lMxSQs8CBh5mT407SsQ|fc_00b88f6d680f909b016aaa2e22918887d0b3bba6923a5629f3",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:27.383Z",
+      "callId": "call_Su5m0w24mmn4qqL1WytAV8zV|fc_00b88f6d680f909b016aaa2e22919c87d08101d14f73cbd468",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:27.389Z",
+      "callId": "call_8gwkGxetZLFre0m90pTX3cWJ|fc_00b88f6d680f909b016aaa2e2291a487d0bd3698e686c5ecc9",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:27.397Z",
+      "callId": "call_t2X4eJRMwmsP2zADssRUdHJK|fc_00b88f6d680f909b016aaa2e2291ac87d0823c9df447780013",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:27.409Z",
+      "callId": "call_mCBxoqMODEVhnO8cC4Cehy4f|fc_00b88f6d680f909b016aaa2e2291b487d08e55d6e7e273ad2e",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#6c71d0fc8d:len143>\n\n<text#4cafa50b4c:len45>",
+      "role": "thinking",
+      "at": "2026-09-16T05:50:43.744Z",
+      "callId": null
+    },
+    {
+      "text": "<text#e545199167:len222>",
+      "role": "planner",
+      "at": "2026-09-16T05:50:45.306Z",
+      "callId": null
+    },
+    {
+      "text": "<text#fa4c735f32:len41>",
+      "role": "thinking",
+      "at": "2026-09-16T05:50:46.386Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:50.133Z",
+      "callId": "call_LIpkuVWahwWC8Azi2nQyvrl8|fc_00b88f6d680f909b016aaa2e39544c87d09cc2309e3900f296",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:50.143Z",
+      "callId": "call_ZqQtV1ypHbjg7BqdD3YT2ozE|fc_00b88f6d680f909b016aaa2e39545c87d0b6c82ea2b7d011dc",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:50.158Z",
+      "callId": "call_yalAbXTAgBx1su53pAAZYxCL|fc_00b88f6d680f909b016aaa2e39546487d080ffa9a44195d759",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:50.186Z",
+      "callId": "call_Upo3xYBoxuddnlsR3en1Ra8Z|fc_00b88f6d680f909b016aaa2e39546c87d0ac7f7e88950c7474",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:50:50.201Z",
+      "callId": "call_yjyAVYZexxaJW09h0Bs2aMrM|fc_00b88f6d680f909b016aaa2e39547487d084bdb8eff481eb8f",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#059e5c2bdd:len104>",
+      "role": "thinking",
+      "at": "2026-09-16T05:51:06.974Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:09.780Z",
+      "callId": "call_ph9yI9IKiD0REC1YkzDlu8N4|fc_00b88f6d680f909b016aaa2e4d0c8887d09d85c67ffba5acbf",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:09.835Z",
+      "callId": "call_WsLSb6sDfyqaAICnrzkNz05H|fc_00b88f6d680f909b016aaa2e4d0c9c87d0b2ba5bd9a227caf8",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:09.850Z",
+      "callId": "call_sfGuUAwyFmhaZ3ZcaTFoYD0c|fc_00b88f6d680f909b016aaa2e4d0ca487d09a79fcd02799e573",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:09.868Z",
+      "callId": "call_P4wyQixS0UuHQsmFSwVjN902|fc_00b88f6d680f909b016aaa2e4d0cb087d0a18ce82b7c572b13",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:09.875Z",
+      "callId": "call_OLW9sj7jc6zloWYncbVVClRu|fc_00b88f6d680f909b016aaa2e4d0cb887d0acb49c8986222dd6",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:31.101Z",
+      "callId": "call_omWRPExnWmwlBrX4XAp6fvoy|fc_00b88f6d680f909b016aaa2e62375087d0a74cf900dc151f63",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:31.118Z",
+      "callId": "call_dxzKW6kkFDJaXTI2IwOSI3LS|fc_00b88f6d680f909b016aaa2e62376487d0b6195b9100e561f7",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:31.129Z",
+      "callId": "call_fwTppjL39HLkPrKoYSQrbudr|fc_00b88f6d680f909b016aaa2e62376c87d0966591af981c55d1",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:31.138Z",
+      "callId": "call_PmiEIzbFOVrhZ4M13PornDWS|fc_00b88f6d680f909b016aaa2e62377087d0b187299c0f4c6459",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#e809690aca:len87>",
+      "role": "thinking",
+      "at": "2026-09-16T05:51:43.284Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:46.985Z",
+      "callId": "call_g2FSkgKxkz6hff64MbnfFFdN|fc_00b88f6d680f909b016aaa2e72400c87d0afc9db864063ae8b",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:47.011Z",
+      "callId": "call_vicEE0bYLvApz9znvVetrjuy|fc_00b88f6d680f909b016aaa2e72401c87d084b757fc0982c9d2",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:47.032Z",
+      "callId": "call_PXsezKBsjGvMeDeXFaeTKlWw|fc_00b88f6d680f909b016aaa2e72402487d08d1ce0211141143d",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:51:47.058Z",
+      "callId": "call_5fos9BsyMtX67bWwVPz0TOoP|fc_00b88f6d680f909b016aaa2e72402c87d0b1f16e1d1750009b",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#1cc3db0afd:len113>",
+      "role": "planner",
+      "at": "2026-09-16T05:52:01.360Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:05.116Z",
+      "callId": "call_8A7lQ9jxDD83jhOBomJJbFAa|fc_00b88f6d680f909b016aaa2e8462d487d087bde7a30c770671",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:05.138Z",
+      "callId": "call_yYmd23bbvmDRQS5wyHyr59FG|fc_00b88f6d680f909b016aaa2e8462e887d0aa4dea46ae409c75",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:05.173Z",
+      "callId": "call_1cpc6Lm1MrLI5rOxHUZskkuJ|fc_00b88f6d680f909b016aaa2e8462f087d0821acfd769b2ae15",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:05.192Z",
+      "callId": "call_WAEUO9LiCxiFpzOtlDNGPREG|fc_00b88f6d680f909b016aaa2e8462f887d0abcaf7e5d4b52054",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#ef3e1b67f1:len31>",
+      "role": "thinking",
+      "at": "2026-09-16T05:52:21.376Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:26.116Z",
+      "callId": "call_4oc2mKNVRsSJ5hKLZ3GfmxOG|fc_00b88f6d680f909b016aaa2e989b3887d0baaee5523954909c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:26.139Z",
+      "callId": "call_yLUpSYPEAUUnAbUvamWb3jhV|fc_00b88f6d680f909b016aaa2e989ba487d0902e331a51a7ed20",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:26.161Z",
+      "callId": "call_V6W3IcRjmrEsFnKEf36e5LUo|fc_00b88f6d680f909b016aaa2e989bac87d0942250dda23a21b4",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:26.182Z",
+      "callId": "call_edJ9Aw0HCOBrO3rIST6jQsna|fc_00b88f6d680f909b016aaa2e989bb487d09f4ee4bcf56862a5",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#bc7d0dc2d2:len39>",
+      "role": "thinking",
+      "at": "2026-09-16T05:52:34.642Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:52:35.138Z",
+      "callId": "call_ATeieMF8TjUbBfHmv8E8zVcq|fc_00b88f6d680f909b016aaa2ea2521087d0b85d326e5a2ddda0",
+      "status": "tool.failed"
+    },
+    {
+      "text": "<text#18d6a9b6dc:len46>",
+      "role": "thinking",
+      "at": "2026-09-16T05:53:02.329Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:02.945Z",
+      "callId": "call_CIaSBSP0fqlsB1sRFhECJcoc|fc_00b88f6d680f909b016aaa2ebdfde887d0a572798700c455c0",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:11.179Z",
+      "callId": "call_1KNSeuglMY3JEufksSUjK2WT|fc_00b88f6d680f909b016aaa2ec5ba4c87d0984eecc5107d11a9",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:17.393Z",
+      "callId": "call_BKggr7RnKgRlP2YhPyehUgH3|fc_00b88f6d680f909b016aaa2ecc3d8887d08299ee5e615a29ca",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#6086a78a41:len53>",
+      "role": "thinking",
+      "at": "2026-09-16T05:53:35.726Z",
+      "callId": null
+    },
+    {
+      "text": "<text#3346482c69:len158>",
+      "role": "planner",
+      "at": "2026-09-16T05:53:36.944Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:45.236Z",
+      "callId": "call_YJgRjfuqJGvzaOAVfjbYiP8t|fc_00b88f6d680f909b016aaa2ee5f4e087d0b22a23aff74efbc9",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:45.262Z",
+      "callId": "call_CFntmM026A57l1yitwfQfBKU|fc_00b88f6d680f909b016aaa2ee5f4f487d088565d0b7e58cacc",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:45.271Z",
+      "callId": "call_JL0gl3noycMV2wWW79WNV9S1|fc_00b88f6d680f909b016aaa2ee5f50087d08d14b69c13b7ab92",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:45.283Z",
+      "callId": "call_XRxDwi3MoIh9aMkCluBtIcfm|fc_00b88f6d680f909b016aaa2ee5f50887d08ef76065029ec2b6",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:45.314Z",
+      "callId": "call_L12kSGUU9MWlvZFJTA5MT1lb|fc_00b88f6d680f909b016aaa2ee5f51087d09ab897020a8d72dd",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:53:53.464Z",
+      "callId": "call_UhJsQC0bCyznz7JIlP8ce94S|fc_00b88f6d680f909b016aaa2eefafc487d0add758ab79c43150",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#fe1b00a848:len144>",
+      "role": "thinking",
+      "at": "2026-09-16T05:54:11.372Z",
+      "callId": null
+    },
+    {
+      "text": "<text#497839ffa2:len121>",
+      "role": "planner",
+      "at": "2026-09-16T05:54:18.141Z",
+      "callId": null
+    },
+    {
+      "text": "<text#1f42a2decf:len34>",
+      "role": "thinking",
+      "at": "2026-09-16T05:54:18.243Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:54:23.627Z",
+      "callId": "call_im9nW12KBhtDxOtHbBwsEvjt|fc_00b88f6d680f909b016aaa2f05a69887d0a9a127c4c50b4bad",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:54:49.225Z",
+      "callId": "call_RlRGjpXGupCCIBuRNB29MQnt|fc_00b88f6d680f909b016aaa2f17a29887d092ef2b65426c5e1a",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#fc0ab1fb31:len32>",
+      "role": "thinking",
+      "at": "2026-09-16T05:54:56.820Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:55:01.145Z",
+      "callId": "call_VFbEaS6hV5930aXZsieXRmpa|fc_00b88f6d680f909b016aaa2f30430487d099efe89d5e0e615b",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#5985a76fd7:len38>",
+      "role": "thinking",
+      "at": "2026-09-16T05:55:08.523Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:55:10.564Z",
+      "callId": "call_DndWfbPNMn1A2oYRYqHY5Fyh|fc_00b88f6d680f909b016aaa2f3db8a887d0b6736e2d290069b4",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:55:10.600Z",
+      "callId": "call_WaHsiC3FkUThue912JXrvf9S|fc_00b88f6d680f909b016aaa2f3db8b887d09e01234acc8c63a0",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#056d7e74df:len86>",
+      "role": "thinking",
+      "at": "2026-09-16T05:55:29.823Z",
+      "callId": null
+    },
+    {
+      "text": "<text#13c35d4e88:len82>",
+      "role": "planner",
+      "at": "2026-09-16T05:55:30.815Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:55:32.515Z",
+      "callId": "call_brHobhvibD329GmoFp04QTXh|fc_00b88f6d680f909b016aaa2f52b6d087d0a603e1686d869437",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:55:55.178Z",
+      "callId": "call_W1Emgix1SWVrZIMPSPARXIKf|fc_00b88f6d680f909b016aaa2f6a259c87d0811f933866a1ced1",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:56:04.166Z",
+      "callId": "call_PHhNWOug1oeSa499K8wiiF8v|fc_00b88f6d680f909b016aaa2f734f5087d088421509600d9d0b",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#4dbed5dea9:len25>",
+      "role": "thinking",
+      "at": "2026-09-16T05:56:39.622Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:56:40.246Z",
+      "callId": "call_cAEEoRZF0nbKJpuCswdFvMVr|fc_00b88f6d680f909b016aaa2f97424887d0889ef0e5775dfe78",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:56:50.104Z",
+      "callId": "call_kBHEyoLio70uXgSzyjTRVUvK|fc_00b88f6d680f909b016aaa2f9f4fa487d0a2faab76bd948799",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:57:09.826Z",
+      "callId": "call_wjQSh5On4SmWQqSxkSUjiRaj|fc_00b88f6d680f909b016aaa2fb46afc87d0b6e7639e83440257",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#2503ae3088:len54>",
+      "role": "thinking",
+      "at": "2026-09-16T05:57:29.611Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:57:30.091Z",
+      "callId": "call_JWNQyhYeyXgNzju9dBsvdnXa|fc_00b88f6d680f909b016aaa2fc939f087d09a2bd3c3f5b96a92",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#99af75c263:len37>",
+      "role": "thinking",
+      "at": "2026-09-16T05:57:48.687Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:57:49.300Z",
+      "callId": "call_ghybmMsL106ekax1FRzg6nEz|fc_00b88f6d680f909b016aaa2fdc11b887d0b7353ed25b83d395",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#5b4dd424d1:len81>",
+      "role": "thinking",
+      "at": "2026-09-16T05:58:03.134Z",
+      "callId": null
+    },
+    {
+      "text": "<text#8bb1990a7b:len168>",
+      "role": "planner",
+      "at": "2026-09-16T05:58:07.052Z",
+      "callId": null
+    },
+    {
+      "text": "<text#e4a0f67480:len37>",
+      "role": "thinking",
+      "at": "2026-09-16T05:58:07.120Z",
+      "callId": null
+    },
+    {
+      "text": "<text#bba61ebc09:len142>",
+      "role": "planner",
+      "at": "2026-09-16T05:58:07.679Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:08.944Z",
+      "callId": "call_89E5BH12bwGkHsHpPyK5kH27|fc_00b88f6d680f909b016aaa2fee7d7887d09f26cfd384135bd7",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#d981997bb3:len37>",
+      "role": "thinking",
+      "at": "2026-09-16T05:58:17.669Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:21.192Z",
+      "callId": "call_dX7diyJJju3C36915M0iKjuB|fc_00b88f6d680f909b016aaa2ffc2c9087d08281f546627a4765",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:21.240Z",
+      "callId": "call_uKOaoeItnCPyG6RBYCTiw4Ga|fc_00b88f6d680f909b016aaa2ffc2ca487d0839489900349c218",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:21.275Z",
+      "callId": "call_ysyGfV61s6gUVgKTiw8H3Qj7|fc_00b88f6d680f909b016aaa2ffc2cac87d0b41f16d53845eb13",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#020c9538dc:len38>",
+      "role": "thinking",
+      "at": "2026-09-16T05:58:44.153Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:45.909Z",
+      "callId": "call_NGQwCyDtM38SCK6cKDXnbnwy|fc_00b88f6d680f909b016aaa3013cd7087d0b8574ae14efa5cb2",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#1cd20b92e4:len47>",
+      "role": "thinking",
+      "at": "2026-09-16T05:58:56.277Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:59.415Z",
+      "callId": "call_WEdjje9bFGLRd8BhHvodyQhi|fc_00b88f6d680f909b016aaa30227f5487d0aa0a976ea2c59c74",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:59.452Z",
+      "callId": "call_HMCrM0BrHHApii2FgJtPLMWs|fc_00b88f6d680f909b016aaa30227f6487d09dbee60f1e55ceef",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:58:59.498Z",
+      "callId": "call_UxexS85M9rmtHi23sLfqgWEl|fc_00b88f6d680f909b016aaa30227f6c87d0afcf098b69a991b2",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#ad04d1fd5b:len39>",
+      "role": "thinking",
+      "at": "2026-09-16T05:59:16.608Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:59:17.704Z",
+      "callId": "call_YAP2b3bEsnbVP5TiWyHbyrec|fc_00b88f6d680f909b016aaa3033c9a087d096b3485a3a8aa07d",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T05:59:31.944Z",
+      "callId": "call_PxKbA85Wv7VhSuY6FgYiErOl|fc_00b88f6d680f909b016aaa3040ceb487d0871c2cd1ed632208",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#cfee56fa63:len45>",
+      "role": "thinking",
+      "at": "2026-09-16T06:00:02.468Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:00:03.571Z",
+      "callId": "call_Fx9Nc4cQpUtlgcbriJYmLRxd|fc_00b88f6d680f909b016aaa3061950087d09d5cdf0713acf5c0",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:00:17.628Z",
+      "callId": "call_jJWp47k8TegVfBzRvjiFvGEp|fc_00b88f6d680f909b016aaa306bda3c87d0ac9de3aa6735e0e3",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#4067ed2408:len32>",
+      "role": "thinking",
+      "at": "2026-09-16T06:00:41.121Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:00:42.415Z",
+      "callId": "call_WbD68u8azf5uY8QNvDGpUIsv|fc_00b88f6d680f909b016aaa3088be2087d0872faf1b34cd3a71",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:00:58.444Z",
+      "callId": "call_HTloH4ItFOz42RFXyj8yZz2u|fc_00b88f6d680f909b016aaa3098d30c87d090a7cbd24f10fffc",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:01:20.657Z",
+      "callId": "call_1ej8hEiYiFMaJktFHQTpAPYX|fc_00b88f6d680f909b016aaa30ae864087d09a1d8e85f970cb89",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:01:48.026Z",
+      "callId": "call_8tXNhJO4QbczbR1Wyp0wL07D|fc_00b88f6d680f909b016aaa30c940f087d0a37e6a8611c0e511",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#3d5b057d74:len42>",
+      "role": "thinking",
+      "at": "2026-09-16T06:02:09.748Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:02:11.375Z",
+      "callId": "call_sTFEvOg5S3jTxUWCqBRo60rK|fc_00b88f6d680f909b016aaa30e1c1b087d0ad89fb08e5bfc926",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#7288e82051:len152>\n\n<text#c77418e417:len37>",
+      "role": "thinking",
+      "at": "2026-09-16T06:02:48.570Z",
+      "callId": null
+    },
+    {
+      "text": "<text#8f576953eb:len152>",
+      "role": "planner",
+      "at": "2026-09-16T06:02:53.073Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:02:55.385Z",
+      "callId": "call_oOk1ZCIZEracyhhiJsns8OWY|fc_00b88f6d680f909b016aaa310ae6e887d0a9991bd902ebe3b1",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:08.402Z",
+      "callId": "call_lmCAx2UmnNxKwNPA2i9924zZ|fc_00b88f6d680f909b016aaa3117929087d0a85f29918adf4298",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:19.455Z",
+      "callId": "call_terImslaEzPD9UFBDSuVGeXK|fc_00b88f6d680f909b016aaa3126894487d09572268e72f326c3",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:19.508Z",
+      "callId": "call_Sxg7g0HEy5E8rbwb6NaPYKl3|fc_00b88f6d680f909b016aaa3126895487d0a6dec38a9ab6bdd6",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:19.550Z",
+      "callId": "call_oK8VHggmPU7yOxBPJggVs9NT|fc_00b88f6d680f909b016aaa3126896087d0b887f58910785c9a",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#3e2f2cb372:len41>",
+      "role": "thinking",
+      "at": "2026-09-16T06:03:39.717Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:42.669Z",
+      "callId": "call_dhzqxGOal0BU4vexSwNGuSru|fc_00b88f6d680f909b016aaa313de13c87d0b7c880f68b86557f",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:42.718Z",
+      "callId": "call_nNFAwH5Net142MEFZLRKPzMj|fc_00b88f6d680f909b016aaa313de15887d0abc29a27c1c49f93",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:42.776Z",
+      "callId": "call_SPhkGwwvPoilMH0dweQH9opM|fc_00b88f6d680f909b016aaa313de16887d0887f215c9422ebf3",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#8446c3e542:len36>",
+      "role": "thinking",
+      "at": "2026-09-16T06:03:51.948Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:03:53.429Z",
+      "callId": "call_Pw6W6XZ9WJq69Oen58ncMD94|fc_00b88f6d680f909b016aaa3147990087d0a30fc666f8929ca1",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:07.532Z",
+      "callId": "call_gDU8aLctxCcyfWPH0mUZejA9|fc_00b88f6d680f909b016aaa315639f887d0b160305a597f9492",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:07.598Z",
+      "callId": "call_jipeueWwn6U2TAzbnVGOFYIm|fc_00b88f6d680f909b016aaa31563a0887d09db3ea7a35be1785",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:07.639Z",
+      "callId": "call_5kq9YTnGs1kf0VfsMNBOcsXo|fc_00b88f6d680f909b016aaa31563a1087d08532fa76ad26dae3",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#be9af577a4:len927>",
+      "role": "planner",
+      "at": "2026-09-16T06:04:21.295Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#6c6c537f52:len74>",
+      "role": "user",
+      "at": "2026-09-16T06:04:26.273Z",
+      "callId": null
+    },
+    {
+      "text": "<text#8bfb58c0f8:len96>",
+      "role": "planner",
+      "at": "2026-09-16T06:04:36.759Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:42.743Z",
+      "callId": "call_eOrDBZahJ5Jmz3YQDll2XM7t|fc_00b88f6d680f909b016aaa3179baf887d08824cb6160821317",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:42.761Z",
+      "callId": "call_Zes2PbRVYaFdT2yW3qTGvXBo|fc_00b88f6d680f909b016aaa3179bb0c87d08475807b619c5e73",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:42.773Z",
+      "callId": "call_JtNW5NR1LojtBVEvaUWldSJa|fc_00b88f6d680f909b016aaa3179bb1887d093618e167bdfa2ef",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:42.797Z",
+      "callId": "call_QN8kvsjagEUkPMV2R688gNt6|fc_00b88f6d680f909b016aaa3179bb2087d086ea90debb888e9f",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:04:42.819Z",
+      "callId": "call_rj0SOg9Llyq5G7yC3egNTMGE|fc_00b88f6d680f909b016aaa3179bb2887d0a49b4b626fa9ba17",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#632f47fb27:len45>",
+      "role": "thinking",
+      "at": "2026-09-16T06:04:53.419Z",
+      "callId": null
+    },
+    {
+      "text": "<text#7f9b0e0b91:len175>",
+      "role": "planner",
+      "at": "2026-09-16T06:04:55.402Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:02.401Z",
+      "callId": "call_HAcm2THH4hxCYAYyIAImuDSY|fc_00b88f6d680f909b016aaa318c5e4087d09614c23d1a63df27",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:02.429Z",
+      "callId": "call_GZUizj2xo9pyJMwSZK3KunJg|fc_00b88f6d680f909b016aaa318c5e5487d0aaf011beaef1509a",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:02.444Z",
+      "callId": "call_ulOK3WfVxD3NIV6b4E5hFFFW|fc_00b88f6d680f909b016aaa318c5e6087d0b2c56d3929a5843a",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:02.457Z",
+      "callId": "call_woKtYtvRArctCHxVsoBGoM7C|fc_00b88f6d680f909b016aaa318c5e6887d0a0bf0eec0f665ede",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:02.484Z",
+      "callId": "call_PLW5LPQkMesG46rHCRooaApe|fc_00b88f6d680f909b016aaa318c5e7487d0bc71e2b97168119c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:02.509Z",
+      "callId": "call_VDiFHzJKBKhrEKCAwU4g1QnI|fc_00b88f6d680f909b016aaa318c5e7c87d091ce225134a3dd36",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:18.078Z",
+      "callId": "call_C0F82kLkPwOXZywi1HFZmt24|fc_00b88f6d680f909b016aaa319d2a4c87d081ae541b4c895934",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:18.102Z",
+      "callId": "call_gAWg72Blkgxvl3Y8KiMfcxJe|fc_00b88f6d680f909b016aaa319d2a5c87d08fa2972861a80aed",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:18.118Z",
+      "callId": "call_z9DefVYok87dOmpyka8M3DXD|fc_00b88f6d680f909b016aaa319d2a6487d08f3b2bca65430f93",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:18.137Z",
+      "callId": "call_LccaRzOHrrvMEbObqgPxdBC5|fc_00b88f6d680f909b016aaa319d2a6c87d09297d4c42c63116f",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:18.163Z",
+      "callId": "call_LknlMeqBOZtlCa88bWUmdH72|fc_00b88f6d680f909b016aaa319d2a7487d09014cbda8de116be",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:18.189Z",
+      "callId": "call_1Mvn37CakJNbNZvRgsOBZ1dU|fc_00b88f6d680f909b016aaa319d2a7c87d0b1b56bd4d4e2a106",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:36.548Z",
+      "callId": "call_XMgTSAfFIXUyAP7AJeR7pwMy|fc_00b88f6d680f909b016aaa31af1f0887d083e06c91d941b70c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:36.573Z",
+      "callId": "call_wRew3tBltvqZu4GuwIFoatCa|fc_00b88f6d680f909b016aaa31af1f1c87d09a0217906b44f1fe",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:36.588Z",
+      "callId": "call_U4bRSGNJhEFZerklg9GvEd0g|fc_00b88f6d680f909b016aaa31af1f2487d08b97dd344c4b6975",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:36.605Z",
+      "callId": "call_u5PTPXgXVrtaZBNrulYh3AEk|fc_00b88f6d680f909b016aaa31af1f3087d09a8cbc61c8a03e4a",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:36.635Z",
+      "callId": "call_9no3oaKba0ZF7SHnKeBYxKhZ|fc_00b88f6d680f909b016aaa31af1f3887d0a8a6a9b1e99a1cdd",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:36.663Z",
+      "callId": "call_uK4U7OoHjrQywpC5IK3dqqWo|fc_00b88f6d680f909b016aaa31af1f4087d0be0dd6afca42ab04",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#225754f8af:len42>",
+      "role": "thinking",
+      "at": "2026-09-16T06:05:46.854Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:05:47.570Z",
+      "callId": "call_sHIIRZnslxG152hgemKNPNYv|fc_00b88f6d680f909b016aaa31ba853087d0b46daeda1b628ccc",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#d114c01352:len90>",
+      "role": "thinking",
+      "at": "2026-09-16T06:06:04.305Z",
+      "callId": null
+    },
+    {
+      "text": "<text#72d1e7ec3a:len162>",
+      "role": "planner",
+      "at": "2026-09-16T06:06:07.080Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:13.019Z",
+      "callId": "call_TiG2jvMOUpN8VBsUxKRoS0mU|fc_00b88f6d680f909b016aaa31d3250887d0b8e9c710987aa6f2",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:13.065Z",
+      "callId": "call_hXAGQio0rrtZXOJUaiZOfQ0P|fc_00b88f6d680f909b016aaa31d3251c87d0b597f9a9dbb918b6",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:13.096Z",
+      "callId": "call_ZgpetGbWo6YpUyyFFPjLnJ7H|fc_00b88f6d680f909b016aaa31d3252887d0a3679ed06fb1b662",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:13.126Z",
+      "callId": "call_we3T5MPym707j1sTDoaI6Pmg|fc_00b88f6d680f909b016aaa31d3253087d08fcadbd9e9f287d9",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:13.156Z",
+      "callId": "call_EDntiLSe3sIipMgYbb38tDXf|fc_00b88f6d680f909b016aaa31d3253487d09e91a46174710dad",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:13.173Z",
+      "callId": "call_U4u4OQzoz7D34EtPqAA9OolH|fc_00b88f6d680f909b016aaa31d3253c87d0af72cc44c6f964cd",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#91f469a917:len45>",
+      "role": "thinking",
+      "at": "2026-09-16T06:06:43.704Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:06:44.181Z",
+      "callId": "call_GdtYcTnoL6Ub2rzNOQ1Ep8Pg|fc_00b88f6d680f909b016aaa31f312f087d0a2ad027b8423feba",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#51015ca804:len44>",
+      "role": "thinking",
+      "at": "2026-09-16T06:06:56.431Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:00.585Z",
+      "callId": "call_OOr8MtnaRg4rKhcurdBkdiwg|fc_00b88f6d680f909b016aaa32039eec87d0b081f0152d7fe316",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:00.779Z",
+      "callId": "call_sE0Be7QHraUGaPDFNwsGbQVk|fc_00b88f6d680f909b016aaa32039efc87d091ff368037e481ed",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:00.831Z",
+      "callId": "call_kuBt6nk6f0Z6MC8bSXt8QqUf|fc_00b88f6d680f909b016aaa32039f0887d0a7adada955acb6fe",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:00.886Z",
+      "callId": "call_vq21NZTQPJqsHuQTCbnqP2Dm|fc_00b88f6d680f909b016aaa32039f1087d0ad7af75d2f339f31",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#c47fc559f5:len40>",
+      "role": "thinking",
+      "at": "2026-09-16T06:07:13.680Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:21.291Z",
+      "callId": "call_0JaATuxiUgHzC0fGGmjQ5CwZ|fc_00b88f6d680f909b016aaa3215f20087d0adf709615e53db2c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:21.344Z",
+      "callId": "call_979XamZscKAEP9iL1uzQ2T3U|fc_00b88f6d680f909b016aaa3215f20c87d08c6376d6f177dcb4",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:21.382Z",
+      "callId": "call_tSu679wNxDdtzeVvXACdp4CQ|fc_00b88f6d680f909b016aaa3215f21487d0a13e5868117ffaaa",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:21.443Z",
+      "callId": "call_RcVuGckpqCBXMKPjNoXxQdez|fc_00b88f6d680f909b016aaa3215f21c87d0aaa6d5f4b361614e",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#bf22a46788:len41>",
+      "role": "thinking",
+      "at": "2026-09-16T06:07:32.509Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:39.707Z",
+      "callId": "call_prSExhsVZw6gVM1wxw7EQ35Y|fc_00b88f6d680f909b016aaa322af8ac87d0a2c670e7b905db3c",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:39.753Z",
+      "callId": "call_scNFI7IWoN5W9fGrkyK0CdO1|fc_00b88f6d680f909b016aaa322af8c087d0a24cd40400058f67",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:39.797Z",
+      "callId": "call_zVF4DK3qdWpOQETe9286SLFD|fc_00b88f6d680f909b016aaa322af8c887d0b9bbab56d412b105",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:07:39.833Z",
+      "callId": "call_CyHuNo6ufQeI8KqOTPbAXBP7|fc_00b88f6d680f909b016aaa322af8d087d0af689186fca278fd",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#8eed32ab51:len95>",
+      "role": "thinking",
+      "at": "2026-09-16T06:08:14.571Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:08:15.294Z",
+      "callId": "call_lu2yQKSMZ4spZF6beMw0Iwi0|fc_00b88f6d680f909b016aaa324e2e4c87d0b65ea221af7bbbc2",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#43e77c9297:len102>",
+      "role": "thinking",
+      "at": "2026-09-16T06:08:31.638Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:08:32.272Z",
+      "callId": "call_beQKKOP4dsO0tueZAXJsnIHL|fc_00b88f6d680f909b016aaa325f443c87d0a1be6859b3f52f8a",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#d6a47c9c78:len182>\n\n<text#1fc3bfa242:len90>",
+      "role": "thinking",
+      "at": "2026-09-16T06:09:21.071Z",
+      "callId": null
+    },
+    {
+      "text": "<text#4178332e12:len178>",
+      "role": "planner",
+      "at": "2026-09-16T06:09:23.041Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:09:28.079Z",
+      "callId": "call_4tHb63SWRnc4dnTSo97YJCLy|fc_00b88f6d680f909b016aaa3292c54c87d0afae121ab91e609a",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:10:13.142Z",
+      "callId": "call_EDJKWE8bfeTVg4f4T0EFon8p|fc_00b88f6d680f909b016aaa32bac79887d099b8cbf7a710e10e",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#e37fa9d89f:len41>",
+      "role": "thinking",
+      "at": "2026-09-16T06:10:28.890Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:10:31.405Z",
+      "callId": "call_2SWTGV9QWYu35zZUfsS1Y9yM|fc_00b88f6d680f909b016aaa32d46edc87d09c5f3b7c1df87514",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:11:12.022Z",
+      "callId": "call_wN8aOfK6ribWxILsfjY6uRVw|fc_00b88f6d680f909b016aaa32f8f8a487d0a68766a70ca2fac5",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#6d84d6d927:len137>",
+      "role": "thinking",
+      "at": "2026-09-16T06:11:39.595Z",
+      "callId": null
+    },
+    {
+      "text": "<text#7ad11089ec:len195>",
+      "role": "planner",
+      "at": "2026-09-16T06:11:41.105Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:11:51.477Z",
+      "callId": "call_yg555kn90uOomz4IcBTnzJu3|fc_00b88f6d680f909b016aaa331cdd0087d0be6f19998376cc5f",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#561a226a42:len32>",
+      "role": "thinking",
+      "at": "2026-09-16T06:12:25.418Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:12:25.891Z",
+      "callId": "call_lJNEay41ZWu5oH1MlCQtseNv|fc_00b88f6d680f909b016aaa3348db4487d0a04c4ff5a0beb73d",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#8b62ff553d:len37>",
+      "role": "thinking",
+      "at": "2026-09-16T06:12:42.367Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:12:44.860Z",
+      "callId": "call_tt3f7HLttZzCFuRribrqlLsG|fc_00b88f6d680f909b016aaa3359e64487d0b111016e993eb5b5",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:14:28.704Z",
+      "callId": "call_pMFb12RC6nATDUQIQLUtzyDR|fc_00b88f6d680f909b016aaa33bf97e087d0862478bf53c85ad9",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#0581089f2a:len33>",
+      "role": "thinking",
+      "at": "2026-09-16T06:14:44.231Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:14:44.729Z",
+      "callId": "call_LEX66cMSTohaDurZbHtcT4WX|fc_00b88f6d680f909b016aaa33d398d487d0a950a501c4f8a0c9",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:15:20.665Z",
+      "callId": "call_pxKqUr2QX6VTc3xFWMeHJayN|fc_00b88f6d680f909b016aaa33f729bc87d088f229649ef0a17f",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:15:40.023Z",
+      "callId": "call_t9Mq8YP19rGSPyJjW4UNAzIP|fc_00b88f6d680f909b016aaa3407a8b087d08dd163a6fc0d1f5d",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:16:26.027Z",
+      "callId": "call_kWhd9hMCfuqb373671DHvCgh|fc_00b88f6d680f909b016aaa3437698887d09b76628529269d18",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:16:46.315Z",
+      "callId": "call_H56AU4YMJRBRzsFdf6mLEc87|fc_00b88f6d680f909b016aaa3446f10087d0b512a42a46094dc5",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#39ebf89b7f:len40>",
+      "role": "thinking",
+      "at": "2026-09-16T06:17:57.951Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:18:04.553Z",
+      "callId": "call_zeT4O9xK5nNP0LA6IcfLnaME|fc_00b88f6d680f909b016aaa349ba60087d08cdee9ee50614391",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:18:04.616Z",
+      "callId": "call_RDnJvTlwhxeYeADkfvklI3ej|fc_00b88f6d680f909b016aaa349ba61487d0b88a63b475a2b627",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:18:04.686Z",
+      "callId": "call_fdJc7VokvZqFZqA6mA8Tx47C|fc_00b88f6d680f909b016aaa349ba62087d0bd16dea8ab600257",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#a88dfd2fae:len40>",
+      "role": "thinking",
+      "at": "2026-09-16T06:18:57.559Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:19:02.209Z",
+      "callId": "call_NYEOZCbt7bTU3GrPyyvZFCOr|fc_00b88f6d680f909b016aaa34d5741487d0838250aa350d79a1",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:19:02.349Z",
+      "callId": "call_CLTgi2pPHkuFml0KuvibDIvp|fc_00b88f6d680f909b016aaa34d5742887d0a41c205d6dc8aedc",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:19:02.403Z",
+      "callId": "call_WKtVrlx4wqsWv4ldmITHF3d0|fc_00b88f6d680f909b016aaa34d5743487d091093d584438bd9e",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#146ed8d075:len46>",
+      "role": "planner",
+      "at": "2026-09-16T06:21:00.160Z",
+      "callId": null
+    },
+    {
+      "text": "<text#c18b555ceb:len111>",
+      "role": "planner",
+      "at": "2026-09-16T06:17:59.458Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#51a6621b8b:len3>",
+      "role": "user",
+      "at": "2026-09-16T06:24:50.013Z",
+      "callId": null
+    },
+    {
+      "text": "<text#a8c7ee6e70:len36>",
+      "role": "planner",
+      "at": "2026-09-16T06:27:00.405Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#51a6621b8b:len3>",
+      "role": "user",
+      "at": "2026-09-16T06:27:45.109Z",
+      "callId": null
+    },
+    {
+      "text": "<text#c72e7f7947:len92>",
+      "role": "thinking",
+      "at": "2026-09-16T06:29:08.713Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:15.637Z",
+      "callId": "call_UBofke5ycE2V7Ix9f7u1IwnQ|fc_00b88f6d680f909b016aaa3739b3d887d0b05b749adde79a83",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:15.664Z",
+      "callId": "call_WTRuW0OX0aYQD6MbrherfJXz|fc_00b88f6d680f909b016aaa3739b3f087d09c3d8fed406666b0",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:15.684Z",
+      "callId": "call_4zwgIQWqPH6qkFEFTPI3crM6|fc_00b88f6d680f909b016aaa3739b3fc87d084f7b9592730ffbb",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:15.719Z",
+      "callId": "call_rk4Eu7TUfAUrxjTLxIdfEpNC|fc_00b88f6d680f909b016aaa3739b40887d0aed165497f9ff230",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#2b4cc50e90:len96>",
+      "role": "thinking",
+      "at": "2026-09-16T06:29:56.100Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:57.398Z",
+      "callId": "call_JVdsL75KxhomtSie05piMU2D|fc_00b88f6d680f909b016aaa3763ed3487d0ab3f53295f2cc3a4",
+      "status": "tool.failed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:57.448Z",
+      "callId": "call_MzJ5u7cokqqDtkTpkozTwFyW|fc_00b88f6d680f909b016aaa3763ed4487d0ae5e12d7f1559503",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T06:29:57.499Z",
+      "callId": "call_YIlCwp7wxuZjnmhLIhnV4rd3|fc_00b88f6d680f909b016aaa3763ed4c87d0974bf72527d8fc0f",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#cd57254dc2:len41>",
+      "role": "planner",
+      "at": "2026-09-16T06:32:14.268Z",
+      "callId": null
+    },
+    {
+      "text": "<text#b261dc8455:len41>",
+      "role": "planner",
+      "at": "2026-09-16T06:33:31.059Z",
+      "callId": null
+    },
+    {
+      "text": "<text#cd57254dc2:len41>",
+      "role": "planner",
+      "at": "2026-09-16T06:35:53.558Z",
+      "callId": null
+    },
+    {
+      "text": "<text#a8c7ee6e70:len36>",
+      "role": "planner",
+      "at": "2026-09-16T06:39:51.734Z",
+      "callId": null
+    },
+    {
+      "text": "<text#1434c87672:len117>",
+      "role": "planner",
+      "at": "2026-09-16T06:29:10.716Z",
+      "callId": null,
+      "final": true
+    }
+  ],
+  "cards": [],
+  "attempts": [
+    {
+      "attemptId": "attempt_execution_0_1789537718997_11",
+      "status": "completed"
+    },
+    {
+      "attemptId": "attempt_execution_0_1789538667584_13",
+      "status": "failed"
+    },
+    {
+      "attemptId": "attempt_execution_0_1789539891156_14",
+      "status": "failed"
+    },
+    {
+      "attemptId": "attempt_execution_0_1789540065196_15",
+      "status": "failed"
+    }
+  ]
+}

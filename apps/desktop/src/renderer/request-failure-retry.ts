@@ -13,7 +13,7 @@ import {
   supportsOneClickRequestRetry,
   usesLatestTurnOnlyRequestRetry,
 } from "../shared/thread-request-retry";
-import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./thread-run-projection-view";
+import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./conversation-v2-projection-view";
 
 export type RequestFailureRetryTarget = {
   activityLineId: string;

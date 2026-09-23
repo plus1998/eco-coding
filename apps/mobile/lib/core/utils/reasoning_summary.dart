@@ -1,4 +1,4 @@
-import '../models/thread_run_projection.dart';
+import '../models/conversation_v2_projection_models.dart';
 
 /// OpenAI/Codex reasoning summary stamp (`summary` | `raw`).
 String? readReasoningDisplay(Map<String, dynamic>? metadata) {

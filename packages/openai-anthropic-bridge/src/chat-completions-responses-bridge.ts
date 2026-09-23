@@ -13,10 +13,7 @@ import {
   lookupChatName,
 } from "./codex-tool-context.js";
 import { bytesTrimSpace, jsonMarshal, jsonParse } from "./json.js";
-import {
-  classifyChatMessageReasoning,
-  classifiedToResponsesReasoningFields,
-} from "./reasoning-classify.js";
+import { classifyChatMessageReasoning, classifiedToResponsesReasoningFields } from "./reasoning-classify.js";
 import type {
   ChatCompletionsChunk,
   ChatCompletionsRequest,
@@ -348,7 +345,11 @@ function appendAssistantToolCall(
 function responsesInputReasoningItemToChat(item: Record<string, string>): ChatReasoningItem | undefined {
   const summary: ResponsesSummary[] = [];
   const content: ResponsesContentPart[] = [];
-  const collectParts = (raw: string | undefined, into: Array<{ type: string; text: string }>, defaultType: string) => {
+  const collectParts = (
+    raw: string | undefined,
+    into: Array<{ type: string; text?: string | undefined }>,
+    defaultType: string,
+  ) => {
     const summaryRaw = bytesTrimSpace(raw ?? "");
     if (summaryRaw === "" || summaryRaw === "null") {
       return;
@@ -885,19 +886,13 @@ function chatMessageToResponsesOutput(
   const outputs: ResponsesOutput[] = [];
   const classified = classifyChatMessageReasoning(message);
   const fields = classifiedToResponsesReasoningFields(classified);
-  if (
-    fields.summary.length > 0 ||
-    fields.content.length > 0 ||
-    fields.encrypted_content !== undefined
-  ) {
+  if (fields.summary.length > 0 || fields.content.length > 0 || fields.encrypted_content !== undefined) {
     outputs.push({
       type: "reasoning",
       id: message.reasoning_items?.[0]?.id ?? generateItemId(),
       summary: fields.summary,
       ...(fields.content.length > 0 ? { content: fields.content } : {}),
-      ...(fields.encrypted_content !== undefined
-        ? { encrypted_content: fields.encrypted_content }
-        : {}),
+      ...(fields.encrypted_content !== undefined ? { encrypted_content: fields.encrypted_content } : {}),
     });
   }
 

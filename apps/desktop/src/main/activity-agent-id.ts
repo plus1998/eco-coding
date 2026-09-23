@@ -96,9 +96,9 @@ export function resolveActivityAgentId(
 
   if (
     shouldOmitAcpRootActivityAgentId({
-      coreKind: options.coreKind,
-      eventAgentId: event.agentId,
-      parentToolUseId,
+      ...(options.coreKind === undefined ? {} : { coreKind: options.coreKind }),
+      ...(event.agentId === undefined ? {} : { eventAgentId: event.agentId }),
+      ...(parentToolUseId === undefined ? {} : { parentToolUseId }),
     })
   ) {
     return undefined;

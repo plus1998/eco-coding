@@ -16,5 +16,7 @@ export function buildSubagentMetricsSummaries(
     ...(entry.contextLimit !== undefined && { contextLimit: entry.contextLimit }),
     ecoCostUsd: entry.ecoCostUsd,
     ...(entry.modelId && { modelId: entry.modelId }),
+    ...(entry.lastRequestKey && { lastRequestKey: entry.lastRequestKey }),
+    ecoCostBreakdown: entry.ecoCostBreakdown,
   }));
 }

@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures/electron-app";
+import { sendConversationV2 } from "./helpers/conversation-v2";
 
 test("resolving a missing bash approval is idempotent success", async ({ ecoPage: page }) => {
   const ghostToolUseId = `tool_idempotent_ghost_${Date.now()}`;
@@ -27,24 +28,22 @@ test("live bash approval can be resolved twice without error", async ({ ecoPage:
   const codexThread = await page.evaluate(async () => {
     const threads = await window.eco.listThreads();
     return threads.find(
-      (thread) =>
-        thread.coreKind === "codex" && thread.status !== "running" && thread.status !== "queued",
+      (thread) => thread.coreKind === "codex" && thread.status !== "running" && thread.status !== "queued",
     );
   });
 
   test.skip(!codexThread, "No idle Codex thread available for live double-resolve.");
 
   const marker = `IDEM_APPROVAL_${Date.now()}`;
-  await page.evaluate(
-    async ({ threadId, prompt }) => window.eco.continueThread({ threadId, prompt }),
-    {
-      threadId: codexThread!.id,
-      prompt: [
-        `Run this shell command: sleep 1 && printf ${marker}.`,
-        "Do not modify files.",
-        `After it completes, reply only with ${marker}.`,
-      ].join(" "),
-    },
+  await sendConversationV2(
+    page,
+    codexThread!.id,
+    [
+      `Run this shell command: sleep 1 && printf ${marker}.`,
+      "Do not modify files.",
+      `After it completes, reply only with ${marker}.`,
+    ].join(" "),
+    "bash-approval-idempotent",
   );
 
   const timeoutMs = 90_000;

@@ -34,7 +34,13 @@ export function resolveWebSearchPlan(input: {
   if (input.integratedSearchConfigured) {
     return "integrated";
   }
-  if (resolveSupportsNativeWebSearch({ supportsNativeWebSearch: input.supportsNativeWebSearch })) {
+  if (
+    resolveSupportsNativeWebSearch(
+      input.supportsNativeWebSearch === undefined
+        ? undefined
+        : { supportsNativeWebSearch: input.supportsNativeWebSearch },
+    )
+  ) {
     return "native";
   }
   return "none";
@@ -50,12 +56,14 @@ export function resolveWebSearchContext(input: {
   integratedApiKey?: string;
 }): { backend: WebSearchBackend; integratedApiKey?: string } {
   const integratedSearchConfigured = isIntegratedWebSearchConfigured({
-    enabled: input.integratedEnabled,
-    apiKey: input.integratedApiKey,
+    ...(input.integratedEnabled === undefined ? {} : { enabled: input.integratedEnabled }),
+    ...(input.integratedApiKey === undefined ? {} : { apiKey: input.integratedApiKey }),
   });
   const backend = resolveWebSearchPlan({
     networkWebSearch: input.networkWebSearch,
-    supportsNativeWebSearch: input.supportsNativeWebSearch,
+    ...(input.supportsNativeWebSearch === undefined
+      ? {}
+      : { supportsNativeWebSearch: input.supportsNativeWebSearch }),
     integratedSearchConfigured,
   });
   if (backend === "integrated" && input.integratedApiKey?.trim()) {

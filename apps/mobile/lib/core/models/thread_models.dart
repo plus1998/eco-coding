@@ -5,7 +5,7 @@ import 'integration_models.dart';
 import 'agent_orchestration.dart';
 import 'composer_mcp.dart';
 import 'mcp_models.dart';
-import 'thread_run_projection.dart';
+import 'conversation_v2_projection_models.dart';
 import 'thread_usage_models.dart';
 
 export 'agent_orchestration.dart';
@@ -572,6 +572,8 @@ class PromptImageAttachment {
     required this.data,
     this.id,
     this.path,
+    this.contentRef,
+    this.byteLength,
     this.uploadProgress,
     this.uploadFailed = false,
   });
@@ -582,6 +584,8 @@ class PromptImageAttachment {
         mediaType: json['mediaType'] as String? ?? 'image/jpeg',
         data: json['data'] as String? ?? '',
         path: json['path'] as String?,
+        contentRef: json['contentRef'] as String?,
+        byteLength: (json['byteLength'] as num?)?.toInt(),
       );
 
   /// Local preview / UI copy. Wire payloads use [toWireJson].
@@ -590,6 +594,8 @@ class PromptImageAttachment {
     if (id != null && id!.isNotEmpty) 'id': id,
     if (data.isNotEmpty) 'data': data,
     if (path != null && path!.isNotEmpty) 'path': path,
+    if (contentRef != null && contentRef!.isNotEmpty) 'contentRef': contentRef,
+    if (byteLength != null) 'byteLength': byteLength,
   };
 
   /// Desktop thread RPC payload: prefer staged path so large base64 is not
@@ -597,7 +603,21 @@ class PromptImageAttachment {
   Map<String, dynamic> toWireJson() {
     final staged = path?.trim() ?? '';
     if (staged.isNotEmpty) {
-      return {'mediaType': mediaType, 'path': staged};
+      return {
+        'mediaType': mediaType,
+        'path': staged,
+        if (contentRef != null && contentRef!.isNotEmpty)
+          'contentRef': contentRef,
+        if (byteLength != null) 'byteLength': byteLength,
+      };
+    }
+    if (contentRef != null && contentRef!.isNotEmpty) {
+      return {
+        'mediaType': mediaType,
+        'contentRef': contentRef,
+        if (data.isNotEmpty) 'data': data,
+        if (byteLength != null) 'byteLength': byteLength,
+      };
     }
     return {'mediaType': mediaType, 'data': data};
   }
@@ -607,6 +627,8 @@ class PromptImageAttachment {
     String? mediaType,
     String? data,
     String? path,
+    String? contentRef,
+    int? byteLength,
     double? uploadProgress,
     bool clearUploadProgress = false,
     bool? uploadFailed,
@@ -616,6 +638,8 @@ class PromptImageAttachment {
       mediaType: mediaType ?? this.mediaType,
       data: data ?? this.data,
       path: path ?? this.path,
+      contentRef: contentRef ?? this.contentRef,
+      byteLength: byteLength ?? this.byteLength,
       uploadProgress: clearUploadProgress
           ? null
           : (uploadProgress ?? this.uploadProgress),
@@ -627,6 +651,9 @@ class PromptImageAttachment {
   final String mediaType;
   final String data;
   final String? path;
+  final String? contentRef;
+  final int? byteLength;
+
   /// 0..1 while uploading; null when idle / finished.
   final double? uploadProgress;
   final bool uploadFailed;
@@ -661,7 +688,8 @@ class ComposerDraftRecord {
                 .where(
                   (attachment) =>
                       (attachment.data.isNotEmpty ||
-                          (attachment.path?.isNotEmpty ?? false)) &&
+                          (attachment.path?.isNotEmpty ?? false) ||
+                          (attachment.contentRef?.isNotEmpty ?? false)) &&
                       _isSupportedPromptImageMediaType(attachment.mediaType),
                 )
                 .toList(growable: false)
@@ -700,7 +728,8 @@ class ComposerRestore {
                 .where(
                   (attachment) =>
                       (attachment.data.isNotEmpty ||
-                          (attachment.path?.isNotEmpty ?? false)) &&
+                          (attachment.path?.isNotEmpty ?? false) ||
+                          (attachment.contentRef?.isNotEmpty ?? false)) &&
                       _isSupportedPromptImageMediaType(attachment.mediaType),
                 )
                 .toList(growable: false)
@@ -1109,7 +1138,11 @@ class ThreadUserMessageEditGetResult {
     final attachments = (json['attachments'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(PromptImageAttachment.fromJson)
-        .where((attachment) => attachment.data.trim().isNotEmpty)
+        .where(
+          (attachment) =>
+              attachment.data.trim().isNotEmpty ||
+              (attachment.contentRef?.isNotEmpty ?? false),
+        )
         .toList(growable: false);
     final capabilityJson = json['capability'];
     return ThreadUserMessageEditGetResult(
@@ -1308,7 +1341,8 @@ class ThreadPendingFollowUp {
             .where(
               (attachment) =>
                   attachment.data.isNotEmpty ||
-                  (attachment.path?.isNotEmpty ?? false),
+                  (attachment.path?.isNotEmpty ?? false) ||
+                  (attachment.contentRef?.isNotEmpty ?? false),
             )
             .toList(),
       );
@@ -1330,14 +1364,10 @@ class ThreadSessionBootstrapResult {
     this.pendingPlan,
     this.pendingBash,
     this.pendingClarification,
-    this.subagentSessions = const [],
-    this.usage = const ThreadUsageSnapshotResult(),
   });
 
   factory ThreadSessionBootstrapResult.fromJson(Map<String, dynamic> json) {
     final followUpsRaw = json['followUps'] as List<dynamic>? ?? const [];
-    final sessionsRaw = json['subagentSessions'] as List<dynamic>? ?? const [];
-    final usageRaw = json['usage'];
     return ThreadSessionBootstrapResult(
       thread: json['thread'] is Map<String, dynamic>
           ? ThreadSummary.fromJson(json['thread'] as Map<String, dynamic>)
@@ -1363,16 +1393,6 @@ class ThreadSessionBootstrapResult {
               json['pendingClarification'] as Map<String, dynamic>,
             )
           : null,
-      subagentSessions: sessionsRaw
-          .map(
-            (entry) => ThreadSubagentSessionTiming.fromJson(
-              entry as Map<String, dynamic>,
-            ),
-          )
-          .toList(),
-      usage: usageRaw is Map<String, dynamic>
-          ? ThreadUsageSnapshotResult.fromJson(usageRaw)
-          : const ThreadUsageSnapshotResult(),
     );
   }
 
@@ -1381,8 +1401,6 @@ class ThreadSessionBootstrapResult {
   final ThreadPendingPlan? pendingPlan;
   final BashApprovalRequest? pendingBash;
   final ClarificationRequest? pendingClarification;
-  final List<ThreadSubagentSessionTiming> subagentSessions;
-  final ThreadUsageSnapshotResult usage;
 }
 
 class ThreadLiveEvent {
@@ -1402,7 +1420,6 @@ class ThreadLiveEvent {
     this.subagentSessions,
     this.billing,
     this.contextSnapshot,
-    this.todoList,
     this.title,
     this.titleGenerating,
     this.tool,
@@ -1415,7 +1432,6 @@ class ThreadLiveEvent {
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
     final projectionRaw = json['projection'];
     final sessionsRaw = json['subagentSessions'];
-    final todoListRaw = json['todoList'];
     final settingsDigestRaw = json['settingsDigest'];
     return ThreadLiveEvent(
       threadId: json['threadId'] as String? ?? '',
@@ -1479,14 +1495,6 @@ class ThreadLiveEvent {
               json['context'] as Map<String, dynamic>,
             )
           : null,
-      todoList: todoListRaw is List
-          ? todoListRaw
-                .map(
-                  (entry) =>
-                      CoderTodoItem.fromJson(entry as Map<String, dynamic>),
-                )
-                .toList()
-          : null,
       title: json['title'] as String?,
       titleGenerating: json['titleGenerating'] as bool?,
       tool: json['tool'] is Map<String, dynamic>
@@ -1525,7 +1533,6 @@ class ThreadLiveEvent {
   final List<ThreadSubagentSessionTiming>? subagentSessions;
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
-  final List<CoderTodoItem>? todoList;
   final String? title;
   final bool? titleGenerating;
   final ThreadRunToolMetadata? tool;
@@ -1652,7 +1659,9 @@ class ModelSettingsSnapshot {
           )
           .toList(),
       mcpSettings: rawMcpSettings is Map
-          ? McpSettingsSnapshot.fromJson(Map<String, dynamic>.from(rawMcpSettings))
+          ? McpSettingsSnapshot.fromJson(
+              Map<String, dynamic>.from(rawMcpSettings),
+            )
           : null,
     );
   }

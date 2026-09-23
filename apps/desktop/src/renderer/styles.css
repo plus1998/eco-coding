@@ -817,6 +817,22 @@ html:not([data-platform="darwin"]) .codex-sidebar-chrome-drag {
   text-align: left;
 }
 
+/* "新对话" and "打开项目" read as one list; the gap stays tight like the
+   project rows below instead of inheriting the sidebar body gap. */
+.sidebar-nav-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  /* Keep the window draggable in the gaps, as the sidebar body itself is. */
+  -webkit-app-region: drag;
+}
+
+.sidebar-nav-list > * {
+  -webkit-app-region: no-drag;
+}
+
 .sidebar-core-selector {
   position: relative;
   display: flex;
@@ -1350,16 +1366,19 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
-}
-
-.sidebar-section-grow .project-tree {
-  flex: 1;
-  min-height: 0;
+  /* The whole block scrolls: the "open project" row is the first item of the
+     list, so it scrolls away with the projects instead of staying pinned. */
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
+  /* The action row replaces the section that used to sit below "新对话";
+     drop the extra section margin so the row hugs the button above it. */
+  margin-top: 0;
+}
+
+.sidebar-section-grow .project-tree {
+  flex: 0 0 auto;
 }
 
 .sidebar-section-label {
@@ -3341,6 +3360,60 @@ button.sidebar-settings-meta {
 
 .ghostty-terminal-mount textarea {
   caret-color: transparent;
+}
+
+/* Terminal context menu (right-click). Portaled to <body>, so it carries its own surface
+   tokens; screen coordinates come from terminal-context-menu-layout.ts. */
+.terminal-context-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-menu);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  user-select: none;
+}
+
+.terminal-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.terminal-context-menu-item svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.terminal-context-menu-item:hover:not(:disabled),
+.terminal-context-menu-item:focus-visible:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--text-heading);
+}
+
+.terminal-context-menu-item:focus-visible {
+  outline: none;
+}
+
+.terminal-context-menu-item:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.terminal-context-menu-item:disabled svg {
+  color: var(--text-tertiary);
 }
 
 .terminal-panel-placeholder,

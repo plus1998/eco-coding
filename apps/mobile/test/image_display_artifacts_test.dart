@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eco_mobile/core/models/image_display_models.dart';
-import 'package:eco_mobile/core/models/thread_run_projection.dart';
+import 'package:eco_mobile/core/models/conversation_v2_projection_models.dart';
 import 'package:eco_mobile/features/threads/image_display_artifacts.dart';
 
 void main() {

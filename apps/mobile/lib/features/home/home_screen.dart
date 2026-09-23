@@ -44,10 +44,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _refreshing = false;
   bool _showManualSetup = false;
   SetupWizardStep? _wizardStep;
+
   /// Desktop id currently being bound after a list tap (inline row spinner).
   String? _selectingDesktopId;
+
   /// Set after scanning a full QR while logged out; completed automatically after login.
   PairingQrPayload? _pendingPairingQr;
+
   /// Set when navigating into `/threads` so [dispose] does not resume bind.
   bool _enteringSession = false;
   EcoCenterClient? _centerClient;
@@ -180,42 +183,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    unawaited(_run(() async {
-      final client = ref.read(ecoCenterClientProvider);
-      final previousDesktop =
-          ref.read(selectedDesktopIdProvider) ??
-          client.credentials.selectedDesktopId;
+    unawaited(
+      _run(() async {
+        final client = ref.read(ecoCenterClientProvider);
+        final previousDesktop =
+            ref.read(selectedDesktopIdProvider) ??
+            client.credentials.selectedDesktopId;
 
-      // Persist the selected target before mounting /threads. This prevents the
-      // session providers from opening a bind channel for the previous PC.
-      await client.setSelectedDesktop(selected);
-      if (!mounted) return;
-      if (ref.read(selectedDesktopIdProvider) != selected) {
-        ref.read(selectedDesktopIdProvider.notifier).state = selected;
-      }
-      ref.invalidate(credentialsProvider);
-      ref.invalidate(bindingsProvider);
-      ref.invalidate(desktopPresenceProvider);
-      // Leave picker mode before connecting / navigating, otherwise
-      // ensureDesktopBindReady stays blocked on Presence-only.
-      _enteringSession = true;
-      client.leavePresenceOnlyMode();
-      if (previousDesktop != selected) {
-        resetDesktopScopedProviders(ref.invalidate);
-      }
-      // Disconnect-old is done in setSelectedDesktop; wait for the new bind
-      // before showing threads so we don't flash "Realtime not connected".
-      try {
-        await client.connect();
-      } catch (error) {
-        _enteringSession = false;
+        // Persist the selected target before mounting /threads. This prevents the
+        // session providers from opening a bind channel for the previous PC.
+        await client.setSelectedDesktop(selected);
         if (!mounted) return;
-        _showSnack(localizedAppError(error, context.l10n));
-        return;
-      }
-      if (!mounted) return;
-      context.go('/threads');
-    }));
+        if (ref.read(selectedDesktopIdProvider) != selected) {
+          ref.read(selectedDesktopIdProvider.notifier).state = selected;
+        }
+        ref.invalidate(credentialsProvider);
+        ref.invalidate(bindingsProvider);
+        ref.invalidate(desktopPresenceProvider);
+        // Leave picker mode before connecting / navigating, otherwise
+        // ensureDesktopBindReady stays blocked on Presence-only.
+        _enteringSession = true;
+        client.leavePresenceOnlyMode();
+        if (previousDesktop != selected) {
+          resetDesktopScopedProviders(ref.invalidate);
+        }
+        // Disconnect-old is done in setSelectedDesktop; wait for the new bind
+        // before showing threads so we don't flash "Realtime not connected".
+        try {
+          await client.connect();
+        } catch (error) {
+          _enteringSession = false;
+          if (!mounted) return;
+          _showSnack(localizedAppError(error, context.l10n));
+          return;
+        }
+        if (!mounted) return;
+        context.go('/threads');
+      }),
+    );
   }
 
   void _goToStep(SetupWizardStep step) {
@@ -270,6 +275,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _handleScanResult(PairingQrPayload payload) async {
+    final l10n = context.l10n;
     final projectUrl = payload.projectUrl?.trim();
     if (projectUrl != null && projectUrl.isNotEmpty) {
       final client = ref.read(ecoCenterClientProvider);
@@ -283,10 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ? anonFromQr
           : (sameProject ? (client.credentials.anonKey?.trim() ?? '') : '');
       if (anon.isNotEmpty) {
-        await client.setProjectConfig(
-          supabaseUrl: projectUrl,
-          anonKey: anon,
-        );
+        await client.setProjectConfig(supabaseUrl: projectUrl, anonKey: anon);
         _serverUrlController.text = client.credentials.supabaseUrl;
         ref.invalidate(credentialsProvider);
       } else {
@@ -305,7 +308,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _showManualSetup = true;
             _wizardStep = SetupWizardStep.login;
           });
-          _showSnack(context.l10n.setupScanNeedsLogin);
+          if (!context.mounted) return;
+          _showSnack(l10n.setupScanNeedsLogin);
           return;
         }
         // Same-account login is enough -- show the normal PC picker.
@@ -313,21 +317,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _showManualSetup = false;
           _wizardStep = null;
         });
-        _showSnack(context.l10n.setupScanServerConfigured);
+        if (!context.mounted) return;
+        _showSnack(l10n.setupScanServerConfigured);
       });
       return;
     }
 
+    if (!context.mounted) return;
     _pendingPairingQr = null;
     setState(() {
       _showManualSetup = true;
       _wizardStep = SetupWizardStep.login;
     });
-    _showSnack(context.l10n.setupLegacyQr);
+    _showSnack(l10n.setupLegacyQr);
   }
 
   Future<void> _completeQuickPair(PairingQrPayload payload) async {
     // Legacy path retained for older QRs that still carry bootstrap tokens.
+    final l10n = context.l10n;
     final client = ref.read(ecoCenterClientProvider);
     final result = await client.quickJoinFromQr(payload);
     _pendingPairingQr = null;
@@ -341,13 +348,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       warmShellCaches: false,
     );
     setState(() => _showManualSetup = false);
+    if (!context.mounted) return;
     if (selected.online == false) {
-      _showSnack(context.l10n.setupSelectedDeviceOffline(selected.name));
+      _showSnack(l10n.setupSelectedDeviceOffline(selected.name));
     } else {
       _showSnack(
         result.alreadyBound
-            ? context.l10n.setupOpenedDevice(selected.name)
-            : context.l10n.setupBoundDevice(selected.name),
+            ? l10n.setupOpenedDevice(selected.name)
+            : l10n.setupBoundDevice(selected.name),
       );
       if (mounted) {
         _enteringSession = true;
@@ -357,7 +365,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         } catch (error) {
           _enteringSession = false;
           if (!mounted) return;
-          _showSnack(localizedAppError(error, context.l10n));
+          _showSnack(localizedAppError(error, l10n));
           return;
         }
         if (!mounted) return;
@@ -433,15 +441,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.watch(credentialsProvider).valueOrNull ??
         ref.read(ecoCenterClientProvider).credentials;
     final pendingRecovery = ref.watch(pendingAuthRecoveryProvider);
-    final needsLogin =
-        pendingRecovery != null || !credentials.hasUserSession;
+    final needsLogin = pendingRecovery != null || !credentials.hasUserSession;
     final forceLoginWizard =
         needsLogin &&
         (pendingRecovery == CenterServerAuthRecovery.relogin ||
             pendingRecovery == CenterServerAuthRecovery.deviceInactive ||
             pendingRecovery == CenterServerAuthRecovery.accountUnusable ||
             credentials.hasProjectConfig);
-    final currentStep = _wizardStep ??
+    final currentStep =
+        _wizardStep ??
         (forceLoginWizard &&
                 pendingRecovery != CenterServerAuthRecovery.accountUnusable
             ? SetupWizardStep.login
@@ -532,9 +540,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ),
       body: bootstrapping
-          ? SessionContentBootLoading(
-              semanticLabel: context.l10n.commonLoading,
-            )
+          ? SessionContentBootLoading(semanticLabel: context.l10n.commonLoading)
           : showLoginWizard
           ? SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -589,7 +595,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 });
                 try {
                   await _selectDesktop(desktopId, warmShellCaches: false);
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   if (online == true) {
                     _showSnack(context.l10n.setupSelectedDevice(name));
                   } else if (online == false) {
@@ -598,11 +604,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     _showSnack(context.l10n.setupSelectedDevice(name));
                   }
                 } catch (error) {
-                  if (mounted) {
+                  if (context.mounted) {
                     _showSnack(localizedAppError(error, context.l10n));
                   }
                 } finally {
-                  if (mounted) {
+                  if (context.mounted) {
                     setState(() {
                       _busy = false;
                       _selectingDesktopId = null;
@@ -637,12 +643,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           overview: overview,
           busy: actionBusy,
           onTest: () => _run(() async {
+            final l10n = context.l10n;
             final client = ref.read(ecoCenterClientProvider);
             final anonInput = _anonKeyController.text.trim();
-            final anon =
-                anonInput.isNotEmpty
-                    ? anonInput
-                    : (client.credentials.anonKey?.trim() ?? '');
+            final anon = anonInput.isNotEmpty
+                ? anonInput
+                : (client.credentials.anonKey?.trim() ?? '');
             if (anon.isEmpty) {
               throw EcoCenterException.app(EcoCenterErrorKind.anonKeyRequired);
             }
@@ -656,11 +662,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 supabaseUrl: _serverUrlController.text,
                 anonKey: anon,
               );
+              if (!context.mounted) return;
               _anonKeyController.clear();
               ref.invalidate(credentialsProvider);
-              _showSnack(context.l10n.setupServerReachable);
+              _showSnack(l10n.setupServerReachable);
             } else {
-              _showSnack(context.l10n.setupServerUnreachable);
+              _showSnack(l10n.setupServerUnreachable);
             }
           }),
         ),
@@ -677,15 +684,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? null
               : (value) => setState(() => _isRegister = value),
           onSubmit: () => _run(() async {
+            final l10n = context.l10n;
             final client = ref.read(ecoCenterClientProvider);
             if (_serverUrlController.text.trim().isEmpty) {
-              throw Exception(context.l10n.setupServerRequired);
+              throw Exception(l10n.setupServerRequired);
             }
             final anonInput = _anonKeyController.text.trim();
-            final anon =
-                anonInput.isNotEmpty
-                    ? anonInput
-                    : (client.credentials.anonKey?.trim() ?? '');
+            final anon = anonInput.isNotEmpty
+                ? anonInput
+                : (client.credentials.anonKey?.trim() ?? '');
             if (anon.isEmpty) {
               throw EcoCenterException.app(EcoCenterErrorKind.anonKeyRequired);
             }
@@ -719,15 +726,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               return;
             }
             // Leave the config wizard; HomeScreen shows _ReadyConnectionView.
+            if (!context.mounted) return;
             setState(() {
               _showManualSetup = false;
               _wizardStep = null;
             });
-            _showSnack(context.l10n.setupLoginSuccess);
+            _showSnack(l10n.setupLoginSuccess);
           }),
           onReconnect: () => _run(() async {
+            final l10n = context.l10n;
             await ref.read(ecoCenterClientProvider).connect();
-            _showSnack(context.l10n.setupReconnectAttempted);
+            if (!mounted) return;
+            _showSnack(l10n.setupReconnectAttempted);
           }),
         ),
       ),
@@ -867,7 +877,12 @@ class _ServerStep extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final serverStep = overview.steps[0];
     final hasSavedAnon =
-        ref.watch(credentialsProvider).valueOrNull?.anonKey?.trim().isNotEmpty ==
+        ref
+            .watch(credentialsProvider)
+            .valueOrNull
+            ?.anonKey
+            ?.trim()
+            .isNotEmpty ==
         true;
 
     return Column(
@@ -1056,6 +1071,7 @@ class _SelectPcStep extends ConsumerWidget {
     String? passwordError;
 
     while (context.mounted) {
+      if (!context.mounted) return;
       final password = await showUnpairPcPasswordDialog(
         context,
         desktopName: name,
@@ -1073,15 +1089,15 @@ class _SelectPcStep extends ConsumerWidget {
           passwordError = l10n.setupUnpairPcWrongPassword;
           continue;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localizedAppError(error, l10n))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(localizedAppError(error, l10n))));
         return;
       } catch (error) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localizedAppError(error, l10n))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(localizedAppError(error, l10n))));
         return;
       }
     }
@@ -1098,14 +1114,14 @@ class _SelectPcStep extends ConsumerWidget {
       ref.invalidate(bindingsProvider);
       ref.invalidate(desktopPresenceProvider);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.setupUnpairPcDone(name))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.setupUnpairPcDone(name))));
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(localizedAppError(error, l10n))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(localizedAppError(error, l10n))));
     }
   }
 

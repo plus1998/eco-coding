@@ -45,6 +45,6 @@ export function detectScreenRecordingAppLabel(packaged: boolean): string {
   return resolveScreenRecordingAppLabel({
     packaged: false,
     ancestorCommands,
-    termProgram: process.env.TERM_PROGRAM,
+    ...(process.env.TERM_PROGRAM ? { termProgram: process.env.TERM_PROGRAM } : {}),
   });
 }

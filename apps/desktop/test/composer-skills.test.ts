@@ -8,7 +8,9 @@ import {
   skillToken,
 } from "../src/renderer/composer-skills";
 import { skillScopeLabel } from "../src/renderer/composer-skills-ui";
-import { i18n } from "../src/renderer/i18n";
+import { withTestLanguage } from "./support/test-language";
+
+withTestLanguage("en-US");
 
 test("parseSlashQuery finds slash token before cursor", () => {
   expect(parseSlashQuery("/uT", 3)).toEqual({ start: 0, query: "uT" });
@@ -59,8 +61,7 @@ test("formatSkillDisplayName humanizes kebab-case ids", () => {
   expect(formatSkillDisplayName("pdf")).toBe("pdf");
 });
 
-test("skillScopeLabel follows the active locale", async () => {
-  await i18n.changeLanguage("en-US");
+test("skillScopeLabel follows the active locale", () => {
   expect(skillScopeLabel("project")).toBe("Project");
   expect(skillScopeLabel("user")).toBe("Personal");
 });

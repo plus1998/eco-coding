@@ -12,7 +12,7 @@ function createIngestionHarness(agents: AgentInstanceRecord[] = []) {
   const stoppedSessions: string[] = [];
   const store = {
     listAgentInstances: () => agents,
-    appendThreadRunEvent: (event: ThreadRunEventInput) => {
+    appendConversationRuntimeEvent: (event: ThreadRunEventInput) => {
       appended.push(event);
       return { ...event, sequence: appended.length };
     },

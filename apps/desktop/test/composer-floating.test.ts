@@ -5,65 +5,36 @@ import {
   composerFloatingStyleForAnchor,
   composerFloatingViewport,
 } from "../src/renderer/composer-floating";
+import { withGlobalWindow } from "./support/global-document";
+
+const viewportWindow = { innerWidth: 1200, innerHeight: 800 };
 
 test("composerFloatingViewport uses the window edges", () => {
-  const originalWindow = globalThis.window;
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      innerWidth: 1200,
-      innerHeight: 800,
-    },
-  });
-  try {
+  withGlobalWindow(viewportWindow, () => {
     const viewport = composerFloatingViewport();
     expect(viewport.left).toBe(8);
     expect(viewport.right).toBe(1192);
     expect(viewport.width).toBe(1184);
-  } finally {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: originalWindow,
-    });
-  }
+  });
 });
 
 test("clampComposerFloatingLeft clamps to the window viewport", () => {
-  const originalWindow = globalThis.window;
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      innerWidth: 1200,
-      innerHeight: 800,
-    },
-  });
-  try {
+  withGlobalWindow(viewportWindow, () => {
     expect(clampComposerFloatingLeft(1100, 220)).toBe(972);
     expect(clampComposerFloatingLeft(0, 220)).toBe(8);
-  } finally {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: originalWindow,
-    });
-  }
+  });
 });
 
 test("composerFloatingAvailableWidth never exceeds window minus margins", () => {
-  const width = composerFloatingAvailableWidth();
-  const max = (typeof window !== "undefined" ? window.innerWidth : 1200) - 16;
-  expect(width).toBeLessThanOrEqual(max);
+  withGlobalWindow(viewportWindow, () => {
+    const width = composerFloatingAvailableWidth();
+    // The task panel margins are the only space the composer gives up.
+    expect(width).toBeLessThanOrEqual(viewportWindow.innerWidth - 16);
+  });
 });
 
 test("composerFloatingStyleForAnchor aligns popovers to the anchor trailing edge", () => {
-  const originalWindow = globalThis.window;
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      innerWidth: 1200,
-      innerHeight: 800,
-    },
-  });
-  try {
+  withGlobalWindow(viewportWindow, () => {
     const anchor = {
       getBoundingClientRect: () =>
         ({
@@ -84,10 +55,5 @@ test("composerFloatingStyleForAnchor aligns popovers to the anchor trailing edge
 
     expect(style.left).toBe(720);
     expect(style.width).toBe(320);
-  } finally {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: originalWindow,
-    });
-  }
+  });
 });

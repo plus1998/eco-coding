@@ -153,17 +153,20 @@ export function createPiSubagentSpawnHandler(
     const childMcp = filterMcpServersForPiSubagent(input.parentMcpServers, agent.mcpServers);
     const hasMcp = Boolean(childMcp && Object.keys(childMcp).length > 0);
     const integratedWebSearch = input.getIntegratedWebSearchRuntime();
+    const plannerManualSpec = input.resolveRouteManualSpec?.(agent.agentKey);
     const webSearchSession = buildPiWebSearchSessionFields({
-      ...(input.resolveRouteManualSpec?.(agent.agentKey)
-        ? { plannerManualSpec: input.resolveRouteManualSpec(agent.agentKey) }
-        : {}),
+      ...(plannerManualSpec ? { plannerManualSpec } : {}),
       networkWebSearch: materializeEcoToolPolicy(agent.tools).network?.webSearch,
       integratedSettings: integratedWebSearch.settings,
       ...(integratedWebSearch.apiKey ? { integratedApiKey: integratedWebSearch.apiKey } : {}),
     });
-    const toolsAllowlist = resolvePiSubagentToolAllowlist(agent.tools, hasMcp, {
-      webSearchBackend: webSearchSession.webSearchBackend,
-    });
+    const toolsAllowlist = resolvePiSubagentToolAllowlist(
+      agent.tools,
+      hasMcp,
+      webSearchSession.webSearchBackend === undefined
+        ? {}
+        : { webSearchBackend: webSearchSession.webSearchBackend },
+    );
 
     const parentSession = globalPiSessionRegistry.get(piParentSessionKey(input.threadId));
     const cwd = parentSession?.cwd;

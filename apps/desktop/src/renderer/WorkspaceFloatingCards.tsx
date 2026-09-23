@@ -35,6 +35,7 @@ import type {
   SubagentEnabledSettings,
   SubagentRole,
   ThreadBillingSnapshot,
+  ThreadUsageLedgerEventView,
   ThreadContextSnapshot,
   ThreadPendingPlan,
   ThreadRuntimeConfig,
@@ -56,7 +57,7 @@ import { CursorAgentsRosterCardBody } from "./CursorAgentsRosterCardBody";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
-import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
+import type { ThreadRunProjectionSubagentCard } from "./conversation-v2-projection-view";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
@@ -64,6 +65,7 @@ import { resolveWorkspacePlanTitle } from "./workspace-plan-title";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   context?: ThreadContextSnapshot;
   contextTokens?: number;
 }

@@ -24,6 +24,7 @@ import type {
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadStatus,
+  ThreadUsageLedgerEventView,
   WorkspaceDiffResult,
   WorkspaceInfo,
 } from "../shared/ipc";
@@ -49,6 +50,7 @@ import { WorkspaceGitSection } from "./WorkspaceGitSection";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   context?: ThreadContextSnapshot;
   contextTokens?: number;
 }
@@ -264,7 +266,7 @@ function ContextFloatPillLabel({
 
 function BillingFloatingCard({
   billing,
-  threadId,
+  ledgerEvents,
   threadStatus,
   tokenBadge,
   plannerLabel,
@@ -273,7 +275,7 @@ function BillingFloatingCard({
   onDismiss,
 }: {
   billing?: ThreadBillingSnapshot;
-  threadId?: string;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
@@ -358,8 +360,8 @@ function BillingFloatingCard({
       {showBilling && billing ? (
         <UsageBreakdownPanel
           billing={billing}
+          {...(ledgerEvents && { ledgerEvents })}
           variant="full"
-          {...(threadId !== undefined && { threadId })}
           {...(agentDisplayNames && { agentDisplayNames })}
         />
       ) : null}
@@ -581,6 +583,7 @@ export function ThreadInfoFloatStack({
   threadId,
   showBillingSection,
   billing,
+  ledgerEvents,
   threadStatus,
   tokenBadge,
   plannerLabel,
@@ -599,6 +602,7 @@ export function ThreadInfoFloatStack({
   threadId?: string;
   showBillingSection: boolean;
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
@@ -656,7 +660,7 @@ export function ThreadInfoFloatStack({
             {(closePanel) => (
               <BillingFloatingCard
                 {...(billing !== undefined && { billing })}
-                {...(threadId !== undefined && { threadId })}
+                {...(ledgerEvents && { ledgerEvents })}
                 {...(threadStatus !== undefined && { threadStatus })}
                 tokenBadge={tokenBadge}
                 plannerLabel={plannerLabel}
@@ -838,6 +842,7 @@ export function ThreadInfoPanel({
           showBillingSection={showBillingSection}
           {...(hostUiFeatures !== undefined && { hostUiFeatures })}
           {...(billing !== undefined && { billing })}
+          {...(usageSummary?.ledgerEvents && { ledgerEvents: usageSummary.ledgerEvents })}
           {...(threadStatus !== undefined && { threadStatus })}
           tokenBadge={tokenBadge}
           plannerLabel={plannerLabel}

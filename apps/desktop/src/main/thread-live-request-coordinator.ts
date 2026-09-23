@@ -247,7 +247,13 @@ export function resolveLiveRequestIdForEvent(
     role: input.role,
     ...(input.agentId && { agentId: input.agentId }),
   };
-  const existing = registry.resolve(threadId, scope);
+  // A lifecycle event is about one span: `request.retry_scheduled` cancels the request it
+  // is attributed to, so it resolves only when the scope names exactly one open request.
+  // Content events keep the permissive lookup — overlapping tool-loop calls are expected
+  // there and the in-flight one is the request being written to.
+  const existing = isLifecycleRequestEvent(input.type)
+    ? registry.resolveUnique(threadId, scope)
+    : registry.resolve(threadId, scope);
   if (existing) {
     return existing;
   }
@@ -261,6 +267,16 @@ export function resolveLiveRequestIdForEvent(
     }
   }
   return undefined;
+}
+
+/**
+ * Event types that describe the fate of one request rather than its content.
+ *
+ * `request.started` never reaches the registry (Bridge owns started spans); the rest of the
+ * lifecycle is what marks a span completed, failed or retried.
+ */
+function isLifecycleRequestEvent(type: string): boolean {
+  return type.startsWith("request.") || type === "thread.api_error";
 }
 
 /**

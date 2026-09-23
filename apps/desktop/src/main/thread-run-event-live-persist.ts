@@ -4,6 +4,7 @@ import type {
   ThreadRunBashApprovalMetadata,
   ThreadRunToolMetadata,
 } from "../shared/ipc";
+import type { ThreadRunEvent } from "../shared/thread-run-events";
 import { activityStreamKey } from "./activity-agent-id";
 import type { AgentLifecycleService } from "./agent-lifecycle-service";
 import type { ConversationStore } from "./conversation-store";
@@ -72,6 +73,7 @@ export interface ThreadRunEventLivePersistDeps {
   ): void;
   onProjectionUpdated(threadId: string, options?: { streaming?: boolean }): void;
   onFileChange?(threadId: string): void;
+  persistConversationEvent?(event: ThreadRunEvent): void;
   createEventId?(input: { persistedActivityLine?: ThreadActivityLine }): string;
   now?(): string;
 }
@@ -174,18 +176,22 @@ export function createThreadRunEventLivePersister(deps: ThreadRunEventLivePersis
     }
     if (event.eventType === "request.retry_scheduled") {
       const retryRequestId = event.requestId?.trim();
+      if (!retryRequestId) {
+        return;
+      }
       if (!shouldEmitRetryScheduledCancellation(deps.liveRequestRegistry, input.threadId, retryRequestId)) {
         return;
       }
       deps.emitRequestTerminalEvent(input.threadId, {
-        requestId: retryRequestId!,
+        requestId: retryRequestId,
         role: input.role,
         ...(agentId && { agentId }),
         stage: "cancelled",
       });
     }
 
-    deps.store.appendThreadRunEvent(event);
+    const persisted = deps.store.appendConversationRuntimeEvent(event);
+    deps.persistConversationEvent?.(persisted);
     if (
       shouldEmitSdkShadowRequestTerminal({
         eventType: event.eventType,

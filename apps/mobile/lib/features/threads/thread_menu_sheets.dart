@@ -9,8 +9,8 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/html_host_models.dart';
 import '../../core/models/image_generation_models.dart';
+import '../../core/models/conversation_v2_models.dart';
 import '../../core/models/thread_models.dart';
-import '../../core/providers/app_providers.dart';
 import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -20,7 +20,6 @@ import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../../core/utils/package_script_search.dart';
 import '../../core/utils/strip_ansi.dart';
-import '../../core/utils/thread_todo_live.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
@@ -314,43 +313,40 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
   }
 
   Future<List<CoderTodoItem>> _loadTodos() async {
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) return const [];
-    final todos = await rpc.listThreadTodos(widget.threadId);
+    final todos = ref
+        .read(conversationV2SessionProvider(widget.threadId))
+        .todos
+        .map(_coderTodoFromV2)
+        .toList(growable: false);
     todos.sort((left, right) => left.position.compareTo(right.position));
     return todos;
   }
 
   Future<void> _refresh() async {
+    await ref
+        .read(conversationV2SessionProvider(widget.threadId).notifier)
+        .refresh();
+    if (!mounted) return;
     setState(() => _future = _loadTodos());
     await _future;
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(ecoEventsProvider, (_, next) {
-      next.whenData((event) {
-        final todos = threadTodoListFromLiveEvent(
-          threadId: widget.threadId,
-          envelopeThreadId: event.threadId,
-          payload: event.payload,
+    ref.listen(
+      conversationV2SessionProvider(
+        widget.threadId,
+      ).select((state) => state.todos),
+      (_, todos) {
+        if (!mounted) return;
+        setState(
+          () => _future = Future.value(
+            todos.map(_coderTodoFromV2).toList(growable: false)
+              ..sort((left, right) => left.position.compareTo(right.position)),
+          ),
         );
-        if (todos == null || !mounted) return;
-        setState(() => _future = Future.value(todos));
-      });
-    });
-    ref.listen(connectionStatusProvider, (previous, next) {
-      next.whenData((status) {
-        if (!mounted ||
-            !shouldReloadThreadTodosAfterConnection(
-              previous: previous?.valueOrNull?.state,
-              current: status.state,
-            )) {
-          return;
-        }
-        setState(() => _future = _loadTodos());
-      });
-    });
+      },
+    );
     final eco = ecoColors(context);
     return SafeArea(
       child: Column(
@@ -398,6 +394,16 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
     );
   }
 }
+
+CoderTodoItem _coderTodoFromV2(ConversationV2Todo todo) => CoderTodoItem(
+  id: todo.todoId,
+  threadId: todo.conversationId,
+  title: todo.title,
+  detail: todo.detail,
+  status: todo.status,
+  position: todo.position,
+  updatedAt: todo.updatedAt,
+);
 
 class _TodoRow extends StatelessWidget {
   const _TodoRow({required this.todo});
@@ -1532,10 +1538,8 @@ class _HtmlHostArtifactsSheetState
     if (url.isEmpty || artifact.status != 'completed') return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => _HtmlHostPageViewer(
-          title: artifact.displayTitle,
-          url: url,
-        ),
+        builder: (context) =>
+            _HtmlHostPageViewer(title: artifact.displayTitle, url: url),
       ),
     );
   }
@@ -1592,7 +1596,9 @@ class _HtmlHostArtifactsSheetState
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      subtitle: Text(_statusLabel(artifact.status, context.l10n)),
+                      subtitle: Text(
+                        _statusLabel(artifact.status, context.l10n),
+                      ),
                       enabled:
                           artifact.status == 'completed' &&
                           artifact.publicUrl.trim().isNotEmpty,

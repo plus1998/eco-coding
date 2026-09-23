@@ -1,9 +1,16 @@
 import type { FitAddon, Ghostty, Terminal as GhosttyTerminalType, ITheme } from "ghostty-web";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TerminalStreamEvent } from "../shared/ipc";
 import { i18n } from "./i18n";
+import { TerminalContextMenu, type TerminalContextMenuAnchor } from "./TerminalContextMenu";
 import { installTerminalLinkHandling } from "./terminal-links";
-import { handleTerminalSelectionShortcut, installTerminalSelectionEnhancements } from "./terminal-selection";
+import {
+  copyTerminalSelection,
+  handleTerminalSelectionShortcut,
+  installTerminalSelectionEnhancements,
+  pasteClipboardIntoTerminal,
+  selectAllTerminalText,
+} from "./terminal-selection";
 import {
   DEFAULT_TYPOGRAPHY_PREFERENCES,
   TYPOGRAPHY_CHANGE_EVENT,
@@ -203,6 +210,7 @@ export function GhosttyTerminal({
   const dimensionsReadyRef = useRef(false);
   const initialResizeSyncedRef = useRef(false);
   const [terminalEpoch, setTerminalEpoch] = useState(0);
+  const [contextMenu, setContextMenu] = useState<TerminalContextMenuAnchor | undefined>(undefined);
 
   sessionIdRef.current = sessionId;
   activeRef.current = active;
@@ -314,6 +322,21 @@ export function GhosttyTerminal({
       cleanups.push(installTerminalSelectionEnhancements(terminal));
       cleanups.push(installTerminalLinkHandling(terminal));
 
+      // Right-click opens Eco's own menu. Capture phase on the mount keeps ghostty-web's
+      // contextmenu handler (it parks the selection in its hidden textarea for the browser
+      // menu) out of the way, so the menu owns copy / paste / select-all.
+      const onContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          hasSelection: terminal.hasSelection(),
+        });
+      };
+      mount.addEventListener("contextmenu", onContextMenu, true);
+      cleanups.push(() => mount.removeEventListener("contextmenu", onContextMenu, true));
+
       const themeObserver = new MutationObserver(() => {
         if (!disposed && termRef.current) {
           applyTerminalTheme(termRef.current);
@@ -419,6 +442,38 @@ export function GhosttyTerminal({
     };
   }, []);
 
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(undefined);
+    termRef.current?.focus();
+  }, []);
+
+  const handleContextMenuCopy = useCallback(() => {
+    const terminal = termRef.current;
+    if (terminal) {
+      void copyTerminalSelection(terminal);
+    }
+    closeContextMenu();
+  }, [closeContextMenu]);
+
+  const handleContextMenuPaste = useCallback(() => {
+    const terminal = termRef.current;
+    const eco = window.eco;
+    if (terminal && eco) {
+      void pasteClipboardIntoTerminal(terminal, () => eco.readClipboardText()).catch((error) => {
+        console.error("[eco] failed to paste into the terminal:", error);
+      });
+    }
+    closeContextMenu();
+  }, [closeContextMenu]);
+
+  const handleContextMenuSelectAll = useCallback(() => {
+    const terminal = termRef.current;
+    if (terminal) {
+      selectAllTerminalText(terminal);
+    }
+    closeContextMenu();
+  }, [closeContextMenu]);
+
   useEffect(() => {
     const terminal = termRef.current;
     const eco = window.eco;
@@ -522,6 +577,16 @@ export function GhosttyTerminal({
   return (
     <div className="ghostty-terminal-host" data-component="terminal">
       <div ref={mountRef} className="ghostty-terminal-mount" />
+      {contextMenu ? (
+        <TerminalContextMenu
+          anchor={contextMenu}
+          hasSelection={contextMenu.hasSelection}
+          onCopy={handleContextMenuCopy}
+          onPaste={handleContextMenuPaste}
+          onSelectAll={handleContextMenuSelectAll}
+          onClose={closeContextMenu}
+        />
+      ) : null}
     </div>
   );
 }

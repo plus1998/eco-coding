@@ -352,8 +352,7 @@ export function toCodexAppServerSandboxPolicyWire(
 }
 
 /**
- * Intersect sessionMode sandbox with orchestration policy (stricter wins).
- * ask -> always readOnly; orchestration danger-full-access only applies in agent mode.
+ * Plan and Ask are always read-only; only Agent mode inherits orchestration write access.
  */
 export function resolveEffectiveTurnSandbox(input: {
   sessionMode: "agent" | "plan" | "ask";
@@ -362,23 +361,11 @@ export function resolveEffectiveTurnSandbox(input: {
   const orchestration = input.orchestrationPolicy ?? DEFAULT_CODEX_TOOL_POLICY;
   const approvalPolicy = orchestration.approvalPolicy;
 
-  if (input.sessionMode === "ask") {
+  if (input.sessionMode === "ask" || input.sessionMode === "plan") {
     return { sandboxPolicy: "readOnly", approvalPolicy };
   }
 
   const orchestrationTurn = ecoSandboxModeToTurnPolicy(orchestration.sandboxMode);
-  if (input.sessionMode === "plan") {
-    // Plan mode keeps workspaceWrite at session layer unless orchestration is stricter (read-only).
-    if (orchestrationTurn === "readOnly") {
-      return { sandboxPolicy: "readOnly", approvalPolicy };
-    }
-    return {
-      sandboxPolicy: "workspaceWrite",
-      ...(orchestration.networkAccess ? { networkAccess: true } : {}),
-      approvalPolicy,
-    };
-  }
-
   // agent
   return {
     sandboxPolicy: orchestrationTurn,

@@ -23,7 +23,7 @@ import {
   isFileChangeToolName,
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
-import type { ThreadLocalStreamUpdate, ThreadRunToolMetadata } from "../shared/ipc";
+import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { resolvePiMcpProxyCall, resolvePiMcpProxyToolName } from "../shared/pi-mcp-proxy.js";
 import {
   formatThreadRunGrepTargetLabel,
@@ -42,40 +42,6 @@ interface PendingRemoteStreamDelta {
   agentId?: string;
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
   timer: ReturnType<typeof setTimeout> | null;
-}
-
-export interface SdkLocalStreamUpdate {
-  threadId: string;
-  streamKey: string;
-  type: string;
-  message: string;
-  role: string;
-  stream: boolean;
-  agentId?: string;
-  extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
-}
-
-export function readReasoningDisplayStamp(value: unknown): ThreadLocalStreamUpdate["reasoningDisplay"] {
-  return value === "summary" || value === "raw" ? value : undefined;
-}
-
-/** IPC overlay payload. Must copy reasoningDisplay from extras so the first paint matches persisted kind. */
-export function toThreadLocalStreamUpdate(
-  update: SdkLocalStreamUpdate,
-  observedAt: string,
-): ThreadLocalStreamUpdate {
-  const reasoningDisplay = readReasoningDisplayStamp(update.extras?.metadata?.reasoningDisplay);
-  return {
-    threadId: update.threadId,
-    streamKey: update.streamKey,
-    text: update.message,
-    role: update.role,
-    channel: update.role === "thinking" ? "thinking" : "message",
-    streaming: update.stream,
-    observedAt,
-    ...(update.agentId && { agentId: update.agentId }),
-    ...(reasoningDisplay && { reasoningDisplay }),
-  };
 }
 
 export type SdkActivityEmit = (
@@ -116,7 +82,7 @@ export class SdkStreamActivityBridge {
 
   /**
    * Flush throttled deltas and finalize any open narrative streams before clearing
-   * bridge state. Dropping pending text here blanks the Feed after overlay clear.
+   * bridge state. Dropping pending text here would lose the durable V2 tail.
    */
   flushPendingAndReset(threadId: string, emit: SdkActivityEmit): void {
     this.flushPending(threadId, emit);
@@ -165,7 +131,6 @@ export class SdkStreamActivityBridge {
       activityAgentId?: string;
       parentToolUseId?: string;
       runAttemptId?: string;
-      onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
     },
   ): void {
     const activityAgentId = options?.activityAgentId;
@@ -186,7 +151,6 @@ export class SdkStreamActivityBridge {
         ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
         ...(runAttemptId !== undefined ? { runAttemptId } : {}),
         emit,
-        ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
       });
     }
 
@@ -241,7 +205,6 @@ export class SdkStreamActivityBridge {
         ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
         ...(runAttemptId !== undefined ? { runAttemptId } : {}),
         emit,
-        ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
         ...(messageId ? { messageId } : {}),
       });
     }
@@ -278,16 +241,6 @@ export class SdkStreamActivityBridge {
         finalizedAgentId,
         finalizedExtras,
       );
-      options?.onLocalStreamUpdate?.({
-        threadId,
-        streamKey,
-        type: event.type,
-        message: finalizedMessage,
-        role: last?.role ?? role,
-        stream: false,
-        ...(finalizedAgentId && { agentId: finalizedAgentId }),
-        ...(finalizedExtras && { extras: finalizedExtras }),
-      });
       this.lastStreamLine.delete(streamKey);
       if (stableSdkMessageBlock) {
         this.finalizedSdkMessageBlocks.add(stableSdkMessageBlock);
@@ -310,16 +263,6 @@ export class SdkStreamActivityBridge {
         ...(placeholderExtras && { extras: placeholderExtras }),
       });
       emit(threadId, event.type, message, role, true, activityAgentId, placeholderExtras);
-      options?.onLocalStreamUpdate?.({
-        threadId,
-        streamKey,
-        type: event.type,
-        message,
-        role,
-        stream: true,
-        ...(activityAgentId && { agentId: activityAgentId }),
-        ...(placeholderExtras && { extras: placeholderExtras }),
-      });
       return;
     }
 
@@ -335,16 +278,6 @@ export class SdkStreamActivityBridge {
       this.lastStreamLine.set(streamKey, {
         role,
         message: accumulated,
-        ...(activityAgentId && { agentId: activityAgentId }),
-        ...(emitExtras && { extras: emitExtras }),
-      });
-      options?.onLocalStreamUpdate?.({
-        threadId,
-        streamKey,
-        type: event.type,
-        message: accumulated,
-        role,
-        stream,
         ...(activityAgentId && { agentId: activityAgentId }),
         ...(emitExtras && { extras: emitExtras }),
       });
@@ -463,7 +396,6 @@ export class SdkStreamActivityBridge {
     parentToolUseId?: string;
     runAttemptId?: string;
     emit: SdkActivityEmit;
-    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
     messageId?: string;
   }): string {
     const ownerKey = activityStreamKey(
@@ -501,7 +433,7 @@ export class SdkStreamActivityBridge {
       `${current.channel}:${current.generation}`,
       input.runAttemptId,
     );
-    this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
+    this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit);
     const generation = current.generation + 1;
     this.unkeyedNarrativeBlocks.set(ownerKey, {
       channel,
@@ -523,7 +455,6 @@ export class SdkStreamActivityBridge {
     parentToolUseId?: string;
     runAttemptId?: string;
     emit: SdkActivityEmit;
-    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
   }): void {
     for (const ownerKey of this.unkeyedNarrativeOwnerKeys(input)) {
       const current = this.unkeyedNarrativeBlocks.get(ownerKey);
@@ -538,7 +469,7 @@ export class SdkStreamActivityBridge {
         `${current.channel}:${current.generation}`,
         input.runAttemptId,
       );
-      this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
+      this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit);
       this.unkeyedNarrativeBlocks.set(ownerKey, {
         channel: current.channel,
         generation: current.generation + 1,
@@ -568,12 +499,7 @@ export class SdkStreamActivityBridge {
     ];
   }
 
-  private closeNarrativeStream(
-    threadId: string,
-    streamKey: string,
-    emit: SdkActivityEmit,
-    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void,
-  ): void {
+  private closeNarrativeStream(threadId: string, streamKey: string, emit: SdkActivityEmit): void {
     const pending = this.pendingDeltas.get(streamKey);
     if (pending?.timer) {
       clearTimeout(pending.timer);
@@ -591,16 +517,6 @@ export class SdkStreamActivityBridge {
       return;
     }
     emit(threadId, "message.delta", last.message, last.role, false, last.agentId, last.extras);
-    onLocalStreamUpdate?.({
-      threadId,
-      streamKey,
-      type: "message.delta",
-      message: last.message,
-      role: last.role,
-      stream: false,
-      ...(last.agentId && { agentId: last.agentId }),
-      ...(last.extras && { extras: last.extras }),
-    });
     this.lastStreamLine.delete(streamKey);
   }
 }
@@ -691,15 +607,10 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     displayName,
     toolInput,
   );
-  const skillName = resolveSdkSkillDisplayName(
-    displayName,
-    isRecord(toolInput) ? toolInput : {},
-  );
+  const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
   // Skill reads label by skill name; skip file targets so the card stays "读取 <name> 技能".
-  const targets = skillDetail
-    ? {}
-    : resolveThreadRunToolTargets(displayName, record.input);
+  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, record.input);
   const command =
     skillDetail ??
     readString(record.command) ??
@@ -963,16 +874,11 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
   const toolInput = proxyCall?.args ?? record.input;
   const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
-  const skillName = resolveSdkSkillDisplayName(
-    displayName,
-    isRecord(toolInput) ? toolInput : {},
-  );
+  const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
   // Skill reads (e.g. pi `read` on SKILL.md) label by skill name; skip file targets so
   // the card does not fall back to "读取 SKILL.md".
-  const targets = skillDetail
-    ? {}
-    : resolveThreadRunToolTargets(displayName, record.input);
+  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, record.input);
   const detail =
     skillDetail ||
     imageViewCall?.path ||

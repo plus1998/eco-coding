@@ -20,7 +20,7 @@ import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import type { IntegratedWebSearchSettingsStore } from "./integrated-web-search-settings-store";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Web-Search-Control-Secret";
 
@@ -279,7 +279,7 @@ export class IntegratedWebSearchMcpGateway {
   }
 }
 
-function webSearchToolDefinition(): Record<string, unknown> {
+function webSearchToolDefinition(): McpToolDefinition {
   return {
     name: ECO_WEB_SEARCH_TOOL,
     description:

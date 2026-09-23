@@ -5,6 +5,7 @@ import {
   resolvePiWebSearchPlan,
   resolveSupportsNativeWebSearch,
 } from "../src/pi-web-search-plan.js";
+import { createPiWebSearchExtensionFactory } from "../src/pi-web-search-factory.js";
 
 test("resolveSupportsNativeWebSearch defaults to true", () => {
   expect(resolveSupportsNativeWebSearch(undefined)).toBe(true);
@@ -94,4 +95,9 @@ test("resolvePiWebSearchContext passes integrated api key only for integrated ba
       integratedApiKey: "brave-key",
     }),
   ).toEqual({ backend: "native" });
+});
+
+test("native web-search extension factory is available to the bundled runtime", async () => {
+  const factory = await createPiWebSearchExtensionFactory();
+  expect(typeof factory).toBe("function");
 });

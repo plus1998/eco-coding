@@ -4,11 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { CONVERSATION_V2_ERROR, ConversationV2Error } from "@eco/shared";
 import { createAgentOrchestrationStore } from "../src/main/agent-orchestration-store";
 import { createConversationStore } from "../src/main/conversation-store";
+import { FEED_SKELETON_RULES_VERSION } from "../src/main/legacy-feed-skeleton-store";
 import { createProjectMcpSettingsStore } from "../src/main/project-mcp-settings-store";
 import { createProjectSkillsSettingsStore } from "../src/main/project-skills-settings-store";
-import { FEED_SKELETON_RULES_VERSION } from "../src/main/thread-feed-skeleton-store";
 import type { ThreadSummary } from "../src/shared/ipc";
 
 async function createTestDirectory(t: test.TestContext, prefix: string): Promise<string> {
@@ -17,6 +18,16 @@ async function createTestDirectory(t: test.TestContext, prefix: string): Promise
     await fs.rm(directory, { recursive: true, force: true });
   });
   return directory;
+}
+
+// These node:test cases exercise the retired V1 reader/writer or migration
+// input directly. Keeping the mode explicit prevents a compatibility fixture
+// from silently becoming a production default.
+async function createLegacyConversationStore(dbPath: string) {
+  return createConversationStore(dbPath, {
+    freshStorageMode: "legacy_compat",
+    requiredStorageMode: "legacy_compat",
+  });
 }
 
 test("Node SQLite remembers Skills independently for each project", async (t) => {
@@ -45,7 +56,7 @@ test("Node SQLite remembers MCP switches independently for each project", async 
   assert.deepEqual(store.get(projectB).enabledByServer, { github: false, browser: true });
 });
 
-test("Node SQLite stores independent orchestration resources and guards default references", async (t) => {
+test("Node SQLite stores independent orchestration resources and deletes them independently", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-orchestration-store-");
   const databasePath = path.join(directory, "eco-coding.sqlite");
   const store = await createAgentOrchestrationStore(databasePath);
@@ -86,10 +97,23 @@ test("Node SQLite stores independent orchestration resources and guards default 
   assert.equal(store.listMainAgentConfigs().length, 1);
   assert.equal(store.listMainAgentPrompts().length, 1);
   assert.equal(store.listSubagentOrchestrations().length, 1);
-  assert.throws(() => store.deleteMainAgentConfig("main_1", selection), /默认编排组合引用/);
-  assert.throws(() => store.deleteMainAgentPrompt("prompt_1", selection), /默认编排组合引用/);
-  // Subagent orchestrations are not guarded by remembered default selection.
-  assert.doesNotThrow(() => store.deleteSubagentOrchestration("subagents_1"));
+  // Deleting a resource is no longer refused when a remembered default selection points at
+  // it: the callers clear that reference first and then delete. Both halves are asserted —
+  // the clearing in workflow-settings-store.test.ts, the deletion here.
+  assert.equal(selection.mainAgentConfigId, "main_1");
+  assert.equal(store.deleteMainAgentConfig("main_1"), undefined);
+  assert.deepEqual(
+    store.listMainAgentConfigs().map((config) => config.id),
+    [],
+  );
+  assert.deepEqual(
+    store.listMainAgentPrompts().map((prompt) => prompt.id),
+    ["prompt_1"],
+  );
+  assert.deepEqual(
+    store.listSubagentOrchestrations().map((orchestration) => orchestration.id),
+    ["subagents_1"],
+  );
   store.saveSubagentOrchestration({
     id: "subagents_1",
     name: "Subagents",
@@ -309,7 +333,7 @@ test("Node SQLite atomically claims and reconciles streaming follow-ups", async 
 
 test("Node SQLite updates Codex cumulative stream events in place", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-codex-stream-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const threadId = "thr_node_codex_stream";
   store.saveThread({
     id: threadId,
@@ -354,7 +378,7 @@ test("Node SQLite projects tool metadata and migrates legacy output exactly once
   const directory = await createTestDirectory(t, "eco-node-tool-output-projection-");
   const databasePath = path.join(directory, "eco-coding.sqlite");
   const threadId = "thr_tool_output_projection";
-  const store = await createConversationStore(databasePath);
+  const store = await createLegacyConversationStore(databasePath);
   store.saveThread({
     id: threadId,
     title: "Tool output projection",
@@ -482,7 +506,7 @@ test("Node SQLite projects tool metadata and migrates legacy output exactly once
   }) as typeof process.stderr.write;
   let migrated: Awaited<ReturnType<typeof createConversationStore>>;
   try {
-    migrated = await createConversationStore(databasePath);
+    migrated = await createLegacyConversationStore(databasePath);
   } finally {
     process.stderr.write = originalStderrWrite;
   }
@@ -538,7 +562,7 @@ test("Node SQLite projects tool metadata and migrates legacy output exactly once
   }
   inspection.close();
 
-  const reopened = await createConversationStore(databasePath);
+  const reopened = await createLegacyConversationStore(databasePath);
   assert.equal(
     reopened.listThreadRunEvents(threadId).some((event) => event.id === "legacy_notice"),
     false,
@@ -549,7 +573,7 @@ test("Node SQLite projects tool metadata and migrates legacy output exactly once
 test("Node SQLite incrementally maintains bounded projection reads in WAL mode", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-projection-cache-");
   const databasePath = path.join(directory, "eco-coding.sqlite");
-  const store = await createConversationStore(databasePath);
+  const store = await createLegacyConversationStore(databasePath);
   const threadId = "thr_projection_cache";
   const streamId = "tre:stream:thr_projection_cache:message.delta:stream_1";
   store.saveThread({
@@ -820,7 +844,7 @@ test("Node SQLite migrates the legacy thread activity schema", async (t) => {
     );
   legacy.close();
 
-  await createConversationStore(databasePath);
+  await createLegacyConversationStore(databasePath);
 
   const migrated = new DatabaseSync(databasePath);
   const columns = migrated.prepare("PRAGMA table_info(thread_activity)").all() as Array<{ name: string }>;
@@ -925,7 +949,7 @@ test("Node SQLite leaves ambiguous mixed-product thread ownership unknown", asyn
   insertMap.run("thr_conflict", "codex_conflict", createdAt, createdAt);
   legacy.close();
 
-  const store = await createConversationStore(databasePath);
+  const store = await createLegacyConversationStore(databasePath);
 
   assert.equal(store.getThread("thr_only_codex")?.coreKind, "codex");
   assert.equal(store.getThread("thr_only_claude")?.coreKind, "claude");
@@ -992,7 +1016,7 @@ test("Node SQLite keeps the unified Claude binding in sync across compaction", a
 
 test("Node SQLite binds projection-only Claude prompts to SDK messages", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-claude-projection-bind-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const now = "2026-08-11T00:00:00.000Z";
   store.saveThread({
     id: "thr_claude_projection",
@@ -1045,7 +1069,7 @@ test("Node SQLite binds projection-only Claude prompts to SDK messages", async (
 
 test("Node SQLite rewinds projection-only Claude user activity lines", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-claude-projection-rewind-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const now = "2026-08-11T00:00:00.000Z";
   store.saveThread({
     id: "thr_claude_proj_rewind",
@@ -1147,7 +1171,7 @@ test("Node SQLite rewinds projection-only Claude user activity lines", async (t)
 
 test("Node SQLite discards an unstarted ACP user turn without clearing earlier todos", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-acp-discard-unstarted-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const now = "2026-08-11T00:00:00.000Z";
   store.saveThread({
     id: "thr_acp_discard",
@@ -1243,7 +1267,7 @@ test("Node SQLite discards an unstarted ACP user turn without clearing earlier t
 
 test("Node SQLite repairs projection-only Claude history from transcript mappings", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-claude-history-rebind-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const now = "2026-08-11T00:00:00.000Z";
   store.saveThread({
     id: "thr_claude_legacy",
@@ -1290,7 +1314,7 @@ test("Node SQLite repairs projection-only Claude history from transcript mapping
 
 test("Node SQLite attributeThreadRunEventsByLogicalRequestId patches started+terminal atomically", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-late-bind-attr-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const threadId = "thr_late_bind_db";
   const logicalRequestId = "req_late_bind_1";
   store.saveThread({
@@ -1342,7 +1366,7 @@ test("Node SQLite attributeThreadRunEventsByLogicalRequestId patches started+ter
 
 test("Node SQLite attributeThreadRunEventsByLogicalRequestId conflict fail closed keeps all rows", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-late-bind-conflict-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const threadId = "thr_late_bind_conflict";
   const logicalRequestId = "req_conflict_1";
   store.saveThread({
@@ -1394,7 +1418,7 @@ test("Node SQLite attributeThreadRunEventsByLogicalRequestId conflict fail close
 
 test("Node SQLite attributeThreadRunEventsByLogicalRequestId role conflict fail closed", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-late-bind-role-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const threadId = "thr_late_bind_role";
   const logicalRequestId = "req_role_conflict";
   store.saveThread({
@@ -1430,7 +1454,7 @@ test("Node SQLite attributeThreadRunEventsByLogicalRequestId role conflict fail 
 
 test("Node SQLite late-bind normalizes scope/role when agent_id already matches (idempotent replay)", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-late-bind-idempotent-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(directory, "eco-coding.sqlite"));
   const threadId = "thr_late_bind_idempotent";
   const logicalRequestId = "req_idempotent_1";
   store.saveThread({
@@ -1504,7 +1528,8 @@ test("Node SQLite late-bind normalizes scope/role when agent_id already matches 
 
 test("Node SQLite persists thread feed skeleton snapshots", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-feed-skeleton-");
-  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createLegacyConversationStore(databasePath);
   const threadId = "thr_feed_skeleton";
   store.saveThread({
     id: threadId,
@@ -1564,6 +1589,17 @@ test("Node SQLite persists thread feed skeleton snapshots", async (t) => {
     },
   });
 
+  const inspection = new DatabaseSync(databasePath, { readOnly: true });
+  const v2Cache = inspection
+    .prepare(`SELECT COUNT(*) AS count FROM conversation_feed_skeletons_v2 WHERE conversation_id = ?`)
+    .get(threadId) as { count: number };
+  const legacyCache = inspection
+    .prepare(`SELECT COUNT(*) AS count FROM thread_feed_skeleton WHERE thread_id = ?`)
+    .get(threadId) as { count: number };
+  assert.equal(v2Cache.count, 1);
+  assert.equal(legacyCache.count, 0);
+  inspection.close();
+
   const loaded = store.getThreadFeedSkeleton(threadId);
   assert.ok(loaded);
   assert.equal(loaded?.historyRevision, 0);
@@ -1617,4 +1653,663 @@ test("Node SQLite persists thread feed skeleton snapshots", async (t) => {
 
   store.deleteThread(threadId);
   assert.equal(store.getThreadFeedSkeleton(threadId), undefined);
+});
+
+test("production fresh conversation stores start V2-only without recreating V1 tables", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-v2-only-fresh-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createConversationStore(databasePath, { freshStorageMode: "v2_only" });
+
+  assert.equal(store.getConversationStorageMode(), "v2_only");
+  const inspection = new DatabaseSync(databasePath, { readOnly: true });
+  const retiredTables = inspection
+    .prepare(
+      `SELECT name FROM sqlite_master
+         WHERE type = 'table'
+           AND name IN ('thread_activity', 'thread_agent_instances', 'thread_coder_todos',
+                        'thread_run_events', 'thread_user_messages', 'thread_feed_skeleton',
+                        'thread_metrics_snapshots', 'thread_usage_ledger_events',
+                        'thread_subagent_sessions', 'thread_subagent_metrics',
+                        'thread_run_attempts', 'thread_pending_followups', 'thread_pending_plans')
+         ORDER BY name`,
+    )
+    .all();
+  assert.deepEqual(retiredTables, []);
+  assert.equal(
+    (
+      inspection
+        .prepare(`SELECT value FROM conversation_store_meta_v2 WHERE key = 'conversation_v2_storage_mode'`)
+        .get() as { value: string }
+    ).value,
+    "v2_only",
+  );
+  inspection.close();
+});
+
+test("V2-only reopen migrates and retires a recreated legacy pending-plan table", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-v2-only-pending-plan-reopen-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createConversationStore(databasePath, { freshStorageMode: "v2_only" });
+  const threadId = "thr_v2_only_pending_plan_reopen";
+  store.saveThread({
+    id: threadId,
+    title: "Pending plan reopen",
+    prompt: "hello",
+    workspacePath: path.join(directory, "project"),
+    status: "awaiting_plan",
+    message: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  const rawDb = (store as unknown as { db: DatabaseSync }).db;
+  rawDb.exec(`
+    CREATE TABLE thread_pending_plans (
+      thread_id TEXT PRIMARY KEY,
+      user_prompt TEXT NOT NULL,
+      analysis TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      workspace_path TEXT NOT NULL,
+      worktree_path TEXT NOT NULL,
+      routes_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  rawDb
+    .prepare(
+      `INSERT INTO thread_pending_plans
+       (thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      threadId,
+      "reopen prompt",
+      "reopen analysis",
+      "1. reopen",
+      path.join(directory, "project"),
+      path.join(directory, "project"),
+      "[]",
+      "2026-01-01T00:00:01.000Z",
+    );
+  rawDb.close();
+
+  const reopened = await createConversationStore(databasePath, {
+    requiredStorageMode: "v2_only",
+  });
+  t.after(() => (reopened as unknown as { db: DatabaseSync }).db.close());
+
+  assert.deepEqual(reopened.getPendingPlan(threadId), {
+    threadId,
+    userPrompt: "reopen prompt",
+    analysis: "reopen analysis",
+    plan: "1. reopen",
+    workspacePath: path.join(directory, "project"),
+    worktreePath: path.join(directory, "project"),
+    routesJson: "[]",
+  });
+  const inspection = new DatabaseSync(databasePath, { readOnly: true });
+  const legacyTable = inspection
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'thread_pending_plans'`)
+    .all();
+  const v2Table = inspection
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'conversation_pending_plans_v2'`)
+    .all() as Array<{ name: string }>;
+  assert.deepEqual(legacyTable, []);
+  assert.deepEqual(
+    v2Table.map((row) => row.name),
+    ["conversation_pending_plans_v2"],
+  );
+  inspection.close();
+});
+
+test("V2-only read entry points fail closed when a thread loses its V2 stream", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-v2-only-missing-stream-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createConversationStore(databasePath);
+  const threadId = "thr_v2_only_missing_stream";
+  store.saveThread({
+    id: threadId,
+    title: "Missing V2 stream",
+    prompt: "hello",
+    workspacePath: path.join(directory, "project"),
+    status: "idle",
+    message: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  store.switchToV2OnlyStorage();
+
+  const rawDb = (store as unknown as { db: DatabaseSync }).db;
+  rawDb.prepare(`DELETE FROM conversation_streams_v2 WHERE conversation_id = ?`).run(threadId);
+
+  const assertIntegrityFailure = (error: unknown): boolean =>
+    error instanceof ConversationV2Error && error.code === CONVERSATION_V2_ERROR.integrityFailure;
+  assert.throws(() => store.listActivityLines(threadId), assertIntegrityFailure);
+  assert.throws(() => store.listUserMessageRecords(threadId), assertIntegrityFailure);
+  assert.throws(() => store.getUserMessageRecord(threadId, "missing"), assertIntegrityFailure);
+  assert.throws(() => store.getUserMessageForEdit(threadId, "missing"), assertIntegrityFailure);
+  assert.throws(() => store.getActivityRewindTarget(threadId, "missing"), assertIntegrityFailure);
+  assert.throws(() => store.bindLatestUserActivityToSdkMessage(threadId, "user"), assertIntegrityFailure);
+  assert.throws(() => store.bindLatestUserRunEventToSdkMessage(threadId, "user"), assertIntegrityFailure);
+  assert.throws(() => store.listThreadRunEvents(threadId), assertIntegrityFailure);
+  assert.throws(() => store.clearThreadRunEvents(threadId), assertIntegrityFailure);
+  assert.throws(() => store.listConversationUserMessageRecords(threadId), assertIntegrityFailure);
+});
+
+test("prompt image content references are authorized by their V2 conversation or landing draft", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-prompt-image-auth-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = "2026-01-01T00:00:00.000Z";
+  const threadA = "thr_prompt_image_auth_a";
+  const threadB = "thr_prompt_image_auth_b";
+  for (const threadId of [threadA, threadB]) {
+    store.saveThread({
+      id: threadId,
+      title: threadId,
+      prompt: "prompt",
+      workspacePath: path.join(directory, threadId),
+      status: "idle",
+      message: "",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const refA = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const refB = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const appendImageMessage = (conversationId: string, eventId: string, contentRef: string) =>
+    store.conversationV2().append({
+      conversationId,
+      eventId,
+      sourceEventKey: eventId,
+      type: "message.created",
+      occurredAt: now,
+      turnId: `${eventId}:turn`,
+      messageId: `${eventId}:message`,
+      payload: {
+        role: "user",
+        channel: "answer",
+        body: "图片",
+        status: "final",
+        attachments: [{ mediaType: "image/png", contentRef, byteLength: 3 }],
+      },
+    });
+  appendImageMessage(threadA, "prompt_image_auth_a_event", refA);
+  appendImageMessage(threadB, "prompt_image_auth_b_event", refB);
+
+  const landingKey = `landing:${path.join(directory, "landing")}`;
+  const landingRef = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+  store.saveComposerDraft(landingKey, "", [
+    { mediaType: "image/png", contentRef: landingRef, byteLength: 3 },
+  ]);
+
+  assert.equal(store.isPromptImageContentRefAuthorized(`thread:${threadA}`, refA), true);
+  assert.equal(store.isPromptImageContentRefAuthorized(`thread:${threadA}`, refB), false);
+  assert.equal(store.isPromptImageContentRefAuthorized(`thread:${threadB}`, refA), false);
+  assert.equal(store.isPromptImageContentRefAuthorized(landingKey, landingRef), true);
+  assert.equal(store.isPromptImageContentRefAuthorized(landingKey, refA), false);
+
+  store.switchToV2OnlyStorage();
+  assert.equal(store.isPromptImageContentRefAuthorized(`thread:${threadA}`, refA), true);
+  assert.equal(store.isPromptImageContentRefAuthorized(`thread:${threadA}`, refB), false);
+  assert.equal(store.isPromptImageContentRefAuthorized(landingKey, landingRef), true);
+
+  const rawDb = (store as unknown as { db: DatabaseSync }).db;
+  rawDb.prepare(`DELETE FROM conversation_streams_v2 WHERE conversation_id = ?`).run(threadA);
+  assert.equal(store.isPromptImageContentRefAuthorized(`thread:${threadA}`, refA), false);
+});
+
+test("a fresh V2 preference never auto-cuts over an existing legacy source", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-v2-only-existing-legacy-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const legacy = await createLegacyConversationStore(databasePath);
+  (legacy as unknown as { db: DatabaseSync }).db.close();
+
+  // A fresh-storage preference never cuts over an existing legacy source;
+  // explicitly require legacy mode because this is a migration fixture.
+  const reopened = await createConversationStore(databasePath, {
+    freshStorageMode: "v2_only",
+    requiredStorageMode: "legacy_compat",
+  });
+  assert.equal(reopened.getConversationStorageMode(), "legacy_compat");
+});
+
+test("a V2-only runtime refuses to open an existing legacy source", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-v2-only-required-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const legacy = await createLegacyConversationStore(databasePath);
+  (legacy as unknown as { db: DatabaseSync }).db.close();
+
+  await assert.rejects(
+    createConversationStore(databasePath, {
+      freshStorageMode: "v2_only",
+      requiredStorageMode: "v2_only",
+    }),
+    (error: unknown) =>
+      error instanceof ConversationV2Error && error.code === CONVERSATION_V2_ERROR.migrationIncomplete,
+  );
+});
+
+test("cutover migrates pending plans from an older schema without optional columns", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-pending-plan-old-schema-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createLegacyConversationStore(databasePath);
+  const threadId = "thr_pending_plan_old_schema";
+  const now = "2026-01-01T00:00:00.000Z";
+  store.saveThread({
+    id: threadId,
+    title: "Old pending plan schema",
+    prompt: "hello",
+    workspacePath: path.join(directory, "project"),
+    status: "awaiting_plan",
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const rawDb = (store as unknown as { db: DatabaseSync }).db;
+  rawDb.exec(`DROP TABLE thread_pending_plans`);
+  rawDb.exec(`
+    CREATE TABLE thread_pending_plans (
+      thread_id TEXT PRIMARY KEY,
+      user_prompt TEXT NOT NULL,
+      analysis TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      workspace_path TEXT NOT NULL,
+      worktree_path TEXT NOT NULL,
+      routes_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  rawDb
+    .prepare(
+      `INSERT INTO thread_pending_plans
+         (thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      threadId,
+      "hello",
+      "legacy analysis",
+      "1. keep it",
+      path.join(directory, "project"),
+      path.join(directory, "project"),
+      "[]",
+      now,
+    );
+
+  store.switchToV2OnlyStorage();
+  assert.deepEqual(store.getPendingPlan(threadId), {
+    threadId,
+    userPrompt: "hello",
+    analysis: "legacy analysis",
+    plan: "1. keep it",
+    workspacePath: path.join(directory, "project"),
+    worktreePath: path.join(directory, "project"),
+    routesJson: "[]",
+  });
+  const table = rawDb
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'thread_pending_plans'`)
+    .get();
+  assert.equal(table, undefined);
+  t.after(() => rawDb.close());
+});
+
+test("Node SQLite enforces the V2-only storage boundary after an atomic cutover", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-v2-only-cutover-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createLegacyConversationStore(databasePath);
+  const threadId = "thr_v2_only_cutover";
+  store.saveThread({
+    id: threadId,
+    title: "V2-only cutover",
+    prompt: "hello",
+    workspacePath: path.join(directory, "project"),
+    status: "idle",
+    message: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  store.savePendingPlan({
+    threadId,
+    userPrompt: "hello",
+    analysis: "The request is ready.",
+    plan: "1. Keep the durable plan",
+    workspacePath: path.join(directory, "project"),
+    worktreePath: path.join(directory, "project"),
+    routesJson: "[]",
+    planFilePath: path.join(directory, "plan.md"),
+    deferredExitPlanToolUseId: "tool_exit_v2",
+  });
+  store.appendConversationRuntimeEvent({
+    id: "native_v2_prompt",
+    threadId,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamState: "none",
+    message: "hello",
+    observedAt: "2026-01-01T00:00:01.000Z",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  const queuedFollowUp = store.enqueueThreadFollowUp({
+    threadId,
+    prompt: "保留到 V2 队列",
+    priority: "escalated",
+    deliveryMode: "interrupt_resume",
+    queuedDuringPhase: "execution",
+  });
+
+  store.conversationV2().saveFeedSkeletonRow({
+    conversationId: threadId,
+    historyRevision: 0,
+    maxEventSequence: 1,
+    snapshotJson: "{}",
+    auxiliaryJson: null,
+    updatedAt: "2026-01-01T00:00:01.500Z",
+  });
+
+  assert.equal(store.getConversationStorageMode(), "legacy_compat");
+  store.switchToV2OnlyStorage();
+  assert.equal(store.getConversationStorageMode(), "v2_only");
+  const migratedPendingPlan = store.getPendingPlan(threadId);
+  assert.ok(migratedPendingPlan);
+  assert.deepEqual(
+    { ...migratedPendingPlan, createdAt: undefined },
+    {
+      threadId,
+      userPrompt: "hello",
+      analysis: "The request is ready.",
+      plan: "1. Keep the durable plan",
+      workspacePath: path.join(directory, "project"),
+      worktreePath: path.join(directory, "project"),
+      routesJson: "[]",
+      planFilePath: path.join(directory, "plan.md"),
+      deferredExitPlanToolUseId: "tool_exit_v2",
+      createdAt: undefined,
+    },
+  );
+  const v2MigratedPendingPlan = store.conversationV2().getPendingPlan(threadId);
+  assert.ok(v2MigratedPendingPlan);
+  assert.equal(typeof v2MigratedPendingPlan.createdAt, "string");
+  assert.deepEqual(store.getThreadFollowUp(threadId, queuedFollowUp.id), queuedFollowUp);
+  const migratedFollowUpInspection = new DatabaseSync(databasePath, { readOnly: true });
+  const migratedFollowUpCount = migratedFollowUpInspection
+    .prepare(`SELECT COUNT(*) AS count FROM conversation_followups_v2 WHERE thread_id = ?`)
+    .get(threadId) as { count: number };
+  const retiredSkeletonCount = migratedFollowUpInspection
+    .prepare(`SELECT COUNT(*) AS count FROM conversation_feed_skeletons_v2 WHERE conversation_id = ?`)
+    .get(threadId) as { count: number };
+  migratedFollowUpInspection.close();
+  assert.equal(migratedFollowUpCount.count, 1);
+  assert.equal(retiredSkeletonCount.count, 0);
+  assert.deepEqual(store.listActivityLines(threadId), [
+    { id: "native_v2_prompt", role: "user", message: "hello", stream: false },
+  ]);
+  assert.deepEqual(store.listThreadRunEvents(threadId), []);
+  const v2UserMessages = store.listUserMessageRecords(threadId);
+  assert.equal(v2UserMessages.length, 1);
+  assert.equal(v2UserMessages[0]?.text, "hello");
+  assert.deepEqual(store.listSubagentSessions(threadId), []);
+  assert.deepEqual(store.listSubagentMetrics(threadId), []);
+  assert.equal(store.getThreadMetrics(threadId), undefined);
+  assert.deepEqual(store.listUsageLedgerEvents(threadId), []);
+  assert.equal(store.getThreadFeedSkeleton(threadId), undefined);
+  // A provider receipt produced by an older adapter may still carry the
+  // compatibility marker. After cutover that marker must not reopen any
+  // retired V1 mirror query (the tables are physically gone).
+  store.appendConversationRuntimeEvent({
+    id: "native_v2_marker",
+    threadId,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamState: "none",
+    message: "",
+    observedAt: "2026-01-01T00:00:02.500Z",
+    metadata: { liveType: "runtime.marker" },
+  });
+  const rawDb = (store as unknown as { db: DatabaseSync }).db;
+  // Recreating a retired table must not turn a V2-only command into a V1 write.
+  // This simulates a damaged/partially restored database while keeping the
+  // authoritative V2 stream intact.
+  rawDb.exec(`
+    CREATE TABLE thread_activity (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL);
+    CREATE TABLE thread_usage_ledger_events (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL);
+    CREATE TABLE thread_pending_followups (attachments_json TEXT);
+    CREATE TABLE thread_subagent_sessions (thread_id TEXT NOT NULL);
+  `);
+  rawDb
+    .prepare(`INSERT INTO thread_activity (id, thread_id) VALUES (?, ?)`)
+    .run("legacy_row_after_cutover", threadId);
+  rawDb
+    .prepare(`INSERT INTO thread_usage_ledger_events (id, thread_id) VALUES (?, ?)`)
+    .run("legacy_usage_after_cutover", threadId);
+  const legacyFollowUpRef = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  rawDb
+    .prepare(`INSERT INTO thread_pending_followups (attachments_json) VALUES (?)`)
+    .run(JSON.stringify({ contentRef: legacyFollowUpRef }));
+  rawDb.prepare(`INSERT INTO thread_subagent_sessions (thread_id) VALUES (?)`).run(threadId);
+  assert.equal(store.listReferencedPromptImageContentRefs().has(legacyFollowUpRef), false);
+  store.clearUsageLedger(threadId);
+  const legacyRowsAfterV2Clear = rawDb
+    .prepare(`SELECT COUNT(*) AS count FROM thread_usage_ledger_events WHERE thread_id = ?`)
+    .get(threadId) as { count: number };
+  assert.equal(legacyRowsAfterV2Clear.count, 1);
+  store.saveSdkSession(threadId, "sdk_v2_only_compaction_probe", path.join(directory, "project"));
+  store.commitCompactHandoffAndClearSession(threadId, {
+    sourceSessionId: "sdk_v2_only_compaction_probe",
+    sourceStartMessageId: "compact_start",
+    sourceEndMessageId: "compact_end",
+    summary: "V2-only compaction probe",
+    recentMessages: [{ role: "user", message: "recent" }],
+    preTokensEstimate: 100,
+    preTokensSource: "sdk_context_usage",
+    postTokensEstimate: 20,
+    postTokensSource: "local_heuristic",
+    compressionRatio: 0.2,
+  });
+  const legacyRowsAfterV2Compaction = rawDb
+    .prepare(`SELECT COUNT(*) AS count FROM thread_subagent_sessions WHERE thread_id = ?`)
+    .get(threadId) as { count: number };
+  assert.equal(legacyRowsAfterV2Compaction.count, 1);
+  const deleteProbeThreadId = "thr_v2_only_delete_probe";
+  store.saveThread({
+    id: deleteProbeThreadId,
+    title: "V2-only delete probe",
+    prompt: "probe",
+    workspacePath: path.join(directory, "project"),
+    status: "idle",
+    message: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  rawDb
+    .prepare(`INSERT INTO thread_activity (id, thread_id) VALUES (?, ?)`)
+    .run("legacy_delete_probe", deleteProbeThreadId);
+  assert.equal(store.deleteThread(deleteProbeThreadId), true);
+  const legacyRowsAfterV2Delete = rawDb
+    .prepare(`SELECT COUNT(*) AS count FROM thread_activity WHERE thread_id = ?`)
+    .get(deleteProbeThreadId) as { count: number };
+  assert.equal(legacyRowsAfterV2Delete.count, 1);
+  const deleteCommandProbeThreadId = "thr_v2_only_delete_command_probe";
+  store.saveThread({
+    id: deleteCommandProbeThreadId,
+    title: "V2-only delete command probe",
+    prompt: "probe",
+    workspacePath: path.join(directory, "project"),
+    status: "idle",
+    message: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  store.conversationV2().ensureConversation(deleteCommandProbeThreadId);
+  rawDb
+    .prepare(`INSERT INTO thread_activity (id, thread_id) VALUES (?, ?)`)
+    .run("legacy_delete_command_probe", deleteCommandProbeThreadId);
+  const deleteCommand = {
+    principalId: "principal_v2_only_delete_probe",
+    threadId: deleteCommandProbeThreadId,
+    clientCommandId: "delete_command_v2_only_probe",
+    expectedHistoryRevision: 0,
+  };
+  assert.equal(store.acceptThreadDeleteCommand(deleteCommand).status, "accepted");
+  assert.equal(store.completeThreadDeleteCommand(deleteCommand).status, "completed");
+  const legacyRowsAfterV2DeleteCommand = rawDb
+    .prepare(`SELECT COUNT(*) AS count FROM thread_activity WHERE thread_id = ?`)
+    .get(deleteCommandProbeThreadId) as { count: number };
+  assert.equal(legacyRowsAfterV2DeleteCommand.count, 1);
+  rawDb.exec(
+    `DROP TABLE thread_activity; DROP TABLE thread_usage_ledger_events; DROP TABLE thread_pending_followups; DROP TABLE thread_subagent_sessions;`,
+  );
+  const providerSource = rawDb
+    .prepare(
+      `SELECT source_json FROM conversation_provider_inputs_v2 WHERE conversation_id = ? AND input_id = ?`,
+    )
+    .get(threadId, "native_v2_marker") as { source_json: string } | undefined;
+  assert.ok(providerSource);
+  if (!providerSource) throw new Error("expected V2 provider source marker");
+  const markedSource = JSON.parse(providerSource.source_json) as Record<string, unknown>;
+  markedSource.metadata = {
+    ...((markedSource.metadata as Record<string, unknown> | undefined) ?? {}),
+    legacyCompat: true,
+  };
+  rawDb
+    .prepare(
+      `UPDATE conversation_provider_inputs_v2 SET source_json = ? WHERE conversation_id = ? AND input_id = ?`,
+    )
+    .run(JSON.stringify(markedSource), threadId, "native_v2_marker");
+  assert.doesNotThrow(() => store.bindLatestUserRunEventToSdkMessage(threadId, "user-after-cutover"));
+  assert.doesNotThrow(() =>
+    store.rebindClaudeUserMessageRecords(threadId, [
+      { activityLineId: "sdk:user-after-cutover", upstreamMessageId: "upstream-after-cutover" },
+    ]),
+  );
+  // V2-only must also reject accidental writes from transitional maintenance
+  // helpers, otherwise a second skeleton read model can silently reappear.
+  store.saveThreadFeedSkeleton(threadId, undefined as never);
+  store.touchThreadFeedSkeletonSequence(threadId, 99);
+  store.deleteThreadFeedSkeleton(threadId);
+  const skeletonInspection = new DatabaseSync(databasePath, { readOnly: true });
+  const skeletonRows = skeletonInspection
+    .prepare(`SELECT COUNT(*) AS count FROM conversation_feed_skeletons_v2 WHERE conversation_id = ?`)
+    .get(threadId) as { count: number };
+  skeletonInspection.close();
+  assert.equal(skeletonRows.count, 0);
+  assert.equal(store.getThreadRunEventMaxSequence(threadId), 5);
+  assert.throws(
+    () =>
+      store.appendThreadRunEvent({
+        id: "legacy_after_cutover",
+        threadId,
+        eventType: "message.final",
+        scope: "main",
+        role: "assistant",
+        streamState: "finalized",
+        message: "must fail",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+    /Legacy thread run event writes are disabled after the V2 storage cutover/,
+  );
+  assert.throws(
+    () => store.appendActivityLine(threadId, { role: "assistant", message: "must fail" }),
+    /Legacy activity-line writes are disabled after the V2 storage cutover/,
+  );
+  store.saveUserMessageRecord({
+    threadId,
+    activityLineId: "legacy_user_after_cutover",
+    text: "must not recreate V1",
+    provider: "claude",
+  });
+  store.saveThreadMetrics(threadId, {
+    context: { occupied: 1, limit: 100, occupancyPct: 1, limitsResolved: true, segments: [], updatedAt: 2 },
+  });
+  store.clearSubagentSessions(threadId);
+  store.clearSubagentMetrics(threadId);
+  const rewrite = store.rewindThreadToActivityLine(threadId, "native_v2_prompt");
+  assert.equal(rewrite.cutoffRunSequence, 2);
+  assert.equal(rewrite.removedActivityCount, 0);
+  assert.equal(rewrite.removedRunEventCount, 0);
+  const durableImageRef = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+  store.conversationV2().append({
+    conversationId: threadId,
+    eventId: "v2_image_message",
+    sourceEventKey: "v2_image_message",
+    type: "message.created",
+    occurredAt: "2026-01-01T00:00:03.000Z",
+    turnId: "turn_image",
+    messageId: "message_image",
+    payload: {
+      role: "user",
+      channel: "answer",
+      body: "图片",
+      status: "final",
+      historyTarget: { activityLineId: "image:1" },
+      attachments: [{ mediaType: "image/png", contentRef: durableImageRef, byteLength: 3 }],
+    },
+  });
+  assert.equal(store.listReferencedPromptImageContentRefs().has(durableImageRef), true);
+
+  const inspection = new DatabaseSync(databasePath, { readOnly: true });
+  const retired = inspection
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table'
+         AND name IN ('thread_activity', 'thread_agent_instances', 'thread_coder_todos',
+                      'thread_run_events', 'thread_user_messages', 'thread_feed_skeleton',
+                      'thread_metrics_snapshots', 'thread_usage_ledger_events',
+                      'thread_subagent_sessions', 'thread_subagent_metrics',
+                      'thread_run_attempts', 'thread_pending_followups', 'thread_pending_plans')
+       ORDER BY name`,
+    )
+    .all();
+  assert.deepEqual(retired, []);
+  assert.equal(
+    (
+      inspection
+        .prepare(`SELECT value FROM conversation_store_meta_v2 WHERE key = 'conversation_v2_storage_mode'`)
+        .get() as { value: string }
+    ).value,
+    "v2_only",
+  );
+  const v2FollowUpCount = inspection
+    .prepare(`SELECT COUNT(*) AS count FROM conversation_followups_v2 WHERE thread_id = ?`)
+    .get(threadId) as { count: number };
+  assert.equal(v2FollowUpCount.count, 0);
+  inspection.close();
+
+  (store as unknown as { db: DatabaseSync }).db.close();
+  const staleSkeletonSeed = new DatabaseSync(databasePath);
+  staleSkeletonSeed
+    .prepare(
+      `INSERT INTO conversation_feed_skeletons_v2
+         (conversation_id, history_revision, max_event_sequence, snapshot_json, auxiliary_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(threadId, 0, 1, "{}", null, "2026-01-01T00:00:04.000Z");
+  staleSkeletonSeed.close();
+  const reopened = await createConversationStore(databasePath);
+  t.after(() => (reopened as unknown as { db: DatabaseSync }).db.close());
+  assert.equal(reopened.getConversationStorageMode(), "v2_only");
+  assert.deepEqual(reopened.listActivityLines(threadId), []);
+  const reopenedInspection = new DatabaseSync(databasePath, { readOnly: true });
+  const retiredAfterReopen = reopenedInspection
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table'
+         AND name IN ('thread_activity', 'thread_agent_instances', 'thread_coder_todos',
+                      'thread_run_events', 'thread_user_messages', 'thread_feed_skeleton',
+                      'thread_metrics_snapshots', 'thread_usage_ledger_events',
+                      'thread_subagent_sessions', 'thread_subagent_metrics',
+                      'thread_run_attempts', 'thread_pending_followups', 'thread_pending_plans')
+       ORDER BY name`,
+    )
+    .all();
+  assert.deepEqual(retiredAfterReopen, []);
+  const retiredSkeletonAfterReopen = reopenedInspection
+    .prepare(`SELECT COUNT(*) AS count FROM conversation_feed_skeletons_v2 WHERE conversation_id = ?`)
+    .get(threadId) as { count: number };
+  assert.equal(retiredSkeletonAfterReopen.count, 0);
+  reopenedInspection.close();
+  assert.equal(reopened.getThreadFollowUp(threadId, queuedFollowUp.id), undefined);
+  assert.equal(reopened.deleteThread(threadId), true);
 });

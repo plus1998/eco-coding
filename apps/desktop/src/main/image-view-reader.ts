@@ -20,7 +20,14 @@ export class ImageViewReadError extends Error {
 
 export interface ImageViewFileData {
   dataBase64: string;
-  mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml" | "image/x-icon" | "image/bmp";
+  mimeType:
+    | "image/png"
+    | "image/jpeg"
+    | "image/gif"
+    | "image/webp"
+    | "image/svg+xml"
+    | "image/x-icon"
+    | "image/bmp";
   path: string;
   fileName: string;
   bytes: number;
@@ -220,8 +227,8 @@ function readIcoDimensions(bytes: Buffer): { width: number; height: number } | u
   const count = bytes.readUInt16LE(4);
   if (count === 0 || bytes.length < 22) return undefined;
   // First image entry starts at offset 6
-  const width = bytes[6]; // 0 means 256
-  const height = bytes[7]; // 0 means 256
+  const width = bytes[6] ?? 0; // 0 means 256
+  const height = bytes[7] ?? 0; // 0 means 256
   return validDimensions(width === 0 ? 256 : width, height === 0 ? 256 : height);
 }
 
@@ -240,8 +247,8 @@ function readSvgDimensions(bytes: Buffer): { width: number; height: number } | u
   const widthMatch = content.match(/width=["']([^"']+)["']/);
   const heightMatch = content.match(/height=["']([^"']+)["']/);
   if (widthMatch && heightMatch) {
-    const width = parseFloat(widthMatch[1]);
-    const height = parseFloat(heightMatch[1]);
+    const width = parseFloat(widthMatch[1] ?? "");
+    const height = parseFloat(heightMatch[1] ?? "");
     if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
       return validDimensions(Math.round(width), Math.round(height));
     }
@@ -249,9 +256,11 @@ function readSvgDimensions(bytes: Buffer): { width: number; height: number } | u
   // Try viewBox: viewBox="0 0 100 200"
   const viewBoxMatch = content.match(/viewBox=["']([^"']+)["']/);
   if (viewBoxMatch) {
-    const parts = viewBoxMatch[1].split(/[\s,]+/).map(Number);
-    if (parts.length === 4 && Number.isFinite(parts[2]) && Number.isFinite(parts[3])) {
-      return validDimensions(Math.round(parts[2]), Math.round(parts[3]));
+    const parts = (viewBoxMatch[1] ?? "").split(/[\s,]+/).map(Number);
+    const width = parts[2] ?? Number.NaN;
+    const height = parts[3] ?? Number.NaN;
+    if (parts.length === 4 && Number.isFinite(width) && Number.isFinite(height)) {
+      return validDimensions(Math.round(width), Math.round(height));
     }
   }
   // Default dimensions for SVG if not specified

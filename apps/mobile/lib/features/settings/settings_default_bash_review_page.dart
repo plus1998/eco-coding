@@ -106,7 +106,7 @@ class _SettingsDefaultBashReviewPageState
                             if (!await _confirmFullAccessIfNeeded(next)) {
                               return;
                             }
-                            if (!mounted) return;
+                            if (!mounted || !context.mounted) return;
                             setState(() => _mode = next);
                             await saveSettingsDefaultBashReviewMode(
                               ref,

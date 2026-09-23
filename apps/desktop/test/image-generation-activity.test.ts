@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readImageGenerationToolUseId } from "../src/renderer/ActivityLogView";
-import type { ThreadRunProjectionTimelineItem } from "../src/shared/thread-run-projection";
+import type { ThreadRunProjectionTimelineItem } from "../src/shared/conversation-v2-projection";
 
 function item(tool: Record<string, unknown>): ThreadRunProjectionTimelineItem {
   return {

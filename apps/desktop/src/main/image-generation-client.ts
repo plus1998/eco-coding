@@ -3,12 +3,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   type GeneratedImageFile,
-  ImageGenerationError,
   IMAGE_GENERATION_REQUEST_TIMEOUT_MS,
+  ImageGenerationError,
   type ImageGenerationProvider,
   type ImageGenerationToolInput,
 } from "../shared/image-generation";
 import type { ImageGenerationClientConfig } from "./image-generation-store";
+
 const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 const MAX_INPUT_IMAGE_BYTES = 50 * 1024 * 1024;
 const OPENAI_MAX_INPUT_IMAGES = 16;
@@ -50,11 +51,7 @@ export async function generateImagesToWorkspace(input: {
   workspacePath: string;
   signal?: AbortSignal;
 }): Promise<GeneratedImageFile[]> {
-  const args = normalizeToolInput(
-    input.toolInput,
-    input.config.provider,
-    input.config.supportsImageToImage,
-  );
+  const args = normalizeToolInput(input.toolInput, input.config.provider, input.config.supportsImageToImage);
   const inputImages =
     args.input_images && args.input_images.length > 0
       ? await loadInputImages(args.input_images, input.workspacePath, input.config.provider)
@@ -187,10 +184,7 @@ async function loadInputImages(
       ? path.resolve(rawPath)
       : path.resolve(workspaceRoot, rawPath);
     if (absolutePath !== workspaceRoot && !absolutePath.startsWith(`${workspaceRoot}${path.sep}`)) {
-      throw new ImageGenerationError(
-        "invalid_input_path",
-        `参考图必须位于当前工作区内：${rawPath}`,
-      );
+      throw new ImageGenerationError("invalid_input_path", `参考图必须位于当前工作区内：${rawPath}`);
     }
     let linkStat;
     try {
@@ -205,11 +199,12 @@ async function loadInputImages(
       throw new ImageGenerationError("invalid_input_path", `参考图不是普通文件：${rawPath}`);
     }
     const realPath = await fs.realpath(absolutePath);
-    if (realPath !== workspaceRoot && !realPath.startsWith(`${workspaceRoot}${path.sep}`)) {
-      throw new ImageGenerationError(
-        "invalid_input_path",
-        `参考图解析后逃逸了工作区：${rawPath}`,
-      );
+    // The root is resolved the same way the file is: on macOS `/var` (and therefore every
+    // temp directory) is a symlink to `/private/var`, so comparing a resolved path against
+    // an unresolved root rejects a reference image that is plainly inside the workspace.
+    const realRoot = await fs.realpath(workspaceRoot).catch(() => workspaceRoot);
+    if (realPath !== realRoot && !realPath.startsWith(`${realRoot}${path.sep}`)) {
+      throw new ImageGenerationError("invalid_input_path", `参考图解析后逃逸了工作区：${rawPath}`);
     }
     if (linkStat.size > MAX_INPUT_IMAGE_BYTES) {
       throw new ImageGenerationError("image_too_large", `参考图超过 50 MB 限制：${rawPath}`);
@@ -220,10 +215,7 @@ async function loadInputImages(
     }
     const mimeType = detectImageMime(bytes);
     if (!mimeType) {
-      throw new ImageGenerationError(
-        "invalid_image",
-        `参考图必须是 PNG、JPEG 或 WebP：${rawPath}`,
-      );
+      throw new ImageGenerationError("invalid_image", `参考图必须是 PNG、JPEG 或 WebP：${rawPath}`);
     }
     loaded.push({
       bytes,

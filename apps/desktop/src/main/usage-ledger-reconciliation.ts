@@ -1,4 +1,5 @@
 import type { BillingUsageSource, ThreadBillingSnapshot, ThreadBillingSourceSnapshot } from "../shared/ipc";
+import { selectBillableUsageLedgerEvents } from "./billing-projector";
 import type { UsageLedgerEvent, UsageLedgerSource, UsageLedgerTotals } from "./usage-ledger";
 import { createEmptyUsageLedgerTotals } from "./usage-ledger";
 
@@ -51,7 +52,8 @@ export function reconcileUsageLedgerWithBilling(
   events: readonly UsageLedgerEvent[],
   billing: ThreadBillingSnapshot | undefined,
 ): UsageLedgerReconciliationResult {
-  const ledgerBySource = buildLedgerSourceTotals(events);
+  const billableEvents = selectBillableUsageLedgerEvents(events);
+  const ledgerBySource = buildLedgerSourceTotals(billableEvents, events);
   const billingBySource = billing?.sourceBreakdown ?? {};
   const sources = new Set<UsageLedgerSource>([
     ...Object.keys(ledgerBySource),
@@ -83,7 +85,7 @@ export function reconcileUsageLedgerWithBilling(
     compareReportedCost(source, ledger, billingSource, issues);
   }
 
-  const unattributed = events.filter((event) => event.attribution.status === "unattributed");
+  const unattributed = billableEvents.filter((event) => event.attribution.status === "unattributed");
   if (unattributed.length > 0) {
     issues.push({
       type: "unattributed_usage",
@@ -124,6 +126,7 @@ export function summarizeUsageLedgerReconciliation(
 
 function buildLedgerSourceTotals(
   events: readonly UsageLedgerEvent[],
+  costEvents: readonly UsageLedgerEvent[] = events,
 ): Partial<Record<UsageLedgerSource, UsageLedgerSourceTotals>> {
   const totals: Partial<Record<UsageLedgerSource, UsageLedgerSourceTotals>> = {};
   const requestCosts = new Map<
@@ -140,7 +143,7 @@ function buildLedgerSourceTotals(
     total.eventCount += 1;
   }
 
-  for (const event of events) {
+  for (const event of costEvents) {
     const key = `${event.source}\u001f${event.requestKey ?? event.sourceEventId}`;
     const cost = requestCosts.get(key) ?? {
       source: event.source,

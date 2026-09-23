@@ -1,0 +1,257 @@
+{
+  "feed": [
+    {
+      "text": "<text#8bb1ed6b47:len25>",
+      "role": "user",
+      "at": "2026-09-16T07:00:50.050Z",
+      "callId": null
+    },
+    {
+      "text": "<text#4845f837d1:len112>",
+      "role": "thinking",
+      "at": "2026-09-16T07:00:57.229Z",
+      "callId": null
+    },
+    {
+      "text": "<text#77a3868eae:len31>",
+      "role": "planner",
+      "at": "2026-09-16T07:00:57.346Z",
+      "callId": null
+    },
+    {
+      "text": "<text#51a9abcada:len193>",
+      "role": "thinking",
+      "at": "2026-09-16T07:01:34.994Z",
+      "callId": null
+    },
+    {
+      "text": "<text#dc9389a757:len32>",
+      "role": "planner",
+      "at": "2026-09-16T07:01:35.310Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T07:01:36.302Z",
+      "callId": "call_ef3be440f03d4010be496c44|item_9241d23b2d767ea54099c27b",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T07:01:36.314Z",
+      "callId": "call_cd02f6970adc475bbb30094f|item_6e5492f21652807467dfac9f",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#6167cbe119:len112>",
+      "role": "thinking",
+      "at": "2026-09-16T07:01:38.351Z",
+      "callId": null
+    },
+    {
+      "text": "<text#5e38ba682f:len24>",
+      "role": "planner",
+      "at": "2026-09-16T07:01:38.670Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T07:01:39.914Z",
+      "callId": "call_8b1240d4bc454895bcd0ed60|item_b033add99ddbe59fb3bdc991",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T07:01:39.929Z",
+      "callId": "call_49e39d914da8443b8519bf0a|item_1f4e04d894496040c642f3a3",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#bbb15645c3:len319>",
+      "role": "thinking",
+      "at": "2026-09-16T07:01:44.823Z",
+      "callId": null
+    },
+    {
+      "text": "<text#7ad9f97a00:len29>",
+      "role": "planner",
+      "at": "2026-09-16T07:01:45.098Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T07:01:49.758Z",
+      "callId": "call_e29804a1139c4f918f26019e|item_13e545ea6fe034133fc019ee",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-16T07:01:49.775Z",
+      "callId": "call_19c58a851054415eac577d70|item_6dd807e687486ea41a2e6d0d",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#bacb957d39:len113>",
+      "role": "thinking",
+      "at": "2026-09-16T07:01:55.715Z",
+      "callId": null
+    },
+    {
+      "text": "<text#c5150ab707:len570>",
+      "role": "planner",
+      "at": "2026-09-16T07:02:01.144Z",
+      "callId": null,
+      "final": true
+    }
+  ],
+  "cards": [
+    {
+      "agentId": "pi_explore_35afefc6",
+      "role": "explore",
+      "kind": "subagent",
+      "status": "stopped",
+      "missionText": "<delegationPrompt#2ccf1d110a:len37>",
+      "taskName": null,
+      "parentToolUseId": "call_b1584ce008fb4df593989b8b|item_9ac87f361d269caf878b9811",
+      "rows": [
+        {
+          "text": "<text#8ce0b0f72e:len158>",
+          "role": "explore",
+          "at": null,
+          "callId": null
+        },
+        {
+          "text": "<text#4afe16fae4:len124>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "text": "<text#5fcd895a62:len130>",
+          "role": "explore",
+          "at": null,
+          "callId": null
+        }
+      ]
+    },
+    {
+      "agentId": "pi_explore_e20d85f6",
+      "role": "explore",
+      "kind": "subagent",
+      "status": "stopped",
+      "missionText": "<delegationPrompt#8ab56e68cd:len37>",
+      "taskName": null,
+      "parentToolUseId": "call_dc6180ecd22243a580a1b69e|item_70d442853d7c350c13683ed0",
+      "rows": [
+        {
+          "text": "<text#ef3dd17c76:len158>",
+          "role": "explore",
+          "at": null,
+          "callId": null
+        },
+        {
+          "text": "<text#3221180a2d:len69>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_7fffc3b396fe455b9b4044b0|item_9ff5d7801cb261eb051a9b5b",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#a375bdfea9:len79>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_5adca81c2741415493fb89e9|item_f50550e1d481926c4bcf4995",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#b980338f98:len155>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_dfb940e703b44f5d874d3f56|item_2661acd54feacc22d479230b",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#f41443e532:len80>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_08a8186d72954461a649f218|item_53457c9a20a1ab5cc7587ec9",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#1bf5775d7b:len138>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_bbb86989b62646e192eccd7e|item_5d12508c0c1151c08c5cbfad",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#438bd5fae8:len135>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_d6a588a7ae6e4f1abcf5e6c5|item_b19530d18bb335516d7c359f",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#434e360a55:len185>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "role": "explore",
+          "at": null,
+          "callId": "call_5611a041850b420d929b8373|item_35c771b49321729635472b7d",
+          "status": "tool.failed"
+        },
+        {
+          "text": "<text#4b5e701053:len224>",
+          "role": "thinking",
+          "at": null,
+          "callId": null
+        },
+        {
+          "text": "<text#364a6ffb0d:len386>",
+          "role": "explore",
+          "at": null,
+          "callId": null
+        }
+      ]
+    }
+  ],
+  "attempts": [
+    {
+      "attemptId": "attempt_execution_0_1789542053007_18",
+      "status": "completed"
+    }
+  ]
+}
