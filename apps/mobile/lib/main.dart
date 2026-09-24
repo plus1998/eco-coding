@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,7 +20,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Flutter engine does not call Android Surface.setFrameRate by default (#160952).
-  RefreshRate.enable();
+  // iOS has no qualified engine-control backend in refresh_rate 2.x; keeping
+  // this request Android-only avoids an unnecessary native call on every iOS
+  // launch while retaining the Android high-refresh behavior.
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    unawaited(RefreshRate.enable());
+  }
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent),

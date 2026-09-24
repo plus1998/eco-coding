@@ -888,10 +888,10 @@ packages:
     dependency: "direct main"
     description:
       name: refresh_rate
-      sha256: b20deeaff0febb447378ecd98e441a1768412603cbdf032b11aa24e2f5a25966
+      sha256: e9155192731485f2448645eedd9bdf69dd7fbad76b85efdc4bdd4585ee97f1f1
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.2"
+    version: "2.0.1"
   riverpod:
     dependency: transitive
     description:
