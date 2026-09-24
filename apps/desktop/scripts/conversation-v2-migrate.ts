@@ -2101,6 +2101,13 @@ function classifyPostCutoverNativeEvents(
   return { warnings, unmatchedEvents: 0 };
 }
 
+/** Accept an exact derived ID and the deterministic suffix used for hash collisions. */
+function matchesDerivedEventId(actual: string, expected: string): boolean {
+  if (actual === expected) return true;
+  const collisionPrefix = `${expected}_collision_`;
+  return actual.startsWith(collisionPrefix) && /^[0-9a-f]{64}$/.test(actual.slice(collisionPrefix.length));
+}
+
 function isVerifiedMaintenanceEvent(
   row: PostCutoverNativeEventRow,
   conversationId: string,
@@ -2113,7 +2120,13 @@ function isVerifiedMaintenanceEvent(
   const factId = source.slice(sourcePrefix.length);
   const fact = ledgerFacts.find((candidate) => candidate.eventId === factId);
   if (fact?.disposition !== "modified" || !fact.matchedSourceId) return false;
-  if (row.event_id !== `maintenance_native_${stableHash(`${conversationId}:${fact.eventId}`)}`) return false;
+  if (
+    !matchesDerivedEventId(
+      row.event_id,
+      `maintenance_native_${stableHash(`${conversationId}:${fact.eventId}`)}`,
+    )
+  )
+    return false;
   const factPayload = asJsonObject(fact.payload);
   const payload = asJsonObject(parseJsonValue(row.payload_json));
   if (!factPayload || !payload || payload.authority !== "maintenance") return false;
@@ -2149,22 +2162,24 @@ function isDesktopUserEvent(
 ): boolean {
   const source = row.source_event_key ?? "";
   if (row.type === "message.created" && source.startsWith(`desktop:user:${conversationId}:`)) {
-    return row.event_id === `desktop_v2_user_${stableHash(source)}` && payload?.role === "user";
+    return (
+      matchesDerivedEventId(row.event_id, `desktop_v2_user_${stableHash(source)}`) && payload?.role === "user"
+    );
   }
   if (row.type === "message.finalized" && source.startsWith(`desktop:user:accepted:${conversationId}:`)) {
-    return row.event_id === `desktop_v2_user_finalize_${stableHash(source)}`;
+    return matchesDerivedEventId(row.event_id, `desktop_v2_user_finalize_${stableHash(source)}`);
   }
   if (
     row.type === "message.finalized" &&
     source.startsWith(`desktop:user:accepted-failed:${conversationId}:`)
   ) {
-    return row.event_id === `desktop_v2_user_failed_${stableHash(source)}`;
+    return matchesDerivedEventId(row.event_id, `desktop_v2_user_failed_${stableHash(source)}`);
   }
   if (
     row.type === "message.history_targeted" &&
     source.startsWith(`desktop:user:history-target:${conversationId}:`)
   ) {
-    return row.event_id === `desktop_v2_user_history_target_${stableHash(source)}`;
+    return matchesDerivedEventId(row.event_id, `desktop_v2_user_history_target_${stableHash(source)}`);
   }
   return false;
 }
@@ -2226,14 +2241,14 @@ function isRuntimeInputReceipt(
     (row.source_event_key ?? "").startsWith(
       `runtime-input:${conversationId}:${sourceId}:${payload.inputHash}`,
     ) &&
-    row.event_id === `runtime_input_${stableHash(row.source_event_key ?? "")}`
+    matchesDerivedEventId(row.event_id, `runtime_input_${stableHash(row.source_event_key ?? "")}`)
   );
 }
 
 function isProviderRuntimeEvent(row: PostCutoverNativeEventRow, conversationId: string): boolean {
   return (
     (row.source_event_key ?? "").startsWith(`provider:${conversationId}:`) &&
-    row.event_id === `legacy_v2_${stableHash(row.source_event_key ?? "")}`
+    matchesDerivedEventId(row.event_id, `legacy_v2_${stableHash(row.source_event_key ?? "")}`)
   );
 }
 
@@ -2250,7 +2265,7 @@ function isProviderPatchEvent(
     return (
       digest !== undefined &&
       source === `provider:patch:${digest}` &&
-      row.event_id === `provider_patch_${digest}`
+      matchesDerivedEventId(row.event_id, `provider_patch_${digest}`)
     );
   }
   if (row.type !== "message.history_targeted" || !row.message_id) return false;
@@ -2264,8 +2279,11 @@ function isProviderPatchEvent(
   return (
     digest !== undefined &&
     baseSource === `provider:patch:${digest}` &&
-    base.event_id === `provider_patch_${digest}` &&
-    row.event_id === `provider_history_target_${stableHash(`${baseSource}:${row.message_id}`)}`
+    matchesDerivedEventId(base.event_id, `provider_patch_${digest}`) &&
+    matchesDerivedEventId(
+      row.event_id,
+      `provider_history_target_${stableHash(`${baseSource}:${row.message_id}`)}`,
+    )
   );
 }
 
@@ -2297,7 +2315,7 @@ function isHistoryRepairEvent(
       const base = source.slice(0, -bindSuffix.length);
       return (
         asJsonObject(payload.historyTarget) !== undefined &&
-        row.event_id === `codex_user_duplicate_bind_${stableHash(base)}`
+        matchesDerivedEventId(row.event_id, `codex_user_duplicate_bind_${stableHash(base)}`)
       );
     }
     if (row.type === "history.deleted" && source.endsWith(deleteSuffix)) {
@@ -2305,7 +2323,7 @@ function isHistoryRepairEvent(
       return (
         payload.reason === "codex-user-item-echo" &&
         Array.isArray(payload.affectedMessageIds) &&
-        row.event_id === `codex_user_duplicate_delete_${stableHash(base)}`
+        matchesDerivedEventId(row.event_id, `codex_user_duplicate_delete_${stableHash(base)}`)
       );
     }
     return false;
@@ -2322,7 +2340,7 @@ function isHistoryRepairEvent(
   return (
     payload.reason === "accepted-prompt-duplicate" &&
     Array.isArray(payload.affectedMessageIds) &&
-    row.event_id === `accepted_prompt_duplicate_delete_${stableHash(base)}`
+    matchesDerivedEventId(row.event_id, `accepted_prompt_duplicate_delete_${stableHash(base)}`)
   );
 }
 
@@ -2343,7 +2361,7 @@ function isRunLifecycleEvent(
     statusByType[row.type] !== undefined &&
     (source.startsWith(`desktop:run:${conversationId}:`) ||
       source.startsWith(`desktop:run-reconciled:${conversationId}:`)) &&
-    row.event_id === `desktop_v2_run_${stableHash(source)}` &&
+    matchesDerivedEventId(row.event_id, `desktop_v2_run_${stableHash(source)}`) &&
     payload?.authority === "lifecycle" &&
     payload.status === statusByType[row.type]
   );
@@ -2353,7 +2371,7 @@ function isAgentLifecycleEvent(row: PostCutoverNativeEventRow, conversationId: s
   return (
     ["agent.created", "agent.started", "agent.interrupted", "agent.completed"].includes(row.type) &&
     (row.source_event_key ?? "").startsWith(`desktop:agent:${conversationId}:`) &&
-    row.event_id === `desktop_v2_agent_${stableHash(row.source_event_key ?? "")}`
+    matchesDerivedEventId(row.event_id, `desktop_v2_agent_${stableHash(row.source_event_key ?? "")}`)
   );
 }
 
@@ -2368,7 +2386,7 @@ function isVerifiedRecoveryToolEvent(
     !row.run_id ||
     !row.tool_call_id ||
     source !== `recovery:terminal-run-tool:${conversationId}:${row.run_id}:${row.tool_call_id}` ||
-    row.event_id !== `recovery_terminal_tool_failed_${stableHash(source)}`
+    !matchesDerivedEventId(row.event_id, `recovery_terminal_tool_failed_${stableHash(source)}`)
   ) {
     return false;
   }

@@ -3969,16 +3969,60 @@ export class ConversationV2Store {
   }
 
   private appendInTransaction(input: ConversationEventInput): ConversationAppendResult {
-    const normalized = normalizeEventInput(input);
-    const existing = this.db
-      .prepare(
-        `SELECT * FROM conversation_events_v2
-         WHERE event_id = ? OR (conversation_id = ? AND source_event_key = ?)
-         LIMIT 1`,
-      )
-      .get(normalized.eventId, normalized.conversationId, normalized.sourceEventKey ?? null) as
-      | EventRow
-      | undefined;
+    let normalized = normalizeEventInput(input);
+    // Most historical event IDs are derived from a 32-bit stableHash. The ID
+    // column is global, so two unrelated source keys can occasionally produce
+    // the same ID after enough events have accumulated. Resolve that narrow
+    // collision without weakening idempotency: the source key remains the
+    // authoritative identity, and the alternate ID is deterministic.
+    let existing = normalized.sourceEventKey
+      ? (this.db
+          .prepare(
+            `SELECT * FROM conversation_events_v2
+             WHERE conversation_id = ? AND source_event_key = ?
+             LIMIT 1`,
+          )
+          .get(normalized.conversationId, normalized.sourceEventKey) as EventRow | undefined)
+      : undefined;
+    if (existing && existing.event_id !== normalized.eventId && isDerivedEventId(normalized.eventId)) {
+      normalized = { ...normalized, eventId: existing.event_id };
+    }
+    if (!existing) {
+      existing = this.db
+        .prepare(`SELECT * FROM conversation_events_v2 WHERE event_id = ? LIMIT 1`)
+        .get(normalized.eventId) as EventRow | undefined;
+      if (
+        existing &&
+        (existing.conversation_id !== normalized.conversationId ||
+          existing.source_event_key !== (normalized.sourceEventKey ?? null)) &&
+        normalized.sourceEventKey &&
+        isDerivedEventId(normalized.eventId)
+      ) {
+        const originalEventId = normalized.eventId;
+        let collisionAttempt = 0;
+        do {
+          const resolvedEventId = resolveEventIdCollision(normalized, collisionAttempt);
+          logEcoDiag("conversation-v2.event-id-collision", {
+            conversationId: normalized.conversationId,
+            sourceEventKey: normalized.sourceEventKey,
+            originalEventId,
+            resolvedEventId,
+            existingConversationId: existing.conversation_id,
+            existingSequence: existing.seq,
+            existingSourceEventKey: existing.source_event_key,
+          });
+          normalized = { ...normalized, eventId: resolvedEventId };
+          existing = this.db
+            .prepare(`SELECT * FROM conversation_events_v2 WHERE event_id = ? LIMIT 1`)
+            .get(normalized.eventId) as EventRow | undefined;
+          collisionAttempt += 1;
+        } while (
+          existing &&
+          (existing.conversation_id !== normalized.conversationId ||
+            existing.source_event_key !== (normalized.sourceEventKey ?? null))
+        );
+      }
+    }
     const eventHash = stableHash(immutableEventShape(normalized));
     if (existing) {
       if (existing.event_hash !== eventHash) {
@@ -6069,6 +6113,45 @@ export class ConversationV2Store {
 }
 
 const TERMINAL_MESSAGE_STATUSES = new Set(["final", "failed", "cancelled", "deleted"]);
+
+/** Event ID prefixes generated from a short hash and therefore eligible for collision repair. */
+const DERIVED_EVENT_ID_PREFIXES = [
+  "runtime_input_",
+  "legacy_v2_",
+  "desktop_v2_",
+  "provider_patch_",
+  "provider_history_target_",
+  "history_v2_",
+  "todo_v2_",
+  "migration_event_",
+  "maintenance_native_",
+  "recovery_terminal_tool_failed_",
+  "codex_user_duplicate_",
+  "accepted_prompt_duplicate_",
+] as const;
+
+function isDerivedEventId(eventId: string): boolean {
+  return DERIVED_EVENT_ID_PREFIXES.some((prefix) => eventId.startsWith(prefix));
+}
+
+function resolveEventIdCollision(
+  input: Pick<ConversationEventInput, "conversationId" | "eventId" | "sourceEventKey">,
+  attempt: number,
+): string {
+  const digest = crypto
+    .createHash("sha256")
+    .update(
+      stableJson({
+        conversationId: input.conversationId,
+        sourceEventKey: input.sourceEventKey,
+        eventId: input.eventId,
+        attempt,
+      }),
+      "utf8",
+    )
+    .digest("hex");
+  return `${input.eventId}_collision_${digest}`;
+}
 
 function normalizeEventInput(
   input: ConversationEventInput,
