@@ -48,4 +48,8 @@ jobs:
       - name: Type check the desktop app
         # Keep this blocking: the V2-only storage boundary spans main, preload, renderer and
         # shared protocol types, so a stale or incompatible type is a release failure.
-        run: bunx tsc --noEmit -p apps/desktop/tsconfig.json
+        # Build the referenced workspace projects first; a clean CI checkout has no dist/*.d.ts
+        # outputs, and TypeScript otherwise reports TS6305 and cascades into misleading `any`s.
+        run: |
+          bunx tsc -b apps/desktop/tsconfig.json --pretty false
+          bunx tsc --noEmit -p apps/desktop/tsconfig.json
