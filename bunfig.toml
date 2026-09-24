@@ -4,4 +4,6 @@ saveTextLockfile = true
 
 [test]
 root = "."
-timeout = 10000
+# Bun does not read a `test.timeout` bunfig key. Keep the suite's intended
+# default in the preload, where Bun exposes the supported test-runner API.
+preload = ["./scripts/bun-test-preload.ts"]
