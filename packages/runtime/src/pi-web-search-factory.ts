@@ -1,4 +1,4 @@
-import piWebSearch from "pi-web-search";
+import piWebSearch from "./pi-web-search-loader.js";
 
 export const PI_WEB_SEARCH_EXTENSION_NAME = "pi-web-search" as const;
 
