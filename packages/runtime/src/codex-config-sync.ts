@@ -152,7 +152,8 @@ export function parseCodexGatewayModelAlias(
 export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput): string {
   const gatewayBaseUrl = input.gatewayBaseUrl ?? resolveEcoGatewayBaseUrl(input.gatewayPort);
   const enabledProviders = input.providers.filter((provider) => provider.enabled);
-  const defaultProvider = enabledProviders[0];
+  const gatewayProviders = enabledProviders.filter((provider) => provider.id !== "openai");
+  const defaultProvider = gatewayProviders[0];
   const agentRoles = uniqueAgentRoles(input.agentRoles ?? []);
   const enableMultiAgent = input.enableMultiAgent === true || agentRoles.length > 0;
   const lines = [
@@ -189,7 +190,7 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
   lines.push("[tools.update_plan]", "enabled = true", "");
 
   const streamIdleTimeoutMs = resolveCodexStreamIdleTimeoutMs();
-  for (const provider of enabledProviders) {
+  for (const provider of gatewayProviders) {
     const slug = buildCodexModelProviderSlug(provider.id);
     lines.push(
       `[model_providers.${slug}]`,
@@ -229,7 +230,9 @@ export async function syncCodexConfigFromEcoProviders(
   const codexHomeDir = resolveCodexHomeDir(input.ecoDataDir);
   const configPath = path.join(codexHomeDir, "config.toml");
   const gatewayBaseUrl = input.gatewayBaseUrl ?? resolveEcoGatewayBaseUrl(input.gatewayPort);
-  const enabledProviders = input.providers.filter((provider) => provider.enabled);
+  const enabledProviders = input.providers.filter(
+    (provider) => provider.enabled && provider.id !== "openai",
+  );
   const providerSlugs = enabledProviders.map((provider) => buildCodexModelProviderSlug(provider.id));
   const mcpServers = uniqueMcpServers(input.mcpServers ?? []);
   const configToml = buildCodexConfigToml({ ...input, gatewayBaseUrl, mcpServers });

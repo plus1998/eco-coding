@@ -509,6 +509,101 @@ const api = {
   testProviderConnection(request: TestProviderConnectionRequest): Promise<TestProviderConnectionResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderTest, request);
   },
+  codexOAuthGetStatus(): Promise<{ isLoggedIn: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.codexOAuthGetStatus);
+  },
+  codexOAuthStartLogin(upstreamProxyUrl?: string): Promise<{ success: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.codexOAuthStartLogin, { upstreamProxyUrl });
+  },
+  codexOAuthLogout(): Promise<{ success: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.codexOAuthLogout);
+  },
+
+  // ─── OpenAI Account Management ─────────────────────────────────────────────
+  openAIAccountsList(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      proxyUrl?: string;
+      isLoggedIn: boolean;
+      authState: "missing" | "configured" | "expired";
+      lastLogin?: string;
+      createdAt: string;
+    }>
+  > {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsList);
+  },
+
+  openAIAccountsCreate(name: string, proxyUrl?: string): Promise<{
+    id: string;
+    name: string;
+    proxyUrl?: string;
+    isLoggedIn: boolean;
+    authState: "missing" | "configured" | "expired";
+    createdAt: string;
+  }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsCreate, { name, proxyUrl });
+  },
+
+  openAIAccountsDelete(accountId: string): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsDelete, { accountId });
+  },
+
+  openAIAccountsStartLogin(accountId: string): Promise<{ success: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsStartLogin, { accountId });
+  },
+
+  openAIAccountsSetActive(accountId: string | null): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsSetActive, { accountId });
+  },
+
+  openAIAccountsSetAuthJson(accountId: string, content: string): Promise<{ success: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsSetAuthJson, { accountId, content });
+  },
+
+  openAIAccountsQueryQuota(accountId: string): Promise<{
+    planType: string;
+    email: string;
+    rateLimit: {
+      allowed: boolean;
+      limitReached: boolean;
+      primaryWindow: {
+        usedPercent: number;
+        limitWindowSeconds: number;
+        resetAfterSeconds: number;
+        resetAt: number;
+      } | null;
+      secondaryWindow: {
+        usedPercent: number;
+        limitWindowSeconds: number;
+        resetAfterSeconds: number;
+        resetAt: number;
+      } | null;
+    };
+    resetCreditsAvailable: number;
+    fetchedAt: number;
+  } | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsQueryQuota, { accountId });
+  },
+
+  openAIAccountsUpdate(accountId: string, name: string, proxyUrl?: string): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsUpdate, { accountId, name, proxyUrl });
+  },
+
+  openAIAccountsGetAuthJson(accountId: string): Promise<string | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsGetAuthJson, { accountId });
+  },
+
+  openAIAccountsGetActive(): Promise<{
+    activeAccountId: string | null;
+    isLoggedIn: boolean;
+    message: string;
+  }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsGetActive);
+  },
+  onCodexOauthLoginResult(callback: (result: { success: boolean; message: string }) => void) {
+    ipcRenderer.on("codex-oauth:login-result", (_event, result) => callback(result));
+  },
   testRouteProfile(request: TestRoleRoutesRequest): Promise<TestRoleRoutesResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileTest, request);
   },

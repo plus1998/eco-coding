@@ -29,6 +29,7 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   type LucideIcon,
+  KeyRound,
   Maximize2,
   MessageCirclePlus,
   MessageSquare,
@@ -287,6 +288,7 @@ import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-conf
 import {
   composerRequiresOrchestration,
   composerShowsRouteConfig,
+  isBuiltInOpenAiProvider,
   resolveComposerModelAvailability,
 } from "./composer-model-availability";
 import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
@@ -347,6 +349,7 @@ import {
   LazyMcpSettingsPanel,
   LazyModelsSettingsPanel,
   LazyNotificationPreferencesPanel,
+  LazyOpenAIAccountsPanel,
   LazyPersonalizationSettingsPanel,
   LazyProxySettingsPanel,
   LazySkillsSettingsPanel,
@@ -4577,6 +4580,14 @@ function App() {
     workflowSettings,
     projectOrchestrationSelection,
   ]);
+  // Built-in OpenAI (auth.json) is Codex-exclusive; other kernels cannot call it via the gateway.
+  const composerUsableProviders = useMemo(
+    () =>
+      composerCoreKind === "codex"
+        ? settings.providers
+        : settings.providers.filter((provider) => !isBuiltInOpenAiProvider(provider)),
+    [composerCoreKind, settings.providers],
+  );
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
     if (!selectedOrchestrationSnapshot) {
       return undefined;
@@ -4587,17 +4598,21 @@ function App() {
     if (!route) {
       return undefined;
     }
-    const provider = settings.providers.find((candidate) => candidate.id === route.providerId);
+    // Built-in OpenAI (auth.json) is only usable with the Codex kernel.
+    const provider = composerUsableProviders.find((candidate) => candidate.id === route.providerId);
+    if (!provider) {
+      return undefined;
+    }
     return {
       providerId: route.providerId,
-      providerName: provider?.name.trim() || route.providerId,
+      providerName: provider.name.trim() || route.providerId,
       modelId: route.modelId,
       ...(route.candidateModelId ? { candidateModelId: route.candidateModelId } : {}),
       ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
     };
-  }, [selectedOrchestrationSnapshot, settings.providers]);
+  }, [composerUsableProviders, selectedOrchestrationSnapshot]);
   const composerModelProvider = templateMainModel
-    ? settings.providers.find((provider) => provider.id === templateMainModel.providerId)
+    ? composerUsableProviders.find((provider) => provider.id === templateMainModel.providerId)
     : undefined;
   const composerModelProviderId = composerModelProvider?.enabled ? composerModelProvider.id : undefined;
   const composerMainAgentModelOverride = resolveMainAgentModelOverrideForProvider(
@@ -4704,7 +4719,7 @@ function App() {
   );
   const primaryOrchestrationIssue = orchestrationIssues[0];
   const composerModelAvailability = resolveComposerModelAvailability(
-    settings.providers,
+    composerUsableProviders,
     templateMainModel,
     composerCoreKind,
   );
@@ -10102,6 +10117,7 @@ function App() {
       onSelectSubagents={selectComposerSubagents}
       onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
       onSelectVisionModel={selectComposerVisionModel}
+      coreKind={composerCoreKind}
       onResetToGlobalSettings={() => void resetComposerToGlobalSettings()}
       onOpenFullSettings={() => openModelsSettings("compositionParts")}
     />

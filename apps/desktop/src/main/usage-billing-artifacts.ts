@@ -25,6 +25,7 @@ import {
   USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
 import { buildUsageRequestKey } from "./thread-usage-accumulator";
+import { resolveBuiltInOpenAiDefaultRates } from "./built-in-openai-pricing";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
@@ -132,8 +133,21 @@ export async function resolveSingleUsageBillingArtifacts(
 
   const actualLookup = usageRoute ? await input.lookupPricing(usageRoute) : null;
   const plannerLookup = plannerRoute ? await input.lookupPricing(plannerRoute) : null;
-  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
-  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  let actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
+  let plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  // Built-in OpenAI (ChatGPT/auth.json) Codex models are not served through the
+  // gateway and are not in the models.dev catalog, so the lookups above return
+  // nothing. Fall back to public list prices so the billing card can show cost.
+  if (input.providerId === "openai") {
+    const pricingModelId = resolvedModelId ?? input.modelId;
+    if (!actualRates && pricingModelId) {
+      actualRates = resolveBuiltInOpenAiDefaultRates(pricingModelId);
+    }
+    const plannerModelId = plannerRoute?.modelId ?? pricingModelId;
+    if (!plannerRates && plannerModelId) {
+      plannerRates = resolveBuiltInOpenAiDefaultRates(plannerModelId);
+    }
+  }
   const requestKey =
     input.requestKey ??
     buildUsageRequestKey({

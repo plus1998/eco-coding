@@ -86,6 +86,7 @@ interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
+  coreKind?: string | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onResetToGlobalSettings: () => void | Promise<void>;
@@ -100,6 +101,7 @@ interface ComposerRouteCardBodyProps extends CompositionControlHandlers {
   showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
+  coreKind?: string | undefined;
   onOpenFullSettings: () => void;
 }
 
@@ -112,6 +114,7 @@ export function ComposerRoutePopover({
   showOrchestration = true,
   invalidFields,
   orchestrationIssues,
+  coreKind,
   anchorRef,
   onClose,
   onResetToGlobalSettings,
@@ -237,6 +240,7 @@ export function ComposerRoutePopover({
         showOrchestration={showOrchestration}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
+        coreKind={coreKind}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
@@ -256,6 +260,7 @@ export function ComposerRouteCardBody({
   showOrchestration = true,
   invalidFields,
   orchestrationIssues,
+  coreKind,
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
@@ -274,6 +279,7 @@ export function ComposerRouteCardBody({
         showOrchestration={showOrchestration}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
+        coreKind={coreKind}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
@@ -309,6 +315,7 @@ function ComposerRouteCompositionControls({
   onSelectSubagents,
   onSelectAuxiliaryModel,
   onSelectVisionModel,
+  coreKind,
 }: {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
@@ -316,9 +323,12 @@ function ComposerRouteCompositionControls({
   showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
+  coreKind?: string | undefined;
 } & CompositionControlHandlers) {
   const { t } = useTranslation();
-  const mainAgentConfigs = settings.mainAgentConfigs ?? [];
+  const mainAgentConfigs = (settings.mainAgentConfigs ?? []).filter(
+    (config) => config.id !== "__openai_official__" || coreKind === "codex",
+  );
   const mainAgentPrompts = (settings.mainAgentPrompts ?? []).filter(
     (prompt) => prompt.mode === "custom_append",
   );
@@ -429,6 +439,7 @@ function ComposerRouteCompositionControls({
           >
             {mainAgentConfigs.map((config) => (
               <option key={config.id} value={config.id}>
+                {config.id === "__openai_official__" ? "🟢 " : ""}
                 {config.name} ({config.modelRef.modelId})
               </option>
             ))}

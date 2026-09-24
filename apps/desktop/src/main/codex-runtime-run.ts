@@ -28,6 +28,7 @@ import {
   type CodexThreadStatusKind,
   type CodexToolPolicy,
   CodexTurnRouteRegistry,
+  type CodexTurnTokenUsageBreakdown,
   type CodexWebSearchMode,
   clearCodexSpawnPayloadQueueSync,
   collectCodexGatewayCatalogRoutes,
@@ -201,6 +202,16 @@ export interface CodexRuntimeRunDeps {
   /** Runs only after the root Eco -> Codex thread mapping has been persisted successfully. */
   onCodexThreadMapped?: (codexThreadId: string) => void;
   onCodexContextUpdated?: (resolution: CodexContextSnapshotResolution) => void;
+  /**
+   * Codex app-server per-turn token usage (terminal `turn/completed`). Used as
+   * the billing source for direct (non-gateway) routes such as built-in OpenAI.
+   */
+  onCodexTurnTokenUsage?: (input: {
+    threadId: string;
+    codexThreadId: string;
+    turnId: string;
+    appServerTokenUsage: CodexTurnTokenUsageBreakdown;
+  }) => void;
   onCodexTurnPlanUpdated?: NonNullable<
     ConstructorParameters<typeof CodexEventAdapter>[0]["onTurnPlanUpdated"]
   >;
@@ -363,6 +374,9 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
           config.resolveRunAttemptId?.(projectionEvent.threadId),
         ),
       );
+      // Pass the raw (un-normalized) event: projectionEvent renames
+      // run.attempt.* to request.* and would bypass the terminal-turn gate.
+      emitCodexTurnTokenUsage(config, event as ThreadRunEventInput);
       config.scheduleThreadRunProjectionUpdated(projectionEvent.threadId, {
         streaming: isCodexStreamingProjectionEvent(projectionEvent),
       });
@@ -389,6 +403,37 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
       onTurnPlanUpdated: config.onCodexTurnPlanUpdated,
     }),
     ...(config.onCodexPlanReady && { onPlanReady: config.onCodexPlanReady }),
+  });
+}
+
+/**
+ * Surface Codex app-server per-turn token usage on terminal turn events so the
+ * host can bill direct (non-gateway) routes. Gateway-routed turns are billed from
+ * gateway usage events instead; the host must gate on the route provider.
+ */
+function emitCodexTurnTokenUsage(config: CodexRuntimeRunDeps, event: ThreadRunEventInput): void {
+  if (
+    event.eventType !== "run.attempt.completed" &&
+    event.eventType !== "run.attempt.failed" &&
+    event.eventType !== "run.attempt.cancelled"
+  ) {
+    return;
+  }
+  const appServerTokenUsage = event.metadata?.appServerTokenUsage;
+  if (!appServerTokenUsage || typeof appServerTokenUsage !== "object") {
+    return;
+  }
+  const codexThreadId =
+    typeof event.metadata?.codexThreadId === "string" ? event.metadata.codexThreadId.trim() : "";
+  const turnId = typeof event.metadata?.turnId === "string" ? event.metadata.turnId.trim() : "";
+  if (!codexThreadId || !turnId) {
+    return;
+  }
+  config.onCodexTurnTokenUsage?.({
+    threadId: event.threadId,
+    codexThreadId,
+    turnId,
+    appServerTokenUsage: appServerTokenUsage as CodexTurnTokenUsageBreakdown,
   });
 }
 
@@ -825,6 +870,18 @@ export function clearCodexModelCatalogCache(): void {
   modelCatalogService?.clear();
 }
 
+/**
+ * Force the next global runtime prepare to cold-restart the shared app-server
+ * even when the config/catalog contents are unchanged. Account credentials
+ * (auth.json) and the account proxy are not part of the config fingerprint,
+ * so the fingerprint gate in prepareCodexRuntime cannot detect those changes
+ * on its own.
+ */
+export function invalidateGlobalCodexRuntimeFingerprints(): void {
+  lastPreparedModelCatalogFingerprint = "";
+  lastPreparedGlobalConfigFingerprint = "";
+}
+
 /** Queue a settings-driven refresh without interrupting active Codex turns. */
 export function scheduleCodexGlobalRuntimeRefresh(): void {
   desiredGlobalRuntimeRevision += 1;
@@ -1009,18 +1066,25 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   );
 
   // Push ProviderStore models into in-process eco-gateway before Codex calls /v1/responses.
+  // Note: providerId "openai" is the built-in Codex provider (auth.json) — no Gateway needed.
   const roleProviderIds = roleSync?.roles.map((role) => role.providerId) ?? [];
   const requiredProviderIds = [
     ...new Set(
-      [...(input.requiredProviderIds ?? []), ...roleProviderIds].map((id) => id.trim()).filter(Boolean),
+      [...(input.requiredProviderIds ?? []), ...roleProviderIds]
+        .map((id) => id.trim())
+        .filter((id) => Boolean(id) && id !== "openai"),
     ),
   ];
-  const gatewayProviders = await ensureGlobalEcoGateway({
-    ...(requiredProviderIds.length > 0 ? { requiredProviderIds } : {}),
-  });
-  runtimeDeps.onStderr?.(
-    `[eco-gateway] ready providers=${gatewayProviders.map((p) => `${p.id}[${p.models.join("|")}]`).join(", ")}`,
-  );
+  const gatewayProviders = requiredProviderIds.length > 0
+    ? await ensureGlobalEcoGateway({ requiredProviderIds })
+    : [];
+  if (gatewayProviders.length > 0) {
+    runtimeDeps.onStderr?.(
+      `[eco-gateway] ready providers=${gatewayProviders.map((p) => `${p.id}[${p.models.join("|")}]`).join(", ")}`,
+    );
+  } else {
+    runtimeDeps.onStderr?.(`[eco-gateway] skipped (no Gateway providers needed)`);
+  }
 
   // Once a global baseline is loaded, normal thread preparation is deliberately
   // thread-only: role files and thread/start config may differ, but neither the

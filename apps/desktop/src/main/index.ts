@@ -16,6 +16,7 @@ import {
   type AgentEvent,
   acpSessionIdToDelete,
   type CodexGatewayCatalogRoute,
+  type CodexTurnTokenUsageBreakdown,
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
@@ -36,6 +37,7 @@ import {
   normalizeSdkSubagentType,
   type PlanReadyPayload,
   parsePiUsage,
+  type ParsedUsage,
   probePiCoreAvailability,
   readFilesystemPath,
   resolveAcpHostUiFeatures,
@@ -515,7 +517,8 @@ import {
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
-import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
+import type { OpenAIAccount, OpenAIAccountService } from "./openai-account-service";
+import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle, setCodexAccountProxyUrlGetter } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
   configureCodexApprovalBridge,
@@ -527,12 +530,15 @@ import {
   isCodexCliAvailable,
   queryCodexThreadStatusForEcoThread,
   registerResolvedCodexGatewayTurnRoute,
+  resolveCodexExecutable,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
+  invalidateGlobalCodexRuntimeFingerprints,
   scheduleCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { ComputerUseMcpGateway } from "./computer-use-mcp-gateway";
 import { detectScreenRecordingAppLabel } from "./computer-use-screen-host-native";
@@ -1314,6 +1320,7 @@ const codexGatewayUsagePending = new CodexGatewayUsagePendingBuffer({
   },
 });
 let agentLifecycle: AgentLifecycleService;
+let openaiAccountService: OpenAIAccountService | undefined;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -1744,6 +1751,8 @@ async function createMainWindow(): Promise<BrowserWindow> {
       revealWindowControls(window);
       throw error;
     }
+    // Auto-open devtools in detached mode during development
+    window.webContents.openDevTools({ mode: "detach" });
   } else {
     try {
       await window.loadFile(path.join(__dirname, "../renderer/index.html"));
@@ -2445,6 +2454,15 @@ app.whenReady().then(async () => {
     scheduleThreadRunProjectionUpdated,
     onCodexThreadMapped: flushPendingCodexGatewayUsage,
     onCodexThreadAttributionRecorded: flushPendingCodexGatewayUsage,
+    onCodexTurnTokenUsage: ({ threadId, codexThreadId, turnId, appServerTokenUsage }) => {
+      void handleCodexAppServerTurnUsage({ threadId, codexThreadId, turnId, appServerTokenUsage }).catch(
+        (error) => {
+          process.stderr.write(
+            `[eco-codex] app-server turn usage billing failed thread=${threadId}: ${errorMessage(error)}\n`,
+          );
+        },
+      );
+    },
     onCodexContextUpdated: (resolution) => {
       void contextMonitor
         .updateOccupied(resolution.ecoThreadId, resolution.billingRole, resolution.contextOccupied, {
@@ -2753,6 +2771,8 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // Clean up OpenAI account service watcher
+  openaiAccountService?.dispose();
   // Main-window close already runs full shutdownApplication (stops eco-gateway).
   // Always quit so macOS does not leave a dock-resident process with globalGateway cleared —
   // otherwise activate → new window → Codex/Claude hits "lifecycle is not configured".
@@ -2855,8 +2875,14 @@ installApplicationShutdownHook(
 );
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
+  // Check if OpenAI auth.json exists in CODEX_HOME (synchronous check)
+  let openAiAccountActive = false;
+  try {
+    const authJsonPath = path.join(app.getPath("userData"), "codex", "auth.json");
+    openAiAccountActive = existsSync(authJsonPath);
+  } catch { /* app not ready yet */ }
   return {
-    ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore),
+    ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore, { openAiAccountActive }),
     mcpSettings: mcpStore.getSettings(),
   };
 }
@@ -5058,6 +5084,345 @@ function registerIpcHandlers(): void {
     );
   });
 
+  // ─── Codex OAuth Login ──────────────────────────────────────────────────────
+
+  registerDesktopCommand(IPC_CHANNELS.codexOAuthGetStatus, async () => {
+    const codexHomeDir = resolveCodexHomeDir(app.getPath("userData"));
+    const { CodexOAuthLoginService } = await import("./codex-oauth-login");
+    const codexExecutable = resolveCodexExecutable();
+    if (!codexExecutable) {
+      return { isLoggedIn: false, message: "Codex CLI not found" };
+    }
+    const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable);
+    return service.getStatus();
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.codexOAuthStartLogin, async (payload: { upstreamProxyUrl?: string }) => {
+    const codexHomeDir = resolveCodexHomeDir(app.getPath("userData"));
+    const { CodexOAuthLoginService } = await import("./codex-oauth-login");
+    const codexExecutable = resolveCodexExecutable();
+    if (!codexExecutable) {
+      return { success: false, message: "Codex CLI not found" };
+    }
+
+    // Use the proxy URL passed from the form, or fall back to provider settings
+    let upstreamProxyUrl = payload?.upstreamProxyUrl?.trim() || undefined;
+    process.stderr.write(`[codex-oauth] payload.upstreamProxyUrl: ${JSON.stringify(payload?.upstreamProxyUrl)}\n`);
+    if (!upstreamProxyUrl) {
+      try {
+        const providers = providerStore.listProvidersWithSecrets();
+        const openaiProvider = providers.find((p) => p.id === "openai");
+        upstreamProxyUrl = openaiProvider?.upstreamProxyUrl?.trim() || undefined;
+        process.stderr.write(`[codex-oauth] stored provider proxy: ${JSON.stringify(upstreamProxyUrl)}\n`);
+      } catch {
+        // ignore
+      }
+    }
+    if (!upstreamProxyUrl) {
+      upstreamProxyUrl = proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim() || undefined;
+      process.stderr.write(`[codex-oauth] global proxy: ${JSON.stringify(upstreamProxyUrl)}\n`);
+    }
+    process.stderr.write(`[codex-oauth] final upstreamProxyUrl: ${JSON.stringify(upstreamProxyUrl)}\n`);
+
+    const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable, upstreamProxyUrl);
+    const authInfo = await service.startLogin();
+
+    if (!authInfo) {
+      return { success: false, message: "Failed to start login" };
+    }
+
+    // Log for debugging
+    process.stderr.write(`[codex-oauth] authUrl: ${authInfo.authUrl}\n`);
+
+    // Create a custom session with proxy for the auth window
+    const { BrowserWindow, session: electronSession } = await import("electron");
+    const mainWin = BrowserWindow.getAllWindows()[0];
+
+    const authSession = electronSession.fromPartition("oauth-auth-session");
+
+    if (upstreamProxyUrl) {
+      try {
+        const parsed = new URL(upstreamProxyUrl);
+        const protocol = parsed.protocol.replace(":", "");
+
+        if (protocol.startsWith("socks")) {
+          process.stderr.write(`[codex-oauth] SOCKS5 proxy not supported by Chromium\n`);
+        } else {
+          const pacContent = `function FindProxyForURL(url, host) {
+            return "PROXY ${parsed.host}";
+          }`;
+          const pacDataUri = 'data:application/x-ns-proxy-autoconfig;base64,' + Buffer.from(pacContent, 'utf8').toString('base64');
+          await authSession.setProxy({
+            mode: "pac_script",
+            pacScript: pacDataUri,
+          });
+        }
+      } catch (error) {
+        process.stderr.write(`[codex-oauth] failed to set proxy: ${error}\n`);
+      }
+    }
+
+    const authWindow = new BrowserWindow({
+      width: 900,
+      height: 700,
+      title: "OpenAI Login",
+      ...(mainWin ? { parent: mainWin } : {}),
+      modal: true,
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition: "oauth-auth-session",
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    // Prevent WebRTC IP leak (bypasses HTTP proxy)
+    authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+    process.stderr.write(`[codex-oauth] WebRTC IP handling: disable_non_proxied_udp\n`);
+
+    // Load the URL
+    process.stderr.write(`[codex-oauth] loading URL: ${authInfo.authUrl}\n`);
+    await authWindow.loadURL(authInfo.authUrl);
+
+    // When user closes the window, kill the codex login process
+    let loginCancelled = false;
+    authWindow.on("closed", () => {
+      if (!loginCancelled) {
+        loginCancelled = true;
+        process.stderr.write(`[codex-oauth] auth window closed\n`);
+        // Notify UI that login was cancelled
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send("codex-oauth:login-result", {
+            success: false,
+            message: "登录已取消",
+          });
+        });
+      }
+    });
+
+    // Store the pending login result so we can notify when it completes
+    authInfo.result.then((res) => {
+      if (loginCancelled) return;
+      process.stderr.write(`[codex-oauth] login result: ${JSON.stringify(res)}\n`);
+      BrowserWindow.getAllWindows().forEach((win) => {
+        win.webContents.send("codex-oauth:login-result", res);
+      });
+    }).catch((error) => {
+      process.stderr.write(`[codex-oauth] login error: ${error}\n`);
+    });
+
+    return { success: true, message: "Login started" };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.codexOAuthLogout, async () => {
+    const codexHomeDir = resolveCodexHomeDir(app.getPath("userData"));
+    const { CodexOAuthLoginService } = await import("./codex-oauth-login");
+    const codexExecutable = resolveCodexExecutable();
+    if (!codexExecutable) {
+      return { success: false, message: "Codex CLI not found" };
+    }
+    const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable);
+    return service.logout();
+  });
+
+  // ─── OpenAI Account Management ─────────────────────────────────────────────
+
+  let openaiAccountServicePromise: Promise<OpenAIAccountService> | undefined;
+  const getOpenAIAccountService = async () => {
+    if (openaiAccountService) return openaiAccountService;
+    if (!openaiAccountServicePromise) {
+      openaiAccountServicePromise = (async () => {
+        const { OpenAIAccountService } = await import("./openai-account-service");
+        const codexExecutable = resolveCodexExecutable();
+        if (!codexExecutable) {
+          throw new Error("Codex CLI not found");
+        }
+        const service = new OpenAIAccountService(app.getPath("userData"), codexExecutable);
+        await service.initialize();
+        openaiAccountService = service;
+        return service;
+      })().finally(() => {
+        openaiAccountServicePromise = undefined;
+      });
+    }
+    return openaiAccountServicePromise;
+  };
+
+  // Register before any composer request can start Codex. The getter itself awaits
+  // initialization, so a cold start cannot silently omit the active account proxy.
+  setCodexAccountProxyUrlGetter(async () => (await getOpenAIAccountService()).getActiveProxyUrl());
+  void getOpenAIAccountService().catch((error) => {
+    console.error(
+      `[openai-accounts] Initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsList, async () => {
+    const svc = await getOpenAIAccountService();
+    return svc.listAccounts();
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsCreate, async (payload: { name: string; proxyUrl?: string }) => {
+    const svc = await getOpenAIAccountService();
+    return svc.createAccount(payload.name, payload.proxyUrl);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsDelete, async (payload: { accountId: string }) => {
+    const svc = await getOpenAIAccountService();
+    const prevActiveId = await svc.getActiveAccountId();
+    await svc.deleteAccount(payload.accountId);
+    if (prevActiveId === payload.accountId) {
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
+    return { success: true };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsStartLogin, async (payload: { accountId: string }) => {
+    const svc = await getOpenAIAccountService();
+    const accounts = await svc.listAccounts();
+    const account = accounts.find((a) => a.id === payload.accountId);
+    const authInfo = await svc.startLogin(payload.accountId);
+    if (!authInfo) {
+      return { success: false, message: "Failed to start login" };
+    }
+
+    // Open BrowserWindow with the auth URL
+    const mainWin = BrowserWindow.getAllWindows()[0];
+    const { session } = await import("electron");
+    const authSession = session.fromPartition("oauth-auth-session");
+
+    // Apply proxy from the account's own proxyUrl (for OAuth login only)
+    const proxyUrl = account?.proxyUrl?.trim();
+    let socksBridge: { close: () => void } | null = null;
+    if (proxyUrl) {
+      try {
+        const parsed = new URL(proxyUrl);
+        const protocol = parsed.protocol;
+        let httpProxyHost: string;
+
+        if (protocol.startsWith("socks")) {
+          // Bridge SOCKS → local HTTP for Chromium (supports auth)
+          const { startSocksToHttpBridge } = await import("./openai-account-service");
+          const bridge = await startSocksToHttpBridge(proxyUrl);
+          httpProxyHost = `127.0.0.1:${bridge.port}`;
+          socksBridge = { close: bridge.close };
+          console.log(`[openai-auth] SOCKS bridge started on port ${bridge.port}`);
+        } else {
+          httpProxyHost = `${parsed.host}${parsed.pathname !== "/" ? parsed.pathname : ""}`;
+        }
+
+        const pacContent = `function FindProxyForURL(url, host) {\n            return "PROXY ${httpProxyHost}";\n          }`;
+        const pacDataUri =
+          "data:application/x-ns-proxy-autoconfig;base64," +
+          Buffer.from(pacContent, "utf8").toString("base64");
+        await authSession.setProxy({ mode: "pac_script", pacScript: pacDataUri });
+        console.log(`[openai-auth] Proxy set: PROXY ${httpProxyHost}`);
+      } catch (e) {
+        console.error("[openai-auth] Proxy setup failed:", e);
+      }
+    }
+
+    const authWindow = new BrowserWindow({
+      width: 900,
+      height: 700,
+      title: "OpenAI Login",
+      ...(mainWin ? { parent: mainWin } : {}),
+      modal: true,
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition: "oauth-auth-session",
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+    authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+    await authWindow.loadURL(authInfo.authUrl);
+
+    let loginCancelled = false;
+    authWindow.on("closed", () => {
+      socksBridge?.close();
+      if (!loginCancelled) {
+        loginCancelled = true;
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send("codex-oauth:login-result", {
+            success: false,
+            message: "登录已取消",
+          });
+        });
+      }
+    });
+
+    authInfo.result.then((res) => {
+      if (loginCancelled) return;
+      BrowserWindow.getAllWindows().forEach((win) => {
+        win.webContents.send("codex-oauth:login-result", res);
+      });
+    });
+
+    return { success: true, message: "Login started" };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetActive, async (payload: { accountId: string | null }) => {
+    const svc = await getOpenAIAccountService();
+    const prevActiveId = await svc.getActiveAccountId();
+    await svc.setActiveAccount(payload.accountId);
+    // Credential changed in the main codex dir — the running app-server keeps
+    // the old auth.json in memory, so recycle it after the current turn idles.
+    if (prevActiveId !== payload.accountId) {
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
+    return { success: true };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsGetActive, async () => {
+    const svc = await getOpenAIAccountService();
+    const activeId = await svc.getActiveAccountId();
+    const status = await svc.getActiveStatus();
+    return { activeAccountId: activeId, ...status };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetAuthJson, async (payload: { accountId: string; content: string }) => {
+    const svc = await getOpenAIAccountService();
+    const result = await svc.setAuthJson(payload.accountId, payload.content);
+    if (result.success && payload.accountId === (await svc.getActiveAccountId())) {
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
+    return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsQueryQuota, async (payload: { accountId: string }) => {
+    const svc = await getOpenAIAccountService();
+    const quota = await svc.queryQuota(payload.accountId);
+    return quota;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsUpdate, async (payload: { accountId: string; name: string; proxyUrl?: string }) => {
+    const svc = await getOpenAIAccountService();
+    const prevAccount = (await svc.listAccounts()).find(
+      (a: OpenAIAccount) => a.id === payload.accountId,
+    );
+    const result = await svc.updateAccount(payload.accountId, payload.name, payload.proxyUrl);
+    if (
+      prevAccount &&
+      (prevAccount.proxyUrl?.trim() ?? "") !== (payload.proxyUrl?.trim() ?? "") &&
+      payload.accountId === (await svc.getActiveAccountId())
+    ) {
+      // Proxy env vars are baked into the app-server at spawn time.
+      invalidateGlobalCodexRuntimeFingerprints();
+      scheduleCodexGlobalRuntimeRefresh();
+    }
+    return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsGetAuthJson, async (payload: { accountId: string }) => {
+    const svc = await getOpenAIAccountService();
+    const content = await svc.getAuthJsonContent(payload.accountId);
+    return content;
+  });
+
   registerDesktopCommand(IPC_CHANNELS.modelRouteProfileTest, async (payload: TestRoleRoutesRequest) => {
     if (!payload || typeof payload !== "object" || !Array.isArray(payload.routes)) {
       return { results: [], passed: 0, failed: 0 };
@@ -5093,6 +5458,15 @@ function registerIpcHandlers(): void {
       throw new Error("Provider id is required.");
     }
     const trimmedProviderId = providerId.trim();
+    // Built-in OpenAI (auth.json) — return hardcoded model list
+    if (trimmedProviderId === "openai") {
+      const { OPENAI_BUILTIN_MODELS } = await import("./provider-models");
+      return OPENAI_BUILTIN_MODELS.map((m) => ({
+        providerId: "openai",
+        modelId: m.id,
+        displayName: m.id,
+      }));
+    }
     const candidates = providerStore.listCandidateModels(trimmedProviderId);
     const provider = providerStore.listProviders().find((p) => p.id === trimmedProviderId);
     const baseUrl = provider?.baseUrl ?? "";
@@ -14369,6 +14743,116 @@ function flushPendingCodexGatewayUsage(codexThreadId: string): void {
       );
     });
   }
+}
+
+/**
+ * Bill Codex turns from app-server token usage for direct (non-gateway) routes.
+ *
+ * eco-gateway only sees traffic that goes through it. Built-in OpenAI (auth.json)
+ * and other direct routes bypass the gateway, so the app-server's per-turn
+ * `appServerTokenUsage` is the only ledger source for those turns. Gateway-routed
+ * turns keep billing from gateway usage events — the provider gate below keeps
+ * the two sources mutually exclusive.
+ */
+async function handleCodexAppServerTurnUsage(input: {
+  threadId: string;
+  codexThreadId: string;
+  turnId: string;
+  appServerTokenUsage: CodexTurnTokenUsageBreakdown;
+}): Promise<void> {
+  const { threadId, codexThreadId, turnId, appServerTokenUsage } = input;
+  const attribution = resolveCodexThreadAttribution(codexThreadMap, codexThreadId);
+  if (!attribution || attribution.ecoThreadId !== threadId) {
+    // Thread mapping not persisted yet; never guess attribution for billing.
+    process.stderr.write(
+      `[eco-codex] app-server turn usage skipped: missing attribution codexThread=${codexThreadId} thread=${threadId}\n`,
+    );
+    return;
+  }
+  const billingRole = normalizeTelemetryBillingRole(attribution.billingRole);
+  // Role routes only: resolveRuntimeRoutesForThread drops the built-in OpenAI route
+  // because it joins providers from the ProviderStore, which has no auth.json entry.
+  const roleRoute = resolveRoleRoutesForThread(threadId).find(
+    (candidate) =>
+      normalizeTelemetryBillingRole(candidate.role) === billingRole &&
+      candidate.providerId === "openai",
+  );
+  if (!roleRoute) {
+    process.stderr.write(
+      `[eco-codex] app-server turn usage skipped: no direct-openai role route role=${billingRole} thread=${threadId}\n`,
+    );
+    return;
+  }
+  // A real API-key OpenAI provider goes through eco-gateway; only the virtual
+  // built-in (auth.json) route is billed from app-server usage.
+  const storedOpenAi = providerStore
+    .listProvidersWithSecrets()
+    .find((provider) => provider.id === "openai");
+  if (storedOpenAi?.hasApiKey) {
+    return;
+  }
+  const usage: ParsedUsage = {
+    inputTokens: appServerTokenUsage.inputTokens,
+    outputTokens: appServerTokenUsage.outputTokens,
+    cacheReadTokens: appServerTokenUsage.cachedInputTokens,
+    cacheCreationTokens: 0,
+    ...(appServerTokenUsage.reasoningOutputTokens > 0
+      ? { reasoningTokens: appServerTokenUsage.reasoningOutputTokens }
+      : {}),
+    modelId: roleRoute.modelId,
+  };
+  if (
+    usage.inputTokens === 0 &&
+    usage.outputTokens === 0 &&
+    usage.cacheReadTokens === 0 &&
+    usage.cacheCreationTokens === 0
+  ) {
+    return;
+  }
+  const requestKey = `codex-turn-usage:${codexThreadId}:${turnId}`;
+  const runAttemptId = agentLifecycle.currentRunAttemptId(threadId);
+  const plannerAgentId = attribution.isSubagentThread
+    ? undefined
+    : agentLifecycle.usagePlannerAgentId(threadId);
+  noteUsageBillingObservation(threadId, {
+    source: "codex",
+    role: billingRole,
+    usage,
+    requestKey,
+    modelId: roleRoute.modelId,
+    ...(attribution.agentId ? { agentId: attribution.agentId } : {}),
+  });
+  const billingTask = processUsageBilling({
+    threadId,
+    role: billingRole,
+    source: "codex",
+    usage,
+    modelId: roleRoute.modelId,
+    providerId: "openai",
+    requestKey,
+    // The context meter is fed directly by thread/tokenUsage/updated.
+    updateContext: false,
+    ...(runAttemptId ? { runAttemptId } : {}),
+    ...(plannerAgentId ? { plannerAgentId } : {}),
+    ...(attribution.agentId ? { agentId: attribution.agentId } : {}),
+  }).then(
+    () => undefined,
+    (error) => {
+      throw error;
+    },
+  );
+  usageLedgerCoordinator.trackUsageUpdate(threadId, billingTask);
+  await billingTask;
+  logEcoDiag("codex.app_server_turn_usage", {
+    threadId: shortThreadId(threadId),
+    codexThreadId,
+    turnId,
+    role: billingRole,
+    modelId: roleRoute.modelId,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+  });
 }
 
 function resolveProxyUsageApiCompat(

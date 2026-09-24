@@ -13,6 +13,11 @@ export function composerShowsRouteConfig(_coreKind: CoreKind): boolean {
   return true;
 }
 
+/** Built-in OpenAI subscription provider (auth.json) — only usable with the Codex kernel. */
+export function isBuiltInOpenAiProvider(provider: Pick<ProviderConfigView, "id" | "authMethod">): boolean {
+  return provider.id === "openai" && provider.authMethod === "auth_json";
+}
+
 export function resolveComposerModelAvailability(
   providers: readonly Pick<ProviderConfigView, "enabled">[],
   templateMainModel: ComposerModelOption | undefined,
