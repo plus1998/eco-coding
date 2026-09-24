@@ -289,6 +289,74 @@ test("keeps an approved tool running until its provider terminal row", () => {
   });
 });
 
+test("keeps the execution owner when an approval row belongs to its planner", () => {
+  const store = createStore();
+  appendLegacyThreadRunEventToConversationV2(
+    store,
+    event({
+      id: "tool_started_by_subagent",
+      sequence: 1,
+      eventType: "tool.started",
+      scope: "agent",
+      role: "tool",
+      agentId: "executor_agent",
+      metadata: {
+        liveType: "tool.started",
+        tool: { name: "Bash", toolUseId: "shared_tool_call", input: { command: "bun test" } },
+      },
+    }),
+  );
+
+  // V1 records the permission decision under the planner, although the call itself
+  // belongs to the subagent that later emits tool.started/tool.completed.
+  appendLegacyThreadRunEventToConversationV2(
+    store,
+    event({
+      id: "approval_by_planner",
+      sequence: 2,
+      eventType: "message.final",
+      scope: "agent",
+      role: "tool",
+      agentId: "planner_for_run",
+      metadata: {
+        liveType: "bash_approval.approved",
+        bashApproval: { toolUseId: "shared_tool_call", phase: "approved" },
+        tool: { name: "Bash", toolUseId: "shared_tool_call", input: { command: "bun test" } },
+      },
+    }),
+  );
+
+  expect(store.bootstrap("thread_legacy").tools[0]).toMatchObject({
+    toolCallId: "shared_tool_call",
+    agentId: "executor_agent",
+    status: "running",
+  });
+});
+
+test("disambiguates a legacy tool ID reused by different runs", () => {
+  const store = createStore();
+  for (const [sequence, runAttemptId] of [[1, "run_1"], [2, "run_2"]] as const) {
+    appendLegacyThreadRunEventToConversationV2(
+      store,
+      event({
+        id: `approval_${runAttemptId}`,
+        sequence,
+        runAttemptId,
+        eventType: "message.final",
+        metadata: {
+          liveType: "bash_approval.approved",
+          bashApproval: { toolUseId: "web_fetch_0", phase: "approved" },
+          tool: { name: "Bash", toolUseId: "web_fetch_0", input: { command: "fetch" } },
+        },
+      }),
+    );
+  }
+
+  expect(store.bootstrap("thread_legacy").tools).toHaveLength(2);
+  expect(store.bootstrap("thread_legacy").tools.map(({ runId }) => runId)).toEqual(["run_1", "run_2"]);
+  expect(new Set(store.bootstrap("thread_legacy").tools.map(({ toolCallId }) => toolCallId)).size).toBe(2);
+});
+
 test("carries structured tool presentation metadata into V2 input summaries", () => {
   const store = createStore();
   appendLegacyThreadRunEventToConversationV2(

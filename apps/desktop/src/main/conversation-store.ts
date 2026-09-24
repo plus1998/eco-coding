@@ -637,11 +637,11 @@ export interface ConversationStoreOptions {
    */
   freshStorageMode?: ConversationV2StorageMode;
   /**
-   * Runtime callers may require an already-cut-over store. When the on-disk
-   * database is still legacy_compat, fail before initializing any V1 schema or
-   * allowing a compatibility read/write path to start.
+   * Runtime callers may require an already-cut-over store. Pass null to allow
+   * an existing legacy_compat database and migrate individual conversations on
+   * demand. When omitted, callers retain the strict V2-only default.
    */
-  requiredStorageMode?: ConversationV2StorageMode;
+  requiredStorageMode?: ConversationV2StorageMode | null;
   /**
    * Must be provided before initialization when a V2-only reopen may need to
    * materialize legacy follow-up image payloads before retiring the old table.
@@ -655,12 +655,13 @@ export async function createConversationStore(
 ): Promise<ConversationStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
-  // Treat an omitted field exactly like the production runtime: callers must
-  // opt into legacy_compat explicitly for migration/compatibility fixtures.
+  // Keep the strict V2-only default for tools and tests. The desktop runtime
+  // explicitly opts into legacy_compat while it lazily migrates V1 threads.
+  const { requiredStorageMode, ...otherOptions } = options;
   const resolvedOptions: ConversationStoreOptions = {
-    freshStorageMode: options.freshStorageMode ?? "v2_only",
-    requiredStorageMode: options.requiredStorageMode ?? "v2_only",
-    ...options,
+    ...otherOptions,
+    freshStorageMode: otherOptions.freshStorageMode ?? "v2_only",
+    ...(requiredStorageMode === null ? {} : { requiredStorageMode: requiredStorageMode ?? "v2_only" }),
   };
   const store = new ConversationStore(new sqlite.DatabaseSync(dbPath), resolvedOptions);
   store.initialize();

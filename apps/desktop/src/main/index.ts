@@ -1012,11 +1012,24 @@ let desktopInitializationComplete = false;
 let pendingEcoDeepLink: string | undefined;
 // True once the renderer reports ready (it then subscribes to deep-link events).
 let desktopRendererReady = false;
+const startupSplashWindows = new WeakSet<BrowserWindow>();
+let resolveInitialDesktopRendererReady: (() => void) | undefined;
+const initialDesktopRendererReady = new Promise<void>((resolve) => {
+  resolveInitialDesktopRendererReady = resolve;
+});
+
+function getMainWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && !startupSplashWindows.has(window));
+}
+
+function getStartupSplashWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && startupSplashWindows.has(window));
+}
 
 // Deliver a deep link to the primary window: immediately when the renderer is
 // already ready, otherwise stash it and flush once the renderer reports ready.
 function deliverEcoDeepLink(url: string): void {
-  const window = BrowserWindow.getAllWindows()[0];
+  const window = getMainWindow();
   if (window && !window.isDestroyed() && desktopRendererReady) {
     window.webContents.send(IPC_CHANNELS.appEcoDeepLinkOpen, url);
     return;
@@ -1026,7 +1039,7 @@ function deliverEcoDeepLink(url: string): void {
 
 // Bring the primary window to the front (creating it if none exists yet).
 function presentPrimaryWindow(): void {
-  const existingWindow = BrowserWindow.getAllWindows()[0];
+  const existingWindow = getStartupSplashWindow() ?? getMainWindow() ?? BrowserWindow.getAllWindows()[0];
   if (existingWindow && !existingWindow.isDestroyed()) {
     presentDesktopWindow(existingWindow);
     return;
@@ -1571,6 +1584,28 @@ const WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME = {
   light: "#ffffff",
 } as const;
 
+const STARTUP_WINDOW_HTML = `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eco Coding</title>
+    <style>
+      :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; }
+      html, body { width: 100%; height: 100%; margin: 0; }
+      body { display: grid; place-items: center; background: #171717; color: #f5f5f5; }
+      main { display: grid; justify-items: center; gap: 18px; }
+      .mark { font-size: 28px; font-weight: 600; letter-spacing: .02em; }
+      .spinner { width: 22px; height: 22px; border: 2px solid #ffffff30; border-top-color: #f5f5f5; border-radius: 50%; animation: spin .8s linear infinite; }
+      p { margin: 0; color: #a3a3a3; font-size: 13px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    </style>
+  </head>
+  <body><main><div class="mark">Eco Coding</div><div class="spinner" aria-hidden="true"></div><p id="status">正在启动…</p></main></body>
+</html>`;
+const STARTUP_WINDOW_URL = `data:text/html;charset=UTF-8,${encodeURIComponent(STARTUP_WINDOW_HTML)}`;
+
 const windowsUseConversationTitlebar = new WeakMap<BrowserWindow, boolean>();
 const windowsAreBooting = new WeakSet<BrowserWindow>();
 const BOOT_WINDOW_OVERLAY_SYMBOL_COLOR = "rgba(0, 0, 0, 0)";
@@ -1650,8 +1685,9 @@ function setWindowControlsOverlayMode(mode: "landing" | "conversation"): void {
   }
 }
 
-async function createMainWindow(): Promise<BrowserWindow> {
+async function createMainWindow(options: { startupSplash?: boolean; show?: boolean } = {}): Promise<BrowserWindow> {
   const isMac = process.platform === "darwin";
+  const isStartupSplash = options.startupSplash === true;
   const windowControlsOverlay = usesWindowControlsOverlay();
   const isWindows = process.platform === "win32";
   const windowsChrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
@@ -1665,6 +1701,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     y,
     width,
     height,
+    show: options.show ?? true,
     minWidth: 480,
     minHeight: 600,
     // macOS: frameless + traffic lights inset.
@@ -1686,7 +1723,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
             resizable: true,
             // Keep native caption controls out of the Windows boot frame until
             // the renderer reports that its initial app state is ready.
-            ...(isWindows
+            ...(isWindows && !isStartupSplash
               ? {
                   minimizable: false,
                   maximizable: false,
@@ -1698,7 +1735,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
               ? {
                   ...windowsChrome.overlay,
                   color: windowsMaterial ? WINDOWS_MICA_OVERLAY_COLOR : windowsChrome.overlay.color,
-                  symbolColor: BOOT_WINDOW_OVERLAY_SYMBOL_COLOR,
+                  symbolColor: isStartupSplash
+                    ? windowsChrome.overlay.symbolColor
+                    : BOOT_WINDOW_OVERLAY_SYMBOL_COLOR,
                 }
               : windowsChrome.overlay,
             ...(windowsMaterial ? { backgroundMaterial: windowsMaterial } : {}),
@@ -1711,12 +1750,13 @@ async function createMainWindow(): Promise<BrowserWindow> {
             autoHideMenuBar: true,
           }),
     ...(appIcon ? { icon: appIcon } : {}),
+    ...(isStartupSplash ? { title: "Eco Coding" } : {}),
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.cjs"),
+      ...(!isStartupSplash ? { preload: path.join(__dirname, "../preload/index.cjs") } : {}),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      webviewTag: true,
+      ...(!isStartupSplash ? { webviewTag: true } : {}),
       ...(windowsBackdropVersion
         ? {
             additionalArguments: [`--eco-windows-backdrop=${windowsBackdropVersion}`],
@@ -1725,7 +1765,14 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   };
   const window = new BrowserWindow(windowOptions);
-  if (isWindows) {
+  if (isStartupSplash) {
+    startupSplashWindows.add(window);
+    window.on("closed", () => {
+      if (!desktopRendererReady && !desktopInitializationComplete) {
+        app.quit();
+      }
+    });
+  } else if (isWindows) {
     windowsAreBooting.add(window);
   }
 
@@ -1744,6 +1791,24 @@ async function createMainWindow(): Promise<BrowserWindow> {
     return { action: "deny" };
   });
 
+  if (isStartupSplash) {
+    void window.loadURL(STARTUP_WINDOW_URL).catch((error: unknown) => {
+      const splashError = error instanceof Error ? error : new Error(String(error));
+      logUpstream("desktop.startup-splash-load-failed", { message: splashError.message });
+    });
+    return window;
+  }
+
+  return loadMainWindow(window);
+}
+
+async function loadMainWindow(window: BrowserWindow): Promise<BrowserWindow> {
+  if (process.platform === "win32") {
+    windowsAreBooting.add(window);
+    window.setMinimizable(false);
+    window.setMaximizable(false);
+    window.setClosable(false);
+  }
   if (isDev) {
     try {
       await window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
@@ -1768,6 +1833,25 @@ async function createMainWindow(): Promise<BrowserWindow> {
   return window;
 }
 
+async function waitForInitialDesktopRendererReady(timeoutMs = 180_000): Promise<void> {
+  if (desktopRendererReady) {
+    return;
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      initialDesktopRendererReady,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("The desktop interface did not finish initializing.")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 function isExternalHttpUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -1779,12 +1863,43 @@ function isExternalHttpUrl(url: string): boolean {
 
 app.whenReady().then(async () => {
   const startupStartedAt = Date.now();
-  const logStartupStage = (stage: string) =>
-    logEcoDiag("desktop.startup-stage", { stage, elapsedMs: Date.now() - startupStartedAt });
+  let startupWindow: BrowserWindow | undefined;
+  const logStartupStage = (stage: string): void => {
+    const elapsedMs = Date.now() - startupStartedAt;
+    const fields = { stage, elapsedMs };
+    if (app.isPackaged) {
+      logUpstream("desktop.startup-stage", fields);
+    } else {
+      logEcoDiag("desktop.startup-stage", fields);
+    }
+    const splashLabels: Record<string, string> = {
+      ready: "正在准备启动…",
+      "startup-window.ready": "正在恢复本地数据…",
+      "conversation-store.initialized": "正在恢复对话…",
+      "conversation-reconciliation.completed": "正在加载设置…",
+      "initial-settings.loaded": "正在恢复任务…",
+      "home-workspace.ready": "正在打开 Eco Coding…",
+      "main-window.ready": "即将完成…",
+    };
+    if (startupWindow && !startupWindow.isDestroyed()) {
+      try {
+        void startupWindow.webContents
+          .executeJavaScript(
+            `(() => { const status = document.getElementById("status"); if (status) status.textContent = ${JSON.stringify(splashLabels[stage] ?? "正在准备应用…")}; })();`,
+          )
+          .catch(() => undefined);
+      } catch {
+        // The splash may still be navigating while a startup stage completes.
+      }
+    }
+  };
+
   logStartupStage("ready");
   if (!hasSingleInstanceLock) {
     return;
   }
+  startupWindow = await createMainWindow({ startupSplash: true });
+  logStartupStage("startup-window.ready");
   // Let the OS hand eco://... deep links to this app.
   // Packaged only: in dev the scheme would register against the bare electron.exe,
   // which treats the URL as an app path and fails to launch.
@@ -1830,12 +1945,12 @@ app.whenReady().then(async () => {
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   // The image store must be available before ConversationStore.initialize():
-  // a V2-only reopen may need to materialize a leftover legacy follow-up
-  // attachment before the retired table can be dropped.
+  // opening a legacy thread may need to materialize an attachment during its
+  // lazy V2 migration.
   promptImageFileStore = new PromptImageFileStore(app.getPath("userData"));
   conversationStore = await createConversationStore(dbPath, {
     freshStorageMode: "v2_only",
-    requiredStorageMode: "v2_only",
+    requiredStorageMode: null,
     promptImageFileStore,
   });
   logStartupStage("conversation-store.initialized");
@@ -1956,7 +2071,7 @@ app.whenReady().then(async () => {
   sshBookmarkStore = await createSshBookmarkStore(dbPath, createLocalSecretCodec());
   notificationSettingsStore = await createNotificationSettingsStore(dbPath);
   browserHost = new BrowserHost({
-    getMainWindow: () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()),
+    getMainWindow,
     getSettings: () => browserSettingsStore,
     broadcast: (state: BrowserViewState) => {
       BrowserWindow.getAllWindows().forEach((window) => {
@@ -2723,7 +2838,20 @@ app.whenReady().then(async () => {
   if (centerServerClient.getSnapshot().settings.enabled) {
     void centerServerClient.start();
   }
-  await createMainWindow();
+  if (startupWindow && !startupWindow.isDestroyed()) {
+    const mainWindow = await createMainWindow({ show: false });
+    await waitForInitialDesktopRendererReady();
+    if (!startupWindow.isDestroyed()) {
+      startupWindow.close();
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    await createMainWindow();
+  }
   logStartupStage("main-window.ready");
   desktopUpdateService.start();
   // Skill materials only when capability is ON (no CDP / no session inject at boot).
@@ -2768,6 +2896,20 @@ app.whenReady().then(async () => {
       await createMainWindow();
     }
   });
+}).catch((error: unknown) => {
+  const startupError = error instanceof Error ? error : new Error(String(error));
+  logUpstream("desktop.startup-failed", {
+    message: startupError.message,
+    ...(startupError.stack && { stack: startupError.stack }),
+  });
+  try {
+    dialog.showErrorBox(
+      "Eco Coding 启动失败",
+      `${startupError.message}\n\n详细日志：${getUpstreamLogFilePath()}`,
+    );
+  } finally {
+    app.quit();
+  }
 });
 
 app.on("window-all-closed", () => {
@@ -2865,7 +3007,7 @@ installApplicationShutdownHook(
     disposeCenterServerClient: () => {
       centerServerClient?.dispose();
     },
-    parentWindow: () => BrowserWindow.getAllWindows()[0],
+    parentWindow: () => getMainWindow(),
     logError: (error) => {
       process.stderr.write(
         `[eco] application shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -3511,7 +3653,12 @@ function localizeExpectedIpcError(error: unknown): unknown {
 
 async function openThreadFromDesktopNotification(threadId: string): Promise<void> {
   pendingThreadOpenId = threadId;
-  let window = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+  const splashWindow = getStartupSplashWindow();
+  if (!desktopRendererReady && splashWindow) {
+    presentDesktopWindow(splashWindow);
+    return;
+  }
+  let window = getMainWindow();
   if (!window || window.isDestroyed()) {
     window = await createMainWindow();
   }
@@ -3624,6 +3771,7 @@ function registerIpcHandlers(): void {
     }
     revealWindowControls(window);
     desktopRendererReady = true;
+    resolveInitialDesktopRendererReady?.();
     flushPendingEcoDeepLink(window);
     return { ok: true as const };
   });
@@ -5136,7 +5284,7 @@ function registerIpcHandlers(): void {
 
     // Create a custom session with proxy for the auth window
     const { BrowserWindow, session: electronSession } = await import("electron");
-    const mainWin = BrowserWindow.getAllWindows()[0];
+    const mainWin = getMainWindow();
 
     const authSession = electronSession.fromPartition("oauth-auth-session");
 
@@ -5288,7 +5436,7 @@ function registerIpcHandlers(): void {
     }
 
     // Open BrowserWindow with the auth URL
-    const mainWin = BrowserWindow.getAllWindows()[0];
+    const mainWin = getMainWindow();
     const { session } = await import("electron");
     const authSession = session.fromPartition("oauth-auth-session");
 
@@ -12156,8 +12304,18 @@ function healOrphanedThreadBeforeContinuation(threadId: string): void {
 /** After a crash, SQLite may still say running while no runtime run is active. */
 function recoverOrphanedRunningThreads(logStartupStage?: (stage: string) => void): void {
   logStartupStage?.("recovery-gate.start");
+  const threads = conversationStore.listThreads();
+  const v2 = conversationStore.conversationV2();
+  const migrator = conversationStore.conversationV2LegacyMigrator();
+  const recoverableThreads = threads.filter(
+    (thread) => v2.hasConversation(thread.id) && !migrator.hasResumableMigration(thread.id),
+  );
+  const deferredLegacyCount = threads.length - recoverableThreads.length;
+  if (deferredLegacyCount > 0) {
+    logUpstream("conversation.v1-lazy-migration.pending", { conversationCount: deferredLegacyCount });
+  }
   const failures = conversationRecoveryGate.inspect(
-    conversationStore.listThreads().map((thread) => thread.id),
+    recoverableThreads.map((thread) => thread.id),
     (threadId) => {
       conversationStore.listRunAttempts(threadId);
       conversationStore.listAgentInstances(threadId);
@@ -12213,7 +12371,7 @@ function recoverOrphanedRunningThreads(logStartupStage?: (stage: string) => void
   const preparedRedispatches: Array<
     Extract<HistoryCommandRecoveryDecision, { kind: "redispatch_prepared" }>
   > = [];
-  for (const thread of conversationStore.listThreads()) {
+  for (const thread of recoverableThreads) {
     if (conversationRecoveryGate.isBlocked(thread.id)) continue;
     if (!activeRunRuntimeState.hasRun(thread.id)) {
       settleRecoveredLifecycleRecords(thread.id, "failed");
@@ -12243,7 +12401,7 @@ function recoverOrphanedRunningThreads(logStartupStage?: (stage: string) => void
     }
   }
   logStartupStage?.("orphaned-run-loop.completed");
-  for (const thread of conversationStore.listThreads()) {
+  for (const thread of recoverableThreads) {
     if (conversationRecoveryGate.isBlocked(thread.id)) continue;
     if (
       shouldClearGhostAcpActiveRun({
@@ -12262,7 +12420,7 @@ function recoverOrphanedRunningThreads(logStartupStage?: (stage: string) => void
     }
   }
   logStartupStage?.("ghost-run-loop.completed");
-  for (const thread of conversationStore.listThreads()) {
+  for (const thread of recoverableThreads) {
     if (conversationRecoveryGate.isBlocked(thread.id)) continue;
     if (activeRunRuntimeState.hasRun(thread.id)) {
       continue;
@@ -15341,18 +15499,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function requireConversationV2Thread(conversationId: string): void {
-  conversationRecoveryGate.assertReady(conversationId);
-  if (!conversationStore.getThread(conversationId)) {
+  const id = conversationId.trim();
+  conversationRecoveryGate.assertReady(id);
+  if (!conversationStore.getThread(id)) {
     throw new ConversationV2Error(
       CONVERSATION_V2_ERROR.conversationNotFound,
       "Conversation V2 conversation was not found.",
     );
   }
-  if (!conversationStore.conversationV2().hasConversation(conversationId)) {
+  const v2 = conversationStore.conversationV2();
+  if (conversationStore.getConversationStorageMode() === "legacy_compat") {
+    const migrator = conversationStore.conversationV2LegacyMigrator();
+    if (!v2.hasConversation(id) || migrator.hasResumableMigration(id)) {
+      const startedAt = Date.now();
+      try {
+        const report = migrator.migrate(id);
+        logUpstream("conversation.v1-lazy-migration.completed", {
+          threadId: shortThreadId(id),
+          userMessageCount: report.userMessageCount,
+          legacyEventCount: report.legacyEventCount,
+          runAttemptCount: report.runAttemptCount,
+          elapsedMs: Date.now() - startedAt,
+        });
+      } catch (error) {
+        logUpstream("conversation.v1-lazy-migration.failed", {
+          threadId: shortThreadId(id),
+          message: errorMessage(error),
+          elapsedMs: Date.now() - startedAt,
+        });
+        throw error;
+      }
+    }
+  }
+  if (!v2.hasConversation(id)) {
     throw new ConversationV2Error(
       CONVERSATION_V2_ERROR.migrationIncomplete,
       "Conversation V2 migration has not completed for this conversation.",
-      { conversationId },
+      { conversationId: id },
     );
   }
 }

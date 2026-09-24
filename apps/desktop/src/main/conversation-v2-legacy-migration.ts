@@ -116,6 +116,19 @@ export class ConversationV2LegacyMigrator {
     private readonly promptImageFileStore?: PromptImageFileStore,
   ) {}
 
+  hasResumableMigration(conversationId: string): boolean {
+    const id = requireConversationId(conversationId);
+    this.store.initialize();
+    const existing = this.db
+      .prepare(
+        `SELECT phase
+         FROM conversation_migrations_v2
+         WHERE migration_version = 1 AND conversation_id = ?`,
+      )
+      .get(id) as { phase?: string } | undefined;
+    return existing?.phase === "running" || existing?.phase === "failed";
+  }
+
   inspect(conversationId: string): ConversationV2MigrationReport {
     const id = requireConversationId(conversationId);
     this.ensureLegacyTables();

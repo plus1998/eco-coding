@@ -94,6 +94,7 @@ export function appendProviderEventToConversationV2(
     suffix: string,
     payload: Record<string, unknown>,
     ids: { messageId?: string; toolCallId?: string } = {},
+    emitOptions: { omitAgentOwnership?: boolean } = {},
   ): void => {
     const sourceEventKey = `${sourceBase}:${suffix}`;
     const input: ConversationEventInput = {
@@ -106,7 +107,7 @@ export function appendProviderEventToConversationV2(
       ...(runId ? { runId } : {}),
       ...(ids.messageId ? { messageId: ids.messageId } : {}),
       ...(ids.toolCallId ? { toolCallId: ids.toolCallId } : {}),
-      ...(owner ? { agentId: owner, agentInstanceId: owner } : {}),
+      ...(!emitOptions.omitAgentOwnership && owner ? { agentId: owner, agentInstanceId: owner } : {}),
       ...(event.parentAgentId
         ? { parentAgentId: event.parentAgentId, parentAgentInstanceId: event.parentAgentId }
         : {}),
@@ -296,6 +297,14 @@ export function appendProviderEventToConversationV2(
         timingQuality: "unknown",
       });
     }
+    if (!runtime && descriptor.toolCallId) {
+      descriptor.toolCallId = disambiguateLegacyToolCallId(
+        store,
+        event.threadId,
+        runId,
+        descriptor.toolCallId,
+      );
+    }
     const isRequested =
       interactionType === "approval.requested" || interactionType === "clarification.requested";
     // Approval is a permission boundary, not the tool's execution result. The
@@ -323,6 +332,12 @@ export function appendProviderEventToConversationV2(
           ...(descriptor.output !== undefined ? { output: descriptor.output } : {}),
         },
         { toolCallId: descriptor.toolCallId },
+        // Approval rows are recorded under the reviewer/planner that handled the
+        // permission prompt, which can differ from the agent that owns the actual
+        // tool call. Keep approval ownership on the interaction fact below; leave
+        // the tool summary unowned until a tool.started/completed row supplies its
+        // execution owner.
+        { omitAgentOwnership: true },
       );
       emitMissingLegacyToolSummary(descriptor, toolProviderRole);
     }
@@ -377,6 +392,14 @@ export function appendProviderEventToConversationV2(
         status: "running",
         timingQuality: "unknown",
       });
+    }
+    if (!runtime) {
+      descriptor.toolCallId = disambiguateLegacyToolCallId(
+        store,
+        event.threadId,
+        runId,
+        descriptor.toolCallId,
+      );
     }
     const toolProviderRole = legacyProviderRole(event);
     emit(
@@ -604,6 +627,29 @@ function deriveLegacyToolDescriptor(
     ...(input !== undefined ? { input } : {}),
     ...(output !== undefined ? { output } : {}),
   };
+}
+
+/**
+ * Some legacy providers restart their tool counter for every run, so two distinct
+ * calls can both be named `web_fetch_0` inside one conversation. V2 call IDs are
+ * conversation-wide identities. Keep the original ID for the first run and derive
+ * a deterministic replacement only when a later run collides; a resumed migration
+ * then reaches the same replacement without changing either call's source facts.
+ */
+function disambiguateLegacyToolCallId(
+  store: ConversationV2Store,
+  conversationId: string,
+  runId: string,
+  toolCallId: string,
+): string {
+  const existing = store.findTool(conversationId, toolCallId);
+  if (!existing || existing.runId === runId) return toolCallId;
+  const disambiguated = `legacy_tool_${stableHash(`${conversationId}:${runId}:${toolCallId}`)}`;
+  const sameRun = store.findTool(conversationId, disambiguated);
+  if (sameRun && sameRun.runId !== runId) {
+    throw new Error(`Legacy tool ID collision while migrating ${toolCallId}.`);
+  }
+  return disambiguated;
 }
 
 function mergeLegacyToolMetadata(

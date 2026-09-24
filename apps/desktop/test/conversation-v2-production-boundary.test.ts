@@ -148,7 +148,7 @@ test("V2-only runtime has no transient local stream projection path", () => {
 });
 
 test("desktop activity entry is V2-only and has no projection fallback props", () => {
-  const activityView = readFileSync(join(desktopRoot, "renderer/ActivityLogView.tsx"), "utf8");
+  const activityView = readFileSync(join(desktopRoot, "renderer/ActivityLogView.tsx"), "utf8").replace(/\r\n/g, "\n");
   const app = readFileSync(join(desktopRoot, "renderer/App.tsx"), "utf8");
   const propsStart = activityView.indexOf("export interface ActivityLogViewProps");
   const propsEnd = activityView.indexOf("}\n\nfunction conversationV2MessageToTimelineItem", propsStart);
@@ -181,21 +181,25 @@ test("desktop activity entry is V2-only and has no projection fallback props", (
   expect(lazyFeed).not.toContain("viewModel:");
 });
 
-test("desktop production opens fresh conversation databases in V2-only mode", () => {
+test("desktop production keeps fresh databases V2-only and permits legacy lazy migration", () => {
   const main = readFileSync(join(desktopRoot, "main/index.ts"), "utf8");
   const store = readFileSync(join(desktopRoot, "main/conversation-store.ts"), "utf8");
   expect(main).toContain('freshStorageMode: "v2_only"');
-  expect(store).toContain('freshStorageMode: options.freshStorageMode ?? "v2_only"');
-  expect(store).toContain('requiredStorageMode: options.requiredStorageMode ?? "v2_only"');
+  expect(main).toContain("requiredStorageMode: null");
+  expect(store).toContain('freshStorageMode: otherOptions.freshStorageMode ?? "v2_only"');
+  expect(store).toContain("requiredStorageMode === null");
 });
 
-test("desktop production refuses to start on an uncut legacy conversation database", () => {
+test("desktop production migrates a legacy conversation when its V2 data is first requested", () => {
   const main = readFileSync(join(desktopRoot, "main/index.ts"), "utf8");
   const store = readFileSync(join(desktopRoot, "main/conversation-store.ts"), "utf8");
-  expect(main).toContain('requiredStorageMode: "v2_only"');
-  expect(store).toContain("requiredStorageMode?: ConversationV2StorageMode");
+  const migrator = readFileSync(join(desktopRoot, "main/conversation-v2-legacy-migration.ts"), "utf8");
+  expect(main).toContain("conversationStore.conversationV2LegacyMigrator()");
+  expect(main).toContain('logUpstream("conversation.v1-lazy-migration.completed"');
+  expect(main).toContain("recoverableThreads");
+  expect(store).toContain("requiredStorageMode?: ConversationV2StorageMode | null");
+  expect(migrator).toContain("hasResumableMigration(conversationId: string)");
   expect(store).toContain("CONVERSATION_V2_ERROR.migrationIncomplete");
-  expect(store).toContain("before initializing any V1 schema");
 });
 
 test("SDK replay fixtures cannot recreate the legacy conversation schema", () => {
