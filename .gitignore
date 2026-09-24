@@ -56,3 +56,6 @@ apps/desktop/.playwright-cli/
 # Supabase CLI local state
 supabase/.branches
 supabase/.temp
+
+# Electron startup test build artifacts
+apps/desktop/release-startup-test*/
