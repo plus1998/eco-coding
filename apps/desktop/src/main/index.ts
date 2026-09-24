@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1584,27 +1584,58 @@ const WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME = {
   light: "#ffffff",
 } as const;
 
-const STARTUP_WINDOW_HTML = `<!doctype html>
+function createStartupWindowUrl(): string {
+  const iconPath = path.join(__dirname, "../renderer/splash-icon.png");
+  const iconDataUrl = `data:image/png;base64,${readFileSync(iconPath).toString("base64")}`;
+  const html = `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Eco Coding</title>
     <style>
-      :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; }
-      html, body { width: 100%; height: 100%; margin: 0; }
-      body { display: grid; place-items: center; background: #171717; color: #f5f5f5; }
-      main { display: grid; justify-items: center; gap: 18px; }
-      .mark { font-size: 28px; font-weight: 600; letter-spacing: .02em; }
-      .spinner { width: 22px; height: 22px; border: 2px solid #ffffff30; border-top-color: #f5f5f5; border-radius: 50%; animation: spin .8s linear infinite; }
-      p { margin: 0; color: #a3a3a3; font-size: 13px; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+      html, body { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
+      #splash-icon {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+      }
+      #splash-icon img {
+        width: 96px;
+        height: 96px;
+        object-fit: contain;
+        opacity: 0.92;
+        animation: app-boot-splash-breathe 1.6s ease-in-out infinite;
+      }
+      #status {
+        position: fixed;
+        top: calc(50% + 60px);
+        left: 0;
+        width: 100%;
+        margin: 0;
+        color: rgba(128, 128, 128, 0.8);
+        font-family: "Segoe UI", system-ui, sans-serif;
+        font-size: 13px;
+        text-align: center;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash-icon img { animation: none; }
+      }
+      @keyframes app-boot-splash-breathe {
+        0%, 100% { opacity: 0.72; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.03); }
+      }
     </style>
   </head>
-  <body><main><div class="mark">Eco Coding</div><div class="spinner" aria-hidden="true"></div><p id="status">正在启动…</p></main></body>
+  <body>
+    <div id="splash-icon" aria-hidden="true"><img src="${iconDataUrl}" alt="" width="96" height="96" /></div>
+    <p id="status">正在启动…</p>
+  </body>
 </html>`;
-const STARTUP_WINDOW_URL = `data:text/html;charset=UTF-8,${encodeURIComponent(STARTUP_WINDOW_HTML)}`;
+  return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
+}
 
 const windowsUseConversationTitlebar = new WeakMap<BrowserWindow, boolean>();
 const windowsAreBooting = new WeakSet<BrowserWindow>();
@@ -1792,7 +1823,7 @@ async function createMainWindow(options: { startupSplash?: boolean; show?: boole
   });
 
   if (isStartupSplash) {
-    void window.loadURL(STARTUP_WINDOW_URL).catch((error: unknown) => {
+    void window.loadURL(createStartupWindowUrl()).catch((error: unknown) => {
       const splashError = error instanceof Error ? error : new Error(String(error));
       logUpstream("desktop.startup-splash-load-failed", { message: splashError.message });
     });
