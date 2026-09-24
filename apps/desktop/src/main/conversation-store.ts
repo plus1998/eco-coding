@@ -8205,10 +8205,9 @@ export class ConversationStore {
       return;
     }
     if (this.isV2OnlyStorage()) {
-      throw new ConversationV2Error(
-        CONVERSATION_V2_ERROR.integrityFailure,
-        `Conversation V2 subagent metrics stream is missing: ${threadId}`,
-      );
+      // Deletion clears in-memory metrics after the conversation stream has
+      // been removed. Missing storage is already the desired state here.
+      return;
     }
     this.db.prepare(`DELETE FROM thread_subagent_metrics WHERE thread_id = ?`).run(threadId);
   }

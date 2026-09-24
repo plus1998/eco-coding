@@ -6755,6 +6755,34 @@ function registerIpcHandlers(): void {
         databasePath: path.join(userDataDir, "eco-coding.sqlite"),
         conversationStore,
         deleteThreadWithExternalState: async (threadId) => {
+          // A stale thread row can survive after its V2 stream was removed.
+          // The normal delete command intentionally requires a V2 head for
+          // optimistic concurrency, but cleanup must also be able to remove
+          // these unreopenable rows.
+          if (!conversationStore.conversationV2().hasConversation(threadId)) {
+            const migrator = conversationStore.conversationV2LegacyMigrator();
+            if (migrator.hasLegacySourceData(threadId)) {
+              // Preserve V1 data until it has either been migrated or
+              // explicitly reported as invalid. A missing V2 row alone is
+              // never sufficient evidence that the conversation is safe to
+              // delete.
+              migrator.migrate(threadId);
+              const head = conversationStore.conversationV2().head(threadId);
+              await executeThreadDeleteCommand({
+                principalId: "desktop-storage-cleanup",
+                clientCommandId: `thread_delete_${stableHash({
+                  threadId,
+                  expectedHistoryRevision: head.historyRevision,
+                })}`,
+                threadId,
+                expectedHistoryRevision: head.historyRevision,
+              });
+              return;
+            }
+            await cleanupThreadExternalState(threadId);
+            conversationStore.deleteThread(threadId);
+            return;
+          }
           const head = conversationStore.conversationV2().head(threadId);
           await executeThreadDeleteCommand({
             principalId: "desktop-storage-cleanup",

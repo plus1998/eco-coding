@@ -129,6 +129,25 @@ export class ConversationV2LegacyMigrator {
     return existing?.phase === "running" || existing?.phase === "failed";
   }
 
+  /** Whether legacy rows still exist and must be preserved for migration. */
+  hasLegacySourceData(conversationId: string): boolean {
+    const id = requireConversationId(conversationId);
+    const tables = this.db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name IN ('thread_user_messages', 'thread_run_events', 'thread_run_attempts', 'thread_agent_instances')`,
+      )
+      .all() as Array<{ name?: string }>;
+    return tables.some((table) => {
+      const name = table.name;
+      if (!name) return false;
+      const row = this.db
+        .prepare(`SELECT 1 AS present FROM ${name} WHERE thread_id = ? LIMIT 1`)
+        .get(id) as { present?: number } | undefined;
+      return row?.present === 1;
+    });
+  }
+
   inspect(conversationId: string): ConversationV2MigrationReport {
     const id = requireConversationId(conversationId);
     this.ensureLegacyTables();

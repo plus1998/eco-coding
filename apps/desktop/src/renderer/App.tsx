@@ -2714,7 +2714,21 @@ function App() {
           setFeedProjectionSettledByThread((current) =>
             current[selectedThreadId] === true ? current : { ...current, [selectedThreadId]: true },
           );
-          setError(errorMessage(error));
+          // A thread row can outlive its V2 stream after an interrupted
+          // migration or an older cleanup run. It cannot be reopened, so
+          // remove the stale sidebar entry instead of leaving the user stuck
+          // on a permanently failing conversation.
+          const message = errorMessage(error);
+          const errorCode =
+            typeof error === "object" && error !== null && "code" in error
+              ? String((error as { code?: unknown }).code ?? "")
+              : "";
+          if (errorCode === "conversation_not_found" || message.includes("Conversation V2 conversation was not found")) {
+            clearThreadClientState(selectedThreadId);
+            setError(undefined);
+          } else {
+            setError(message);
+          }
           console.error("[eco] conversation V2 renderer bootstrap unavailable:", error);
         })
         .finally(() => {
