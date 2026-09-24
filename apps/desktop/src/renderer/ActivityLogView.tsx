@@ -97,6 +97,7 @@ import type {
   ThreadUserMessageEditGetResult,
 } from "../shared/ipc";
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
+import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
 import { supportsHistoryRewrite } from "../shared/thread-request-retry";
@@ -825,7 +826,10 @@ export function buildConversationV2OnlyProjection(
     },
     attempts,
     agents,
-    requestSpans: conversationV2.projectionExtras?.requestSpans ?? [],
+    requestSpans: attachOutputTokensToRequestSpans(
+      conversationV2.projectionExtras?.requestSpans ?? [],
+      conversationV2.projectionExtras?.ledgerEvents ?? [],
+    ),
     timeline: mainTimeline,
     diagnostics: [],
     sourceEventCount: conversationV2.messages.size + conversationV2.runs.size + conversationV2.tools.size,
