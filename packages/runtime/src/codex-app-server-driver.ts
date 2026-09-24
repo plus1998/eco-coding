@@ -354,7 +354,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         threadId: codexThreadId,
         cwd,
         model: codexGatewayModel,
-        modelProvider,
+        ...(modelProvider ? { modelProvider } : {}),
         ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
         ...(this.threadConfig ? { config: this.threadConfig } : {}),
         ...(this.threadConfig && isCodexThreadConfigApplied(this.client, codexThreadId, this.threadConfig)
@@ -384,7 +384,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
           {
             cwd,
             model: codexGatewayModel,
-            modelProvider,
+            ...(modelProvider ? { modelProvider } : {}),
             ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
             ...(this.threadConfig ? { config: this.threadConfig } : {}),
           } satisfies CodexThreadStartParams,

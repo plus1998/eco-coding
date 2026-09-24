@@ -23,7 +23,7 @@ export function configureCodexOAuthIpc(ecoDataDir: string) {
     if (!codexLoginService) {
       return { success: false, message: "Codex CLI 未找到" };
     }
-    return codexLoginService.startDeviceAuth();
+    return codexLoginService.startLogin();
   });
 
   ipcMain.handle("codex-oauth:logout", async () => {
