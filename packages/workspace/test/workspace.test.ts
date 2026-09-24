@@ -13,6 +13,13 @@ import {
   isInsidePath,
 } from "../src";
 
+const TEST_GIT_IDENTITY_ARGS = [
+  "-c",
+  "user.name=Eco Coding Test",
+  "-c",
+  "user.email=eco-coding-test@localhost",
+];
+
 function createGitRunner(gitExecutable = "git"): CommandRunner {
   return {
     async run(command, cwd, options) {
@@ -284,7 +291,7 @@ test("applyApprovedDiff materializes files when workspace drifted from merge-bas
   });
   await fs.writeFile(path.join(root, "preload.js"), "base\n");
   execFileSync("git", ["add", "preload.js"], { cwd: root });
-  execFileSync("git", ["commit", "-m", "seed"], { cwd: root });
+  execFileSync("git", [...TEST_GIT_IDENTITY_ARGS, "commit", "-m", "seed"], { cwd: root });
 
   await service.createWorktree(plan);
   await fs.writeFile(path.join(plan.worktreePath, "preload.js"), "worktree-final\n");
