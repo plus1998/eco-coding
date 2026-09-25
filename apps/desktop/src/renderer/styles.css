@@ -14835,6 +14835,64 @@ a.run-log-web-search-detail-result-url:focus-visible {
   gap: 6px;
 }
 
+.rolling-billing-visual {
+  position: relative;
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+.rolling-billing-digit {
+  position: relative;
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: -0.08em;
+  line-height: 1;
+  text-align: center;
+}
+
+.rolling-billing-digit--active {
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
+}
+
+.rolling-billing-reel {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  will-change: transform;
+}
+
+.rolling-billing-glyph {
+  display: block;
+  flex: 0 0 1em;
+  width: 100%;
+  height: 1em;
+  line-height: 1;
+}
+
+.rolling-billing-swap {
+  display: inline-grid;
+  overflow: hidden;
+  perspective: 8em;
+}
+
+.rolling-billing-swap-face {
+  grid-area: 1 / 1;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rolling-billing-reel,
+  .rolling-billing-swap-face {
+    transform: none !important;
+  }
+}
+
 .thread-info-float-pill-cost {
   color: var(--success);
   font-size: 11px;

@@ -41,6 +41,7 @@ import { ContextCard } from "./ContextCard";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
 import { i18n } from "./i18n";
+import { RollingBillingAmount } from "./RollingBillingAmount";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 import type { RuntimeAgentThemes } from "./runtime-agent-theme";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
@@ -211,11 +212,14 @@ function ContextOccupancyRing({
 function BillingFloatPillLabel({
   billing,
   minimal = false,
+  resetKey,
 }: {
   billing?: ThreadBillingSnapshot;
   minimal?: boolean;
+  resetKey?: string;
 }) {
   const cost = billing?.ecoCostUsd ?? 0;
+  const formattedCost = formatBillingPillCost(billing);
   if (minimal) {
     return (
       <span
@@ -227,7 +231,11 @@ function BillingFloatPillLabel({
           .filter(Boolean)
           .join(" ")}
       >
-        {formatBillingPillCost(billing)}
+        <RollingBillingAmount
+          value={cost}
+          formatted={formattedCost}
+          {...(resetKey !== undefined && { resetKey })}
+        />
       </span>
     );
   }
@@ -235,7 +243,11 @@ function BillingFloatPillLabel({
     <span className="thread-info-float-pill-label">
       <span>{i18n.t("billing.title")}</span>
       <span className={cost > 0 ? "thread-info-float-pill-cost" : "thread-info-float-pill-cost is-empty"}>
-        {formatBillingPillCost(billing)}
+        <RollingBillingAmount
+          value={cost}
+          formatted={formattedCost}
+          {...(resetKey !== undefined && { resetKey })}
+        />
       </span>
     </span>
   );
@@ -272,6 +284,7 @@ function BillingFloatingCard({
   plannerLabel,
   showBilling,
   agentDisplayNames,
+  resetKey,
   onDismiss,
 }: {
   billing?: ThreadBillingSnapshot;
@@ -281,6 +294,7 @@ function BillingFloatingCard({
   plannerLabel: string;
   showBilling: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  resetKey?: string;
   onDismiss: () => void;
 }) {
   const showComparison = Boolean(billing && shouldShowBillingSavings(billing.savedUsd));
@@ -324,7 +338,13 @@ function BillingFloatingCard({
                   </ThreadInfoHelpButton>
                 ) : null}
               </span>
-              <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
+              <strong>
+                <RollingBillingAmount
+                  value={billing.ecoCostUsd}
+                  formatted={formatCostUsd(billing.ecoCostUsd)}
+                  {...(resetKey !== undefined && { resetKey })}
+                />
+              </strong>
             </span>
           </div>
           {showComparison ? (
@@ -646,6 +666,7 @@ export function ThreadInfoFloatStack({
               <BillingFloatPillLabel
                 minimal={variant === "composer"}
                 {...(billing !== undefined && { billing })}
+                {...(threadId !== undefined && { resetKey: threadId })}
               />
             }
             ariaLabel={t("billing.comparisonCurrent", {
@@ -666,6 +687,7 @@ export function ThreadInfoFloatStack({
                 plannerLabel={plannerLabel}
                 showBilling={showBilling}
                 {...(agentDisplayNames && { agentDisplayNames })}
+                {...(threadId !== undefined && { resetKey: threadId })}
                 onDismiss={closePanel}
               />
             )}
