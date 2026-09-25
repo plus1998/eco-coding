@@ -6,12 +6,9 @@ export interface RollingBillingDigit {
   value: number;
 }
 
-export interface RollingBillingSlot {
-  kind: "digit" | "static";
-  key: string;
-  value: string;
-  digit?: RollingBillingDigit;
-}
+export type RollingBillingSlot =
+  | { kind: "digit"; key: string; value: string; digit: RollingBillingDigit }
+  | { kind: "static"; key: string; value: string };
 
 export function splitBillingAmount(formatted: string): RollingBillingSlot[] {
   const slots: RollingBillingSlot[] = [];
@@ -198,14 +195,16 @@ export function RollingBillingAmount({
           return (
             <span
               className={`rolling-billing-digit${
-                previousDigit.value === nextDigit.value ? "" : " rolling-billing-digit--active"
+                previousDigit.digit.value === nextDigit.digit.value
+                  ? ""
+                  : " rolling-billing-digit--active"
               }`}
               key={slot.key}
             >
               <motion.span
                 className="rolling-billing-reel"
-                initial={{ y: `${billingDigitOffsetPercent(previousDigit.value)}%` }}
-                animate={{ y: `${billingDigitOffsetPercent(nextDigit.value)}%` }}
+                initial={{ y: `${billingDigitOffsetPercent(previousDigit.digit.value)}%` }}
+                animate={{ y: `${billingDigitOffsetPercent(nextDigit.digit.value)}%` }}
                 transition={{ duration: 1.2, ease: [0.1, 0.8, 0.2, 1] }}
               >
                 {BILLING_REEL_DIGITS.map((digit) => (

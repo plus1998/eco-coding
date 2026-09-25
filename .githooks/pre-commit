@@ -10,5 +10,9 @@ cd "$repo_root"
 # can accidentally read the current checkout's index.
 unset GIT_DIR GIT_INDEX_FILE GIT_PREFIX GIT_WORK_TREE
 
+echo "[pre-commit] type checking the desktop app..."
+bunx tsc -b apps/desktop/tsconfig.json --pretty false
+bunx tsc --noEmit -p apps/desktop/tsconfig.json
+
 echo "[pre-commit] running the strict test gate..."
-exec node scripts/test-gate.mjs --strict
+node scripts/test-gate.mjs --strict
