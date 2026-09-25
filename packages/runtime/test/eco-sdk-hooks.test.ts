@@ -21,6 +21,7 @@ import {
   createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
   createForcedPlanDelegationPreToolHook,
+  createForcedPlanDelegationSubagentStartHook,
   createNestedSubagentDenyPreToolHook,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
@@ -2933,6 +2934,38 @@ test("createForcedPlanDelegationPreToolHook rewrites the spawn to the canonical 
   expect(output.hookSpecificOutput?.permissionDecision).toBe("allow");
   expect(output.hookSpecificOutput?.updatedInput?.prompt).toBe("# 已批准计划\n\nverbatim body");
   expect(output.hookSpecificOutput?.updatedInput?.subagent_type).toBe("eco_explore");
+});
+
+test("createForcedPlanDelegationSubagentStartHook confirms the actual started agent", async () => {
+  const confirmations: Array<{ agentKey: string; toolUseIds: readonly string[] }> = [];
+  const hook = createForcedPlanDelegationSubagentStartHook(() => ({
+    agentKey: "coder",
+    canonicalTask: "canonical",
+    claimSpawn: () => ({ ok: true }),
+    confirmSpawn: (input) => confirmations.push(input),
+  }));
+
+  await hook(
+    {
+      hook_event_name: "SubagentStart",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      agent_id: "agent-1",
+      agent_type: "eco_coder",
+      parent_tool_use_id: "tu_parent",
+      tool_use_id: "tu_start",
+    } as SubagentStartHookInput & { parent_tool_use_id: string; tool_use_id: string },
+    "tu_callback",
+    { signal: new AbortController().signal },
+  );
+
+  expect(confirmations).toEqual([
+    {
+      agentKey: "coder",
+      toolUseIds: ["tu_parent", "tu_callback", "tu_start"],
+    },
+  ]);
 });
 
 test("createForcedPlanDelegationPreToolHook denies wrong-target or repeat delegations", async () => {

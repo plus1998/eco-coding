@@ -24,7 +24,7 @@ test("claimSpawn succeeds once for the armed role and claims the tool use id", (
   const claim = store.claimSpawn({ threadId: "t1", agentKey: "eco_coder", toolUseId: "tu1" });
   expect(claim.ok).toBe(true);
   if (claim.ok) {
-    expect(claim.attempt.status).toBe("spawned");
+    expect(claim.attempt.status).toBe("claimed");
     expect(claim.attempt.spawnToolUseId).toBe("tu1");
   }
 
@@ -74,9 +74,32 @@ test("complete marks a spawned attempt and release clears the record", () => {
   const store = new ForcedPlanDelegationStore();
   store.arm({ threadId: "t1", coreKind: "claude", agentKey: "coder", canonicalTask: "x" });
   store.claimSpawn({ threadId: "t1", agentKey: "coder" });
+  store.confirmSpawn({ threadId: "t1", agentKey: "coder" });
   expect(store.complete("t1")?.status).toBe("completed");
   store.release("t1");
   expect(store.get("t1")).toBeUndefined();
+});
+
+test("a claim becomes spawned only after a matching SubagentStart", () => {
+  const store = new ForcedPlanDelegationStore();
+  store.arm({ threadId: "t1", coreKind: "claude", agentKey: "coder", canonicalTask: "x" });
+  store.claimSpawn({ threadId: "t1", agentKey: "coder", toolUseId: "tu1" });
+
+  store.confirmSpawn({ threadId: "t1", agentKey: "reviewer", toolUseIds: ["tu1"] });
+  expect(store.get("t1")?.status).toBe("claimed");
+  store.confirmSpawn({ threadId: "t1", agentKey: "coder", toolUseIds: ["other"] });
+  expect(store.get("t1")?.status).toBe("claimed");
+  store.confirmSpawn({ threadId: "t1", agentKey: "eco_coder", toolUseIds: ["tu1"] });
+  expect(store.get("t1")?.status).toBe("spawned");
+});
+
+test("an unstarted claim resets to armed for retry", () => {
+  const store = new ForcedPlanDelegationStore();
+  store.arm({ threadId: "t1", coreKind: "claude", agentKey: "coder", canonicalTask: "x" });
+  store.claimSpawn({ threadId: "t1", agentKey: "coder", toolUseId: "tu1" });
+  expect(store.resetUnstartedClaim("t1")?.status).toBe("armed");
+  expect(store.get("t1")?.spawnToolUseId).toBeUndefined();
+  expect(store.claimSpawn({ threadId: "t1", agentKey: "coder", toolUseId: "tu2" }).ok).toBe(true);
 });
 
 test("fail records the reason and a violated attempt is preserved", () => {

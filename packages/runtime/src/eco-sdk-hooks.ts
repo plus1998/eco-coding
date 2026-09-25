@@ -248,6 +248,35 @@ export interface ForcedPlanDelegationHookConfig {
     toolUseId?: string;
     agentKey: string;
   }) => { ok: true } | { ok: false; reason: string };
+  /** Mark the claim as started only after the SDK emits SubagentStart. */
+  confirmSpawn?: (input: { agentKey: string; toolUseIds: readonly string[] }) => void;
+}
+
+export function createForcedPlanDelegationSubagentStartHook(
+  resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
+): HookCallback | undefined {
+  if (!resolveConfig) {
+    return undefined;
+  }
+  return async (input, toolUseID) => {
+    if (input.hook_event_name !== "SubagentStart") {
+      return {};
+    }
+    const config = resolveConfig();
+    if (!config) {
+      return {};
+    }
+    const started = input as SubagentStartHookInput;
+    const agentKey =
+      normalizeSdkBuiltinOrEcoAgentRole(started.agent_type) ??
+      normalizeSdkSubagentType(started.agent_type) ??
+      started.agent_type;
+    config.confirmSpawn?.({
+      agentKey,
+      toolUseIds: collectSubagentStartParentToolUseIdCandidates(started, toolUseID),
+    });
+    return {};
+  };
 }
 
 export interface EcoHookContext {
@@ -1941,6 +1970,11 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(hooks, "PreToolUse", createForcedPlanDelegationPreToolHook(ctx.resolveForcedPlanDelegation));
+  pushHook(
+    hooks,
+    "SubagentStart",
+    createForcedPlanDelegationSubagentStartHook(ctx.resolveForcedPlanDelegation),
+  );
   pushHook(
     hooks,
     "PostToolUse",

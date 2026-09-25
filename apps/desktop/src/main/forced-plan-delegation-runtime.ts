@@ -96,7 +96,7 @@ export function buildForcedPlanDelegationHookConfig(
   threadId: string,
 ): ForcedPlanDelegationHookConfig | undefined {
   const attempt = forcedPlanDelegationStore.get(threadId);
-  if (!attempt || attempt.status !== "armed") {
+  if (!attempt || (attempt.status !== "armed" && attempt.status !== "claimed")) {
     return undefined;
   }
   return {
@@ -110,7 +110,57 @@ export function buildForcedPlanDelegationHookConfig(
       });
       return result.ok ? { ok: true } : { ok: false, reason: result.reason };
     },
+    confirmSpawn: ({ agentKey, toolUseIds }) => {
+      forcedPlanDelegationStore.confirmSpawn({ threadId, agentKey, toolUseIds });
+    },
   };
+}
+
+/** Confirm a host-observed subagent start (used by cores without SDK SubagentStart hooks). */
+export function confirmForcedPlanDelegationSpawn(
+  threadId: string,
+  input: { agentKey: string; toolUseIds?: readonly string[] },
+): void {
+  const attempt = forcedPlanDelegationStore.get(threadId);
+  if (!attempt || (attempt.status !== "armed" && attempt.status !== "claimed")) {
+    return;
+  }
+  if (attempt.status === "armed") {
+    const claim = forcedPlanDelegationStore.claimSpawn({
+      threadId,
+      agentKey: input.agentKey,
+      ...(input.toolUseIds?.[0] ? { toolUseId: input.toolUseIds[0] } : {}),
+    });
+    if (!claim.ok) {
+      return;
+    }
+  }
+  forcedPlanDelegationStore.confirmSpawn({
+    threadId,
+    agentKey: input.agentKey,
+    ...(input.toolUseIds ? { toolUseIds: input.toolUseIds } : {}),
+  });
+}
+
+/** Confirm Codex delegations only from persisted lifecycle events with a parent tool call. */
+export function confirmForcedPlanDelegationFromRuntimeEvent(input: {
+  eventType: string;
+  threadId: string;
+  role?: string | null;
+  parentToolUseId?: string | null;
+}): void {
+  if (input.eventType !== "agent.started") {
+    return;
+  }
+  const agentKey = input.role?.trim();
+  const parentToolUseId = input.parentToolUseId?.trim();
+  if (!agentKey || !parentToolUseId) {
+    return;
+  }
+  confirmForcedPlanDelegationSpawn(input.threadId, {
+    agentKey,
+    toolUseIds: [parentToolUseId],
+  });
 }
 
 export function releaseForcedPlanDelegation(threadId: string): void {
@@ -144,6 +194,13 @@ export function settleForcedPlanDelegation(
   const attempt = forcedPlanDelegationStore.get(threadId);
   if (!attempt) {
     return undefined;
+  }
+  if (attempt.status === "claimed") {
+    forcedPlanDelegationStore.resetUnstartedClaim(threadId);
+    return {
+      outcome: "failed",
+      reason: input.reason ?? `指定的子代理「${attempt.agentKey}」未能启动；已保留批准计划，可直接重试。`,
+    };
   }
   if (input.ok) {
     if (attempt.status !== "spawned" && attempt.status !== "completed") {

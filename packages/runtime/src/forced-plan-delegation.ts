@@ -230,7 +230,13 @@ export function validatePlanExecutionTarget(input: {
 }
 
 /** Runtime status of a single forced-delegation attempt. */
-export type ForcedPlanDelegationAttemptStatus = "armed" | "spawned" | "completed" | "failed" | "violated";
+export type ForcedPlanDelegationAttemptStatus =
+  | "armed"
+  | "claimed"
+  | "spawned"
+  | "completed"
+  | "failed"
+  | "violated";
 
 export interface ForcedPlanDelegationAttempt {
   runAttemptId: string;

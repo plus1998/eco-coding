@@ -25,6 +25,12 @@ export interface ClaimForcedPlanDelegationSpawnInput {
   runAttemptId?: string;
 }
 
+export interface ConfirmForcedPlanDelegationSpawnInput {
+  threadId: string;
+  agentKey: string;
+  toolUseIds?: readonly string[];
+}
+
 export type ClaimForcedPlanDelegationResult =
   | { ok: true; attempt: ForcedPlanDelegationAttempt }
   | { ok: false; reason: string; attempt: ForcedPlanDelegationAttempt };
@@ -106,13 +112,51 @@ export class ForcedPlanDelegationStore {
       this.byThread.set(input.threadId, violated);
       return { ok: false, reason: violated.failureReason ?? "", attempt: violated };
     }
-    const spawned: ForcedPlanDelegationAttempt = {
+    const claimed: ForcedPlanDelegationAttempt = {
       ...attempt,
-      status: "spawned",
+      status: "claimed",
       ...(input.toolUseId ? { spawnToolUseId: input.toolUseId } : {}),
     };
+    this.byThread.set(input.threadId, claimed);
+    return { ok: true, attempt: claimed };
+  }
+
+  /** Confirm that the SDK emitted SubagentStart for the claimed Agent tool call. */
+  confirmSpawn(input: ConfirmForcedPlanDelegationSpawnInput): ForcedPlanDelegationAttempt | undefined {
+    const attempt = this.byThread.get(input.threadId);
+    if (attempt?.status !== "claimed") {
+      return attempt;
+    }
+    if (normalizeDelegationAgentKey(input.agentKey) !== normalizeDelegationAgentKey(attempt.agentKey)) {
+      return attempt;
+    }
+    const claimedToolUseId = attempt.spawnToolUseId?.trim();
+    const candidateToolUseIds = (input.toolUseIds ?? []).map((value) => value.trim()).filter(Boolean);
+    if (
+      claimedToolUseId &&
+      candidateToolUseIds.length > 0 &&
+      !candidateToolUseIds.includes(claimedToolUseId)
+    ) {
+      return attempt;
+    }
+    const spawned: ForcedPlanDelegationAttempt = { ...attempt, status: "spawned" };
     this.byThread.set(input.threadId, spawned);
-    return { ok: true, attempt: spawned };
+    return spawned;
+  }
+
+  /** A PreToolUse claim whose tool never started must remain retryable. */
+  resetUnstartedClaim(threadId: string): ForcedPlanDelegationAttempt | undefined {
+    const attempt = this.byThread.get(threadId);
+    if (attempt?.status !== "claimed") {
+      return attempt;
+    }
+    const { spawnToolUseId: _spawnToolUseId, failureReason: _failureReason, ...retryable } = attempt;
+    const armed: ForcedPlanDelegationAttempt = {
+      ...retryable,
+      status: "armed",
+    };
+    this.byThread.set(threadId, armed);
+    return armed;
   }
 
   complete(threadId: string, runAttemptId?: string): ForcedPlanDelegationAttempt | undefined {

@@ -618,6 +618,7 @@ import {
   armForcedPlanDelegation,
   buildForcedPlanDelegationHookConfig,
   clearStaleForcedPlanDelegationState,
+  confirmForcedPlanDelegationFromRuntimeEvent,
   configureForcedPlanDelegationCodexHome,
   forcedPlanDelegationStore,
   releaseForcedPlanDelegation,
@@ -2538,6 +2539,7 @@ app.whenReady().then(async () => {
       }
       maybeRevealBrowserFromThreadRunEvent(event);
       const persisted = conversationStore.appendConversationRuntimeEvent(event);
+      confirmForcedPlanDelegationFromRuntimeEvent(persisted);
       if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
         const codexThreadId =
           typeof persisted.metadata.codexThreadId === "string" ? persisted.metadata.codexThreadId.trim() : "";

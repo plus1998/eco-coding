@@ -195,6 +195,11 @@ export function createPiSubagentSpawnHandler(
       parentToolUseId: spawnInput.parentToolUseId,
       prompt: task,
     });
+    forcedPlanDelegationStore.confirmSpawn({
+      threadId: input.threadId,
+      agentKey: agent.agentKey,
+      ...(spawnInput.parentToolUseId ? { toolUseIds: [spawnInput.parentToolUseId] } : {}),
+    });
 
     spawnInput.emitEvent(
       createAgentEvent({
