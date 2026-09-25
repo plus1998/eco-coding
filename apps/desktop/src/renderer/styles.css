@@ -8090,20 +8090,83 @@ button.sidebar-settings-meta {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 260px;
-  max-width: 340px;
-  padding: 12px;
+  gap: 0;
+  width: max-content;
+  min-width: min(260px, calc(100vw - 32px));
+  max-width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 5px;
   border: 1px solid var(--codex-panel-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--bg-menu);
   box-shadow: var(--shadow-composer);
 }
 
-.plan-approval-delegation-header {
-  font-size: 12px;
+.plan-approval-menu-options,
+.plan-approval-menu-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plan-approval-menu-option,
+.plan-approval-menu-back {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-log-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-approval-menu-option span,
+.plan-approval-menu-back span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-approval-menu-option svg,
+.plan-approval-menu-back svg {
+  flex: none;
+}
+
+.plan-approval-menu-option:hover:not(:disabled),
+.plan-approval-menu-option:focus-visible,
+.plan-approval-menu-back:hover,
+.plan-approval-menu-back:focus-visible {
+  outline: none;
+  background: var(--codex-panel-hover);
+}
+
+.plan-approval-menu-option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.plan-approval-menu-back {
   font-weight: 600;
-  color: var(--codex-log-heading);
+  border-bottom: 1px solid var(--codex-panel-border);
+  border-radius: 0;
+}
+
+.plan-approval-menu-agents .plan-approval-delegation-message-label {
+  margin: 8px 6px 0;
+}
+
+.plan-approval-menu-agents .plan-approval-delegation-message {
+  width: calc(100% - 12px);
+  margin: 0 6px 6px;
+  box-sizing: border-box;
 }
 
 .plan-approval-delegation-message-label {
@@ -8135,8 +8198,9 @@ button.sidebar-settings-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0;
-  padding: 0;
+  margin: 4px 0 0;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--codex-panel-border);
   list-style: none;
   max-height: 220px;
   overflow-y: auto;
@@ -8145,12 +8209,11 @@ button.sidebar-settings-meta {
 .plan-approval-delegation-agent {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 7px 9px;
+  padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--codex-log-text);
   font-size: 12.5px;
@@ -8159,7 +8222,7 @@ button.sidebar-settings-meta {
 }
 
 .plan-approval-delegation-agent:hover:not(:disabled),
-.plan-approval-delegation-agent.is-focused:not(:disabled) {
+.plan-approval-delegation-agent:focus-visible {
   background: var(--codex-panel-hover);
 }
 
@@ -8174,11 +8237,16 @@ button.sidebar-settings-meta {
 }
 
 .plan-approval-delegation-agent-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 500;
 }
 
 .plan-approval-delegation-agent-key {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 11px;
   color: var(--codex-log-faint);
 }

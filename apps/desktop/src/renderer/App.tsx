@@ -284,6 +284,7 @@ import {
   captureComposerBeforeFollowUpEdit,
   resolveComposerAfterFollowUpEdit,
 } from "./composer-follow-up-edit-draft";
+import { resolveComposerContextPrompt, type ComposerPlanHandoff } from "./composer-plan-handoff";
 import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
   composerRequiresOrchestration,
@@ -3515,6 +3516,7 @@ function App() {
     [activeThread?.id, currentProjectPath],
   );
   const composerDraftsByKeyRef = useRef<Record<string, ComposerDraft>>({});
+  const pendingPlanComposerHandoffRef = useRef<ComposerPlanHandoff | undefined>(undefined);
   const prevComposerContextKeyRef = useRef<string | undefined>(undefined);
   const composerContextKeyRef = useRef(composerContextKey);
   const composerPromptRef = useRef(prompt);
@@ -4937,24 +4939,51 @@ function App() {
       if (editingFollowUpIdRef.current && prevThreadId) {
         void releaseThreadFollowUpEditingLock(prevThreadId);
       }
-      const nextPrompt = draft?.prompt ?? "";
+      const promptResolution = resolveComposerContextPrompt(
+        composerContextKey,
+        draft?.prompt,
+        pendingPlanComposerHandoffRef.current,
+      );
+      if (promptResolution.handoffConsumed) {
+        pendingPlanComposerHandoffRef.current = undefined;
+      }
+      const nextPrompt = promptResolution.prompt;
       editingFollowUpIdRef.current = undefined;
       editingFollowUpThreadIdRef.current = undefined;
       savedComposerBeforeFollowUpEditRef.current = undefined;
       setEditingFollowUpId(undefined);
       composerPromptRef.current = nextPrompt;
       setPrompt(nextPrompt);
-      setComposerAttachments(draft?.attachments ? [...draft.attachments] : []);
+      setComposerAttachments(
+        promptResolution.handoffConsumed ? [] : draft?.attachments ? [...draft.attachments] : [],
+      );
       setComposerRewindTarget(
-        draft?.rewindTarget && (!threadId || draft.rewindTarget.threadId === threadId)
+        !promptResolution.handoffConsumed &&
+          draft?.rewindTarget &&
+          (!threadId || draft.rewindTarget.threadId === threadId)
           ? draft.rewindTarget
           : undefined,
       );
       setComposerImageNotice(undefined);
       prevComposerContextKeyRef.current = composerContextKey;
 
+      if (promptResolution.handoffConsumed) {
+        window.requestAnimationFrame(() => {
+          if (
+            composerContextKeyRef.current === composerContextKey &&
+            composerPromptRef.current === nextPrompt
+          ) {
+            composerRef.current?.focus();
+          }
+        });
+      }
+
       const requestId = ++composerDraftLoadRequestRef.current;
-      if (!draft && composerContextKey && typeof window.eco?.getComposerDraft === "function") {
+      if (
+        promptResolution.shouldLoadPersistedDraft &&
+        composerContextKey &&
+        typeof window.eco?.getComposerDraft === "function"
+      ) {
         void window.eco
           .getComposerDraft(composerContextKey)
           .then((persisted) => {
@@ -9411,6 +9440,15 @@ function App() {
     setError(undefined);
   }
 
+  function startNewChatWithPlan(plan: ThreadPendingPlan) {
+    const contextKey = composerContextKeyFromParts(undefined, currentProjectPath);
+    if (!contextKey) {
+      return;
+    }
+    pendingPlanComposerHandoffRef.current = { contextKey, prompt: plan.plan };
+    startNewChat();
+  }
+
   async function addComposerImageFiles(files: FileList | File[]) {
     if (plannerCapability && !plannerCapability.capabilitiesResolved) {
       setComposerImageNotice(t("app.imageCapabilityUnknown"));
@@ -10320,6 +10358,7 @@ function App() {
                 variant="dock"
                 {...(planFailureMessage && { failureMessage: planFailureMessage })}
                 onApprove={() => void approvePendingPlan()}
+                onStartNewSession={() => startNewChatWithPlan(pendingPlan)}
                 onApproveWithSubagent={(agentKey, additionalMessage) =>
                   void approvePendingPlanWithSubagent(agentKey, additionalMessage)
                 }
