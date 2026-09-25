@@ -2873,9 +2873,20 @@ test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubb
         text: mission,
         metadata: { liveType: "message.user", itemType: "userMessage" },
       }),
+      // Some Codex child histories echo the delegated task as a regular
+      // assistant message. It must not duplicate the mission header.
+      item({
+        id: "initial-agent-echo",
+        sequence: 2,
+        eventType: "message.final",
+        scope: "agent",
+        role: "assistant",
+        text: mission,
+        metadata: { itemType: "agentMessage" },
+      }),
       item({
         id: "agent-output",
-        sequence: 2,
+        sequence: 3,
         eventType: "message.final",
         scope: "agent",
         role: "coder",
@@ -2884,7 +2895,7 @@ test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubb
       }),
       item({
         id: "follow-up-request-started",
-        sequence: 3,
+        sequence: 4,
         eventType: "request.started",
         scope: "agent",
         role: "coder",
@@ -2893,17 +2904,19 @@ test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubb
       }),
       item({
         id: "follow-up-agent-prompt",
-        sequence: 4,
+        sequence: 5,
         eventType: "message.final",
         scope: "agent",
         role: "coder",
         requestId: "req_follow_up",
-        text: "按审查意见修正验签逻辑。",
-        metadata: { liveType: "message.user", itemType: "userMessage" },
+        text: "状态确认：请立刻停止当前等待，直接汇报你现在的情况：\n\n1. 已执行过哪些命令？是否已成功拿到广州天气数据？\n2. 如果卡在 require_escalated 审批上，请说明具体命令；不要继续无限等待。\n3. 如果已有真实数据，立刻按原格式返回结果；如果没有，明确说\"未获取到\"，并附上失败命令与报错原文。",
+        // Persisted V2 user messages can retain only itemType. They are still
+        // messages sent by the parent agent and must render as outgoing prompts.
+        metadata: { itemType: "userMessage" },
       }),
       item({
         id: "follow-up-agent-output",
-        sequence: 5,
+        sequence: 6,
         eventType: "message.final",
         scope: "agent",
         role: "coder",
@@ -2913,7 +2926,7 @@ test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubb
       }),
       item({
         id: "same-request-follow-up-agent-prompt",
-        sequence: 6,
+        sequence: 7,
         eventType: "message.final",
         scope: "agent",
         role: "coder",
@@ -2938,10 +2951,12 @@ test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubb
   expect(html.match(/subagent-conversation-turn/g)?.length ?? 0).toBe(3);
   expect(html.match(/class="run-log-turn-toggle/g)?.length ?? 0).toBe(3);
   expect(html.match(new RegExp(mission, "g"))?.length ?? 0).toBe(1);
-  expect(html).toContain("按审查意见修正验签逻辑。");
+  expect(html).toContain("状态确认：请立刻停止当前等待");
   expect(html).toContain("继续补充回归测试。");
   expect(html).toContain("初版实现已完成。");
-  expect(html.indexOf("按审查意见修正验签逻辑。")).toBeLessThan(html.indexOf("正在思考"));
+  const statusPromptIndex = html.indexOf("状态确认：请立刻停止当前等待");
+  expect(statusPromptIndex).toBeGreaterThan(-1);
+  expect(statusPromptIndex).toBeLessThan(html.indexOf("正在思考"));
   const sameRequestPromptIndex = html.indexOf("继续补充回归测试。");
   expect(sameRequestPromptIndex).toBeGreaterThan(-1);
   expect(sameRequestPromptIndex).toBeLessThan(html.indexOf("正在思考", sameRequestPromptIndex));

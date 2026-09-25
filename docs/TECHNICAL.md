@@ -125,6 +125,7 @@ Core 适配层统一描述以下能力：
 - Anthropic-only 路径与 OpenAI 协议组合会硬失败，不会静默改写到可能错误的端点。
 - 路由可为主代理和每个子代理选择不同 Provider / Model。
 - llama.cpp 等服务只要暴露兼容的 Chat Completions 接口即可接入。
+- Codex 的模型 catalog 只有 GPT-5.6 Terra 及以上（当前为 Sol/Terra，另含 GPT-6 系列）使用 Multi-Agent v2；其他模型 alias 标为 v1，并在线程配置中显式关闭 `features.multi_agent_v2`。
 
 ## 6. 会话隔离、MCP 与 Skills
 

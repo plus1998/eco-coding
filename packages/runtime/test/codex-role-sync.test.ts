@@ -218,6 +218,11 @@ test("multi-agent config keeps roles thread-scoped and heterogeneous models immu
   expect(configToml).toContain("[agents]");
   expect(configToml).toContain("max_threads = 16");
   expect(configToml).toContain("max_depth = 1");
+  expect(roleSync.threadConfig.features).toMatchObject({
+    multi_agent: true,
+    hooks: true,
+    multi_agent_v2: false,
+  });
   expect(configToml).not.toContain("[agents.explore]");
   expect(configToml).not.toContain("[agents.coder]");
   expect(configToml).not.toContain("config_file");
@@ -344,6 +349,29 @@ test("syncOrchestrationAgentsToCodexRoles keeps old bundles immutable when avail
   expect(await fs.stat(initialCoderPath!)).toBeTruthy();
 });
 
+test("role sync enables Multi-Agent v2 only for GPT-5.6 Terra or above", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const base = buildOrchestration();
+  const result = await syncOrchestrationAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    orchestration: {
+      ...base,
+      mainAgent: {
+        ...base.mainAgent,
+        modelRef: { providerId: "main", modelId: "gpt-5.6-terra" },
+      },
+    },
+    templates: [researchTemplate, codingTemplate],
+  });
+
+  expect(result.threadConfig.features).toMatchObject({
+    multi_agent: true,
+    hooks: true,
+    multi_agent_v2: true,
+  });
+  expect(result.roleThreadConfigs.researcher?.features).toMatchObject({ multi_agent_v2: true });
+});
+
 test("role sync explicitly disables multi-agent features when no role is available", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const result = await syncOrchestrationAgentsToCodexRoles({
@@ -354,7 +382,11 @@ test("role sync explicitly disables multi-agent features when no role is availab
   });
 
   expect(result.roleIds).toEqual([]);
-  expect(result.threadConfig.features).toEqual({ multi_agent: false, hooks: false });
+  expect(result.threadConfig.features).toEqual({
+    multi_agent: false,
+    hooks: false,
+    multi_agent_v2: false,
+  });
   expect(result.threadConfig.agents).toBeUndefined();
 });
 

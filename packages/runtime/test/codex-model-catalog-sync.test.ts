@@ -13,6 +13,7 @@ import {
   fingerprintEcoModelCatalog,
   mergeCodexGatewayCatalogRoutes,
   parseBundledCodexModelCatalog,
+  resolveCodexMultiAgentVersion,
   resolveEcoModelCatalogPath,
   selectFreeformApplyPatchTemplate,
   selectNativeTemplateForModel,
@@ -138,6 +139,7 @@ test("buildAliasCatalogEntry forces freeform apply_patch and keeps unknown model
   // Same registration DeepSeek's official Codex catalog uses (shell_command + tool_mode null).
   expect(unknown.shell_type).toBe("shell_command");
   expect(unknown.tool_mode).toBeNull();
+  expect(unknown.multi_agent_version).toBe("v1");
 
   const grok = buildAliasCatalogEntry(
     "eco_route_v1.grok",
@@ -152,6 +154,7 @@ test("buildAliasCatalogEntry forces freeform apply_patch and keeps unknown model
   expect(grok.shell_type).toBe("shell_command");
   expect(grok.tool_mode).toBeNull();
   expect(grok.apply_patch_tool_type).toBe("freeform");
+  expect(grok.multi_agent_version).toBe("v1");
 
   // models.dev / manual context must override the unknown-model 128k default
   // (e.g. gpt-5.6-* has catalog context 1_050_000 and max output 128_000).
@@ -168,6 +171,15 @@ test("buildAliasCatalogEntry forces freeform apply_patch and keeps unknown model
   );
   expect(withModelsDevContext.context_window).toBe(1_050_000);
   expect(withModelsDevContext.max_context_window).toBe(1_050_000);
+});
+
+test("Codex Multi-Agent v2 starts at GPT-5.6 Terra", () => {
+  expect(resolveCodexMultiAgentVersion("gpt-5.6-sol")).toBe("v2");
+  expect(resolveCodexMultiAgentVersion("gpt-5.6-terra-preview")).toBe("v2");
+  expect(resolveCodexMultiAgentVersion("gpt-6")).toBe("v2");
+  expect(resolveCodexMultiAgentVersion("gpt-6-astra")).toBe("v2");
+  expect(resolveCodexMultiAgentVersion("gpt-5.6-luna")).toBe("v1");
+  expect(resolveCodexMultiAgentVersion("LongCat-2.0")).toBe("v1");
 });
 
 test("applyManualCatalogCapabilities overrides only declared fields", () => {

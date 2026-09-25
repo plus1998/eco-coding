@@ -3398,7 +3398,15 @@ export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem
 }
 
 export function isProjectionSubagentPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return item.scope === "agent" && projectionLiveType(item) === "message.user" && item.text.trim().length > 0;
+  if (item.scope !== "agent" || item.text.trim().length === 0) {
+    return false;
+  }
+  const liveType = projectionLiveType(item);
+  return (
+    liveType === "message.user" ||
+    item.role === "user" ||
+    item.metadata?.itemType === "userMessage"
+  );
 }
 
 export function resolveProjectionAgentStatusText(agent: ThreadRunProjectionAgent): string | undefined {

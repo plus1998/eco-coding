@@ -162,6 +162,38 @@ test("reuses the accepted V2 user message identity when the legacy prompt arrive
   });
 });
 
+test("preserves agent-scoped Codex message.user rows as V2 user prompts", () => {
+  const store = createStore();
+  appendLegacyThreadRunEventToConversationV2(
+    store,
+    event({
+      id: "legacy_agent_prompt_1",
+      sequence: 1,
+      eventType: "message.final",
+      scope: "agent",
+      role: "coder",
+      agentId: "agent_coder",
+      requestId: "request_1",
+      streamKey: "message_1",
+      streamState: "finalized",
+      message: "状态确认：请汇报当前情况。",
+      metadata: { liveType: "message.user" },
+    }),
+  );
+
+  expect(store.bootstrap("thread_legacy").messages).toEqual([
+    expect.objectContaining({
+      body: "状态确认：请汇报当前情况。",
+      role: "user",
+      channel: "answer",
+      providerRole: "coder",
+      agentId: "agent_coder",
+      agentInstanceId: "agent_coder",
+      status: "final",
+    }),
+  ]);
+});
+
 test("keeps legacy tool rows when structured metadata or run id is missing", () => {
   const store = createStore();
   const emitted = appendLegacyThreadRunEventToConversationV2(

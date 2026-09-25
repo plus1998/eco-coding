@@ -14,6 +14,7 @@ import {
   type CodexMcpServerForConfigSync,
   type EcoProviderForCodexConfig,
 } from "./codex-config-sync.js";
+import { resolveCodexMultiAgentVersion } from "./codex-model-catalog-sync.js";
 import type {
   CodexExecutionConfirmationMode,
   CodexSandboxMode,
@@ -71,6 +72,7 @@ export interface CodexThreadConfigOverrides extends Record<string, unknown> {
   features?: {
     multi_agent: boolean;
     hooks: boolean;
+    multi_agent_v2?: boolean;
   };
   agents?: Record<string, unknown>;
   skills?: {
@@ -275,7 +277,7 @@ export async function syncOrchestrationAgentsToCodexRoles(
     });
   }
 
-  const commonThreadConfig = buildThreadAgentConfig(roles);
+  const commonThreadConfig = buildThreadAgentConfig(roles, input.orchestration.mainAgent.modelRef.modelId);
   const threadConfig: CodexThreadConfigOverrides = {
     ...commonThreadConfig,
     mcp_servers: cloneMcpVisibility(mainMcpVisibility),
@@ -502,12 +504,14 @@ function assertRoleDoesNotSilentlyBroadenMainMcp(input: {
 
 function buildThreadAgentConfig(
   roles: readonly SyncedCodexRole[],
+  mainModelId: string,
 ): Pick<CodexThreadConfigOverrides, "features" | "agents"> {
   if (roles.length === 0) {
     return {
       features: {
         multi_agent: false,
         hooks: false,
+        multi_agent_v2: false,
       },
     };
   }
@@ -525,6 +529,7 @@ function buildThreadAgentConfig(
     features: {
       multi_agent: true,
       hooks: true,
+      multi_agent_v2: resolveCodexMultiAgentVersion(mainModelId) === "v2",
     },
     agents,
   };

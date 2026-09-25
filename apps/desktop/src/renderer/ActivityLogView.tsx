@@ -4032,10 +4032,16 @@ export function shouldSuppressSubagentCardTimelineItem(
   if (block?.kind === "subagent-mission") {
     return true;
   }
-  return (
-    block?.kind === "subagent-prompt" &&
-    resolveMissionDisplayText(block.text) === resolveMissionDisplayText(missionText)
-  );
+  if (block?.kind !== "subagent-prompt" && block?.kind !== "narrative") {
+    return false;
+  }
+  // Some Codex child-thread histories echo the delegated task as a regular
+  // assistant message instead of preserving its user-message marker. The
+  // drawer already renders the mission header, so either representation would
+  // otherwise show the same task twice.
+  const normalizeMissionComparisonText = (text: string): string =>
+    resolveMissionDisplayText(text).replace(/\s+/gu, " ").trim();
+  return normalizeMissionComparisonText(block.text) === normalizeMissionComparisonText(missionText);
 }
 
 /**

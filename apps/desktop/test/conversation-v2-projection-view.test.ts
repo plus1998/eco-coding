@@ -5086,6 +5086,20 @@ test("projectionItemToDetailBlock maps Codex subagent user messages to prompt bu
   });
 });
 
+test("isProjectionSubagentPromptItem recognizes persisted userMessage markers without liveType", () => {
+  expect(
+    isProjectionSubagentPromptItem(
+      item({
+        id: "persisted-subagent-message",
+        scope: "agent",
+        role: "coder",
+        text: "状态确认：请汇报当前情况。",
+        metadata: { itemType: "userMessage" },
+      }),
+    ),
+  ).toBe(true);
+});
+
 test("projectionItemToDetailBlock keeps subagent assistant messages as narrative", () => {
   const detail = projectionItemToDetailBlock(
     item({

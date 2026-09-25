@@ -1521,6 +1521,7 @@ function buildDenyAllMcpThreadConfig(
     features: {
       multi_agent: false,
       hooks: false,
+      multi_agent_v2: false,
     },
     mcp_servers: Object.fromEntries(
       servers.map((server) => [server.name.trim(), { enabled: false }]).filter(([name]) => Boolean(name)),

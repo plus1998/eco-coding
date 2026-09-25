@@ -106,7 +106,6 @@ import {
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
 import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-decision";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
-import { assertCodexRuntimeConfigSupported } from "./codex-runtime-capabilities";
 import type { PreparedConversationCommandDispatch } from "./conversation-command-dispatch";
 import {
   type AcceptedConversationMessageSchedule,
@@ -7226,9 +7225,6 @@ function registerIpcHandlers(): void {
       coreKind === "acp"
         ? normalizeThreadRuntimeConfig(parsedRuntimeConfig)
         : materializeThreadRuntimeConfig(settings, parsedRuntimeConfig);
-    if (coreKind === "codex") {
-      assertCodexRuntimeConfigSupported(threadRuntime);
-    }
     const roleRoutes = coreKind === "acp" ? [] : roleRoutesForThreadConfig(settings, threadRuntime);
     const resolvedRuntimeConfig =
       coreKind === "acp"
@@ -9829,7 +9825,6 @@ async function startCodexThreadContinuation(
   if (!threadConfig) {
     throw new Error("Thread runtime configuration is missing.");
   }
-  assertCodexRuntimeConfigSupported(threadConfig);
   const roleRoutes = roleRoutesForThreadConfig(settings, threadConfig);
   const runtime = resolveRuntimeConfigForThreadConfig(settings, threadConfig, roleRoutes);
   if (!runtime.ok) {

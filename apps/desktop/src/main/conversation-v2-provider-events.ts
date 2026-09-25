@@ -836,6 +836,19 @@ function providerHistoryTarget(
  * accepted user message unable to be closed by the legacy row that reports it.
  */
 function isLegacyUserPromptRow(event: ThreadRunEventInput): boolean {
+  const liveType = typeof event.metadata?.liveType === "string" ? event.metadata.liveType : "";
+  // Codex child-thread prompts are delivered on the agent scope with the
+  // provider role (`coder`, `explore`, …), even though their envelope is
+  // explicitly marked `message.user`. Preserve that user-message identity in
+  // V2 so the subagent drawer can render the parent's follow-up as an outgoing
+  // prompt instead of assistant narration.
+  if (
+    event.scope === "agent" &&
+    (liveType === "message.user" || liveType === "thread.user_prompt") &&
+    event.message.trim().length > 0
+  ) {
+    return true;
+  }
   if (event.role !== "user") return false;
   if (event.scope === "agent") return false;
   if (LEGACY_MESSAGE_EVENT_TYPES.has(event.eventType)) return false;
