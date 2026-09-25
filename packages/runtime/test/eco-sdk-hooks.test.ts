@@ -2963,7 +2963,37 @@ test("createForcedPlanDelegationSubagentStartHook confirms the actual started ag
   expect(confirmations).toEqual([
     {
       agentKey: "coder",
-      toolUseIds: ["tu_parent", "tu_callback", "tu_start"],
+      toolUseIds: ["tu_parent", "tu_start"],
+    },
+  ]);
+});
+
+test("createForcedPlanDelegationSubagentStartHook maps SDK general-purpose to the armed Eco target", async () => {
+  const confirmations: Array<{ agentKey: string; toolUseIds: readonly string[] }> = [];
+  const hook = createForcedPlanDelegationSubagentStartHook(() => ({
+    agentKey: "coder",
+    canonicalTask: "canonical",
+    claimSpawn: () => ({ ok: true }),
+    confirmSpawn: (input) => confirmations.push(input),
+  }));
+
+  await hook(
+    {
+      hook_event_name: "SubagentStart",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      agent_id: "agent-general-purpose",
+      agent_type: SDK_GENERAL_PURPOSE_AGENT_KEY,
+    } satisfies SubagentStartHookInput,
+    "tu_callback",
+    { signal: new AbortController().signal },
+  );
+
+  expect(confirmations).toEqual([
+    {
+      agentKey: "coder",
+      toolUseIds: [],
     },
   ]);
 });

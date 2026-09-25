@@ -71,6 +71,21 @@ test("SubagentStart confirmation permits successful settlement", () => {
   expect(forcedPlanDelegationStore.get(THREAD_ID)).toBeUndefined();
 });
 
+test("Claude SubagentStart without a parent tool id confirms the locked role", () => {
+  armForcedPlanDelegation({
+    threadId: THREAD_ID,
+    coreKind: "claude",
+    target: { kind: "subagent", agentKey: "coder" },
+    plan: "implement",
+  });
+  const config = buildForcedPlanDelegationHookConfig(THREAD_ID);
+  config?.claimSpawn({ agentKey: "coder", toolUseId: "call_spawn" });
+  config?.confirmSpawn?.({ agentKey: "coder", toolUseIds: [] });
+
+  expect(forcedPlanDelegationStore.get(THREAD_ID)?.status).toBe("spawned");
+  expect(settleForcedPlanDelegation(THREAD_ID, { ok: true })).toEqual({ outcome: "completed" });
+});
+
 test("a host-observed start claims and confirms cores without SDK hooks", () => {
   armForcedPlanDelegation({
     threadId: THREAD_ID,

@@ -258,7 +258,7 @@ export function createForcedPlanDelegationSubagentStartHook(
   if (!resolveConfig) {
     return undefined;
   }
-  return async (input, toolUseID) => {
+  return async (input) => {
     if (input.hook_event_name !== "SubagentStart") {
       return {};
     }
@@ -267,13 +267,22 @@ export function createForcedPlanDelegationSubagentStartHook(
       return {};
     }
     const started = input as SubagentStartHookInput;
+    // Claude Agent SDK reports Eco's registered agents as `general-purpose` in
+    // SubagentStart, even though the spawn was rewritten to `eco_<role>`. The
+    // armed delegation already pins the only allowed target, so use that
+    // target for the launch confirmation when the SDK emits its generic key.
     const agentKey =
-      normalizeSdkBuiltinOrEcoAgentRole(started.agent_type) ??
+      (started.agent_type === SDK_GENERAL_PURPOSE_AGENT_KEY
+        ? config.agentKey
+        : normalizeSdkBuiltinOrEcoAgentRole(started.agent_type)) ??
       normalizeSdkSubagentType(started.agent_type) ??
       started.agent_type;
     config.confirmSpawn?.({
       agentKey,
-      toolUseIds: collectSubagentStartParentToolUseIdCandidates(started, toolUseID),
+      // The SDK's SubagentStart callback `toolUseID` is a hook invocation id,
+      // not the parent Agent tool id. Use only ids explicitly carried by the
+      // event; otherwise the one-shot role claim is the source of truth.
+      toolUseIds: collectSubagentStartParentToolUseIdCandidates(started, undefined),
     });
     return {};
   };
