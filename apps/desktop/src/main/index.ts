@@ -572,6 +572,7 @@ import {
 } from "./conversation-interaction-command";
 import { executeNonRewindRetryCommand } from "./conversation-nonrewind-retry-command";
 import { executePlanResolutionCommand, recoverInterruptedPlanCommands } from "./conversation-plan-command";
+import { reportConversationRuntimeEventFailure } from "./conversation-runtime-event-failure";
 import { executeConversationRewriteCommand } from "./conversation-rewrite-command";
 import {
   executeRuntimeConfigMutationCommand,
@@ -2534,60 +2535,74 @@ app.whenReady().then(async () => {
     threadMap: codexThreadMap,
     resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
     appendConversationRuntimeEvent: (event) => {
-      if (!conversationStore.getThread(event.threadId)) {
-        throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
-      }
-      maybeRevealBrowserFromThreadRunEvent(event);
-      const persisted = conversationStore.appendConversationRuntimeEvent(event);
-      confirmForcedPlanDelegationFromRuntimeEvent(persisted);
-      if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
-        const codexThreadId =
-          typeof persisted.metadata.codexThreadId === "string" ? persisted.metadata.codexThreadId.trim() : "";
-        const turnId = typeof persisted.metadata.turnId === "string" ? persisted.metadata.turnId.trim() : "";
-        const attribution = codexThreadId
-          ? resolveCodexThreadAttribution(codexThreadMap, codexThreadId)
-          : undefined;
-        if (codexThreadId && turnId && attribution?.isSubagentThread) {
-          codexSubagentRuntimeLimit.start({
-            threadId: persisted.threadId,
-            agentId: codexThreadId,
-            turnId,
-          });
+      try {
+        if (!conversationStore.getThread(event.threadId)) {
+          throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
         }
-      } else if (
-        (persisted.eventType === "agent.stopped" || persisted.eventType === "agent.abandoned") &&
-        persisted.agentId
-      ) {
-        codexSubagentRuntimeLimit.stop(persisted.agentId);
-      }
-      applyCodexSubagentLifecycleEvent(persisted, {
-        getAgentState: (threadId, agentId) => {
-          const agent = conversationStore
-            .listAgentInstances(threadId)
-            .find((candidate) => candidate.agentId === agentId);
-          return agent
-            ? {
-                status: agent.status,
-                ...(agent.parentToolUseId && {
-                  parentToolUseId: agent.parentToolUseId,
-                }),
-              }
+        maybeRevealBrowserFromThreadRunEvent(event);
+        const persisted = conversationStore.appendConversationRuntimeEvent(event);
+        confirmForcedPlanDelegationFromRuntimeEvent(persisted);
+        if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
+          const codexThreadId =
+            typeof persisted.metadata.codexThreadId === "string" ? persisted.metadata.codexThreadId.trim() : "";
+          const turnId = typeof persisted.metadata.turnId === "string" ? persisted.metadata.turnId.trim() : "";
+          const attribution = codexThreadId
+            ? resolveCodexThreadAttribution(codexThreadMap, codexThreadId)
             : undefined;
-        },
-        resolvePhase: (threadId) => {
-          const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
-          return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
-        },
-        startSession: (input) => conversationStore.upsertSubagentSessionActive(input),
-        stopSession: (threadId, agentId) => conversationStore.markSubagentSessionStopped(threadId, agentId),
-        startMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStart(threadId, input),
-        stopMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStop(threadId, input),
-        startAgent: (input) => {
-          agentLifecycle.startSubagent(input);
-        },
-        stopAgent: (input) => agentLifecycle.stopSubagent(input),
-        abandonAgent: (input) => agentLifecycle.abandonSubagent(input),
-      });
+          if (codexThreadId && turnId && attribution?.isSubagentThread) {
+            codexSubagentRuntimeLimit.start({
+              threadId: persisted.threadId,
+              agentId: codexThreadId,
+              turnId,
+            });
+          }
+        } else if (
+          (persisted.eventType === "agent.stopped" || persisted.eventType === "agent.abandoned") &&
+          persisted.agentId
+        ) {
+          codexSubagentRuntimeLimit.stop(persisted.agentId);
+        }
+        applyCodexSubagentLifecycleEvent(persisted, {
+          getAgentState: (threadId, agentId) => {
+            const agent = conversationStore
+              .listAgentInstances(threadId)
+              .find((candidate) => candidate.agentId === agentId);
+            return agent
+              ? {
+                  status: agent.status,
+                  ...(agent.parentToolUseId && {
+                    parentToolUseId: agent.parentToolUseId,
+                  }),
+                }
+              : undefined;
+          },
+          resolvePhase: (threadId) => {
+            const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
+            return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
+          },
+          startSession: (input) => conversationStore.upsertSubagentSessionActive(input),
+          stopSession: (threadId, agentId) => conversationStore.markSubagentSessionStopped(threadId, agentId),
+          startMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStart(threadId, input),
+          stopMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStop(threadId, input),
+          startAgent: (input) => {
+            agentLifecycle.startSubagent(input);
+          },
+          stopAgent: (input) => agentLifecycle.stopSubagent(input),
+          abandonAgent: (input) => agentLifecycle.abandonSubagent(input),
+        });
+      } catch (error) {
+        reportConversationRuntimeEventFailure({
+          event,
+          error,
+          appendEvent: (failure) => {
+            conversationStore.appendConversationRuntimeEvent(failure);
+          },
+          onProjectionUpdated: (threadId) => {
+            scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
+          },
+          logError: (message) => process.stderr.write(`${message}\n`),
+        });
+      }
     },
     bindLatestUserPromptToCodexItem: (threadId, itemId) => {
       return Boolean(conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId));

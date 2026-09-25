@@ -1,4 +1,5 @@
 import { isCodexRetryBlockingProgressItem } from "../shared/codex-request-retry-gate";
+import { CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN } from "../shared/conversation-runtime-event-failure";
 import type { ThreadRunProjectionTimelineItem } from "../shared/ipc";
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import {
@@ -59,7 +60,7 @@ export function isRetryableRequestFailureItem(item: ThreadRunProjectionTimelineI
     return false;
   }
   const origin = resolveThreadActivityOrigin(item);
-  if (origin === "sdk.api_retry") {
+  if (origin === "sdk.api_retry" || origin === CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN) {
     return false;
   }
   if (origin === "proxy.connection_error" || origin === "eco.thread_failed") {

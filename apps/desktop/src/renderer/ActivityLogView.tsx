@@ -67,6 +67,11 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import {
+  CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
+  CONVERSATION_RUNTIME_EVENT_FAILURE_ROLE,
+  CONVERSATION_RUNTIME_EVENT_FAILURE_TITLE,
+} from "../shared/conversation-runtime-event-failure";
+import {
   type ActionGroupBucket,
   type ActionKindPayload,
   formatActionLine,
@@ -539,6 +544,12 @@ function conversationV2MessageToTimelineItem(
       conversationV2ContentVersion: message.contentVersion,
       conversationV2Channel: message.channel,
       conversationV2Status: message.status,
+      ...(isNotice && message.providerRole === CONVERSATION_RUNTIME_EVENT_FAILURE_ROLE
+        ? {
+            activityOrigin: CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
+            apiError: { title: CONVERSATION_RUNTIME_EVENT_FAILURE_TITLE, message: message.body },
+          }
+        : {}),
       ...(message.agentInstanceId ? { conversationV2AgentInstanceId: message.agentInstanceId } : {}),
       // The row's own stream key is the message id, which names the logical entity the row
       // is: the read model upserts a stream's deltas into one message, so one message is one

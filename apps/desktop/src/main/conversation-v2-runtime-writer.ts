@@ -72,6 +72,38 @@ export class ConversationV2RuntimeWriter {
         source = { ...source, runAttemptId: recoveredRunId };
       }
     }
+    if (
+      (source.eventType === "agent.stopped" || source.eventType === "agent.abandoned") &&
+      source.agentId
+    ) {
+      const agent = this.db
+        .prepare(`SELECT run_id, role FROM conversation_agents_v2
+          WHERE conversation_id = ? AND agent_instance_id = ?`)
+        .get(source.threadId, source.agentId) as { run_id: string | null; role: string } | undefined;
+      if (agent) {
+        // Codex stamps a child turn's completion with the parent's *current* run.
+        // The agent's first lifecycle event already fixed its owning run and role.
+        const reportedRunAttemptId = source.runAttemptId?.trim();
+        const reportedRole = source.role?.trim();
+        const { runAttemptId: _reportedRunAttemptId, ...sourceWithoutAttempt } = source;
+        const runChanged = Boolean(reportedRunAttemptId && reportedRunAttemptId !== agent.run_id);
+        const roleChanged = Boolean(reportedRole && reportedRole !== agent.role);
+        source = {
+          ...sourceWithoutAttempt,
+          ...(agent.run_id ? { runAttemptId: agent.run_id } : {}),
+          role: agent.role,
+          ...(runChanged || roleChanged
+            ? {
+                metadata: {
+                  ...source.metadata,
+                  ...(runChanged ? { reportedRunAttemptId } : {}),
+                  ...(roleChanged ? { reportedRole } : {}),
+                },
+              }
+            : {}),
+        };
+      }
+    }
     const receiptInput = conversationV2ProviderReceipt(source, "runtime-input");
     const sourceEventKey = receiptInput.sourceEventKey;
     if (!sourceEventKey) throw new Error("Runtime provider receipt has no source event key.");

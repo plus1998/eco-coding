@@ -200,6 +200,101 @@ test("native tools require explicit run ownership and never invent synthetic run
   }
 });
 
+test("a child lifecycle terminal event keeps its original run and role after the parent starts another run", () => {
+  const { db, v2, writer } = setup();
+  try {
+    v2.append({
+      conversationId: "thread",
+      eventId: "agent-start",
+      type: "agent.started",
+      occurredAt: "2026-09-18T00:00:01Z",
+      runId: "run",
+      agentId: "child",
+      agentInstanceId: "child",
+      parentToolCallId: "spawn-call",
+      payload: { role: "explore", kind: "subagent", status: "running" },
+    });
+    v2.append({
+      conversationId: "thread",
+      eventId: "next-run-start",
+      type: "run.started",
+      occurredAt: "2026-09-18T00:01:00Z",
+      runId: "next-run",
+      turnId: "next-run",
+      payload: { status: "running" },
+    });
+    const stopped: ThreadRunEventInput = {
+      threadId: "thread",
+      id: "child-stopped",
+      eventType: "agent.stopped",
+      role: "general",
+      agentId: "child",
+      parentToolUseId: "spawn-call",
+      runAttemptId: "next-run",
+      scope: "agent",
+      streamState: "finalized",
+      message: "",
+      observedAt: "2026-09-18T00:01:01Z",
+    };
+
+    expect(writer.append(stopped).event).toMatchObject({
+      runAttemptId: "run",
+      role: "explore",
+      metadata: { reportedRunAttemptId: "next-run", reportedRole: "general" },
+    });
+    expect(v2.agentsOf("thread")[0]).toMatchObject({
+      agentId: "child",
+      runId: "run",
+      role: "explore",
+      status: "completed",
+    });
+    const head = v2.head("thread").lastSeq;
+    expect(writer.append(stopped).duplicate).toBe(true);
+    expect(v2.head("thread").lastSeq).toBe(head);
+    v2.rebuildReadModels("thread");
+    expect(v2.agentsOf("thread")[0]).toMatchObject({ runId: "run", role: "explore", status: "completed" });
+
+    expect(() => writer.append({ ...stopped, id: "wrong-parent", parentToolUseId: "another-call" }))
+      .toThrow(/changed identity or ownership/);
+    expect(v2.head("thread").lastSeq).toBe(head);
+  } finally {
+    db.close();
+  }
+});
+
+test("a runless agent terminal event does not acquire the parent's current run", () => {
+  const { db, v2, writer } = setup();
+  try {
+    v2.append({
+      conversationId: "thread",
+      eventId: "runless-agent-start",
+      type: "agent.started",
+      occurredAt: "2026-09-18T00:00:01Z",
+      agentId: "runless-child",
+      agentInstanceId: "runless-child",
+      payload: { role: "explore", kind: "subagent", status: "running" },
+    });
+    const stopped = writer.append({
+      threadId: "thread",
+      id: "runless-child-stopped",
+      eventType: "agent.stopped",
+      agentId: "runless-child",
+      role: "explore",
+      runAttemptId: "run",
+      scope: "agent",
+      streamState: "finalized",
+      message: "",
+      observedAt: "2026-09-18T00:00:02Z",
+    });
+    expect(stopped.event.runAttemptId).toBeUndefined();
+    expect(stopped.event.metadata).toMatchObject({ reportedRunAttemptId: "run" });
+    expect(v2.agentsOf("thread")[0]).toMatchObject({ agentId: "runless-child", status: "completed" });
+    expect(v2.agentsOf("thread")[0]?.runId).toBeUndefined();
+  } finally {
+    db.close();
+  }
+});
+
 test("late Codex tool terminal events recover their run from the persisted turn correlation", () => {
   const { db, v2, writer } = setup();
   try {

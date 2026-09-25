@@ -18,7 +18,11 @@ import {
 } from "../src/renderer/ActivityLogView";
 import type { ConversationV2RendererState } from "../src/renderer/conversation-v2-renderer-state";
 import type { ThreadRunProjectionMainFeedEntry } from "../src/renderer/conversation-v2-projection-view";
-import { buildThreadRunProjectionViewModel } from "../src/renderer/conversation-v2-projection-view";
+import {
+  buildThreadRunProjectionViewModel,
+  projectionItemToDetailBlock,
+} from "../src/renderer/conversation-v2-projection-view";
+import { isRetryableRequestFailureItem } from "../src/renderer/request-failure-retry";
 import { buildThreadRunTurnFeedSections } from "../src/renderer/conversation-v2-turn-feed";
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
@@ -107,6 +111,28 @@ function projection(timeline: ThreadRunProjectionTimelineItem[]): ThreadRunProje
     sourceEventCount: timeline.length,
   };
 }
+
+test("V2-only runtime write failures retain their Feed error title without a provider row", () => {
+  const errorMessage: ConversationMessage = {
+    ...message("runtime-error", 2),
+    role: "system",
+    channel: "system",
+    providerRole: "eco_runtime_error",
+    body: "记录 agent.stopped 事件失败：Agent child changed identity or ownership.",
+  };
+  const merged = mergeConversationV2MessagesIntoProjection(projection([]), v2State([errorMessage]));
+  const item = merged.timeline[0];
+  expect(item).toBeDefined();
+  expect(projectionItemToDetailBlock(item!)).toMatchObject({
+    kind: "api-error",
+    title: "会话事件记录失败",
+    message: errorMessage.body,
+  });
+  expect(isRetryableRequestFailureItem(item!)).toBe(false);
+  const html = renderToStaticMarkup(createElement(ActivityLogView, { conversationV2: v2State([errorMessage]) }));
+  expect(html).toContain("会话事件记录失败");
+  expect(html).toContain("Agent child changed identity or ownership");
+});
 
 test("keeps two user prompts that say the same thing as two rows", () => {
   // A reader who sends the same short message twice ("继续" again) wrote two prompts; the log

@@ -84,6 +84,16 @@ test("isRetryableRequestFailureItem accepts connection, upstream, and thread fai
   expect(
     isRetryableRequestFailureItem(
       item({
+        id: "runtime-event-failure",
+        eventType: "api.error",
+        text: "记录 agent.stopped 事件失败",
+        metadata: { activityOrigin: "eco.runtime_event_persist_failure" },
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    isRetryableRequestFailureItem(
+      item({
         id: "reconnect",
         eventType: "api.error",
         text: "【连接失败】HTTP 502：upstream unavailable",

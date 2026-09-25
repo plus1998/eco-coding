@@ -3202,6 +3202,7 @@ export function projectionItemToDetailBlock(
     return {
       kind: "api-error",
       message: apiError?.message ?? text,
+      ...(apiError?.title && { title: apiError.title }),
       ...(apiError?.statusCode !== undefined && { statusCode: apiError.statusCode }),
       ...(apiError?.code && { code: apiError.code }),
       ...(subagent && { subagent }),
@@ -3543,7 +3544,7 @@ function isProjectionTodoToolActionItem(item: ThreadRunProjectionTimelineItem): 
 
 function readProjectionApiError(
   item: ThreadRunProjectionTimelineItem,
-): { message: string; statusCode?: number; code?: string } | undefined {
+): { message: string; title?: string; statusCode?: number; code?: string } | undefined {
   const raw = item.metadata?.apiError;
   if (!raw || typeof raw !== "object") {
     return undefined;
@@ -3555,6 +3556,7 @@ function readProjectionApiError(
   }
   return {
     message,
+    ...(typeof record.title === "string" && record.title.trim() && { title: record.title.trim() }),
     ...(typeof record.statusCode === "number" && { statusCode: record.statusCode }),
     ...(typeof record.code === "string" && record.code.trim() && { code: record.code.trim() }),
   };

@@ -3,12 +3,14 @@ import {
   parseReconnectActivityMessage,
   shouldClearReconnectActivity,
 } from "./activity-display";
+import { CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN } from "./conversation-runtime-event-failure";
 
 /** Who produced an activity/run-event line — used for feed dedupe, never inferred from message text in UI. */
 export type ThreadActivityOrigin =
   | "proxy.connection_error"
   | "eco.thread_blocked"
   | "eco.thread_failed"
+  | typeof CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN
   | "sdk.api_retry"
   | "sdk.upstream_error"
   | "sdk.run_failure";
@@ -22,6 +24,7 @@ const ACTIVITY_ORIGIN_VALUES = new Set<string>([
   "proxy.connection_error",
   "eco.thread_blocked",
   "eco.thread_failed",
+  CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
   "sdk.api_retry",
   "sdk.upstream_error",
   "sdk.run_failure",
