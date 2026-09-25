@@ -4,7 +4,6 @@ import type { ThreadRunEvent, ThreadRunEventInput } from "../shared/thread-run-e
 import {
   appendProviderEventToConversationV2,
   conversationV2ProviderMessageId,
-  withLegacyConversationV2MessageIdentity,
 } from "./conversation-v2-provider-events";
 import type { ConversationAppendResult, ConversationV2Store } from "./conversation-v2-store";
 
@@ -51,7 +50,12 @@ export class ConversationV2RuntimeWriter {
     input: ThreadRunEventInput,
     results: ConversationAppendResult[],
   ): { event: ThreadRunEvent; duplicate: boolean } {
-    let source = withLegacyConversationV2MessageIdentity({ ...input, sequence: 0 });
+    // Runtime inputs are provider envelopes, not legacy rows.  Let the V2
+    // provider adapter derive identities while it creates the normalized fact.
+    // Pre-populating `conversationV2MessageId` here makes a new user prompt
+    // look like an already materialized message, so the adapter skips the
+    // `message.created` effect and the receipt references a missing message.
+    let source = { ...input, sequence: 0 };
     // A child agent can start in one provider turn and stop in another. Its
     // lifecycle identity is the agent instance, so inferring a run from each
     // turn would make one agent appear to change ownership. Only provider
