@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Git exports the committing repository's index/worktree variables to hooks.
+# Clear them before tests create temporary repositories, otherwise those repos
+# can accidentally read the current checkout's index.
+unset GIT_DIR GIT_INDEX_FILE GIT_PREFIX GIT_WORK_TREE
+
+echo "[pre-commit] running the strict test gate..."
+exec node scripts/test-gate.mjs --strict
