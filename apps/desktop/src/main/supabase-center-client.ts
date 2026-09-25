@@ -109,6 +109,10 @@ export interface SupabaseCenterDesktopClientOptions {
   now?: () => Date;
   log?: (message: string) => void;
   onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
+  onHtmlHostingCapabilityChange?: (
+    capability: HtmlHostingCapability,
+    previous: HtmlHostingCapability,
+  ) => void;
   /** Optional hooks for pushing/pulling provider/ASR/image settings + secrets. */
   settingsSyncHooks?: DomainSettingsSyncHooks;
   /** Test/integration seam; production defaults to SupabaseRealtimeRpc. */
@@ -166,6 +170,9 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   private readonly onStatusChange: ((snapshot: CenterServerSettingsSnapshot) => void) | undefined;
+  private readonly onHtmlHostingCapabilityChange:
+    | ((capability: HtmlHostingCapability, previous: HtmlHostingCapability) => void)
+    | undefined;
   private readonly realtimeFactory: (options: SupabaseRealtimeRpcOptions) => CenterRealtimeTransport;
   private readonly reconnectScheduler: (callback: () => void, delayMs: number) => { cancel(): void };
   private readonly accessTokenRefreshScheduler: (callback: () => void, delayMs: number) => { cancel(): void };
@@ -202,6 +209,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? (() => {});
     this.onStatusChange = options.onStatusChange;
+    this.onHtmlHostingCapabilityChange = options.onHtmlHostingCapabilityChange;
     this.realtimeFactory =
       options.realtimeFactory ?? ((realtimeOptions) => new SupabaseRealtimeRpc(realtimeOptions));
     this.reconnectScheduler =
@@ -260,14 +268,12 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   async refreshHtmlHostingCapability(options?: { force?: boolean }): Promise<HtmlHostingCapability> {
     const settings = this.store.getSettingsWithSecrets();
     if (!settings.enabled || !settings.supabaseUrl || !settings.anonKey) {
-      this.htmlHostingCapability = {
+      return this.setHtmlHostingCapability({
         available: false,
         reason: "not_connected",
         checkedAt: this.now().toISOString(),
         detail: "Supabase Center is not connected.",
-      };
-      this.onStatusChange?.(this.getSnapshot());
-      return this.htmlHostingCapability;
+      });
     }
     if (
       !options?.force &&
@@ -280,11 +286,21 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       }
     }
     const { probeHtmlHostingCapability } = await import("./html-host-store");
-    this.htmlHostingCapability = await probeHtmlHostingCapability({
-      supabaseUrl: settings.supabaseUrl,
-      anonKey: settings.anonKey,
-      fetchImpl: this.fetchImpl as typeof fetch,
-    });
+    return this.setHtmlHostingCapability(
+      await probeHtmlHostingCapability({
+        supabaseUrl: settings.supabaseUrl,
+        anonKey: settings.anonKey,
+        fetchImpl: this.fetchImpl as typeof fetch,
+      }),
+    );
+  }
+
+  private setHtmlHostingCapability(capability: HtmlHostingCapability): HtmlHostingCapability {
+    const previous = this.htmlHostingCapability;
+    this.htmlHostingCapability = capability;
+    if (previous.available !== capability.available) {
+      this.onHtmlHostingCapabilityChange?.(capability, previous);
+    }
     this.onStatusChange?.(this.getSnapshot());
     return this.htmlHostingCapability;
   }

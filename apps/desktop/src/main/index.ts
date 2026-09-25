@@ -2236,6 +2236,7 @@ app.whenReady().then(async () => {
     eventCenter: desktopEventCenter,
     log: (message) => process.stderr.write(message),
     onStatusChange: emitCenterServerStatus,
+    onHtmlHostingCapabilityChange: () => scheduleCodexGlobalRuntimeRefresh(),
   });
   centerServerClient.setSettingsSyncHooks(
     createDesktopSettingsSyncHooks({
