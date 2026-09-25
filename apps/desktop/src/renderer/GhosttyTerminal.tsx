@@ -1,4 +1,11 @@
-import type { FitAddon, Ghostty, Terminal as GhosttyTerminalType, ITheme } from "ghostty-web";
+import type {
+  FitAddon,
+  Ghostty,
+  GhosttyCell,
+  Terminal as GhosttyTerminalType,
+  ITheme,
+  RGB,
+} from "ghostty-web";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TerminalStreamEvent } from "../shared/ipc";
 import { i18n } from "./i18n";
@@ -148,8 +155,110 @@ function readTerminalTheme(): ITheme {
   };
 }
 
-function applyTerminalTheme(terminal: GhosttyTerminalType): void {
-  terminal.options.theme = readTerminalTheme();
+interface TerminalThemeState {
+  defaultBackground: RGB;
+  defaultForeground: RGB;
+  background: RGB | undefined;
+  foreground: RGB | undefined;
+}
+
+function parseCssColor(value: string): RGB | undefined {
+  const normalized = value.trim();
+  const hex = normalized.match(/^#([\da-f]{3}|[\da-f]{6})$/i)?.[1];
+  if (hex) {
+    const expanded = hex.length === 3 ? hex.replace(/./g, (digit) => `${digit}${digit}`) : hex;
+    const parsed = Number.parseInt(expanded, 16);
+    return {
+      r: (parsed >> 16) & 0xff,
+      g: (parsed >> 8) & 0xff,
+      b: parsed & 0xff,
+    };
+  }
+  const rgb = normalized.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!rgb) {
+    return undefined;
+  }
+  return {
+    r: Number(rgb[1]),
+    g: Number(rgb[2]),
+    b: Number(rgb[3]),
+  };
+}
+
+function hasRgb(cell: GhosttyCell, prefix: "bg" | "fg", color: RGB): boolean {
+  return (
+    cell[`${prefix}_r`] === color.r && cell[`${prefix}_g`] === color.g && cell[`${prefix}_b`] === color.b
+  );
+}
+
+function remapDefaultColors(cells: GhosttyCell[] | null, state: TerminalThemeState): GhosttyCell[] | null {
+  if (!cells) {
+    return null;
+  }
+
+  const nextBackground = state.background;
+  const nextForeground = state.foreground;
+  if (
+    (!nextBackground ||
+      (nextBackground.r === state.defaultBackground.r &&
+        nextBackground.g === state.defaultBackground.g &&
+        nextBackground.b === state.defaultBackground.b)) &&
+    (!nextForeground ||
+      (nextForeground.r === state.defaultForeground.r &&
+        nextForeground.g === state.defaultForeground.g &&
+        nextForeground.b === state.defaultForeground.b))
+  ) {
+    return cells;
+  }
+
+  let changed = false;
+  const remapped = cells.map((cell) => {
+    let next = cell;
+    if (nextBackground && hasRgb(cell, "bg", state.defaultBackground)) {
+      next = { ...next, bg_r: nextBackground.r, bg_g: nextBackground.g, bg_b: nextBackground.b };
+      changed = true;
+    }
+    if (nextForeground && hasRgb(cell, "fg", state.defaultForeground)) {
+      next = { ...next, fg_r: nextForeground.r, fg_g: nextForeground.g, fg_b: nextForeground.b };
+      changed = true;
+    }
+    return next;
+  });
+  return changed ? remapped : cells;
+}
+
+function installTerminalThemeAdapter(terminal: GhosttyTerminalType, state: TerminalThemeState): () => void {
+  const wasmTerm = terminal.wasmTerm;
+  if (!wasmTerm) {
+    return () => {};
+  }
+
+  const originalGetLine = wasmTerm.getLine.bind(wasmTerm);
+  const originalGetScrollbackLine = wasmTerm.getScrollbackLine.bind(wasmTerm);
+  wasmTerm.getLine = (row) => remapDefaultColors(originalGetLine(row), state);
+  wasmTerm.getScrollbackLine = (offset) => remapDefaultColors(originalGetScrollbackLine(offset), state);
+
+  return () => {
+    wasmTerm.getLine = originalGetLine;
+    wasmTerm.getScrollbackLine = originalGetScrollbackLine;
+  };
+}
+
+function applyTerminalTheme(terminal: GhosttyTerminalType, state: TerminalThemeState): void {
+  const theme = readTerminalTheme();
+  const renderer = terminal.renderer;
+  const wasmTerm = terminal.wasmTerm;
+
+  // ghostty-web currently warns that changing options.theme after open() is not
+  // fully supported. Update the live canvas renderer directly and force a full
+  // paint so existing terminal cells get the new background immediately.
+  if (renderer && wasmTerm) {
+    state.background = parseCssColor(theme.background ?? "");
+    state.foreground = parseCssColor(theme.foreground ?? "");
+    renderer.setTheme(theme);
+    renderer.clear();
+    renderer.render(wasmTerm, true, terminal.viewportY, terminal);
+  }
 }
 
 function isToggleTerminalShortcut(event: KeyboardEvent): boolean {
@@ -291,6 +400,7 @@ export function GhosttyTerminal({
         return;
       }
 
+      const initialTheme = readTerminalTheme();
       const terminal = new mod.Terminal({
         ghostty,
         cursorBlink: true,
@@ -300,7 +410,7 @@ export function GhosttyTerminal({
           "--font-mono",
           "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
         ),
-        theme: readTerminalTheme(),
+        theme: initialTheme,
       });
       termRef.current = terminal;
 
@@ -322,6 +432,22 @@ export function GhosttyTerminal({
       cleanups.push(installTerminalSelectionEnhancements(terminal));
       cleanups.push(installTerminalLinkHandling(terminal));
 
+      const wasmTerm = terminal.wasmTerm;
+      const themeState = wasmTerm
+        ? {
+            defaultBackground: wasmTerm.getColors().background,
+            defaultForeground: wasmTerm.getColors().foreground,
+            background: parseCssColor(initialTheme.background ?? ""),
+            foreground: parseCssColor(initialTheme.foreground ?? ""),
+          }
+        : undefined;
+      if (themeState) {
+        cleanups.push(installTerminalThemeAdapter(terminal, themeState));
+        // Sync once after opening in case the system theme changed while the
+        // Ghostty WASM runtime was loading.
+        applyTerminalTheme(terminal, themeState);
+      }
+
       // Right-click opens Eco's own menu. Capture phase on the mount keeps ghostty-web's
       // contextmenu handler (it parks the selection in its hidden textarea for the browser
       // menu) out of the way, so the menu owns copy / paste / select-all.
@@ -338,8 +464,8 @@ export function GhosttyTerminal({
       cleanups.push(() => mount.removeEventListener("contextmenu", onContextMenu, true));
 
       const themeObserver = new MutationObserver(() => {
-        if (!disposed && termRef.current) {
-          applyTerminalTheme(termRef.current);
+        if (!disposed && termRef.current && themeState) {
+          applyTerminalTheme(termRef.current, themeState);
         }
       });
       themeObserver.observe(document.documentElement, {
