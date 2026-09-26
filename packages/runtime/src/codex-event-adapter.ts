@@ -25,7 +25,10 @@ import {
 import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spawn-role-queue.js";
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
-import { readImageViewPathFromToolArgs } from "./eco-image-view-tool.js";
+import {
+  readImageViewPathFromToolArgs,
+  readImageViewReferenceFromToolArgs,
+} from "./eco-image-view-tool.js";
 import {
   isAgentBrowserScreenshotToolName,
   isEcoImageDisplayToolName,
@@ -1445,6 +1448,7 @@ function emitMcpToolEvent(
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
   let imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
+  const imageViewReference = readImageViewReferenceFromToolArgs(toolName, mcpInput);
   if (
     !imageViewPath &&
     eventType === "tool.completed" &&
@@ -1503,15 +1507,22 @@ function emitMcpToolEvent(
       : undefined;
   const detailParts = imageViewPath
     ? [imageViewPath]
-    : imageDisplayArtifactId
-      ? [imageDisplayArtifactId]
-      : htmlHostMeta?.publicUrl
-        ? [htmlHostMeta.publicUrl]
-        : ecoWebSearchQuery
-          ? [ecoWebSearchQuery]
-          : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+    : imageViewReference
+      ? [imageViewReference]
+      : imageDisplayArtifactId
+        ? [imageDisplayArtifactId]
+        : htmlHostMeta?.publicUrl
+          ? [htmlHostMeta.publicUrl]
+          : ecoWebSearchQuery
+            ? [ecoWebSearchQuery]
+            : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
   const messageHint =
-    imageViewPath ?? imageDisplayArtifactId ?? htmlHostMeta?.publicUrl ?? ecoWebSearchQuery ?? urlHint;
+    imageViewPath ??
+    imageViewReference ??
+    imageDisplayArtifactId ??
+    htmlHostMeta?.publicUrl ??
+    ecoWebSearchQuery ??
+    urlHint;
 
   emit(ctx, {
     eventType,

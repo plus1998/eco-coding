@@ -706,7 +706,7 @@
   "composerAuxiliaryModelManualFallback": "仍可发送；标题不会自动生成，审查将使用手动模式",
   "composerAuxiliaryModelNeedsMainAgent": "请先配置主 Agent，再选择辅助模型",
   "composerVisionModel": "视觉模型",
-  "composerVisionModelHint": "用于看图子代理；未配置时使用主模型",
+  "composerVisionModelHint": "用于 image_view 工具；未配置时使用主模型",
   "composerVisionModelFollowMain": "未配置时使用当前主模型看图",
   "composerVisionModelNeedsMainAgent": "请先配置主 Agent，再选择视觉模型",
   "composerAuxiliaryModelHintAcp": "用于标题生成、命令自动审批",

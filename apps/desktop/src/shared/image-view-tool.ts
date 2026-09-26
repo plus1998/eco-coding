@@ -10,9 +10,9 @@ export {
 export function buildImageViewPromptAppend(): string {
   return [
     "Built-in local image viewing (Eco) is always available.",
-    `To inspect a local image file, use only \`${ECO_IMAGE_VIEW_FULL_TOOL}\` with an absolute path.`,
-    "The tool returns a factual text report (describe-only sensor), not pixels and not advice. Do not attach image bytes to the main conversation.",
-    "Optional `question` is an observation focus for what to look for, not a chat question for the user.",
+    `To inspect an image, call \`${ECO_IMAGE_VIEW_FULL_TOOL}\` with either an absolute path or a durable ref, plus the prompt you choose for this task.`,
+    "The tool returns the vision model's text response; it does not impose a response schema. Keep image bytes out of the main prompt.",
+    "Composer image references are included in the prompt when available. Choose the image-specific prompt yourself.",
     "On Codex, prefer this Eco tool over the native view_image when you need the Eco vision model; the native viewer may still appear.",
   ].join("\n");
 }

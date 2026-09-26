@@ -668,6 +668,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(webSearch?.query && !command && { detail: webSearch.query }),
+    ...(imageViewCall?.ref && !command && !sendMessageDetail && { detail: imageViewCall.ref }),
     ...(imageDisplayMeta?.artifactId &&
       !command &&
       !sendMessageDetail && { detail: imageDisplayMeta.artifactId }),
@@ -882,6 +883,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const detail =
     skillDetail ||
     imageViewCall?.path ||
+    imageViewCall?.ref ||
     (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ||
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
     resolveSdkToolDisplayDetail(displayName, toolInput);

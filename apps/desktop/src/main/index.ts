@@ -344,7 +344,8 @@ import {
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
 import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
-import { BUILTIN_VISION_AGENT_ROLE, buildPromptWithVisionAnalysis } from "../shared/prompt-image-vision";
+import { BUILTIN_VISION_AGENT_ROLE } from "../shared/prompt-image-vision";
+import { buildPromptWithImageReferences } from "../shared/prompt-image-reference";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
@@ -923,7 +924,7 @@ import {
 import { createUsageContextService } from "./usage-context-effects";
 import type { RunAttemptCommandDispatch, RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import { runVisionAnalysis, type VisionAnalysisHost } from "./vision-analysis";
+import { runImageView, type ImageViewHost } from "./vision-analysis";
 import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
 import {
   createWebChatListStore,
@@ -2145,24 +2146,41 @@ app.whenReady().then(async () => {
     },
   });
   imageViewGateway = new ImageViewMcpGateway({
-    analyze: async ({ threadId, path: imagePath, question }) => {
-      const file = await readImageViewFile(imagePath);
-      if (!isPromptImageMediaType(file.mimeType)) {
-        throw new Error(`Unsupported image media type: ${file.mimeType}`);
+    analyze: async ({ threadId, path: imagePath = "", ref, prompt, question }) => {
+      const requestedPrompt = prompt?.trim() || question?.trim() || "";
+      if (!requestedPrompt) {
+        throw new Error("image_view 调用必须提供 prompt。");
       }
-      const attachments: PromptImageAttachment[] = [{ mediaType: file.mimeType, data: file.dataBase64 }];
-      const agentId = `vision:${threadId}:${randomUUID()}`;
+      const file = ref
+        ? (() => {
+            const contextKey = `thread:${threadId}`;
+            if (!conversationStore.isPromptImageContentRefAuthorized(contextKey, ref)) {
+              throw new Error("图片 ref 未授权给当前线程。");
+            }
+            return promptImageFileStore.readContentRefAttachment(ref).then((resolved) => ({
+              mimeType: resolved.mediaType,
+              dataBase64: resolved.dataBase64,
+            }));
+          })()
+        : readImageViewFile(imagePath);
+      const resolvedFile = await file;
+      if (!isPromptImageMediaType(resolvedFile.mimeType)) {
+        throw new Error(`Unsupported image media type: ${resolvedFile.mimeType}`);
+      }
+      const attachments: PromptImageAttachment[] = [
+        { mediaType: resolvedFile.mimeType, data: resolvedFile.dataBase64 },
+      ];
+      const agentId = `image_view:${threadId}:${randomUUID()}`;
       const runAttemptId = agentLifecycle.currentRunAttemptId(threadId);
-      return runVisionAnalysis(
+      return runImageView(
         {
           threadId,
-          prompt: question?.trim() || `Describe the local image at ${imagePath}. Report only visible facts.`,
+          prompt: requestedPrompt,
           attachments,
           billingAgentId: agentId,
-          emitSubagentLifecycle: false,
           ...(runAttemptId ? { runAttemptId } : {}),
         },
-        createThreadVisionAnalysisHost(runAttemptId),
+        createThreadImageViewHost(runAttemptId),
       );
     },
   });
@@ -9415,6 +9433,7 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
       const prepared = await resolvePiSessionResourcesForThread(threadId, workspacePath);
       return toAcpMcpServers(prepared.mcpServers);
     },
+    resolvePromptImagesForMainContext,
     resolveAcpCreatePlanHandler: ({ threadId, workspacePath, userPrompt }) => {
       return async (request) => {
         const overview =
@@ -17079,7 +17098,7 @@ function createPromptImagePreviews(
   return previews;
 }
 
-function createThreadVisionAnalysisHost(runAttemptId?: string): VisionAnalysisHost {
+function createThreadImageViewHost(runAttemptId?: string): ImageViewHost {
   return {
     resolveRoute(threadId, routesOverride) {
       const thread = conversationStore.getThread(threadId);
@@ -17097,7 +17116,7 @@ function createThreadVisionAnalysisHost(runAttemptId?: string): VisionAnalysisHo
           }
           const sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
           if (!sourceRoute) {
-            throw new Error("看图子代理缺少可用的模型路由。");
+            throw new Error("image_view 缺少可用的模型路由。");
           }
           return sourceRoute;
         },
@@ -17110,7 +17129,7 @@ function createThreadVisionAnalysisHost(runAttemptId?: string): VisionAnalysisHo
       });
       const alias = proxy.routes[0];
       if (!alias) {
-        throw new Error("看图子代理没有生成可调用的模型别名。");
+        throw new Error("image_view 没有生成可调用的模型别名。");
       }
       return {
         baseUrl: proxy.baseUrl,
@@ -17129,92 +17148,6 @@ function createThreadVisionAnalysisHost(runAttemptId?: string): VisionAnalysisHo
     unregisterBilling(threadId, agentId) {
       proxyBillingStampRegistry.unregister(threadId, agentId);
     },
-    emitSubagentStart(input) {
-      const parentAgentId = agentLifecycle.currentPlannerAgentId(input.threadId);
-      const phase = resolveBuiltInVisionSubagentPhase(input.threadId);
-      const startedAt = new Date().toISOString();
-      const subagentLaunchGate = getThreadSubagentConcurrencyGate(input.threadId);
-      const launchDecision = subagentLaunchGate.tryReserveLaunch({
-        toolUseId: input.agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-        prompt: `Analyze ${input.imageCount} image attachment(s).`,
-      });
-      if (!launchDecision.ok) {
-        throw new Error(launchDecision.reason);
-      }
-      conversationStore.upsertSubagentSessionActive({
-        threadId: input.threadId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-        agentId: input.agentId,
-        phase,
-        missionKey: `prompt-images:${input.imageCount}`,
-      });
-      subagentMetricsRegistry.onSubagentStart(input.threadId, {
-        agentId: input.agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-      });
-      agentLifecycle.startSubagent({
-        threadId: input.threadId,
-        agentId: input.agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-        missionKey: `prompt-images:${input.imageCount}`,
-      });
-      subagentLaunchGate.releaseLaunch?.({ toolUseId: input.agentId });
-      conversationStore.appendConversationRuntimeEvent(
-        buildSubagentLifecycleRunEvent({
-          threadId: input.threadId,
-          agentId: input.agentId,
-          role: BUILTIN_VISION_AGENT_ROLE,
-          lifecycle: "started",
-          observedAt: startedAt,
-          ...(runAttemptId && { runAttemptId }),
-          ...(parentAgentId && { parentAgentId }),
-          missionKey: `prompt-images:${input.imageCount}`,
-          delegationPrompt: `分析本轮 ${input.imageCount} 张图片，只返回结构化视觉报告。`,
-        }),
-      );
-      scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
-      emitSubagentTimingUpdated(input.threadId);
-    },
-    emitSubagentStop(input) {
-      const parentAgentId = agentLifecycle.currentPlannerAgentId(input.threadId);
-      const terminalAt = new Date().toISOString();
-      conversationStore.appendConversationRuntimeEvent(
-        buildSubagentLifecycleRunEvent({
-          threadId: input.threadId,
-          agentId: input.agentId,
-          role: BUILTIN_VISION_AGENT_ROLE,
-          lifecycle: input.failed ? "abandoned" : "stopped",
-          observedAt: terminalAt,
-          ...(runAttemptId && { runAttemptId }),
-          ...(parentAgentId && { parentAgentId }),
-          missionKey: `prompt-images:${input.imageCount}`,
-          ...(input.report && {
-            delegationSummary: `已完成 ${input.imageCount} 张图片的结构化分析。`,
-          }),
-        }),
-      );
-      conversationStore.markSubagentSessionStopped(input.threadId, input.agentId);
-      subagentMetricsRegistry.onSubagentStop(input.threadId, {
-        agentId: input.agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-      });
-      if (input.failed) {
-        agentLifecycle.abandonSubagent({
-          threadId: input.threadId,
-          agentId: input.agentId,
-          role: BUILTIN_VISION_AGENT_ROLE,
-        });
-      } else {
-        agentLifecycle.stopSubagent({
-          threadId: input.threadId,
-          agentId: input.agentId,
-          role: BUILTIN_VISION_AGENT_ROLE,
-        });
-      }
-      scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
-      emitSubagentTimingUpdated(input.threadId);
-    },
   };
 }
 
@@ -17226,53 +17159,10 @@ async function resolvePromptImagesForMainContext(input: {
   signal?: AbortSignal;
 }): Promise<string> {
   imageViewGateway.noteThreadPrompt(input.threadId, input.prompt);
-  const attachments = input.attachments ?? [];
-  if (attachments.length === 0) {
-    return input.prompt;
-  }
-
-  const agentId = `vision:${input.threadId}:${randomUUID()}`;
-  const runAttemptId = agentLifecycle.currentRunAttemptId(input.threadId);
-  const report = await runVisionAnalysis(
-    {
-      threadId: input.threadId,
-      prompt: input.prompt,
-      attachments,
-      billingAgentId: agentId,
-      emitSubagentLifecycle: true,
-      ...(input.signal ? { signal: input.signal } : {}),
-      ...(input.routesOverride ? { routesOverride: input.routesOverride } : {}),
-      ...(runAttemptId ? { runAttemptId } : {}),
-    },
-    createThreadVisionAnalysisHost(runAttemptId),
-  );
-  conversationStore.appendConversationRuntimeEvent({
-    id: `tre:${input.threadId}:agent:${agentId}:vision-report`,
-    threadId: input.threadId,
-    eventType: "message.final",
-    scope: "agent",
-    streamState: "finalized",
-    role: BUILTIN_VISION_AGENT_ROLE,
-    agentId,
-    message: report,
-    observedAt: new Date().toISOString(),
-    ...(runAttemptId && { runAttemptId }),
-    metadata: {
-      visionAnalysis: true,
-      imageCount: attachments.length,
-      originalImagesInMainContext: false,
-    },
-  });
-  return buildPromptWithVisionAnalysis({
+  return buildPromptWithImageReferences({
     prompt: input.prompt,
-    report,
-    imageCount: attachments.length,
+    ...(input.attachments ? { attachments: input.attachments } : {}),
   });
-}
-
-function resolveBuiltInVisionSubagentPhase(threadId: string): SubagentRunPhase {
-  const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
-  return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
 }
 
 async function handleThreadAskUserQuestion(

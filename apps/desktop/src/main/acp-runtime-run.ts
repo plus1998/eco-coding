@@ -68,6 +68,12 @@ export interface AcpRuntimeOrchestrationDeps {
   resolveAcpCursorEnv?: () => NodeJS.ProcessEnv;
   /** Composer-selected Eco MCP servers mapped to ACP `mcpServers`. */
   resolveAcpMcpServers?: (input: { threadId: string; workspacePath: string }) => Promise<AcpMcpServer[]>;
+  resolvePromptImagesForMainContext?: (input: {
+    threadId: string;
+    prompt: string;
+    attachments?: readonly PromptImageAttachment[];
+    signal?: AbortSignal;
+  }) => Promise<string>;
   /** Plan: park cursor/create_plan on Eco approval bridge. */
   resolveAcpCreatePlanHandler?: (input: {
     threadId: string;
@@ -305,6 +311,14 @@ export async function startAcpThreadRunWithDriver(
           workspacePath: input.workspace.path,
         })
       : [];
+    const promptForAgent = deps.resolvePromptImagesForMainContext
+      ? await deps.resolvePromptImagesForMainContext({
+          threadId: input.thread.id,
+          prompt: input.prompt,
+          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          signal: controller.signal,
+        })
+      : input.prompt;
     const onCreatePlan = deps.resolveAcpCreatePlanHandler?.({
       threadId: input.thread.id,
       workspacePath: input.workspace.path,
@@ -322,7 +336,7 @@ export async function startAcpThreadRunWithDriver(
       deps.consumeEvents({
         events: acpDriver.run({
           threadId: input.thread.id,
-          prompt: input.prompt,
+          prompt: promptForAgent,
           workspacePath: input.workspace.path,
           signal: controller.signal,
           acpAgentId,
@@ -333,7 +347,9 @@ export async function startAcpThreadRunWithDriver(
             : {}),
           ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
           ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
-          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          ...(!deps.resolvePromptImagesForMainContext && input.attachments?.length
+            ? { attachments: input.attachments }
+            : {}),
           mcpServers,
           ...(onCreatePlan ? { onCreatePlan } : {}),
           ...(onAskQuestion ? { onAskQuestion } : {}),

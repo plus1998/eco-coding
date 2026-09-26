@@ -2254,7 +2254,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerVisionModelHint =>
-      'Used by the vision subagent; falls back to the main model when unset';
+      'Used by the image_view tool; falls back to the main model when unset';
 
   @override
   String get composerVisionModelFollowMain =>
@@ -2270,7 +2270,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerVisionModelHintAcp =>
-      'Used by the vision subagent; falls back to the Cursor model when unset';
+      'Used by the image_view tool; falls back to the Cursor model when unset';
 
   @override
   String get composerCoreKind => 'Runtime core';

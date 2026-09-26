@@ -413,6 +413,29 @@ export class PromptImageFileStore {
     return (await this.readAttachmentBytes(attachment)).toString("base64");
   }
 
+  async readContentRefAttachment(contentRef: string): Promise<{
+    mediaType: PromptImageAttachment["mediaType"];
+    dataBase64: string;
+    byteLength: number;
+  }> {
+    const normalized = requireContentRef(contentRef);
+    const mediaTypes = Object.keys(MEDIA_TYPE_EXTENSION) as PromptImageAttachment["mediaType"][];
+    for (const mediaType of mediaTypes) {
+      try {
+        const buffer = await this.readContentObject(normalized, mediaType);
+        return {
+          mediaType,
+          dataBase64: buffer.toString("base64"),
+          byteLength: buffer.length,
+        };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+    }
+    throw new Error("Prompt image content reference was not found.");
+  }
+
   async resolveAttachmentsForRuntime(
     attachments: readonly PromptImageAttachment[],
   ): Promise<Array<PromptImageAttachment & { data: string }>> {

@@ -2147,7 +2147,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerVisionModel => '视觉模型';
 
   @override
-  String get composerVisionModelHint => '用于看图子代理；未配置时使用主模型';
+  String get composerVisionModelHint => '用于 image_view 工具；未配置时使用主模型';
 
   @override
   String get composerVisionModelFollowMain => '未配置时使用当前主模型看图';

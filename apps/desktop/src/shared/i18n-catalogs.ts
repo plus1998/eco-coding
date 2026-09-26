@@ -1896,7 +1896,7 @@ export const i18nCatalogs = {
       "composer.route.auxiliaryModelHint": "用于标题生成、命令自动审批、Git 提交信息",
       "composer.route.auxiliaryModelHintAcp": "用于 Git 提交信息生成",
       "composer.route.visionModel": "视觉模型",
-      "composer.route.visionModelHint": "用于看图子代理；未配置时使用主模型",
+      "composer.route.visionModelHint": "用于 image_view 工具；未配置时使用主模型",
       "composer.route.visionModelHintAcp": "用于看图（imageView）。ACP 没有 Eco 主模型可回退，必须单独配置",
       "composer.route.defaultBuiltinPrompt": "跟随 Agent 内置提示词",
       "composer.route.notConfigured": "未配置",
@@ -4221,7 +4221,7 @@ export const i18nCatalogs = {
       "composer.route.auxiliaryModelHintAcp": "Used to generate Git commit messages",
       "composer.route.visionModel": "Vision model",
       "composer.route.visionModelHint":
-        "Used by the vision subagent; falls back to the main model when unset",
+        "Used by the image_view tool; falls back to the main model when unset",
       "composer.route.visionModelHintAcp":
         "Used by imageView. ACP has no Eco main model fallback, so this must be set",
       "composer.route.defaultBuiltinPrompt": "Use agent's built-in prompt",

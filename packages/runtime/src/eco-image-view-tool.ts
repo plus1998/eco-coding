@@ -18,12 +18,14 @@ const PI_MCP_PROXY_TOOL_NAMES = new Set(["mcp", "mcpscript", "mcp_tool"]);
 export function resolveEcoImageViewToolCall(
   toolName: string | undefined,
   input: unknown,
-): { name: string; path?: string } | undefined {
+): { name: string; path?: string; ref?: string } | undefined {
   const directPath = isEcoImageViewToolName(toolName) ? readAbsoluteImagePath(input) : undefined;
+  const directRef = isEcoImageViewToolName(toolName) ? readImageReference(input) : undefined;
   if (isEcoImageViewToolName(toolName)) {
     return {
       name: toolName!.trim(),
       ...(directPath ? { path: directPath } : {}),
+      ...(directRef ? { ref: directRef } : {}),
     };
   }
 
@@ -32,9 +34,11 @@ export function resolveEcoImageViewToolCall(
     return undefined;
   }
   const nestedPath = readAbsoluteImagePath(proxy.args) ?? readAbsoluteImagePath(input);
+  const nestedRef = readImageReference(proxy.args) ?? readImageReference(input);
   return {
     name: proxy.name,
     ...(nestedPath ? { path: nestedPath } : {}),
+    ...(nestedRef ? { ref: nestedRef } : {}),
   };
 }
 
@@ -43,6 +47,13 @@ export function readImageViewPathFromToolArgs(
   input: unknown,
 ): string | undefined {
   return resolveEcoImageViewToolCall(toolName, input)?.path;
+}
+
+export function readImageViewReferenceFromToolArgs(
+  toolName: string | undefined,
+  input: unknown,
+): string | undefined {
+  return resolveEcoImageViewToolCall(toolName, input)?.ref;
 }
 
 /**
@@ -103,6 +114,14 @@ function readAbsoluteImagePath(input: unknown): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed || !path.isAbsolute(trimmed)) return undefined;
   return trimmed;
+}
+
+function readImageReference(input: unknown): string | undefined {
+  if (!isRecord(input)) return undefined;
+  const raw = input.ref ?? input.reference ?? input.contentRef;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return /^sha256:[0-9a-f]{64}$/.test(trimmed) ? trimmed : undefined;
 }
 
 function readRecord(value: unknown): Record<string, unknown> | undefined {

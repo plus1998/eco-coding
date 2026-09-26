@@ -89,7 +89,7 @@ export interface PiRuntimeOrchestrationDeps {
     attachments: PromptImageAttachment[] | undefined,
     context: RunAttemptContext,
   ) => Promise<StartedGatewayRouteBinding>;
-  /** User paste images → vision subagent; main PI prompt gets text report only. */
+  /** Composer supplies image paths/refs; PI decides when to call image_view. */
   resolvePromptImagesForMainContext: (input: {
     threadId: string;
     prompt: string;

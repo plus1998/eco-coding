@@ -128,7 +128,7 @@ export interface ThreadRunProjectionSubagentCard {
    * Cursor ACP nested subagents have no inspectable transcript on the wire.
    */
   openable: boolean;
-  /** Images submitted with the user prompt that started a vision subagent. */
+  /** Images submitted with the user prompt and available to image_view. */
   promptImages?: PromptImagePreview[];
 }
 

@@ -3929,7 +3929,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerVisionModelHint.
   ///
   /// In en, this message translates to:
-  /// **'Used by the vision subagent; falls back to the main model when unset'**
+  /// **'Used by the image_view tool; falls back to the main model when unset'**
   String get composerVisionModelHint;
 
   /// No description provided for @composerVisionModelFollowMain.
@@ -3953,7 +3953,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerVisionModelHintAcp.
   ///
   /// In en, this message translates to:
-  /// **'Used by the vision subagent; falls back to the Cursor model when unset'**
+  /// **'Used by the image_view tool; falls back to the Cursor model when unset'**
   String get composerVisionModelHintAcp;
 
   /// No description provided for @composerCoreKind.
