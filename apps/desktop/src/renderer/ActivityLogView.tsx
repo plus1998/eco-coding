@@ -124,6 +124,13 @@ import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } fr
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
 import {
+  advanceComposerAgentSilenceClock,
+  COMPOSER_FLOATING_LOADING_DELAY_MS,
+  type ComposerAgentSilenceClock,
+  isComposerAgentSilent,
+  resolveComposerAgentSilenceDelayMs,
+} from "./composer-floating-loading";
+import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
   filterProjectionTimelineForDetailFeed,
@@ -397,6 +404,63 @@ function usePlannerLayoutChangeEffect(
   }, [layoutSignature]);
 }
 
+/**
+ * Report whether the Feed has gone quiet mid-run so the Composer can float its own
+ * "still working" dots. The clock lives here rather than in the Composer because the
+ * signature it measures is the Feed's: `layoutSignature` changes exactly when a rendered
+ * row's visible text or tool lifecycle changes, and holds still while the agent writes a
+ * tool call nothing renders yet. See `composer-floating-loading.ts`.
+ */
+function useComposerAgentSilenceEffect(
+  input: { active: boolean; feedIndicatorVisible: boolean; signature: string },
+  onComposerAgentSilenceChange?: (silent: boolean) => void,
+) {
+  const onComposerAgentSilenceChangeRef = useRef(onComposerAgentSilenceChange);
+  onComposerAgentSilenceChangeRef.current = onComposerAgentSilenceChange;
+  const clockRef = useRef<ComposerAgentSilenceClock | undefined>(undefined);
+  // Every streamed token re-runs the effect below. Reporting only on a change keeps a
+  // live turn from pushing a state update into the app on each one.
+  const reportedRef = useRef(false);
+  const report = useCallback((silent: boolean) => {
+    if (reportedRef.current === silent) {
+      return;
+    }
+    reportedRef.current = silent;
+    onComposerAgentSilenceChangeRef.current?.(silent);
+  }, []);
+  const { active, feedIndicatorVisible, signature } = input;
+
+  useEffect(() => {
+    const nowMs = Date.now();
+    const clock = advanceComposerAgentSilenceClock(clockRef.current, signature, nowMs);
+    clockRef.current = clock;
+    const emit = () => {
+      report(isComposerAgentSilent({ active, feedIndicatorVisible, clock, nowMs: Date.now() }));
+    };
+    emit();
+    if (!active || feedIndicatorVisible) {
+      return;
+    }
+    // Re-armed by every change of the signature, so one timer for the delay's remainder
+    // is enough: the only way this clock advances is a new signature.
+    const timer = window.setTimeout(emit, resolveComposerAgentSilenceDelayMs(clock, nowMs));
+    return () => window.clearTimeout(timer);
+  }, [active, feedIndicatorVisible, report, signature]);
+
+  // A Feed that unmounts mid-gap must take the indicator with it. Its cleanups run before
+  // the replacing Feed's effects, so this cannot clear a report the new one has made.
+  useEffect(
+    () => () => {
+      if (!reportedRef.current) {
+        return;
+      }
+      reportedRef.current = false;
+      onComposerAgentSilenceChangeRef.current?.(false);
+    },
+    [],
+  );
+}
+
 function isThreadStoppedForFinalSummary(status: string): boolean {
   return (
     status === "completed" ||
@@ -491,6 +555,12 @@ export interface ActivityLogViewProps {
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
+  /**
+   * Called when the Feed has gone quiet mid-run: the agent is alive but has produced
+   * nothing visible for {@link COMPOSER_FLOATING_LOADING_DELAY_MS}, which is the gap while
+   * it writes its next tool call. The Composer floats its loading dots on `true`.
+   */
+  onComposerAgentSilenceChange?: (silent: boolean) => void;
   onLoadProjectionDetail?: ProjectionDetailLoader;
   thinkingDisplayMode?: ThinkingDisplayMode;
 }
@@ -1530,6 +1600,10 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
               {...(props.thread.createdAt ? { createdAt: props.thread.createdAt } : {})}
             />,
           )}
+          {/* No V2 event has landed yet, so the prompt bubble is the entire feed. The
+              run is already under way — keep the waiting line up rather than leaving a
+              blank pane under the prompt, which is what a first send used to look like. */}
+          <RunLogActiveTail waiting stopping={Boolean(props.thread.cancelling)} />
         </div>
       );
     }
@@ -1569,6 +1643,9 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.onPlannerLayoutChange && {
         onPlannerLayoutChange: props.onPlannerLayoutChange,
       })}
+      {...(props.onComposerAgentSilenceChange && {
+        onComposerAgentSilenceChange: props.onComposerAgentSilenceChange,
+      })}
       {...(props.onLoadProjectionDetail && {
         onLoadProjectionDetail: props.onLoadProjectionDetail,
       })}
@@ -1594,6 +1671,7 @@ export function ConversationV2ProjectionActivityLogView({
   onRewriteUserMessage,
   onRetryFailedRequest,
   onPlannerLayoutChange,
+  onComposerAgentSilenceChange,
   agentDisplayNames,
   agentThemes,
   onLoadProjectionDetail,
@@ -1619,6 +1697,7 @@ export function ConversationV2ProjectionActivityLogView({
   onRewriteUserMessage?: RewriteUserMessageHandler;
   onRetryFailedRequest?: RetryFailedRequestHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
+  onComposerAgentSilenceChange?: (silent: boolean) => void;
   thinkingDisplayMode?: ThinkingDisplayMode;
 }) {
   const requestSpansById = useMemo(
@@ -1719,11 +1798,18 @@ export function ConversationV2ProjectionActivityLogView({
     : undefined;
   const deferReasoningStageTip =
     conversationActive && !runningToolVisible && !runningContextCompactionVisible;
+  // Sending has to look acknowledged even before the request span exists. Every prompt
+  // opens a window where the agent side has produced nothing for it yet, and the active
+  // tail would render an empty shell — a blank feed under your own message reads as "the
+  // send did nothing". Widest on a thread's first message (cold runtime start), but
+  // present after every follow-up too.
+  const awaitingAgentAnswer = isAwaitingAgentAnswer(viewModel.mainFeedEntries);
   const waitingThinkingVisible =
     !runningToolVisible &&
     !runningContextCompactionVisible &&
     !latestContentIsToolGroup &&
-    (Boolean(liveReasoningStageLabel) ||
+    (awaitingAgentAnswer ||
+      Boolean(liveReasoningStageLabel) ||
       viewModel.mainFeedEntries.some((entry) => {
         if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
           return false;
@@ -1782,6 +1868,17 @@ export function ConversationV2ProjectionActivityLogView({
   );
 
   usePlannerLayoutChangeEffect(layoutSignature, onPlannerLayoutChange);
+  // The Feed owns the tail while it has something of its own animating there — its waiting
+  // line, or a thinking row still streaming its shimmer. The Composer's dots are for the
+  // gaps the Feed cannot narrate, so they wait for the Feed to go quiet first.
+  useComposerAgentSilenceEffect(
+    {
+      active: conversationActive,
+      feedIndicatorVisible: waitingThinkingVisible || isTailThinkingStreamingLive(viewModel.mainFeedEntries),
+      signature: layoutSignature,
+    },
+    onComposerAgentSilenceChange,
+  );
 
   const runLogRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
@@ -4617,6 +4714,44 @@ function WaitingThinkingBlock({
       </div>
     </div>
   );
+}
+
+/**
+ * Whether the Feed's newest row is a thinking block that is still streaming, and therefore
+ * already carrying its own「正在思考」shimmer.
+ *
+ * A thinking row stays `thinking.delta` while the agent moves on to writing its tool call,
+ * so this covers the thinking → tool gap as well: the block the reader is looking at is
+ * still animating, which is why that gap never reads as stalled even though nothing new
+ * arrives. The Composer's dots defer to it rather than doubling up on the same row.
+ */
+export function isTailThinkingStreamingLive(entries: readonly ThreadRunProjectionMainFeedEntry[]): boolean {
+  const last = entries.at(-1);
+  if (!last || (last.kind !== "timeline" && last.kind !== "agent-echo")) {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(last.item);
+  return block?.kind === "thinking" && Boolean(block.streaming);
+}
+
+/**
+ * Whether the feed is still waiting on the agent for its newest row — true when the last
+ * row is the user's own prompt, or when the feed holds nothing at all yet.
+ *
+ * Every send opens this window, not just a thread's first message. Mid-turn steers sort
+ * after the output they interrupt, so a prompt landing last means the agent has not
+ * answered it; once it does, the newest row is a request/thinking/tool/narrative row and
+ * the normal waiting rules take over.
+ */
+function isAwaitingAgentAnswer(entries: readonly ThreadRunProjectionMainFeedEntry[]): boolean {
+  const last = entries.at(-1);
+  if (!last) {
+    return true;
+  }
+  if (last.kind !== "timeline" && last.kind !== "agent-echo") {
+    return false;
+  }
+  return isProjectionUserPromptItem(last.item);
 }
 
 function isWaitingThinkingItem(

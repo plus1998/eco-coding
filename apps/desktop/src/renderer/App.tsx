@@ -253,6 +253,7 @@ import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerDockMorph } from "./ComposerDockMorph";
+import { ComposerFloatingLoading } from "./ComposerFloatingLoading";
 import { useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 import { ComposerIntegrations } from "./ComposerIntegrations";
 import { ComposerMcpServers } from "./ComposerMcpServers";
@@ -10270,6 +10271,10 @@ function App() {
 
   const showComposerContextOverlays = showLanding && !asrSession.active;
   const showComposerInputOverlays = queuedFollowUps.length > 0 || showComposerContextOverlays;
+  // Reported by the Feed, which owns the clock: the run is live, its waiting line is not up,
+  // and nothing visible has changed for half a second — the gap while the agent writes its
+  // next tool call. See `composer-floating-loading.ts`.
+  const [composerAgentSilenceVisible, setComposerAgentSilenceVisible] = useState(false);
 
   useLayoutEffect(() => {
     const overlays = composerInputOverlaysRef.current;
@@ -10338,6 +10343,11 @@ function App() {
               </div>
             ) : null}
           </div>
+        ) : null}
+        {/* The overlay band is shared: a queued follow-up panel or the landing context bar
+            already owns it, and stacking the dots under either would just collide. */}
+        {composerAgentSilenceVisible && !showComposerInputOverlays ? (
+          <ComposerFloatingLoading />
         ) : null}
         <ComposerDockMorph
           showApproval={showComposerDockApproval}
@@ -11104,6 +11114,7 @@ function App() {
                                     onRewriteUserMessage={rewriteUserMessage}
                                     onRetryFailedRequest={retryFailedRequest}
                                     onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                                    onComposerAgentSilenceChange={setComposerAgentSilenceVisible}
                                     {...(Object.keys(activityModelByRole).length > 0 && {
                                       modelByRole: activityModelByRole,
                                     })}

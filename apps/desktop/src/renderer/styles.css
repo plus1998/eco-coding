@@ -17412,6 +17412,31 @@ a.run-log-web-search-detail-result-url:focus-visible {
   pointer-events: auto;
 }
 
+/* Floats clear of the Composer, not on it: the loading dots are not a notice the user
+   reads or dismisses, so they must not push the input down or join the overlay height the
+   Composer reserves for queued follow-ups.
+
+   The band is anchored above the stack rather than straddling its top edge the way
+   `.composer-input-overlays` does. That band only works for the overlays because their
+   panels are tall enough to stand well clear; this mark is a 5px dot row, so straddling
+   put it inside `.composer-primary`'s 18px top padding and behind the dock's z-index. */
+.composer-floating-loading {
+  position: absolute;
+  right: clamp(18px, 3vw, 42px);
+  /* Clear of the stack's top edge, so no part of the mark can land on the input surface. */
+  bottom: calc(100% + 6px);
+  left: clamp(18px, 3vw, 42px);
+  /* `.composer-primary` and `.composer-dock-morph` are positioned at z-index 1 in this same
+     stacking context and are painted after this element; outranking them keeps the mark
+     visible if the two ever overlap. */
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  pointer-events: none;
+}
+
 .composer-attachments {
   display: flex;
   flex-wrap: nowrap;

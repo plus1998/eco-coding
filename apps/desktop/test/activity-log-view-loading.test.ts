@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   ActivityLogView,
   formatRunLogTurnHeading,
+  isTailThinkingStreamingLive,
   ConversationV2ProjectionActivityLogView as ProjectionActivityLogView,
   ProjectionSubagentDetailFeed,
   ProjectionToolGroupEntry,
@@ -13,7 +14,10 @@ import {
   splitThinkingCarouselLines,
 } from "../src/renderer/ActivityLogView";
 import { formatDuration, iconForToolName, reasoningSummaryLabel } from "../src/renderer/activity-log";
-import { buildThreadRunProjectionViewModel } from "../src/renderer/conversation-v2-projection-view";
+import {
+  buildThreadRunProjectionViewModel,
+  type ThreadRunProjectionMainFeedEntry,
+} from "../src/renderer/conversation-v2-projection-view";
 import { i18n } from "../src/renderer/i18n";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
@@ -90,6 +94,60 @@ test("running turn heading switches to stopping while cancelling", async () => {
   await i18n.changeLanguage("zh-CN");
   expect(formatRunLogTurnHeading(true, "running", 4_000)).toBe("处理中 4s");
   expect(formatRunLogTurnHeading(true, "running", 4_000, true)).toBe("停止中 4s");
+});
+
+test("a streaming thinking row on the tail owns the Feed's own live indicator", () => {
+  const timelineEntry = (item: ThreadRunProjectionTimelineItem): ThreadRunProjectionMainFeedEntry => ({
+    kind: "timeline",
+    key: item.id,
+    at: item.at,
+    sequence: item.sequence,
+    item,
+  });
+
+  // A thinking row keeps `thinking.delta` while the agent moves on to writing its tool
+  // call, so the Composer's dots defer to the shimmer it is already showing.
+  expect(
+    isTailThinkingStreamingLive([
+      timelineEntry(item({ id: "thinking", eventType: "thinking.delta", role: "thinking", text: "先看看…" })),
+    ]),
+  ).toBe(true);
+  // Finalized thinking has stopped animating; the gap is the Composer's to narrate.
+  expect(
+    isTailThinkingStreamingLive([
+      timelineEntry(item({ id: "thinking", eventType: "thinking.final", role: "thinking", text: "先看看…" })),
+    ]),
+  ).toBe(false);
+  // Narrative is typed out with no mark of its own, which is the case the dots exist for.
+  expect(
+    isTailThinkingStreamingLive([
+      timelineEntry(
+        item({ id: "narrative", eventType: "message.delta", role: "planner", text: "让我读取代码：" }),
+      ),
+    ]),
+  ).toBe(false);
+  // Only the newest row counts: earlier thinking has already been scrolled past.
+  expect(
+    isTailThinkingStreamingLive([
+      timelineEntry(item({ id: "thinking", eventType: "thinking.delta", role: "thinking", text: "先看看…" })),
+      {
+        kind: "tool-group",
+        key: "tool",
+        at: "2026-01-01T00:00:01.000Z",
+        sequence: 2,
+        entries: [
+          {
+            kind: "timeline",
+            key: "tool",
+            at: "2026-01-01T00:00:01.000Z",
+            sequence: 2,
+            item: item({ id: "tool", eventType: "tool.started", sequence: 2, role: "tool" }),
+          },
+        ],
+      },
+    ]),
+  ).toBe(false);
+  expect(isTailThinkingStreamingLive([])).toBe(false);
 });
 
 test("settled tool group keeps its running display for at least one second", () => {
@@ -307,7 +365,7 @@ test("ActivityLogView waits for thread stop before exposing final output copy", 
   expect(html).toContain("run-log-active-tail");
 });
 
-test("ActivityLogView does not show thinking before a request starts", () => {
+test("ActivityLogView shows thinking when the prompt is the only row on the feed", () => {
   const html = renderToStaticMarkup(
     createElement(ProjectionActivityLogView, {
       projection: projection({
@@ -325,12 +383,48 @@ test("ActivityLogView does not show thinking before a request starts", () => {
     }),
   );
 
-  expect(html).not.toContain('class="run-log-thinking streaming empty"');
-  expect(html).toContain("run-log-conversation-tail");
-  expect(html).not.toContain("正在思考");
+  // Nothing agent-side has landed yet, so the tail is the only thing that can show the
+  // send was received — a bare user bubble read as "the send did nothing".
+  expect(html).toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain("run-log-active-tail");
+  expect(html).not.toContain("run-log-conversation-tail");
+  expect(html).toContain("正在思考");
 });
 
-test("ActivityLogView does not show thinking while the first request event is pending", () => {
+test("ActivityLogView shows thinking when a follow-up prompt is the newest row", () => {
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "previous-answer",
+            sequence: 1,
+            eventType: "message.final",
+            text: "上一轮已经答完的内容。",
+          }),
+          item({
+            id: "follow-up-prompt",
+            sequence: 2,
+            eventType: "thread.status",
+            role: "user",
+            text: "再改一下这里",
+            metadata: { liveType: "thread.user_prompt" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  // A follow-up send is not acknowledged by the answer that came before it: until the
+  // agent produces its first row for the new prompt, the tail is the only signal.
+  expect(html).toContain("再改一下这里");
+  expect(html).toContain("run-log-active-tail");
+  expect(html).toContain("正在思考");
+  expect(html).not.toContain("run-log-conversation-tail");
+});
+
+test("ActivityLogView shows thinking while the first request event is pending", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       thread: {
@@ -347,9 +441,11 @@ test("ActivityLogView does not show thinking while the first request event is pe
   );
 
   expect(html).toContain("检查当前实现");
-  expect(html).not.toContain('class="run-log-thinking streaming empty"');
-  expect(html).not.toContain("run-log-active-tail");
-  expect(html).not.toContain("正在思考");
+  // No V2 event has arrived, but the thread is already running: the prompt bubble
+  // cannot be the whole feed, or a first send looks unacknowledged.
+  expect(html).toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain("run-log-active-tail");
+  expect(html).toContain("正在思考");
   expect(html).not.toContain("run-log-projection-loading");
 });
 
@@ -479,13 +575,14 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
     [requestSpan({ requestId: "req-first-message", status: "waiting_first_token" })],
   );
 
-  // Before request.started there is no loading indicator. Once the request span
-  // enters waiting_first_token, the indicator is deferred to the active-tail.
+  // The waiting line is up from the moment the user bubble is the only row on the feed,
+  // and request.started only moves it from the tail onto the turn's request row — the
+  // empty turn keeps its spacing either way.
   expect(beforeRequest).toContain("run-log-turn-process-inner is-empty");
   expect(afterRequest).toContain("run-log-turn-process-inner is-empty");
-  expect(beforeRequest).toContain("run-log-conversation-tail");
+  expect(beforeRequest).toContain("run-log-active-tail");
   expect(afterRequest).toContain("run-log-active-tail");
-  expect(beforeRequest).not.toContain("正在思考");
+  expect(beforeRequest).toContain("正在思考");
   expect(afterRequest).toContain("正在思考");
 });
 
