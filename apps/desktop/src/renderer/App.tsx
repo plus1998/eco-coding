@@ -285,7 +285,11 @@ import {
   captureComposerBeforeFollowUpEdit,
   resolveComposerAfterFollowUpEdit,
 } from "./composer-follow-up-edit-draft";
-import { resolveComposerContextPrompt, type ComposerPlanHandoff } from "./composer-plan-handoff";
+import {
+  resolveComposerContextPrompt,
+  type ComposerPlanHandoff,
+  resolveComposerPlanRuntimeConfig,
+} from "./composer-plan-handoff";
 import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
   composerRequiresOrchestration,
@@ -2725,7 +2729,10 @@ function App() {
             typeof error === "object" && error !== null && "code" in error
               ? String((error as { code?: unknown }).code ?? "")
               : "";
-          if (errorCode === "conversation_not_found" || message.includes("Conversation V2 conversation was not found")) {
+          if (
+            errorCode === "conversation_not_found" ||
+            message.includes("Conversation V2 conversation was not found")
+          ) {
             clearThreadClientState(selectedThreadId);
             setError(undefined);
           } else {
@@ -4947,6 +4954,12 @@ function App() {
       );
       if (promptResolution.handoffConsumed) {
         pendingPlanComposerHandoffRef.current = undefined;
+        setComposerRuntimeConfig(
+          (current) =>
+            resolveComposerPlanRuntimeConfig(current, promptResolution.sessionMode) ??
+            buildComposerDefaultConfig({ planModeOverride: false }) ??
+            current,
+        );
       }
       const nextPrompt = promptResolution.prompt;
       editingFollowUpIdRef.current = undefined;
@@ -9446,7 +9459,11 @@ function App() {
     if (!contextKey) {
       return;
     }
-    pendingPlanComposerHandoffRef.current = { contextKey, prompt: plan.plan };
+    pendingPlanComposerHandoffRef.current = {
+      contextKey,
+      prompt: plan.plan,
+      sessionMode: "agent",
+    };
     startNewChat();
   }
 

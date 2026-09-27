@@ -10,17 +10,19 @@ test("a matching plan handoff wins over the landing draft and skips persisted dr
   const resolution = resolveComposerContextPrompt("landing:/workspace", "older landing draft", {
     contextKey: "landing:/workspace",
     prompt: rawPlan,
+    sessionMode: "agent",
   });
 
   expect(resolution).toEqual({
     prompt: rawPlan,
     handoffConsumed: true,
     shouldLoadPersistedDraft: false,
+    sessionMode: "agent",
   });
 });
 
 test("a plan handoff is consumed only by its target context", () => {
-  const handoff = { contextKey: "landing:/workspace", prompt: "# Plan" };
+  const handoff = { contextKey: "landing:/workspace", prompt: "# Plan", sessionMode: "agent" as const };
   const resolution = resolveComposerContextPrompt("thread:other", undefined, handoff);
 
   expect(resolution).toEqual({
@@ -36,12 +38,16 @@ test("plan handoff reuses new-chat flow without approving or sending the origina
   const handler = appSource.slice(start, end);
 
   expect(start).toBeGreaterThanOrEqual(0);
-  expect(handler).toContain("pendingPlanComposerHandoffRef.current = { contextKey, prompt: plan.plan }");
+  expect(handler).toContain("pendingPlanComposerHandoffRef.current = {");
+  expect(handler).toContain('sessionMode: "agent"');
   expect(handler).toContain("startNewChat();");
   expect(handler).not.toContain("approvePendingPlan");
   expect(handler).not.toContain("startThread");
   expect(handler).not.toContain("sendMessage");
   expect(appSource).toContain("resolveComposerContextPrompt(");
+  expect(appSource).toContain("resolveComposerPlanRuntimeConfig(current, promptResolution.sessionMode)");
   expect(appSource).toContain("onStartNewSession={() => startNewChatWithPlan(pendingPlan)}");
-  expect(appSource).toContain("const pendingPlan = activeThread ? pendingPlansByThread[activeThread.id] : undefined;");
+  expect(appSource).toContain(
+    "const pendingPlan = activeThread ? pendingPlansByThread[activeThread.id] : undefined;",
+  );
 });
