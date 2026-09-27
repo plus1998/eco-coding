@@ -18,4 +18,4 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-console.log(`[git-hooks] enabled ${hooksPath}/pre-commit`);
+console.log(`[git-hooks] enabled ${hooksPath}/pre-push`);

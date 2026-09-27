@@ -5,14 +5,14 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
-# Git exports the committing repository's index/worktree variables to hooks.
+# Git exports the pushing repository's index/worktree variables to hooks.
 # Clear them before tests create temporary repositories, otherwise those repos
 # can accidentally read the current checkout's index.
 unset GIT_DIR GIT_INDEX_FILE GIT_PREFIX GIT_WORK_TREE
 
-echo "[pre-commit] type checking the desktop app..."
+echo "[pre-push] type checking the desktop app..."
 bunx tsc -b apps/desktop/tsconfig.json --pretty false
 bunx tsc --noEmit -p apps/desktop/tsconfig.json
 
-echo "[pre-commit] running the strict test gate..."
+echo "[pre-push] running the strict test gate..."
 node scripts/test-gate.mjs --strict
