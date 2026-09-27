@@ -56,6 +56,15 @@ test("supportsOneClickRequestRetry covers rewrite cores and ACP, not Pi", () => 
   expect(supportsOneClickRequestRetry("pi")).toBe(false);
 });
 
+test("empty user text is usable for continuation but not prompt replay", () => {
+  const imageOnly = { ...userPrompt, text: "" };
+  expect(readUserPromptRetryIdentity(imageOnly)).toBeUndefined();
+  expect(readUserPromptRetryIdentity(imageOnly, { allowEmptyPrompt: true })).toMatchObject({
+    activityLineId: "user:abc",
+    prompt: "",
+  });
+});
+
 test("readUserPromptRetryIdentity prefers rewindTarget then streamKey", () => {
   expect(readUserPromptRetryIdentity(userPrompt)).toEqual({
     activityLineId: "user:abc",

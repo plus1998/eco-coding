@@ -5214,6 +5214,8 @@ function registerIpcHandlers(): void {
       prompt,
       expectedHistoryRevision,
       hasImages: request.hasImages === true,
+      continueInterrupted: request.continueInterrupted === true,
+      ...(typeof request.sourceAttemptId === "string" ? { sourceAttemptId: request.sourceAttemptId } : {}),
       ...(activityLineId ? { activityLineId } : {}),
       ...(request.runtimeConfig ? { runtimeConfig: request.runtimeConfig } : {}),
     });
@@ -9825,7 +9827,7 @@ async function startCodexThreadContinuation(
   input: StartThreadContinuationInput,
 ): Promise<ThreadContinueResult> {
   const prompt = input.prompt.trim();
-  if (!prompt && !input.attachments?.length) {
+  if (!input.codexEmptyInput && !prompt && !input.attachments?.length) {
     throw new Error("Message is required.");
   }
   const thread = conversationStore.getThread(input.threadId);
@@ -9838,6 +9840,16 @@ async function startCodexThreadContinuation(
   }
   const binding = conversationStore.getThreadCoreSession(thread.id);
   const hasBinding = binding?.coreKind === "codex" && Boolean(binding.externalSessionId.trim());
+  if (input.codexEmptyInput && !hasBinding) {
+    throw new Error("Codex 会话绑定已丢失，无法继续原有上下文。");
+  }
+  if (input.codexEmptyInput) {
+    await ensureCodexControlPlaneClient();
+    const status = await queryCodexThreadStatusForEcoThread(thread.id);
+    if (status !== "idle" && status !== "systemError" && status !== "notLoaded") {
+      throw new Error(`无法确认 Codex 会话处于可继续状态：${status ?? "missing"}。`);
+    }
+  }
   const strategy = resolveCodexContinueStrategy({
     hasBinding,
     hasRewindTarget: Boolean(input.rewindTarget),
@@ -9873,8 +9885,9 @@ async function startCodexThreadContinuation(
   }
 
   // Cold start has no Codex remote history — carry original task + follow-up into the first turn.
-  const runPrompt =
-    strategy.kind === "cold_start" ? buildThreadTurnPrompt(activeThread.prompt, prompt) : prompt;
+  const runPrompt = input.codexEmptyInput
+    ? ""
+    : strategy.kind === "cold_start" ? buildThreadTurnPrompt(activeThread.prompt, prompt) : prompt;
 
   updateThread(thread.id, { status: "running", message: "" });
   const workspace = await ensureWorkspace(thread.workspacePath);
@@ -11457,6 +11470,8 @@ function markAcceptedConversationMessageFailed(
 interface StartThreadContinuationInput {
   threadId: string;
   prompt: string;
+  /** Starts a new Codex turn with input: [] against the existing remote thread. */
+  codexEmptyInput?: boolean;
   displayPrompt?: string;
   runtimeConfigInput?: ThreadRuntimeConfigInput;
   attachments?: PromptImageAttachment[];
@@ -12589,7 +12604,7 @@ async function redispatchPreparedHistoryCommand(
     });
     return;
   }
-  if (!prompt && attachments.length === 0) {
+  if (!prompt && attachments.length === 0 && job.request.continueInterrupted !== true) {
     conversationStore.conversationV2().failCommand(job.principalId, job.conversationId, job.clientCommandId, {
       code: CONVERSATION_V2_ERROR.invalidParams,
       reason: "Prepared history command request has no prompt or attachments.",
@@ -12628,7 +12643,8 @@ async function redispatchPreparedHistoryCommand(
   await startThreadContinuation({
     threadId: job.conversationId,
     prompt,
-    ...(attachments.length > 0 ? { attachments } : {}),
+    ...(job.request.continueInterrupted === true ? { codexEmptyInput: true } : {}),
+    ...(attachments.length > 0 && job.request.continueInterrupted !== true ? { attachments } : {}),
     ...(runtimeConfigInput ? { runtimeConfigInput } : {}),
     displayPrompt: prompt,
     skipRecordUserPrompt: true,
@@ -12952,6 +12968,8 @@ async function retryThreadFromFailedRequest(input: {
   activityLineId?: string;
   prompt: string;
   hasImages: boolean;
+  continueInterrupted?: boolean;
+  sourceAttemptId?: string;
   expectedHistoryRevision: number;
   runtimeConfig?: ThreadRuntimeConfigInput;
 }): Promise<ThreadContinueResult> {
@@ -12962,6 +12980,9 @@ async function retryThreadFromFailedRequest(input: {
   }
   if (!supportsOneClickRequestRetry(thread.coreKind)) {
     throw new Error("当前核心不支持一键重试失败请求。");
+  }
+  if (input.continueInterrupted && (thread.coreKind !== "codex" || !input.sourceAttemptId?.trim())) {
+    throw new Error("Codex 继续需要有效的原执行标识。");
   }
   const activityLineId = input.activityLineId?.trim() ?? "";
   const prompt = input.prompt.trim();
@@ -13067,6 +13088,8 @@ async function retryThreadFromFailedRequest(input: {
       existing.request.activityLineId !== activityLineId ||
       existing.request.requestedPrompt !== prompt ||
       existing.request.hasImages !== input.hasImages ||
+      existing.request.continueInterrupted !== (input.continueInterrupted || undefined) ||
+      existing.request.sourceAttemptId !== input.sourceAttemptId ||
       stableHash(existing.request.runtimeConfig ?? null) !== stableHash(input.runtimeConfig ?? null)
     ) {
       throw new ConversationV2Error(
@@ -13075,10 +13098,11 @@ async function retryThreadFromFailedRequest(input: {
       );
     }
     retryPrompt = typeof existing.request.prompt === "string" ? existing.request.prompt.trim() : "";
-    storedAttachments = parsePromptImageAttachments(existing.request.attachments);
+    storedAttachments = input.continueInterrupted ? [] : parsePromptImageAttachments(existing.request.attachments);
     if (
-      !Array.isArray(existing.request.attachments) ||
-      storedAttachments.length !== existing.request.attachments.length
+      !input.continueInterrupted &&
+      (!Array.isArray(existing.request.attachments) ||
+        storedAttachments.length !== existing.request.attachments.length)
     ) {
       throw new ConversationV2Error(
         CONVERSATION_V2_ERROR.integrityFailure,
@@ -13093,7 +13117,18 @@ async function retryThreadFromFailedRequest(input: {
     if (currentRevision !== input.expectedHistoryRevision) {
       throw new Error("历史记录已变化，请刷新后再重试。");
     }
-    if (requiresEmptyTurnForRequestRetry(thread.coreKind)) {
+    if (input.continueInterrupted) {
+      const attempts = conversationStore.listRunAttempts(input.threadId);
+      const latest = attempts.at(-1);
+      if (!latest || latest.attemptId !== input.sourceAttemptId || latest.status === "running" || latest.status === "completed") {
+        throw new Error("该执行已变化或尚未中断，请刷新后再继续。");
+      }
+      const binding = conversationStore.getThreadCoreSession(input.threadId);
+      if (binding?.coreKind !== "codex" || !binding.externalSessionId.trim()) {
+        throw new Error("Codex 会话绑定已丢失，无法继续原有上下文。");
+      }
+    }
+    if (requiresEmptyTurnForRequestRetry(thread.coreKind) && !input.continueInterrupted) {
       if (!activityLineId) {
         throw new Error("找不到可重试的用户消息。");
       }
@@ -13109,7 +13144,7 @@ async function retryThreadFromFailedRequest(input: {
       throw new Error("V2 中找不到可重试的用户消息，已拒绝读取旧消息表。");
     }
     retryPrompt = message.body.trim() || prompt;
-    const v2Attachments = parsePromptImageAttachments(message.attachments);
+    const v2Attachments = input.continueInterrupted ? [] : parsePromptImageAttachments(message.attachments);
     if (
       v2Attachments.some(
         (attachment) => !attachment.contentRef || !isPromptImageContentRef(attachment.contentRef),
@@ -13120,10 +13155,10 @@ async function retryThreadFromFailedRequest(input: {
       storedAttachments = v2Attachments;
     }
   }
-  if (input.hasImages && storedAttachments.length === 0) {
+  if (!input.continueInterrupted && input.hasImages && storedAttachments.length === 0) {
     throw new Error("该次请求包含图片，但本地没有保存原图，无法一键重试。请重新发送。");
   }
-  if (!retryPrompt && storedAttachments.length === 0) {
+  if (!retryPrompt && storedAttachments.length === 0 && !input.continueInterrupted) {
     throw new Error("Message is required.");
   }
   return executeNonRewindRetryCommand(
@@ -13136,6 +13171,7 @@ async function retryThreadFromFailedRequest(input: {
       requestedPrompt: prompt,
       attachments: storedAttachments,
       hasImages: input.hasImages,
+      ...(input.continueInterrupted ? { continueInterrupted: true, sourceAttemptId: input.sourceAttemptId } : {}),
       expectedHistoryRevision: input.expectedHistoryRevision,
       ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
     },

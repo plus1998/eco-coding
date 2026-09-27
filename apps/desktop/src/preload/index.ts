@@ -1374,6 +1374,9 @@ const api = {
   retryThreadFromMessage(request: ThreadRetryFromMessageRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRetryFromMessage, request);
   },
+  continueCodexThread(request: ThreadRetryFromMessageRequest): Promise<ThreadContinueResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRetryFromMessage, { ...request, continueInterrupted: true });
+  },
   getStorageUsage(): Promise<StorageUsageSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.storageGetUsage);
   },

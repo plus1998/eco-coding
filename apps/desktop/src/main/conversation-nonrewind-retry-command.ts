@@ -19,6 +19,8 @@ export interface NonRewindRetryCommandInput {
   requestedPrompt: string;
   attachments: PromptImageAttachment[];
   hasImages: boolean;
+  continueInterrupted?: boolean;
+  sourceAttemptId?: string;
   expectedHistoryRevision: number;
   runtimeConfig?: ThreadRuntimeConfigInput;
 }
@@ -31,6 +33,7 @@ export interface NonRewindRetryCommandDeps {
     threadId: string;
     prompt: string;
     attachments: PromptImageAttachment[];
+    codexEmptyInput?: boolean;
     runtimeConfigInput?: ThreadRuntimeConfigInput;
     skipRecordUserPrompt: true;
     displayPrompt: string;
@@ -56,6 +59,7 @@ export async function executeNonRewindRetryCommand(
       requestedPrompt: input.requestedPrompt,
       attachments: input.attachments,
       hasImages: input.hasImages,
+      ...(input.continueInterrupted ? { continueInterrupted: true, sourceAttemptId: input.sourceAttemptId } : {}),
       ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
     },
     expectedHistoryRevision: input.expectedHistoryRevision,
@@ -75,6 +79,9 @@ export async function executeNonRewindRetryCommand(
     if (!thread?.coreKind || (thread.coreKind !== "codex" && thread.coreKind !== "acp")) {
       throw new Error("Non-rewind retry requires a Codex or ACP thread.");
     }
+    if (input.continueInterrupted && thread.coreKind !== "codex") {
+      throw new Error("Empty-input continuation requires a Codex thread.");
+    }
     const prepared = prepareConversationCommandDispatch({
       v2: deps.v2,
       job: accepted,
@@ -84,7 +91,8 @@ export async function executeNonRewindRetryCommand(
     return await deps.start({
       threadId: input.threadId,
       prompt: input.prompt,
-      attachments: input.attachments,
+      attachments: input.continueInterrupted ? [] : input.attachments,
+      ...(input.continueInterrupted ? { codexEmptyInput: true } : {}),
       ...(input.runtimeConfig ? { runtimeConfigInput: input.runtimeConfig } : {}),
       skipRecordUserPrompt: true,
       displayPrompt: input.prompt,

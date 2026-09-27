@@ -1761,6 +1761,10 @@ export interface ThreadRetryFromMessageRequest {
   hasImages?: boolean;
   expectedHistoryRevision: number;
   runtimeConfig?: ThreadRuntimeConfigInput;
+  /** Continue a settled Codex turn with empty app-server input. */
+  continueInterrupted?: boolean;
+  /** Terminal run being continued; rejects stale UI actions. */
+  sourceAttemptId?: string;
 }
 
 export interface ThreadResumeSubagentRequest {

@@ -547,7 +547,7 @@ export function buildCodexTurnInput(
   skillInputs: readonly CodexSkillInput[] | undefined,
   localImagePaths: readonly string[] | undefined = undefined,
 ): CodexTurnStartParams["input"] {
-  const input: CodexTurnStartParams["input"] = [{ type: "text", text: prompt }];
+  const input: CodexTurnStartParams["input"] = prompt ? [{ type: "text", text: prompt }] : [];
   const seenPaths = new Set<string>();
   for (const [index, skill] of (skillInputs ?? []).entries()) {
     const name = skill.name.trim();

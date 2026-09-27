@@ -73,6 +73,10 @@ test("buildCodexTurnInput validates and deduplicates structured skills by exact 
   );
 });
 
+test("buildCodexTurnInput sends no items for a continuation without a new prompt", () => {
+  expect(buildCodexTurnInput("", undefined)).toEqual([]);
+});
+
 test("buildCodexTurnInput includes deduplicated local image paths", () => {
   expect(buildCodexTurnInput("inspect", undefined, ["/tmp/a.png", "/tmp/a.png", "/tmp/b.jpg"])).toEqual([
     { type: "text", text: "inspect" },
@@ -1245,7 +1249,7 @@ test("CodexAppServerDriver rejects empty routes", async () => {
   driver.dispose();
 });
 
-test("CodexAppServerDriver resumes existing map via thread/resume and never thread/start", async () => {
+test("CodexAppServerDriver resumes existing map and starts an empty-input continuation", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const client = new CodexAppServerClient(stdin, stdout);
@@ -1268,14 +1272,14 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
   await handshake;
 
   const runPromise = (async () => {
-    for await (const _event of driver.run({
+    for await (const _event of driver.runContinuation({
       threadId: "thr_eco_resume",
-      prompt: "continue",
+      prompt: "",
       workspacePath: "/repo",
       worktreePath: "/repo",
       routes: [plannerRoute()],
       signal: controller.signal,
-    })) {
+    }, "execution")) {
       // drain
     }
   })();
@@ -1324,6 +1328,7 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
     mcp_servers: { browser: { enabled: false } },
   });
   expect(turnStart?.params?.threadId).toBe("thr_codex_existing");
+  expect(turnStart?.params?.input).toEqual([]);
   expect(
     isCodexThreadConfigApplied(client, "thr_codex_existing", {
       mcp_servers: { browser: { enabled: false } },

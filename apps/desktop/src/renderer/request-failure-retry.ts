@@ -33,12 +33,19 @@ function readRewindActivityLineId(item: ThreadRunProjectionTimelineItem): string
 
 export function readUserPromptRetryIdentity(
   item: ThreadRunProjectionTimelineItem,
+  options?: { allowEmptyPrompt?: boolean },
 ): RequestFailureRetryTarget | undefined {
-  if (!isProjectionUserPromptItem(item)) {
+  const imageOnlyRecordedPrompt =
+    options?.allowEmptyPrompt === true &&
+    !item.text.trim() &&
+    item.scope !== "agent" &&
+    item.role === "user" &&
+    item.metadata?.liveType === "thread.user_prompt";
+  if (!isProjectionUserPromptItem(item) && !imageOnlyRecordedPrompt) {
     return undefined;
   }
   const prompt = item.text.trim();
-  if (!prompt) {
+  if (!prompt && !options?.allowEmptyPrompt) {
     return undefined;
   }
   const activityLineId = readRewindActivityLineId(item) || item.streamKey?.trim() || item.id.trim();

@@ -61,6 +61,30 @@ function harness(coreKind: "codex" | "acp" = "codex") {
 }
 
 describe("non-rewind retry command", () => {
+  test("persists Codex empty-input continuation without replaying images", async () => {
+    const state = harness();
+    let dispatched: Parameters<Parameters<typeof executeNonRewindRetryCommand>[1]["start"]>[0] | undefined;
+    await executeNonRewindRetryCommand({
+      ...state.input,
+      continueInterrupted: true,
+      sourceAttemptId: "attempt_interrupted",
+      attachments: [{ id: "image-1", name: "example.png", mimeType: "image/png", size: 1, dataUrl: "data:image/png;base64,AA==" }],
+      hasImages: true,
+    }, {
+      ...state.deps,
+      start: async (input) => {
+        dispatched = input;
+        return { thread: state.thread };
+      },
+    });
+    expect(dispatched).toMatchObject({ codexEmptyInput: true, attachments: [], skipRecordUserPrompt: true });
+    expect(state.v2.getCommandJob(state.input.principalId, state.input.threadId, state.input.clientCommandId)?.request).toMatchObject({
+      continueInterrupted: true,
+      sourceAttemptId: "attempt_interrupted",
+    });
+    state.db.close();
+  });
+
   test("prepares one durable dispatch and makes response-loss retry idempotent", async () => {
     const state = harness();
     const first = await executeNonRewindRetryCommand(state.input, state.deps);

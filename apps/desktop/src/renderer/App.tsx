@@ -389,7 +389,7 @@ import {
   persistPromptCacheTipPreferences,
   readStoredPromptCacheTipPreferences,
 } from "./prompt-cache-tip-preferences";
-import type { RequestFailureRetryTarget } from "./request-failure-retry";
+import { readUserPromptRetryIdentity, type RequestFailureRetryTarget } from "./request-failure-retry";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SettingsSyncControl } from "./SettingsSyncControl";
@@ -5085,6 +5085,36 @@ function App() {
     activeThread?.status === "queued" ||
     activeThread?.status === "awaiting_plan";
 
+  // A settled failed/cancelled Codex attempt can start a new empty-input turn.
+  // A completed attempt is not an interruption, even when the thread is idle.
+  const latestContinueAttempt = displayProjection?.attempts.at(-1);
+  const lastRunInterrupted =
+    activeThread?.coreKind === "codex" &&
+    (latestContinueAttempt?.status === "failed" || latestContinueAttempt?.status === "cancelled") &&
+    (activeThread.status === "failed" || activeThread.status === "blocked" || activeThread.status === "idle");
+
+  const composerContinueTarget = useMemo(() => {
+    if (!lastRunInterrupted || !activeThread || !threadAcceptsInput || !latestContinueAttempt) return undefined;
+    const timeline = displayProjection?.timeline ?? [];
+    for (let i = timeline.length - 1; i >= 0; i -= 1) {
+      const item = timeline[i];
+      if (!item) continue;
+      const target = readUserPromptRetryIdentity(item, { allowEmptyPrompt: true });
+      if (target) return { ...target, sourceAttemptId: latestContinueAttempt.attemptId };
+    }
+    return undefined;
+  }, [lastRunInterrupted, activeThread, threadAcceptsInput, displayProjection, latestContinueAttempt]);
+
+  // Show only for a settled Codex attempt with an empty composer.
+  const composerShowContinue =
+    Boolean(composerContinueTarget) &&
+    !composerHasContent &&
+    !composerFollowUpMode &&
+    !showComposerDockApproval &&
+    composerRoutesReady &&
+    !planActionBusy &&
+    !contextCompactionInFlight;
+
   const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
   const queuedFollowUps = useMemo(() => queuedThreadFollowUps(activeFollowUps), [activeFollowUps]);
   const activeSubagentTimings = activeConversationV2?.projectionExtras?.subagentTimings;
@@ -7004,6 +7034,37 @@ function App() {
     clearPendingBashApprovalForThread(input.thread.id);
     await refreshThreadState(input.thread.id);
     return updated ?? configured.thread;
+  }
+
+  async function continueInterruptedCodexTurn(target: RequestFailureRetryTarget & { sourceAttemptId: string }) {
+    if (!activeThread || isStarting || !window.eco) return;
+    const threadId = activeThread.id;
+    const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
+    setIsStarting(true);
+    setError(undefined);
+    try {
+      const result = await window.eco.continueCodexThread({
+        principalId: "desktop-local",
+        clientCommandId: `codex_continue_${stableHash({ threadId, sourceAttemptId: target.sourceAttemptId })}`,
+        threadId,
+        activityLineId: target.activityLineId,
+        prompt: target.prompt,
+        hasImages: target.hasImages,
+        sourceAttemptId: target.sourceAttemptId,
+        expectedHistoryRevision,
+      });
+      setThreads((current) =>
+        current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+      );
+      queueConversationV2Recovery(threadId);
+      await refreshThreadState(threadId);
+      requestActivityFeedForceScroll();
+    } catch (caught) {
+      setError(errorMessage(caught));
+      queueConversationV2Recovery(threadId);
+    } finally {
+      setIsStarting(false);
+    }
   }
 
   async function retryFailedRequest(target: RequestFailureRetryTarget) {
@@ -10105,7 +10166,9 @@ function App() {
       ? composerHasContent
         ? "queue"
         : "stop"
-      : "send";
+      : composerShowContinue
+        ? "continue"
+        : "send";
   // The follow-up delivery mode actually applied when sending while the thread is running
   // (steer = 调整方向, queue = 排队); used to pick the composer action icon/label.
   const composerFollowUpDeliveryMode: FollowUpDeliveryMode = resolveFollowUpDeliveryModeForCore(
@@ -10117,19 +10180,25 @@ function App() {
       ? cancelBusy || Boolean(activeThread?.cancelling)
       : isStarting || followUpBusy;
   const composerActionDisabled =
-    composerActionMode === "stop" ? cancelBusy || Boolean(activeThread?.cancelling) : !canSend;
+    composerActionMode === "stop"
+      ? cancelBusy || Boolean(activeThread?.cancelling)
+      : composerActionMode === "continue"
+        ? isStarting || followUpBusy
+        : !canSend;
   const composerActionLabel =
     composerActionMode === "stop"
       ? activeThread?.cancelling || cancelBusy
         ? t("thread.action.stopping")
         : t("thread.action.stop")
-      : composerActionMode === "queue"
-        ? composerFollowUpDeliveryMode === "steer"
-          ? t("thread.action.steer")
-          : t("thread.action.queue")
-        : composerActionMode === "save-follow-up"
-          ? t("thread.action.saveFollowUp")
-          : t("thread.action.send");
+      : composerActionMode === "continue"
+        ? t("thread.action.continue")
+        : composerActionMode === "queue"
+          ? composerFollowUpDeliveryMode === "steer"
+            ? t("thread.action.steer")
+            : t("thread.action.queue")
+          : composerActionMode === "save-follow-up"
+            ? t("thread.action.saveFollowUp")
+            : t("thread.action.send");
   const composerActionClassName = ["send-button", composerActionMode].filter(Boolean).join(" ");
   const composerCompact = !showLanding;
   const composerIconOnly = useComposerIconOnlyToolbar();
@@ -10600,6 +10669,10 @@ function App() {
                             void requestStopThread();
                             return;
                           }
+                          if (composerActionMode === "continue" && composerContinueTarget) {
+                            void continueInterruptedCodexTurn(composerContinueTarget);
+                            return;
+                          }
                           void sendComposerMessage();
                         }}
                         disabled={composerActionDisabled}
@@ -10614,6 +10687,8 @@ function App() {
                           />
                         ) : composerActionMode === "stop" ? (
                           <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                        ) : composerActionMode === "continue" ? (
+                          <Play size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                         ) : composerActionMode === "queue" ? (
                           // Steer = 立即注入当前回合，与“发送”同义，复用发送图标；排队用折线入队图标。
                           composerFollowUpDeliveryMode === "steer" ? (
