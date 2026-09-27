@@ -203,6 +203,8 @@ test("approved plan card shows title only without body preview", () => {
 
   expect(markup).toContain("桌面端首个 Beta 发布方案");
   expect(markup).toContain("workspace-plan-card-trigger");
+  expect(markup).toContain("workspace-plan-card-copy");
+  expect(markup).toContain('aria-label="复制完整计划"');
   expect(markup).not.toContain(".claude/plans/beta.md");
   expect(markup).not.toContain("1. 打包");
   expect(markup).not.toContain("打开右侧面板查看完整计划");

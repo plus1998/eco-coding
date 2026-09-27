@@ -6543,6 +6543,85 @@ button.sidebar-settings-meta {
   color: var(--text-primary);
 }
 
+/* Approved-plan card in the workspace panel: open the full plan + copy its text. */
+.workspace-plan-card-trigger {
+  position: relative;
+  padding: 0 2px 0 4px;
+}
+
+.workspace-plan-card-trigger:active {
+  transform: none;
+}
+
+.workspace-plan-card-trigger:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.workspace-plan-card-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  align-items: center;
+  align-self: stretch;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+
+.workspace-plan-card-open:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.workspace-plan-card-copy {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.7;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.workspace-plan-card-trigger:hover .workspace-plan-card-copy,
+.workspace-plan-card-copy:focus-visible,
+.workspace-plan-card-copy.is-copied {
+  opacity: 1;
+}
+
+.workspace-plan-card-copy:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.workspace-plan-card-copy.is-copied,
+.workspace-plan-card-copy.is-copied:hover {
+  color: var(--text-primary);
+}
+
+.workspace-plan-card-copy:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
 .workspace-browser-card-close-all {
   display: inline-flex;
   flex: 0 0 auto;
@@ -7868,6 +7947,7 @@ button.sidebar-settings-meta {
 }
 
 .plan-approval-expand,
+.plan-approval-copy,
 .plan-approval-open-panel {
   display: inline-flex;
   align-items: center;
@@ -7891,9 +7971,19 @@ button.sidebar-settings-meta {
 }
 
 .plan-approval-expand:hover,
+.plan-approval-copy:hover:not(:disabled),
 .plan-approval-open-panel:hover {
   background: var(--nav-hover);
   color: var(--codex-log-text);
+}
+
+.plan-approval-copy.is-copied {
+  color: var(--codex-log-text);
+}
+
+.plan-approval-copy:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 .plan-approval-dock-shell.is-expanded .plan-approval-expand {
@@ -31876,6 +31966,55 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   min-height: 0;
   flex-direction: column;
   color: var(--terminal-fg);
+}
+
+.task-plan-detail-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 18px 6px;
+}
+
+.task-plan-detail-title {
+  color: var(--terminal-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.task-plan-detail-copy {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--terminal-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.task-plan-detail-copy:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--terminal-fg) 10%, transparent);
+  color: var(--terminal-fg);
+}
+
+.task-plan-detail-copy.is-copied {
+  color: var(--terminal-fg);
+}
+
+.task-plan-detail-copy:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 .task-plan-detail-body {

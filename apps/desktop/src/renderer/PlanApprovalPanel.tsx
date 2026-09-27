@@ -1,8 +1,10 @@
 import type { PlanDelegationAgentOption } from "@eco/runtime/forced-plan-delegation";
 import {
   ArrowLeft,
+  Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   Loader2,
   Maximize2,
   MessageCirclePlus,
@@ -13,6 +15,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, use
 import { useTranslation } from "react-i18next";
 import type { ThreadPendingPlan } from "../shared/ipc";
 import { MAIN_SHELL_MEDIA_QUERIES } from "./activity-workspace-layout";
+import { copyTextToClipboard } from "./clipboard";
 import { MarkdownContent } from "./MarkdownContent";
 
 interface PlanApprovalPanelProps {
@@ -53,6 +56,7 @@ export function PlanApprovalPanel({
   const planTrimmed = plan.plan.trim();
   const docked = variant === "dock";
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [executeMenuOpen, setExecuteMenuOpen] = useState(false);
   const [executeMenuView, setExecuteMenuView] = useState<"options" | "agents">("options");
   const toggleRef = useRef<HTMLButtonElement | null>(null);
@@ -149,12 +153,36 @@ export function PlanApprovalPanel({
   };
 
   const expandLabel = expanded ? t("approval.plan.collapse") : t("approval.plan.expand");
+  const copyLabel = copied ? t("approval.plan.copied") : t("approval.plan.copy");
+
+  const copyPlan = () => {
+    if (!planTrimmed) {
+      return;
+    }
+    void copyTextToClipboard(plan.plan).then((ok) => {
+      if (!ok) {
+        return;
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   const body = (
     <>
       <header className="plan-approval-header">
         <h3 className={docked ? "plan-approval-dock-title" : undefined}>{t("approval.plan.title")}</h3>
         <div className="plan-approval-header-actions">
+          <button
+            type="button"
+            className={`plan-approval-copy${copied ? " is-copied" : ""}`}
+            onClick={copyPlan}
+            disabled={!planTrimmed}
+            title={copyLabel}
+            aria-label={copyLabel}
+          >
+            {copied ? <Check size={15} aria-hidden /> : <Copy size={15} aria-hidden />}
+          </button>
           {docked ? (
             <button
               type="button"

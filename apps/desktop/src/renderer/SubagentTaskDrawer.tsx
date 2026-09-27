@@ -1,7 +1,9 @@
 import { shortenModelId } from "@eco/runtime/usage";
 import {
   Bot,
+  Check,
   Circle,
+  Copy,
   ExternalLink,
   FileText,
   FolderOpen,
@@ -35,6 +37,7 @@ import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { BrowserPanel } from "./BrowserPanel";
 import { useBrowserTaskInstances } from "./browser-state-store";
+import { copyTextToClipboard } from "./clipboard";
 import { i18n } from "./i18n";
 import { ImageLightbox } from "./image-lightbox";
 import { createImageObjectUrlFromBase64, revokeImageObjectUrl, revokeImageObjectUrls } from "./image-object-url";
@@ -384,9 +387,43 @@ export function BackgroundTerminalTasksPanel({
 function PlanDetailPanel({ plan }: { plan: ThreadPendingPlan }) {
   const { t } = useTranslation();
   const analysis = plan.analysis.trim();
+  const [copied, setCopied] = useState(false);
+  const planText = plan.plan.trim();
+
+  function copyPlan() {
+    if (!planText) {
+      return;
+    }
+    void copyTextToClipboard(plan.plan).then((ok) => {
+      if (!ok) {
+        return;
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  const copyLabel = copied ? t("task.planCopied") : t("task.copyPlan");
 
   return (
     <section className="task-plan-detail" aria-label={t("task.fullPlan")}>
+      <header className="task-plan-detail-header">
+        <span className="task-plan-detail-title">{t("task.fullPlan")}</span>
+        <button
+          type="button"
+          className={`task-plan-detail-copy${copied ? " is-copied" : ""}`}
+          onClick={copyPlan}
+          disabled={!planText}
+          title={copyLabel}
+          aria-label={copyLabel}
+        >
+          {copied ? (
+            <Check size={15} strokeWidth={2} aria-hidden />
+          ) : (
+            <Copy size={15} strokeWidth={1.75} aria-hidden />
+          )}
+        </button>
+      </header>
       <div className="task-plan-detail-body">
         <section className="task-plan-detail-section">
           <div className="task-plan-detail-markdown">
