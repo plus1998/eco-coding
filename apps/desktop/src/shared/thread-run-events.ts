@@ -72,6 +72,24 @@ export interface ThreadRunToolMetadata {
   sendMessage?: ThreadRunSendMessageMetadata;
 }
 
+/**
+ * `imageView` 会在四个地方各自被重建——store 读回、Feed 投影、tool 投影、SDK 采集。
+ * 每处都只挑自己认识的字段，于是新增的 `prompt` 被逐个丢掉，卡片就只剩下图片。
+ * 所有读取都走这一个解析器，下次加字段不会再漏。
+ */
+export function parseThreadRunImageViewMetadata(value: unknown): ThreadRunImageViewMetadata | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const path = typeof record.path === "string" ? record.path.trim() : "";
+  if (!path) {
+    return undefined;
+  }
+  const prompt = typeof record.prompt === "string" ? record.prompt.trim() : "";
+  return { path, ...(prompt ? { prompt } : {}) };
+}
+
 export interface ThreadRunSendMessageMetadata {
   recipient?: string;
   summary?: string;
@@ -84,6 +102,29 @@ export interface ThreadRunSendMessageMetadata {
 export interface ThreadRunImageViewMetadata {
   /** Path resolved by Codex in the selected execution environment. */
   path: string;
+  /**
+   * The caller's own instruction for the vision model. Kept beside the path so the
+   * preview can show what was asked next to the answer the tool returned.
+   */
+  prompt?: string;
+}
+
+/**
+ * `tool.started` and `tool.completed` arrive as two events whose metadata gets merged, and the
+ * two halves are not distributed evenly: the prompt is known when the call starts, the path may
+ * only be resolvable at the end. So merge field by field instead of letting the later event win
+ * wholesale — otherwise a card that learned the question early loses it on completion.
+ */
+export function mergeThreadRunImageViewMetadata(
+  existing: ThreadRunImageViewMetadata | undefined,
+  incoming: ThreadRunImageViewMetadata | undefined,
+): ThreadRunImageViewMetadata | undefined {
+  const base = incoming ?? existing;
+  if (!base) {
+    return undefined;
+  }
+  const prompt = base.prompt ?? existing?.prompt ?? incoming?.prompt;
+  return prompt ? { ...base, prompt } : base;
 }
 
 export interface ThreadRunImageDisplayMetadata {

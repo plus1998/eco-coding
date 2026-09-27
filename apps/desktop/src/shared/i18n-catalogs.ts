@@ -1341,6 +1341,8 @@ export const i18nCatalogs = {
       "activity.imageView.localPath": "本地路径",
       "activity.imageView.previewAlt": "已查看的图片：{{name}}",
       "activity.imageView.open": "放大查看 {{name}}",
+      "activity.imageView.promptLabel": "查看提示词",
+      "activity.imageView.resultLabel": "工具返回",
       "activity.imageView.error.invalidPath": "图片路径不是有效的绝对路径。",
       "activity.imageView.error.notFound": "文件不存在，或该路径属于远程执行环境，Desktop 无法直接读取。",
       "activity.imageView.error.symbolicLink": "为避免读取目标不明确，图片预览不接受符号链接。",
@@ -3648,6 +3650,8 @@ export const i18nCatalogs = {
       "activity.imageView.localPath": "Local path",
       "activity.imageView.previewAlt": "Viewed image: {{name}}",
       "activity.imageView.open": "Enlarge {{name}}",
+      "activity.imageView.promptLabel": "Prompt",
+      "activity.imageView.resultLabel": "Returned",
       "activity.imageView.error.invalidPath": "The image path is not a valid absolute path.",
       "activity.imageView.error.notFound":
         "The file does not exist, or the path belongs to a remote execution environment that Desktop cannot read directly.",

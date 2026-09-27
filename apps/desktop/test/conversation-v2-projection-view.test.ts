@@ -858,6 +858,64 @@ test("eco_image_view MCP tool projects as an independent image Feed entry", () =
   }
 });
 
+test("eco_image_view result and prompt reach the image preview block", () => {
+  const block = projectionItemToDetailBlock(
+    item({
+      id: "eco-image-view-answered",
+      eventType: "tool.completed",
+      role: "tool",
+      text: "Tool: mcp__eco_image_view__view_image · /tmp/feed-preview.png",
+      metadata: {
+        itemType: "mcpToolCall",
+        tool: {
+          name: "mcp__eco_image_view__view_image",
+          detail: "/tmp/feed-preview.png",
+          toolUseId: "item_mcp_view_1",
+          status: "completed",
+          imageView: { path: "/tmp/feed-preview.png", prompt: "找报错" },
+          outputPreview: "第 3 行的类型不匹配。",
+        },
+      },
+    }),
+  );
+
+  expect(block).toMatchObject({
+    kind: "action",
+    imageView: {
+      path: "/tmp/feed-preview.png",
+      eventId: "eco-image-view-answered",
+      prompt: "找报错",
+    },
+    // The vision answer travels on the same output channel the command cards use.
+    toolOutput: "第 3 行的类型不匹配。",
+  });
+});
+
+test("an image view without a recorded prompt keeps the preview single-pane", () => {
+  const block = projectionItemToDetailBlock(
+    item({
+      id: "eco-image-view-bare",
+      eventType: "tool.completed",
+      role: "tool",
+      text: "Tool: ViewImage · /tmp/feed-preview.png",
+      metadata: {
+        itemType: "imageView",
+        tool: {
+          name: "ViewImage",
+          detail: "/tmp/feed-preview.png",
+          toolUseId: "item_image_view_1",
+          status: "completed",
+          imageView: { path: "/tmp/feed-preview.png" },
+        },
+      },
+    }),
+  );
+
+  expect(block).toMatchObject({ kind: "action", imageView: { path: "/tmp/feed-preview.png" } });
+  expect(block && "imageView" in block ? block.imageView?.prompt : undefined).toBeUndefined();
+  expect(block && "toolOutput" in block ? block.toolOutput : undefined).toBeUndefined();
+});
+
 test("projectionItemToDetailBlock maps Codex webSearch to tool blocks with WebSearch label", () => {
   const block = projectionItemToDetailBlock(
     item({

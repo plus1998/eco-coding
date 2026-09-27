@@ -18,14 +18,16 @@ const PI_MCP_PROXY_TOOL_NAMES = new Set(["mcp", "mcpscript", "mcp_tool"]);
 export function resolveEcoImageViewToolCall(
   toolName: string | undefined,
   input: unknown,
-): { name: string; path?: string; ref?: string } | undefined {
+): { name: string; path?: string; ref?: string; prompt?: string } | undefined {
   const directPath = isEcoImageViewToolName(toolName) ? readAbsoluteImagePath(input) : undefined;
   const directRef = isEcoImageViewToolName(toolName) ? readImageReference(input) : undefined;
+  const directPrompt = isEcoImageViewToolName(toolName) ? readImageViewPrompt(input) : undefined;
   if (isEcoImageViewToolName(toolName)) {
     return {
       name: toolName!.trim(),
       ...(directPath ? { path: directPath } : {}),
       ...(directRef ? { ref: directRef } : {}),
+      ...(directPrompt ? { prompt: directPrompt } : {}),
     };
   }
 
@@ -35,10 +37,12 @@ export function resolveEcoImageViewToolCall(
   }
   const nestedPath = readAbsoluteImagePath(proxy.args) ?? readAbsoluteImagePath(input);
   const nestedRef = readImageReference(proxy.args) ?? readImageReference(input);
+  const nestedPrompt = readImageViewPrompt(proxy.args) ?? readImageViewPrompt(input);
   return {
     name: proxy.name,
     ...(nestedPath ? { path: nestedPath } : {}),
     ...(nestedRef ? { ref: nestedRef } : {}),
+    ...(nestedPrompt ? { prompt: nestedPrompt } : {}),
   };
 }
 
@@ -54,6 +58,25 @@ export function readImageViewReferenceFromToolArgs(
   input: unknown,
 ): string | undefined {
   return resolveEcoImageViewToolCall(toolName, input)?.ref;
+}
+
+export function readImageViewPromptFromToolArgs(
+  toolName: string | undefined,
+  input: unknown,
+): string | undefined {
+  return resolveEcoImageViewToolCall(toolName, input)?.prompt;
+}
+
+/** The caller-chosen instruction whose answer is the tool's returned text. */
+export function readImageViewPrompt(input: unknown): string | undefined {
+  if (!isRecord(input)) return undefined;
+  for (const key of ["prompt", "question"] as const) {
+    const raw = input[key];
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 /**

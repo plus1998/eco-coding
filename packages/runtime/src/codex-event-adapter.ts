@@ -25,10 +25,8 @@ import {
 import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spawn-role-queue.js";
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
-import {
-  readImageViewPathFromToolArgs,
-  readImageViewReferenceFromToolArgs,
-} from "./eco-image-view-tool.js";
+import { resolveEcoImageViewToolCall } from "./eco-image-view-tool.js";
+import { readMcpToolOutputText } from "./mcp-tool-output-text.js";
 import {
   isAgentBrowserScreenshotToolName,
   isEcoImageDisplayToolName,
@@ -1447,8 +1445,9 @@ function emitMcpToolEvent(
   const toolName = `mcp__${server}__${tool}`;
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
-  let imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
-  const imageViewReference = readImageViewReferenceFromToolArgs(toolName, mcpInput);
+  const imageViewCall = resolveEcoImageViewToolCall(toolName, mcpInput);
+  let imageViewPath = imageViewCall?.path;
+  const imageViewReference = imageViewCall?.ref;
   if (
     !imageViewPath &&
     eventType === "tool.completed" &&
@@ -1456,6 +1455,13 @@ function emitMcpToolEvent(
   ) {
     imageViewPath = readAbsolutePathFromMcpToolOutput(item);
   }
+  // The vision answer is the only place the caller's prompt is answered; without it the
+  // Feed card can show the image but never what was asked or answered. Read it off the
+  // completed item and let it ride the same output channel bash already uses.
+  const imageViewResult =
+    imageViewPath && eventType === "tool.completed" ? readMcpToolOutputText(item) : undefined;
+  const imageViewOutputPreview = imageViewResult ? createToolOutputPreview(imageViewResult) : undefined;
+  const imageViewPrompt = imageViewPath ? imageViewCall?.prompt : undefined;
   if (imageViewPath) {
     if (eventType === "tool.started") {
       if (ctx.emittedImageViewPaths.has(imageViewPath)) {
@@ -1547,7 +1553,11 @@ function emitMcpToolEvent(
         toolUseId: itemId,
         status: toolStatus,
         ...(durationMs !== undefined ? { durationMs } : {}),
-        ...(imageViewPath ? { imageView: { path: imageViewPath } } : {}),
+        ...(imageViewPath
+          ? { imageView: { path: imageViewPath, ...(imageViewPrompt ? { prompt: imageViewPrompt } : {}) } }
+          : {}),
+        ...(imageViewOutputPreview?.text ? { outputPreview: imageViewOutputPreview.text } : {}),
+        ...(imageViewOutputPreview?.truncated ? { outputPreviewTruncated: true } : {}),
         ...(imageDisplayMeta
           ? {
               imageDisplay: {

@@ -1,5 +1,14 @@
-import { createToolOutputPreview } from "@eco/runtime";
-import type { ThreadRunToolMetadata } from "./thread-run-events";
+import { createToolOutputPreview, isEcoImageViewToolName } from "@eco/runtime";
+import { parseThreadRunImageViewMetadata, type ThreadRunToolMetadata } from "./thread-run-events";
+
+/**
+ * 工具输出会按调用逐条落库，所以只有"输出本身就是卡片重点"的工具才值得存。
+ * Bash 一直如此；查看图像也要，因为视觉模型的回答是提示词唯一的答案——不存它，
+ * 卡片就只能显示图片，永远说不出问了什么、答了什么。
+ */
+export function keepsOutputPreview(name: string): boolean {
+  return name === "Bash" || isEcoImageViewToolName(name);
+}
 
 export function projectThreadRunToolMetadata(
   tool: ThreadRunToolMetadata | undefined,
@@ -12,7 +21,10 @@ export function projectThreadRunToolMetadata(
     return undefined;
   }
   const outputPreview =
-    name === "Bash" && tool.outputPreview?.trim() ? createToolOutputPreview(tool.outputPreview) : undefined;
+    keepsOutputPreview(name) && tool.outputPreview?.trim()
+      ? createToolOutputPreview(tool.outputPreview)
+      : undefined;
+  const imageView = parseThreadRunImageViewMetadata(tool.imageView);
   const projected = {
     name,
     ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
@@ -35,7 +47,7 @@ export function projectThreadRunToolMetadata(
     ...(tool.readTarget && { readTarget: tool.readTarget }),
     ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
     ...(tool.webSearch && { webSearch: projectWebSearchMetadata(tool.webSearch) }),
-    ...(tool.imageView?.path.trim() && { imageView: { path: tool.imageView.path.trim() } }),
+    ...(imageView && { imageView }),
     ...(tool.imageDisplay?.artifactId.trim() && {
       imageDisplay: {
         artifactId: tool.imageDisplay.artifactId.trim(),

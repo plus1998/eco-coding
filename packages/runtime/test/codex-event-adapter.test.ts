@@ -325,9 +325,107 @@ test("eco_image_view MCP calls project imageView metadata from absolute path arg
   expect(events[0]?.metadata?.tool).toEqual(
     expect.objectContaining({
       name: "mcp__eco_image_view__view_image",
-      imageView: { path: "/tmp/shot.png" },
+      // `question` is the deprecated alias of `prompt`; either one is what the vision
+      // model was asked, and the Feed shows it beside the answer.
+      imageView: { path: "/tmp/shot.png", prompt: "找报错" },
     }),
   );
+});
+
+test("eco_image_view MCP completion carries the vision answer as the tool output", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_done",
+      item: {
+        id: "item_mcp_view_done",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        status: "completed",
+        arguments: { path: "/tmp/shot.png", prompt: "找报错" },
+        aggregatedOutput: "第 3 行的类型不匹配。",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      imageView: { path: "/tmp/shot.png", prompt: "找报错" },
+      outputPreview: "第 3 行的类型不匹配。",
+    }),
+  );
+});
+
+test("eco_image_view MCP completion reads the answer out of a raw MCP result envelope", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_envelope",
+      item: {
+        id: "item_mcp_view_envelope",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        status: "completed",
+        arguments: { path: "/tmp/shot.png", prompt: "找报错" },
+        result: { content: [{ type: "text", text: "第 3 行的类型不匹配。" }] },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool?.outputPreview).toBe("第 3 行的类型不匹配。");
+});
+
+test("eco_image_view MCP completion keeps both halves of a real call", () => {
+  // Values taken from a live call: a long multi-line prompt and an answer that arrives as a
+  // raw MCP content envelope rather than a flattened string.
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_live",
+      item: {
+        type: "mcpToolCall",
+        id: "call_00_ET_1enklUHENuk398PNWfYx2663",
+        server: "eco_image_view",
+        tool: "view_image",
+        arguments: {
+          path: "/Users/plus/img_0_76f9aad9eac302601f1b04ac.png",
+          prompt: "请详细描述这张图片的全部内容：包括画面中的文字（逐字列出）。",
+        },
+        status: "completed",
+        result: { content: [{ type: "text", text: "## 整体印象\n\n这是一幅数字拼贴图像。" }] },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: {
+        path: "/Users/plus/img_0_76f9aad9eac302601f1b04ac.png",
+        prompt: "请详细描述这张图片的全部内容：包括画面中的文字（逐字列出）。",
+      },
+      outputPreview: "## 整体印象\n\n这是一幅数字拼贴图像。",
+    }),
+  );
+});
+
+test("eco_image_view MCP start does not invent an output before the answer exists", () => {  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_start",
+      item: {
+        id: "item_mcp_view_start",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        arguments: { path: "/tmp/shot.png", prompt: "找报错" },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool?.outputPreview).toBeUndefined();
 });
 
 test("eco_image_view MCP calls with relative path do not attach imageView", () => {

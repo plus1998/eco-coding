@@ -101,7 +101,7 @@ export type ActivityDetailBlock =
       bashRun?: BashRunCardDisplay;
       fileChange?: FileChangeCardDisplay;
       webSearch?: WebSearchCardDisplay;
-      imageView?: { path: string; eventId: string };
+      imageView?: { path: string; eventId: string; prompt?: string };
       imageDisplay?: { artifactId: string; eventId: string; title?: string };
       htmlHost?: {
         pageId: string;

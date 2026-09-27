@@ -23,8 +23,9 @@ import {
   isFileChangeToolName,
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
-import type { ThreadRunToolMetadata } from "../shared/ipc";
+import type { ThreadRunImageViewMetadata, ThreadRunToolMetadata } from "../shared/ipc";
 import { resolvePiMcpProxyCall, resolvePiMcpProxyToolName } from "../shared/pi-mcp-proxy.js";
+import { parseThreadRunImageViewMetadata } from "../shared/thread-run-events.js";
 import {
   formatThreadRunGrepTargetLabel,
   formatThreadRunReadTargetLabel,
@@ -625,6 +626,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readToolResultText(record.result) ??
     readToolResultText(record.content);
   const outputPreview = output ? createToolOutputPreview(output) : undefined;
+  const imageViewMeta = toImageViewMetadata(imageViewCall);
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
@@ -683,7 +685,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
-    ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(imageViewMeta && { imageView: imageViewMeta }),
     ...(imageDisplayMeta?.artifactId && {
       imageDisplay: {
         artifactId: imageDisplayMeta.artifactId,
@@ -746,7 +748,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
-  const imageViewPath = imageViewCall?.path;
+  const failedImageViewMeta = toImageViewMetadata(imageViewCall);
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -756,7 +758,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     ...(fileChange && { fileChange }),
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
-    ...(imageViewPath && { imageView: { path: imageViewPath } }),
+    ...(failedImageViewMeta && { imageView: failedImageViewMeta }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(nonExecutionKind && { nonExecutionKind }),
     status: "failed",
@@ -835,6 +837,16 @@ function readBashDescriptionFromToolInput(input: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/**
+ * The Feed preview needs the path to load the image and the caller's prompt to explain
+ * the answer the vision model returned; the call carries both.
+ */
+function toImageViewMetadata(
+  call: ReturnType<typeof resolveEcoImageViewToolCall>,
+): ThreadRunImageViewMetadata | undefined {
+  return parseThreadRunImageViewMetadata(call);
+}
+
 function resolveSdkImageViewAndMcpDiscovery(
   name: string,
   input: unknown,
@@ -894,6 +906,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     : undefined;
   const sendMessage = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
   const webSearch = resolveEcoWebSearchToolMetadata(displayName, toolInput);
+  const imageViewMeta = toImageViewMetadata(imageViewCall);
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -903,7 +916,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && { sendMessage }),
-    ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(imageViewMeta && { imageView: imageViewMeta }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(webSearch && { webSearch }),
     status: "started",

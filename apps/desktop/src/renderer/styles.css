@@ -14474,6 +14474,76 @@ a.run-log-web-search-detail-result-url:focus-visible {
   background: color-mix(in srgb, var(--lightbox-panel-text) 10%, transparent);
 }
 
+.run-log-image-view-lightbox-body {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* 带补充内容位时（查看图像工具）预览变成左图右文；否则与只有图片时完全一致。 */
+.run-log-image-view-lightbox-content:has(.run-log-image-view-lightbox-side)
+  .run-log-image-view-lightbox-body {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+}
+
+.run-log-image-view-lightbox-side {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 16px 4px 20px;
+  overflow: auto;
+  color: var(--lightbox-panel-text);
+  border-left: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/*
+ * 两块竖着排：提示词按内容占高，返回文本吃掉剩下高度并在内部滚动。
+ *
+ * 提示词那块必须是 `flex: 0 0 auto`。它的父级是定高的 flex 列，`min-height: 0` 会允许
+ * 它被压到比内容还矮——块本身的盒子缩了，里面的文字不会被一起裁掉，而是溢出画到下一块
+ * 身上，把"工具返回"的标签和返回文本第一行盖住。
+ */
+.run-log-image-view-side-block {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.run-log-image-view-side-block.is-result {
+  flex: 1 1 auto;
+  /* 下限保证提示词再长也压不没返回文本；真放不下时整块面板滚动，而不是把它藏起来。 */
+  min-height: 120px;
+}
+
+.run-log-image-view-side-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--lightbox-panel-muted);
+}
+
+.run-log-image-view-side-text {
+  margin: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* 返回文本按 Markdown 渲染；滚动条落在这层，长答案在面板内自己滚。 */
+.run-log-image-view-side-block.is-result .run-log-image-view-side-markdown {
+  min-height: 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.65;
+  color: inherit;
+}
+
 .run-log-image-view-lightbox-stage {
   box-sizing: border-box;
   min-height: 120px;
@@ -14513,6 +14583,19 @@ a.run-log-web-search-detail-result-url:focus-visible {
   .run-log-image-view-lightbox-content {
     max-width: calc(100vw - var(--eco-modal-inset-left) - var(--eco-modal-inset-right));
     max-height: calc(100vh - var(--eco-modal-inset-top) - var(--eco-modal-inset-bottom));
+  }
+
+  /* 窄屏放不下左图右文：改为上图下文。 */
+  .run-log-image-view-lightbox-content:has(.run-log-image-view-lightbox-side)
+    .run-log-image-view-lightbox-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 38vh);
+  }
+
+  .run-log-image-view-lightbox-side {
+    padding: 12px 14px 4px;
+    border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+    border-left: 0;
   }
 }
 

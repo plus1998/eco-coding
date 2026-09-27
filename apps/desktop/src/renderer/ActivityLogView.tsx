@@ -165,6 +165,7 @@ import { i18n } from "./i18n";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { ImageLightbox } from "./image-lightbox";
 import { createImageObjectUrlFromBase64, revokeImageObjectUrl } from "./image-object-url";
+import { imageViewAnalysisPanel } from "./image-view-analysis-panel";
 import { releaseMermaidModule } from "./prosemirror/mermaid-block";
 import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
@@ -4388,6 +4389,7 @@ function DetailBlock({
       return (
         <ImageViewBlock
           imageView={block.imageView}
+          {...(block.toolOutput && { output: block.toolOutput })}
           {...(block.lifecycle && { lifecycle: block.lifecycle })}
           {...(block.subagent && { subagent: block.subagent })}
           omitRoleLabel={omitSubagent}
@@ -5980,12 +5982,15 @@ type ImageViewLoadState =
 
 export function ImageViewBlock({
   imageView,
+  output,
   lifecycle,
   subagent,
   modelByRole,
   omitRoleLabel,
 }: {
-  imageView: { path: string; eventId: string };
+  imageView: { path: string; eventId: string; prompt?: string };
+  /** 视觉模型实际返回的文本，作为预览弹窗右侧的补充内容。 */
+  output?: string;
   lifecycle?: ToolActionLifecycle;
   subagent?: string;
   modelByRole?: Record<string, string>;
@@ -6066,6 +6071,7 @@ export function ImageViewBlock({
   const previewAlt = i18n.t("activity.imageView.previewAlt", {
     name: fileName,
   });
+  const analysisPanel = imageViewAnalysisPanel(imageView.prompt, output);
 
   return (
     <div className="run-log-image-view-wrap">
@@ -6131,6 +6137,7 @@ export function ImageViewBlock({
           dialogLabel={i18n.t("activity.imageView.open", { name: fileName })}
           onOpenFolder={revealInFolder}
           onClose={closeLightbox}
+          {...(analysisPanel && { sidePanel: analysisPanel })}
         />
       ) : null}
     </div>

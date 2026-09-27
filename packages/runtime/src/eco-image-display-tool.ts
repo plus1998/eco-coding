@@ -5,6 +5,7 @@ import {
   ECO_IMAGE_DISPLAY_TOOL,
   isEcoImageDisplayToolName,
 } from "./eco-image-display-names.js";
+import { readMcpToolOutputText } from "./mcp-tool-output-text.js";
 
 export {
   ECO_IMAGE_DISPLAY_FULL_TOOL,
@@ -139,40 +140,6 @@ function readSourceKind(value: unknown): ImageDisplaySourceKind | undefined {
   const normalized = value.trim().toLowerCase();
   if (normalized === "path" || normalized === "url" || normalized === "base64") {
     return normalized;
-  }
-  return undefined;
-}
-
-function readMcpToolOutputText(item: unknown): string | undefined {
-  if (!isRecord(item)) {
-    return undefined;
-  }
-  for (const key of [
-    "aggregatedOutput",
-    "result",
-    "output",
-    "response",
-    "content",
-    "text",
-  ] as const) {
-    const raw = item[key];
-    if (typeof raw === "string" && raw.trim()) {
-      return raw.trim();
-    }
-    if (Array.isArray(raw)) {
-      const joined = raw
-        .map((entry) => {
-          if (typeof entry === "string") return entry;
-          if (isRecord(entry) && typeof entry.text === "string") return entry.text;
-          return "";
-        })
-        .filter(Boolean)
-        .join("\n")
-        .trim();
-      if (joined) {
-        return joined;
-      }
-    }
   }
   return undefined;
 }

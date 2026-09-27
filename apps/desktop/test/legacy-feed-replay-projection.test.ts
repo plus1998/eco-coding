@@ -13,7 +13,11 @@ import {
   trimProjectionForRemoteWire,
 } from "../src/main/legacy-feed-replay-projection";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
-import { projectThreadRunToolMetadataForFeed } from "../src/shared/thread-run-tool-projection";
+import { mergeThreadRunImageViewMetadata } from "../src/shared/thread-run-events";
+import {
+  projectThreadRunToolMetadata,
+  projectThreadRunToolMetadataForFeed,
+} from "../src/shared/thread-run-tool-projection";
 
 function requireValue<T>(value: T | undefined, label: string): T {
   if (value === undefined) {
@@ -570,6 +574,25 @@ test("trimProjectionForFeed strips tool detail metadata from a live running turn
   });
 });
 
+test("a started-then-completed view_image keeps the prompt whichever event carried it", () => {
+  const call = "/tmp/shot.png";
+  // 提示词在调用发起时就知道，路径有时要等到结束才能解析出来——两半各来一边。
+  expect(mergeThreadRunImageViewMetadata({ path: call, prompt: "找报错" }, { path: call })).toEqual({
+    path: call,
+    prompt: "找报错",
+  });
+  expect(mergeThreadRunImageViewMetadata({ path: call }, { path: call, prompt: "找报错" })).toEqual({
+    path: call,
+    prompt: "找报错",
+  });
+  expect(mergeThreadRunImageViewMetadata({ path: call, prompt: "找报错" }, undefined)).toEqual({
+    path: call,
+    prompt: "找报错",
+  });
+  expect(mergeThreadRunImageViewMetadata(undefined, { path: call })).toEqual({ path: call });
+  expect(mergeThreadRunImageViewMetadata(undefined, undefined)).toBeUndefined();
+});
+
 test("live feed tool projection never exposes bash output preview", () => {
   expect(
     projectThreadRunToolMetadataForFeed({
@@ -580,6 +603,44 @@ test("live feed tool projection never exposes bash output preview", () => {
       status: "completed",
     }),
   ).toEqual({ name: "Bash", detail: "bun test", status: "completed" });
+});
+
+test("persisted view_image metadata keeps the prompt and the vision answer", () => {
+  expect(
+    projectThreadRunToolMetadata({
+      name: "mcp__eco_image_view__view_image",
+      status: "completed",
+      imageView: { path: "/tmp/shot.png", prompt: "找报错" },
+      outputPreview: "第 3 行的类型不匹配。",
+    }),
+  ).toEqual({
+    name: "mcp__eco_image_view__view_image",
+    status: "completed",
+    imageView: { path: "/tmp/shot.png", prompt: "找报错" },
+    // The answer is the only place the caller's prompt is answered, so it has to survive
+    // the same projection that deliberately drops every other tool's output.
+    outputPreview: "第 3 行的类型不匹配。",
+  });
+});
+
+test("a view_image with no recorded prompt keeps only the answer", () => {
+  expect(
+    projectThreadRunToolMetadata({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/shot.png" },
+      outputPreview: "第 3 行的类型不匹配。",
+    }),
+  ).toEqual({
+    name: "mcp__eco_image_view__view_image",
+    imageView: { path: "/tmp/shot.png" },
+    outputPreview: "第 3 行的类型不匹配。",
+  });
+});
+
+test("opening the view_image output gate does not open it for every other tool", () => {
+  for (const name of ["Edit", "Read", "Grep", "mcp__eco_agent_browser__agent_browser_open"]) {
+    expect(projectThreadRunToolMetadata({ name, outputPreview: "noise" })).toEqual({ name });
+  }
 });
 
 test("trimProjectionForFeed keeps imageView path for Eco view_image on a live running turn", () => {

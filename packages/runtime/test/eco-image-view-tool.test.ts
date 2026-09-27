@@ -72,6 +72,28 @@ test("readImageViewPathFromToolArgs unwraps PI mcp proxy view_image calls", () =
   });
 });
 
+test("PI mcp proxy view_image calls keep the caller's prompt, not just the path", () => {
+  // 真实 PI 会话里这一句（server 字段缺省，tool 写成 <server>_<tool>）：
+  //   mcp({ tool: "eco_image_view_view_image", args: { path, prompt } })
+  expect(
+    resolveEcoImageViewToolCall("mcp", {
+      tool: "eco_image_view_view_image",
+      args: { path: "/tmp/left_circle.png", prompt: "这幅图是奖章正面。请回答：(1) 人像特征" },
+    }),
+  ).toEqual({
+    name: ECO_IMAGE_VIEW_FULL_TOOL,
+    path: "/tmp/left_circle.png",
+    prompt: "这幅图是奖章正面。请回答：(1) 人像特征",
+  });
+  // 旧字段 question 仍按同一个提示词读取。
+  expect(
+    resolveEcoImageViewToolCall("mcp", {
+      tool: "eco_image_view_view_image",
+      args: { path: "/tmp/left_circle.png", question: "找报错" },
+    }),
+  ).toEqual({ name: ECO_IMAGE_VIEW_FULL_TOOL, path: "/tmp/left_circle.png", prompt: "找报错" });
+});
+
 test("resolvePiMcpProxyDiscoveryCall labels PI mcp search/action probes", () => {
   expect(resolvePiMcpProxyDiscoveryCall("mcp", { search: "view image" })).toEqual({ kind: "search" });
   expect(resolvePiMcpProxyDiscoveryCall("mcp", { action: "list_tools" })).toEqual({ kind: "search" });

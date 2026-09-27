@@ -464,6 +464,7 @@ export type {
   ThreadRunEventScope,
   ThreadRunEventStreamState,
   ThreadRunEventType,
+  ThreadRunImageViewMetadata,
   ThreadRunToolMetadata,
   ThreadRunWebSearchMetadata,
 } from "./thread-run-events";

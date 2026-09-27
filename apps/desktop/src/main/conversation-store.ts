@@ -46,7 +46,11 @@ import {
   attachSpanTimingToLedgerEventViews,
 } from "../shared/ledger-event-timing";
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
-import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
+import {
+  mergeThreadRunImageViewMetadata,
+  parseThreadRunImageViewMetadata,
+} from "../shared/thread-run-events";
+import { keepsOutputPreview, projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
 import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import { parseThreadRunGrepToolTarget, parseThreadRunReadToolTarget } from "../shared/tool-target.js";
 import { upgradeLegacyCursorCore } from "../shared/upgrade-legacy-cursor-core";
@@ -9636,7 +9640,7 @@ function migratePersistedToolMetadata(metadata: Record<string, unknown>): Record
       ? rawTool.outputPreview
       : undefined;
   const preview =
-    name === "Bash" && (existingPreview || legacyOutput)
+    keepsOutputPreview(name) && (existingPreview || legacyOutput)
       ? createToolOutputPreview(existingPreview ?? legacyOutput ?? "")
       : undefined;
   const migratedRawTool: Record<string, unknown> = {
@@ -9781,10 +9785,12 @@ function mergeThreadRunToolMetadata(
     return existing;
   }
   const description = incoming.description ?? existing.description;
+  const imageView = mergeThreadRunImageViewMetadata(existing.imageView, incoming.imageView);
   return {
     ...existing,
     ...incoming,
     ...(description !== undefined ? { description } : {}),
+    ...(imageView && { imageView }),
     ...(incoming.readTarget
       ? { readTarget: incoming.readTarget }
       : existing.readTarget
@@ -9794,11 +9800,6 @@ function mergeThreadRunToolMetadata(
       ? { grepTarget: incoming.grepTarget }
       : existing.grepTarget
         ? { grepTarget: existing.grepTarget }
-        : {}),
-    ...(incoming.imageView
-      ? { imageView: incoming.imageView }
-      : existing.imageView
-        ? { imageView: existing.imageView }
         : {}),
     ...(incoming.imageDisplay
       ? { imageDisplay: incoming.imageDisplay }
@@ -10018,14 +10019,6 @@ function parseThreadRunWebSearchMetadata(value: unknown): ThreadRunToolMetadata[
     ...(actionType && { actionType }),
     ...(mode && { mode }),
   };
-}
-
-function parseThreadRunImageViewMetadata(value: unknown): ThreadRunToolMetadata["imageView"] | undefined {
-  if (!isJsonRecord(value)) {
-    return undefined;
-  }
-  const path = typeof value.path === "string" ? value.path.trim() : "";
-  return path ? { path } : undefined;
 }
 
 function parseThreadRunMcpDiscoveryMetadata(

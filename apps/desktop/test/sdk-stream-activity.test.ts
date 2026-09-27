@@ -1889,3 +1889,153 @@ test("unkeyed narrative streams are isolated per runAttemptId in the durable tai
     expect.arrayContaining(["第一轮", "第二轮"]),
   );
 });
+
+test("an image-view tool_result carries the prompt and the vision answer", () => {
+  // Claude Code / PI deliver tool results as `tool_result` payloads whose `input` is the
+  // original tool_use input, so the caller's prompt rides along with the answer.
+  const bridge = new SdkStreamActivityBridge();
+  const tools: Array<Record<string, unknown>> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    _message: string,
+    _role: string,
+    _stream: boolean,
+    _agentId?: string,
+    extras?: { tool?: Record<string, unknown> },
+  ) => {
+    if (extras?.tool) tools.push(extras.tool);
+  };
+
+  bridge.handleEvent(
+    "thr_sdk_view_image",
+    {
+      type: "tool.completed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "mcp__eco_image_view__view_image",
+        tool_use_id: "toolu_view_1",
+        input: { path: "/tmp/shot.png", prompt: "找报错" },
+        output: "第 3 行的类型不匹配。",
+      },
+    },
+    emit,
+    undefined,
+    undefined,
+  );
+
+  expect(tools[0]).toEqual(
+    expect.objectContaining({
+      imageView: { path: "/tmp/shot.png", prompt: "找报错" },
+      outputPreview: "第 3 行的类型不匹配。",
+    }),
+  );
+});
+
+test("a PI mcp-proxy view_image keeps the prompt on both the start and the result event", () => {
+  // PI 不走 `mcp__eco_image_view__view_image` 这个名字，而是 `mcp({ tool: "eco_image_view_view_image",
+  // args: { path, prompt } })`。tool_name 到这里还是 "mcp"，只有解开代理层才拿得到提示词——
+  // 这正是三个 agent 里提示词全都不见的那条路。
+  const bridge = new SdkStreamActivityBridge();
+  const tools: Array<Record<string, unknown>> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    _message: string,
+    _role: string,
+    _stream: boolean,
+    _agentId?: string,
+    extras?: { tool?: Record<string, unknown> },
+  ) => {
+    if (extras?.tool) tools.push(extras.tool);
+  };
+  const piInput = {
+    tool: "eco_image_view_view_image",
+    args: { path: "/tmp/left_circle.png", prompt: "这幅图是奖章正面。请回答：(1) 人像特征" },
+  };
+
+  bridge.handleEvent(
+    "thr_pi_view_image",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: { type: "tool_use", tool_name: "mcp", tool_use_id: "call_pi_1", input: piInput },
+    },
+    emit,
+    undefined,
+    undefined,
+  );
+  bridge.handleEvent(
+    "thr_pi_view_image",
+    {
+      type: "tool.completed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "mcp",
+        tool_use_id: "call_pi_1",
+        input: piInput,
+        output: "孙宇晨奖。",
+      },
+    },
+    emit,
+    undefined,
+    undefined,
+  );
+
+  expect(tools[0]).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/left_circle.png", prompt: "这幅图是奖章正面。请回答：(1) 人像特征" },
+    }),
+  );
+  expect(tools[1]).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/left_circle.png", prompt: "这幅图是奖章正面。请回答：(1) 人像特征" },
+      outputPreview: "孙宇晨奖。",
+    }),
+  );
+});
+
+test("an image-view tool_result without a recorded prompt still keeps the answer", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const tools: Array<Record<string, unknown>> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    _message: string,
+    _role: string,
+    _stream: boolean,
+    _agentId?: string,
+    extras?: { tool?: Record<string, unknown> },
+  ) => {
+    if (extras?.tool) tools.push(extras.tool);
+  };
+
+  bridge.handleEvent(
+    "thr_sdk_view_image_no_prompt",
+    {
+      type: "tool.completed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "mcp__eco_image_view__view_image",
+        tool_use_id: "toolu_view_2",
+        input: { path: "/tmp/shot.png" },
+        output: "第 3 行的类型不匹配。",
+      },
+    },
+    emit,
+    undefined,
+    undefined,
+  );
+
+  expect(tools[0]).toEqual(
+    expect.objectContaining({
+      imageView: { path: "/tmp/shot.png" },
+      outputPreview: "第 3 行的类型不匹配。",
+    }),
+  );
+});

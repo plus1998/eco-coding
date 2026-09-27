@@ -51,6 +51,7 @@ import {
   isThreadFollowUpActivityMessage,
   isThreadFollowUpLiveEvent,
 } from "../shared/thread-follow-up-events";
+import { parseThreadRunImageViewMetadata } from "../shared/thread-run-events";
 import {
   formatThreadRunToolDetailLabel,
   parseThreadRunGrepToolTarget,
@@ -2977,7 +2978,10 @@ function buildProjectionToolActionBlock(
     translateActionKind,
   );
   const imagePath = metadataTool?.imageView?.path.trim();
-  const imageView = imagePath ? { path: imagePath, eventId: item.id } : undefined;
+  const imageViewPrompt = metadataTool?.imageView?.prompt?.trim();
+  const imageView = imagePath
+    ? { path: imagePath, eventId: item.id, ...(imageViewPrompt ? { prompt: imageViewPrompt } : {}) }
+    : undefined;
   const artifactId = metadataTool?.imageDisplay?.artifactId.trim();
   const imageDisplay = artifactId
     ? {
@@ -3577,13 +3581,7 @@ export function readProjectionToolMetadata(
   const fileChange = parseThreadRunFileChangeMetadata(record.fileChange);
   const readTarget = parseThreadRunReadToolTarget(record.readTarget);
   const grepTarget = parseThreadRunGrepToolTarget(record.grepTarget);
-  const rawImageView = record.imageView;
-  const imageViewPath =
-    rawImageView && typeof rawImageView === "object"
-      ? (rawImageView as Record<string, unknown>).path
-      : undefined;
-  const imageView =
-    typeof imageViewPath === "string" && imageViewPath.trim() ? { path: imageViewPath.trim() } : undefined;
+  const imageView = parseThreadRunImageViewMetadata(record.imageView);
   const rawImageDisplay = record.imageDisplay;
   const imageDisplayArtifactId =
     rawImageDisplay && typeof rawImageDisplay === "object"

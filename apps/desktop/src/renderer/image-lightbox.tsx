@@ -1,5 +1,5 @@
 import { FolderOpen, Minus, Plus, RotateCcw, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { i18n } from "./i18n";
 import {
@@ -17,6 +17,7 @@ export function ImageLightbox({
   dialogLabel,
   onOpenFolder,
   onClose,
+  sidePanel,
 }: {
   src: string;
   alt: string;
@@ -25,6 +26,11 @@ export function ImageLightbox({
   /** 可选：图片对应本地文件时提供，用于在文件管理器中显示所在文件夹。 */
   onOpenFolder?: () => void;
   onClose: () => void;
+  /**
+   * 可选：图片右侧的补充内容位。查看图像这类工具会把它的提示词与返回内容放进
+   * 这个 slot，于是预览变成左图右文；不传时布局与只有图片时完全一致。
+   */
+  sidePanel?: ReactNode;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -158,10 +164,13 @@ export function ImageLightbox({
             </button>
           </div>
         </div>
-        <div ref={stageRef} className="run-log-image-view-lightbox-stage lightbox-zoom-stage">
-          <div ref={canvasRef} className="lightbox-zoom-canvas">
-            <img src={src} alt={alt} draggable={false} />
+        <div className="run-log-image-view-lightbox-body">
+          <div ref={stageRef} className="run-log-image-view-lightbox-stage lightbox-zoom-stage">
+            <div ref={canvasRef} className="lightbox-zoom-canvas">
+              <img src={src} alt={alt} draggable={false} />
+            </div>
           </div>
+          {sidePanel ? <aside className="run-log-image-view-lightbox-side">{sidePanel}</aside> : null}
         </div>
       </div>
     </div>,
