@@ -173,6 +173,7 @@ import {
   shouldEagerMountThinkingBody,
   THINKING_COLLAPSE_ANIM_MS,
 } from "./thinking-block-expand";
+import { resolveThinkingCarouselIndex, THINKING_CAROUSEL_STAGE_MS } from "./thinking-carousel";
 import {
   readStoredThinkingDisplayPreferences,
   type ThinkingDisplayMode,
@@ -4548,23 +4549,34 @@ function ScrollingThinkingText({ text }: { text: string }) {
   const lines = splitThinkingCarouselLines(text);
   const linesKey = lines.join("\n");
   const [activeLine, setActiveLine] = useState(0);
+  /** The stage list playback came from, so a grown tip can carry its position over. */
+  const playedLinesRef = useRef<readonly string[] | null>(null);
 
   useEffect(() => {
-    setActiveLine(0);
-    if (lines.length <= 1) {
+    const previousLines = playedLinesRef.current;
+    playedLinesRef.current = lines;
+    // The tip streams in, so most updates are this same tip getting longer — the stage on
+    // screen keeps its turn through those. Only a different tip starts a fresh pass.
+    const nextLine = resolveThinkingCarouselIndex(previousLines, lines, activeLine);
+    if (nextLine !== activeLine) {
+      setActiveLine(nextLine);
+    }
+  }, [linesKey, activeLine]);
+
+  const lastIndex = lines.length - 1;
+  useEffect(() => {
+    // Played through the stages there are: hold on the last one until the tip grows again.
+    if (activeLine >= lastIndex) {
       return;
     }
-    let index = 0;
-    const lastIndex = lines.length - 1;
-    const timer = setInterval(() => {
-      index += 1;
-      setActiveLine(index);
-      if (index >= lastIndex) {
-        clearInterval(timer);
-      }
-    }, 2600);
-    return () => clearInterval(timer);
-  }, [linesKey]);
+    // Deliberately not keyed on the text: a stage keeping its turn while the agent writes
+    // more of the same stage is the point. Restarting this clock per token is what left the
+    // tip parked on its first stage until the run ended.
+    const timer = window.setTimeout(() => {
+      setActiveLine((value) => Math.min(value + 1, lastIndex));
+    }, THINKING_CAROUSEL_STAGE_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeLine, lastIndex]);
 
   const activeIndex = lines.length > 0 ? Math.min(activeLine, lines.length - 1) : 0;
   const activeText = lines[activeIndex] ?? i18n.t("activity.thinking");
