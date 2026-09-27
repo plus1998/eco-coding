@@ -26168,6 +26168,23 @@ html:not([data-platform="darwin"])
   box-sizing: border-box;
 }
 
+/*
+ * docked (feed-panel only): reserve panel width + its right inset + gap so cards
+ * sit *beside* the feed instead of covering it. Class is set only when
+ * `workspacePanelLayoutForMode()` returns "docked" — full / feed-nav / feed-only
+ * keep floating cards and equal inline insets.
+ */
+.codex-main:not(.codex-main-landing)
+  .codex-main-scroll.is-workspace-cards-docked
+  .codex-main-scroll-body {
+  padding-right: calc(
+    var(--workspace-cards-panel-width, 300px) +
+    var(--workspace-cards-panel-right) +
+    var(--workspace-cards-panel-gap, 18px)
+  );
+  box-sizing: border-box;
+}
+
 .codex-main-landing .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
   padding-right: var(--content-inline-start);
   box-sizing: border-box;
