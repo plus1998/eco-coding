@@ -36,6 +36,27 @@ interface SdkSessionMessage {
   session_id?: string;
   message?: unknown;
   parent_tool_use_id?: string | null;
+  /** Present in the transcript JSONL; not surfaced by `getSessionMessages` today. */
+  isCompactSummary?: boolean;
+  isVisibleInTranscriptOnly?: boolean;
+}
+
+/**
+ * Claude Code's in-session auto-compaction writes its summary back into the
+ * transcript as a synthetic user turn. The CLI marks it (`isCompactSummary`,
+ * `isVisibleInTranscriptOnly`) but the Agent SDK does not surface those fields,
+ * so the summary's own opening sentence is the only marker available. The entry
+ * sits at the root of the compacted transcript — the head of the session's user
+ * lines, exactly where the pre-compaction prompts used to be — so treating it as
+ * a prompt shifts every prompt↔session pairing by one.
+ */
+const COMPACT_SUMMARY_SENTINEL = "This session is being continued from a previous conversation";
+
+export function isSdkCompactSummaryMessage(message: SdkSessionMessage): boolean {
+  if (message.isCompactSummary === true || message.isVisibleInTranscriptOnly === true) {
+    return true;
+  }
+  return extractSdkMessageText(message.message).startsWith(COMPACT_SUMMARY_SENTINEL);
 }
 
 export function sdkActivityLineId(messageUuid: string): string {
@@ -118,6 +139,11 @@ export function sdkSessionMessageToActivityLine(
 ): ThreadActivityLine | undefined {
   const uuid = message.uuid?.trim();
   if (!uuid || (message.type !== "user" && message.type !== "assistant")) {
+    return undefined;
+  }
+  if (message.type === "user" && isSdkCompactSummaryMessage(message)) {
+    // Provider-authored transcript entry, not something the user said: it must
+    // never reach activity listings or the prompt↔session pairing.
     return undefined;
   }
   const text = extractSdkMessageText(message.message);
