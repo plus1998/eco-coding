@@ -9,6 +9,57 @@ import type { ResponsesStreamEvent } from "../src/types.js";
 
 /** Ported from sub2api anthropic_responses_test.go (streaming unit tests) */
 describe("responses → anthropic stream events (sub2api parity)", () => {
+  test("duplicate upstream call IDs become distinct Anthropic tool uses", () => {
+    const state = newResponsesEventToAnthropicState();
+    const events = [
+      ...responsesEventToAnthropicEvents({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_same", name: "Read", status: "in_progress" },
+      }, state),
+      ...responsesEventToAnthropicEvents({
+        type: "response.output_item.added",
+        output_index: 1,
+        item: { type: "function_call", id: "fc_2", call_id: "call_same", name: "Read", status: "in_progress" },
+      }, state),
+      ...responsesEventToAnthropicEvents({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_same", name: "Read", arguments: "{}", status: "completed" },
+      }, state),
+      ...responsesEventToAnthropicEvents({
+        type: "response.output_item.done",
+        output_index: 1,
+        item: { type: "function_call", id: "fc_2", call_id: "call_same", name: "Read", arguments: "{}", status: "completed" },
+      }, state),
+    ];
+    const ids = events
+      .filter((event) => event.type === "content_block_start" && event.content_block?.type === "tool_use")
+      .map((event) => event.content_block?.id);
+    expect(ids).toEqual(["call_same", "call_same__eco_2"]);
+  });
+
+  test("terminal response completes queued parallel calls when item done events are absent", () => {
+    const state = newResponsesEventToAnthropicState();
+    const first = { type: "function_call" as const, id: "fc_1", call_id: "call_same", name: "Read", arguments: '{"file_path":"a"}' };
+    const second = { type: "function_call" as const, id: "fc_2", call_id: "call_same", name: "Read", arguments: '{"file_path":"b"}' };
+    const events = [
+      ...responsesEventToAnthropicEvents({
+        type: "response.output_item.added", output_index: 0, item: first,
+      }, state),
+      ...responsesEventToAnthropicEvents({
+        type: "response.output_item.added", output_index: 1, item: second,
+      }, state),
+      ...responsesEventToAnthropicEvents({
+        type: "response.completed",
+        response: { id: "resp", object: "response", model: "model", status: "completed", output: [first, second] },
+      }, state),
+    ];
+    expect(events.filter((event) => event.type === "content_block_start" && event.content_block?.type === "tool_use")
+      .map((event) => event.content_block?.id)).toEqual(["call_same", "call_same__eco_2"]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
   test("text delta emits content_block_start with empty text field", () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
