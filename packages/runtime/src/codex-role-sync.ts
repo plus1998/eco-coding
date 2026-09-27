@@ -73,6 +73,7 @@ export interface CodexThreadConfigOverrides extends Record<string, unknown> {
     multi_agent: boolean;
     hooks: boolean;
     multi_agent_v2?: boolean;
+    view_image?: boolean;
   };
   agents?: Record<string, unknown>;
   skills?: {
@@ -89,6 +90,19 @@ export function withCodexSkillConfig(
   return {
     ...config,
     skills: { config: entries.map((entry) => ({ path: entry.path, enabled: entry.enabled })) },
+  };
+}
+
+export function withCodexNativeImageView(
+  config: CodexThreadConfigOverrides,
+  providerId: string,
+): CodexThreadConfigOverrides {
+  if (!config.features) {
+    throw new Error("Codex thread features are required to scope native image viewing.");
+  }
+  return {
+    ...config,
+    features: { ...config.features, view_image: providerId.trim() === "openai" },
   };
 }
 
@@ -285,10 +299,13 @@ export async function syncOrchestrationAgentsToCodexRoles(
   const roleThreadConfigs = Object.fromEntries(
     drafts.map((draft) => [
       draft.roleId,
-      {
-        ...commonThreadConfig,
-        mcp_servers: cloneMcpVisibility(draft.mcpVisibility),
-      } satisfies CodexThreadConfigOverrides,
+      withCodexNativeImageView(
+        {
+          ...commonThreadConfig,
+          mcp_servers: cloneMcpVisibility(draft.mcpVisibility),
+        },
+        draft.providerId,
+      ),
     ]),
   );
 
@@ -611,6 +628,7 @@ export function buildCodexRoleToml(input: {
   if (input.reasoningEffort) {
     lines.push(`model_reasoning_effort = ${tomlString(input.reasoningEffort)}`);
   }
+  lines.push("", "[features]", `view_image = ${isBuiltInOpenAi ? "true" : "false"}`);
   if (permission.sandbox_workspace_write) {
     lines.push(
       "",

@@ -17,6 +17,7 @@ import {
   mapEcoThinkingEffortToCodexReasoningEffort,
   sanitizeCodexRoleId,
   syncOrchestrationAgentsToCodexRoles,
+  withCodexNativeImageView,
   withCodexSkillConfig,
 } from "../src/codex-role-sync";
 
@@ -41,6 +42,22 @@ test("Codex thread Skill visibility is path-scoped", () => {
       { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
     ],
   });
+});
+
+test("native image viewing follows the selected provider without changing other thread features", () => {
+  const config = {
+    features: { multi_agent: true, hooks: true, multi_agent_v2: false },
+    mcp_servers: { eco_image_view: { enabled: true } },
+  };
+  expect(withCodexNativeImageView(config, "custom")).toEqual({
+    ...config,
+    features: { ...config.features, view_image: false },
+  });
+  expect(withCodexNativeImageView(withCodexNativeImageView(config, "custom"), "openai")).toEqual({
+    ...config,
+    features: { ...config.features, view_image: true },
+  });
+  expect(config.features).not.toHaveProperty("view_image");
 });
 
 afterEach(async () => {
@@ -81,6 +98,7 @@ test("syncOrchestrationAgentsToCodexRoles writes role toml for explore and enabl
   expect(exploreToml).toContain('approval_policy = "on-request"');
   expect(exploreToml).toContain('model = "eco_main__explore-model"');
   expect(exploreToml).toContain('model_provider = "eco_main"');
+  expect(exploreToml).toContain("[features]\nview_image = false");
   const researcherToml = await fs.readFile(path.join(result.agentsDir, "researcher.toml"), "utf8");
   expect(researcherToml).toContain('name = "researcher"');
   expect(researcherToml).toContain("developer_instructions = ");
@@ -89,6 +107,7 @@ test("syncOrchestrationAgentsToCodexRoles writes role toml for explore and enabl
   expect(researcherToml).toContain('web_search = "live"');
   expect(researcherToml).toContain('model = "eco_main__research-model"');
   expect(researcherToml).toContain('model_provider = "eco_main"');
+  expect(result.roleThreadConfigs.researcher?.features?.view_image).toBe(false);
   const coderToml = await fs.readFile(path.join(result.agentsDir, "coder.toml"), "utf8");
   expect(coderToml).toContain('model_reasoning_effort = "high"');
   await expect(fs.stat(path.join(result.agentsDir, "architect.toml"))).rejects.toThrow();
@@ -243,6 +262,27 @@ test("multi-agent config keeps roles thread-scoped and heterogeneous models immu
   expect(exploreToml).toContain('model_provider = "eco_fast"');
   expect(coderToml).toContain('model = "eco_strong__coder-strong"');
   expect(coderToml).toContain('model_provider = "eco_strong"');
+  expect(coderToml).toContain("[features]\nview_image = false");
+});
+
+test("official OpenAI subagents retain native image viewing beside custom provider roles", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const result = await syncOrchestrationAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    orchestration: buildOrchestration({
+      agents: [exploreAgent({ providerId: "openai", modelId: "gpt-5" }), firstOrchestrationAgent()],
+    }),
+    templates: [researchTemplate],
+  });
+
+  const officialToml = await fs.readFile(path.join(result.agentsDir, "explore.toml"), "utf8");
+  const customToml = await fs.readFile(path.join(result.agentsDir, "researcher.toml"), "utf8");
+  expect(officialToml).toContain('model = "gpt-5"');
+  expect(officialToml).not.toContain("model_provider =");
+  expect(officialToml).toContain("[features]\nview_image = true");
+  expect(customToml).toContain("[features]\nview_image = false");
+  expect(result.roleThreadConfigs.explore?.features?.view_image).toBe(true);
+  expect(result.roleThreadConfigs.researcher?.features?.view_image).toBe(false);
 });
 
 test("role TOML carries an explicit apiCompat override in the V1 gateway alias", async () => {

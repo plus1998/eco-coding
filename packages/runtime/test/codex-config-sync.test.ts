@@ -66,6 +66,7 @@ test("buildCodexConfigToml maps enabled providers to eco_* model_providers", () 
   expect(toml).toContain("[features]");
   expect(toml).toContain("remote_plugin = false");
   expect(toml).toContain("plugins = false");
+  expect(toml).not.toContain("view_image = false");
   expect(toml).toContain("[tools.update_plan]");
   expect(toml).toContain("enabled = true");
   expect(toml).not.toContain("multi_agent = true");
@@ -87,6 +88,28 @@ test("buildCodexConfigToml leaves the built-in OpenAI provider on Codex's offici
   expect(toml).not.toContain("model_provider =");
   expect(toml).not.toContain("[model_providers.eco_openai]");
   expect(toml).not.toContain("http://127.0.0.1:18765/v1");
+  expect(toml).not.toContain("view_image = false");
+});
+
+test("buildCodexConfigToml keeps native view_image thread-scoped and leaves Eco's MCP viewer available", () => {
+  const toml = buildCodexConfigToml({
+    ecoDataDir: "/data",
+    providers: [{ id: "local", name: "Local", enabled: true }],
+    mcpServers: [
+      {
+        name: "eco_image_view",
+        transport: "http",
+        url: "http://127.0.0.1:12345/mcp",
+        enabledTools: ["view_image"],
+      },
+    ],
+  });
+
+  expect(toml).toContain("[features]\nremote_plugin = false\nplugins = false");
+  expect(toml).not.toContain("view_image = false");
+  expect(toml).toContain("[mcp_servers.eco_image_view]");
+  expect(toml).toContain('enabled_tools = ["view_image"]');
+  expect(toml).not.toContain("[tools.view_image]");
 });
 
 test("syncCodexConfigFromEcoProviders does not report built-in OpenAI as a Gateway provider", async () => {
@@ -329,6 +352,7 @@ test("syncCodexConfigFromEcoProviders writes config.toml under CODEX_HOME", asyn
 
   const written = await fs.readFile(result.configPath, "utf8");
   expect(written).toContain("[model_providers.eco_anthropic-main]");
+  expect(written).not.toContain("view_image = false");
   expect(written).not.toContain("[mcp_servers.");
   expect(codexConfigContainsUpstreamSecret(written, [secret])).toBeUndefined();
 });

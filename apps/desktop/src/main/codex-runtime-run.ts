@@ -52,6 +52,7 @@ import {
   syncEcoCodexModelCatalog,
   syncOrchestrationAgentsToCodexRoles,
   transferAppliedCodexThreadConfig,
+  withCodexNativeImageView,
   withCodexSkillConfig,
 } from "@eco/runtime";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
@@ -230,6 +231,8 @@ export interface PrepareCodexRuntimeInput {
   subagentAvailability?: Partial<Record<string, boolean>>;
   /** Provider ids required by the current thread routes; incomplete providers fail with a Settings hint. */
   requiredProviderIds?: readonly string[];
+  /** Main thread's selected provider (the built-in `openai` route retains native image viewing). */
+  mainProviderId?: string;
   /**
    * Global MCP pool for `config.toml` `[mcp_servers.*]` (settings-enabled servers).
    * Thread selection is applied via per-server `enabledTools` (warm process, hidden tools).
@@ -1042,6 +1045,8 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   const threadConfigWithWebSearch = input.webSearchOverride
     ? { ...baseThreadConfig, web_search: input.webSearchOverride }
     : baseThreadConfig;
+  const mainProviderId =
+    input.mainProviderId ?? input.agentRegistry?.orchestration.mainAgent.modelRef.providerId;
   const prepared: PreparedCodexRuntime = {
     ...(orchestrationAppend ? { orchestrationAppend } : {}),
     ...(orchestrationToolPolicy ? { orchestrationToolPolicy } : {}),
@@ -1049,7 +1054,12 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     roleToolPolicies: Object.fromEntries(
       (roleSync?.roles ?? []).map((role) => [role.roleId, role.toolPolicy]),
     ),
-    threadConfig: withCodexSkillConfig(threadConfigWithWebSearch, input.skillConfig ?? []),
+    threadConfig: withCodexSkillConfig(
+      mainProviderId
+        ? withCodexNativeImageView(threadConfigWithWebSearch, mainProviderId)
+        : threadConfigWithWebSearch,
+      input.skillConfig ?? [],
+    ),
     roleThreadConfigs: Object.fromEntries(
       Object.entries(roleSync?.roleThreadConfigs ?? {}).map(([role, config]) => [
         role,
@@ -1635,6 +1645,8 @@ export async function runThreadRequestWithRuntimeProxy(
       });
     }
     const systemPromptAppend = input.resolveSystemPromptAppend?.()?.trim();
+    const plannerRoute = freshConfig.routes.find((route) => route.role === "planner");
+    const selectedRoute = plannerRoute ?? freshConfig.routes[0];
     const webSearchOverride = input.resolveWebSearchOverride?.();
     const prepared = await prepareCodexRuntime({
       ...(input.signal ? { signal: input.signal } : {}),
@@ -1647,6 +1659,7 @@ export async function runThreadRequestWithRuntimeProxy(
       ...(input.enableSubagents === false ? { enableSubagents: false } : {}),
       ...(subagentAvailability ? { subagentAvailability } : {}),
       requiredProviderIds,
+      ...(selectedRoute ? { mainProviderId: selectedRoute.provider.id } : {}),
       mcpServers,
       threadEnabledMcpServerNames,
       skillConfig,
