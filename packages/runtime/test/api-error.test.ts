@@ -90,6 +90,17 @@ test("parseSdkApiErrorAttribute maps leading 529 status", () => {
   expect(parsed?.message).toBe("上游模型过载，请稍后重试或切换 Provider。");
 });
 
+test("parseSdkApiErrorAttribute keeps text that surrounds a JSON blob without error fields", () => {
+  // Internal integrity errors embed JSON in the middle of the sentence. Only the
+  // text after the first blob used to survive, so the Feed showed a fragment.
+  const conflict =
+    'Message message_user_c8be0859 history target changed (existing={"activityLineId":"user:c3a73dc6","userMessageId":"c3a73dc6"}, attempted={"activityLineId":"sdk:efa57c6c","userMessageId":"efa57c6c"}, eventId=provider_history_target_635c1aa2, seq=4941).';
+  const parsed = parseSdkApiErrorAttribute(conflict);
+  expect(parsed?.message).toBe(conflict);
+  expect(parsed?.statusCode).toBeUndefined();
+  expect(parsed?.code).toBeUndefined();
+});
+
 test("apiErrorDedupeKey collapses identical failures", () => {
   const first = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer");
   const second = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer");

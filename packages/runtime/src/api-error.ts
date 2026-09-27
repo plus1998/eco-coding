@@ -98,10 +98,10 @@ function extractLeadingStatusCode(text: string): { statusCode?: number; rest: st
   };
 }
 
-function extractJsonPayload(text: string): { jsonText?: string; remainder: string } {
+function extractJsonPayload(text: string): string | undefined {
   const start = text.indexOf("{");
   if (start < 0) {
-    return { remainder: text.trim() };
+    return undefined;
   }
 
   let depth = 0;
@@ -134,16 +134,12 @@ function extractJsonPayload(text: string): { jsonText?: string; remainder: strin
     if (char === "}") {
       depth -= 1;
       if (depth === 0) {
-        const jsonText = text.slice(start, index + 1);
-        return {
-          jsonText,
-          remainder: text.slice(index + 1).trim(),
-        };
+        return text.slice(start, index + 1);
       }
     }
   }
 
-  return { remainder: text.trim() };
+  return undefined;
 }
 
 /** Parse SDK structured `error` attribute from stream/tool payloads. */
@@ -155,7 +151,7 @@ export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadAp
 
   const withoutSse = stripSseArtifacts(trimmed);
   const { statusCode, rest } = extractLeadingStatusCode(withoutSse);
-  const { jsonText, remainder } = extractJsonPayload(rest);
+  const jsonText = extractJsonPayload(rest);
 
   let code: string | undefined;
   let rawMessage: string | undefined;
@@ -172,8 +168,13 @@ export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadAp
   }
 
   if (!rawMessage) {
-    const cleanedRemainder = stripSseArtifacts(remainder || rest || withoutSse);
-    rawMessage = cleanedRemainder || undefined;
+    // The JSON payload carried no error fields, so this is not an API error
+    // envelope and the text around it is the message. Falling back to the text
+    // *after* the payload (as this used to) showed users mid-sentence fragments
+    // for any internal error that embeds JSON — e.g. the history-target
+    // conflict message, whose own JSON blobs sit in the middle of the sentence.
+    const cleaned = stripSseArtifacts(rest || withoutSse);
+    rawMessage = cleaned || undefined;
   }
 
   if (!statusCode && !code && !rawMessage) {
