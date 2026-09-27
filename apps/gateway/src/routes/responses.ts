@@ -82,8 +82,6 @@ export async function handlePostResponses(
     );
     return toolArgumentCircuitBreakResponse(body.stream === true, failureObservation.count);
   }
-  body = normalizeCodexIntegerToolSchemas(body);
-
   let route: ResolvedProviderRoute;
   try {
     route = resolveProviderRoute(
@@ -104,6 +102,10 @@ export async function handlePostResponses(
     throw error;
   }
   route = enrichResolvedRouteWithCodexTurnIdentity(route, codexTurnMetadata);
+  // Native Responses providers can require reserved tool schemas to match exactly.
+  if (route.upstreamKind !== "responses" && route.upstreamKind !== "gateway-delegated") {
+    body = normalizeCodexIntegerToolSchemas(body);
+  }
 
   if (
     hasCompactionTrigger(body.input) &&

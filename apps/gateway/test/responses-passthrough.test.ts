@@ -22,6 +22,52 @@ const UPSTREAM_SSE = [
 ].join("\n");
 
 describe("responses passthrough", () => {
+  test("preserves reserved tool schemas for a native Responses upstream", async () => {
+    const provider: GatewayProvider = {
+      id: "native",
+      name: "Native Responses mock",
+      upstreamKind: "responses",
+      baseUrl: "https://mock.native.test",
+      apiKey: "test-key",
+      upstreamModelId: "gpt-6-sol",
+      models: ["gpt-6-sol"],
+    };
+    const tools = [
+      {
+        type: "namespace",
+        name: "collaboration",
+        tools: [
+          {
+            type: "function",
+            name: "wait_agent",
+            parameters: {
+              type: "object",
+              properties: { timeout_ms: { type: "number" } },
+            },
+          },
+        ],
+      },
+    ];
+    const handler = createTestGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        const upstreamBody = JSON.parse(String(init?.body)) as { tools: unknown };
+        expect(upstreamBody.tools).toEqual(tools);
+        return Response.json({ id: "resp_native", object: "response", model: "gpt-6-sol", output: [] });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "gpt-6-sol", input: [], tools }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   test("malformed reserved V1 aliases return 400 without reaching upstream", async () => {
     const malformed = "eco_route_v1.bad";
     const provider: GatewayProvider = {
