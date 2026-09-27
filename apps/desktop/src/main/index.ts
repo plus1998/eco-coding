@@ -105,6 +105,10 @@ import {
 } from "electron";
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
 import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-decision";
+import {
+  type ClaudePromptSessionLine,
+  planClaudeUserMessageRebindMappings,
+} from "./claude-user-message-rebind";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import type { PreparedConversationCommandDispatch } from "./conversation-command-dispatch";
 import {
@@ -14050,53 +14054,33 @@ async function rebindClaudeUserMessageRecordsFromSession(
     return [];
   }
   const sessionLines = await listThreadActivityFromSdkSession(threadId);
-  const userLines = sessionLines.filter(
-    (
-      line,
-    ): line is ThreadActivityLine & {
-      rewindTarget: { activityLineId: string; userMessageId?: string };
-    } => line.role === "user" && Boolean(line.rewindTarget?.activityLineId),
-  );
+  const userLines: ClaudePromptSessionLine[] = sessionLines
+    .filter(
+      (
+        line,
+      ): line is ThreadActivityLine & {
+        rewindTarget: { activityLineId: string; userMessageId?: string };
+      } => line.role === "user" && Boolean(line.rewindTarget?.activityLineId),
+    )
+    .map((line) => ({
+      activityLineId: line.rewindTarget.activityLineId,
+      text: line.message,
+      upstreamMessageId: line.rewindTarget.userMessageId?.trim() ?? "",
+    }));
   if (userLines.length === 0) {
     return [];
   }
 
-  const mappings: Array<{ activityLineId: string; upstreamMessageId: string }> = [];
-  if (userLines.length === records.length) {
-    for (let index = 0; index < records.length; index += 1) {
-      const record = records[index];
-      const line = userLines[index];
-      const upstreamMessageId = line?.rewindTarget?.userMessageId?.trim();
-      if (record && upstreamMessageId) {
-        mappings.push({
-          activityLineId: record.activityLineId,
-          upstreamMessageId,
-        });
-      }
-    }
-  } else {
-    let cursor = 0;
-    for (const record of records) {
-      const recordText = record.text.trim();
-      const matchIndex = userLines.findIndex(
-        (line, index) => index >= cursor && line.message.trim() === recordText,
-      );
-      if (matchIndex < 0) {
-        continue;
-      }
-      const line = userLines[matchIndex];
-      const upstreamMessageId = line?.rewindTarget?.userMessageId?.trim();
-      if (upstreamMessageId) {
-        mappings.push({
-          activityLineId: record.activityLineId,
-          upstreamMessageId,
-        });
-      }
-      cursor = matchIndex + 1;
-    }
+  const plan = planClaudeUserMessageRebindMappings(records, userLines);
+  if (plan.rejected.length > 0) {
+    // Rewriting an existing history target fails the V2 guard closed and blocks
+    // the conversation for good, so rebind only ever fills in missing bindings.
+    process.stderr.write(
+      `[eco] claude rebind kept ${plan.rejected.length} existing history target(s) thread=${threadId}: ${JSON.stringify(plan.rejected)}\n`,
+    );
   }
-  conversationStore.rebindClaudeUserMessageRecords(threadId, mappings);
-  return mappings;
+  conversationStore.rebindClaudeUserMessageRecords(threadId, plan.mappings);
+  return plan.mappings;
 }
 
 async function hydrateClaudeUserMessageEditState(threadId: string): Promise<void> {
