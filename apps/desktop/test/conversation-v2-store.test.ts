@@ -832,10 +832,12 @@ describe("conversation storage V2", () => {
 
     expect(finalized.effect.effect).toMatchObject({
       type: "message.finalize",
+      occurredAt: "2026-09-14T00:00:02.000Z",
       attachments: [{ mediaType: "image/jpeg", data: "cHJldmlldw==" }],
     });
     expect(store.getMessage("thread_queued_attachment", "message_1")).toMatchObject({
       status: "final",
+      occurredAt: "2026-09-14T00:00:02.000Z",
       attachments: [{ mediaType: "image/jpeg", data: "cHJldmlldw==" }],
     });
     db.close();

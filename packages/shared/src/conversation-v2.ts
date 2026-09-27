@@ -137,6 +137,8 @@ export type ConversationEffect =
       contentVersion: number;
       versionSeq: number;
       status: Exclude<ConversationMessageStatus, "queued" | "streaming" | "deleted">;
+      /** Wall-clock time when the message became deliverable to the provider. */
+      occurredAt?: string;
       /** Replaces transport-local attachment paths with mobile-readable previews or refs. */
       attachments?: unknown[];
     }

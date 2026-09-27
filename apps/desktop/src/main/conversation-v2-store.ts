@@ -4375,7 +4375,7 @@ export class ConversationV2Store {
     this.db
       .prepare(
         `UPDATE conversation_messages_v2
-         SET body = COALESCE(?, body), version_seq = ?, content_version = ?,
+         SET body = COALESCE(?, body), version_seq = ?, content_version = ?, occurred_at = ?,
              attachments_json = COALESCE(?, attachments_json), status = ?, is_deleted = 0
          WHERE message_id = ?`,
       )
@@ -4383,6 +4383,7 @@ export class ConversationV2Store {
         body ?? null,
         record.seq,
         nextVersion,
+        record.occurredAt,
         attachments === undefined ? null : JSON.stringify(attachments),
         status,
         messageId,
@@ -4393,6 +4394,7 @@ export class ConversationV2Store {
       contentVersion: nextVersion,
       versionSeq: record.seq,
       status,
+      occurredAt: record.occurredAt,
       ...(attachments === undefined ? {} : { attachments }),
     };
   }
@@ -6651,12 +6653,14 @@ function storedEffect(value: unknown, effectSeq?: number): ConversationEffect {
         throw integrity(`Stored message ${messageId} final status is invalid: ${String(status)}`);
       }
       const attachments = optionalStoredArray(object.attachments, "effect.attachments");
+      const occurredAt = storedEffectOptionalText(object.occurredAt, "effect.occurredAt");
       return {
         type,
         messageId,
         contentVersion,
         versionSeq,
         status,
+        ...(occurredAt ? { occurredAt } : {}),
         ...(attachments === undefined ? {} : { attachments }),
       };
     }

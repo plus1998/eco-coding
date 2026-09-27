@@ -11971,9 +11971,9 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
  * Returns a handled row (applied, failed, or concurrently finalized); undefined
  * only when the row is safely queued for the existing drain/interrupt path.
  *
- * After claim, inserts a local user bubble **before** the async inject so Feed
- * order matches Codex-style mid-turn (user turn boundary between prior process
- * and the steered reply) — not after the model finishes answering.
+ * The queue row remains the only visible representation until the provider
+ * confirms the push. The user bubble is written after that confirmation so a
+ * failed or unknown delivery cannot look like a sent prompt.
  */
 async function tryDeliverFollowUpViaMidTurn(
   thread: ThreadSummary,
@@ -12042,15 +12042,6 @@ async function tryDeliverFollowUpViaMidTurn(
     return conversationStore.getThreadFollowUp(thread.id, followUp.id);
   }
 
-  // Insert between turns immediately after reserving the row (before await inject).
-  await recordUserPrompt(
-    thread.id,
-    prompt,
-    followUp.attachments,
-    followUp.conversationMessageId ? [followUp.conversationMessageId] : undefined,
-  );
-  midTurnLocalUserPromptFollowUpIds.add(claimed.id);
-
   const push = isCodex
     ? await codexMidTurnPorts.tryPushUserText(thread.id, prompt, {
         clientUserMessageId: followUp.id,
@@ -12063,12 +12054,16 @@ async function tryDeliverFollowUpViaMidTurn(
 
   if (!push.ok) {
     if (push.deliveryUnknown) {
+      midTurnLocalUserPromptFollowUpIds.delete(claimed.id);
       const failed =
         conversationStore.markThreadFollowUpDeliveryUnknown(
           thread.id,
           claimed.id,
           `${midTurnLabel} delivery is unknown: ${push.reason}`,
         ) ?? claimed;
+      if (followUp.conversationMessageId) {
+        failAcceptedV2Messages(thread.id, [followUp.conversationMessageId], push.reason);
+      }
       emitThreadEvent(
         thread.id,
         "thread.follow_up.delivery_unknown",
@@ -12087,6 +12082,9 @@ async function tryDeliverFollowUpViaMidTurn(
       conversationStore.requeueThreadFollowUpStreamingPush(thread.id, claimed.id, {
         error: push.reason,
       }) ?? claimed;
+    // No local prompt row was written before the push. Let the later queue drain
+    // record/finalize it after a real continuation starts.
+    midTurnLocalUserPromptFollowUpIds.delete(claimed.id);
     emitThreadEvent(
       thread.id,
       "thread.follow_up.push_failed",
@@ -12118,6 +12116,7 @@ async function tryDeliverFollowUpViaMidTurn(
 
   const applied = conversationStore.markThreadFollowUpStreamingPushApplied(thread.id, claimed.id);
   if (!applied) {
+    midTurnLocalUserPromptFollowUpIds.delete(claimed.id);
     const failed =
       conversationStore.markThreadFollowUpDeliveryUnknown(
         thread.id,
@@ -12128,6 +12127,13 @@ async function tryDeliverFollowUpViaMidTurn(
             ? "PI accepted steer, but Eco could not commit the applied state."
             : "Claude accepted streamInput, but Eco could not commit the applied state.",
       ) ?? claimed;
+    if (followUp.conversationMessageId) {
+      failAcceptedV2Messages(
+        thread.id,
+        [followUp.conversationMessageId],
+        `${midTurnLabel} accepted the prompt, but Eco could not commit the applied state.`,
+      );
+    }
     logEcoDiag(
       isCodex
         ? "follow_up.turn_steer_commit_miss"
@@ -12140,6 +12146,24 @@ async function tryDeliverFollowUpViaMidTurn(
       },
     );
     return failed;
+  }
+
+  // The provider has accepted the irreversible push. Only now expose the user
+  // bubble and finalize the durable V2 message, using this confirmation time
+  // instead of the earlier queue-acceptance time for Feed ordering.
+  await recordUserPrompt(
+    thread.id,
+    prompt,
+    followUp.attachments,
+    followUp.conversationMessageId ? [followUp.conversationMessageId] : undefined,
+    // Stamp the durable message in the explicit post-push finalization below,
+    // rather than at the time this local activity row is assembled.
+    { finalizeAcceptedMessages: false },
+  );
+  midTurnLocalUserPromptFollowUpIds.add(claimed.id);
+
+  if (followUp.conversationMessageId) {
+    finalizeAcceptedV2Messages(thread.id, [followUp.conversationMessageId]);
   }
 
   emitThreadEvent(
@@ -16886,6 +16910,7 @@ async function recordUserPrompt(
   prompt: string,
   attachments?: readonly PromptImageAttachment[],
   v2AcceptedMessageIds?: readonly string[],
+  options?: { finalizeAcceptedMessages?: boolean },
 ): Promise<RecordedUserPromptResult> {
   const resolvedForPreview = attachments?.length
     ? await loadPromptAttachmentsForRuntime(attachments)
@@ -16924,9 +16949,11 @@ async function recordUserPrompt(
         ...(previewsByAttachment[index]?.data ? { data: previewsByAttachment[index].data } : {}),
       }))
     : [];
-  // Create/finalize the V2 message before the provider input receipt is appended. The
-  // receipt intentionally references the message identity, so both rows must exist in
-  // the same logical write sequence instead of asking the reducer to resolve a future row.
+  // Create (and, unless deferred, finalize) the V2 message before the provider input
+  // receipt is appended in the normal continuation path. The receipt intentionally
+  // references the message identity, so both rows must exist in the same logical write
+  // sequence instead of asking the reducer to resolve a future row. Mid-turn delivery
+  // defers finalization until the provider push has been confirmed.
   if (activityLineId) {
     const v2MessageId =
       precomputedV2MessageId ??
@@ -16945,21 +16972,23 @@ async function recordUserPrompt(
         ) {
           continue;
         }
-        const v2Key = `desktop:user:accepted:${threadId}:${messageId}:${activityLineId}`;
-        v2.append({
-          conversationId: threadId,
-          eventId: `desktop_v2_user_finalize_${stableHash(v2Key)}`,
-          sourceEventKey: v2Key,
-          type: "message.finalized",
-          occurredAt: new Date().toISOString(),
-          messageId,
-          payload: {
-            status: "final",
-            // Keep the durable content reference and a small mobile preview. Never
-            // persist the desktop-only managed path in the V2 event.
-            ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
-          },
-        });
+        if (options?.finalizeAcceptedMessages !== false) {
+          const v2Key = `desktop:user:accepted:${threadId}:${messageId}:${activityLineId}`;
+          v2.append({
+            conversationId: threadId,
+            eventId: `desktop_v2_user_finalize_${stableHash(v2Key)}`,
+            sourceEventKey: v2Key,
+            type: "message.finalized",
+            occurredAt: new Date().toISOString(),
+            messageId,
+            payload: {
+              status: "final",
+              // Keep the durable content reference and a small mobile preview. Never
+              // persist the desktop-only managed path in the V2 event.
+              ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
+            },
+          });
+        }
         // Accepted messages are created before the runtime knows the final
         // activity-line identity. Bind that identity as a separate immutable
         // V2 event once the line exists; retry/edit gates must not read the
@@ -17038,6 +17067,61 @@ async function recordUserPrompt(
     ...(resolvedLine ? { line: resolvedLine } : {}),
     ...(storedAttachments?.length ? { storedAttachments } : {}),
   };
+}
+
+/** Finalize an accepted V2 prompt only after a mid-turn provider push succeeds. */
+function finalizeAcceptedV2Messages(threadId: string, messageIds: readonly string[]): void {
+  const v2 = conversationStore.conversationV2();
+  for (const rawMessageId of messageIds) {
+    const messageId = rawMessageId.trim();
+    if (!messageId) continue;
+    const existing = v2.getMessage(threadId, messageId);
+    if (
+      !existing ||
+      existing.status === "final" ||
+      existing.status === "failed" ||
+      existing.status === "cancelled"
+    ) {
+      continue;
+    }
+    const v2Key = `desktop:user:accepted-mid-turn:${threadId}:${messageId}`;
+    v2.append({
+      conversationId: threadId,
+      eventId: `desktop_v2_user_finalize_mid_turn_${stableHash(v2Key)}`,
+      sourceEventKey: v2Key,
+      type: "message.finalized",
+      occurredAt: new Date().toISOString(),
+      messageId,
+      payload: { status: "final" },
+    });
+  }
+}
+
+function failAcceptedV2Messages(threadId: string, messageIds: readonly string[], reason: string): void {
+  const v2 = conversationStore.conversationV2();
+  for (const rawMessageId of messageIds) {
+    const messageId = rawMessageId.trim();
+    if (!messageId) continue;
+    const existing = v2.getMessage(threadId, messageId);
+    if (
+      !existing ||
+      existing.status === "final" ||
+      existing.status === "failed" ||
+      existing.status === "cancelled"
+    ) {
+      continue;
+    }
+    const v2Key = `desktop:user:accepted-mid-turn-failed:${threadId}:${messageId}`;
+    v2.append({
+      conversationId: threadId,
+      eventId: `desktop_v2_user_failed_mid_turn_${stableHash(v2Key)}`,
+      sourceEventKey: v2Key,
+      type: "message.finalized",
+      occurredAt: new Date().toISOString(),
+      messageId,
+      payload: { status: "failed", reason },
+    });
+  }
 }
 
 function createPromptImagePreviews(

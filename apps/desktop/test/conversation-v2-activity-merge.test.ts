@@ -42,6 +42,13 @@ function message(messageId: string, createdSeq: number): ConversationMessage {
   };
 }
 
+function queuedMessage(messageId: string, createdSeq: number): ConversationMessage {
+  return {
+    ...message(messageId, createdSeq),
+    status: "queued",
+  };
+}
+
 function legacyUserItem(id: string, sequence: number): ThreadRunProjectionTimelineItem {
   return {
     id,
@@ -132,6 +139,46 @@ test("V2-only runtime write failures retain their Feed error title without a pro
   const html = renderToStaticMarkup(createElement(ActivityLogView, { conversationV2: v2State([errorMessage]) }));
   expect(html).toContain("会话事件记录失败");
   expect(html).toContain("Agent child changed identity or ownership");
+});
+
+test("does not render an accepted queued follow-up as a sent user message", () => {
+  const queued = queuedMessage("queued_follow_up", 3);
+  const merged = mergeConversationV2MessagesIntoProjection(projection([]), v2State([queued]));
+
+  expect(merged.timeline).toEqual([]);
+  expect(
+    renderToStaticMarkup(createElement(ActivityLogView, { conversationV2: v2State([queued]) })),
+  ).not.toContain("same prompt");
+});
+
+test("renders the follow-up after its accepted message is finalized", () => {
+  const finalized = message("queued_follow_up", 3);
+  const merged = mergeConversationV2MessagesIntoProjection(projection([]), v2State([finalized]));
+
+  expect(merged.timeline.map((item) => item.text)).toEqual(["same prompt"]);
+});
+
+test("places a finalized queued follow-up after the turn that accepted it", () => {
+  const firstAnswer: ConversationMessage = {
+    ...message("first_answer", 5),
+    role: "assistant",
+    body: "第一轮回答",
+    versionSeq: 5,
+    occurredAt: "2026-09-14T00:00:05.000Z",
+  };
+  const finalizedQueued: ConversationMessage = {
+    ...queuedMessage("queued_follow_up", 3),
+    status: "final",
+    versionSeq: 8,
+    body: "第二轮问题",
+    occurredAt: "2026-09-14T00:00:08.000Z",
+  };
+  const onlyV2 = buildConversationV2OnlyProjection(
+    v2State([firstAnswer, finalizedQueued]),
+    { createdAt: "2026-09-14T00:00:00.000Z", status: "completed" },
+  );
+
+  expect(onlyV2.timeline.map((item) => item.text)).toEqual(["第一轮回答", "第二轮问题"]);
 });
 
 test("keeps two user prompts that say the same thing as two rows", () => {

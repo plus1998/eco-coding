@@ -638,6 +638,19 @@ function conversationV2MessageToTimelineItem(
   } satisfies ThreadRunProjectionTimelineItem;
 }
 
+/**
+ * `message.accepted` is the durable receipt written when a follow-up is queued.
+ * It must stay out of the conversation feed until the runtime finalizes it;
+ * the queue panel is the only UI that represents this pending user message.
+ */
+function isQueuedConversationV2UserMessage(message: ConversationMessage): boolean {
+  return message.role === "user" && message.status === "queued";
+}
+
+function isDeferredAcceptedConversationV2Message(message: ConversationMessage): boolean {
+  return message.role === "user" && message.versionSeq > message.createdSeq;
+}
+
 function readConversationV2MessageId(item: ThreadRunProjectionTimelineItem): string | undefined {
   const value = item.metadata?.conversationV2MessageId;
   if (typeof value !== "string") {
@@ -822,6 +835,9 @@ export function buildConversationV2OnlyProjection(
   const messagesByAgent = new Map<string, ThreadRunProjectionTimelineItem[]>();
   const mainTimeline: ThreadRunProjectionTimelineItem[] = [];
   for (const message of orderedConversationV2Messages(conversationV2)) {
+    if (isQueuedConversationV2UserMessage(message)) {
+      continue;
+    }
     const ownerAgentId = message.agentId?.trim();
     const agentId = ownerAgentId && cardAgentIds.has(ownerAgentId) ? ownerAgentId : undefined;
     const item = conversationV2MessageToTimelineItem(message, message.occurredAt ?? at);
@@ -1406,7 +1422,9 @@ export function mergeConversationV2MessagesIntoProjection(
   if (!conversationV2 || conversationV2.conversationId !== projection.thread.threadId) {
     return projection;
   }
-  const messages = orderedConversationV2Messages(conversationV2);
+  const messages = orderedConversationV2Messages(conversationV2).filter(
+    (message) => !isQueuedConversationV2UserMessage(message),
+  );
   const v2MessageIds = new Set(conversationV2.messages.keys());
   if (messages.length === 0 && v2MessageIds.size === 0) {
     return projection;
@@ -1443,11 +1461,17 @@ export function mergeConversationV2MessagesIntoProjection(
     runAnchorByRunId,
   );
   for (const message of messages) {
-    const explicitAnchor = legacyV2Anchors.get(message.messageId);
+    // A queued acceptance was recorded before the preceding turn completed.
+    // Do not reuse that early legacy anchor after finalization.
+    const explicitAnchor = isDeferredAcceptedConversationV2Message(message)
+      ? undefined
+      : legacyV2Anchors.get(message.messageId);
     const runPosition = explicitAnchor ? undefined : runMessagePositions?.get(message.messageId);
     const fallbackAnchor =
       explicitAnchor ??
-      (message.role === "user"
+      (isDeferredAcceptedConversationV2Message(message)
+        ? undefined
+        : message.role === "user"
         ? projection.timeline.find(
             (item) =>
               isConversationV2MessageTimelineItem(item) &&
@@ -1519,7 +1543,9 @@ export function mergeConversationV2MessagesIntoProjection(
       continue;
     }
     const anchor = canonicalPositionAnchors.get(message.messageId);
-    const anchorIndex = anchor ? mergedTimeline.findIndex((item) => item.id === anchor.id) : -1;
+    const anchorIndex = anchor
+      ? mergedTimeline.findIndex((item) => item.id === anchor.id)
+      : mergedTimeline.findIndex((item) => item.sequence > canonical.sequence);
     if (anchorIndex >= 0) {
       mergedTimeline.splice(anchorIndex, 0, canonical);
     } else {

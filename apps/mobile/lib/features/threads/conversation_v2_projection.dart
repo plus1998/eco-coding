@@ -40,7 +40,17 @@ ThreadRunProjectionSnapshot buildConversationV2Projection({
       ),
   ];
 
-  final sortedMessages = [...messages]..sort(_compareMessages);
+  // `message.accepted` is the durable receipt for a queued follow-up. Until the
+  // runtime finalizes it, the queue bar is its only visible representation;
+  // rendering it here makes the same prompt look both queued and already sent.
+  final sortedMessages = messages
+      .where(
+        (message) =>
+            !(message.role == 'user' &&
+                message.status == ConversationV2MessageStatus.queued),
+      )
+      .toList()
+    ..sort(_compareMessages);
   final sortedTools = [...tools]
     ..sort((left, right) {
       final time = _compareRowTime(left.occurredAt, right.occurredAt);
@@ -567,6 +577,8 @@ int _compareTimelineItems(
   ThreadRunProjectionTimelineItem left,
   ThreadRunProjectionTimelineItem right,
 ) {
+  final time = _compareRowTime(left.at, right.at);
+  if (time != 0) return time;
   final sequence = left.sequence.compareTo(right.sequence);
   return sequence != 0 ? sequence : left.id.compareTo(right.id);
 }

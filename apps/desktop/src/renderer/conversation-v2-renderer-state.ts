@@ -638,6 +638,7 @@ function applyEffect(
         contentVersion: effect.contentVersion,
         versionSeq: effect.versionSeq,
         status: effect.status,
+        ...(effect.occurredAt !== undefined ? { occurredAt: effect.occurredAt } : {}),
         ...(effect.attachments === undefined ? {} : { attachments: effect.attachments }),
       });
       return;
@@ -1080,6 +1081,7 @@ function validateMessageFinalize(
     effect.contentVersion < 0 ||
     !MESSAGE_FINAL_STATUSES.has(effect.status) ||
     (effect.attachments !== undefined && !Array.isArray(effect.attachments)) ||
+    (effect.occurredAt !== undefined && typeof effect.occurredAt !== "string") ||
     !Number.isSafeInteger(effect.versionSeq) ||
     effect.versionSeq < 1 ||
     effect.versionSeq > seq

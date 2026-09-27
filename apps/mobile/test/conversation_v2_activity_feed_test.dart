@@ -13,6 +13,71 @@ import 'package:eco_mobile/features/threads/conversation_v2_projection.dart';
 void main() {
   mainSessionRunningClocks();
 
+  test('does not render an accepted queued follow-up as a sent user message', () {
+    final projection = buildConversationV2Projection(
+      conversationId: 'thread_queued_follow_up',
+      messages: const [
+        ConversationV2Message(
+          messageId: 'queued_follow_up',
+          conversationId: 'thread_queued_follow_up',
+          turnId: 'turn_queued_follow_up',
+          role: 'user',
+          channel: 'answer',
+          createdSeq: 1,
+          versionSeq: 1,
+          contentVersion: 0,
+          body: 'same prompt',
+          status: ConversationV2MessageStatus.queued,
+          isDeleted: false,
+        ),
+      ],
+      runs: const [],
+      tools: const [],
+    );
+
+    expect(projection.timeline, isEmpty);
+  });
+
+  test('places a finalized queued follow-up after the turn that accepted it', () {
+    final projection = buildConversationV2Projection(
+      conversationId: 'thread_queued_follow_up_order',
+      messages: const [
+        ConversationV2Message(
+          messageId: 'first_answer',
+          conversationId: 'thread_queued_follow_up_order',
+          turnId: 'turn_first',
+          role: 'assistant',
+          channel: 'answer',
+          createdSeq: 5,
+          versionSeq: 5,
+          contentVersion: 0,
+          body: '第一轮回答',
+          status: ConversationV2MessageStatus.finalised,
+          isDeleted: false,
+          occurredAt: '2026-09-14T00:00:05.000Z',
+        ),
+        ConversationV2Message(
+          messageId: 'queued_follow_up',
+          conversationId: 'thread_queued_follow_up_order',
+          turnId: 'turn_queued',
+          role: 'user',
+          channel: 'answer',
+          createdSeq: 3,
+          versionSeq: 8,
+          contentVersion: 0,
+          body: '第二轮问题',
+          status: ConversationV2MessageStatus.finalised,
+          isDeleted: false,
+          occurredAt: '2026-09-14T00:00:08.000Z',
+        ),
+      ],
+      runs: const [],
+      tools: const [],
+    );
+
+    expect(projection.timeline.map((item) => item.text), ['第一轮回答', '第二轮问题']);
+  });
+
   test(
     'V2 keeps retry identity and history revision on failed-request feed rows',
     () {

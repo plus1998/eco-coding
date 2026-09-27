@@ -1211,6 +1211,9 @@ class ConversationV2Cache
           throw StateError('Message final content version regressed.');
         }
         final status = _finalMessageStatus(payload['status']);
+        final occurredAt = payload['occurredAt'] is String
+            ? payload['occurredAt'] as String
+            : null;
         if (message.versionSeq >= effect.seq) return;
         if (_isTerminalMessageStatus(message.status)) return;
         final hasAttachments = payload.containsKey('attachments');
@@ -1227,6 +1230,7 @@ class ConversationV2Cache
             versionSeq: effect.seq,
             contentVersion: contentVersion,
             status: status,
+            occurredAt: occurredAt,
             attachments: attachments,
             clearAttachments: hasAttachments && attachments!.isEmpty,
           ),
