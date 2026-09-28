@@ -88,6 +88,33 @@ function decodeJwtExpiry(token: string): number | undefined {
   }
 }
 
+/**
+ * `auth.json`'s own refresh stamp, used to decide which of the two copies (CODEX_HOME or
+ * the account dir) is newer. Codex writes ISO timestamps with millisecond precision while
+ * Eco-copied content can carry microsecond precision, so both must stay parseable; anything
+ * else yields undefined and is treated as "no comparison basis".
+ */
+export function readAuthRefreshStamp(content: string): number | undefined {
+  try {
+    const parsed = JSON.parse(content) as { last_refresh?: unknown };
+    if (typeof parsed.last_refresh !== "string") return undefined;
+    const ms = Date.parse(parsed.last_refresh);
+    return Number.isNaN(ms) ? undefined : ms;
+  } catch {
+    return undefined;
+  }
+}
+
+/** ChatGPT account id inside `auth.json` — the guard against copying tokens across accounts. */
+export function readAuthAccountId(content: string): string | undefined {
+  try {
+    const tokens = (JSON.parse(content) as { tokens?: { account_id?: unknown } }).tokens;
+    return typeof tokens?.account_id === "string" ? tokens.account_id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function proxyEndpointForLog(proxyUrl: string): string {
   try {
     const parsed = new URL(proxyUrl);
@@ -270,6 +297,13 @@ export class OpenAIAccountService {
       await fs.writeFile(this.accountsPath, "[]", "utf-8");
     }
     this.startAuthWatcher();
+    // Settle any drift left by the previous run, in whichever direction it points: a login
+    // that finished just before the last run quit, a crash mid-login, a token refresh whose
+    // write-back raced the shutdown, or a build that predates login sync. Without this the
+    // two copies can stay apart forever, and whichever is stale wins the next time the
+    // account is (re)activated.
+    await this.syncMainAuthFromActiveAccount();
+    await this.syncAuthToActiveAccount();
   }
 
   /**
@@ -291,6 +325,47 @@ export class OpenAIAccountService {
     }
   }
 
+  /**
+   * Publish the active account's own auth.json into CODEX_HOME when that copy is the newer
+   * one. `codex login` writes only the account's own CODEX_HOME, so a successful login —
+   * or any run where the two copies drifted apart and Eco is no longer around to notice —
+   * leaves CODEX_HOME holding credentials the account has already replaced. Codex then
+   * keeps failing to refresh (the replaced refresh_token is revoked) even though the
+   * account dir holds a working one. Returns true when CODEX_HOME was rewritten.
+   */
+  async syncMainAuthFromActiveAccount(): Promise<boolean> {
+    const activeId = await this.getActiveAccountId();
+    if (!activeId) return false;
+
+    const accountContent = await this.readFileOrNull(this.authJsonPath(activeId));
+    if (accountContent === null) return false;
+    // Without a stamp there is nothing to order the two copies by, and guessing could
+    // overwrite fresher credentials.
+    const accountStamp = readAuthRefreshStamp(accountContent);
+    if (accountStamp === undefined) return false;
+
+    const mainAuthPath = path.join(this.mainCodexDir, "auth.json");
+    const mainContent = await this.readFileOrNull(mainAuthPath);
+    if (mainContent !== null) {
+      if (mainContent === accountContent) return false;
+      const mainStamp = readAuthRefreshStamp(mainContent);
+      // CODEX_HOME is already in step or ahead — never bury fresher credentials.
+      if (mainStamp !== undefined && mainStamp >= accountStamp) return false;
+    }
+
+    await fs.mkdir(this.mainCodexDir, { recursive: true });
+    await fs.writeFile(mainAuthPath, accountContent, "utf-8");
+    return true;
+  }
+
+  private async readFileOrNull(filePath: string): Promise<string | null> {
+    try {
+      return await fs.readFile(filePath, "utf-8");
+    } catch {
+      return null;
+    }
+  }
+
   private async syncAuthToActiveAccount(): Promise<void> {
     const mainAuthPath = path.join(this.mainCodexDir, "auth.json");
     const activeId = await this.getActiveAccountId();
@@ -301,6 +376,31 @@ export class OpenAIAccountService {
       // Skip a partially-written file — never corrupt the account copy.
       JSON.parse(content);
       const destPath = this.authJsonPath(activeId);
+      const accountContent = await this.readFileOrNull(destPath);
+      if (accountContent !== null) {
+        // Identical content: stop here so the two watchers cannot ping-pong writes.
+        if (accountContent === content) return;
+        const mainStamp = readAuthRefreshStamp(content);
+        const accountStamp = readAuthRefreshStamp(accountContent);
+        // A login writes only the account copy. When that copy is ahead, publish it to
+        // CODEX_HOME instead of copying the staler content back over it.
+        if (accountStamp !== undefined && mainStamp !== undefined && accountStamp > mainStamp) {
+          await this.syncMainAuthFromActiveAccount();
+          return;
+        }
+        // Account switch in flight: setActiveAccount writes CODEX_HOME before it writes
+        // the active marker, so a stale marker can still point at the account whose dir we
+        // are about to overwrite. Copying there would plant another account's tokens.
+        const mainAccountId = readAuthAccountId(content);
+        const accountAccountId = readAuthAccountId(accountContent);
+        if (
+          mainAccountId !== undefined &&
+          accountAccountId !== undefined &&
+          mainAccountId !== accountAccountId
+        ) {
+          return;
+        }
+      }
       await fs.mkdir(this.accountDir(activeId), { recursive: true });
       await fs.writeFile(destPath, content, "utf-8");
     } catch {
