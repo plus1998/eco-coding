@@ -567,6 +567,10 @@ import {
   recoverNonRewindRetryToPrepared,
 } from "./conversation-command-recovery";
 import {
+  abandonedQueuedAcceptedPrompts,
+  discardAbandonedAcceptedPrompts,
+} from "./conversation-follow-up-accepted-prompt";
+import {
   executeFollowUpMutationCommand,
   failInterruptedFollowUpCommands,
 } from "./conversation-follow-up-command";
@@ -8235,6 +8239,15 @@ function registerIpcHandlers(): void {
             ? base
             : (conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base);
           emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "");
+          // Escalating supersedes the other "handle now" rows: they will never deliver,
+          // so their V2 acceptances are discarded with them.
+          discardAbandonedAcceptedPrompts(conversationStore.conversationV2(), {
+            conversationId: thread.id,
+            messageIds: conversationStore
+              .listThreadFollowUps(thread.id, { statuses: ["superseded"] })
+              .map((superseded) => superseded.conversationMessageId ?? ""),
+            reason: "follow-up-superseded",
+          });
 
           const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
           if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
@@ -8357,6 +8370,13 @@ function registerIpcHandlers(): void {
           if (!followUp) {
             throw new Error("Pending follow-up was not found or cannot be cancelled.");
           }
+          // The queue row is gone, so its V2 acceptance must go too: left `queued` it is
+          // resent as a fresh run by startup queued-message recovery.
+          discardAbandonedAcceptedPrompts(conversationStore.conversationV2(), {
+            conversationId: request.threadId,
+            messageIds: followUp.conversationMessageId ? [followUp.conversationMessageId] : [],
+            reason: "follow-up-cancelled",
+          });
           const attachmentPaths = promptImageFileStore.collectAttachmentPaths(followUp.attachments);
           if (attachmentPaths.length > 0) {
             await promptImageFileStore.releasePaths(attachmentPaths);
@@ -11375,7 +11395,26 @@ async function runCodingThreadExecution(
 }
 
 function recoverQueuedConversationV2Messages(): void {
-  for (const message of conversationStore.conversationV2().listQueuedUserMessages()) {
+  const v2 = conversationStore.conversationV2();
+  const queuedMessages = v2.listQueuedUserMessages();
+  // A queued acceptance whose queue row was cancelled or superseded is not pending
+  // work: the queue never delivers it, and rescheduling it here is exactly how a
+  // deleted follow-up came back as a brand-new run.
+  const abandoned = abandonedQueuedAcceptedPrompts({
+    messages: queuedMessages,
+    listFollowUps: (conversationId) => conversationStore.listThreadFollowUps(conversationId),
+  });
+  const abandonedIds = new Set(abandoned.map((message) => message.messageId));
+  for (const message of abandoned) {
+    discardAbandonedAcceptedPrompts(v2, {
+      conversationId: message.conversationId,
+      messageIds: [message.messageId],
+      reason: "follow-up-abandoned",
+    });
+  }
+
+  for (const message of queuedMessages) {
+    if (abandonedIds.has(message.messageId)) continue;
     if (conversationRecoveryGate.isBlocked(message.conversationId)) continue;
     let input: AcceptedConversationMessageSchedule;
     try {
@@ -11412,11 +11451,14 @@ async function scheduleAcceptedConversationMessage(
   // may consume it.
   if (!thread) return;
   const currentMessage = conversationStore.conversationV2().getMessage(input.conversationId, input.messageId);
+  // A tombstoned acceptance (deleted follow-up) must never start a run.
   if (
     !currentMessage ||
+    currentMessage.isDeleted ||
     currentMessage.status === "final" ||
     currentMessage.status === "failed" ||
-    currentMessage.status === "cancelled"
+    currentMessage.status === "cancelled" ||
+    currentMessage.status === "deleted"
   ) {
     return;
   }
@@ -11482,9 +11524,11 @@ function markAcceptedConversationMessageFailed(
   const message = v2.getMessage(input.conversationId, input.messageId);
   if (
     !message ||
+    message.isDeleted ||
     message.status === "final" ||
     message.status === "failed" ||
-    message.status === "cancelled"
+    message.status === "cancelled" ||
+    message.status === "deleted"
   ) {
     return;
   }

@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import type { ThreadPendingFollowUp } from "../src/shared/ipc";
 import {
+  abandonedFollowUpsForConversationMessage,
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   canEscalatedFollowUpProgressNow,
   collectThreadFollowUpAttachments,
+  isAbandonedThreadFollowUp,
   isFollowUpMidTurnResultDelivered,
   shouldAutoPauseFollowUpQueue,
   shouldBlockThreadFollowUpDrain,
@@ -27,6 +29,32 @@ function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): Threa
     ...patch,
   };
 }
+
+test("abandonedFollowUpsForConversationMessage only matches rows the queue can never deliver", () => {
+  const queuedRow = followUp("tfu_queued", { status: "queued", conversationMessageId: "message_a" });
+  const cancelledRow = followUp("tfu_cancelled", {
+    status: "cancelled",
+    conversationMessageId: "message_b",
+  });
+  const supersededRow = followUp("tfu_superseded", {
+    status: "superseded",
+    conversationMessageId: "message_c",
+  });
+  const followUps = [queuedRow, cancelledRow, supersededRow];
+
+  expect(isAbandonedThreadFollowUp(queuedRow)).toBe(false);
+  expect(isAbandonedThreadFollowUp(cancelledRow)).toBe(true);
+  expect(isAbandonedThreadFollowUp(supersededRow)).toBe(true);
+  expect(abandonedFollowUpsForConversationMessage(followUps, "message_a")).toEqual([]);
+  expect(abandonedFollowUpsForConversationMessage(followUps, "message_b").map((row) => row.id)).toEqual([
+    "tfu_cancelled",
+  ]);
+  expect(abandonedFollowUpsForConversationMessage(followUps, "message_c").map((row) => row.id)).toEqual([
+    "tfu_superseded",
+  ]);
+  expect(abandonedFollowUpsForConversationMessage(followUps, "message_unknown")).toEqual([]);
+  expect(abandonedFollowUpsForConversationMessage(followUps, "   ")).toEqual([]);
+});
 
 test("shouldBlockThreadFollowUpDrain while plan or clarification awaits user", () => {
   expect(

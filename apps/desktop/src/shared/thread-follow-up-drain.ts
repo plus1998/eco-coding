@@ -95,6 +95,30 @@ export function isFollowUpMidTurnResultDelivered(
 }
 
 /**
+ * A row that will never deliver the prompt it holds: the user cancelled it, or an
+ * escalated sibling superseded it. Its accepted V2 prompt has to be discarded with
+ * it — a leftover `queued` V2 message is re-sent as a brand-new run by startup
+ * queued-message recovery, i.e. the prompt the user removed comes back.
+ */
+export function isAbandonedThreadFollowUp(followUp: ThreadPendingFollowUp): boolean {
+  return followUp.status === "cancelled" || followUp.status === "superseded";
+}
+
+/** Abandoned queue rows holding the given V2 accepted prompt. */
+export function abandonedFollowUpsForConversationMessage(
+  followUps: readonly ThreadPendingFollowUp[],
+  conversationMessageId: string,
+): ThreadPendingFollowUp[] {
+  const messageId = conversationMessageId.trim();
+  if (!messageId) {
+    return [];
+  }
+  return followUps.filter(
+    (followUp) => followUp.conversationMessageId === messageId && isAbandonedThreadFollowUp(followUp),
+  );
+}
+
+/**
  * Escalated ("handle now") may bypass a user-paused queue, but it still needs
  * something that can move: an active run to interrupt, or a drainable boundary.
  * Used after a skipped mid-turn inject so a paused queue cannot swallow the

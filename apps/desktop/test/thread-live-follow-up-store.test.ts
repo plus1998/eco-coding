@@ -4,9 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { discardAbandonedAcceptedPrompts } from "../src/main/conversation-follow-up-accepted-prompt";
 import { createConversationStore } from "../src/main/conversation-store";
 import { PromptImageFileStore } from "../src/main/prompt-image-file-store";
 import type { ThreadSummary } from "../src/shared/ipc";
+import { abandonedFollowUpsForConversationMessage } from "../src/shared/thread-follow-up-drain";
 
 const sqliteAvailable = await (async () => {
   try {
@@ -315,6 +317,38 @@ test.skipIf(!sqliteAvailable)("cancels only queued follow-ups", async () => {
   const delivered = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "已交付" });
   store.updateThreadFollowUpStatus("thr_followup", delivered.id, { status: "delivered" });
   expect(store.cancelThreadFollowUp("thr_followup", delivered.id)).toBeUndefined();
+});
+
+test.skipIf(!sqliteAvailable)("a cancelled follow-up leaves no queued acceptance for recovery", async () => {
+  const store = await createStore();
+  const v2 = store.conversationV2();
+  const accepted = v2.sendMessage({
+    principalId: "desktop-local",
+    conversationId: "thr_followup",
+    clientCommandId: "cmd_follow_up_ghost",
+    text: "auth.json 有 2 个路径",
+  });
+  const queued = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "auth.json 有 2 个路径",
+    conversationMessageId: accepted.messageId,
+  });
+  expect(store.cancelThreadFollowUp("thr_followup", queued.id)?.status).toBe("cancelled");
+  // The queue row is gone but its acceptance is still the only place that prompt lives.
+  expect(v2.getMessage("thr_followup", accepted.messageId)?.status).toBe("queued");
+
+  const abandoned = abandonedFollowUpsForConversationMessage(
+    store.listThreadFollowUps("thr_followup"),
+    accepted.messageId,
+  );
+  expect(abandoned.map((row) => row.id)).toEqual([queued.id]);
+
+  discardAbandonedAcceptedPrompts(v2, {
+    conversationId: "thr_followup",
+    messageIds: abandoned.map((row) => row.conversationMessageId ?? ""),
+    reason: "follow-up-cancelled",
+  });
+  expect(v2.listQueuedUserMessages()).toEqual([]);
 });
 
 test.skipIf(!sqliteAvailable)("updates queued follow-up prompt and attachments", async () => {
