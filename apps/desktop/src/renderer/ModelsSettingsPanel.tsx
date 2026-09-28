@@ -709,8 +709,14 @@ export function ModelsSettingsPanel({
               className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.icon && <img src={tab.icon} alt="" width="14" height="14" style={{ display: "block" }} />}
-              {tab.label}
+              <div style={{ height: "100%", display: "flex", gap: 5 }}>
+                {tab.icon && (
+                  <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <img src={tab.icon} alt="" width="14" height="14" style={{ display: "block" }} />
+                  </div>
+                )}
+                <div>{tab.label}</div>
+              </div>
             </button>
           ))}
         </div>

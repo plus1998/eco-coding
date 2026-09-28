@@ -8621,6 +8621,11 @@ button.integrated-web-search-clear-key:disabled {
   border-left: 2px solid var(--accent);
 }
 
+.mcp-server-row.openai-account-row.active {
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--bg-elevated));
+  border-left: 0;
+}
+
 .manual-auth-row {
   flex-direction: column;
   align-items: stretch;

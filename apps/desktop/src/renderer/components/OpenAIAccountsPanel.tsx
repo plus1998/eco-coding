@@ -287,7 +287,7 @@ export function OpenAIAccountsPanel() {
             return (
             <li
               key={account.id}
-              className={`mcp-server-row mcp-server-row-grid ${activeAccountId === account.id ? "active" : ""}`}
+              className={`mcp-server-row mcp-server-row-grid openai-account-row ${activeAccountId === account.id ? "active" : ""}`}
             >
               <span className="mcp-server-name">
                 {account.name}
