@@ -5424,6 +5424,11 @@ function registerIpcHandlers(): void {
     authInfo.result.then((res) => {
       if (loginCancelled) return;
       process.stderr.write(`[codex-oauth] login result: ${JSON.stringify(res)}\n`);
+      if (res.success) {
+        // This flow logs straight into CODEX_HOME/auth.json, which gates the virtual
+        // OpenAI Official provider/model in the settings snapshot.
+        emitSettingsUpdated();
+      }
       BrowserWindow.getAllWindows().forEach((win) => {
         win.webContents.send("codex-oauth:login-result", res);
       });
@@ -5442,7 +5447,11 @@ function registerIpcHandlers(): void {
       return { success: false, message: "Codex CLI not found" };
     }
     const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable);
-    return service.logout();
+    const result = await service.logout();
+    // Logout removes CODEX_HOME/auth.json, which gates the virtual OpenAI Official
+    // provider/model in the settings snapshot.
+    emitSettingsUpdated();
+    return result;
   });
 
   // ─── OpenAI Account Management ─────────────────────────────────────────────
@@ -5494,6 +5503,9 @@ function registerIpcHandlers(): void {
     if (prevActiveId === payload.accountId) {
       invalidateGlobalCodexRuntimeFingerprints();
       scheduleCodexGlobalRuntimeRefresh();
+      // Deleting the active account removes CODEX_HOME/auth.json, which gates the
+      // virtual OpenAI Official provider/model in the settings snapshot.
+      emitSettingsUpdated();
     }
     return { success: true };
   });
@@ -5573,8 +5585,23 @@ function registerIpcHandlers(): void {
       }
     });
 
-    authInfo.result.then((res) => {
+    authInfo.result.then(async (res) => {
       if (loginCancelled) return;
+      // `codex login` only writes the account's own CODEX_HOME. When this account is
+      // already the active one, the main CODEX_HOME/auth.json still holds the old
+      // (possibly expired) credentials — re-activate it to publish the fresh token.
+      if (res.success && payload.accountId === (await svc.getActiveAccountId())) {
+        try {
+          await svc.setActiveAccount(payload.accountId);
+          invalidateGlobalCodexRuntimeFingerprints();
+          scheduleCodexGlobalRuntimeRefresh();
+          emitSettingsUpdated();
+        } catch (error) {
+          console.error(
+            `[openai-accounts] Failed to sync fresh auth.json to CODEX_HOME: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       BrowserWindow.getAllWindows().forEach((win) => {
         win.webContents.send("codex-oauth:login-result", res);
       });
@@ -5593,6 +5620,10 @@ function registerIpcHandlers(): void {
       invalidateGlobalCodexRuntimeFingerprints();
       scheduleCodexGlobalRuntimeRefresh();
     }
+    // setActiveAccount writes (or clears) CODEX_HOME/auth.json, which gates the virtual
+    // OpenAI Official provider/model. Without this the renderer keeps its stale snapshot
+    // and the config only shows up after an app restart.
+    emitSettingsUpdated();
     return { success: true };
   });
 
@@ -5609,6 +5640,9 @@ function registerIpcHandlers(): void {
     if (result.success && payload.accountId === (await svc.getActiveAccountId())) {
       invalidateGlobalCodexRuntimeFingerprints();
       scheduleCodexGlobalRuntimeRefresh();
+      // Writing auth.json for the active account can create CODEX_HOME/auth.json,
+      // which gates the virtual OpenAI Official provider/model in the snapshot.
+      emitSettingsUpdated();
     }
     return result;
   });

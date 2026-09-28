@@ -91,6 +91,24 @@ test("buildCodexConfigToml leaves the built-in OpenAI provider on Codex's offici
   expect(toml).not.toContain("view_image = false");
 });
 
+test("buildCodexConfigToml defaults model_provider to a gateway provider when both exist", () => {
+  // The trap behind the built-in OpenAI 404: with any gateway provider present the global
+  // default points at eco-gateway, so anything that relies on the default instead of an
+  // explicit provider is routed into a gateway that has no "openai" entry. thread/start and
+  // role TOMLs must therefore pin the built-in route explicitly.
+  const toml = buildCodexConfigToml({
+    ecoDataDir: "/data",
+    gatewayBaseUrl: "http://127.0.0.1:18765/v1",
+    providers: [
+      { id: "openai", name: "OpenAI", enabled: true },
+      { id: "anthropic-main", name: "Anthropic", enabled: true },
+    ],
+  });
+
+  expect(toml).toContain('model_provider = "eco_anthropic-main"');
+  expect(toml).not.toContain("eco_openai");
+});
+
 test("buildCodexConfigToml keeps native view_image thread-scoped and leaves Eco's MCP viewer available", () => {
   const toml = buildCodexConfigToml({
     ecoDataDir: "/data",

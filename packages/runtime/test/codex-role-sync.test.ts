@@ -278,7 +278,11 @@ test("official OpenAI subagents retain native image viewing beside custom provid
   const officialToml = await fs.readFile(path.join(result.agentsDir, "explore.toml"), "utf8");
   const customToml = await fs.readFile(path.join(result.agentsDir, "researcher.toml"), "utf8");
   expect(officialToml).toContain('model = "gpt-5"');
-  expect(officialToml).not.toContain("model_provider =");
+  // Pinned to Codex's built-in provider: config.toml carries a global
+  // `model_provider = "eco_*"` default, so an omitted value would route the
+  // official-subscription role through eco-gateway (which has no "openai" provider).
+  expect(officialToml).toContain('model_provider = "openai"');
+  expect(officialToml).not.toContain("eco_openai");
   expect(officialToml).toContain("[features]\nview_image = true");
   expect(customToml).toContain("[features]\nview_image = false");
   expect(result.roleThreadConfigs.explore?.features?.view_image).toBe(true);

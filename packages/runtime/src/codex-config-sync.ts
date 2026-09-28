@@ -121,6 +121,14 @@ export function resolveCodexHomeDir(ecoDataDir: string): string {
   return path.join(ecoDataDir, "codex");
 }
 
+/**
+ * Codex's built-in provider id for the official OpenAI/ChatGPT subscription route
+ * (credentials from CODEX_HOME/auth.json). Eco never writes `[model_providers.openai]`,
+ * so this id must be pinned explicitly wherever config.toml's global `model_provider =
+ * "eco_*"` default would otherwise apply (thread/start, role TOMLs).
+ */
+export const CODEX_BUILT_IN_OPENAI_PROVIDER_ID = "openai";
+
 export function buildCodexModelProviderSlug(providerId: string): string {
   const trimmed = providerId.trim();
   if (!trimmed) {
@@ -152,7 +160,9 @@ export function parseCodexGatewayModelAlias(
 export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput): string {
   const gatewayBaseUrl = input.gatewayBaseUrl ?? resolveEcoGatewayBaseUrl(input.gatewayPort);
   const enabledProviders = input.providers.filter((provider) => provider.enabled);
-  const gatewayProviders = enabledProviders.filter((provider) => provider.id !== "openai");
+  const gatewayProviders = enabledProviders.filter(
+    (provider) => provider.id !== CODEX_BUILT_IN_OPENAI_PROVIDER_ID,
+  );
   const defaultProvider = gatewayProviders[0];
   const agentRoles = uniqueAgentRoles(input.agentRoles ?? []);
   const enableMultiAgent = input.enableMultiAgent === true || agentRoles.length > 0;
@@ -231,7 +241,7 @@ export async function syncCodexConfigFromEcoProviders(
   const configPath = path.join(codexHomeDir, "config.toml");
   const gatewayBaseUrl = input.gatewayBaseUrl ?? resolveEcoGatewayBaseUrl(input.gatewayPort);
   const enabledProviders = input.providers.filter(
-    (provider) => provider.enabled && provider.id !== "openai",
+    (provider) => provider.enabled && provider.id !== CODEX_BUILT_IN_OPENAI_PROVIDER_ID,
   );
   const providerSlugs = enabledProviders.map((provider) => buildCodexModelProviderSlug(provider.id));
   const mcpServers = uniqueMcpServers(input.mcpServers ?? []);

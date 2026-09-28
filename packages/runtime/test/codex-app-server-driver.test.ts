@@ -219,6 +219,71 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
   driver.dispose();
 });
 
+test("CodexAppServerDriver pins the built-in OpenAI subscription route to Codex's own provider", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const registry = new CodexTurnRouteRegistry();
+  const client = new CodexAppServerClient(stdin, stdout);
+  const driver = new CodexAppServerDriver({ client, turnRouteRegistry: registry });
+  const controller = new AbortController();
+
+  const handshake = client.initialize();
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 1, result: { codexHome: "/tmp/codex" } });
+  await handshake;
+
+  const runPromise = (async () => {
+    const events = [];
+    for await (const event of driver.run({
+      threadId: "thr_eco_openai",
+      prompt: "reply with pong",
+      workspacePath: "/repo",
+      worktreePath: "/repo",
+      routes: [plannerRoute({ providerId: "openai", upstreamModelId: "gpt-5.6-luna" })],
+      signal: controller.signal,
+    })) {
+      events.push(event);
+    }
+    return events;
+  })();
+
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 2, result: { thread: { id: "thr_codex_openai" } } });
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 3, result: { turn: { id: "turn_openai", items: [], status: "inProgress" } } });
+  await Bun.sleep(0);
+
+  // Read the bound route before the turn terminal clears it.
+  const boundRoute = registry.peek("thr_codex_openai", "turn_openai");
+
+  stdout.write(
+    `${JSON.stringify({
+      method: "turn/completed",
+      params: {
+        threadId: "thr_codex_openai",
+        turn: { id: "turn_openai", items: [], status: "completed" },
+      },
+    })}\n`,
+  );
+  await runPromise;
+
+  const messages = readRpcMessages(stdin);
+  const threadStart = messages.find((message) => message.method === "thread/start");
+  const turnStart = messages.find((message) => message.method === "turn/start");
+  // Must be explicit: config.toml sets a global `model_provider = "eco_*"` default, so an
+  // omitted value silently routes the official-subscription model into eco-gateway, whose
+  // provider table has no "openai" entry (route miss → 404).
+  expect(threadStart?.params?.modelProvider).toBe("openai");
+  // Built-in OpenAI keeps the bare upstream model id — never the eco_ gateway alias.
+  expect(threadStart?.params?.model).toBe("gpt-5.6-luna");
+  expect(turnStart?.params?.model).toBe("gpt-5.6-luna");
+  // The bridge resolves the gateway provider id from this registry record.
+  expect(boundRoute?.providerId).toBe("openai");
+  expect(boundRoute?.upstreamModelId).toBe("gpt-5.6-luna");
+
+  driver.dispose();
+});
+
 test("CodexAppServerDriver serializes new thread creation on a shared app-server client", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
