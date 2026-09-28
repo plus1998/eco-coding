@@ -213,17 +213,33 @@ export function startSocksToHttpBridge(proxyUrl: string): Promise<{ port: number
   });
 }
 
-async function waitForLoginResult(
+function waitForLoginResult(
   child: ReturnType<typeof spawn>,
   codexHomeDir: string,
-): Promise<OpenAIAccountLoginResult> {
-  return new Promise((resolve) => {
-    let resolved = false;
+): { result: Promise<OpenAIAccountLoginResult>; cancel: () => void } {
+  let resolved = false;
+  let resolveResult: (result: OpenAIAccountLoginResult) => void = () => {};
+  let pollInterval: ReturnType<typeof setInterval> | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
 
-    const resolveOnce = (result: OpenAIAccountLoginResult) => {
+  const terminateChild = () => {
+    if (child.exitCode !== null || child.killed) return;
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // The process may exit between the state check and kill().
+    }
+  };
+
+  const result = new Promise<OpenAIAccountLoginResult>((resolve) => {
+    resolveResult = resolve;
+
+    const resolveOnce = (loginResult: OpenAIAccountLoginResult) => {
       if (resolved) return;
       resolved = true;
-      resolve(result);
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeout) clearTimeout(timeout);
+      resolveResult(loginResult);
     };
 
     const authPath = path.join(codexHomeDir, "auth.json");
@@ -237,43 +253,58 @@ async function waitForLoginResult(
       }
     };
 
-    // Poll for auth.json every 2 seconds
-    const pollInterval = setInterval(async () => {
-      if (await checkAuthJson()) {
-        clearInterval(pollInterval);
-        resolveOnce({ success: true, message: "登录成功" });
-      }
-    }, 2000);
-
-    child.on("exit", (code) => {
-      clearInterval(pollInterval);
-      checkAuthJson().then((exists) => {
+    const pollForAuthJson = () => {
+      void checkAuthJson().then((exists) => {
         if (exists) {
           resolveOnce({ success: true, message: "登录成功" });
-        } else {
-          resolveOnce({
-            success: code === 0,
-            message: code === 0 ? "登录成功" : `登录失败 (exit code ${code})`,
-          });
         }
+      });
+    };
+
+    // Poll for auth.json every 2 seconds.
+    pollInterval = setInterval(pollForAuthJson, 2000);
+
+    child.on("exit", (code) => {
+      void checkAuthJson().then((exists) => {
+        resolveOnce(
+          exists
+            ? { success: true, message: "登录成功" }
+            : {
+                success: code === 0,
+                message: code === 0 ? "登录成功" : `登录失败 (exit code ${code})`,
+              },
+        );
       });
     });
 
     child.on("error", (error) => {
-      clearInterval(pollInterval);
       resolveOnce({
         success: false,
         message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
       });
     });
 
-    // 5 minute timeout
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      child.kill("SIGTERM");
-      resolveOnce({ success: false, message: "登录超时 (5分钟)" });
-    }, 5 * 60 * 1000);
+    // 5 minute timeout.
+    timeout = setTimeout(
+      () => {
+        terminateChild();
+        resolveOnce({ success: false, message: "登录超时 (5分钟)" });
+      },
+      5 * 60 * 1000,
+    );
   });
+
+  return {
+    result,
+    cancel: () => {
+      if (resolved) return;
+      terminateChild();
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeout) clearTimeout(timeout);
+      resolved = true;
+      resolveResult({ success: false, message: "登录已取消" });
+    },
+  };
 }
 
 export class OpenAIAccountService {
@@ -568,7 +599,7 @@ export class OpenAIAccountService {
   /** Start login for a specific account. */
   async startLogin(
     accountId: string,
-  ): Promise<{ authUrl: string; result: Promise<OpenAIAccountLoginResult> } | null> {
+  ): Promise<{ authUrl: string; result: Promise<OpenAIAccountLoginResult>; cancel: () => void } | null> {
     await this.requireAccount(accountId);
     const codexHomeDir = this.accountDir(accountId);
     await fs.mkdir(codexHomeDir, { recursive: true });
@@ -576,6 +607,7 @@ export class OpenAIAccountService {
     return new Promise((resolve) => {
       let authUrl = "";
       let urlFound = false;
+      let urlTimeout: ReturnType<typeof setTimeout> | undefined;
 
       const child = spawn(this.codexExecutable, ["login"], {
         env: buildLoginEnv(codexHomeDir),
@@ -592,9 +624,12 @@ export class OpenAIAccountService {
         if (urlMatch && !urlFound) {
           authUrl = urlMatch[0];
           urlFound = true;
+          if (urlTimeout) clearTimeout(urlTimeout);
+          const loginResult = waitForLoginResult(child, codexHomeDir);
           resolve({
             authUrl,
-            result: waitForLoginResult(child, codexHomeDir),
+            result: loginResult.result,
+            cancel: loginResult.cancel,
           });
         }
       };
@@ -602,7 +637,7 @@ export class OpenAIAccountService {
       child.stdout.on("data", handleOutput);
       child.stderr.on("data", handleOutput);
 
-      setTimeout(() => {
+      urlTimeout = setTimeout(() => {
         if (!urlFound) {
           child.kill("SIGTERM");
           resolve(null);

@@ -84,6 +84,28 @@ test("active account proxy is available without listing accounts first", async (
   service.dispose();
 });
 
+test("cancelling an OAuth login settles the result and terminates the codex child", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-accounts-"));
+  tempDirs.push(root);
+  const executable = path.join(root, "fake-codex");
+  await fs.writeFile(
+    executable,
+    "#!/bin/sh\nprintf '%s\\n' 'https://auth.openai.com/oauth/authorize?client_id=test'\nsleep 30\n",
+    { encoding: "utf8", mode: 0o755 },
+  );
+
+  const service = new OpenAIAccountService(root, executable);
+  await service.initialize();
+  const account = await service.createAccount("Cancellable");
+  const login = await service.startLogin(account.id);
+  if (!login) throw new Error("Expected the fake Codex process to emit an auth URL");
+
+  login.cancel();
+
+  await expect(login.result).resolves.toEqual({ success: false, message: "登录已取消" });
+  service.dispose();
+});
+
 // ─── auth.json 两份副本的一致性 ────────────────────────────────────────────────
 // CODEX_HOME（<root>/codex/auth.json，Codex 真正读的那份）与账号目录
 //（<root>/codex-accounts/<id>/auth.json，`codex login` 写的那份）必须收敛到更新的一份。

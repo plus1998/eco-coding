@@ -29,59 +29,99 @@ function buildLoginEnv(codexHomeDir: string, upstreamProxyUrl?: string): NodeJS.
   return env;
 }
 
-function waitForLoginResult(child: ReturnType<typeof spawn>, codexHomeDir: string): Promise<CodexOAuthLoginResult> {
-  return new Promise((resolve) => {
-    let resolved = false;
+function waitForLoginResult(
+  child: ReturnType<typeof spawn>,
+  codexHomeDir: string,
+): { result: Promise<CodexOAuthLoginResult>; cancel: () => void } {
+  let resolved = false;
+  let resolveResult: (result: CodexOAuthLoginResult) => void = () => {};
+  let pollInterval: ReturnType<typeof setInterval> | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
 
-    const resolveOnce = (result: CodexOAuthLoginResult) => {
+  const terminateChild = () => {
+    if (child.exitCode !== null || child.killed) return;
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // The process may exit between the state check and kill().
+    }
+  };
+
+  const result = new Promise<CodexOAuthLoginResult>((resolve) => {
+    resolveResult = resolve;
+
+    const resolveOnce = (loginResult: CodexOAuthLoginResult) => {
       if (resolved) return;
       resolved = true;
-      resolve(result);
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeout) clearTimeout(timeout);
+      resolveResult(loginResult);
     };
 
-    // Watch for auth.json creation (backup in case exit code is non-zero)
+    // Watch for auth.json creation (backup in case of a non-zero exit code).
     const authPath = path.join(codexHomeDir, "auth.json");
-    const checkAuthJson = async () => {
+    const checkAuthJson = async (): Promise<boolean> => {
       try {
         await fs.access(authPath);
-        resolveOnce({ success: true, message: "登录成功 (auth.json detected)" });
+        return true;
       } catch {
-        // auth.json not yet created
+        return false;
       }
     };
 
-    // Poll for auth.json every 2 seconds
-    const pollInterval = setInterval(checkAuthJson, 2000);
+    const pollForAuthJson = () => {
+      void checkAuthJson().then((exists) => {
+        if (exists) {
+          resolveOnce({ success: true, message: "登录成功 (auth.json detected)" });
+        }
+      });
+    };
+
+    // Poll for auth.json every 2 seconds.
+    pollInterval = setInterval(pollForAuthJson, 2000);
 
     child.on("exit", (code) => {
-      clearInterval(pollInterval);
-      // Double-check: even if exit code != 0, auth.json might exist
-      checkAuthJson().then(() => {
-        // If auth.json wasn't found, report based on exit code
-        fs.access(authPath).catch(() => {
-          resolveOnce({
-            success: code === 0,
-            message: code === 0 ? "登录成功" : `登录失败 (exit code ${code})`,
-          });
-        });
+      // Double-check: even if exit code != 0, auth.json might exist.
+      void checkAuthJson().then((exists) => {
+        resolveOnce(
+          exists
+            ? { success: true, message: "登录成功 (auth.json detected)" }
+            : {
+                success: code === 0,
+                message: code === 0 ? "登录成功" : `登录失败 (exit code ${code})`,
+              },
+        );
       });
     });
 
     child.on("error", (error) => {
-      clearInterval(pollInterval);
       resolveOnce({
         success: false,
         message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
       });
     });
 
-    // Hard timeout: 5 minutes max for the entire login flow
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      child.kill("SIGTERM");
-      resolveOnce({ success: false, message: "登录超时 (5分钟)" });
-    }, 5 * 60 * 1000);
+    // Hard timeout: 5 minutes max for the entire login flow.
+    timeout = setTimeout(
+      () => {
+        terminateChild();
+        resolveOnce({ success: false, message: "登录超时 (5分钟)" });
+      },
+      5 * 60 * 1000,
+    );
   });
+
+  return {
+    result,
+    cancel: () => {
+      if (resolved) return;
+      terminateChild();
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeout) clearTimeout(timeout);
+      resolved = true;
+      resolveResult({ success: false, message: "登录已取消" });
+    },
+  };
 }
 
 export class CodexOAuthLoginService {
@@ -150,10 +190,12 @@ export class CodexOAuthLoginService {
   async startLogin(): Promise<{
     authUrl: string;
     result: Promise<CodexOAuthLoginResult>;
+    cancel: () => void;
   } | null> {
     return new Promise((resolve) => {
       let authUrl = "";
       let urlFound = false;
+      let urlTimeout: ReturnType<typeof setTimeout> | undefined;
 
       const child = spawn(this.codexExecutable, ["login"], {
         env: buildLoginEnv(this.codexHomeDir, this.upstreamProxyUrl),
@@ -172,9 +214,12 @@ export class CodexOAuthLoginService {
         if (urlMatch && !urlFound) {
           authUrl = urlMatch[0];
           urlFound = true;
+          if (urlTimeout) clearTimeout(urlTimeout);
+          const loginResult = waitForLoginResult(child, this.codexHomeDir);
           resolve({
             authUrl,
-            result: waitForLoginResult(child, this.codexHomeDir),
+            result: loginResult.result,
+            cancel: loginResult.cancel,
           });
         }
       };
@@ -183,7 +228,7 @@ export class CodexOAuthLoginService {
       child.stderr.on("data", handleOutput);
 
       // Timeout after 30 seconds if we can't extract the URL
-      setTimeout(() => {
+      urlTimeout = setTimeout(() => {
         if (!urlFound) {
           child.kill("SIGTERM");
           resolve(null);

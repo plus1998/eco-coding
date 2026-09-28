@@ -1032,6 +1032,33 @@ function getMainWindow(): BrowserWindow | undefined {
   return BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && !startupSplashWindows.has(window));
 }
 
+/**
+ * Create the OAuth browser window with native close controls.
+ *
+ * Electron renders a parented modal BrowserWindow as a sheet on macOS. Sheets
+ * do not expose the traffic-light buttons, so the login window must be a
+ * normal child window on that platform; otherwise users have no way to cancel
+ * an in-progress login.
+ */
+function createOAuthAuthWindow(parent?: BrowserWindow): BrowserWindow {
+  const isMac = process.platform === "darwin";
+  return new BrowserWindow({
+    width: 900,
+    height: 700,
+    title: "OpenAI Login",
+    ...(parent ? { parent } : {}),
+    modal: Boolean(parent) && !isMac,
+    closable: true,
+    ...(isMac ? { titleBarStyle: "default" as const } : {}),
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: "oauth-auth-session",
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+}
+
 function getStartupSplashWindow(): BrowserWindow | undefined {
   return BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && startupSplashWindows.has(window));
 }
@@ -5359,7 +5386,7 @@ function registerIpcHandlers(): void {
     process.stderr.write(`[codex-oauth] authUrl: ${authInfo.authUrl}\n`);
 
     // Create a custom session with proxy for the auth window
-    const { BrowserWindow, session: electronSession } = await import("electron");
+    const { session: electronSession } = await import("electron");
     const mainWin = getMainWindow();
 
     const authSession = electronSession.fromPartition("oauth-auth-session");
@@ -5386,18 +5413,31 @@ function registerIpcHandlers(): void {
       }
     }
 
-    const authWindow = new BrowserWindow({
-      width: 900,
-      height: 700,
-      title: "OpenAI Login",
-      ...(mainWin ? { parent: mainWin } : {}),
-      modal: true,
-      autoHideMenuBar: true,
-      webPreferences: {
-        partition: "oauth-auth-session",
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
+    const authWindow = createOAuthAuthWindow(mainWin);
+    let loginCancelled = false;
+
+    const cancelLogin = () => {
+      if (loginCancelled) return;
+      loginCancelled = true;
+      authInfo.cancel();
+      process.stderr.write(`[codex-oauth] auth window closed\n`);
+      // Notify UI that login was cancelled.
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send("codex-oauth:login-result", {
+            success: false,
+            message: "登录已取消",
+          });
+        }
+      });
+    };
+
+    // Register before loadURL: the user can close the native window while the
+    // OAuth page is still loading.
+    authWindow.on("close", cancelLogin);
+    authWindow.on("closed", () => {
+      // `destroy()` and application shutdown may skip the `close` event.
+      cancelLogin();
     });
 
     // Prevent WebRTC IP leak (bypasses HTTP proxy)
@@ -5406,27 +5446,24 @@ function registerIpcHandlers(): void {
 
     // Load the URL
     process.stderr.write(`[codex-oauth] loading URL: ${authInfo.authUrl}\n`);
-    await authWindow.loadURL(authInfo.authUrl);
-
-    // When user closes the window, kill the codex login process
-    let loginCancelled = false;
-    authWindow.on("closed", () => {
-      if (!loginCancelled) {
-        loginCancelled = true;
-        process.stderr.write(`[codex-oauth] auth window closed\n`);
-        // Notify UI that login was cancelled
-        BrowserWindow.getAllWindows().forEach((win) => {
-          win.webContents.send("codex-oauth:login-result", {
-            success: false,
-            message: "登录已取消",
-          });
-        });
-      }
-    });
+    try {
+      await authWindow.loadURL(authInfo.authUrl);
+    } catch (error) {
+      cancelLogin();
+      if (!authWindow.isDestroyed()) authWindow.destroy();
+      return {
+        success: false,
+        message: `打开登录页面失败: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
 
     // Store the pending login result so we can notify when it completes
-    authInfo.result.then((res) => {
+    void authInfo.result.then((res) => {
       if (loginCancelled) return;
+      // Mark the flow as settled before closing so the close listener does not
+      // report a successful login as a cancellation.
+      loginCancelled = true;
+      if (!authWindow.isDestroyed()) authWindow.close();
       process.stderr.write(`[codex-oauth] login result: ${JSON.stringify(res)}\n`);
       if (res.success) {
         // This flow logs straight into CODEX_HOME/auth.json, which gates the virtual
@@ -5434,10 +5471,24 @@ function registerIpcHandlers(): void {
         emitSettingsUpdated();
       }
       BrowserWindow.getAllWindows().forEach((win) => {
-        win.webContents.send("codex-oauth:login-result", res);
+        if (!win.isDestroyed()) {
+          win.webContents.send("codex-oauth:login-result", res);
+        }
       });
     }).catch((error) => {
+      if (loginCancelled) return;
+      loginCancelled = true;
+      authInfo.cancel();
+      if (!authWindow.isDestroyed()) authWindow.close();
       process.stderr.write(`[codex-oauth] login error: ${error}\n`);
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send("codex-oauth:login-result", {
+            success: false,
+            message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      });
     });
 
     return { success: true, message: "Login started" };
@@ -5559,38 +5610,58 @@ function registerIpcHandlers(): void {
       }
     }
 
-    const authWindow = new BrowserWindow({
-      width: 900,
-      height: 700,
-      title: "OpenAI Login",
-      ...(mainWin ? { parent: mainWin } : {}),
-      modal: true,
-      autoHideMenuBar: true,
-      webPreferences: {
-        partition: "oauth-auth-session",
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
-    });
-    authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
-    await authWindow.loadURL(authInfo.authUrl);
-
+    const authWindow = createOAuthAuthWindow(mainWin);
     let loginCancelled = false;
-    authWindow.on("closed", () => {
+    let socksBridgeClosed = false;
+    const closeSocksBridge = () => {
+      if (socksBridgeClosed) return;
+      socksBridgeClosed = true;
       socksBridge?.close();
-      if (!loginCancelled) {
-        loginCancelled = true;
-        BrowserWindow.getAllWindows().forEach((win) => {
+      socksBridge = null;
+    };
+
+    const cancelLogin = () => {
+      if (loginCancelled) return;
+      loginCancelled = true;
+      authInfo.cancel();
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
           win.webContents.send("codex-oauth:login-result", {
             success: false,
             message: "登录已取消",
           });
-        });
-      }
-    });
+        }
+      });
+    };
 
-    authInfo.result.then(async (res) => {
+    // Register before loadURL so closing while the OAuth page is loading still
+    // cancels the CLI process and releases the proxy bridge.
+    authWindow.on("close", cancelLogin);
+    authWindow.on("closed", () => {
+      closeSocksBridge();
+      // `destroy()` and application shutdown may skip the `close` event.
+      cancelLogin();
+    });
+    authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+    try {
+      await authWindow.loadURL(authInfo.authUrl);
+    } catch (error) {
+      cancelLogin();
+      closeSocksBridge();
+      if (!authWindow.isDestroyed()) authWindow.destroy();
+      return {
+        success: false,
+        message: `打开登录页面失败: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    void authInfo.result.then(async (res) => {
       if (loginCancelled) return;
+      // Settle before closing so the close listener does not turn a completed
+      // login into a cancellation notification.
+      loginCancelled = true;
+      closeSocksBridge();
+      if (!authWindow.isDestroyed()) authWindow.close();
       // `codex login` only writes the account's own CODEX_HOME. When this account is
       // already the active one, the main CODEX_HOME/auth.json still holds the old
       // (possibly expired) credentials — re-activate it to publish the fresh token.
@@ -5607,7 +5678,24 @@ function registerIpcHandlers(): void {
         }
       }
       BrowserWindow.getAllWindows().forEach((win) => {
-        win.webContents.send("codex-oauth:login-result", res);
+        if (!win.isDestroyed()) {
+          win.webContents.send("codex-oauth:login-result", res);
+        }
+      });
+    }).catch((error) => {
+      if (loginCancelled) return;
+      loginCancelled = true;
+      authInfo.cancel();
+      closeSocksBridge();
+      if (!authWindow.isDestroyed()) authWindow.close();
+      console.error(`[openai-accounts] Login failed: ${error instanceof Error ? error.message : String(error)}`);
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send("codex-oauth:login-result", {
+            success: false,
+            message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       });
     });
 
