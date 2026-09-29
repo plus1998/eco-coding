@@ -362,10 +362,24 @@ export async function handleMcpStreamableHttpRequest(
       // response must carry that ID. This also prevents a request from one
       // session from entering another session's cancellation table.
       if (!sessionState) {
-        if (!response.destroyed) {
-          sendJson(response, 400, { error: "missing or invalid MCP session id" });
+        // Recovery for an expired or unknown session: an authenticated
+        // client may still hold a session ID the server has already evicted
+        // (idle TTL) or never registered for this auth scope — notably when
+        // a tool call waited for user approval while the session idled out.
+        // Issuing a fresh session ID and echoing it in the Mcp-Session-Id
+        // response header lets conforming clients (e.g. rmcp) adopt it
+        // transparently. The scope key keeps the new session out of any
+        // other session's cancellation table. Anonymous requests must still
+        // start with a fresh initialize handshake.
+        if (sessionId && authToken) {
+          sessionId = randomUUID();
+          sessionState = registerSession(authScope, sessionId);
+        } else {
+          if (!response.destroyed) {
+            sendJson(response, 400, { error: "missing or invalid MCP session id" });
+          }
+          return true;
         }
-        return true;
       }
 
       let operation: ReturnType<typeof beginMcpRequest> | undefined;

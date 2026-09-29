@@ -332,6 +332,58 @@ test("eco_image_view MCP calls project imageView metadata from absolute path arg
   );
 });
 
+test("per-thread MCP Hub wrapper calls unwrap to the nested tool for the Feed", () => {
+  // Codex sessions register the Hub under `eco_mcp_<hash>_<threadSuffix>`; the
+  // wrapper call carries the real tool id in `arguments.name`.
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_view",
+      item: {
+        id: "item_hub_view_1",
+        type: "mcpToolCall",
+        server: "eco_mcp_4b6e103b_thr_1790688274221",
+        tool: "call_tool",
+        arguments: {
+          name: "eco_image_view:view_image",
+          arguments: { path: "/tmp/shot.png", prompt: "描述这张图" },
+        },
+      },
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_view",
+      item: {
+        id: "item_hub_view_1",
+        type: "mcpToolCall",
+        server: "eco_mcp_4b6e103b_thr_1790688274221",
+        tool: "call_tool",
+        status: "completed",
+        arguments: {
+          name: "eco_image_view:view_image",
+          arguments: { path: "/tmp/shot.png", prompt: "描述这张图" },
+        },
+        aggregatedOutput: "这是一张终端截图。",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/shot.png", prompt: "描述这张图" },
+    }),
+  );
+  const completed = events.find((event) => event.id === "tre:codex:tool:item_hub_view_1:done");
+  expect(completed?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/shot.png", prompt: "描述这张图" },
+      outputPreview: "这是一张终端截图。",
+    }),
+  );
+});
+
 test("eco_image_view MCP completion carries the vision answer as the tool output", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });

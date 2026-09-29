@@ -26,13 +26,31 @@ export interface EcoMcpHubSearchCall {
   query?: string;
 }
 
+/**
+ * Namespaced wrapper names as the Codex app-server runtime exposes them:
+ * `mcp__<server>__<tool>`. The server part is either the fixed `eco_mcp` or
+ * the per-thread runtime name `eco_mcp_<hash>_<threadSuffix>` that the
+ * desktop main process derives from the thread id for Codex sessions
+ * (`codexHubServerName`). The suffix is a sequence of `_`-prefixed
+ * alphanumeric chunks, so match it structurally instead of with an exact
+ * string.
+ */
+const HUB_NAMESPACED_WRAPPER_PATTERN =
+  /^mcp__eco_mcp(?:_[a-z0-9]+)*__(search_tools|call_tool)$/;
+
+function hubWrapperToolInNamespacedName(normalized: string): string | undefined {
+  return HUB_NAMESPACED_WRAPPER_PATTERN.exec(normalized)?.[1];
+}
+
 /** True for the fixed Hub `call_tool` wrapper name. */
 export function isEcoMcpHubCallToolName(toolName: string | undefined): boolean {
   const normalized = normalizeToolName(toolName);
   return (
-    normalized === ECO_MCP_HUB_CALL_FULL_TOOL ||
+    // `ECO_MCP_HUB_CALL_FULL_TOOL` (`mcp__eco_mcp__call_tool`) is the zero-chunk
+    // case of the namespaced pattern below.
     normalized === `eco_${ECO_MCP_HUB_MCP_SERVER}_${ECO_MCP_HUB_CALL_TOOL}` ||
-    normalized === `${ECO_MCP_HUB_MCP_SERVER}_${ECO_MCP_HUB_CALL_TOOL}`
+    normalized === `${ECO_MCP_HUB_MCP_SERVER}_${ECO_MCP_HUB_CALL_TOOL}` ||
+    hubWrapperToolInNamespacedName(normalized) === ECO_MCP_HUB_CALL_TOOL
   );
 }
 
@@ -40,9 +58,10 @@ export function isEcoMcpHubCallToolName(toolName: string | undefined): boolean {
 export function isEcoMcpHubSearchToolName(toolName: string | undefined): boolean {
   const normalized = normalizeToolName(toolName);
   return (
-    normalized === ECO_MCP_HUB_SEARCH_FULL_TOOL ||
+    // `ECO_MCP_HUB_SEARCH_FULL_TOOL` is the zero-chunk case of the pattern.
     normalized === `eco_${ECO_MCP_HUB_MCP_SERVER}_${ECO_MCP_HUB_SEARCH_TOOL}` ||
-    normalized === `${ECO_MCP_HUB_MCP_SERVER}_${ECO_MCP_HUB_SEARCH_TOOL}`
+    normalized === `${ECO_MCP_HUB_MCP_SERVER}_${ECO_MCP_HUB_SEARCH_TOOL}` ||
+    hubWrapperToolInNamespacedName(normalized) === ECO_MCP_HUB_SEARCH_TOOL
   );
 }
 
