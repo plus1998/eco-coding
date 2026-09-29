@@ -9,6 +9,7 @@ import {
   appendBrowserPrompt,
   type BrowserInstanceSource,
   type BrowserInstanceView,
+  type BrowserLoadError,
   type BrowserViewState,
   browserAgentSessionKey,
   buildEcoAgentBrowserPromptAppend,
@@ -139,6 +140,7 @@ interface SessionBrowser {
   source: BrowserInstanceSource;
   surfacePlaceholder: boolean;
   faviconUrl?: string | undefined;
+  loadError?: BrowserLoadError | undefined;
   /** Last URL loaded onto the guest — avoids reload loops on reparent/register. */
   lastLoadedUrl?: string | undefined;
   /** Debounced navigation while guest webContents churns. */
@@ -559,6 +561,7 @@ export class BrowserHost {
           title: alive ? wc.getTitle() || "" : "",
           ...(faviconUrl ? { faviconUrl } : {}),
           isLoading: Boolean(alive && wc.isLoading()),
+          ...(browser.loadError ? { loadError: browser.loadError } : {}),
           canGoBack: Boolean(
             alive &&
               (wc.navigationHistory?.canGoBack?.() ??
@@ -702,6 +705,7 @@ export class BrowserHost {
     });
 
     const onNav = (_event: unknown, url?: string) => {
+      browser.loadError = undefined;
       const target = typeof url === "string" && url.trim() ? url : !wc.isDestroyed() ? wc.getURL() : "";
       if (!isBrowserPlaceholderUrl(target)) {
         browser.detachedUrl = target;
@@ -714,7 +718,10 @@ export class BrowserHost {
       this.emit();
     };
 
-    wc.on("did-start-loading", () => this.emit());
+    wc.on("did-start-loading", () => {
+      browser.loadError = undefined;
+      this.emit();
+    });
     wc.on("did-stop-loading", () => {
       scope.cdp?.notifyTargetInfoChanged(browser.id);
       this.emit();
@@ -741,7 +748,19 @@ export class BrowserHost {
       browser.faviconUrl = next ?? undefined;
       this.emit();
     });
-    wc.on("did-fail-load", () => this.emit());
+    wc.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      // ERR_ABORTED is emitted for normal superseded navigations and should not leave
+      // an error card over the next page.
+      if (!isMainFrame || errorCode === -3) {
+        return;
+      }
+      browser.loadError = {
+        code: errorCode,
+        description: errorDescription?.trim() || "未知错误",
+        ...(validatedURL?.trim() ? { url: validatedURL.trim() } : {}),
+      };
+      this.emit();
+    });
     wc.on("destroyed", () => {
       if (browser.webContents?.id === wc.id) {
         try {

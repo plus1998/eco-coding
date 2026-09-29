@@ -70,6 +70,15 @@ test("browser webview z-index stays above fullscreen task panel shell", () => {
   );
 });
 
+test("browser guest load failures are shown above the guest with a retry action", () => {
+  expect(browserHostSource).toContain('wc.on("did-fail-load"');
+  expect(browserHostSource).toContain("loadError");
+  expect(browserWebviewPersistentHostSource).toContain("browser-page-status");
+  expect(browserWebviewPersistentHostSource).toContain("browser.emptyTitle");
+  expect(browserWebviewPersistentHostSource).toContain("browserReload");
+  expect(stylesSource).toContain(".browser-page-status");
+});
+
 test("browser layer uses imperative pool driven by allGuestInstances", () => {
   expect(browserPanelSource).toContain("BrowserWebviewViewportMarker");
   expect(browserPanelSource).not.toContain("registerBrowserWebviewHost");

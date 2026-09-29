@@ -33565,7 +33565,118 @@ body,
   display: flex;
   flex-direction: column;
   position: relative;
-  background: #111;
+  background: var(--terminal-bg, #fff);
+}
+
+.browser-webview-host-slot[data-browser-loading="true"] .browser-panel-webview,
+.browser-webview-host-slot[data-browser-status="true"] .browser-panel-webview {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.browser-page-status {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: auto;
+  color: var(--text-primary, #202124);
+  background: var(--terminal-bg, #fff) !important;
+  background-color: var(--terminal-bg, #fff) !important;
+  background-image: none;
+  font-family: inherit;
+  font-size: var(--ui-font-size, 14px);
+  pointer-events: auto;
+}
+
+.browser-page-status-inner {
+  width: min(560px, calc(100% - 48px));
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: clamp(56px, 10vh, 88px) 0 56px;
+  background: var(--terminal-bg, #fff) !important;
+}
+
+.browser-page-status-mark {
+  display: block;
+  width: 48px;
+  height: 48px;
+  fill: none;
+  stroke: var(--accent, #0b67c9);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3.5;
+}
+
+.browser-page-status h1 {
+  margin: 24px 0 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+
+.browser-page-status-subtitle {
+  margin: 16px 0 0;
+  color: var(--text-secondary, #5f6368);
+  font-size: inherit;
+  line-height: 1.35;
+}
+
+.browser-page-status-try {
+  margin-top: 28px;
+  color: var(--text-secondary, #5f6368);
+  font-size: inherit;
+  line-height: 1.5;
+}
+
+.browser-page-status-try ul {
+  margin: 8px 0 0;
+  padding-left: 39px;
+}
+
+.browser-page-status-code {
+  margin-top: 28px;
+  color: var(--text-secondary, #5f6368);
+  font-size: inherit;
+  line-height: 1.4;
+}
+
+.browser-page-status-retry {
+  margin-top: 48px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 9px;
+  color: #202124;
+  background: #f1f3f4 !important;
+  background-image: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.browser-page-status-retry:hover {
+  background: #e8eaed !important;
+}
+
+[data-theme="dark"] .browser-page-status-retry {
+  color: #f1f1f1;
+  background: #363636 !important;
+}
+
+[data-theme="dark"] .browser-page-status-retry:hover {
+  background: #414141 !important;
+}
+
+[data-theme="light"] .browser-page-status-retry {
+  color: #1d1d1f;
+  background: #f1f3f4 !important;
+}
+
+[data-theme="light"] .browser-page-status-retry:hover {
+  background: #e8eaed !important;
 }
 
 .browser-panel-host {

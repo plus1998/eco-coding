@@ -174,6 +174,12 @@ export const BROWSER_WEBVIEW_TAB_ID_ATTR = "ecobrowsertabid";
 
 export type BrowserInstanceSource = "human" | "agent";
 
+export interface BrowserLoadError {
+  code: number;
+  description: string;
+  url?: string;
+}
+
 export interface BrowserInstanceView {
   id: string;
   threadId: string;
@@ -184,6 +190,7 @@ export interface BrowserInstanceView {
   /** Page favicon URL from WebContents (`page-favicon-updated`), when available. */
   faviconUrl?: string;
   isLoading: boolean;
+  loadError?: BrowserLoadError;
   canGoBack: boolean;
   canGoForward: boolean;
   focused: boolean;
