@@ -447,26 +447,6 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
                 </div>
                 {openMenuOpen ? (
                   <div className="workspace-file-header__open-menu-dropdown" role="menu">
-                    {/* Default open: built-in browser for HTML, system default for others */}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setOpenMenuOpen(false);
-                        if (activeTarget?.path) {
-                          void openFileDefault(activeTarget.path);
-                        }
-                      }}
-                    >
-                      {isHtmlFile(activeTarget?.path) ? (
-                        <img src="/icon.png" alt="" className="workspace-file-header__app-icon" />
-                      ) : defaultApp?.iconBase64 ? (
-                        <img src={defaultApp.iconBase64} alt="" className="workspace-file-header__app-icon" />
-                      ) : (
-                        <ExternalLink size={14} aria-hidden="true" />
-                      )}
-                      <span>{isHtmlFile(activeTarget?.path) ? t("fileViewer.openInBrowser") : t("fileViewer.open")}</span>
-                    </button>
                     {/* Associated apps (exclude default only for non-HTML files) */}
                     {associatedApps.filter((app) => isHtmlFile(activeTarget?.path) || !app.isDefault).map((app) => (
                       <button
