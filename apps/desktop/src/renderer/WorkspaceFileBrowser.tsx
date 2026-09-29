@@ -426,7 +426,7 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
                     }}
                   >
                     {isHtmlFile(activeTarget?.path) ? (
-                      <img src="/icon.png" alt="" className="workspace-file-header__app-icon" />
+                      <img src="./icon.png" alt="" className="workspace-file-header__app-icon" />
                     ) : defaultApp?.iconBase64 ? (
                       <img src={defaultApp.iconBase64} alt="" className="workspace-file-header__app-icon" />
                     ) : (

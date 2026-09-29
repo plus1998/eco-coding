@@ -144,7 +144,7 @@ export function ModelsSettingsPanel({
   const { t } = useTranslation();
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string; icon?: string }> = [
     { id: "providers", label: t("settings.models.providers") },
-    { id: "openaiAccounts" as ModelsSettingsTab, label: t("settings.openaiAccounts.title"), icon: "/provider-icons/openai.svg" },
+    { id: "openaiAccounts" as ModelsSettingsTab, label: t("settings.openaiAccounts.title"), icon: "./provider-icons/openai.svg" },
   ];
   const runtimeConfigTabItems: Array<{ id: RuntimeConfigTab; label: string }> = [
     { id: "defaults", label: t("settings.models.runtimeConfigTab.defaults") },
