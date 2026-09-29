@@ -33457,6 +33457,17 @@ body,
   width: 100%;
 }
 
+.browser-panel-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.browser-panel-tool-home {
+  flex: 0 0 auto;
+}
+
 .browser-panel-chrome {
   display: flex;
   flex-direction: row;
@@ -33573,6 +33584,11 @@ body,
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
+}
+
+.browser-webview-host-slot[data-browser-empty="true"] {
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .browser-page-status {

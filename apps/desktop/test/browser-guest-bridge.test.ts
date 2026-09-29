@@ -17,6 +17,10 @@ const browserPanelSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/BrowserPanel.tsx", import.meta.url)),
   "utf8",
 );
+const subagentTaskDrawerSource = readFileSync(
+  fileURLToPath(new URL("../src/renderer/SubagentTaskDrawer.tsx", import.meta.url)),
+  "utf8",
+);
 const browserWebviewPoolSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/browser-webview-pool.ts", import.meta.url)),
   "utf8",
@@ -74,8 +78,14 @@ test("browser guest load failures are shown above the guest with a retry action"
   expect(browserHostSource).toContain('wc.on("did-fail-load"');
   expect(browserHostSource).toContain("loadError");
   expect(browserWebviewPersistentHostSource).toContain("browser-page-status");
-  expect(browserWebviewPersistentHostSource).toContain("browser.emptyTitle");
+  expect(browserWebviewPersistentHostSource).toContain("data-browser-empty");
   expect(browserWebviewPersistentHostSource).toContain("browserReload");
+  expect(browserPanelSource).toContain("browser.toolsTitle");
+  expect(subagentTaskDrawerSource).toContain("browser.newTab");
+  expect(subagentTaskDrawerSource).toContain("onClick={onNewBrowserTab}");
+  expect(subagentTaskDrawerSource).not.toContain("task-panel-home-title");
+  expect(appSource).toContain("onNewBrowserTab={openBrowserTaskPanel}");
+  expect(appSource).toContain("openBrowserTaskPanel();");
   expect(stylesSource).toContain(".browser-page-status");
 });
 

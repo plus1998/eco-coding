@@ -5597,24 +5597,6 @@ function App() {
     });
   }, [activeProjectionViewModel, activeSubagentCards, browserInstanceIds, taskPanelActiveTab]);
 
-  const toggleTaskPanelForCurrentProject = useCallback(() => {
-    if (!currentProjectPath) {
-      return;
-    }
-    if (taskDrawerOpen) {
-      if (taskPanelClosingRef.current) {
-        revealTaskPanel();
-      } else {
-        dismissTaskPanel();
-      }
-      return;
-    }
-    setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
-    setSelectedSubagentAgentId(undefined);
-    setTaskPanelFullscreen(false);
-    revealTaskPanel();
-  }, [currentProjectPath, dismissTaskPanel, revealTaskPanel, taskDrawerOpen]);
-
   const toggleWorkPanelForCurrentProject = useCallback(() => {
     toggleWorkspacePanelForCurrentProject();
   }, [toggleWorkspacePanelForCurrentProject]);
@@ -5651,9 +5633,11 @@ function App() {
       if (shouldResetTaskPanelFullscreenOnBrowserOpen(taskDrawerOpenRef.current)) {
         setTaskPanelFullscreen(false);
       }
-      revealTaskPanel();
       if (resolved.browserId) {
         selectBrowserTaskTab(resolved.browserId);
+        if (!taskDrawerOpenRef.current) {
+          revealTaskPanel();
+        }
         return;
       }
       setSelectedSubagentAgentId(undefined);
@@ -5669,11 +5653,30 @@ function App() {
           const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
           if (focusId) {
             selectBrowserTaskTab(focusId);
+            if (!taskDrawerOpenRef.current) {
+              revealTaskPanel();
+            }
           }
         });
     },
     [activeThread?.id, currentProjectPath, revealTaskPanel, selectBrowserTaskTab],
   );
+
+  const toggleTaskPanelForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    if (taskDrawerOpen) {
+      if (taskPanelClosingRef.current) {
+        revealTaskPanel();
+      } else {
+        dismissTaskPanel();
+      }
+      return;
+    }
+    setTaskPanelFullscreen(false);
+    openBrowserTaskPanel();
+  }, [currentProjectPath, dismissTaskPanel, openBrowserTaskPanel, revealTaskPanel, taskDrawerOpen]);
 
   const openWebChatItem = useCallback(
     (item: WebChatItem) => {
@@ -10027,10 +10030,7 @@ function App() {
               toggleTerminalForCurrentProject();
               dismissTaskPanel();
             }}
-            onShowHome={() => {
-              setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
-              setSelectedSubagentAgentId(undefined);
-            }}
+            onNewBrowserTab={openBrowserTaskPanel}
             onSelectReviewPath={setReviewSelectedPath}
             onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
             onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}

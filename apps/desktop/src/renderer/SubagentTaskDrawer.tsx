@@ -19,7 +19,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
+import {
+  browserTaskTabId,
+  isBrowserPlaceholderUrl,
+  isBrowserTaskTabId,
+  parseBrowserTaskTabId,
+} from "../shared/browser";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
 import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
@@ -703,7 +708,7 @@ export function SubagentTaskDrawer({
   browserInstances,
   onViewedFileChange,
   onOpenTerminal,
-  onShowHome,
+  onNewBrowserTab,
   onSelectReviewPath,
   onOpenTerminalTask,
   onStopTerminalTask,
@@ -753,7 +758,7 @@ export function SubagentTaskDrawer({
   browserInstances?: readonly TaskPanelBrowserInstance[];
   onViewedFileChange: (target: WorkspaceFileReference & { requestId: number }) => void;
   onOpenTerminal: () => void;
-  onShowHome: () => void;
+  onNewBrowserTab: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
@@ -773,7 +778,6 @@ export function SubagentTaskDrawer({
   const storedBrowserInstances = useBrowserTaskInstances();
   const resolvedBrowserInstances = browserInstances ?? storedBrowserInstances;
   const loadFileDiff = useEcoWorkspaceFileDiffLoader();
-  const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
   const filesSelected = activeTab === TASK_PANEL_FILES_TAB_ID;
   const fileViewerSelected = activeTab === TASK_PANEL_FILE_VIEWER_TAB_ID;
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
@@ -810,7 +814,7 @@ export function SubagentTaskDrawer({
       const id = parseBrowserTaskTabId(String(tabId));
       if (!id) return undefined;
       const known = resolvedBrowserInstances.find((item) => item.id === id);
-      return known ?? { id, title: t("browser.title"), url: "about:blank" };
+      return known ?? { id, title: t("browser.newTab"), url: "about:blank" };
     })
     .filter((item): item is TaskPanelBrowserInstance => Boolean(item));
   const browserTabs = openBrowserInstances.length > 0 ? openBrowserInstances : browserTabsFromOpenIds;
@@ -829,7 +833,6 @@ export function SubagentTaskDrawer({
     [cards, openTabIds],
   );
   const liveActiveSubagentCard =
-    !homeSelected &&
     !filesSelected &&
     !fileViewerSelected &&
     !reviewSelected &&
@@ -949,9 +952,9 @@ export function SubagentTaskDrawer({
             const tabId = browserTaskTabId(instance.id);
             const isActive = activeTab === tabId;
             const isLoading = instance.isLoading === true;
-            const label =
-              instance.title?.trim() ||
-              (instance.url && instance.url !== "about:blank" ? instance.url : t("browser.title"));
+            const label = isBrowserPlaceholderUrl(instance.url)
+              ? t("browser.newTab")
+              : instance.title?.trim() || instance.url || t("browser.newTab");
             return (
               <span
                 key={tabId}
@@ -967,7 +970,7 @@ export function SubagentTaskDrawer({
                   role="tab"
                   aria-selected={isActive}
                   aria-controls={`subagent-task-tab-browser-${instance.id}`}
-                  title={instance.url || label}
+                  title={isBrowserPlaceholderUrl(instance.url) ? label : instance.url || label}
                   onClick={() => onSelectBrowser(instance.id)}
                 >
                   {isLoading ? (
@@ -1182,9 +1185,9 @@ export function SubagentTaskDrawer({
           <button
             type="button"
             className="subagent-task-panel-tab-add"
-            aria-label={t("task.home")}
-            title={t("task.home")}
-            onClick={onShowHome}
+            aria-label={t("browser.newTab")}
+            title={t("browser.newTab")}
+            onClick={onNewBrowserTab}
           >
             <Plus size={17} aria-hidden />
           </button>
@@ -1192,31 +1195,6 @@ export function SubagentTaskDrawer({
       </header>
 
       <div className="subagent-task-panel-body">
-        {homeSelected ? (
-          <section className="task-panel-home-actions" aria-labelledby="task-panel-home-title">
-            <h2 id="task-panel-home-title">{t("task.home")}</h2>
-            <button type="button" onClick={onOpenTerminal}>
-              <Terminal size={17} aria-hidden />
-              <span>{t("task.terminal")}</span>
-            </button>
-            <button type="button" onClick={onSelectFiles}>
-              <FolderOpen size={17} aria-hidden />
-              <span>{t("task.files")}</span>
-            </button>
-            <button type="button" onClick={onSelectReview}>
-              <ListChecks size={17} aria-hidden />
-              <span>{t("task.review")}</span>
-            </button>
-            <button type="button" onClick={() => onSelectBrowser()}>
-              <Globe size={17} aria-hidden />
-              <span>{t("browser.title")}</span>
-            </button>
-            <button type="button" onClick={onSelectSshBookmarks}>
-              <KeyRound size={17} aria-hidden />
-              <span>{t("app.sshBookmarks.title")}</span>
-            </button>
-          </section>
-        ) : null}
         {filesSelected ? (
           <div id="subagent-task-tab-files" className="subagent-task-panel-tab-pane" role="tabpanel">
             <WorkspaceFileBrowser workspacePath={workspacePath} />
@@ -1266,7 +1244,14 @@ export function SubagentTaskDrawer({
               role="tabpanel"
               hidden={!isActive}
             >
-              <BrowserPanel active={isActive && surfaceActive} browserId={instance.id} />
+              <BrowserPanel
+                active={isActive && surfaceActive}
+                browserId={instance.id}
+                onOpenTerminal={onOpenTerminal}
+                onSelectFiles={onSelectFiles}
+                onSelectReview={onSelectReview}
+                onSelectSshBookmarks={onSelectSshBookmarks}
+              />
             </div>
           );
         })}

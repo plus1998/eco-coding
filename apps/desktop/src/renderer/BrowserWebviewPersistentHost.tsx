@@ -109,6 +109,7 @@ export function BrowserWebviewPersistentHost({ browserId }: BrowserWebviewPersis
       data-browser-host-hidden={hidden ? "true" : "false"}
       data-browser-loading={browserIsLoading ? "true" : "false"}
       data-browser-status={showStatus ? "true" : "false"}
+      data-browser-empty={showEmptyState ? "true" : "false"}
       style={style}
     >
       {loadError ? (
@@ -134,14 +135,6 @@ export function BrowserWebviewPersistentHost({ browserId }: BrowserWebviewPersis
             >
               {t("browser.reload")}
             </button>
-          </div>
-        </div>
-      ) : showEmptyState ? (
-        <div className="browser-page-status" role="status">
-          <div className="browser-page-status-inner browser-page-status-inner-empty">
-            <BrowserStatusMark />
-            <h1>{t("browser.emptyTitle")}</h1>
-            <p className="browser-page-status-subtitle">{t("browser.emptySubtitle")}</p>
           </div>
         </div>
       ) : null}
