@@ -258,7 +258,7 @@ function buildChatMessagesFromItems(
         messages.push({
           role: "tool",
           tool_call_id: rawString(item.call_id),
-          content: responsesFunctionCallOutputToChatContent(item.output),
+          content: flattenChatToolContent(responsesFunctionCallOutputToChatContent(item.output)),
         });
         pendingReasoning = "";
         pendingReasoningItem = undefined;
@@ -418,6 +418,53 @@ function responsesFunctionCallOutputToChatContent(raw: string | undefined): unkn
     /* rawString below handles JSON string literals */
   }
   return rawString(raw);
+}
+
+/**
+ * Chat Completions `role: "tool"` messages must contain string content;
+ * upstreams reject part arrays with 400 "tool messages must contain string
+ * content". Responses `function_call_output` items may carry content part
+ * arrays — pi sends text + input_image parts when a tool result includes
+ * images — so flatten them: keep text and describe images with a compact
+ * placeholder. Images cannot travel inside a chat tool message, and
+ * text-only chat upstreams may reject image parts even in user messages.
+ */
+function flattenChatToolContent(content: unknown): unknown {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  const lines: string[] = [];
+  for (const part of content) {
+    if (part === null || typeof part !== "object") {
+      continue;
+    }
+    const record = part as Partial<ChatContentPart>;
+    if (record.type === "text" && typeof record.text === "string" && record.text !== "") {
+      lines.push(record.text);
+      continue;
+    }
+    if (record.type === "image_url") {
+      lines.push(imageToolPlaceholder(record.image_url?.url));
+    }
+  }
+  if (lines.length === 0) {
+    return "";
+  }
+  return lines.join("\n");
+}
+
+function imageToolPlaceholder(url: string | undefined): string {
+  const trimmed = bytesTrimSpace(url ?? "");
+  if (trimmed === "") {
+    return "[image]";
+  }
+  if (trimmed.startsWith("data:")) {
+    const headerEnd = trimmed.indexOf(",");
+    const header = trimmed.slice("data:".length, headerEnd === -1 ? undefined : headerEnd);
+    const mime = header.split(";")[0]?.trim() ?? "";
+    return mime === "" ? "[image]" : `[image: ${mime}]`;
+  }
+  return `[image: ${trimmed}]`;
 }
 
 /** Preserve parsed JSON value types when re-encoding fields as raw JSON. */
