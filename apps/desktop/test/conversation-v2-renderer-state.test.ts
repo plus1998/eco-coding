@@ -376,6 +376,38 @@ describe("conversation V2 renderer state", () => {
     expect(duplicate.tools.get("tool_1")).toEqual(first.tools.get("tool_1"));
   });
 
+  test("accepts a bounded tool page after a full payload effect at the same version", () => {
+    const state = installConversationV2Bootstrap(bootstrap);
+    const previewLines = Array.from({ length: 39 }, (_, index) => `line ${index}`);
+    const fullTool = {
+      toolCallId: "tool_bounded_page",
+      conversationId: "thread_1",
+      runId: "run_1",
+      name: "Edit",
+      status: "completed" as const,
+      createdSeq: 2,
+      versionSeq: 2,
+      input: { fileChange: { previewLines } },
+    };
+    const withEffect = applyConversationV2Effect(
+      state,
+      effect(2, { type: "tool.summary.upsert", toolCall: fullTool }),
+    );
+    const boundedPage: ConversationToolsPage = {
+      protocolVersion: 2,
+      storeEpoch: "epoch_1",
+      conversationId: "thread_1",
+      runId: "run_1",
+      readSeq: 2,
+      historyRevision: 0,
+      tools: [{ ...fullTool, input: { fileChange: { previewLines: previewLines.slice(0, 32) } } }],
+      totalCount: 1,
+      hasMore: false,
+    };
+
+    expect(() => mergeConversationV2ToolPage(withEffect, boundedPage)).not.toThrow();
+  });
+
   test("rejects newer entity updates that change lineage or ownership", () => {
     const state = installConversationV2Bootstrap({
       ...bootstrap,

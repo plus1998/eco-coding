@@ -13,7 +13,7 @@ import type {
   ConversationToolCall,
   ConversationToolsPage,
 } from "@eco/shared";
-import { stableHash, stableJson } from "@eco/shared";
+import { limitConversationToolSummaryPayload, stableHash, stableJson } from "@eco/shared";
 import type { ConversationV2ProjectionExtras } from "../shared/ipc";
 
 function isGenericToolLabel(name: string): boolean {
@@ -1251,6 +1251,10 @@ function sameRun(left: ConversationRun, right: ConversationRun): boolean {
 }
 
 function sameTool(left: ConversationToolCall, right: ConversationToolCall): boolean {
+  // Bootstrap and tool pages carry bounded summaries, while sync effects carry the
+  // full payload. Compare the same read-side projection at an equal version.
+  const leftSummary = limitConversationToolSummaryPayload(left);
+  const rightSummary = limitConversationToolSummaryPayload(right);
   return (
     left.toolCallId === right.toolCallId &&
     left.conversationId === right.conversationId &&
@@ -1263,8 +1267,8 @@ function sameTool(left: ConversationToolCall, right: ConversationToolCall): bool
     left.status === right.status &&
     left.createdSeq === right.createdSeq &&
     left.versionSeq === right.versionSeq &&
-    stableJson(left.input) === stableJson(right.input) &&
-    stableJson(left.output) === stableJson(right.output)
+    stableJson(leftSummary.input) === stableJson(rightSummary.input) &&
+    stableJson(leftSummary.output) === stableJson(rightSummary.output)
   );
 }
 

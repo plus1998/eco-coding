@@ -32,6 +32,7 @@ import {
   decodeConversationCursor,
   encodeConversationCursor,
   estimateConversationBytes,
+  limitConversationToolSummaryPayload,
   stableHash,
   stableJson,
 } from "@eco/shared";
@@ -2761,7 +2762,7 @@ export class ConversationV2Store {
            ORDER BY created_seq DESC, tool_call_id DESC LIMIT ?`,
         )
         .all(...params, safeLimit + 1) as unknown as ToolRow[];
-      let selected = fitPage(rows.map(rowToTool).map(limitToolSummaryPayload), safeLimit, safeBytes);
+      let selected = fitPage(rows.map(rowToTool).map(limitConversationToolSummaryPayload), safeLimit, safeBytes);
       const buildPage = (pageTools: readonly ConversationToolCall[]): ConversationToolsPage => {
         const last = pageTools.at(-1);
         const hasMore = rows.length > pageTools.length;
@@ -6036,7 +6037,7 @@ export class ConversationV2Store {
     // makes the mobile presentation lose command/path/search semantics that
     // desktop already renders. Keep the payload bounded and structured: full
     // tool detail remains available through detailsPage().
-    const tools = rows.map(rowToTool).map(limitToolSummaryPayload);
+    const tools = rows.map(rowToTool).map(limitConversationToolSummaryPayload);
     return limit === undefined ? tools : tools.reverse();
   }
 
@@ -6498,32 +6499,6 @@ function rowToTool(row: ToolRow): ConversationToolCall {
     ...(row.input_json !== null ? { input: parseJson(row.input_json) } : {}),
     ...(row.output_json !== null ? { output: parseJson(row.output_json) } : {}),
   };
-}
-
-function limitToolSummaryPayload(tool: ConversationToolCall): ConversationToolCall {
-  const input = boundedToolPayload(tool.input);
-  const output = boundedToolPayload(tool.output);
-  return {
-    ...tool,
-    ...(input !== undefined ? { input } : {}),
-    ...(output !== undefined ? { output } : {}),
-  };
-}
-
-/** Keep bootstrap useful for rendering without turning it into a detail dump. */
-function boundedToolPayload(value: unknown, depth = 0): unknown {
-  if (value === undefined || value === null) return value;
-  if (typeof value === "string") return value.length <= 4000 ? value : `${value.slice(0, 4000)}…`;
-  if (typeof value === "number" || typeof value === "boolean") return value;
-  if (depth >= 4) return String(value).slice(0, 1000);
-  if (Array.isArray(value)) {
-    return value.slice(0, 32).map((item) => boundedToolPayload(item, depth + 1));
-  }
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).slice(0, 48);
-    return Object.fromEntries(entries.map(([key, item]) => [key, boundedToolPayload(item, depth + 1)]));
-  }
-  return String(value).slice(0, 1000);
 }
 
 function rowToDetail(row: DetailRow): ConversationDetailItem {

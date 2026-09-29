@@ -274,6 +274,32 @@ export interface ConversationToolCall {
   output?: unknown;
 }
 
+/** The read-side tool summary budget, shared by paged reads and renderer comparisons. */
+export function limitConversationToolSummaryPayload(tool: ConversationToolCall): ConversationToolCall {
+  const input = boundedToolPayload(tool.input);
+  const output = boundedToolPayload(tool.output);
+  return {
+    ...tool,
+    ...(input !== undefined ? { input } : {}),
+    ...(output !== undefined ? { output } : {}),
+  };
+}
+
+function boundedToolPayload(value: unknown, depth = 0): unknown {
+  if (value === undefined || value === null) return value;
+  if (typeof value === "string") return value.length <= 4000 ? value : `${value.slice(0, 4000)}…`;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 4) return String(value).slice(0, 1000);
+  if (Array.isArray(value)) {
+    return value.slice(0, 32).map((item) => boundedToolPayload(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).slice(0, 48);
+    return Object.fromEntries(entries.map(([key, item]) => [key, boundedToolPayload(item, depth + 1)]));
+  }
+  return String(value).slice(0, 1000);
+}
+
 export interface ConversationDetailItem {
   itemId: string;
   conversationId: string;

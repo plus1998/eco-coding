@@ -89,6 +89,7 @@ export {
   decodeConversationCursor,
   encodeConversationCursor,
   estimateConversationBytes,
+  limitConversationToolSummaryPayload,
   stableHash,
   stableJson,
 } from "./conversation-v2";
