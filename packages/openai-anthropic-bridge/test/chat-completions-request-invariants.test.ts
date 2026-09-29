@@ -46,6 +46,17 @@ describe("responses → chat request invariants (sub2api parity)", () => {
     expect(chatReq.stream_options).toEqual({ include_usage: true });
   });
 
+  test("omits tool_choice when a Responses request has no tools", () => {
+    const chatReq = responsesToChatCompletionsRequest({
+      model: "local-model",
+      input: "[]",
+      tool_choice: "auto",
+    });
+
+    expect(chatReq.tools).toBeUndefined();
+    expect(chatReq.tool_choice).toBeUndefined();
+  });
+
   test("single tool call attaches pending reasoning to assistant message", () => {
     const messages = convertGolden([
       { type: "message", role: "user", content: [{ type: "input_text", text: "latest sha?" }] },

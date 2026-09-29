@@ -376,6 +376,7 @@ describe("LiteLLM parity: Chat Completions <-> Responses", () => {
     const chat = responsesToChatCompletionsRequest({
       model: "gpt-5.2",
       input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "echo" }] }],
+      tools: [{ type: "function", name: "Echo", parameters: { type: "object" } }],
       tool_choice: { type: "function", name: "Echo" },
     });
 

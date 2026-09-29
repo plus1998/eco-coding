@@ -100,9 +100,13 @@ export function responsesToChatCompletionsRequest(
   }
   if (toolContext.chatTools.length > 0) {
     out.tools = toolContext.chatTools;
-  }
-  if (req.tool_choice !== undefined && req.tool_choice !== null) {
-    out.tool_choice = responsesToolChoiceToChatToolChoice(req.tool_choice);
+    // OpenAI-compatible Chat Completions servers require `tools` whenever
+    // `tool_choice` is present. Responses requests can carry `tool_choice: auto`
+    // while their tool list is empty (for example after MCP tools are unloaded),
+    // so only forward the choice when there is a tool list to choose from.
+    if (req.tool_choice !== undefined && req.tool_choice !== null) {
+      out.tool_choice = responsesToolChoiceToChatToolChoice(req.tool_choice);
+    }
   }
 
   return out;
