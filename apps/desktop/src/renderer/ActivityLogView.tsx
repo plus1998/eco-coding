@@ -478,11 +478,18 @@ function isThreadStoppedForFinalSummary(status: string): boolean {
  * an older active projection from resurrecting a waiting indicator after the
  * thread has already completed.
  */
-function reconcileActivityProjectionThreadStatus(
+export function reconcileActivityProjectionThreadStatus(
   projection: ThreadRunProjectionSnapshot,
   thread?: Pick<ThreadSummary, "status">,
 ): ThreadRunProjectionSnapshot {
-  if (!thread || isThreadStoppedForFinalSummary(projection.thread.status)) {
+  // `idle` is also the V2 projection's provisional status while its message rows have
+  // arrived but the corresponding run row has not. In that window the thread summary is
+  // the live source and must be allowed to restore `running`; terminal projection states
+  // remain authoritative so an old active thread summary cannot resurrect a finished run.
+  if (
+    !thread ||
+    (isThreadStoppedForFinalSummary(projection.thread.status) && projection.thread.status !== "idle")
+  ) {
     return projection;
   }
   if (thread.status === projection.thread.status) {
@@ -1873,11 +1880,11 @@ export function ConversationV2ProjectionActivityLogView({
         showThreadPrompt ? `prompt:${thread?.id ?? ""}` : "",
         ...viewModel.mainFeedEntries.map((entry) => {
           if (entry.kind === "timeline" || entry.kind === "agent-echo") {
-            return `${entry.key}:${entry.item.text.length}`;
+            return `${entry.key}:${projectionTimelineItemRenderSignature(entry.item)}`;
           }
           if (entry.kind === "tool-group") {
             return `${entry.key}:${entry.entries
-              .map((child) => `${child.key}:${child.item.text.length}`)
+              .map((child) => `${child.key}:${projectionTimelineItemRenderSignature(child.item)}`)
               .join(",")}`;
           }
           const lastItem = entry.card.agent.timeline.at(-1);
@@ -1885,7 +1892,7 @@ export function ConversationV2ProjectionActivityLogView({
             entry.key,
             entry.card.agent.timeline.length,
             lastItem?.id ?? "",
-            lastItem?.text.length ?? 0,
+            lastItem ? projectionTimelineItemRenderSignature(lastItem) : "",
           ].join(":");
         }),
       ]

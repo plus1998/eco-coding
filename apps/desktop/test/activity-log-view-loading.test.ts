@@ -9,6 +9,7 @@ import {
   ConversationV2ProjectionActivityLogView as ProjectionActivityLogView,
   ProjectionSubagentDetailFeed,
   ProjectionToolGroupEntry,
+  reconcileActivityProjectionThreadStatus,
   resolveActiveSubagentDurationMs,
   resolveToolGroupDisplayState,
   splitThinkingCarouselLines,
@@ -94,6 +95,17 @@ test("running turn heading switches to stopping while cancelling", async () => {
   await i18n.changeLanguage("zh-CN");
   expect(formatRunLogTurnHeading(true, "running", 4_000)).toBe("处理中 4s");
   expect(formatRunLogTurnHeading(true, "running", 4_000, true)).toBe("停止中 4s");
+});
+
+test("an active thread summary restores running during a provisional idle V2 projection", () => {
+  const snapshot = projection({
+    status: "idle",
+    timeline: [item({ id: "message", eventType: "message.delta", role: "planner", text: "正在准备下一步" })],
+  });
+
+  expect(reconcileActivityProjectionThreadStatus(snapshot, { status: "running" }).thread.status).toBe(
+    "running",
+  );
 });
 
 test("a streaming thinking row on the tail owns the Feed's own live indicator", () => {
