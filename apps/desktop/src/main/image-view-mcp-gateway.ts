@@ -42,6 +42,7 @@ export interface ImageViewAnalyzeInput {
   prompt?: string;
   question?: string;
   toolUseId?: string;
+  signal?: AbortSignal;
 }
 
 export class ImageViewMcpGateway {
@@ -158,8 +159,8 @@ export class ImageViewMcpGateway {
           instructions:
             "Eco local image viewing. Pass an absolute path or durable ref plus a caller-chosen prompt. The tool returns the vision model's text response.",
           listTools: async () => ({ tools: [imageViewToolDefinition()] }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-image-view-control-secret",
@@ -212,11 +213,13 @@ export class ImageViewMcpGateway {
     name: string,
     rawArgs: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     if (name !== ECO_IMAGE_VIEW_TOOL) {
       throw new Error(`未知看图工具：${name}`);
     }
     const claim = this.resolveThread(authToken);
+    signal?.throwIfAborted();
     const imagePath = typeof rawArgs.path === "string" ? rawArgs.path.trim() : "";
     const rawReference = rawArgs.ref ?? rawArgs.reference ?? rawArgs.contentRef;
     const reference = typeof rawReference === "string" ? rawReference.trim() : "";
@@ -251,6 +254,7 @@ export class ImageViewMcpGateway {
       ...(reference ? { ref: reference } : {}),
       ...(prompt ? { prompt } : question ? { question } : {}),
       ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
+      ...(signal ? { signal } : {}),
     };
     const resultText = await this.deps.analyze({
       ...analyzeInput,

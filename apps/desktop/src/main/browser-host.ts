@@ -192,8 +192,8 @@ export class BrowserHost {
         ensureScopeGuestsReady: (threadId) => this.ensureScopeGuestsReady(threadId),
         afterAgentBrowserClose: (threadId) => this.disposeAllBrowsersInThread(threadId),
         onToolCall: (threadId) => this.noteAgentPresenceForThread(threadId),
-        invokeNativeTool: (threadId, toolName, args) =>
-          this.invokeNativeAgentBrowserTool(threadId, toolName, args),
+        invokeNativeTool: (threadId, toolName, args, signal) =>
+          this.invokeNativeAgentBrowserTool(threadId, toolName, args, signal),
       });
     }
     return this.browserMcpGateway;
@@ -1260,7 +1260,9 @@ export class BrowserHost {
     threadId: string,
     toolName: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<AgentBrowserMcpToolResult | null> {
+    signal?.throwIfAborted();
     this.noteAgentPresenceForThread(threadId);
     switch (toolName) {
       case "agent_browser_tab_list":

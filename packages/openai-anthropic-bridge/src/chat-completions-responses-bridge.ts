@@ -929,7 +929,7 @@ function chatToolCallToResponsesOutput(
   const spec = lookupChatName(toolContext, chatName);
   const common = {
     id,
-    call_id: toolCall.id ?? "",
+    call_id: ensureChatToolCallId(toolCall),
     status: "completed",
   };
   if (spec?.kind === "custom") {
@@ -955,6 +955,20 @@ function chatToolCallToResponsesOutput(
     ...(spec?.namespace ? { namespace: spec.namespace } : {}),
     arguments: arguments_,
   };
+}
+
+function isUsableChatToolCallId(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function ensureChatToolCallId(toolCall: ChatToolCall): string {
+  const callId = toolCall.id;
+  if (isUsableChatToolCallId(callId)) {
+    return callId;
+  }
+  const generated = generateItemId();
+  toolCall.id = generated;
+  return generated;
 }
 
 function emptyResponsesMessageOutput(): ResponsesOutput {
@@ -1183,7 +1197,7 @@ export function chatCompletionsChunkToResponsesEvents(
         events.push(...closeChatReasoningItem(state));
         const copyCall: ChatToolCall = {
           ...toolCall,
-          id: toolCall.id !== undefined && toolCall.id !== "" ? toolCall.id : generateItemId(),
+          id: isUsableChatToolCallId(toolCall.id) ? toolCall.id : generateItemId(),
           type: "function",
           function: {
             name: toolCall.function.name ?? "",
@@ -1205,7 +1219,7 @@ export function chatCompletionsChunkToResponsesEvents(
           }),
         );
       } else {
-        if (toolCall.id !== undefined && toolCall.id !== "") {
+        if (isUsableChatToolCallId(toolCall.id)) {
           stored.id = toolCall.id;
         }
         // Argument-only deltas often omit `function.name` (null/undefined). Do not
@@ -1230,7 +1244,7 @@ export function chatCompletionsChunkToResponsesEvents(
               output_index: outputIndex,
               item_id: state.toolItemIds.get(idx) ?? "",
               delta: argsDelta,
-              call_id: stored.id ?? "",
+              call_id: ensureChatToolCallId(stored),
               name: toolName,
             }),
           );
@@ -1466,6 +1480,7 @@ function closeChatToolItems(state: ChatCompletionsToResponsesStreamState): Respo
     if (itemID === undefined) {
       continue;
     }
+    const callId = ensureChatToolCallId(toolCall);
     let arguments_ = toolCall.function.arguments ?? "";
     const toolName = toolCall.function.name ?? "";
     const isCustom = isCustomToolChatName(state.toolContext, toolName);
@@ -1480,7 +1495,7 @@ function closeChatToolItems(state: ChatCompletionsToResponsesStreamState): Respo
         chatToResponsesEvent(state, "response.custom_tool_call_input.done", {
           output_index: outputIndex,
           item_id: itemID,
-          call_id: toolCall.id ?? "",
+          call_id: callId,
           name: toolName,
           input,
         }),
@@ -1494,7 +1509,7 @@ function closeChatToolItems(state: ChatCompletionsToResponsesStreamState): Respo
         chatToResponsesEvent(state, "response.function_call_arguments.done", {
           output_index: outputIndex,
           item_id: itemID,
-          call_id: toolCall.id ?? "",
+          call_id: callId,
           name: toolName,
           arguments: arguments_,
         }),

@@ -11,6 +11,8 @@ import {
   readHtmlHostMetadataFromToolOutput,
   readImageDisplayMetadataFromToolOutput,
   readSendMessageToolInput,
+  resolveEcoMcpHubSearchCall,
+  resolveEcoMcpHubToolCall,
   resolveEcoHtmlHostToolCall,
   resolveEcoImageDisplayToolCall,
   resolveEcoImageViewToolCall,
@@ -592,6 +594,31 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
   return undefined;
 }
 
+function resolveSdkMcpToolIdentity(
+  name: string,
+  input: unknown,
+): {
+  displayName: string;
+  toolInput: unknown;
+  mcpDiscovery?: { kind: "search" };
+} {
+  const hubCall = resolveEcoMcpHubToolCall(name, input);
+  const hubSearch = resolveEcoMcpHubSearchCall(name, input);
+  const proxyCall = hubCall ? undefined : resolvePiMcpProxyCall(name, input);
+  const proxyName = proxyCall ? resolvePiMcpProxyToolName(name, input) : undefined;
+  const displayName = hubCall?.name ?? proxyName ?? name;
+  const toolInput = hubCall?.args ?? proxyCall?.args ?? input;
+  const mcpDiscovery =
+    hubSearch || (!hubCall && !proxyCall && resolvePiMcpProxyDiscoveryCall(name, input))
+      ? { kind: "search" as const }
+      : undefined;
+  return {
+    displayName,
+    toolInput,
+    ...(mcpDiscovery ? { mcpDiscovery } : {}),
+  };
+}
+
 function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
@@ -601,17 +628,16 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
-  const proxyCall = resolvePiMcpProxyCall(name, record.input);
-  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
-  const toolInput = proxyCall?.args ?? record.input;
-  const { imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
-    displayName,
-    toolInput,
-  );
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const toolInput = identity.toolInput;
+  const { imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery: imageMcpDiscovery } =
+    resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
   const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
   // Skill reads label by skill name; skip file targets so the card stays "读取 <name> 技能".
-  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, record.input);
+  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, toolInput);
   const command =
     skillDetail ??
     readString(record.command) ??
@@ -630,25 +656,25 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
-      ? (readString(record.description) ?? readBashDescriptionFromToolInput(record.input))
+      ? (readString(record.description) ?? readBashDescriptionFromToolInput(toolInput))
       : undefined;
-  const fileChangeFromInput = isFileChangeToolName(name)
-    ? resolveFileChangeFromToolInput(name, record.input)
+  const fileChangeFromInput = isFileChangeToolName(displayName)
+    ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
   const fileChange = enrichFileChangeFromToolOutput(
     fileChangeFromInput,
     output ?? record.result ?? record.content,
   );
-  const sendMessageInput = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const sendMessageInput = displayName === "SendMessage" ? readSendMessageToolInput(toolInput) : undefined;
   const sendMessageResult =
-    name === "SendMessage"
+    displayName === "SendMessage"
       ? parseSendMessageToolResult(output ?? record.result ?? record.content)
       : undefined;
   const sendMessageDetail = sendMessageResult
     ? formatSendMessageToolResultSummary(sendMessageResult)
     : undefined;
   const sendMessageOutputPreview =
-    name === "SendMessage" && sendMessageResult?.resultMessage
+    displayName === "SendMessage" && sendMessageResult?.resultMessage
       ? createToolOutputPreview(sendMessageResult.resultMessage)
       : undefined;
   const sendMessage =
@@ -722,11 +748,15 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     return undefined;
   }
   const name = record.tool_name;
-  const proxyCall = resolvePiMcpProxyCall(name, record.input);
-  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
-  const toolInput = proxyCall?.args ?? record.input;
-  const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
-  const targets = resolveThreadRunToolTargets(displayName, record.input);
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const toolInput = identity.toolInput;
+  const { imageViewCall, mcpDiscovery: imageMcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
+    displayName,
+    toolInput,
+  );
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
+  const targets = resolveThreadRunToolTargets(displayName, toolInput);
   const message =
     typeof record.message === "string"
       ? record.message
@@ -745,8 +775,8 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
       ? `System cancelled ${name} — not a user denial${message ? `: ${message}` : ""}`
       : message;
   const outputPreview = message ? createToolOutputPreview(message) : undefined;
-  const fileChange = isFileChangeToolName(name)
-    ? resolveFileChangeFromToolInput(name, record.input)
+  const fileChange = isFileChangeToolName(displayName)
+    ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
   const failedImageViewMeta = toImageViewMetadata(imageViewCall);
   return {
@@ -883,15 +913,19 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     return undefined;
   }
   const name = record.tool_name.trim();
-  const proxyCall = resolvePiMcpProxyCall(name, record.input);
-  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
-  const toolInput = proxyCall?.args ?? record.input;
-  const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const toolInput = identity.toolInput;
+  const { imageViewCall, mcpDiscovery: imageMcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
+    displayName,
+    toolInput,
+  );
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
   const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
   // Skill reads (e.g. pi `read` on SKILL.md) label by skill name; skip file targets so
   // the card does not fall back to "读取 SKILL.md".
-  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, record.input);
+  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, toolInput);
   const detail =
     skillDetail ||
     imageViewCall?.path ||
@@ -900,11 +934,11 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
     resolveSdkToolDisplayDetail(displayName, toolInput);
   const toolUseId = readString(record.tool_use_id);
-  const description = name === "Bash" ? readBashDescriptionFromToolInput(record.input) : undefined;
-  const fileChange = isFileChangeToolName(name)
-    ? resolveFileChangeFromToolInput(name, record.input)
+  const description = displayName === "Bash" ? readBashDescriptionFromToolInput(toolInput) : undefined;
+  const fileChange = isFileChangeToolName(displayName)
+    ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
-  const sendMessage = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const sendMessage = displayName === "SendMessage" ? readSendMessageToolInput(toolInput) : undefined;
   const webSearch = resolveEcoWebSearchToolMetadata(displayName, toolInput);
   const imageViewMeta = toImageViewMetadata(imageViewCall);
   return {
@@ -935,14 +969,26 @@ function resolveSdkToolProgressMetadata(payload: unknown): ThreadRunToolMetadata
   if (!name) {
     return undefined;
   }
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const { imageViewCall, mcpDiscovery: imageMcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
+    displayName,
+    identity.toolInput,
+  );
+  const imageViewMeta = toImageViewMetadata(imageViewCall);
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
   const elapsedSeconds =
     typeof record.elapsed_time_seconds === "number" ? record.elapsed_time_seconds : undefined;
   const toolUseId = readString(record.tool_use_id);
   return {
-    name,
+    name: displayName,
+    ...(imageViewCall?.path && { detail: imageViewCall.path }),
+    ...(imageViewCall?.ref && !imageViewCall.path && { detail: imageViewCall.ref }),
     ...(toolUseId && { toolUseId }),
     ...(elapsedSeconds !== undefined &&
       Number.isFinite(elapsedSeconds) && { durationMs: elapsedSeconds * 1000 }),
+    ...(imageViewMeta && { imageView: imageViewMeta }),
+    ...(mcpDiscovery && { mcpDiscovery }),
   };
 }
 

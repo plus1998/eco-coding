@@ -32,6 +32,7 @@ function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): Applicati
     closeImageViewGateway: async () => {},
     closeImageDisplayGateway: async () => {},
     closeIntegratedWebSearchGateway: async () => {},
+    closeMcpHubGateway: async () => {},
     stopGlobalCodexRuntime: async () => {},
     stopAllAcpRuntimes: () => {},
     stopGlobalEcoGateway: async () => {},

@@ -25,6 +25,7 @@ import {
 import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spawn-role-queue.js";
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
+import { resolveEcoMcpHubSearchCall, resolveEcoMcpHubToolCall } from "./eco-mcp-hub-tool.js";
 import { resolveEcoImageViewToolCall } from "./eco-image-view-tool.js";
 import { readMcpToolOutputText } from "./mcp-tool-output-text.js";
 import {
@@ -1445,13 +1446,17 @@ function emitMcpToolEvent(
   const toolName = `mcp__${server}__${tool}`;
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
-  const imageViewCall = resolveEcoImageViewToolCall(toolName, mcpInput);
+  const hubCall = resolveEcoMcpHubToolCall(toolName, mcpInput);
+  const hubSearch = resolveEcoMcpHubSearchCall(toolName, mcpInput);
+  const displayToolName = hubCall?.name ?? toolName;
+  const displayInput = hubCall?.args ?? mcpInput;
+  const imageViewCall = resolveEcoImageViewToolCall(displayToolName, displayInput);
   let imageViewPath = imageViewCall?.path;
   const imageViewReference = imageViewCall?.ref;
   if (
     !imageViewPath &&
     eventType === "tool.completed" &&
-    isAgentBrowserScreenshotToolName(toolName)
+    isAgentBrowserScreenshotToolName(displayToolName)
   ) {
     imageViewPath = readAbsolutePathFromMcpToolOutput(item);
   }
@@ -1471,7 +1476,7 @@ function emitMcpToolEvent(
     }
   }
   let imageDisplayMeta =
-    isEcoImageDisplayToolName(toolName) && eventType === "tool.completed"
+    isEcoImageDisplayToolName(displayToolName) && eventType === "tool.completed"
       ? readImageDisplayMetadataFromToolOutput(item)
       : undefined;
   if (imageDisplayMeta && eventType === "tool.completed") {
@@ -1482,17 +1487,19 @@ function emitMcpToolEvent(
   }
   const imageDisplayArtifactId = imageDisplayMeta?.artifactId;
   const htmlHostMeta =
-    isEcoHtmlHostToolName(toolName) && eventType === "tool.completed"
+    isEcoHtmlHostToolName(displayToolName) && eventType === "tool.completed"
       ? readHtmlHostMetadataFromToolOutput(item)
       : undefined;
-  const urlHint = readMcpToolUrlHint(item, mcpInput);
-  const ecoWebSearchQuery = isEcoWebSearchToolName(toolName) ? readEcoWebSearchQuery(mcpInput) : undefined;
+  const urlHint = readMcpToolUrlHint(item, displayInput);
+  const ecoWebSearchQuery = isEcoWebSearchToolName(displayToolName)
+    ? readEcoWebSearchQuery(displayInput)
+    : undefined;
   const ecoWebSearchParsed =
-    isEcoWebSearchToolName(toolName) && eventType !== "tool.started"
+    isEcoWebSearchToolName(displayToolName) && eventType !== "tool.started"
       ? parseEcoWebSearchToolOutput(item)
       : undefined;
   const ecoWebSearch =
-    isEcoWebSearchToolName(toolName)
+    isEcoWebSearchToolName(displayToolName)
       ? {
           mode: "search" as const,
           actionType: "search" as const,
@@ -1521,7 +1528,7 @@ function emitMcpToolEvent(
           ? [htmlHostMeta.publicUrl]
           : ecoWebSearchQuery
             ? [ecoWebSearchQuery]
-            : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+            : [formatMcpToolTarget(displayToolName, `${server}/${tool}`), ...(urlHint ? [urlHint] : [])];
   const messageHint =
     imageViewPath ??
     imageViewReference ??
@@ -1536,7 +1543,7 @@ function emitMcpToolEvent(
     turnId,
     itemId,
     role: "tool",
-    message: messageHint ? `Tool: ${toolName} · ${messageHint}` : `Tool: ${toolName}`,
+    message: messageHint ? `Tool: ${displayToolName} · ${messageHint}` : `Tool: ${displayToolName}`,
     streamState: eventType === "tool.started" ? "streaming" : "finalized",
     stableEventId: `tre:codex:tool:${itemId}:${eventType === "tool.started" ? "started" : "done"}`,
     metadata: {
@@ -1545,10 +1552,10 @@ function emitMcpToolEvent(
       logicalEntityId: itemId,
       itemId,
       itemType: "mcpToolCall",
-      ...(mcpInput ? { mcpInput } : {}),
+      ...(displayInput ? { mcpInput: displayInput } : {}),
       ...(urlHint ? { url: urlHint } : {}),
       tool: {
-        name: toolName,
+        name: displayToolName,
         detail: detailParts.join(" · "),
         toolUseId: itemId,
         status: toolStatus,
@@ -1580,9 +1587,15 @@ function emitMcpToolEvent(
             }
           : {}),
         ...(ecoWebSearch ? { webSearch: ecoWebSearch } : {}),
+        ...(hubSearch ? { mcpDiscovery: { kind: "search" as const } } : {}),
       },
     },
   });
+}
+
+function formatMcpToolTarget(toolName: string, fallback: string): string {
+  const match = toolName.match(/^mcp__([^_]+(?:_[^_]+)*)__(.+)$/);
+  return match?.[1] && match[2] ? `${match[1]}/${match[2]}` : fallback;
 }
 
 /** Best-effort MCP tool arguments blob (Codex field names vary). */

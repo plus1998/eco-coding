@@ -8,7 +8,7 @@ import {
 } from "../src/chat-completions-responses-bridge.js";
 import { jsonParse } from "../src/json.js";
 import { responsesStreamEventToJSON } from "../src/responses-stream-event-wire.js";
-import type { ChatCompletionsChunk, ResponsesStreamEvent } from "../src/types.js";
+import type { ChatCompletionsChunk, ChatCompletionsResponse, ResponsesStreamEvent } from "../src/types.js";
 
 /** Ported from sub2api chatcompletions_responses_stream_lifecycle_test.go */
 function collectResponsesStreamEvents(chunkPayloads: string[]): ResponsesStreamEvent[] {
@@ -203,6 +203,46 @@ describe("chat completions stream → responses lifecycle (sub2api parity)", () 
     expect(itemDone?.item?.name).toBe("exec_command");
     expect(itemDone?.item?.arguments).toBe('{"cmd":"ls"}');
     expect(itemDone?.item?.call_id).toBe("call_a");
+  });
+
+  test("argument deltas with explicit null id preserve the first tool call id", () => {
+    const events = collectResponsesStreamEvents([
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_longcat","type":"function","function":{"name":"exec_command","arguments":""}}]}}]}`,
+      // LongCat repeats nullable identity fields on argument-only deltas.
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":null,"type":"function","function":{"name":null,"arguments":"{\\"cmd\\":\\"printf OK\\"}"}}]}}]}`,
+      `{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+    ]);
+
+    const toolEvents = events.filter(
+      (event) =>
+        event.type === "response.output_item.added" ||
+        event.type === "response.function_call_arguments.delta" ||
+        event.type === "response.function_call_arguments.done" ||
+        event.type === "response.output_item.done",
+    );
+    for (const event of toolEvents) {
+      if (event.type === "response.output_item.added" || event.type === "response.output_item.done") {
+        if (event.item?.type === "function_call") {
+          expect(event.item.call_id).toBe("call_longcat");
+        }
+      } else {
+        expect(event.call_id).toBe("call_longcat");
+      }
+    }
+  });
+
+  test("non-stream tool calls with null id receive a stable fallback id", () => {
+    const response = chatCompletionsResponseToResponses(
+      jsonParse<ChatCompletionsResponse>(
+        `{"id":"chatcmpl-null-id","object":"chat.completion","created":1,"model":"longcat","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":null,"type":"function","function":{"name":"exec_command","arguments":"{\\"cmd\\":\\"pwd\\"}"}}]},"finish_reason":"tool_calls"}]}`,
+      ),
+      "longcat",
+    );
+
+    const toolCall = (response.output ?? []).find((item) => item.type === "function_call");
+    expect(toolCall?.type).toBe("function_call");
+    expect(typeof toolCall?.call_id).toBe("string");
+    expect(toolCall?.call_id).not.toBe("");
   });
 
   test("function_call output_item.added wire includes empty arguments and call_id", () => {

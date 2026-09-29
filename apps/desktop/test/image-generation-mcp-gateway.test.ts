@@ -21,14 +21,14 @@ test("global image generation Codex server starts once and has a stable definiti
     expect(first?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
     expect(first?.httpHeaders?.["X-Eco-Image-Control-Secret"]).toBeTruthy();
     expect(first?.toolTimeoutSec).toBe(IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC);
-    expect(first?.toolTimeoutSec).toBeGreaterThanOrEqual(300);
+    expect(first?.toolTimeoutSec).toBeGreaterThanOrEqual(600);
     expect(second).toEqual(first);
   } finally {
     await gateway.close();
   }
 });
 
-test("Claude/Pi injection sets 5-minute MCP tool-call timeout", async () => {
+test("Claude/Pi injection sets 10-minute MCP tool-call timeout", async () => {
   const gateway = new ImageGenerationMcpGateway({
     store: {
       getSettings: () => ({ enabled: true }),
@@ -52,7 +52,7 @@ test("Claude/Pi injection sets 5-minute MCP tool-call timeout", async () => {
       type: "http",
       url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
     });
-    expect(IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(300_000);
+    expect(IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(600_000);
     expect(injection.sdkEntry).toMatchObject({
       // Claude Agent SDK McpStdioServerConfig.timeout (also used for HTTP entries)
       timeout: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,

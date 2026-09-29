@@ -36,6 +36,7 @@ export type BrowserMcpGatewayDeps = {
     threadId: string,
     toolName: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ) => Promise<AgentBrowserMcpToolResult | null | undefined>;
 };
 
@@ -138,6 +139,7 @@ export class BrowserMcpGateway {
     cdpPort: number,
     toolName: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ) {
     const resolved = resolveAgentBrowserBinary();
     if (!resolved.available || !resolved.binaryPath) {
@@ -152,6 +154,7 @@ export class BrowserMcpGateway {
       env,
       toolName,
       args,
+      ...(signal ? { signal } : {}),
     });
   }
 
@@ -159,19 +162,21 @@ export class BrowserMcpGateway {
     name: string,
     args: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<AgentBrowserMcpToolResult> {
     const threadId = this.resolveThreadForCall({
       ...(authToken !== undefined ? { authToken } : {}),
       toolName: name,
     });
     this.deps.onToolCall?.(threadId, name);
-    const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args);
+    signal?.throwIfAborted();
+    const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args, signal);
     const result =
       nativeResult ??
       (await (async () => {
         const cdp = await this.deps.ensureCdpPort(threadId);
         await this.deps.ensureScopeGuestsReady?.(threadId);
-        return this.invokeToolViaCli(threadId, cdp, name, args);
+        return this.invokeToolViaCli(threadId, cdp, name, args, signal);
       })());
     if (name === "agent_browser_close" && !result.isError) {
       await this.deps.afterAgentBrowserClose?.(threadId);
@@ -190,8 +195,8 @@ export class BrowserMcpGateway {
           instructions:
             "Eco built-in browser. Tools apply only to the authenticated conversation thread.",
           listTools: async () => ({ tools: agentBrowserCoreToolsCatalog() }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-browser-control-secret",

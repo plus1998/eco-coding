@@ -3045,6 +3045,7 @@ export function mapSdkMessageToEvents(
   if (message.type === "tool_progress") {
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     const toolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id : uuid;
+    const toolUseDescriptor = streamCtx?.toolUseById.get(toolUseId);
     const messageParentToolUseId =
       typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
     return [
@@ -3057,6 +3058,7 @@ export function mapSdkMessageToEvents(
           type: "tool.started",
           payload: {
             ...message,
+            ...(toolUseDescriptor?.input && !isRecord(message.input) && { input: toolUseDescriptor.input }),
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
           },
@@ -3167,6 +3169,10 @@ export function mapSdkMessageToEvents(
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     const messageParentToolUseId =
       typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
+    const summaryToolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id.trim() : "";
+    const summaryDescriptor = summaryToolUseId ? streamCtx?.toolUseById.get(summaryToolUseId) : undefined;
+    const summaryInput =
+      isRecord(message.input) && Object.keys(message.input).length > 0 ? message.input : undefined;
     return [
       createAttributedAgentEvent(
         {
@@ -3179,6 +3185,7 @@ export function mapSdkMessageToEvents(
             ...message,
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+            ...(summaryDescriptor?.input && !summaryInput && { input: summaryDescriptor.input }),
           },
           ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
         },

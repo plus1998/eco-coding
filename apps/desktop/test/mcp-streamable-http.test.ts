@@ -1,10 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-  handleMcpStreamableHttpRequest,
-  isJsonRpcNotification,
-} from "../src/main/mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, isJsonRpcNotification } from "../src/main/mcp-streamable-http";
 
 const servers: http.Server[] = [];
 
@@ -82,13 +79,14 @@ test("MCP streamable HTTP initialize tools/list tools/call round-trip", async ()
     }),
   });
   expect(init.status).toBe(200);
-  expect(init.headers.get("mcp-session-id")).toBeTruthy();
+  const sessionId = init.headers.get("mcp-session-id");
+  expect(sessionId).toBeTruthy();
   const initBody = (await init.json()) as { result: { serverInfo: { name: string } } };
   expect(initBody.result.serverInfo.name).toBe("eco_test");
 
   const list = await fetch(url, {
     method: "POST",
-    headers,
+    headers: { ...headers, ...(sessionId ? { "mcp-session-id": sessionId } : {}) },
     body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
   });
   const listBody = (await list.json()) as { result: { tools: Array<{ name: string }> } };
@@ -96,7 +94,7 @@ test("MCP streamable HTTP initialize tools/list tools/call round-trip", async ()
 
   const call = await fetch(url, {
     method: "POST",
-    headers,
+    headers: { ...headers, ...(sessionId ? { "mcp-session-id": sessionId } : {}) },
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 3,
@@ -196,4 +194,168 @@ test("probeCodexStyleHttpMcpHandshake accepts Codex Accept header + 202 notifica
     headers: { "x-eco-test-control-secret": secret },
   });
   expect(result.toolCount).toBe(1);
+});
+
+test("MCP client disconnect does not implicitly cancel an in-flight tools/call", async () => {
+  let startedResolve!: () => void;
+  let finishResolve!: () => void;
+  const started = new Promise<void>((resolve) => {
+    startedResolve = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    finishResolve = resolve;
+  });
+  let observedSignal: AbortSignal | undefined;
+  const { port, secret } = await listenTestServer({
+    serverName: "eco_abort",
+    listTools: async () => ({ tools: [{ name: "slow", inputSchema: { type: "object" } }] }),
+    callTool: async ({ signal }) => {
+      observedSignal = signal;
+      startedResolve();
+      await finish;
+      return { content: [{ type: "text", text: "finished" }] };
+    },
+  });
+
+  const url = `http://127.0.0.1:${port}/mcp`;
+  const headers = {
+    "content-type": "application/json",
+    "x-eco-test-control-secret": secret,
+  };
+  const init = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 0,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-03-26",
+        capabilities: {},
+        clientInfo: { name: "disconnect", version: "0" },
+      },
+    }),
+  });
+  const sessionId = init.headers.get("mcp-session-id");
+  expect(sessionId).toBeTruthy();
+
+  const request = http.request(url, {
+    method: "POST",
+    headers: { ...headers, ...(sessionId ? { "mcp-session-id": sessionId } : {}) },
+  });
+  request.on("error", () => undefined);
+  request.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "slow", arguments: {} },
+    }),
+  );
+  request.end();
+  await started;
+  request.destroy();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(observedSignal?.aborted).toBe(false);
+  finishResolve();
+});
+
+test("MCP notifications/cancelled aborts only the matching authenticated session request", async () => {
+  let startedResolve!: () => void;
+  let observedSignal: AbortSignal | undefined;
+  const started = new Promise<void>((resolve) => {
+    startedResolve = resolve;
+  });
+  const { port, secret } = await listenTestServer({
+    serverName: "eco_cancel",
+    listTools: async () => ({ tools: [] }),
+    callTool: async ({ signal }) => {
+      observedSignal = signal;
+      startedResolve();
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      throw signal.reason instanceof Error ? signal.reason : new Error("aborted");
+    },
+  });
+  const url = `http://127.0.0.1:${port}/mcp`;
+  const headers = {
+    "content-type": "application/json",
+    "x-eco-test-control-secret": secret,
+  };
+  const initialize = async () => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "cancel", version: "0" },
+        },
+      }),
+    });
+    const sessionId = response.headers.get("mcp-session-id");
+    if (!sessionId) throw new Error("missing MCP session id");
+    return sessionId;
+  };
+  const sessionA = await initialize();
+  const sessionB = await initialize();
+  const call = http.request(url, {
+    method: "POST",
+    headers: { ...headers, "mcp-session-id": sessionA },
+  });
+  call.on("error", () => undefined);
+  call.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 42,
+      method: "tools/call",
+      params: { name: "slow", arguments: {} },
+    }),
+  );
+  call.end();
+  await started;
+
+  const wrongSession = await fetch(url, {
+    method: "POST",
+    headers: { ...headers, "mcp-session-id": sessionB },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: 42, reason: "wrong session" },
+    }),
+  });
+  expect(wrongSession.status).toBe(202);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  expect(observedSignal?.aborted).toBe(false);
+
+  const cancelled = await fetch(url, {
+    method: "POST",
+    headers: { ...headers, "mcp-session-id": sessionA },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: 42, reason: "same session" },
+    }),
+  });
+  expect(cancelled.status).toBe(202);
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      const signal = observedSignal;
+      if (signal?.aborted) return resolve();
+      signal?.addEventListener("abort", () => resolve(), { once: true });
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("cancellation was not propagated")), 2_000),
+    ),
+  ]);
+  expect(observedSignal?.aborted).toBe(true);
 });

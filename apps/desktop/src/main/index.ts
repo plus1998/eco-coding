@@ -336,7 +336,7 @@ import {
   normalizeLocalePreference,
   resolveAppLocale,
 } from "../shared/locale";
-import { buildCodexMcpServersForConfigSync, filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
+import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
 import { parseThreadApprovePlanPayload, parseThreadDismissPlanPayload } from "../shared/plan-approval";
 import {
@@ -681,6 +681,7 @@ import {
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { createLocalSecretCodec } from "./local-secret-codec";
 import { checkMcpServerConnection } from "./mcp-checker";
+import { McpHubGateway } from "./mcp-hub-gateway";
 import { prepareCodexGlobalMcpServerPool, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
@@ -1185,6 +1186,7 @@ let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
 let agentOrchestrationStore: AgentOrchestrationStore;
 let mcpStore: McpStore;
+let mcpHubGateway: McpHubGateway;
 let conversationStore: ConversationStore;
 let executeThreadDeleteCommand: ReturnType<typeof createThreadDeleteCommandCoordinator>;
 let codexThreadMap: CodexThreadMap;
@@ -1220,29 +1222,19 @@ function requireBrowserHost(): BrowserHost {
 }
 
 async function resolveCodexGlobalMcpServers() {
-  const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
-  const configured = buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled);
+  // Codex must see only the thread-scoped Hub descriptors. Direct stdio/HTTP
+  // entries and built-in Eco gateways would create a second dispatch path and
+  // could retain credentials outside the Hub session binding.
   return prepareCodexGlobalMcpServerPool({
-    configuredServers: configured,
-    builtinServerResolvers: [
-      () => requireBrowserHost().resolveGlobalAgentBrowserMcpServer(),
-      () => computerUseGateway.resolveGlobalCodexServer(),
-      () => imageGenerationGateway.resolveGlobalCodexServer(),
-      () => imageViewGateway.resolveGlobalCodexServer(),
-      () => imageDisplayGateway.resolveGlobalCodexServer(),
-      async () => {
-        if (!centerServerClient || !htmlHostGateway) {
-          return undefined;
-        }
-        const capability = await centerServerClient.refreshHtmlHostingCapability();
-        if (!capability.available) {
-          return undefined;
-        }
-        return htmlHostGateway.resolveGlobalCodexServer();
-      },
-      () => integratedWebSearchGateway.resolveGlobalCodexServer(),
-    ],
+    configuredServers: mcpHubGateway.listThreadCodexServers(),
+    builtinServerResolvers: [],
   });
+}
+
+function codexHubServerName(threadId: string): string {
+  const normalized = threadId.trim();
+  const readableSuffix = normalized.replace(/[^a-zA-Z0-9_-]/g, "_").slice(-24);
+  return `eco_mcp_${stableHash(normalized)}${readableSuffix ? `_${readableSuffix}` : ""}`;
 }
 let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
@@ -2012,6 +2004,7 @@ app.whenReady().then(async () => {
   providerStore = await createProviderStore(dbPath);
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
+  mcpHubGateway = new McpHubGateway();
   // The image store must be available before ConversationStore.initialize():
   // opening a legacy thread may need to materialize an attachment during its
   // lazy V2 migration.
@@ -2181,7 +2174,8 @@ app.whenReady().then(async () => {
     },
   });
   imageViewGateway = new ImageViewMcpGateway({
-    analyze: async ({ threadId, path: imagePath = "", ref, prompt, question }) => {
+    analyze: async ({ threadId, path: imagePath = "", ref, prompt, question, signal }) => {
+      signal?.throwIfAborted();
       const requestedPrompt = prompt?.trim() || question?.trim() || "";
       if (!requestedPrompt) {
         throw new Error("image_view 调用必须提供 prompt。");
@@ -2199,6 +2193,7 @@ app.whenReady().then(async () => {
           })()
         : readImageViewFile(imagePath);
       const resolvedFile = await file;
+      signal?.throwIfAborted();
       if (!isPromptImageMediaType(resolvedFile.mimeType)) {
         throw new Error(`Unsupported image media type: ${resolvedFile.mimeType}`);
       }
@@ -2213,6 +2208,7 @@ app.whenReady().then(async () => {
           prompt: requestedPrompt,
           attachments,
           billingAgentId: agentId,
+          ...(signal ? { signal } : {}),
           ...(runAttemptId ? { runAttemptId } : {}),
         },
         createThreadImageViewHost(runAttemptId),
@@ -3080,6 +3076,9 @@ installApplicationShutdownHook(
     },
     closeIntegratedWebSearchGateway: async () => {
       await integratedWebSearchGateway?.close();
+    },
+    closeMcpHubGateway: async () => {
+      await mcpHubGateway?.close();
     },
     stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
     stopAllAcpRuntimes,
@@ -10261,92 +10260,108 @@ async function startCodexThreadRun(
             ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
               .runtimeConfig?.subagentEnabled,
           resolveMcpServers: async () => {
-            const globalPool = await resolveCodexGlobalMcpServers();
+            const configuredMcp = mcpStore.buildSdkConfig();
+            const threadMcpKeys = resolveCodexThreadMcpServerKeys(input.thread.id);
+            const hubMcpKeys = threadMcpKeys.filter(
+              (key) => Object.hasOwn(configuredMcp.mcpServers, key) && !key.startsWith("eco_"),
+            );
+            const codexHubName = codexHubServerName(input.thread.id);
+            const builtinHubServers: string[] = [];
+            const registerBuiltin = (name: string, sdkEntry: Record<string, unknown> | undefined): void => {
+              if (!sdkEntry) return;
+              mcpHubGateway.registerThreadServerEntry({
+                name,
+                threadId: input.thread.id,
+                sdkEntry,
+              });
+              builtinHubServers.push(name);
+            };
             if (sessionEcoBrowserEnabled) {
               const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection({
                 threadId: input.thread.id,
                 sessionEnabled: true,
               });
-              if (!browserInject.enabled || !browserInject.codexServer) {
+              if (!browserInject.enabled || !browserInject.codexServer || !browserInject.sdkEntry) {
                 throw new Error(
                   `本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`,
                 );
               }
+              registerBuiltin(ECO_AGENT_BROWSER_MCP_SERVER, browserInject.sdkEntry);
             }
             if (sessionImageGenerationEnabled) {
               const imageInject = await imageGenerationGateway.resolveInjection({
                 threadId: input.thread.id,
                 sessionEnabled: true,
               });
-              if (!imageInject.enabled || !imageInject.codexServer) {
+              if (!imageInject.enabled || !imageInject.codexServer || !imageInject.sdkEntry) {
                 throw new Error(
                   `本会话已开启创意绘画，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
                 );
               }
+              registerBuiltin(ECO_IMAGE_GENERATION_MCP_SERVER, imageInject.sdkEntry);
             }
             if (sessionComputerUseEnabled) {
               const computerUseInject = await computerUseGateway.resolveInjection({
                 threadId: input.thread.id,
                 sessionEnabled: true,
               });
-              if (!computerUseInject.enabled || !computerUseInject.codexServer) {
+              if (!computerUseInject.enabled || !computerUseInject.codexServer || !computerUseInject.sdkEntry) {
                 throw new Error(
                   `本会话已开启电脑操控，但不可用：${computerUseInject.unavailableReason ?? "未知原因"}`,
                 );
               }
+              registerBuiltin(ECO_COMPUTER_USE_MCP_SERVER, computerUseInject.sdkEntry);
             }
             if (sessionIntegratedWebSearchEnabled) {
               const webSearchInject = await integratedWebSearchGateway.resolveInjection({
                 threadId: input.thread.id,
                 sessionEnabled: true,
               });
-              if (!webSearchInject.enabled || !webSearchInject.codexServer) {
+              if (!webSearchInject.enabled || !webSearchInject.codexServer || !webSearchInject.sdkEntry) {
                 throw new Error(
                   `本会话需要 Integrated Web Search，但不可用：${webSearchInject.unavailableReason ?? "未知原因"}`,
                 );
               }
+              registerBuiltin(ECO_WEB_SEARCH_MCP_SERVER, webSearchInject.sdkEntry);
             }
-            await imageViewGateway.resolveInjection(input.thread.id);
-            await imageDisplayGateway.resolveInjection(input.thread.id);
+            const imageViewInject = await imageViewGateway.resolveInjection(input.thread.id);
+            registerBuiltin(ECO_IMAGE_VIEW_MCP_SERVER, imageViewInject.sdkEntry);
+            const imageDisplayInject = await imageDisplayGateway.resolveInjection(input.thread.id);
+            registerBuiltin(ECO_IMAGE_DISPLAY_MCP_SERVER, imageDisplayInject.sdkEntry);
             const htmlCap = await centerServerClient.refreshHtmlHostingCapability();
             if (htmlCap.available) {
-              await htmlHostGateway.resolveInjection(input.thread.id);
+              const htmlHostInject = await htmlHostGateway.resolveInjection(input.thread.id);
+              registerBuiltin(ECO_HTML_HOST_MCP_SERVER, htmlHostInject.sdkEntry);
             }
-            return globalPool;
+            const hadCodexHub = mcpHubGateway
+              .listThreadCodexServers()
+              .some((server) => server.name === codexHubName);
+            const hubInjection = await mcpHubGateway.prepareThreadFromSdkConfig({
+              threadId: input.thread.id,
+              config: configuredMcp,
+              allowedServers: [...hubMcpKeys, ...builtinHubServers],
+              runtimeName: codexHubName,
+            });
+            if (hubInjection?.codexServerChanged || (!hubInjection && hadCodexHub)) {
+              scheduleCodexGlobalRuntimeRefresh();
+            }
+            return hubInjection ? [hubInjection.codexServer] : [];
           },
           resolveEnabledMcpServerKeys: async () => {
+            const codexHubName = codexHubServerName(input.thread.id);
             const keys = resolveCodexThreadMcpServerKeys(input.thread.id).filter(
-              (key) => !key.startsWith("eco_ab_"),
+              (key) => !key.startsWith("eco_ab_") && !Object.hasOwn(mcpStore.buildSdkConfig().mcpServers, key),
             );
-            if (sessionEcoBrowserEnabled && !keys.includes(ECO_AGENT_BROWSER_MCP_SERVER)) {
-              keys.push(ECO_AGENT_BROWSER_MCP_SERVER);
-            }
-            if (sessionComputerUseEnabled && !keys.includes(ECO_COMPUTER_USE_MCP_SERVER)) {
-              keys.push(ECO_COMPUTER_USE_MCP_SERVER);
-            }
-            if (sessionImageGenerationEnabled && !keys.includes(ECO_IMAGE_GENERATION_MCP_SERVER)) {
-              keys.push(ECO_IMAGE_GENERATION_MCP_SERVER);
-            }
-            if (sessionIntegratedWebSearchEnabled && !keys.includes(ECO_WEB_SEARCH_MCP_SERVER)) {
-              keys.push(ECO_WEB_SEARCH_MCP_SERVER);
-            }
-            if (!keys.includes(ECO_IMAGE_VIEW_MCP_SERVER)) {
-              keys.push(ECO_IMAGE_VIEW_MCP_SERVER);
-            }
-            if (!keys.includes(ECO_IMAGE_DISPLAY_MCP_SERVER)) {
-              keys.push(ECO_IMAGE_DISPLAY_MCP_SERVER);
-            }
-            const htmlCap = centerServerClient.getHtmlHostingCapability();
-            if (htmlCap.available && !keys.includes(ECO_HTML_HOST_MCP_SERVER)) {
-              keys.push(ECO_HTML_HOST_MCP_SERVER);
+            const hasCodexHub = mcpHubGateway
+              .listThreadCodexServers()
+              .some((server) => server.name === codexHubName);
+            if (hasCodexHub && !keys.includes(codexHubName)) {
+              keys.push(codexHubName);
             }
             return keys.filter(
               (key) =>
-                (key !== ECO_AGENT_BROWSER_MCP_SERVER || sessionEcoBrowserEnabled) &&
-                (key !== ECO_COMPUTER_USE_MCP_SERVER || sessionComputerUseEnabled) &&
-                (key !== ECO_IMAGE_GENERATION_MCP_SERVER || sessionImageGenerationEnabled) &&
-                (key !== ECO_WEB_SEARCH_MCP_SERVER || sessionIntegratedWebSearchEnabled) &&
-                (key !== ECO_HTML_HOST_MCP_SERVER || centerServerClient.getHtmlHostingCapability().available),
+                !key.startsWith("eco_") ||
+                key === codexHubName,
             );
           },
           resolveSkillConfig: () => {
@@ -10687,11 +10702,34 @@ async function resolvePiSessionResourcesForThread(
     ...(browserSkillDirectory ? { browserSkillDirectory } : {}),
   });
 
+  const globalMcpConfig = mcpStore.buildSdkConfig();
+  const hubServerKeys = enabledMcpServers.filter(
+    (key) => Object.hasOwn(globalMcpConfig.mcpServers, key) && !key.startsWith("eco_"),
+  );
+  const hubBuiltinKeys = Object.keys(mcpSession.mcpServers).filter(
+    (key) => key.startsWith("eco_") && key !== "eco_mcp",
+  );
+  for (const key of hubBuiltinKeys) {
+    const entry = mcpSession.mcpServers[key];
+    if (isRecord(entry)) {
+      mcpHubGateway.registerThreadServerEntry({ name: key, threadId, sdkEntry: entry });
+    }
+  }
+  const hubInjection = await mcpHubGateway.prepareThreadFromSdkConfig({
+    threadId,
+    config: globalMcpConfig,
+    allowedServers: [...hubServerKeys, ...hubBuiltinKeys],
+  });
+  const resolvedMcpServers = { ...mcpSession.mcpServers };
+  for (const key of hubServerKeys) delete resolvedMcpServers[key];
+  for (const key of hubBuiltinKeys) delete resolvedMcpServers[key];
+  if (hubInjection) resolvedMcpServers.eco_mcp = hubInjection.sdkEntry;
+
   return {
     skillPaths: [
       ...new Set([...skillPaths, ...mcpSession.extraSkillDirectories].map((entry) => path.resolve(entry))),
     ].sort((a, b) => a.localeCompare(b)),
-    mcpServers: mcpSession.mcpServers,
+    mcpServers: resolvedMcpServers,
     appendSystemPrompt: mergePiAppendSystemPrompt(
       definedProps({
         globalUserRules: personalizationSettingsStore.get().globalRules,
@@ -14023,6 +14061,12 @@ async function cleanupPendingClaudeFork(threadId: string): Promise<void> {
 async function cleanupThreadExternalState(threadId: string): Promise<void> {
   await cleanupPendingClaudeFork(threadId);
   await deleteThreadSdkSession(threadId);
+  if (mcpHubGateway.revokeThread(threadId)) {
+    // Removing a thread-scoped Codex descriptor changes the process-global
+    // pool. Defer the reload through the existing idle coordinator so a
+    // running turn never loses its MCP connection mid-call.
+    scheduleCodexGlobalRuntimeRefresh();
+  }
   disposePiThreadSession(threadId);
   await removePiThreadAgentDir(app.getPath("userData"), threadId);
   imageGenerationGateway.disposeThread(threadId);
@@ -15991,6 +16035,9 @@ async function buildSdkSessionOptions(
         key !== ECO_WEB_SEARCH_MCP_SERVER,
     ),
   );
+  const hubServerKeys = enabledMcpServers.filter(
+    (key) => Object.hasOwn(mcp.mcpServers, key) && !key.startsWith("eco_"),
+  );
   const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
   const withComputerUseMcp = computerUseGateway.mergeIntoSdkConfig(withBrowserMcp, computerUseInject);
   const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withComputerUseMcp, imageInject);
@@ -16000,25 +16047,30 @@ async function buildSdkSessionOptions(
     ? htmlHostGateway.mergeIntoSdkConfig(withImageDisplayMcp, htmlHostInject)
     : withImageDisplayMcp;
   const withWebSearchMcp = integratedWebSearchGateway.mergeIntoSdkConfig(withHtmlHostMcp, webSearchInject);
-  const runtimeMcp = prepareMcpSdkConfigForRuntime(withWebSearchMcp);
+  const hubBuiltinKeys = Object.keys(withWebSearchMcp.mcpServers).filter(
+    (key) => key.startsWith("eco_") && key !== "eco_mcp",
+  );
+  for (const key of hubBuiltinKeys) {
+    const entry = withWebSearchMcp.mcpServers[key];
+    if (isRecord(entry)) {
+      mcpHubGateway.registerThreadServerEntry({ name: key, threadId, sdkEntry: entry });
+    }
+  }
+  const hubInjection = await mcpHubGateway.prepareThreadFromSdkConfig({
+    threadId,
+    config: mcp,
+    allowedServers: [...hubServerKeys, ...hubBuiltinKeys],
+  });
+  const hubRuntimeConfig: typeof withWebSearchMcp = {
+    mcpServers: { ...withWebSearchMcp.mcpServers },
+    allowedTools: hubInjection ? ["mcp__eco_mcp__search_tools", "mcp__eco_mcp__call_tool"] : [],
+  };
+  for (const key of hubServerKeys) delete hubRuntimeConfig.mcpServers[key];
+  for (const key of hubBuiltinKeys) delete hubRuntimeConfig.mcpServers[key];
+  if (hubInjection) hubRuntimeConfig.mcpServers.eco_mcp = hubInjection.sdkEntry;
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(hubRuntimeConfig);
   const runtimeMcpServers = [
-    ...enabledMcpServers.filter(
-      (key) =>
-        key !== ECO_AGENT_BROWSER_MCP_SERVER &&
-        !key.startsWith("eco_ab_") &&
-        key !== ECO_COMPUTER_USE_MCP_SERVER &&
-        key !== ECO_IMAGE_VIEW_MCP_SERVER &&
-        key !== ECO_IMAGE_DISPLAY_MCP_SERVER &&
-        key !== ECO_HTML_HOST_MCP_SERVER &&
-        key !== ECO_WEB_SEARCH_MCP_SERVER,
-    ),
-    ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
-    ...(computerUseInject.enabled ? [ECO_COMPUTER_USE_MCP_SERVER] : []),
-    ...(imageInject.enabled ? [ECO_IMAGE_GENERATION_MCP_SERVER] : []),
-    ...(webSearchInject.enabled ? [ECO_WEB_SEARCH_MCP_SERVER] : []),
-    ECO_IMAGE_VIEW_MCP_SERVER,
-    ECO_IMAGE_DISPLAY_MCP_SERVER,
-    ...(htmlHostInject ? [ECO_HTML_HOST_MCP_SERVER] : []),
+    ...(hubInjection ? ["eco_mcp"] : []),
   ];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
@@ -17680,6 +17732,12 @@ function createThreadToolPermissionHandler(
   if (skipExecutionApprovals) {
     return composeCanUseToolHandlers(
       createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
+      createMcpHubNestedToolPermissionHandler([
+        imageGenerationHandler,
+        computerUseHandler,
+        browserOpenHandler,
+        webSearchHandler,
+      ]),
       imageGenerationHandler,
       computerUseHandler,
       browserOpenHandler,
@@ -17689,12 +17747,49 @@ function createThreadToolPermissionHandler(
   const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
   return composeCanUseToolHandlers(
     createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
+    createMcpHubNestedToolPermissionHandler([
+      imageGenerationHandler,
+      computerUseHandler,
+      browserOpenHandler,
+      webSearchHandler,
+      bashAndFilesystemHandler,
+    ]),
     imageGenerationHandler,
     computerUseHandler,
     browserOpenHandler,
     webSearchHandler,
     bashAndFilesystemHandler,
   );
+}
+
+function createMcpHubNestedToolPermissionHandler(
+  handlers: readonly ((request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>)[],
+): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  const delegate = composeCanUseToolHandlers(...handlers);
+  return async (request) => {
+    if (
+      request.toolName !== "mcp__eco_mcp__call_tool" &&
+      request.toolName !== "eco_mcp_call_tool" &&
+      !request.toolName.endsWith("__eco_mcp__call_tool")
+    ) {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    const toolId = typeof request.input.name === "string" ? request.input.name.trim() : "";
+    const nested = isRecord(request.input.arguments) ? request.input.arguments : {};
+    const separator = toolId.indexOf(":");
+    if (separator <= 0 || !toolId.slice(separator + 1).trim()) {
+      return {
+        behavior: "deny",
+        message: "Eco MCP Hub call_tool 缺少有效的已搜索工具 ID。",
+        interrupt: false,
+      };
+    }
+    return delegate({
+      ...request,
+      toolName: `mcp__${toolId.slice(0, separator)}__${toolId.slice(separator + 1)}`,
+      input: nested,
+    });
+  };
 }
 
 function createWebSearchToolPermissionHandler(

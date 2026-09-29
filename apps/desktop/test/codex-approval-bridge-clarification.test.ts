@@ -5,6 +5,7 @@ import {
   CODEX_TOOL_REQUEST_USER_INPUT,
   CODEX_TOOL_REQUEST_USER_INPUT_ASYNC,
   type CodexApprovalBridgeDeps,
+  handleCodexApprovalNotification,
   handleCodexServerRequest,
   parseMcpToolRunElicitationMessage,
   shouldAutoAcceptEcoBrowserToolElicitation,
@@ -235,5 +236,53 @@ test("Codex eco_agent_browser open elicitation still asks when always_ask", asyn
       selections: [["同意并继续"]],
     }),
   ).toBe(true);
+  await expect(pending).resolves.toEqual({ action: "accept", content: {} });
+});
+
+test("Codex Hub elicitation unwraps the started call before showing approval", async () => {
+  const events: ThreadLiveEvent[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-hub-approval",
+    getThread: () => ({ prompt: "打开网页", workspacePath: "/workspace" }),
+    getWorktreePath: () => undefined,
+    getPlannerAgentId: () => "planner-hub-approval",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getBrowserOpenApprovalMode: () => "always_ask",
+  };
+
+  handleCodexApprovalNotification(deps, "item/started", {
+    threadId: "codex-hub-approval",
+    turnId: "turn-hub-approval",
+    item: {
+      id: "mcp-call-hub-approval",
+      type: "mcpToolCall",
+      server: "eco_mcp_abc123",
+      tool: "call_tool",
+      arguments: {
+        name: "eco_agent_browser:agent_browser_open",
+        arguments: { url: "https://example.test" },
+      },
+    },
+  });
+
+  const pending = handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+    threadId: "codex-hub-approval",
+    turnId: "turn-hub-approval",
+    serverName: "eco_mcp_abc123",
+    mode: "form",
+    message: 'Allow the eco_mcp_abc123 MCP server to run tool "call_tool"?',
+    requestedSchema: { type: "object", properties: {} },
+    _meta: { codex_approval_kind: "mcp_tool_call" },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  const toolUseId = events[0]?.clarification?.toolUseId;
+  expect(events[0]?.clarification?.questions[0]?.question).toContain("agent_browser_open");
+  expect(events[0]?.clarification?.questions[0]?.question).toContain("https://example.test");
+  expect(toolUseId).toBeTruthy();
+  expect(submitClarification(toolUseId!, { toolUseId: toolUseId!, selections: [["同意并继续"]] })).toBe(true);
   await expect(pending).resolves.toEqual({ action: "accept", content: {} });
 });

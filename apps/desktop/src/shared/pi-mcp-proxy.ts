@@ -12,6 +12,7 @@
 import { ECO_HTML_HOST_MCP_SERVER } from "@eco/runtime/eco-html-host-names";
 import { ECO_IMAGE_DISPLAY_MCP_SERVER } from "@eco/runtime/eco-image-display-names";
 import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime/eco-image-view-names";
+import { resolveEcoMcpHubToolCall } from "@eco/runtime/eco-mcp-hub-tool";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "./browser";
 import { ECO_COMPUTER_USE_MCP_SERVER } from "./computer-use";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "./image-generation";
@@ -21,6 +22,7 @@ const PI_MCP_PROXY_TOOL_NAMES = new Set(["mcp", "mcpscript", "mcp_tool"]);
 
 /** Eco integration server ids, longest first so prefix stripping is unambiguous. */
 const ECO_INTEGRATED_MCP_SERVERS = [
+  "eco_mcp",
   ECO_IMAGE_GENERATION_MCP_SERVER, // eco_image_generation
   ECO_IMAGE_DISPLAY_MCP_SERVER, // eco_image_display
   ECO_COMPUTER_USE_MCP_SERVER, // eco_computer_use
@@ -77,11 +79,22 @@ export function resolvePiMcpProxyCall(
   }
   const server = typeof input.server === "string" ? input.server.trim() : "";
   const args = readRecord(input.args) ?? readRecord(input.arguments);
-  return {
+  const rawCall: PiMcpProxyCall = {
     tool,
     ...(server ? { server } : {}),
     ...(args ? { args } : {}),
   };
+  // Pi may expose Eco's Hub through its own `mcp` proxy. Resolve the nested
+  // `call_tool({ name, arguments })` here so all downstream activity metadata
+  // sees the actual integration tool and its arguments.
+  const wrapperName = resolvePiMcpProxyBaseToolName(rawCall);
+  const hubCall = wrapperName ? resolveEcoMcpHubToolCall(wrapperName, args) : undefined;
+  return hubCall
+    ? {
+        tool: hubCall.name,
+        ...(hubCall.args ? { args: hubCall.args } : {}),
+      }
+    : rawCall;
 }
 
 /**
@@ -95,6 +108,24 @@ export function resolvePiMcpProxyToolName(toolName: string | undefined, input: u
   if (!call) {
     return undefined;
   }
+  const token = normalizeToolToken(call.tool);
+  if (call.server) {
+    const server = normalizeToolToken(call.server);
+    return `mcp__${server}__${stripServerPrefix(token, server)}`;
+  }
+  if (token.startsWith("mcp__")) {
+    return token;
+  }
+  for (const server of ECO_INTEGRATED_MCP_SERVERS) {
+    const leaf = stripServerPrefix(token, server);
+    if (leaf !== token) {
+      return `mcp__${server}__${leaf}`;
+    }
+  }
+  return undefined;
+}
+
+function resolvePiMcpProxyBaseToolName(call: PiMcpProxyCall): string | undefined {
   const token = normalizeToolToken(call.tool);
   if (call.server) {
     const server = normalizeToolToken(call.server);

@@ -145,7 +145,7 @@ function textResult(text: string, extra: Record<string, unknown> = {}): McpToolC
   return { content: [{ type: "text", text }], ...extra };
 }
 
-class HubState {
+export class HubState {
   readonly logs: ProbeLog[] = [];
   readonly sessions = new Map<string, SessionRecord>();
   readonly approval = new Map<Identity, ApprovalDecision>();
@@ -153,6 +153,7 @@ class HubState {
   mockWriteCount = 0;
   slowStarted = 0;
   slowCompleted = 0;
+  slowCancelled = 0;
   disconnected = 0;
   private requestCount = 0;
 
@@ -221,6 +222,7 @@ class HubState {
     name: string;
     arguments: Record<string, unknown>;
     authToken?: string;
+    signal?: AbortSignal;
   }): Promise<McpToolCallResult> {
     const record = this.find(input.authToken);
     if (input.name === "search_tools") {
@@ -272,6 +274,39 @@ class HubState {
       this.logs.push({ event: "search_tools", identity: record.identity, query, returned: page.map((tool) => tool.name) });
       return textResult(JSON.stringify(result), { structuredContent: result });
     }
+    // Approval must happen before an upstream execution is recorded.  The
+    // rejected path therefore has no `upstream_call/started` event at all.
+    if (nestedName === "mock_write") {
+      const decision = this.approval.get(record.identity) ?? "reject";
+      const approvalRequestId = `approval_${++this.requestCount}`;
+      this.approvalEvents.push({
+        identity: record.identity,
+        tool: nestedName,
+        args: safeArgs(nestedArgs),
+        decision,
+        requestId: approvalRequestId,
+      });
+      if (decision !== "allow") {
+        this.logs.push({
+          event: "approval_rejected",
+          requestId: approvalRequestId,
+          identity: record.identity,
+          tool: nestedName,
+          args: safeArgs(nestedArgs),
+        });
+        return textResult("mock_write rejected by Hub approval", {
+          isError: true,
+          structuredContent: { identity: record.identity, tool: nestedName, requestId: approvalRequestId, decision },
+        });
+      }
+      const requestId = this.nextRequest(record.identity, nestedName, nestedArgs);
+      this.mockWriteCount += 1;
+      this.completeRequest(requestId, record.identity, nestedName, "ok");
+      return textResult("mock_write applied", {
+        structuredContent: { identity: record.identity, tool: nestedName, requestId, count: this.mockWriteCount },
+      });
+    }
+
     const requestId = this.nextRequest(record.identity, nestedName, nestedArgs);
     try {
       if (nestedName === "echo_context") {
@@ -289,32 +324,18 @@ class HubState {
         this.completeRequest(requestId, record.identity, nestedName, "ok");
         return textResult(JSON.stringify(result), { structuredContent: result });
       }
-      if (nestedName === "mock_write") {
-        const decision = this.approval.get(record.identity) ?? "reject";
-        this.approvalEvents.push({
-          identity: record.identity,
-          tool: nestedName,
-          args: safeArgs(nestedArgs),
-          decision,
-          requestId,
-        });
-        if (decision !== "allow") {
-          this.completeRequest(requestId, record.identity, nestedName, "error");
-          return textResult("mock_write rejected by Hub approval", {
-            isError: true,
-            structuredContent: { identity: record.identity, tool: nestedName, requestId, decision },
-          });
-        }
-        this.mockWriteCount += 1;
-        this.completeRequest(requestId, record.identity, nestedName, "ok");
-        return textResult("mock_write applied", {
-          structuredContent: { identity: record.identity, tool: nestedName, requestId, count: this.mockWriteCount },
-        });
-      }
       if (nestedName === "slow_probe") {
         const delayMs = Math.max(10, Math.min(2_000, Number(nestedArgs.delayMs ?? 250)));
         this.slowStarted += 1;
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        try {
+          await waitWithAbort(delayMs, input.signal);
+        } catch (error) {
+          if (input.signal?.aborted) {
+            this.slowCancelled += 1;
+            this.logs.push({ event: "upstream_call", phase: "cancelled", requestId, identity: record.identity, tool: nestedName });
+          }
+          throw error;
+        }
         this.slowCompleted += 1;
         this.completeRequest(requestId, record.identity, nestedName, "ok");
         return textResult(`slow_probe completed after ${delayMs}ms`, { structuredContent: { requestId, delayMs } });
@@ -338,14 +359,14 @@ class HubState {
   }
 }
 
-type RunningHub = {
+export type RunningHub = {
   url: string;
   state: HubState;
   server: http.Server;
   close: () => Promise<void>;
 };
 
-async function startHub(): Promise<RunningHub> {
+export async function startHub(): Promise<RunningHub> {
   const state = new HubState();
   const server = http.createServer((request, response) => {
     response.on("close", () => {
@@ -359,8 +380,8 @@ async function startHub(): Promise<RunningHub> {
         serverName: "eco_mcp_probe",
         instructions: "Probe Hub. Only search_tools and call_tool are exposed.",
         listTools: async ({ authToken }) => state.listTools(authToken),
-        callTool: async ({ name, arguments: args, authToken }) =>
-          state.callTool({ name, arguments: args, authToken }),
+        callTool: async ({ name, arguments: args, authToken, signal }) =>
+          state.callTool({ name, arguments: args, authToken, signal }),
       },
     ).catch((error) => {
       if (!response.headersSent) {
@@ -383,9 +404,25 @@ async function startHub(): Promise<RunningHub> {
   };
 }
 
-type RpcReply = { status: number; headers: Headers; body: Record<string, any> };
+function waitWithAbort(delayMs: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason instanceof Error ? signal.reason : new Error("MCP request aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
-async function rpc(
+export type RpcReply = { status: number; headers: Headers; body: Record<string, any> };
+
+export async function rpc(
   url: string,
   token: string | undefined,
   id: number,
@@ -402,11 +439,11 @@ async function rpc(
     signal: options.signal,
     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
   });
-  const body = (await response.json()) as Record<string, any>;
+  const body = ((await response.json().catch(() => ({}))) ?? {}) as Record<string, any>;
   return { status: response.status, headers: response.headers, body };
 }
 
-function nestedParams(name: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+export function nestedParams(name: string, args: Record<string, unknown> = {}): Record<string, unknown> {
   return { name: "call_tool", arguments: { name, arguments: args } };
 }
 
@@ -517,8 +554,31 @@ async function runHubExperiments(hub: RunningHub, a: SessionRecord, b: SessionRe
     aborted = true;
   }
   assert(aborted, "client timeout did not abort the slow request");
-  await new Promise((resolve) => setTimeout(resolve, 360));
-  assert(state.slowStarted === 1 && state.slowCompleted === 1, "slow upstream cancellation behavior changed unexpectedly");
+  await waitFor(() => state.slowCompleted === 1, 2_000, "slow upstream completion after disconnect");
+  assert(state.slowStarted === 1 && state.slowCancelled === 0, "disconnect was incorrectly treated as MCP cancellation");
+
+  const explicitRequestId = 14;
+  const explicitSlow = rpc(
+    hub.url,
+    b.token,
+    explicitRequestId,
+    "tools/call",
+    nestedParams("slow_probe", { delayMs: 500 }),
+    { sessionId: initializedB.sessionId },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await rpc(
+    hub.url,
+    b.token,
+    15,
+    "notifications/cancelled",
+    { requestId: explicitRequestId },
+    { sessionId: initializedB.sessionId },
+  );
+  const explicitReply = await explicitSlow;
+  assert(explicitReply.status === 202 || (explicitReply.body.error && !explicitReply.body.result), "explicit cancellation did not settle the request");
+  await waitFor(() => state.slowCancelled === 1, 2_000, "explicit slow upstream cancellation");
+  assert(state.slowStarted === 2 && state.slowCompleted === 1, "explicit cancellation did not stop the second slow call");
 
   const restored = await initialize(hub.url, a.token);
   const restoredEcho = await rpc(hub.url, a.token, 12, "tools/call", nestedParams("echo_context", { marker: "restored" }), {
@@ -555,12 +615,21 @@ async function runHubExperiments(hub: RunningHub, a: SessionRecord, b: SessionRe
       clientAborted: true,
       upstreamStarted: state.slowStarted,
       upstreamCompleted: state.slowCompleted,
-      cancellationDelivered: false,
+      upstreamCancelled: state.slowCancelled,
+      cancellationDelivered: true,
     },
     restoredIdentity: restoredEcho.body.result.structuredContent.identity,
     noTokenRejected: true,
     orderBasedClaimNegativeControl: true,
   };
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 async function runClaudeProbe(hub: RunningHub, token: string) {
@@ -888,7 +957,9 @@ async function main() {
         bun: process.versions.bun ?? "unknown",
         ecoDesktop: "0.1.0-beta.12",
         claudeAgentSdk: "0.3.266",
-        codex: "0.153.4",
+        claudeAgentSdkRootResolverObserved: "0.3.223 (not used by real Claude harness)",
+        codexDependency: "0.153.4",
+        codexCliHarness: "0.158.0-alpha.2.1",
         piCodingAgent: "0.85.1",
         piMcpAdapter: "2.23.0",
         acpAgent: "fake-acp-agent probe v0.1.0 (Cursor ACP 未验证)",

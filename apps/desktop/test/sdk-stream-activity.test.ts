@@ -164,6 +164,7 @@ test("resolves pi mcp proxy calls into canonical eco tool names", () => {
       status?: string;
       mcpDiscovery?: { kind: string };
       webSearch?: { query?: string };
+      imageView?: { path: string; prompt?: string };
     };
   }> = [];
 
@@ -238,6 +239,19 @@ test("resolves pi mcp proxy calls into canonical eco tool names", () => {
     tool_use_id: "pi_tool_third_party",
     input: { tool: "linear_create_issue", args: { title: "bug" } },
   });
+  handleTool({
+    type: "tool_use",
+    tool_name: "mcp",
+    tool_use_id: "pi_tool_hub",
+    input: {
+      tool: "call_tool",
+      server: "eco_mcp",
+      args: {
+        name: "eco_image_view:view_image",
+        arguments: { path: "/tmp/hub.png", prompt: "描述" },
+      },
+    },
+  });
 
   expect(emitted.map((entry) => entry.tool?.name)).toEqual([
     "mcp__eco_agent_browser__agent_browser_open",
@@ -247,10 +261,12 @@ test("resolves pi mcp proxy calls into canonical eco tool names", () => {
     "mcp",
     "mcp__eco_image_generation__create_image",
     "mcp",
+    "mcp__eco_image_view__view_image",
   ]);
   expect(emitted[0]?.tool?.detail).toBe("https://example.com/page");
   expect(emitted[3]?.tool?.webSearch?.query).toBe("eco desktop app");
   expect(emitted[4]?.tool?.mcpDiscovery).toEqual({ kind: "search" });
+  expect(emitted[7]?.tool?.imageView).toEqual({ path: "/tmp/hub.png", prompt: "描述" });
 });
 
 test("emits structured SDK tool metadata with tool started activity", () => {

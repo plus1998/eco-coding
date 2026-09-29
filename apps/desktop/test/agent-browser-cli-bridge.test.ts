@@ -2,11 +2,26 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  callAgentBrowserToolViaCli,
   mapAgentBrowserToolToCliArgs,
   resolveAgentBrowserTabIndex,
   resolveAgentBrowserTabSwitchArg,
   shouldRouteAgentBrowserToolsViaCli,
 } from "../src/main/agent-browser-cli-bridge";
+
+test("pre-cancelled browser calls reject before launching the CLI", async () => {
+  const controller = new AbortController();
+  const reason = new Error("cancelled before dispatch");
+  controller.abort(reason);
+  await expect(callAgentBrowserToolViaCli({
+    binaryPath: "/does-not-exist/agent-browser",
+    cdpPort: 9333,
+    sessionKey: "cancelled-session",
+    toolName: "agent_browser_click",
+    args: { ref: "@e2" },
+    signal: controller.signal,
+  })).rejects.toBe(reason);
+});
 
 test("shouldRouteAgentBrowserToolsViaCli defaults to CLI on all platforms", () => {
   expect(shouldRouteAgentBrowserToolsViaCli()).toBe(true);

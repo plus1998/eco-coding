@@ -1,4 +1,5 @@
 import { ECO_IMAGE_VIEW_FULL_TOOL } from "@eco/runtime/eco-image-view-names";
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
 
 export {
   ECO_IMAGE_VIEW_FULL_TOOL,
@@ -10,7 +11,8 @@ export {
 export function buildImageViewPromptAppend(): string {
   return [
     "Built-in local image viewing (Eco) is always available.",
-    `To inspect an image, call \`${ECO_IMAGE_VIEW_FULL_TOOL}\` with either an absolute path or a durable ref, plus the prompt you choose for this task.`,
+    buildEcoMcpHubToolUsage({ server: "eco_image_view", tool: "view_image" }),
+    `When the direct tool \`${ECO_IMAGE_VIEW_FULL_TOOL}\` is explicitly listed, call it with either an absolute path or a durable ref, plus the prompt you choose for this task.`,
     "The tool returns the vision model's text response; it does not impose a response schema. Keep image bytes out of the main prompt.",
     "Composer image references are included in the prompt when available. Choose the image-specific prompt yourself.",
     "On Codex, use this Eco tool for image inspection with custom providers; the native view_image tool remains available with the built-in OpenAI account.",

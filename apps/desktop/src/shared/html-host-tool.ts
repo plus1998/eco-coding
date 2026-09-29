@@ -1,4 +1,5 @@
 import { ECO_HTML_HOST_FULL_TOOL } from "@eco/runtime/eco-html-host-names";
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
 
 export {
   ECO_HTML_HOST_FULL_TOOL,
@@ -10,7 +11,8 @@ export {
 export function buildHtmlHostPromptAppend(): string {
   return [
     "Built-in HTML page hosting (Eco Artifacts) is available when Supabase Center is connected and html-host Edge Functions are deployed.",
-    `To publish a progress / report / stats page, use only \`${ECO_HTML_HOST_FULL_TOOL}\`.`,
+    buildEcoMcpHubToolUsage({ server: "eco_html_host", tool: "publish_html" }),
+    `When the direct tool \`${ECO_HTML_HOST_FULL_TOOL}\` is explicitly listed, use it to publish a progress / report / stats page.`,
     "Provide a short `title` and a single self-contained `html` document (inline CSS/JS). Do not draw the Eco chrome / top bar — Eco wraps your content.",
     "Optional `pageId` updates an existing page's content without resetting TTL.",
     "On success the tool returns `{ status: \"ok\", pageId, publicUrl, expiresAt, canExtend }`. Tell the user they can open or copy the link from the Feed card.",

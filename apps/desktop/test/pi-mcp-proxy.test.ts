@@ -63,6 +63,29 @@ test("resolvePiMcpProxyToolName canonicalizes explicit server calls", () => {
   );
 });
 
+test("resolvePiMcpProxyCall unwraps Eco Hub calls", () => {
+  expect(
+    resolvePiMcpProxyCall("mcp", {
+      tool: "call_tool",
+      server: "eco_mcp",
+      args: {
+        name: "eco_image_view:view_image",
+        arguments: { path: "/tmp/example.png", prompt: "describe" },
+      },
+    }),
+  ).toEqual({
+    tool: "mcp__eco_image_view__view_image",
+    args: { path: "/tmp/example.png", prompt: "describe" },
+  });
+  expect(
+    resolvePiMcpProxyToolName("mcp", {
+      tool: "call_tool",
+      server: "eco_mcp",
+      args: { name: "eco_image_view:view_image", arguments: {} },
+    }),
+  ).toBe("mcp__eco_image_view__view_image");
+});
+
 test("resolvePiMcpProxyToolName strips known eco integration prefixes", () => {
   expect(resolvePiMcpProxyToolName("mcp", { tool: "eco_agent_browser_agent_browser_open" })).toBe(
     "mcp__eco_agent_browser__agent_browser_open",

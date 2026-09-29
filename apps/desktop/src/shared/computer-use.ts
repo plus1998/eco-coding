@@ -1,3 +1,5 @@
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
+
 /** Built-in Eco Computer Use MCP server name (must stay sanitizable for MCP tool prefixes). */
 export const ECO_COMPUTER_USE_MCP_SERVER = "eco_computer_use";
 
@@ -161,7 +163,8 @@ export function buildEcoComputerUsePromptAppend(): string {
     "Desktop state is shared across conversations — concurrent sessions share the same OS UI.",
     "Workflow: call list_apps, then get_app_state before element-targeted actions; re-snapshot after navigation or failed actions.",
     "Prefer element_index from get_app_state; use x/y coordinates only when no AX element matches.",
-    "When `mcp__eco_computer_use__*` tools are available, ALWAYS use them.",
+    buildEcoMcpHubToolUsage({ server: ECO_COMPUTER_USE_MCP_SERVER }),
+    "When direct `mcp__eco_computer_use__*` tools are explicitly listed, use them for desktop actions.",
     "Do NOT shell `open-computer-use` / `ocu` CLI (`Bash`).",
     "Do NOT use a separate Computer Use MCP server when this integration is available for the thread.",
   ].join("\n");

@@ -760,9 +760,9 @@ export class ComputerUseMcpGateway {
         {
           serverName: ECO_COMPUTER_USE_MCP_SERVER,
           instructions: "Eco computer use (shared open-computer-use upstream).",
-          listTools: async () => {
+          listTools: async ({ signal }) => {
             await this.ensureUpstream();
-            const listed = await this.upstream.listTools();
+            const listed = await this.upstream.listTools(signal);
             return {
               tools: listed.tools.filter(
                 (tool): tool is { name: string; [key: string]: unknown } =>
@@ -772,9 +772,9 @@ export class ComputerUseMcpGateway {
               ),
             };
           },
-          callTool: async ({ name, arguments: args }) => {
+          callTool: async ({ name, arguments: args, signal }) => {
             await this.ensureUpstream();
-            const result = await this.upstream.callTool(name, args);
+            const result = await this.upstream.callTool(name, args, signal);
             return result && typeof result === "object"
               ? (result as Record<string, unknown>)
               : { content: [{ type: "text", text: String(result ?? "") }] };

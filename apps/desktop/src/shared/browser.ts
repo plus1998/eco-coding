@@ -1,3 +1,5 @@
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
+
 /** Built-in Eco browser MCP server name (must stay sanitizable for MCP tool prefixes). */
 export const ECO_AGENT_BROWSER_MCP_SERVER = "eco_agent_browser";
 
@@ -41,16 +43,17 @@ export function browserAgentSessionKey(threadId: string): string {
 export function buildEcoAgentBrowserPromptAppend(_threadId?: string): string {
   return [
     "Built-in browser (Eco): tools run against the *current conversation thread* only.",
-    "That thread may have multiple independent browser tabs; list them via tab_list. Use tab_switch only to show the user a tab; other tools must not steal UI focus.",
-    "MCP server `eco_agent_browser` is Eco-hosted: each connection is bound to this conversation (auth token / tool claims) — never another thread's open pages.",
-    "Site data (cookies / localStorage / IndexedDB) is shared across conversations in the same workspace (login once, reuse).",
-    "When `mcp__eco_agent_browser__*` tools are available, ALWAYS use them.",
-    "Do NOT use `list_mcp_resources` / `list_mcp_resource_templates` to probe `eco_agent_browser` — Codex MCP is tools-only; those resource RPCs fail even when browser tools work.",
-    "If `mcp__eco_agent_browser__*` tools are missing from your tool list, say so and stop; do not fall back to shell `agent-browser` or external skills.",
+    "The thread may have multiple tabs; use tab_list to list them and tab_switch only to show the user's chosen tab.",
+    "The Eco-hosted `eco_agent_browser` connection is auth-bound to this thread and cannot access another thread's pages.",
+    "Cookies, localStorage, and IndexedDB are shared across conversations in this workspace.",
+    buildEcoMcpHubToolUsage({ server: ECO_AGENT_BROWSER_MCP_SERVER }),
+    "When direct `mcp__eco_agent_browser__*` tools are explicitly listed, use them for browser actions.",
+    "Do NOT probe `eco_agent_browser` with `list_mcp_resources` / `list_mcp_resource_templates`; this server exposes tools only.",
+    "If the Eco MCP Hub tools and direct `mcp__eco_agent_browser__*` tools are both missing, say so and stop; do not use shell `agent-browser` or external skills.",
     "Do NOT pass a custom `session` argument (or session=__active__/web/chat) — Eco binds one short session per conversation thread.",
     "Do NOT shell `agent-browser` CLI (`Bash`/`agent-browser open|--headed|tab`).",
     "Do NOT read or follow `~/.agents/skills/agent-browser` or external agent-browser skills; use Skill `eco-agent-browser` only.",
-    "Do not use macOS `open` / a separate Chrome when this integration is available for the thread.",
+    "Do not use macOS `open` or a separate Chrome when this integration is available.",
     `Prefer Skill \`${ECO_AGENT_BROWSER_SKILL_NAME}\` for the snapshot-and-ref workflow.`,
   ].join("\n");
 }

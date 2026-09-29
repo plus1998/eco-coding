@@ -65,15 +65,15 @@ test("prepareMcpSdkConfigForRuntime preserves explicit Claude tool-call timeout"
         type: "stdio",
         command: process.execPath,
         args: ["stdio.mjs"],
-        timeout: 300_000,
-        requestTimeoutMs: 300_000,
+        timeout: 600_000,
+        requestTimeoutMs: 600_000,
       },
     },
     allowedTools: [],
   });
   const entry = prepared.mcpServers.eco_image_generation as Record<string, unknown>;
-  expect(entry.timeout).toBe(300_000);
-  expect(entry.requestTimeoutMs).toBe(300_000);
+  expect(entry.timeout).toBe(600_000);
+  expect(entry.requestTimeoutMs).toBe(600_000);
 });
 
 test("prepareCodexGlobalMcpServerPool preserves toolTimeoutSec from builtins", async () => {
@@ -85,11 +85,11 @@ test("prepareCodexGlobalMcpServerPool preserves toolTimeoutSec from builtins", a
         transport: "stdio",
         command: process.execPath,
         startupTimeoutSec: 60,
-        toolTimeoutSec: 300,
+        toolTimeoutSec: 600,
       }),
     ],
   });
-  expect(prepared[0]?.toolTimeoutSec).toBe(300);
+  expect(prepared[0]?.toolTimeoutSec).toBe(600);
 });
 
 test("global Codex MCP pool includes built-ins and lets trusted definitions win", async () => {

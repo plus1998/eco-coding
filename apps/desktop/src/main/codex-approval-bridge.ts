@@ -54,6 +54,21 @@ export const CODEX_TOOL_REQUEST_USER_INPUT = "item/tool/requestUserInput";
 export const CODEX_TOOL_REQUEST_USER_INPUT_ASYNC = "item/tool/requestUserInputAsync";
 export const CODEX_MCP_SERVER_ELICITATION_REQUEST = "mcpServer/elicitation/request";
 
+type PendingMcpToolCall = {
+  codexThreadId: string;
+  itemId: string;
+  serverName: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+};
+
+/**
+ * Codex currently sends MCP tool approval as an elicitation whose payload can
+ * identify only the wrapper server. Keep the preceding item/started payload so
+ * the approval card can show the actual Hub target and arguments.
+ */
+const pendingMcpToolCalls = new Map<string, PendingMcpToolCall[]>();
+
 /**
  * Detect Codex / MCP “Allow the X MCP server to run tool "Y"?” tool-run confirmations.
  * Returns full MCP tool name when recognized.
@@ -231,6 +246,7 @@ export interface CodexApprovalBridge {
 }
 
 export function createCodexApprovalBridge(deps: CodexApprovalBridgeDeps): CodexApprovalBridge {
+  pendingMcpToolCalls.clear();
   return {
     handleServerRequest: (method, params) => handleCodexServerRequest(deps, method, params),
     handleNotification: (method, params) => handleCodexApprovalNotification(deps, method, params),
@@ -269,9 +285,17 @@ export function handleCodexApprovalNotification(
   method: string,
   params: unknown,
 ): void {
-  if (method !== "item/completed" || !isRecord(params)) {
+  if (!isRecord(params)) {
     return;
   }
+  if (method === "item/started") {
+    rememberPendingMcpToolCall(params);
+    return;
+  }
+  if (method !== "item/completed") {
+    return;
+  }
+  forgetPendingMcpToolCall(params);
   handlePlanItemCompleted(deps, params);
 }
 
@@ -529,11 +553,20 @@ async function handleMcpServerElicitationRequest(
     "threadId",
   );
   const ecoThreadId = deps.resolveEcoThreadId(codexThreadId);
-  const serverName = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "serverName");
+  const rawServerName = requireNonEmptyRequestString(
+    CODEX_MCP_SERVER_ELICITATION_REQUEST,
+    params,
+    "serverName",
+  );
   const mode = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "mode");
-  const message = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
+  const rawMessage = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
   validateNullableStringFields(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, ["turnId"]);
   const turnId = readString(params, "turnId");
+  const nestedHubCall = resolvePendingHubCall(codexThreadId, rawServerName);
+  const serverName = nestedHubCall?.serverName ?? rawServerName;
+  const message = nestedHubCall
+    ? buildMcpToolApprovalMessage(nestedHubCall.serverName, nestedHubCall.toolName, nestedHubCall.arguments)
+    : rawMessage;
 
   const openApprovalMode = deps.getBrowserOpenApprovalMode?.() ?? "always_allow";
   const autoAccept = shouldAutoAcceptEcoBrowserToolElicitation({
@@ -2364,6 +2397,101 @@ function mapClarificationAnswersToCodexToolResponse(
   }
 
   return { answers: Object.fromEntries(answerEntries) };
+}
+
+function rememberPendingMcpToolCall(params: Record<string, unknown>): void {
+  const codexThreadId = readString(params, "threadId");
+  const item = isRecord(params.item) ? params.item : undefined;
+  if (!codexThreadId || !item || readString(item, "type") !== "mcpToolCall") {
+    return;
+  }
+  const itemId = readString(item, "id");
+  const serverName = readString(item, "server");
+  const toolName = readString(item, "tool");
+  const argumentsValue = readMcpArguments(item);
+  if (!itemId || !serverName || !toolName || !argumentsValue) {
+    return;
+  }
+  const existing = pendingMcpToolCalls.get(codexThreadId) ?? [];
+  const next = existing.filter((call) => call.itemId !== itemId);
+  next.push({ codexThreadId, itemId, serverName, toolName, arguments: argumentsValue });
+  // A malformed/abandoned turn must not grow this process-global cache forever.
+  pendingMcpToolCalls.set(codexThreadId, next.slice(-32));
+}
+
+function forgetPendingMcpToolCall(params: Record<string, unknown>): void {
+  const codexThreadId = readString(params, "threadId");
+  const item = isRecord(params.item) ? params.item : undefined;
+  const itemId = item ? readString(item, "id") : undefined;
+  if (!codexThreadId || !itemId) {
+    return;
+  }
+  const next = (pendingMcpToolCalls.get(codexThreadId) ?? []).filter((call) => call.itemId !== itemId);
+  if (next.length > 0) pendingMcpToolCalls.set(codexThreadId, next);
+  else pendingMcpToolCalls.delete(codexThreadId);
+}
+
+function resolvePendingHubCall(
+  codexThreadId: string,
+  wrapperServerName: string,
+): { itemId: string; serverName: string; toolName: string; arguments: Record<string, unknown> } | undefined {
+  if (!wrapperServerName.trim().toLowerCase().startsWith("eco_mcp")) {
+    return undefined;
+  }
+  const calls = pendingMcpToolCalls.get(codexThreadId) ?? [];
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index];
+    if (!call || call.serverName.trim().toLowerCase() !== wrapperServerName.trim().toLowerCase()) {
+      continue;
+    }
+    if (call.toolName.trim().toLowerCase() !== "call_tool") {
+      continue;
+    }
+    const nestedName = readString(call.arguments, "name");
+    const separator = nestedName?.indexOf(":") ?? -1;
+    if (!nestedName || separator <= 0 || separator === nestedName.length - 1) {
+      return undefined;
+    }
+    const nestedArguments = isRecord(call.arguments.arguments) ? call.arguments.arguments : {};
+    return {
+      itemId: call.itemId,
+      serverName: nestedName.slice(0, separator),
+      toolName: nestedName.slice(separator + 1),
+      arguments: nestedArguments,
+    };
+  }
+  return undefined;
+}
+
+function buildMcpToolApprovalMessage(
+  serverName: string,
+  toolName: string,
+  argumentsValue: Record<string, unknown>,
+): string {
+  let encoded = "{}";
+  try {
+    encoded = JSON.stringify(argumentsValue);
+  } catch {
+    encoded = "[unserializable arguments]";
+  }
+  if (encoded.length > 4000) encoded = `${encoded.slice(0, 3997)}...`;
+  return `Allow the ${serverName} MCP server to run tool "${toolName}" with arguments ${encoded}?`;
+}
+
+function readMcpArguments(item: Record<string, unknown>): Record<string, unknown> | undefined {
+  for (const key of ["arguments", "args", "input", "params", "toolInput", "tool_input"] as const) {
+    const value = item[key];
+    if (isRecord(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (isRecord(parsed)) return parsed;
+      } catch {
+        // Ignore non-JSON diagnostics fields.
+      }
+    }
+  }
+  return undefined;
 }
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {

@@ -153,8 +153,8 @@ export class ImageDisplayMcpGateway {
           instructions:
             "Eco image display for the user. Stores images as feed artifacts; returns artifactId text.",
           listTools: async () => ({ tools: [imageDisplayToolDefinition()] }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-image-display-control-secret",
@@ -207,11 +207,13 @@ export class ImageDisplayMcpGateway {
     name: string,
     rawArgs: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     if (name !== ECO_IMAGE_DISPLAY_TOOL) {
       throw new Error(`未知图片展示工具：${name}`);
     }
     const claim = this.resolveThread(authToken);
+    signal?.throwIfAborted();
     let toolInput: ImageDisplayToolInput;
     try {
       toolInput = normalizeImageDisplayToolInput(rawArgs as unknown as ImageDisplayToolInput);
@@ -224,6 +226,7 @@ export class ImageDisplayMcpGateway {
         threadId: claim.threadId,
         ...(claim.toolUseId ? { toolUseId: claim.toolUseId } : {}),
         toolInput,
+        ...(signal ? { signal } : {}),
       });
       this.deps.onArtifactChanged(artifact);
       return {

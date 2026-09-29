@@ -529,6 +529,58 @@ test("eco_web_search MCP completed calls attach webSearch results", () => {
   );
 });
 
+test("Eco MCP Hub calls expose the nested tool in Codex activity metadata", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_call",
+      item: {
+        id: "item_hub_call_1",
+        type: "mcpToolCall",
+        server: "eco_mcp",
+        tool: "call_tool",
+        status: "completed",
+        arguments: {
+          name: "eco_image_view:view_image",
+          arguments: { path: "/tmp/hub-shot.png", prompt: "描述" },
+        },
+        aggregatedOutput: "一张截图",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/hub-shot.png", prompt: "描述" },
+    }),
+  );
+  expect(events[0]?.message).toContain("mcp__eco_image_view__view_image");
+});
+
+test("Eco MCP Hub search calls remain classified as MCP discovery", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_search",
+      item: {
+        id: "item_hub_search_1",
+        type: "mcpToolCall",
+        server: "eco_mcp",
+        tool: "search_tools",
+        arguments: { query: "image" },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_mcp__search_tools",
+      mcpDiscovery: { kind: "search" },
+    }),
+  );
+});
+
 test("agent_browser_screenshot completed attaches imageView path from output", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });

@@ -86,9 +86,12 @@ export class ImageDisplayStore {
     threadId: string;
     toolUseId?: string;
     toolInput: ImageDisplayToolInput;
+    signal?: AbortSignal;
   }): Promise<ImageDisplayArtifact> {
+    input.signal?.throwIfAborted();
     const normalized = normalizeImageDisplayToolInput(input.toolInput);
-    const loaded = await loadImageDisplayBytes(normalized);
+    const loaded = await loadImageDisplayBytes(normalized, input.signal);
+    input.signal?.throwIfAborted();
     const artifactId = randomUUID();
     const threadDir = path.join(this.rootDir, input.threadId.trim());
     await fs.mkdir(threadDir, { recursive: true });
@@ -261,7 +264,10 @@ interface NormalizedImageDisplayInput {
   sourceRef?: string;
 }
 
-async function loadImageDisplayBytes(input: NormalizedImageDisplayInput): Promise<{
+async function loadImageDisplayBytes(
+  input: NormalizedImageDisplayInput,
+  signal?: AbortSignal,
+): Promise<{
   data: Buffer;
   mimeType: string;
   bytes: number;
@@ -270,7 +276,9 @@ async function loadImageDisplayBytes(input: NormalizedImageDisplayInput): Promis
 }> {
   try {
     if (input.source === "path" && input.path) {
+      signal?.throwIfAborted();
       const file = await readImageViewFile(input.path);
+      signal?.throwIfAborted();
       return {
         data: Buffer.from(file.dataBase64, "base64"),
         mimeType: file.mimeType,
@@ -280,7 +288,7 @@ async function loadImageDisplayBytes(input: NormalizedImageDisplayInput): Promis
       };
     }
     if (input.source === "url" && input.url) {
-      const fetched = await fetchImageDisplayUrl(input.url);
+      const fetched = await fetchImageDisplayUrl(input.url, signal);
       const inspected = inspectImageBuffer(fetched.data);
       return {
         data: fetched.data,

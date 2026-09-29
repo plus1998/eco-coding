@@ -197,8 +197,8 @@ export class IntegratedWebSearchMcpGateway {
           instructions:
             "Eco Integrated Web Search (Tavily, Doubao, or Brave). Use when you need up-to-date information.",
           listTools: async () => ({ tools: [webSearchToolDefinition()] }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-web-search-control-secret",
@@ -249,6 +249,7 @@ export class IntegratedWebSearchMcpGateway {
     name: string,
     rawArgs: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     if (name !== ECO_WEB_SEARCH_TOOL) {
       throw new Error(`未知网络搜索工具：${name}`);
@@ -261,7 +262,8 @@ export class IntegratedWebSearchMcpGateway {
     }
     const query = typeof rawArgs.query === "string" ? rawArgs.query.trim() : "";
     const provider = settings.provider as IntegratedWebSearchProvider;
-    const results = await searchIntegratedWeb(provider, query, apiKey);
+    signal?.throwIfAborted();
+    const results = await searchIntegratedWeb(provider, query, apiKey, signal ? { signal } : undefined);
     const text = formatIntegratedWebSearchResults(provider, query, results);
     return {
       content: [{ type: "text", text }],

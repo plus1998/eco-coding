@@ -159,8 +159,22 @@ test("mapCdpMouseEventToSendInput maps pressed/moved/wheel", () => {
 test("agent_browser_get_text is in core catalog and CLI map", () => {
   expect(AGENT_BROWSER_CORE_TOOL_NAMES).toContain("agent_browser_get_text");
   expect(mapAgentBrowserToolToCliArgs("agent_browser_get_text", { ref: "@e1" })).toEqual([
+    "get",
     "text",
     "@e1",
   ]);
-  expect(mapAgentBrowserToolToCliArgs("agent_browser_get_text", {})).toEqual(["text"]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_get_text", {})).toEqual(["get", "text"]);
+});
+
+test("browser wait mappings use agent-browser explicit modes", () => {
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_wait_for_text", { text: "Ready" })).toEqual([
+    "wait",
+    "--text",
+    "Ready",
+  ]);
+  expect(mapAgentBrowserToolToCliArgs("agent_browser_wait_for_load", {})).toEqual([
+    "wait",
+    "--load",
+    "load",
+  ]);
 });
