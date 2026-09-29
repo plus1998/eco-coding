@@ -40,6 +40,11 @@ export interface StartEcoGatewayOptions {
    * listener and calls handleRequest in-process.
    */
   embedded?: boolean;
+  /**
+   * Map Codex thread id → Eco thread id. Enables the per-thread MCP Hub
+   * namespace repair on Responses streams (local models drop `namespace`).
+   */
+  resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined;
 }
 
 export function createGatewayFetchHandler(
@@ -49,6 +54,7 @@ export function createGatewayFetchHandler(
   onUsage?: GatewayUsageObserver,
   onRequestLifecycle?: GatewayRequestLifecycleObserver,
   onProvidersChanged?: (providers: readonly GatewayProvider[]) => void,
+  resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined,
 ): (request: Request) => Response | Promise<Response> {
   return async (request: Request) => {
     const url = new URL(request.url);
@@ -81,6 +87,7 @@ export function createGatewayFetchHandler(
         onLog,
         onUsage,
         onRequestLifecycle,
+        resolveEcoThreadIdFromCodex,
       );
       onLog(`POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
@@ -218,6 +225,7 @@ export async function startEcoGateway(
           proxyController.setProxyRoutes(buildProviderProxyRoutes(providers));
         }
       : undefined,
+    options?.resolveEcoThreadIdFromCodex,
   );
 
   let server: http.Server | undefined;

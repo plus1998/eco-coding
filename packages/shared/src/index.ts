@@ -93,6 +93,11 @@ export {
   stableHash,
   stableJson,
 } from "./conversation-v2";
+export {
+  ECO_MCP_HUB_TOOL_NAMES,
+  ecoMcpHubNamespace,
+  ecoMcpHubServerName,
+} from "./eco-mcp-hub";
 export type {
   ConversationAgent,
   ConversationBootstrap,

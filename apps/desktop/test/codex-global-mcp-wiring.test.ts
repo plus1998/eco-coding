@@ -23,3 +23,38 @@ test("saving browser integration settings schedules a Codex global runtime refre
   const handler = source.slice(start, end);
   expect(handler).toContain("scheduleCodexGlobalRuntimeRefresh()");
 });
+
+test("Codex system prompt rewrites fixed Hub tool names to the per-thread registered server", () => {
+  expect(source).toContain("import { rewriteEcoMcpHubPromptForCodexServer } from \"../shared/mcp-hub-tool-usage\"");
+  // The rewrite must wrap the resolved append so every Hub usage line
+  // (image view / display / web search / ...) uses the registered name.
+  expect(source).toMatch(
+    /return rewriteEcoMcpHubPromptForCodexServer\(\s*append,\s*codexHubServerName\(input\.thread\.id\),\s*\);/,
+  );
+});
+
+test("codexHubServerName delegates to the @eco/shared name builder (single source of truth)", () => {
+  expect(source).toContain("ecoMcpHubServerName");
+  expect(source).toMatch(
+    /function codexHubServerName\(threadId: string\): string \{\s*(?:\/\/[^\n]*\n\s*)*return ecoMcpHubServerName\(threadId\);\s*\}/,
+  );
+});
+
+test("the embedded gateway receives the Codex→Eco thread resolver for Hub namespace repair", () => {
+  const lifecycle = fs.readFileSync(
+    new URL("../src/main/eco-gateway-lifecycle.ts", import.meta.url),
+    "utf8",
+  );
+  const startCall = lifecycle.indexOf("startEcoGateway(");
+  expect(startCall).toBeGreaterThan(-1);
+  const callSite = lifecycle.slice(startCall, lifecycle.indexOf(");", startCall));
+  // The resolver must be part of the startEcoGateway options (not only the bridge face):
+  // the gateway repairs `namespace` on the model→Codex Responses path.
+  expect(callSite).toContain("resolveEcoThreadIdFromCodex: this.options.resolveEcoThreadIdFromCodex");
+});
+
+test("the Codex→Eco resolver falls back through subagent attribution", () => {
+  expect(source).toMatch(
+    /resolveEcoThreadIdFromCodex:\s*\(codexThreadId\)\s*=>\s*codexThreadMap\.getEcoThreadId\(codexThreadId\)\s*\?\?\s*resolveCodexThreadAttribution\(codexThreadMap, codexThreadId\)\?\.ecoThreadId/,
+  );
+});

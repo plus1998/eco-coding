@@ -74,6 +74,7 @@ import {
   CONVERSATION_V2_ERROR,
   ConversationV2Error,
   definedProps,
+  ecoMcpHubServerName,
   isRemoteCommandChannel,
   stableHash,
 } from "@eco/shared";
@@ -337,6 +338,7 @@ import {
   resolveAppLocale,
 } from "../shared/locale";
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
+import { rewriteEcoMcpHubPromptForCodexServer } from "../shared/mcp-hub-tool-usage";
 import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
 import { parseThreadApprovePlanPayload, parseThreadDismissPlanPayload } from "../shared/plan-approval";
 import {
@@ -1232,9 +1234,9 @@ async function resolveCodexGlobalMcpServers() {
 }
 
 function codexHubServerName(threadId: string): string {
-  const normalized = threadId.trim();
-  const readableSuffix = normalized.replace(/[^a-zA-Z0-9_-]/g, "_").slice(-24);
-  return `eco_mcp_${stableHash(normalized)}${readableSuffix ? `_${readableSuffix}` : ""}`;
+  // Single source of truth lives in @eco/shared (packages/shared/src/eco-mcp-hub.ts);
+  // the gateway derives the same name for Hub namespace repair.
+  return ecoMcpHubServerName(threadId);
 }
 let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
@@ -2344,7 +2346,9 @@ app.whenReady().then(async () => {
     getUpstreamUserAgent: () => resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
     getUpstreamProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
     getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
-    resolveEcoThreadIdFromCodex: (codexThreadId) => codexThreadMap.getEcoThreadId(codexThreadId),
+    resolveEcoThreadIdFromCodex: (codexThreadId) =>
+      codexThreadMap.getEcoThreadId(codexThreadId) ??
+      resolveCodexThreadAttribution(codexThreadMap, codexThreadId)?.ecoThreadId,
     prepareClaudeMessages: async ({ path, body, model, headers }) => {
       const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
       return prepareClaudeBridgeMessagesRequest({
@@ -10249,7 +10253,14 @@ async function startCodexThreadRun(
                 ),
               );
             }
-            return append;
+            // Codex registers this thread's Hub under a per-thread server
+            // name (shared app-server global pool + per-thread bearer token),
+            // so rewrite the fixed `mcp__eco_mcp__*` names emitted by the Hub
+            // usage builders to the exact names Codex will register.
+            return rewriteEcoMcpHubPromptForCodexServer(
+              append,
+              codexHubServerName(input.thread.id),
+            );
           },
           resolveWebSearchOverride: () =>
             sessionIntegratedWebSearchEnabled ? ("disabled" as const) : undefined,

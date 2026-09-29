@@ -173,6 +173,9 @@ export class EcoGatewayLifecycle {
           ...(this.options.onRequestLifecycle && {
             onRequestLifecycle: this.options.onRequestLifecycle,
           }),
+          ...(this.options.resolveEcoThreadIdFromCodex && {
+            resolveEcoThreadIdFromCodex: this.options.resolveEcoThreadIdFromCodex,
+          }),
         },
       );
       log(`embedded gateway ready (no public listen)`);

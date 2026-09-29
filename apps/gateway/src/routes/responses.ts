@@ -26,6 +26,7 @@ import {
   normalizeResponsesToolArgumentResponse,
   toolArgumentCircuitBreakResponse,
 } from "../tool-argument-guard.js";
+import { resolveEcoMcpHubNamespace } from "../eco-mcp-hub-fixup.js";
 import type {
   GatewayCodexTurnMetadata,
   GatewayConfig,
@@ -52,6 +53,7 @@ export async function handlePostResponses(
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
   onRequestLifecycle?: GatewayRequestLifecycleObserver,
+  resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined,
 ): Promise<Response> {
   let body: ResponsesRequest;
   try {
@@ -65,6 +67,15 @@ export async function handlePostResponses(
   const codexTurnMetadata = parseCodexTurnMetadataHeader(request.headers);
   if (request.headers.has(CODEX_TURN_METADATA_HEADER) && !codexTurnMetadata) {
     onLog(`POST /v1/responses received invalid ${CODEX_TURN_METADATA_HEADER}; usage will not be billed`);
+  }
+  const hubNamespace = resolveEcoMcpHubNamespace(
+    resolveEcoThreadIdFromCodex,
+    codexTurnMetadata?.threadId,
+  );
+  if (hubNamespace) {
+    onLog(
+      `eco mcp hub namespace fixup active codexThread=${codexTurnMetadata?.threadId ?? "(unknown)"} hub=${hubNamespace}`,
+    );
   }
   onLog(
     `POST /v1/responses model=${requestedModel} stream=${body.stream === true} providers=${config.providers.map((p) => p.id).join(",")}`,
@@ -174,7 +185,7 @@ export async function handlePostResponses(
       return _exhaustive;
     }
   }
-  return normalizeResponsesToolArgumentResponse(upstreamResponse);
+  return normalizeResponsesToolArgumentResponse(upstreamResponse, hubNamespace);
 }
 
 /**
