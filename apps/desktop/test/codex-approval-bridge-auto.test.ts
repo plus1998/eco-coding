@@ -237,9 +237,7 @@ test("image generation MCP approval accepts only a one-time approval", async () 
   }
 
   await expect(request("approved")).resolves.toEqual({ action: "accept", content: {} });
-  expect(claims).toEqual([
-    expect.objectContaining({ threadId: "thread-image", toolName: "create_image" }),
-  ]);
+  expect(claims).toEqual([expect.objectContaining({ threadId: "thread-image", toolName: "create_image" })]);
   await expect(request("approved_for_session")).resolves.toEqual({ action: "decline" });
   await expect(request("approved_remember_prefix")).resolves.toEqual({ action: "decline" });
   await expect(request("denied", "不要创建图片，先说明成本")).resolves.toEqual({ action: "decline" });
@@ -338,4 +336,80 @@ test("Codex allow_all host-auto-allows file-change approval without parking", as
   ).resolves.toEqual({ decision: "accept" });
 
   expect(events).toEqual([]);
+});
+
+test("Codex allow_all host-auto-allows generic MCP tool approval without parking", async () => {
+  const events: ThreadLiveEvent[] = [];
+  let reviewed = false;
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-allow-all-mcp",
+    getThread: () => ({ prompt: "调用 MCP", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-allow-all-mcp",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getApprovalMode: () => "allow_all",
+    reviewApproval: async () => {
+      reviewed = true;
+      return { action: "human_required", rationale: "should not run" };
+    },
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+      threadId: "codex-thread-allow-all-mcp",
+      turnId: "turn-allow-all-mcp",
+      serverName: "github",
+      mode: "form",
+      message: 'Allow the github MCP server to run tool "create_issue"?',
+      requestedSchema: { type: "object", properties: {} },
+    }),
+  ).resolves.toEqual({ action: "accept", content: {} });
+
+  expect(reviewed).toBe(false);
+  expect(events).toEqual([]);
+});
+
+test("Codex auto mode routes generic MCP tool approval through the reviewer", async () => {
+  const events: ThreadLiveEvent[] = [];
+  let reviewedTool: { toolName: string; toolInput: Record<string, unknown> } | undefined;
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-auto-mcp",
+    getThread: () => ({ prompt: "调用 MCP", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-auto-mcp",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getApprovalMode: () => "auto",
+    reviewApproval: async (_threadId, _request, tool) => {
+      reviewedTool = tool;
+      return { action: "allow", rationale: "MCP action is within the user request." };
+    },
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+      threadId: "codex-thread-auto-mcp",
+      turnId: "turn-auto-mcp",
+      serverName: "github",
+      mode: "form",
+      message: 'Allow the github MCP server to run tool "create_issue"?',
+      requestedSchema: { type: "object", properties: {} },
+    }),
+  ).resolves.toEqual({ action: "accept", content: {} });
+
+  expect(reviewedTool).toEqual({ toolName: "mcp__github__create_issue", toolInput: {} });
+  expect(events[0]).toMatchObject({
+    type: "bash_approval.approved",
+    bashApproval: {
+      kind: "mcp",
+      filesystemTool: "MCP",
+      filesystemPath: "github/mcp__github__create_issue",
+      reviewRationale: "MCP action is within the user request.",
+    },
+  });
 });

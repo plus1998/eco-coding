@@ -8,20 +8,17 @@ import {
   isEcoAgentBrowserRuntimeServerName,
   requiresBrowserOpenApproval,
 } from "../shared/browser";
+import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
 import {
   type ComputerUseActionApprovalMode,
   isEcoComputerUseRuntimeServerName,
   requiresComputerUseActionApproval,
 } from "../shared/computer-use";
-import {
-  ECO_WEB_SEARCH_MCP_SERVER,
-  type WebSearchApprovalMode,
-} from "../shared/integrated-web-search";
-import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
-import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_HTML_HOST_MCP_SERVER, ECO_HTML_HOST_TOOL } from "../shared/html-host-tool";
+import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_IMAGE_GENERATION_MCP_SERVER, ECO_IMAGE_GENERATION_TOOL } from "../shared/image-generation";
 import { ECO_IMAGE_VIEW_MCP_SERVER, ECO_IMAGE_VIEW_TOOL } from "../shared/image-view-tool";
+import { ECO_WEB_SEARCH_MCP_SERVER, type WebSearchApprovalMode } from "../shared/integrated-web-search";
 import type {
   BashApprovalRequest,
   ClarificationAnswers,
@@ -208,11 +205,7 @@ export interface CodexApprovalBridgeDeps {
    * Codex image MCP has no per-thread auth token. Register a claim when the
    * elicitation is accepted so create_image can bind to this Eco thread.
    */
-  noteUpcomingImageGenerationTool?: (
-    ecoThreadId: string,
-    toolName: string,
-    toolUseId?: string,
-  ) => void;
+  noteUpcomingImageGenerationTool?: (ecoThreadId: string, toolName: string, toolUseId?: string) => void;
   reviewApproval?: (
     ecoThreadId: string,
     request: BashApprovalRequest,
@@ -567,6 +560,80 @@ async function handleMcpServerElicitationRequest(
   const message = nestedHubCall
     ? buildMcpToolApprovalMessage(nestedHubCall.serverName, nestedHubCall.toolName, nestedHubCall.arguments)
     : rawMessage;
+  const parsedToolName = mode === "form" ? parseMcpToolRunElicitationMessage(serverName, message) : undefined;
+  const approvalMode = deps.getApprovalMode?.(ecoThreadId) ?? "always";
+
+  // MCP tool-run confirmations are a separate Codex request category from
+  // command/file approvals. Route the global Eco approval modes through the
+  // same bridge before applying integration-specific policies below.
+  if (parsedToolName && (approvalMode === "allow_all" || approvalMode === "auto")) {
+    const toolName = parsedToolName;
+    const toolInput = nestedHubCall?.arguments ?? {};
+    const isImageGenerationTool =
+      serverName.trim().toLowerCase() === ECO_IMAGE_GENERATION_MCP_SERVER &&
+      toolName.endsWith(`__${ECO_IMAGE_GENERATION_TOOL}`);
+    const toolUseId = createMcpElicitationToolUseId(serverName);
+    const thread = deps.getThread(ecoThreadId);
+    if (!thread) {
+      return { action: "decline" };
+    }
+    let approvalRequest: BashApprovalRequest = {
+      toolUseId,
+      threadId: ecoThreadId,
+      command: toolName,
+      cwd: deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath,
+      reason: `Agent 请求调用 MCP 工具 ${serverName}/${toolName}。`,
+      riskScore: 60,
+      riskLevel: "medium",
+      agentId: deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`,
+      description: message.trim() || `调用 MCP 工具 ${serverName}/${toolName}`,
+      kind: "mcp",
+      filesystemTool: "MCP",
+      filesystemPath: `${serverName}/${toolName}`,
+    };
+
+    if (approvalMode === "allow_all") {
+      if (isImageGenerationTool) {
+        deps.noteUpcomingImageGenerationTool?.(ecoThreadId, ECO_IMAGE_GENERATION_TOOL, toolUseId);
+      }
+      return { action: "accept", content: {} };
+    }
+
+    const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
+      toolName,
+      toolInput,
+    });
+    if (automatic?.action === "allow") {
+      if (isImageGenerationTool) {
+        deps.noteUpcomingImageGenerationTool?.(ecoThreadId, ECO_IMAGE_GENERATION_TOOL, toolUseId);
+      }
+      emitAutomaticApproval(deps, { ...approvalRequest, reviewRationale: automatic.rationale }, toolName);
+      return { action: "accept", content: {} };
+    }
+    if (automatic?.action === "deny") {
+      emitAutomaticDenial(deps, approvalRequest, automatic.rationale);
+      return { action: "decline" };
+    }
+    if (automatic?.action === "human_required") {
+      approvalRequest = { ...approvalRequest, reviewRationale: automatic.rationale };
+    }
+
+    emitBashApprovalRequested(deps, approvalRequest, `MCP ${serverName}/${toolName}`);
+    const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+    if (resolution.feedback?.trim() && turnId && deps.injectCodexApprovalFeedback) {
+      await deps.injectCodexApprovalFeedback({
+        ecoThreadId,
+        codexThreadId,
+        turnId,
+        toolUseId,
+        text: ["MCP approval feedback:", resolution.feedback.trim()].join("\n"),
+      });
+    }
+    if (resolution.decision === "approved" || resolution.decision === "approved_for_session") {
+      return { action: "accept", content: {} };
+    }
+    return { action: "decline" };
+  }
 
   const openApprovalMode = deps.getBrowserOpenApprovalMode?.() ?? "always_allow";
   const autoAccept = shouldAutoAcceptEcoBrowserToolElicitation({
@@ -620,6 +687,55 @@ async function handleMcpServerElicitationRequest(
     parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(`__${ECO_HTML_HOST_TOOL}`)
   ) {
     return { action: "accept", content: {} };
+  }
+
+  // Generic external MCP tool-run confirmations still use Eco's approval
+  // surface in the normal interactive mode. Built-in integrations above keep
+  // their dedicated approval settings and clarification UX.
+  const normalizedServerName = serverName.trim().toLowerCase();
+  const isDedicatedEcoServer =
+    isEcoAgentBrowserRuntimeServerName(normalizedServerName) ||
+    isEcoComputerUseRuntimeServerName(normalizedServerName) ||
+    normalizedServerName === ECO_WEB_SEARCH_MCP_SERVER ||
+    normalizedServerName === ECO_IMAGE_VIEW_MCP_SERVER ||
+    normalizedServerName === ECO_IMAGE_DISPLAY_MCP_SERVER ||
+    normalizedServerName === ECO_HTML_HOST_MCP_SERVER ||
+    normalizedServerName === ECO_IMAGE_GENERATION_MCP_SERVER;
+  if (parsedToolName && !isDedicatedEcoServer) {
+    const thread = deps.getThread(ecoThreadId);
+    if (!thread) {
+      return { action: "decline" };
+    }
+    const toolUseId = createMcpElicitationToolUseId(serverName);
+    const approvalRequest: BashApprovalRequest = {
+      toolUseId,
+      threadId: ecoThreadId,
+      command: parsedToolName,
+      cwd: deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath,
+      reason: `Agent 请求调用 MCP 工具 ${serverName}/${parsedToolName}。`,
+      riskScore: 60,
+      riskLevel: "medium",
+      agentId: deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`,
+      description: message.trim() || `调用 MCP 工具 ${serverName}/${parsedToolName}`,
+      kind: "mcp",
+      filesystemTool: "MCP",
+      filesystemPath: `${serverName}/${parsedToolName}`,
+    };
+    emitBashApprovalRequested(deps, approvalRequest, `MCP ${serverName}/${parsedToolName}`);
+    const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+    if (resolution.feedback?.trim() && turnId && deps.injectCodexApprovalFeedback) {
+      await deps.injectCodexApprovalFeedback({
+        ecoThreadId,
+        codexThreadId,
+        turnId,
+        toolUseId,
+        text: ["MCP approval feedback:", resolution.feedback.trim()].join("\n"),
+      });
+    }
+    if (resolution.decision === "approved" || resolution.decision === "approved_for_session") {
+      return { action: "accept", content: {} };
+    }
+    return { action: "decline" };
   }
 
   if (

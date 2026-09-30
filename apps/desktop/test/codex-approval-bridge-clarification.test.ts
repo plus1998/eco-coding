@@ -8,6 +8,7 @@ import {
   handleCodexApprovalNotification,
   handleCodexServerRequest,
   parseMcpToolRunElicitationMessage,
+  resolvePendingCodexBashApproval,
   shouldAutoAcceptEcoBrowserToolElicitation,
 } from "../src/main/codex-approval-bridge";
 import type { ThreadLiveEvent } from "../src/shared/ipc";
@@ -239,18 +240,17 @@ test("Codex eco_agent_browser open elicitation still asks when always_ask", asyn
   await expect(pending).resolves.toEqual({ action: "accept", content: {} });
 });
 
-test("Codex Hub elicitation unwraps the started call before showing approval", async () => {
+test("Codex Hub elicitation unwraps the started call before showing MCP approval", async () => {
   const events: ThreadLiveEvent[] = [];
   const deps: CodexApprovalBridgeDeps = {
     resolveEcoThreadId: () => "thread-hub-approval",
-    getThread: () => ({ prompt: "打开网页", workspacePath: "/workspace" }),
+    getThread: () => ({ prompt: "创建 issue", workspacePath: "/workspace" }),
     getWorktreePath: () => undefined,
     getPlannerAgentId: () => "planner-hub-approval",
     getRoutesJson: () => "[]",
     savePendingPlan: () => undefined,
     emitThreadLive: (event) => events.push(event),
     updateThreadStatus: () => undefined,
-    getBrowserOpenApprovalMode: () => "always_ask",
   };
 
   handleCodexApprovalNotification(deps, "item/started", {
@@ -262,8 +262,8 @@ test("Codex Hub elicitation unwraps the started call before showing approval", a
       server: "eco_mcp_abc123",
       tool: "call_tool",
       arguments: {
-        name: "eco_agent_browser:agent_browser_open",
-        arguments: { url: "https://example.test" },
+        name: "github:create_issue",
+        arguments: { title: "example" },
       },
     },
   });
@@ -279,10 +279,17 @@ test("Codex Hub elicitation unwraps the started call before showing approval", a
   });
   await Promise.resolve();
   await Promise.resolve();
-  const toolUseId = events[0]?.clarification?.toolUseId;
-  expect(events[0]?.clarification?.questions[0]?.question).toContain("agent_browser_open");
-  expect(events[0]?.clarification?.questions[0]?.question).toContain("https://example.test");
-  expect(toolUseId).toBeTruthy();
-  expect(submitClarification(toolUseId!, { toolUseId: toolUseId!, selections: [["同意并继续"]] })).toBe(true);
+  const approval = events[0]?.bashApproval;
+  expect(events[0]?.type).toBe("bash_approval.requested");
+  expect(approval).toMatchObject({
+    kind: "mcp",
+    filesystemTool: "MCP",
+    filesystemPath: "github/mcp__github__create_issue",
+  });
+  expect(approval?.description).toContain("create_issue");
+  expect(approval?.description).toContain('"title":"example"');
+  const approvalToolUseId = approval?.toolUseId;
+  expect(approvalToolUseId).toBeTruthy();
+  expect(resolvePendingCodexBashApproval(approvalToolUseId ?? "", { decision: "approved" })).toBe(true);
   await expect(pending).resolves.toEqual({ action: "accept", content: {} });
 });

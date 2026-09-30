@@ -2056,7 +2056,7 @@ export interface ClarificationDismissPayload {
   expectedHistoryRevision: number;
 }
 
-export type BashApprovalKind = "command" | "file_change" | "network" | "image_generation";
+export type BashApprovalKind = "command" | "file_change" | "network" | "image_generation" | "mcp";
 
 export interface BashApprovalNetworkPolicyAmendment {
   host: string;
