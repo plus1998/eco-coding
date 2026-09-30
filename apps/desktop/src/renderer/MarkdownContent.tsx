@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Plugin as PMPlugin } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 import {
   collectLocalImageSrcs,
   resolveLocalImageDataUrls,
@@ -11,20 +13,33 @@ import {
   feedMarkdownSchema,
   renderFeedMarkdownHtml,
 } from "./prosemirror/feed-markdown";
-import { EMPTY_PM_PLUGINS, ProseMirrorHost } from "./prosemirror/ProseMirrorHost";
+import { EMPTY_PM_PLUGINS, ProseMirrorHost, type ProseMirrorDocProvider } from "./prosemirror/ProseMirrorHost";
 
 interface MarkdownContentProps {
   text: string;
   className?: string;
   /** When set, relative / workspace-local image srcs are loaded via readWorkspaceFile. */
   localImageContext?: MarkdownLocalImageContext;
+  /** Replaces the default feed plugin list (e.g. to add a caret decoration). */
+  plugins?: readonly PMPlugin[];
+  /** Builds the document incrementally instead of re-parsing `text`. */
+  docProvider?: ProseMirrorDocProvider;
+  /** Receives the editor view, e.g. so a controller can drive decorations. */
+  onView?: (view: EditorView | null) => void;
 }
 
 function canUseProseMirrorHost(): boolean {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
 
-export function MarkdownContent({ text, className, localImageContext }: MarkdownContentProps) {
+export function MarkdownContent({
+  text,
+  className,
+  localImageContext,
+  plugins,
+  docProvider,
+  onView,
+}: MarkdownContentProps) {
   if (!text.trim()) {
     return null;
   }
@@ -41,6 +56,9 @@ export function MarkdownContent({ text, className, localImageContext }: Markdown
       text={text}
       className={rootClass}
       {...(localImageContext ? { localImageContext } : {})}
+      {...(plugins ? { plugins } : {})}
+      {...(docProvider ? { docProvider } : {})}
+      {...(onView ? { onView } : {})}
     />
   );
 }
@@ -49,12 +67,18 @@ function MarkdownContentProseMirror({
   text,
   className,
   localImageContext,
+  plugins: pluginsOverride,
+  docProvider,
+  onView,
 }: {
   text: string;
   className: string;
   localImageContext?: MarkdownLocalImageContext;
+  plugins?: readonly PMPlugin[];
+  docProvider?: ProseMirrorDocProvider;
+  onView?: (view: EditorView | null) => void;
 }) {
-  const plugins = useMemo(() => FEED_MARKDOWN_PLUGINS, []);
+  const plugins = useMemo(() => pluginsOverride ?? FEED_MARKDOWN_PLUGINS, [pluginsOverride]);
   const serializeDoc = useMemo(() => () => "__feed_markdown__", []);
   const [urlBySrc, setUrlBySrc] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [imageEpoch, setImageEpoch] = useState(0);
@@ -127,6 +151,8 @@ function MarkdownContentProseMirror({
         serializeDoc={serializeDoc}
         readOnly
         editable={false}
+        {...(docProvider ? { docProvider } : {})}
+        {...(onView ? { onView } : {})}
       />
     </div>
   );

@@ -321,6 +321,35 @@ test("StreamingMarkdownContent leaves held structured edit loading to the conver
   expect(html).toBe("");
 });
 
+test("StreamingMarkdownContent keeps a long unfinished response on the markdown path", () => {
+  // The reveal is incremental now, so a large mutable tail no longer has to
+  // fall back to pre-wrap plain text: dropping the tail would change paragraph
+  // spacing the moment the turn settles.
+  const paragraph = "这是一段持续输出的正文内容，用来把可变尾块撑过旧的 800 字阈值。";
+  const text = `${paragraph.repeat(30)}\n\n仍在继续输出`;
+  const streamingHtml = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, { text, streaming: true }),
+  );
+  const settledHtml = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, { text, streaming: false }),
+  );
+
+  expect(text.length).toBeGreaterThan(800);
+  expect(streamingHtml).not.toContain("markdown-content--streaming-plain");
+  expect(streamingHtml).toContain("仍在继续输出");
+  expect(streamingHtml).toBe(settledHtml);
+});
+
+test("StreamingMarkdownContent streams the prose tail as markdown, not pre-wrap plain text", () => {
+  const html = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, { text: "第一段\n\n第二段", streaming: true }),
+  );
+
+  expect(html).toContain("<p>第一段</p>");
+  expect(html).toContain("<p>第二段</p>");
+  expect(html).not.toContain("markdown-content--streaming-plain");
+});
+
 test("desktop feed keeps narrative edge spacing stable when streaming settles to markdown", () => {
   const streamingHtml = renderToStaticMarkup(
     createElement(StreamingMarkdownContent, { text: "正文输出", streaming: true }),

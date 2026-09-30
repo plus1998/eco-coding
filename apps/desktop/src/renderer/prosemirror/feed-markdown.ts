@@ -467,6 +467,63 @@ export function createFeedMarkdownDoc(text: string): PMNode {
   return rewriteFileReferences(doc);
 }
 
+/** A top-level Markdown block with its source range, from the real tokenizer. */
+export interface FeedMarkdownBlockRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * Top-level block ranges of `text` as the tokenizer sees them.
+ *
+ * Streaming rendering needs to know which part of a growing response can no
+ * longer change. The line-oriented scan in `streaming-markdown-partition` is a
+ * cheap approximation and misses constructs whose block structure spans lines
+ * in non-obvious ways (GFM tables without a leading pipe, setext headings,
+ * lists that merge across a blank line). The tokenizer's `map` is authoritative,
+ * so the doc builder uses it to decide what is safe to freeze.
+ */
+export function feedMarkdownBlockRanges(text: string): FeedMarkdownBlockRange[] {
+  if (!text) {
+    return [];
+  }
+  let tokens: Array<{ level: number; map: [number, number] | null }>;
+  try {
+    tokens = tokenizer.parse(text, {}) as unknown as Array<{ level: number; map: [number, number] | null }>;
+  } catch {
+    return [];
+  }
+
+  // Line offsets once, so each token map lookup is O(1) instead of a rescan.
+  const lineOffsets = [0];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === "\n") {
+      lineOffsets.push(i + 1);
+    }
+  }
+  const offsetOfLine = (lineIndex: number): number => {
+    if (lineIndex <= 0) {
+      return 0;
+    }
+    return lineIndex < lineOffsets.length ? lineOffsets[lineIndex]! : text.length;
+  };
+
+  const ranges: FeedMarkdownBlockRange[] = [];
+  for (const token of tokens) {
+    // Only level-0 block tokens carry a source line range; nested inline tokens
+    // are level 1+ and would duplicate their parent's range.
+    if (token.level !== 0 || !token.map) {
+      continue;
+    }
+    const start = offsetOfLine(token.map[0]);
+    const end = offsetOfLine(token.map[1]);
+    if (end > start) {
+      ranges.push({ start, end });
+    }
+  }
+  return ranges;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
