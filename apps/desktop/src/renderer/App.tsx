@@ -806,6 +806,13 @@ function clearComposerDraft(store: Record<string, ComposerDraft>, key: string | 
 
 const ACTIVITY_FEED_STICK_THRESHOLD_PX = 120;
 const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
+/**
+ * Coalesce provider effects for a short frame-sized window. The Markdown
+ * renderer paces the text between these commits, so this is an IPC/React
+ * batching guard rather than the visible typing cadence.
+ */
+const CONVERSATION_V2_LIVE_FLUSH_TARGET_MS = 48;
+const CONVERSATION_V2_LIVE_FLUSH_BACKPRESSURE_MS = 80;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
@@ -1544,8 +1551,9 @@ function App() {
   const conversationV2RenderPendingRef = useRef(new Map<string, ConversationV2RendererState>());
   const conversationV2RenderFramesRef = useRef(new Map<string, number>());
   // Live streams can deliver hundreds of sync effects per second. Keep the
-  // durable cursor in the imperative ref, but apply a bounded batch so a
-  // streaming Markdown response is parsed at most five times per second.
+  // durable cursor in the imperative ref, but apply short bounded batches. The
+  // streaming Markdown pacer fills the gaps between these commits, so users
+  // see a continuous reveal without making React parse every provider delta.
   const conversationV2LiveEffectsRef = useRef(new Map<string, ConversationSyncEffect[]>());
   const conversationV2LiveFlushTimersRef = useRef(new Map<string, number>());
   const scheduleConversationV2Render = useCallback((threadId: string, state: ConversationV2RendererState) => {
@@ -1574,11 +1582,18 @@ function App() {
     const pendingTimer = conversationV2LiveFlushTimersRef.current.get(threadId);
     if (pendingTimer !== undefined) {
       if (!immediate) return;
-      // A user message can arrive while a 200ms stream batch is waiting. Do not
+      // A user message can arrive while a stream batch is waiting. Do not
       // let that older timer delay the prompt acknowledgement.
       window.clearTimeout(pendingTimer);
       conversationV2LiveFlushTimersRef.current.delete(threadId);
     }
+    const pendingEffects = conversationV2LiveEffectsRef.current.get(threadId)?.length ?? 0;
+    const delayMs =
+      immediate
+        ? 0
+        : pendingEffects >= 96
+          ? CONVERSATION_V2_LIVE_FLUSH_BACKPRESSURE_MS
+          : CONVERSATION_V2_LIVE_FLUSH_TARGET_MS;
     const timer = window.setTimeout(() => {
       conversationV2LiveFlushTimersRef.current.delete(threadId);
       const effects = conversationV2LiveEffectsRef.current.get(threadId);
@@ -1605,7 +1620,7 @@ function App() {
           for (const effect of effects) bufferConversationV2Event(threadId, effect);
         }
       }
-    }, immediate ? 0 : 200);
+    }, delayMs);
     conversationV2LiveFlushTimersRef.current.set(threadId, timer);
   }, [scheduleConversationV2Render]);
   const conversationV2DuplicateVerificationInFlightRef = useRef(new Set<string>());
@@ -2487,17 +2502,20 @@ function App() {
               status: statusFromLiveEvent(event.type, thread.status),
               updatedAt: new Date().toISOString(),
               ...(cancelling ? { cancelling: true } : {}),
-              ...(event.followUpQueuePaused === true ? { followUpQueuePaused: true } : {}),
+              ...(typeof event.followUpQueuePaused === "boolean"
+                ? { followUpQueuePaused: event.followUpQueuePaused }
+                : {}),
             };
           }),
         );
       } else if (typeof event.followUpQueuePaused === "boolean") {
+        const followUpQueuePaused = event.followUpQueuePaused;
         setThreads((current) =>
           current.map((thread) =>
             thread.id === event.threadId
               ? {
                   ...thread,
-                  ...(event.followUpQueuePaused === true ? { followUpQueuePaused: true } : {}),
+                  followUpQueuePaused,
                   updatedAt: new Date().toISOString(),
                 }
               : thread,
@@ -7613,8 +7631,12 @@ function App() {
     setError(undefined);
     setFollowUpQueuePauseBusy(true);
     try {
+      // Queue pause/resume is a reversible state transition. Its desired payload
+      // can repeat after an automatic error pause, so the stable command hash
+      // would otherwise replay an old receipt instead of applying this click.
+      const command = await buildV2CommandEnvelope(activeThread.id, "queue-paused", { paused });
       const result = await window.eco.setThreadFollowUpQueuePaused(
-        await buildV2CommandEnvelope(activeThread.id, "queue-paused", { paused }),
+        { ...command, clientCommandId: `command_queue-paused_${crypto.randomUUID()}` },
       );
       setThreads((current) =>
         current.map((thread) =>
@@ -7622,7 +7644,10 @@ function App() {
             ? {
                 ...thread,
                 ...result.thread,
-                ...(result.paused === true ? { followUpQueuePaused: true } : {}),
+                // `rowToThread` omits the optional field when the queue is resumed.
+                // Write the authoritative command result explicitly so a stale
+                // `true` in the renderer cannot turn Resume back into Pause.
+                followUpQueuePaused: result.paused === true,
               }
             : thread,
         ),

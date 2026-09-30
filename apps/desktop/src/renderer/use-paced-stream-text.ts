@@ -32,7 +32,7 @@ export const STREAM_TICK_MAX_MS = 120;
  * accelerates only as far as the step cap allows. A fixed window would instead
  * make a tiny excess snap and a large one crawl.
  */
-export const STREAM_CATCH_UP_MS = 600;
+export const STREAM_CATCH_UP_MS = 360;
 /**
  * How far behind the arrived text the reveal is allowed to sit.
  *
@@ -44,7 +44,7 @@ export const STREAM_CATCH_UP_MS = 600;
  * The only visible cost is a one-off snap of at most this much text when a turn
  * ends while the reveal is still behind.
  */
-export const STREAM_REVEAL_TARGET_LAG_MS = 200;
+export const STREAM_REVEAL_TARGET_LAG_MS = 80;
 /**
  * Hard ceiling on a single tick's reveal, as a multiple of the steady-state step.
  * Catching up is allowed to move faster than the stream, but never so fast that

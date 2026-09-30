@@ -841,15 +841,11 @@ export function buildConversationV2OnlyProjection(
 
   const messagesByAgent = new Map<string, ThreadRunProjectionTimelineItem[]>();
   const mainTimeline: ThreadRunProjectionTimelineItem[] = [];
-  // The live ActivityLog always supplies the thread summary. Keep the pure
-  // projection helper's historical no-thread behavior for callers that only
-  // want finalized messages (and for replay/test fixtures).
-  const showQueuedUserMessages = Boolean(thread);
   for (const message of orderedConversationV2Messages(conversationV2)) {
-    // `message.create` is the durable acknowledgement of a user send. Render it
-    // immediately while it is queued; waiting for the runtime to create a run
-    // leaves the Feed blank for several seconds and makes the app look frozen.
-    if (isQueuedConversationV2UserMessage(message) && !showQueuedUserMessages) {
+    // `message.accepted` is the durable acknowledgement of a user send. The
+    // queue panel owns this row until the runtime finalizes it; otherwise the
+    // same prompt would be rendered twice.
+    if (isQueuedConversationV2UserMessage(message)) {
       continue;
     }
     const ownerAgentId = message.agentId?.trim();

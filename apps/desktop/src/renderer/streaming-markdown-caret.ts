@@ -30,9 +30,9 @@ export interface StreamingCaretController {
 }
 
 /** Minimum reveal, in code units, that is worth a pulse. */
-export const STREAM_CARET_PULSE_MIN_UNITS = 6;
+export const STREAM_CARET_PULSE_MIN_UNITS = 2;
 /** Pulses are rate limited so a fast stream does not strobe. */
-export const STREAM_CARET_PULSE_MIN_INTERVAL_MS = 160;
+export const STREAM_CARET_PULSE_MIN_INTERVAL_MS = 120;
 
 const caretKey = new PluginKey<boolean>("ecoStreamCaret");
 const caretMeta = "ecoStreamCaretVisible";
