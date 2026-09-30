@@ -2014,6 +2014,135 @@ test.skipIf(!sqliteAvailable)(
 );
 
 test.skipIf(!sqliteAvailable)(
+  "startup repair scans only the conversations that still hold a queued prompt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-accepted-prompt-duplicate-scan-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-09-18T00:00:00.000Z";
+    const duplicateThreadId = "thr_accepted_prompt_duplicate_scan";
+    const idleThreadId = "thr_accepted_prompt_duplicate_idle";
+    for (const id of [duplicateThreadId, idleThreadId]) {
+      store.saveThread({
+        id,
+        title: "Accepted prompt duplicate scan",
+        prompt: "same prompt",
+        workspacePath: "/tmp/project",
+        status: "running",
+        message: "working",
+        createdAt: now,
+        updatedAt: now,
+        coreKind: "codex",
+        coreLockedAt: now,
+      });
+    }
+    store.conversationV2().ensureConversation(idleThreadId);
+
+    const accepted = store.conversationV2().sendMessage({
+      principalId: "desktop-local",
+      conversationId: duplicateThreadId,
+      clientCommandId: "command-accepted-duplicate-scan",
+      text: "same prompt",
+    });
+    store.conversationV2().append({
+      conversationId: duplicateThreadId,
+      eventId: "runtime-created-duplicate-scan",
+      sourceEventKey: "desktop:user:accepted-duplicate-scan-runtime",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_runtime_duplicate_scan",
+      messageId: "message_user_runtime_duplicate_scan",
+      payload: { role: "user", body: "same prompt", status: "final" },
+    });
+    store.appendConversationRuntimeEvent({
+      id: "runtime-duplicate-prompt-source-scan",
+      threadId: duplicateThreadId,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "same prompt",
+      observedAt: now,
+      streamKey: "codex-pending:duplicate-scan",
+      metadata: {
+        liveType: "thread.user_prompt",
+        conversationV2MessageId: "message_user_runtime_duplicate_scan",
+        rewindTarget: { activityLineId: "codex-pending:duplicate-scan" },
+      },
+    });
+
+    // The idle stream is skipped because its prompt is no longer queued, so the
+    // startup sweep never walks that conversation's event log.
+    expect(store.reconcileAllConversationV2AcceptedPromptDuplicates()).toEqual({
+      conversations: 1,
+      scanned: 1,
+      repaired: 1,
+      ambiguous: 0,
+    });
+    expect(store.conversationV2().getMessage(duplicateThreadId, accepted.messageId)).toMatchObject({
+      isDeleted: true,
+      status: "deleted",
+    });
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "one-time conversation repairs are recorded and never scanned twice",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-v2-repair-bookkeeping-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-09-18T00:00:00.000Z";
+    const threadId = "thr_v2_repair_bookkeeping";
+    store.saveThread({
+      id: threadId,
+      title: "Repair bookkeeping",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+    store.conversationV2().append({
+      conversationId: threadId,
+      eventId: "bookkeeping-message",
+      sourceEventKey: "desktop:user:bookkeeping-message",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_bookkeeping",
+      messageId: "message_user_bookkeeping",
+      payload: { role: "user", body: "hello", status: "final" },
+    });
+
+    // Nothing queued and no runtime echo: both repairs record the conversation
+    // as done instead of leaving it in the scan set.
+    expect(store.reconcileConversationV2AcceptedPromptDuplicates(threadId)).toEqual({
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+    expect(store.reconcileConversationV2CodexUserMessageDuplicates(threadId)).toEqual({
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+    expect(store.reconcileAllConversationV2AcceptedPromptDuplicates()).toEqual({
+      conversations: 0,
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+    expect(store.reconcileAllConversationV2CodexUserMessageDuplicates()).toEqual({
+      conversations: 0,
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
   "native Claude prompt without provider identity never gets a synthetic rewind target",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-native-claude-unbound-"));

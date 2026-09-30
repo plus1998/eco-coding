@@ -2017,10 +2017,9 @@ app.whenReady().then(async () => {
     promptImageFileStore,
   });
   logStartupStage("conversation-store.initialized");
-  const startupRunReconcile = conversationStore.reconcileAllConversationV2Runs();
-  if (startupRunReconcile.repaired > 0) {
-    logEcoDiag("conversation-v2.startup-run-reconcile", startupRunReconcile);
-  }
+  // Run reconciliation happens per conversation (conversationBootstrap and
+  // repairConversationV2OnLoad). The startup sweep that walked every thread was
+  // redundant with it.
   const startupToolRecovery = conversationStore.reconcileAllConversationV2TerminalRunTools();
   if (startupToolRecovery.settled > 0) {
     logEcoDiag("conversation-v2.startup-terminal-run-tool-recovery", startupToolRecovery);
@@ -2030,11 +2029,9 @@ app.whenReady().then(async () => {
   if (startupLedgerAttributionReconcile.attributed > 0 || startupLedgerAttributionReconcile.ambiguous > 0) {
     logEcoDiag("conversation-v2.startup-ledger-attribution-reconcile", startupLedgerAttributionReconcile);
   }
-  const startupCodexUserDuplicateReconcile =
-    conversationStore.reconcileAllConversationV2CodexUserMessageDuplicates();
-  if (startupCodexUserDuplicateReconcile.repaired > 0 || startupCodexUserDuplicateReconcile.ambiguous > 0) {
-    logEcoDiag("conversation-v2.startup-codex-user-duplicate-reconcile", startupCodexUserDuplicateReconcile);
-  }
+  // The accepted-prompt repair stays on the startup path because queue recovery
+  // below delivers queued prompts without anyone opening the conversation. Its
+  // candidates are only the conversations holding a queued user message.
   const startupAcceptedPromptDuplicateReconcile =
     conversationStore.reconcileAllConversationV2AcceptedPromptDuplicates();
   if (
@@ -2072,15 +2069,13 @@ app.whenReady().then(async () => {
   });
   conversationStore.setPromptImageFileStore(promptImageFileStore);
   if (conversationStore.getConversationStorageMode() === "v2_only") {
-    const referencedPromptImageRefs = conversationStore.listReferencedPromptImageContentRefs();
     void promptImageFileStore
-      .sweepUnreferencedContentObjects({ referencedContentRefs: referencedPromptImageRefs })
+      .sweepUnreferencedContentObjects({
+        resolveReferencedContentRefs: () => conversationStore.listReferencedPromptImageContentRefs(),
+      })
       .then((result) => {
-        if (result.removed > 0 || result.retainedRecent > 0) {
-          logEcoDiag("conversation-v2.prompt-image-object-gc", {
-            ...result,
-            referencedCount: referencedPromptImageRefs.size,
-          });
+        if (result.removed > 0 || result.retainedReferenced > 0) {
+          logEcoDiag("conversation-v2.prompt-image-object-gc", { ...result });
         }
       })
       .catch((error) => {
@@ -15894,6 +15889,9 @@ function requireConversationV2Thread(conversationId: string): void {
       { conversationId: id },
     );
   }
+  // One-time data repairs for this conversation. Recorded per conversation, so
+  // loading it again after the first pass costs only a lookup.
+  conversationStore.repairConversationV2OnLoad(id);
 }
 
 function isSdkCompactionStatusEvent(event: AgentEventLike): boolean {

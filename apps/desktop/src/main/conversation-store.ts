@@ -599,6 +599,14 @@ const FULL_PROJECTION_EVENT_CACHE_MAX = 0;
 const CONVERSATION_V2_RUN_LIVE_SOURCE_PREFIX = "desktop:run";
 const CONVERSATION_V2_RUN_RECONCILE_SOURCE_PREFIX = "desktop:run-reconciled";
 
+/**
+ * One-time conversation repairs. Each key records, per conversation, that the
+ * repair has already run, so startup and conversation loads stop rescanning a
+ * conversation that has nothing left to fix.
+ */
+const CONVERSATION_V2_REPAIR_CODEX_USER_DUPLICATES = "codex-user-echo-duplicate";
+const CONVERSATION_V2_REPAIR_ACCEPTED_PROMPT_DUPLICATES = "accepted-prompt-duplicate";
+
 function normalizeLegacyRunAttemptStatus(value: string): RunAttemptStatus | undefined {
   const status = value.trim().toLowerCase();
   if (status === "running" || status === "completed" || status === "failed") return status;
@@ -728,10 +736,12 @@ export class ConversationStore {
   /**
    * Mark content-addressed image objects referenced by both V2 storage and
    * durable composer drafts. The GC caller uses this set before deleting any
-   * object, so a pending resend cannot lose its source bytes.
+   * object, so a pending resend cannot lose its source bytes. The V2 event log
+   * dominates the cost, so that part of the walk yields to the event loop
+   * instead of holding the main process for the whole scan.
    */
-  listReferencedPromptImageContentRefs(): Set<string> {
-    const refs = this.v2.listReferencedPromptImageContentRefs();
+  async listReferencedPromptImageContentRefs(): Promise<Set<string>> {
+    const refs = await this.v2.collectReferencedPromptImageContentRefs();
     if (this.tableExists("composer_drafts")) {
       const rows = this.db.prepare(`SELECT attachments_json FROM composer_drafts`).all() as Array<{
         attachments_json: string | null;
@@ -6271,6 +6281,9 @@ export class ConversationStore {
     if (!id || !this.v2.hasConversation(id)) {
       return { scanned: 0, repaired: 0, ambiguous: 0 };
     }
+    if (this.v2.hasConversationRepair(CONVERSATION_V2_REPAIR_CODEX_USER_DUPLICATES, id)) {
+      return { scanned: 0, repaired: 0, ambiguous: 0 };
+    }
     const sources = this.listConversationRuntimeSources(id);
     const promptSources = sources.filter(
       (event) =>
@@ -6360,25 +6373,25 @@ export class ConversationStore {
       throw error;
     }
     if (results.length > 0) this.v2.publishCommitted(results);
+    this.v2.markConversationRepaired(CONVERSATION_V2_REPAIR_CODEX_USER_DUPLICATES, id);
     return { scanned: echoes.length, repaired, ambiguous };
   }
 
-  /** Repair every existing V2 conversation without creating a missing stream. */
+  /** Repair every V2 conversation that has not been through the echo repair yet. */
   reconcileAllConversationV2CodexUserMessageDuplicates(): {
     conversations: number;
     scanned: number;
     repaired: number;
     ambiguous: number;
   } {
-    const rows = this.db
-      .prepare(`SELECT conversation_id FROM conversation_streams_v2 ORDER BY conversation_id ASC`)
-      .all() as Array<{ conversation_id: string }>;
     let conversations = 0;
     let scanned = 0;
     let repaired = 0;
     let ambiguous = 0;
-    for (const row of rows) {
-      const result = this.reconcileConversationV2CodexUserMessageDuplicates(row.conversation_id);
+    for (const conversationId of this.v2.listConversationsMissingRepair(
+      CONVERSATION_V2_REPAIR_CODEX_USER_DUPLICATES,
+    )) {
+      const result = this.reconcileConversationV2CodexUserMessageDuplicates(conversationId);
       conversations += 1;
       scanned += result.scanned;
       repaired += result.repaired;
@@ -6402,6 +6415,16 @@ export class ConversationStore {
   } {
     const id = threadId.trim();
     if (!id || !this.v2.hasConversation(id)) {
+      return { scanned: 0, repaired: 0, ambiguous: 0 };
+    }
+    if (this.v2.hasConversationRepair(CONVERSATION_V2_REPAIR_ACCEPTED_PROMPT_DUPLICATES, id)) {
+      return { scanned: 0, repaired: 0, ambiguous: 0 };
+    }
+    // The repair only ever deletes an accepted row whose user message is still
+    // queued, so a conversation without one has nothing to repair. Recording
+    // that here keeps the (potentially large) event log out of the check.
+    if (!this.hasQueuedUserMessage(id)) {
+      this.v2.markConversationRepaired(CONVERSATION_V2_REPAIR_ACCEPTED_PROMPT_DUPLICATES, id);
       return { scanned: 0, repaired: 0, ambiguous: 0 };
     }
     const rows = this.db
@@ -6503,18 +6526,41 @@ export class ConversationStore {
       throw error;
     }
     if (results.length > 0) this.v2.publishCommitted(results);
+    this.v2.markConversationRepaired(CONVERSATION_V2_REPAIR_ACCEPTED_PROMPT_DUPLICATES, id);
     return { scanned: acceptedRows.length, repaired, ambiguous };
   }
 
-  /** Repair every V2 stream's exact accepted-prompt duplicate shape. */
+  /**
+   * Repair the accepted-prompt duplicate shape for every conversation that could
+   * still produce one.
+   *
+   * This is the one repair that also belongs on the startup path: the startup
+   * queue recovery delivers queued prompts without anyone opening the
+   * conversation, so a stale accepted duplicate has to be tombstoned before that
+   * runs. The repair itself only ever deletes an accepted row whose user message
+   * is still `queued`, so the candidate set is exactly the conversations holding
+   * a queued user message — normally none.
+   */
   reconcileAllConversationV2AcceptedPromptDuplicates(): {
     conversations: number;
     scanned: number;
     repaired: number;
     ambiguous: number;
   } {
+    this.v2.initialize();
     const rows = this.db
-      .prepare(`SELECT conversation_id FROM conversation_streams_v2 ORDER BY conversation_id ASC`)
+      .prepare(
+        `SELECT DISTINCT messages.conversation_id
+           FROM conversation_messages_v2 AS messages
+          WHERE messages.role = 'user'
+            AND messages.status = 'queued'
+            AND messages.is_deleted = 0
+            AND EXISTS (
+              SELECT 1 FROM conversation_streams_v2 AS streams
+               WHERE streams.conversation_id = messages.conversation_id
+            )
+          ORDER BY messages.conversation_id ASC`,
+      )
       .all() as Array<{ conversation_id: string }>;
     let conversations = 0;
     let scanned = 0;
@@ -6530,7 +6576,12 @@ export class ConversationStore {
     return { conversations, scanned, repaired, ambiguous };
   }
 
-  /** Repair only ledger rows with a unique V2 agent owner; ambiguous rows remain visible. */
+  /**
+   * Repair only ledger rows with a unique V2 agent owner; ambiguous rows remain
+   * visible. The writer can still leave rows unattributed, so this stays a sweep
+   * instead of a one-time repair — but it is driven by the rows that actually
+   * need it rather than by every conversation in the store.
+   */
   reconcileAllConversationV2UsageLedgerAttribution(): {
     conversations: number;
     scanned: number;
@@ -6539,7 +6590,11 @@ export class ConversationStore {
   } {
     this.v2.initialize();
     const rows = this.db
-      .prepare(`SELECT conversation_id FROM conversation_streams_v2 ORDER BY conversation_id ASC`)
+      .prepare(
+        `SELECT DISTINCT conversation_id FROM conversation_usage_ledger_events_v2
+          WHERE agent_id IS NULL
+          ORDER BY conversation_id ASC`,
+      )
       .all() as Array<{ conversation_id: string }>;
     let conversations = 0;
     let scanned = 0;
@@ -6553,6 +6608,33 @@ export class ConversationStore {
       ambiguous += result.ambiguous;
     }
     return { conversations, scanned, attributed, ambiguous };
+  }
+
+  /**
+   * One-time repairs scoped to a single conversation, run when that conversation
+   * is loaded or first migrated. Each repair records itself, so the cost is paid
+   * once by the conversation that needs it instead of by every startup over the
+   * whole store.
+   */
+  repairConversationV2OnLoad(threadId: string): void {
+    const id = threadId.trim();
+    if (!id || !this.v2.hasConversation(id)) {
+      return;
+    }
+    this.reconcileConversationV2CodexUserMessageDuplicates(id);
+    this.reconcileConversationV2AcceptedPromptDuplicates(id);
+  }
+
+  /** Whether the conversation still holds a queued user prompt. */
+  private hasQueuedUserMessage(conversationId: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS present FROM conversation_messages_v2
+          WHERE conversation_id = ? AND role = 'user' AND status = 'queued' AND is_deleted = 0
+          LIMIT 1`,
+      )
+      .get(conversationId) as { present?: number } | undefined;
+    return row?.present === 1;
   }
 
   private parseV2RunAttemptRow(

@@ -2089,7 +2089,7 @@ test("Node SQLite enforces the V2-only storage boundary after an atomic cutover"
     .prepare(`INSERT INTO thread_pending_followups (attachments_json) VALUES (?)`)
     .run(JSON.stringify({ contentRef: legacyFollowUpRef }));
   rawDb.prepare(`INSERT INTO thread_subagent_sessions (thread_id) VALUES (?)`).run(threadId);
-  assert.equal(store.listReferencedPromptImageContentRefs().has(legacyFollowUpRef), false);
+  assert.equal((await store.listReferencedPromptImageContentRefs()).has(legacyFollowUpRef), false);
   store.clearUsageLedger(threadId);
   const legacyRowsAfterV2Clear = rawDb
     .prepare(`SELECT COUNT(*) AS count FROM thread_usage_ledger_events WHERE thread_id = ?`)
@@ -2247,7 +2247,7 @@ test("Node SQLite enforces the V2-only storage boundary after an atomic cutover"
       attachments: [{ mediaType: "image/png", contentRef: durableImageRef, byteLength: 3 }],
     },
   });
-  assert.equal(store.listReferencedPromptImageContentRefs().has(durableImageRef), true);
+  assert.equal((await store.listReferencedPromptImageContentRefs()).has(durableImageRef), true);
 
   const inspection = new DatabaseSync(databasePath, { readOnly: true });
   const retired = inspection
@@ -2312,4 +2312,31 @@ test("Node SQLite enforces the V2-only storage boundary after an atomic cutover"
   reopenedInspection.close();
   assert.equal(reopened.getThreadFollowUp(threadId, queuedFollowUp.id), undefined);
   assert.equal(reopened.deleteThread(threadId), true);
+});
+
+test("prompt image references are collected from the first payload row of a source table", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-prompt-image-refs-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_prompt_image_first_row";
+  const durableRef = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  store.conversationV2().append({
+    conversationId: threadId,
+    eventId: "v2_first_row_image",
+    sourceEventKey: "v2_first_row_image",
+    type: "message.created",
+    occurredAt: "2026-01-01T00:00:00.000Z",
+    turnId: "turn_image",
+    messageId: "message_image",
+    payload: {
+      role: "user",
+      channel: "answer",
+      body: "图片",
+      status: "final",
+      historyTarget: { activityLineId: "image:1" },
+      attachments: [{ mediaType: "image/png", contentRef: durableRef, byteLength: 3 }],
+    },
+  });
+  const refs = await store.listReferencedPromptImageContentRefs();
+  assert.equal(refs.has(durableRef), true);
+  assert.deepEqual([...refs], [durableRef]);
 });

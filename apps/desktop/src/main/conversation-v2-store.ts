@@ -49,6 +49,32 @@ import { collectPromptImageContentRefs, isPromptImageContentRef } from "./prompt
 const META_KEY = "conversation_v2_store_epoch";
 const STORAGE_MODE_KEY = "conversation_v2_storage_mode";
 
+/**
+ * Durable payloads that can hold a prompt-image `sha256:` reference, cheapest
+ * first. `hasPromptImageContentRef` reads one owner's rows; the GC walks the
+ * same sources without an owner filter.
+ */
+const PROMPT_IMAGE_REF_SOURCES = [
+  ["conversation_command_receipts_v2", "result_json", "conversation_id"],
+  ["conversation_command_checkpoints_v2", "payload_json", "conversation_id"],
+  ["conversation_command_jobs_v2", "request_json", "conversation_id"],
+  ["conversation_command_jobs_v2", "result_json", "conversation_id"],
+  ["conversation_command_jobs_v2", "error_json", "conversation_id"],
+  ["conversation_native_facts_v2", "payload_json", "conversation_id"],
+  ["conversation_native_facts_v2", "attachment_summary_json", "conversation_id"],
+  ["conversation_projection_snapshots_v2", "snapshot_json", "conversation_id"],
+  ["conversation_followups_v2", "attachments_json", "thread_id"],
+  ["conversation_messages_v2", "attachments_json", "conversation_id"],
+  ["conversation_feed_skeletons_v2", "snapshot_json", "conversation_id"],
+  ["conversation_feed_skeletons_v2", "auxiliary_json", "conversation_id"],
+  ["conversation_provider_inputs_v2", "source_json", "conversation_id"],
+  ["conversation_sync_effects_v2", "effect_json", "conversation_id"],
+  ["conversation_events_v2", "payload_json", "conversation_id"],
+] as const;
+
+/** Rows per reference-scan window; each window yields before reading the next. */
+const PROMPT_IMAGE_REF_SCAN_WINDOW_ROWS = 5_000;
+
 export type ConversationV2StorageMode = "legacy_compat" | "v2_only";
 
 const LEGACY_STORAGE_TABLES = [
@@ -953,6 +979,16 @@ export class ConversationV2Store {
         PRIMARY KEY (migration_version, conversation_id)
       );
 
+      -- One-time data repairs, recorded per conversation. A repair is a durable
+      -- fact ("this conversation has already been through repair X"), so startup
+      -- and conversation loads can skip it instead of rescanning the log.
+      CREATE TABLE IF NOT EXISTS conversation_repairs_v2 (
+        repair_key TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        repaired_at TEXT NOT NULL,
+        PRIMARY KEY (repair_key, conversation_id)
+      );
+
       CREATE TABLE IF NOT EXISTS conversation_native_facts_v2 (
         conversation_id TEXT NOT NULL,
         native_seq INTEGER NOT NULL,
@@ -1627,34 +1663,36 @@ export class ConversationV2Store {
    * Content-addressed objects are garbage collected only after this mark set
    * has been collected, so event history, queued commands, effects and the
    * read models all remain protected during cleanup.
+   *
+   * The reference sources include the whole event log, which is by far the
+   * largest table in the store. Scanning it holds the synchronous SQLite
+   * connection and regex-walks every payload, so a large store used to stall
+   * the desktop main process for many seconds. Two changes keep that cost off
+   * the main thread's critical path: the `instr` prefilter decides inside
+   * SQLite which rows can contain a content ref, and the walk proceeds in
+   * rowid windows that yield to the event loop between batches.
    */
-  listReferencedPromptImageContentRefs(): Set<string> {
+  async collectReferencedPromptImageContentRefs(): Promise<Set<string>> {
     this.ensureInitialized();
     const refs = new Set<string>();
-    const sources = [
-      ["conversation_events_v2", "payload_json"],
-      ["conversation_messages_v2", "attachments_json"],
-      ["conversation_followups_v2", "attachments_json"],
-      ["conversation_sync_effects_v2", "effect_json"],
-      ["conversation_feed_skeletons_v2", "snapshot_json"],
-      ["conversation_feed_skeletons_v2", "auxiliary_json"],
-      ["conversation_projection_snapshots_v2", "snapshot_json"],
-      ["conversation_provider_inputs_v2", "source_json"],
-      ["conversation_command_receipts_v2", "result_json"],
-      ["conversation_command_jobs_v2", "request_json"],
-      ["conversation_command_jobs_v2", "result_json"],
-      ["conversation_command_jobs_v2", "error_json"],
-      ["conversation_command_checkpoints_v2", "payload_json"],
-      ["conversation_native_facts_v2", "payload_json"],
-      ["conversation_native_facts_v2", "attachment_summary_json"],
-    ] as const;
-    for (const [table, column] of sources) {
-      const rows = this.db.prepare(`SELECT ${column} AS value FROM ${table}`).all() as Array<{
-        value: string | null;
-      }>;
-      for (const row of rows) {
-        if (row.value === null) continue;
-        collectPromptImageContentRefs(row.value, refs);
+    for (const [table, column] of PROMPT_IMAGE_REF_SOURCES) {
+      const bounds = this.db
+        .prepare(`SELECT MIN(rowid) AS low, MAX(rowid) AS high FROM ${table}`)
+        .get() as { low: number | null; high: number | null } | undefined;
+      if (!bounds || bounds.low === null || bounds.high === null) continue;
+      const select = this.db.prepare(
+        `SELECT ${column} AS value FROM ${table}
+          WHERE rowid > ? AND rowid <= ? AND instr(${column}, 'sha256:') > 0`,
+      );
+      for (let low = bounds.low - 1; low < bounds.high; low += PROMPT_IMAGE_REF_SCAN_WINDOW_ROWS) {
+        const rows = select.all(low, low + PROMPT_IMAGE_REF_SCAN_WINDOW_ROWS) as Array<{
+          value: string | null;
+        }>;
+        for (const row of rows) {
+          if (row.value === null) continue;
+          collectPromptImageContentRefs(row.value, refs);
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
       }
     }
     return refs;
@@ -1675,22 +1713,7 @@ export class ConversationV2Store {
     if (!isPromptImageContentRef(ref) || !this.hasConversation(id)) {
       return false;
     }
-    const sources = [
-      ["conversation_events_v2", "payload_json", "conversation_id"],
-      ["conversation_messages_v2", "attachments_json", "conversation_id"],
-      ["conversation_followups_v2", "attachments_json", "thread_id"],
-      ["conversation_sync_effects_v2", "effect_json", "conversation_id"],
-      ["conversation_projection_snapshots_v2", "snapshot_json", "conversation_id"],
-      ["conversation_provider_inputs_v2", "source_json", "conversation_id"],
-      ["conversation_command_receipts_v2", "result_json", "conversation_id"],
-      ["conversation_command_jobs_v2", "request_json", "conversation_id"],
-      ["conversation_command_jobs_v2", "result_json", "conversation_id"],
-      ["conversation_command_jobs_v2", "error_json", "conversation_id"],
-      ["conversation_command_checkpoints_v2", "payload_json", "conversation_id"],
-      ["conversation_native_facts_v2", "payload_json", "conversation_id"],
-      ["conversation_native_facts_v2", "attachment_summary_json", "conversation_id"],
-    ] as const;
-    for (const [table, column, ownerColumn] of sources) {
+    for (const [table, column, ownerColumn] of PROMPT_IMAGE_REF_SOURCES) {
       const rows = this.db
         .prepare(`SELECT ${column} AS value FROM ${table} WHERE ${ownerColumn} = ?`)
         .all(id) as Array<{ value: string | null }>;
@@ -1744,6 +1767,56 @@ export class ConversationV2Store {
       .prepare(`SELECT 1 AS present FROM conversation_streams_v2 WHERE conversation_id = ?`)
       .get(id) as { present?: number } | undefined;
     return row?.present === 1;
+  }
+
+  /**
+   * Whether a one-time conversation repair has already been applied. Repairs are
+   * recorded so a later start (or a later open of the same conversation) can skip
+   * the scan instead of repeating it forever.
+   */
+  hasConversationRepair(repairKey: string, conversationId: string): boolean {
+    this.ensureInitialized();
+    const key = requireText(repairKey, "repairKey");
+    const id = requireText(conversationId, "conversationId");
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS present FROM conversation_repairs_v2
+          WHERE repair_key = ? AND conversation_id = ?`,
+      )
+      .get(key, id) as { present?: number } | undefined;
+    return row?.present === 1;
+  }
+
+  /** Record that a conversation has been through the named one-time repair. */
+  markConversationRepaired(repairKey: string, conversationId: string): void {
+    this.ensureInitialized();
+    const key = requireText(repairKey, "repairKey");
+    const id = requireText(conversationId, "conversationId");
+    this.db
+      .prepare(
+        `INSERT INTO conversation_repairs_v2(repair_key, conversation_id, repaired_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(repair_key, conversation_id) DO NOTHING`,
+      )
+      .run(key, id, this.now());
+  }
+
+  /** V2 conversations that have not been through the named one-time repair. */
+  listConversationsMissingRepair(repairKey: string): string[] {
+    this.ensureInitialized();
+    const key = requireText(repairKey, "repairKey");
+    const rows = this.db
+      .prepare(
+        `SELECT streams.conversation_id
+           FROM conversation_streams_v2 AS streams
+          WHERE NOT EXISTS (
+            SELECT 1 FROM conversation_repairs_v2 AS repairs
+             WHERE repairs.repair_key = ? AND repairs.conversation_id = streams.conversation_id
+          )
+          ORDER BY streams.conversation_id ASC`,
+      )
+      .all(key) as Array<{ conversation_id: string }>;
+    return rows.map((row) => row.conversation_id);
   }
 
   rotateStoreEpoch(): string {
@@ -3795,6 +3868,7 @@ export class ConversationV2Store {
       "conversation_events_v2",
       "conversation_streams_v2",
       "conversation_migrations_v2",
+      "conversation_repairs_v2",
     ]) {
       this.db.prepare(`DELETE FROM ${table} WHERE conversation_id = ?`).run(id);
     }

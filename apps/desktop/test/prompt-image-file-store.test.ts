@@ -303,7 +303,7 @@ test("content-addressed GC removes only old unreferenced objects", async () => {
   await fs.utimes(orphanPath, old, old);
 
   const preview = await store.sweepUnreferencedContentObjects({
-    referencedContentRefs: [retained[0]!.contentRef!],
+    resolveReferencedContentRefs: () => [retained[0]!.contentRef!],
     minAgeMs: 0,
     dryRun: true,
   });
@@ -311,11 +311,28 @@ test("content-addressed GC removes only old unreferenced objects", async () => {
   await expect(fs.stat(orphanPath)).resolves.toBeDefined();
 
   const result = await store.sweepUnreferencedContentObjects({
-    referencedContentRefs: [retained[0]!.contentRef!],
+    resolveReferencedContentRefs: () => [retained[0]!.contentRef!],
     minAgeMs: 0,
   });
   expect(result).toMatchObject({ scanned: 2, retainedReferenced: 1, removed: 1, dryRun: false });
   await expect(fs.stat(orphanPath)).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(store.hasReadableContentRef(retained[0]!)).resolves.toBe(true);
+});
+
+test("content-addressed GC skips the durable reference walk when nothing is collectable", async () => {
+  const store = await createStore();
+  const retained = await store.persistMessageAttachments("thr_gc_fresh", "user:fresh", [
+    { mediaType: "image/png", data: Buffer.from("fresh").toString("base64") },
+  ]);
+  let resolved = 0;
+  const result = await store.sweepUnreferencedContentObjects({
+    resolveReferencedContentRefs: () => {
+      resolved += 1;
+      throw new Error("reference walk must not run");
+    },
+  });
+  expect(resolved).toBe(0);
+  expect(result).toMatchObject({ scanned: 1, retainedReferenced: 0, retainedRecent: 1, removed: 0 });
   await expect(store.hasReadableContentRef(retained[0]!)).resolves.toBe(true);
 });
 

@@ -288,19 +288,16 @@ export class PromptImageFileStore {
    *
    * A grace period is mandatory by default: a producer can write the object
    * before its event/command transaction commits, so an immediate sweep must
-   * never race that write sequence. Callers should pass the refs observed from
-   * every durable V2 input and use dryRun for maintenance previews.
+   * never race that write sequence. Only objects past the grace period can be
+   * collected, so `resolveReferencedContentRefs` — which walks every durable V2
+   * payload and is the expensive half of the sweep — is called only when such
+   * an object exists. Callers use dryRun for maintenance previews.
    */
   async sweepUnreferencedContentObjects(input: {
-    referencedContentRefs: Iterable<string>;
+    resolveReferencedContentRefs: () => Iterable<string> | Promise<Iterable<string>>;
     minAgeMs?: number;
     dryRun?: boolean;
   }): Promise<PromptImageObjectGcResult> {
-    const referenced = new Set(
-      [...input.referencedContentRefs]
-        .map((value) => value.trim())
-        .filter((value) => isPromptImageContentRef(value)),
-    );
     const graceMs =
       input.minAgeMs === undefined
         ? DEFAULT_GC_GRACE_MS
@@ -322,24 +319,42 @@ export class PromptImageFileStore {
       throw error;
     }
     const cutoff = Date.now() - graceMs;
+    const objects: Array<{ contentRef: string; filePath: string; mtimeMs: number }> = [];
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       const match = /^([0-9a-f]{64})\.(jpg|png|gif|webp)$/.exec(entry.name);
       if (!match) continue;
       result.scanned += 1;
-      const contentRef = `${CONTENT_REF_PREFIX}${match[1]}`;
-      if (referenced.has(contentRef)) {
+      const filePath = path.join(objectsDir, entry.name);
+      const stat = await fs.stat(filePath);
+      objects.push({
+        contentRef: `${CONTENT_REF_PREFIX}${match[1]}`,
+        filePath,
+        mtimeMs: stat.mtimeMs,
+      });
+    }
+    // Nothing is old enough to collect, so this sweep cannot delete anything
+    // and never needs to know which refs are live.
+    if (!objects.some((object) => object.mtimeMs <= cutoff)) {
+      result.retainedRecent = objects.length;
+      return result;
+    }
+    const referenced = new Set(
+      [...(await input.resolveReferencedContentRefs())]
+        .map((value) => value.trim())
+        .filter((value) => isPromptImageContentRef(value)),
+    );
+    for (const object of objects) {
+      if (referenced.has(object.contentRef)) {
         result.retainedReferenced += 1;
         continue;
       }
-      const filePath = path.join(objectsDir, entry.name);
-      const stat = await fs.stat(filePath);
-      if (stat.mtimeMs > cutoff) {
+      if (object.mtimeMs > cutoff) {
         result.retainedRecent += 1;
         continue;
       }
       if (!dryRun) {
-        await this.unlinkIfExists(filePath);
+        await this.unlinkIfExists(object.filePath);
       }
       result.removed += 1;
     }
