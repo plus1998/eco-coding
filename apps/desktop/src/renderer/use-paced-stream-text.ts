@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export const PACED_STREAM_INTERVAL_MS = 24;
+// Markdown feed blocks are expensive to rebuild (tables and Mermaid node views
+// in particular). A 24 ms reveal cadence turns every token into a full parse;
+// keep the visual stream paced while capping rebuilds at roughly five per
+// second, with larger chunks when the upstream backlog is already large.
+export const PACED_STREAM_INTERVAL_MS = 200;
 
 const graphemeSegmenter =
   typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
@@ -23,15 +27,15 @@ export function resolvePacedRevealCount(pendingCount: number, streaming: boolean
     return Math.min(pendingCount, Math.max(4, Math.ceil(pendingCount / 3)));
   }
   if (pendingCount > 120) {
-    return 8;
+    return 96;
   }
   if (pendingCount > 60) {
-    return 4;
+    return 48;
   }
   if (pendingCount > 24) {
-    return 2;
+    return 16;
   }
-  return 1;
+  return 4;
 }
 
 export function revealPacedText(current: string, target: string, streaming: boolean): string {

@@ -218,6 +218,25 @@ describe("conversation V2 renderer state", () => {
     ).toThrow("effect hash mismatch");
   });
 
+  test("bounds duplicate effect hashes while replaying a long stream", () => {
+    const state = installConversationV2Bootstrap(bootstrap);
+    const effects = Array.from({ length: 2_100 }, (_, index) => {
+      const seq = index + 2;
+      const value = {
+        type: "message.append" as const,
+        messageId: "message_1",
+        baseContentVersion: index,
+        nextContentVersion: index + 1,
+        delta: "x",
+        versionSeq: seq,
+      };
+      return effect(seq, value);
+    });
+    const next = applyConversationV2Effects(state, effects);
+    expect(next.appliedSeq).toBe(2_101);
+    expect(next.effectHashes.size).toBeLessThanOrEqual(2_048);
+  });
+
   test("does not apply an out-of-order effect and exposes a recoverable gap", () => {
     const state = installConversationV2Bootstrap(bootstrap);
     expect(() => applyConversationV2Effect(state, effect(3, { type: "noop", reason: "gap" }))).toThrow(

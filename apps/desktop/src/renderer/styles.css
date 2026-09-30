@@ -12636,6 +12636,10 @@ button.default-agent-option:focus-visible {
   overflow-x: auto;
   overflow-anchor: none;
   border-radius: 10px;
+  /* Large historical tables stay in the PM tree for copy/expand actions, but
+     Chromium can skip layout and paint while an offscreen table is idle. */
+  content-visibility: auto;
+  contain-intrinsic-size: 420px;
 }
 
 .markdown-content .markdown-table-block .markdown-table {

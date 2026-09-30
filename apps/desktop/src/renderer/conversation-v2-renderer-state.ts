@@ -52,6 +52,23 @@ export interface ConversationV2RendererState {
   hasOlder: boolean;
 }
 
+// Duplicate notifications are verified against the authoritative store when
+// their hash is no longer in this bounded recent window. Keeping every hash
+// made each streamed event copy an ever-growing Map, turning long histories
+// into quadratic renderer work.
+const MAX_EFFECT_HASHES = 2_048;
+
+function rememberEffectHash(effectHashes: Map<number, string>, seq: number, hash: string): void {
+  effectHashes.set(seq, hash);
+  while (effectHashes.size > MAX_EFFECT_HASHES) {
+    const oldest = effectHashes.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    effectHashes.delete(oldest);
+  }
+}
+
 function normalizeToolSummaryCounts(
   value: Record<string, number> | undefined,
 ): ReadonlyMap<string, number> | undefined {
@@ -467,27 +484,78 @@ export function applyConversationV2Effects(
   state: ConversationV2RendererState,
   effects: readonly ConversationSyncEffect[],
 ): ConversationV2RendererState {
-  return effects.reduce(applyConversationV2Effect, state);
+  if (effects.length === 0) {
+    return state;
+  }
+
+  // A sync page can contain hundreds of effects. Clone the renderer maps once
+  // for the page instead of once per effect; the previous implementation made
+  // a 157k-event history repeatedly copy its accumulated hash map.
+  const messages = new Map(state.messages);
+  const runs = new Map(state.runs);
+  const agents = new Map(state.agents);
+  const todos = new Map(state.todos);
+  const tools = new Map(state.tools);
+  const details = new Map(state.details);
+  const effectHashes = new Map(state.effectHashes);
+  let appliedSeq = state.appliedSeq;
+  let historyRevision = state.historyRevision;
+
+  for (const envelope of effects) {
+    validateConversationV2EffectEnvelope(envelope);
+    if (envelope.effectHash !== stableHash(envelope.effect)) {
+      throw new Error(`Conversation V2 renderer effect hash mismatch at sequence ${envelope.seq}.`);
+    }
+    if (envelope.seq <= appliedSeq) {
+      const knownHash = effectHashes.get(envelope.seq);
+      if (knownHash && knownHash !== envelope.effectHash) {
+        throw new ConversationV2RendererConflictError(envelope.seq);
+      }
+      continue;
+    }
+    if (envelope.seq !== appliedSeq + 1) {
+      throw new ConversationV2RendererGapError(appliedSeq + 1, envelope.seq);
+    }
+    applyEffect(
+      envelope.effect,
+      envelope.seq,
+      state.conversationId,
+      messages,
+      runs,
+      agents,
+      todos,
+      tools,
+      details,
+      (revision) => {
+        if (revision < historyRevision) {
+          throw new Error("Conversation V2 renderer history revision regressed.");
+        }
+        historyRevision = revision;
+      },
+    );
+    appliedSeq = envelope.seq;
+    rememberEffectHash(effectHashes, envelope.seq, envelope.effectHash);
+  }
+
+  return {
+    ...state,
+    appliedSeq,
+    historyRevision,
+    messages,
+    runs,
+    agents,
+    todos,
+    tools,
+    details,
+    effectHashes,
+  };
 }
 
 export function applyConversationV2Effect(
   state: ConversationV2RendererState,
   envelope: ConversationSyncEffect,
 ): ConversationV2RendererState {
-  if (
-    envelope.effectVersion !== 1 ||
-    !Number.isSafeInteger(envelope.seq) ||
-    envelope.seq < 1 ||
-    typeof envelope.effectHash !== "string" ||
-    !envelope.effectHash.trim() ||
-    !envelope.effect ||
-    typeof envelope.effect !== "object" ||
-    Array.isArray(envelope.effect) ||
-    typeof envelope.effect.type !== "string" ||
-    !envelope.effect.type.trim()
-  ) {
-    throw new Error("Conversation V2 renderer effect metadata is invalid.");
-  }
+  validateConversationV2EffectEnvelope(envelope);
   if (envelope.effectHash !== stableHash(envelope.effect)) {
     throw new Error(`Conversation V2 renderer effect hash mismatch at sequence ${envelope.seq}.`);
   }
@@ -527,7 +595,7 @@ export function applyConversationV2Effect(
     },
   );
   const effectHashes = new Map(state.effectHashes);
-  effectHashes.set(envelope.seq, envelope.effectHash);
+  rememberEffectHash(effectHashes, envelope.seq, envelope.effectHash);
   return {
     ...state,
     appliedSeq: envelope.seq,
@@ -540,6 +608,23 @@ export function applyConversationV2Effect(
     details,
     effectHashes,
   };
+}
+
+function validateConversationV2EffectEnvelope(envelope: ConversationSyncEffect): void {
+  if (
+    envelope.effectVersion !== 1 ||
+    !Number.isSafeInteger(envelope.seq) ||
+    envelope.seq < 1 ||
+    typeof envelope.effectHash !== "string" ||
+    !envelope.effectHash.trim() ||
+    !envelope.effect ||
+    typeof envelope.effect !== "object" ||
+    Array.isArray(envelope.effect) ||
+    typeof envelope.effect.type !== "string" ||
+    !envelope.effect.type.trim()
+  ) {
+    throw new Error("Conversation V2 renderer effect metadata is invalid.");
+  }
 }
 
 export function orderedConversationV2Messages(state: ConversationV2RendererState): ConversationMessage[] {

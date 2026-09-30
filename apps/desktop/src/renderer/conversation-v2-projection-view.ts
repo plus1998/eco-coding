@@ -1841,20 +1841,30 @@ function appendStreamScopeSuffix(
 }
 
 /** Last user_prompt sequence strictly before this item; 0 when none (hard turn boundary). */
+const userPromptIndexes = new WeakMap<
+  readonly ThreadRunProjectionTimelineItem[],
+  readonly ThreadRunProjectionTimelineItem[]
+>();
+
 function resolvePrecedingUserPromptSequence(
   item: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): number {
-  let sequence = 0;
-  for (const entry of timeline) {
-    if (compareTimelineItems(entry, item) >= 0) {
-      break;
-    }
-    if (isProjectionUserPromptItem(entry)) {
-      sequence = entry.sequence;
-    }
+  let prompts = userPromptIndexes.get(timeline);
+  if (!prompts) {
+    prompts = timeline.filter(isProjectionUserPromptItem).sort(compareTimelineItems);
+    userPromptIndexes.set(timeline, prompts);
   }
-  return sequence;
+  // Display keys are read multiple times for every row. Scanning the full
+  // history each time made a send quadratic in accumulated message count.
+  let low = 0;
+  let high = prompts.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (compareTimelineItems(prompts[mid]!, item) < 0) low = mid + 1;
+    else high = mid;
+  }
+  return low > 0 ? prompts[low - 1]!.sequence : 0;
 }
 
 function hasUserPromptBetween(
@@ -3387,6 +3397,14 @@ export function isProjectionRequestActive(
 
 export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
   const liveType = projectionLiveType(item);
+  // Assistant replies (including long Markdown) cannot be user prompts. Avoid
+  // trimming and running operational-status regexes on them in boundary scans.
+  if (
+    !isRecordedUserPromptLiveEvent(liveType) &&
+    !(liveType === "message.user" && item.role === "user" && item.scope !== "agent")
+  ) {
+    return false;
+  }
   const textOk = item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
   if (!textOk) {
     return false;

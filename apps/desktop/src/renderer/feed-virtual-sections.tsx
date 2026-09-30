@@ -157,17 +157,38 @@ export function useFeedSectionVirtualizer(input: {
     return runLog.closest(".activity-messages") as HTMLElement | null;
   }, [runLogRef]);
 
+  const getItemKey = useCallback((index: number) => sections[index]?.key ?? index, [sections]);
+  const estimateSize = useCallback((index: number) => {
+    const section = sections[index];
+    return section ? estimateSectionSize(section) : ESTIMATE_ENTRY_PX;
+  }, [sections]);
+
   const virtualizer = useVirtualizer({
     count: enabled ? count : 0,
+    enabled,
     getScrollElement,
-    estimateSize: (index) => {
-      const section = sections[index];
-      return section ? estimateSectionSize(section) : ESTIMATE_ENTRY_PX;
-    },
+    estimateSize,
     overscan: OVERSCAN,
-    getItemKey: (index) => sections[index]?.key ?? index,
+    getItemKey,
     scrollMargin,
+    // Mount measurements can correct the scroll offset during React's commit.
+    // Let React batch those notifications rather than flush the whole Feed here.
+    useFlushSync: false,
   });
+
+  const measureElement = useCallback((node: Element | null) => {
+    virtualizer.measureElement(node);
+    if (!node) return;
+    const index = virtualizer.indexFromElement(node);
+    if (index < 0 || index >= virtualizer.options.count) return;
+    const key = virtualizer.options.getItemKey(index);
+    if (virtualizer.itemSizeCache.has(key)) return;
+    // The library skips mount measurements while scrolling. In our flow layout,
+    // an unmeasured long row changes scrollHeight before the bottom-follow RO runs.
+    // It can then be removed before its own RO ever fires, oscillating forever
+    // between its estimate and DOM height. Cache its first size in this commit.
+    virtualizer.resizeItem(index, (node as HTMLElement).offsetHeight);
+  }, [virtualizer]);
 
   useLayoutEffect(() => {
     if (!enabled) {
@@ -240,7 +261,7 @@ export function useFeedSectionVirtualizer(input: {
     virtualItems: enabled ? virtualizer.getVirtualItems() : ([] as VirtualItem[]),
     totalSize: enabled ? virtualizer.getTotalSize() : 0,
     scrollMargin: enabled ? scrollMargin : 0,
-    measureElement: virtualizer.measureElement,
+    measureElement,
     resolveSectionTopPx: (sectionIndex: number) => {
       if (!enabled || sectionIndex < 0) {
         return 0;

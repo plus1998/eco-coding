@@ -181,6 +181,16 @@ test("places a finalized queued follow-up after the turn that accepted it", () =
   expect(onlyV2.timeline.map((item) => item.text)).toEqual(["第一轮回答", "第二轮问题"]);
 });
 
+test("shows a directly accepted continuation while the previous thread is terminal", () => {
+  const queued = queuedMessage("direct_continuation", 3);
+  const projection = buildConversationV2OnlyProjection(v2State([queued]), {
+    createdAt: "2026-09-14T00:00:00.000Z",
+    status: "completed",
+  });
+
+  expect(projection.timeline.map((item) => item.text)).toEqual(["same prompt"]);
+});
+
 test("keeps two user prompts that say the same thing as two rows", () => {
   // A reader who sends the same short message twice ("继续" again) wrote two prompts; the log
   // holds two V2 messages and both turns have to be in the Feed. The redundancy rule that

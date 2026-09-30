@@ -29,6 +29,10 @@ export function StreamingMarkdownContent({
     [renderText, renderAsStreaming],
   );
   const structuralTail = renderAsStreaming && isStructuralStreamingTail(tail);
+  // A short prose tail benefits from live Markdown spacing. Once the mutable
+  // tail grows large, reparsing the entire response on every paced tick costs
+  // more than the visual benefit; keep it as text until the turn settles.
+  const renderMutableTailAsMarkdown = !structuralTail && tail.length <= 800;
   const layoutSignature = renderAsStreaming
     ? `${stable.length}:${tail.length}:${structuralTail ? "struct" : "live"}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
     : "";
@@ -67,9 +71,10 @@ export function StreamingMarkdownContent({
       return null;
     }
 
-    // Prose-only mutable tails stream as full markdown so block margins / list density
-    // do not snap when the incomplete block later commits or the run settles.
-    if (!structuralTail) {
+    // Keep short prose tails as Markdown so block margins remain stable. Large
+    // tails use the same plain path as fences/tables and are parsed once when
+    // streaming finishes.
+    if (renderMutableTailAsMarkdown) {
       return <MarkdownContent text={renderText} {...(className && { className })} />;
     }
 

@@ -9,15 +9,15 @@ test("splitStreamingTextUnits keeps grapheme clusters intact", () => {
   expect(splitStreamingTextUnits("你👍🏽e\u0301好")).toEqual(["你", "👍🏽", "e\u0301", "好"]);
 });
 
-test("revealPacedText reveals a small live backlog one grapheme at a time", () => {
-  expect(revealPacedText("开始", "开始输出👍🏽", true)).toBe("开始输");
+test("revealPacedText drains a small live backlog in a bounded render step", () => {
+  expect(revealPacedText("开始", "开始输出👍🏽", true)).toBe("开始输出👍🏽");
 });
 
 test("resolvePacedRevealCount accelerates as the live backlog grows", () => {
-  expect(resolvePacedRevealCount(12, true)).toBe(1);
-  expect(resolvePacedRevealCount(30, true)).toBe(2);
-  expect(resolvePacedRevealCount(80, true)).toBe(4);
-  expect(resolvePacedRevealCount(140, true)).toBe(8);
+  expect(resolvePacedRevealCount(12, true)).toBe(4);
+  expect(resolvePacedRevealCount(30, true)).toBe(16);
+  expect(resolvePacedRevealCount(80, true)).toBe(48);
+  expect(resolvePacedRevealCount(140, true)).toBe(96);
 });
 
 test("revealPacedText still can drain when streaming is false (hook snaps instead)", () => {

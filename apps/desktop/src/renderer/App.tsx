@@ -315,7 +315,6 @@ import {
   type ThreadRunProjectionMainFeedEntry,
 } from "./conversation-v2-projection-view";
 import {
-  applyConversationV2Effect,
   applyConversationV2Effects,
   type ConversationV2RendererState,
   catchUpConversationV2RendererState,
@@ -1526,15 +1525,92 @@ function App() {
     Record<string, ConversationV2RendererState>
   >({});
   const conversationV2ByThreadRef = useRef(conversationV2ByThread);
-  conversationV2ByThreadRef.current = conversationV2ByThread;
+  // A stream effect can advance the imperative ref between React renders. Do
+  // not let an unrelated render publish an older snapshot back into that ref.
+  const renderedConversationV2ByThread = { ...conversationV2ByThread };
+  for (const [threadId, state] of Object.entries(conversationV2ByThreadRef.current)) {
+    const rendered = renderedConversationV2ByThread[threadId];
+    if (rendered && rendered.storeEpoch === state.storeEpoch && rendered.appliedSeq < state.appliedSeq) {
+      renderedConversationV2ByThread[threadId] = state;
+    }
+  }
+  conversationV2ByThreadRef.current = renderedConversationV2ByThread;
   const conversationV2PendingEventsRef = useRef(new Map<string, ConversationSyncEffect[]>());
   const conversationV2PendingOverflowRef = useRef(new Set<string>());
   const conversationV2LoadingThreadsRef = useRef(new Set<string>());
   const conversationV2LoadGenerationRef = useRef(new Map<string, number>());
   const conversationV2RecoveryRequestsRef = useRef(new Set<string>());
   const conversationV2RecoveryInFlightRef = useRef(new Set<string>());
+  const conversationV2RenderPendingRef = useRef(new Map<string, ConversationV2RendererState>());
+  const conversationV2RenderFramesRef = useRef(new Map<string, number>());
+  // Live streams can deliver hundreds of sync effects per second. Keep the
+  // durable cursor in the imperative ref, but apply a bounded batch so a
+  // streaming Markdown response is parsed at most five times per second.
+  const conversationV2LiveEffectsRef = useRef(new Map<string, ConversationSyncEffect[]>());
+  const conversationV2LiveFlushTimersRef = useRef(new Map<string, number>());
+  const scheduleConversationV2Render = useCallback((threadId: string, state: ConversationV2RendererState) => {
+    conversationV2RenderPendingRef.current.set(threadId, state);
+    if (conversationV2RenderFramesRef.current.has(threadId)) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      conversationV2RenderFramesRef.current.delete(threadId);
+      const pending = conversationV2RenderPendingRef.current.get(threadId);
+      if (!pending) {
+        return;
+      }
+      conversationV2RenderPendingRef.current.delete(threadId);
+      setConversationV2ByThread((current) => {
+        const latest = current[threadId];
+        if (!latest || latest.storeEpoch !== pending.storeEpoch || latest.appliedSeq >= pending.appliedSeq) {
+          return current;
+        }
+        return { ...current, [threadId]: pending };
+      });
+    });
+    conversationV2RenderFramesRef.current.set(threadId, frame);
+  }, []);
+  const scheduleConversationV2LiveFlush = useCallback((threadId: string, immediate = false) => {
+    const pendingTimer = conversationV2LiveFlushTimersRef.current.get(threadId);
+    if (pendingTimer !== undefined) {
+      if (!immediate) return;
+      // A user message can arrive while a 200ms stream batch is waiting. Do not
+      // let that older timer delay the prompt acknowledgement.
+      window.clearTimeout(pendingTimer);
+      conversationV2LiveFlushTimersRef.current.delete(threadId);
+    }
+    const timer = window.setTimeout(() => {
+      conversationV2LiveFlushTimersRef.current.delete(threadId);
+      const effects = conversationV2LiveEffectsRef.current.get(threadId);
+      if (!effects || effects.length === 0) return;
+      conversationV2LiveEffectsRef.current.delete(threadId);
+      const existing = conversationV2ByThreadRef.current[threadId];
+      if (!existing) {
+        if (threadId === selectedThreadIdRef.current) {
+          for (const effect of effects) bufferConversationV2Event(threadId, effect);
+        }
+        return;
+      }
+      try {
+        const appliedState = applyConversationV2Effects(existing, effects);
+        conversationV2ByThreadRef.current = {
+          ...conversationV2ByThreadRef.current,
+          [threadId]: appliedState,
+        };
+        scheduleConversationV2Render(threadId, appliedState);
+        refreshConversationV2ProjectionExtras(threadId);
+      } catch (error) {
+        console.warn("[eco] conversation V2 live batch deferred:", error);
+        if (threadId === selectedThreadIdRef.current) {
+          for (const effect of effects) bufferConversationV2Event(threadId, effect);
+        }
+      }
+    }, immediate ? 0 : 200);
+    conversationV2LiveFlushTimersRef.current.set(threadId, timer);
+  }, [scheduleConversationV2Render]);
   const conversationV2DuplicateVerificationInFlightRef = useRef(new Set<string>());
   const conversationV2ProjectionExtrasInFlightRef = useRef(new Set<string>());
+  const conversationV2ProjectionExtrasNextAllowedRef = useRef(new Map<string, number>());
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const readSnapshot = () =>
@@ -1548,6 +1624,7 @@ function App() {
             messageCount: state.messages.size,
             runCount: state.runs.size,
             toolCount: state.tools.size,
+            effectHashCount: state.effectHashes.size,
             bufferedEffectSeqs: (conversationV2PendingEventsRef.current.get(threadId) ?? []).map(
               (effect) => effect.seq,
             ),
@@ -1602,9 +1679,10 @@ function App() {
       const pending = conversationV2PendingEventsRef.current.get(threadId) ?? [];
       let merged = base;
       try {
-        for (const effect of [...pending].sort((left, right) => left.seq - right.seq)) {
-          merged = applyConversationV2Effect(merged, effect);
-        }
+        merged = applyConversationV2Effects(
+          merged,
+          [...pending].sort((left, right) => left.seq - right.seq),
+        );
       } catch (error) {
         console.warn("[eco] conversation V2 renderer buffered effect deferred:", error);
         queueConversationV2Recovery(threadId);
@@ -1649,13 +1727,17 @@ function App() {
   const refreshConversationV2ProjectionExtras = useCallback((threadId: string) => {
     const api = window.eco;
     const current = conversationV2ByThreadRef.current[threadId];
+    const now = Date.now();
+    const nextAllowed = conversationV2ProjectionExtrasNextAllowedRef.current.get(threadId) ?? 0;
     if (
       !current ||
       typeof api?.conversationV2Projection !== "function" ||
-      conversationV2ProjectionExtrasInFlightRef.current.has(threadId)
+      conversationV2ProjectionExtrasInFlightRef.current.has(threadId) ||
+      now < nextAllowed
     ) {
       return;
     }
+    conversationV2ProjectionExtrasNextAllowedRef.current.set(threadId, now + 1000);
     conversationV2ProjectionExtrasInFlightRef.current.add(threadId);
     void api
       .conversationV2Projection(threadId)
@@ -2236,47 +2318,48 @@ function App() {
           }
           return;
         }
-        let nextAppliedSeq: number;
-        try {
-          nextAppliedSeq = applyConversationV2Effect(existing, conversationEvent.effect).appliedSeq;
-        } catch (error) {
-          // A gap/conflict is recoverable by an authoritative bootstrap and
-          // range sync. Queue that side effect outside any state updater so
-          // React may replay state updates without starting duplicate reads.
-          console.warn("[eco] conversation V2 renderer effect deferred:", error);
+        const pending = conversationV2LiveEffectsRef.current.get(threadId) ?? [];
+        const duplicatePending = pending.find((effect) => effect.seq === conversationEvent.effect.seq);
+        if (duplicatePending) {
+          // React is intentionally behind the imperative cursor while the
+          // 200ms batch is waiting. Treat a repeated IPC notification for a
+          // queued sequence as idempotent instead of misclassifying it as a
+          // gap and starting recovery.
+          if (duplicatePending.effectHash === conversationEvent.effect.effectHash) {
+            return;
+          }
+          console.warn("[eco] conversation V2 pending effect conflict:", conversationEvent.effect.seq);
           if (threadId === selectedThreadIdRef.current) {
             bufferConversationV2Event(threadId, conversationEvent.effect);
           }
           return;
         }
-        const appliedState = applyConversationV2Effect(existing, conversationEvent.effect);
-        // Keep the imperative cursor in lockstep with the durable notification stream.
-        // Multiple IPC notifications may arrive before React commits the prior state.
-        const currentRefState = conversationV2ByThreadRef.current[threadId];
-        if (
-          !currentRefState ||
-          currentRefState.storeEpoch !== appliedState.storeEpoch ||
-          currentRefState.appliedSeq <= appliedState.appliedSeq
-        ) {
-          conversationV2ByThreadRef.current = {
-            ...conversationV2ByThreadRef.current,
-            [threadId]: appliedState,
-          };
+        const lastSeq = pending.length > 0 ? pending[pending.length - 1]!.seq : existing.appliedSeq;
+        if (conversationEvent.effect.seq !== lastSeq + 1) {
+          // A gap/conflict is recoverable by an authoritative bootstrap and
+          // range sync. Flush the already queued contiguous prefix first so
+          // the recovery starts from the newest durable cursor we have.
+          if (pending.length > 0) {
+            conversationV2LiveEffectsRef.current.set(threadId, pending);
+            scheduleConversationV2LiveFlush(threadId);
+          }
+          console.warn("[eco] conversation V2 live effect sequence deferred:", {
+            expected: lastSeq + 1,
+            received: conversationEvent.effect.seq,
+          });
+          if (threadId === selectedThreadIdRef.current) {
+            bufferConversationV2Event(threadId, conversationEvent.effect);
+          }
+          return;
         }
-        setConversationV2ByThread((current) => {
-          const latest = current[threadId];
-          if (!latest || latest.storeEpoch !== conversationEvent.storeEpoch) {
-            return current;
-          }
-          if (latest.appliedSeq >= nextAppliedSeq) {
-            return current;
-          }
-          return {
-            ...current,
-            [threadId]: appliedState,
-          };
-        });
-        refreshConversationV2ProjectionExtras(threadId);
+        pending.push(conversationEvent.effect);
+        conversationV2LiveEffectsRef.current.set(threadId, pending);
+        const effect = conversationEvent.effect.effect;
+        const directUserPrompt =
+          effect.type === "message.create" &&
+          effect.message.role === "user" &&
+          effect.message.status === "queued";
+        scheduleConversationV2LiveFlush(threadId, directUserPrompt);
         return;
       }
       if (!isThreadLiveEvent(event)) {
@@ -2295,6 +2378,13 @@ function App() {
       if (event.type === "thread.deleted") {
         clearThreadClientState(event.threadId);
         conversationV2PendingEventsRef.current.delete(event.threadId);
+        conversationV2LiveEffectsRef.current.delete(event.threadId);
+        conversationV2ProjectionExtrasNextAllowedRef.current.delete(event.threadId);
+        const liveTimer = conversationV2LiveFlushTimersRef.current.get(event.threadId);
+        if (liveTimer !== undefined) {
+          window.clearTimeout(liveTimer);
+          conversationV2LiveFlushTimersRef.current.delete(event.threadId);
+        }
         conversationV2PendingOverflowRef.current.delete(event.threadId);
         conversationV2LoadGenerationRef.current.delete(event.threadId);
         conversationV2RecoveryRequestsRef.current.delete(event.threadId);
@@ -2627,6 +2717,17 @@ function App() {
       if (threadListRefreshTimer !== undefined) {
         window.clearTimeout(threadListRefreshTimer);
       }
+      for (const frame of conversationV2RenderFramesRef.current.values()) {
+        window.cancelAnimationFrame(frame);
+      }
+      conversationV2RenderFramesRef.current.clear();
+      conversationV2RenderPendingRef.current.clear();
+      for (const timer of conversationV2LiveFlushTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      conversationV2LiveFlushTimersRef.current.clear();
+      conversationV2LiveEffectsRef.current.clear();
+      conversationV2ProjectionExtrasNextAllowedRef.current.clear();
       unsubscribe();
       unsubscribeThreadOpen();
     };

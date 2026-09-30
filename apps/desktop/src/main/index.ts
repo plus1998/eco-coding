@@ -11670,7 +11670,7 @@ function markAcceptedConversationMessageFailed(
     return;
   }
   const sourceEventKey = `desktop:user:accepted-failed:${input.conversationId}:${input.messageId}`;
-  v2.append({
+  v2.appendRuntime({
     conversationId: input.conversationId,
     eventId: `desktop_v2_user_failed_${stableHash(sourceEventKey)}`,
     sourceEventKey,
@@ -17239,7 +17239,7 @@ async function recordUserPrompt(
         }
         if (options?.finalizeAcceptedMessages !== false) {
           const v2Key = `desktop:user:accepted:${threadId}:${messageId}:${activityLineId}`;
-          v2.append({
+          v2.appendRuntime({
             conversationId: threadId,
             eventId: `desktop_v2_user_finalize_${stableHash(v2Key)}`,
             sourceEventKey: v2Key,
@@ -17265,7 +17265,7 @@ async function recordUserPrompt(
         // look like an illegal immutable-target rewrite.
         if (thread?.coreKind !== "codex" && !finalizedMessage?.historyTarget) {
           const historyTargetKey = `desktop:user:history-target:${threadId}:${messageId}:${activityLineId}`;
-          v2.append({
+          v2.appendRuntime({
             conversationId: threadId,
             eventId: `desktop_v2_user_history_target_${stableHash(historyTargetKey)}`,
             sourceEventKey: historyTargetKey,
@@ -17279,7 +17279,7 @@ async function recordUserPrompt(
     } else {
       const v2Key = `desktop:user:${threadId}:${activityLineId}`;
       const messageId = v2MessageId ?? `message_user_${stableHash(v2Key)}`;
-      v2.append({
+      v2.appendRuntime({
         conversationId: threadId,
         eventId: `desktop_v2_user_${stableHash(v2Key)}`,
         sourceEventKey: v2Key,
@@ -17350,7 +17350,7 @@ function finalizeAcceptedV2Messages(threadId: string, messageIds: readonly strin
       continue;
     }
     const v2Key = `desktop:user:accepted-mid-turn:${threadId}:${messageId}`;
-    v2.append({
+    v2.appendRuntime({
       conversationId: threadId,
       eventId: `desktop_v2_user_finalize_mid_turn_${stableHash(v2Key)}`,
       sourceEventKey: v2Key,
@@ -17377,7 +17377,7 @@ function failAcceptedV2Messages(threadId: string, messageIds: readonly string[],
       continue;
     }
     const v2Key = `desktop:user:accepted-mid-turn-failed:${threadId}:${messageId}`;
-    v2.append({
+    v2.appendRuntime({
       conversationId: threadId,
       eventId: `desktop_v2_user_failed_mid_turn_${stableHash(v2Key)}`,
       sourceEventKey: v2Key,
