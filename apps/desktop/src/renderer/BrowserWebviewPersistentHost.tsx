@@ -107,7 +107,6 @@ export function BrowserWebviewPersistentHost({ browserId }: BrowserWebviewPersis
       data-browser-host
       data-browser-id={browserId}
       data-browser-host-hidden={hidden ? "true" : "false"}
-      data-browser-loading={browserIsLoading ? "true" : "false"}
       data-browser-status={showStatus ? "true" : "false"}
       data-browser-empty={showEmptyState ? "true" : "false"}
       style={style}

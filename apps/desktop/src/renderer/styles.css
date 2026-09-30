@@ -33631,7 +33631,12 @@ body,
   background: var(--terminal-bg, #fff);
 }
 
-.browser-webview-host-slot[data-browser-loading="true"] .browser-panel-webview,
+/*
+ * Keep the committed page painted while a navigation is in flight. Electron
+ * emits did-start-loading before the new document is committed; hiding the
+ * guest here made every navigation look like a brief browser disappearance.
+ * The status layer below still covers the guest for empty and failed pages.
+ */
 .browser-webview-host-slot[data-browser-status="true"] .browser-panel-webview {
   visibility: hidden;
   opacity: 0;

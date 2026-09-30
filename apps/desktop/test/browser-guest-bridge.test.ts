@@ -89,6 +89,12 @@ test("browser guest load failures are shown above the guest with a retry action"
   expect(stylesSource).toContain(".browser-page-status");
 });
 
+test("browser navigation keeps the current guest painted until the next page commits", () => {
+  expect(browserWebviewPersistentHostSource).not.toContain('data-browser-loading="true"');
+  expect(stylesSource).not.toContain('.browser-webview-host-slot[data-browser-loading="true"]');
+  expect(stylesSource).toContain('.browser-webview-host-slot[data-browser-status="true"]');
+});
+
 test("browser layer uses imperative pool driven by allGuestInstances", () => {
   expect(browserPanelSource).toContain("BrowserWebviewViewportMarker");
   expect(browserPanelSource).not.toContain("registerBrowserWebviewHost");
