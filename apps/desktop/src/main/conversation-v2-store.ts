@@ -3096,6 +3096,8 @@ export class ConversationV2Store {
    * Decide whether a user turn already contains model/tool work that makes a
    * non-rewind retry unsafe.  This is deliberately a V2-owned query: retry
    * gating must keep working after the legacy projection tables are retired.
+   * Accept either the durable V2 message id or the provider history target.
+   * Early provider failures may never receive a provider history target.
    * Missing or ambiguous user identity is treated as blocking so callers
    * cannot turn an incomplete migration into a destructive retry.
    */
@@ -3110,10 +3112,10 @@ export class ConversationV2Store {
             WHERE conversation_id = ?
               AND role = 'user'
               AND is_deleted = 0
-              AND history_activity_line_id = ?
+              AND (message_id = ? OR history_activity_line_id = ?)
             ORDER BY created_seq ASC, message_id ASC`,
         )
-        .all(id, activity) as Array<{ created_seq?: unknown }>;
+        .all(id, activity, activity) as Array<{ created_seq?: unknown }>;
       // A retry without one and only one durable V2 target cannot prove which
       // turn the caller means. Refuse it instead of consulting V1 or guessing.
       if (targetRows.length !== 1) return true;

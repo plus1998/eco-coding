@@ -8,6 +8,7 @@ import type {
 } from "@eco/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { resolveNonRewindRetryUserMessage } from "../src/main/conversation-nonrewind-retry-command";
 import { appendLegacyThreadRunEventToConversationV2 } from "../src/main/conversation-v2-legacy-adapter";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import {
@@ -16,14 +17,17 @@ import {
   mergeConversationV2IntoProjection,
   mergeConversationV2MessagesIntoProjection,
 } from "../src/renderer/ActivityLogView";
-import type { ConversationV2RendererState } from "../src/renderer/conversation-v2-renderer-state";
 import type { ThreadRunProjectionMainFeedEntry } from "../src/renderer/conversation-v2-projection-view";
 import {
   buildThreadRunProjectionViewModel,
   projectionItemToDetailBlock,
 } from "../src/renderer/conversation-v2-projection-view";
-import { isRetryableRequestFailureItem } from "../src/renderer/request-failure-retry";
+import type { ConversationV2RendererState } from "../src/renderer/conversation-v2-renderer-state";
 import { buildThreadRunTurnFeedSections } from "../src/renderer/conversation-v2-turn-feed";
+import {
+  buildRequestFailureRetryTargets,
+  isRetryableRequestFailureItem,
+} from "../src/renderer/request-failure-retry";
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function message(messageId: string, createdSeq: number): ConversationMessage {
@@ -119,6 +123,67 @@ function projection(timeline: ThreadRunProjectionTimelineItem[]): ThreadRunProje
   };
 }
 
+test("V2 Feed retry identities resolve before and after provider user-message binding", () => {
+  for (const coreKind of ["codex", "acp"] as const) {
+    for (const bound of [false, true]) {
+      const db = new DatabaseSync(":memory:");
+      const store = new ConversationV2Store(db);
+      store.initialize();
+      store.append({
+        conversationId: "thread_merge",
+        eventId: "user_created",
+        type: "message.created",
+        occurredAt: "2026-10-03T00:00:00.000Z",
+        turnId: "turn_retry",
+        messageId: "local_user",
+        payload: {
+          role: "user",
+          body: "retry this request",
+          status: "final",
+          ...(bound
+            ? { historyTarget: { activityLineId: "sdk:provider_user", userMessageId: "provider_user" } }
+            : {}),
+        },
+      });
+      store.append({
+        conversationId: "thread_merge",
+        eventId: "capacity_notice",
+        type: "message.created",
+        occurredAt: "2026-10-03T00:00:01.000Z",
+        turnId: "turn_retry",
+        messageId: "capacity_error",
+        payload: {
+          role: "system",
+          channel: "system",
+          body: "Selected model is at capacity. Please try a different model.",
+          status: "final",
+        },
+      });
+      const user = store.getMessage("thread_merge", "local_user");
+      const notice = store.getMessage("thread_merge", "capacity_error");
+      if (!user || !notice) throw new Error("Missing persisted retry fixture messages.");
+      const projection = buildConversationV2OnlyProjection(v2State([user, notice]), { status: "failed" });
+      const targets = buildRequestFailureRetryTargets({
+        coreKind,
+        threadStatus: "failed",
+        items: projection.timeline,
+      });
+      const target = targets.get("conversation-v2:capacity_error");
+      if (!target) throw new Error("Missing capacity-error retry target.");
+      expect(target).toMatchObject({ activityLineId: "local_user", prompt: "retry this request" });
+      expect(
+        resolveNonRewindRetryUserMessage(store, "thread_merge", target.activityLineId, coreKind === "codex"),
+      ).toEqual(user);
+      if (bound) {
+        expect(
+          resolveNonRewindRetryUserMessage(store, "thread_merge", "sdk:provider_user", coreKind === "codex"),
+        ).toEqual(user);
+      }
+      db.close();
+    }
+  }
+});
+
 test("V2-only runtime write failures retain their Feed error title without a provider row", () => {
   const errorMessage: ConversationMessage = {
     ...message("runtime-error", 2),
@@ -136,7 +201,9 @@ test("V2-only runtime write failures retain their Feed error title without a pro
     message: errorMessage.body,
   });
   expect(isRetryableRequestFailureItem(item!)).toBe(false);
-  const html = renderToStaticMarkup(createElement(ActivityLogView, { conversationV2: v2State([errorMessage]) }));
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, { conversationV2: v2State([errorMessage]) }),
+  );
   expect(html).toContain("会话事件记录失败");
   expect(html).toContain("Agent child changed identity or ownership");
 });
@@ -173,10 +240,10 @@ test("places a finalized queued follow-up after the turn that accepted it", () =
     body: "第二轮问题",
     occurredAt: "2026-09-14T00:00:08.000Z",
   };
-  const onlyV2 = buildConversationV2OnlyProjection(
-    v2State([firstAnswer, finalizedQueued]),
-    { createdAt: "2026-09-14T00:00:00.000Z", status: "completed" },
-  );
+  const onlyV2 = buildConversationV2OnlyProjection(v2State([firstAnswer, finalizedQueued]), {
+    createdAt: "2026-09-14T00:00:00.000Z",
+    status: "completed",
+  });
 
   expect(onlyV2.timeline.map((item) => item.text)).toEqual(["第一轮回答", "第二轮问题"]);
 });

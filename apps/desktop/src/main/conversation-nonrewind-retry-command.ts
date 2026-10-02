@@ -1,3 +1,4 @@
+import type { ConversationMessage } from "@eco/shared";
 import type {
   PromptImageAttachment,
   ThreadContinueResult,
@@ -9,6 +10,32 @@ import {
   prepareConversationCommandDispatch,
 } from "./conversation-command-dispatch";
 import type { ConversationV2Store } from "./conversation-v2-store";
+
+/** A non-rewind retry uses local V2 identity even before the SDK binds its user item. */
+export function resolveNonRewindRetryUserMessage(
+  v2: Pick<ConversationV2Store, "listUserMessages" | "hasRetryBlockingProgress">,
+  threadId: string,
+  activityLineId: string,
+  requireEmptyTurn: boolean,
+): ConversationMessage {
+  const identity = activityLineId.trim();
+  if (!identity) {
+    throw new Error("找不到可重试的用户消息。");
+  }
+  const matches = v2
+    .listUserMessages(threadId)
+    .filter(
+      (message) => message.messageId === identity || message.historyTarget?.activityLineId === identity,
+    );
+  const message = matches[0];
+  if (!message || matches.length !== 1) {
+    throw new Error("V2 中找不到唯一的可重试用户消息，已拒绝读取旧消息表。");
+  }
+  if (requireEmptyTurn && v2.hasRetryBlockingProgress(threadId, identity)) {
+    throw new Error("本轮已有模型输出或文件改动，无法一键重试。");
+  }
+  return message;
+}
 
 export interface NonRewindRetryCommandInput {
   principalId: string;
@@ -59,7 +86,9 @@ export async function executeNonRewindRetryCommand(
       requestedPrompt: input.requestedPrompt,
       attachments: input.attachments,
       hasImages: input.hasImages,
-      ...(input.continueInterrupted ? { continueInterrupted: true, sourceAttemptId: input.sourceAttemptId } : {}),
+      ...(input.continueInterrupted
+        ? { continueInterrupted: true, sourceAttemptId: input.sourceAttemptId }
+        : {}),
       ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
     },
     expectedHistoryRevision: input.expectedHistoryRevision,

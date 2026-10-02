@@ -5,7 +5,10 @@ import {
   failUndispatchedConversationCommand,
   observeConversationCommandRuntime,
 } from "../src/main/conversation-command-dispatch";
-import { executeNonRewindRetryCommand } from "../src/main/conversation-nonrewind-retry-command";
+import {
+  executeNonRewindRetryCommand,
+  resolveNonRewindRetryUserMessage,
+} from "../src/main/conversation-nonrewind-retry-command";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import type { ThreadSummary } from "../src/shared/ipc";
 
@@ -61,24 +64,92 @@ function harness(coreKind: "codex" | "acp" = "codex") {
 }
 
 describe("non-rewind retry command", () => {
+  test("reports missing V2 identity before progress and refuses ambiguous targets", () => {
+    const state = harness();
+    expect(() => resolveNonRewindRetryUserMessage(state.v2, state.thread.id, "missing", true)).toThrow(
+      "V2 中找不到唯一的可重试用户消息",
+    );
+    for (const messageId of ["user_1", "user_2"]) {
+      state.v2.append({
+        conversationId: state.thread.id,
+        eventId: `created_${messageId}`,
+        type: "message.created",
+        occurredAt: "2026-10-03T00:00:00.000Z",
+        messageId,
+        payload: { role: "user", body: "task", historyTarget: { activityLineId: "duplicate" } },
+      });
+    }
+    expect(() => resolveNonRewindRetryUserMessage(state.v2, state.thread.id, "duplicate", false)).toThrow(
+      "V2 中找不到唯一的可重试用户消息",
+    );
+    state.db.close();
+  });
+
+  test("durable message-id retry still refuses model and tool progress", () => {
+    for (const progress of ["message", "tool"] as const) {
+      const state = harness();
+      state.v2.append({
+        conversationId: state.thread.id,
+        eventId: "created_user",
+        type: "message.created",
+        occurredAt: "2026-10-03T00:00:00.000Z",
+        messageId: "local_user",
+        payload: { role: "user", body: "task" },
+      });
+      expect(resolveNonRewindRetryUserMessage(state.v2, state.thread.id, "local_user", true).body).toBe(
+        "task",
+      );
+      state.v2.append({
+        conversationId: state.thread.id,
+        eventId: "agent_progress",
+        runId: "retry_run",
+        type: progress === "message" ? "message.created" : "tool.started",
+        occurredAt: "2026-10-03T00:00:01.000Z",
+        ...(progress === "message" ? { messageId: "assistant_1" } : { toolCallId: "tool_1" }),
+        payload:
+          progress === "message"
+            ? { role: "assistant", body: "started work" }
+            : { name: "Read", status: "running" },
+      });
+      expect(() => resolveNonRewindRetryUserMessage(state.v2, state.thread.id, "local_user", true)).toThrow(
+        "本轮已有模型输出或文件改动",
+      );
+      state.db.close();
+    }
+  });
+
   test("persists Codex empty-input continuation without replaying images", async () => {
     const state = harness();
     let dispatched: Parameters<Parameters<typeof executeNonRewindRetryCommand>[1]["start"]>[0] | undefined;
-    await executeNonRewindRetryCommand({
-      ...state.input,
-      continueInterrupted: true,
-      sourceAttemptId: "attempt_interrupted",
-      attachments: [{ id: "image-1", name: "example.png", mimeType: "image/png", size: 1, dataUrl: "data:image/png;base64,AA==" }],
-      hasImages: true,
-    }, {
-      ...state.deps,
-      start: async (input) => {
-        dispatched = input;
-        return { thread: state.thread };
+    await executeNonRewindRetryCommand(
+      {
+        ...state.input,
+        continueInterrupted: true,
+        sourceAttemptId: "attempt_interrupted",
+        attachments: [
+          {
+            id: "image-1",
+            name: "example.png",
+            mimeType: "image/png",
+            size: 1,
+            dataUrl: "data:image/png;base64,AA==",
+          },
+        ],
+        hasImages: true,
       },
-    });
+      {
+        ...state.deps,
+        start: async (input) => {
+          dispatched = input;
+          return { thread: state.thread };
+        },
+      },
+    );
     expect(dispatched).toMatchObject({ codexEmptyInput: true, attachments: [], skipRecordUserPrompt: true });
-    expect(state.v2.getCommandJob(state.input.principalId, state.input.threadId, state.input.clientCommandId)?.request).toMatchObject({
+    expect(
+      state.v2.getCommandJob(state.input.principalId, state.input.threadId, state.input.clientCommandId)
+        ?.request,
+    ).toMatchObject({
       continueInterrupted: true,
       sourceAttemptId: "attempt_interrupted",
     });

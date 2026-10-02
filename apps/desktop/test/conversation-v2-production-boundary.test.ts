@@ -148,7 +148,10 @@ test("V2-only runtime has no transient local stream projection path", () => {
 });
 
 test("desktop activity entry is V2-only and has no projection fallback props", () => {
-  const activityView = readFileSync(join(desktopRoot, "renderer/ActivityLogView.tsx"), "utf8").replace(/\r\n/g, "\n");
+  const activityView = readFileSync(join(desktopRoot, "renderer/ActivityLogView.tsx"), "utf8").replace(
+    /\r\n/g,
+    "\n",
+  );
   const app = readFileSync(join(desktopRoot, "renderer/App.tsx"), "utf8");
   const propsStart = activityView.indexOf("export interface ActivityLogViewProps");
   const propsEnd = activityView.indexOf("}\n\nfunction conversationV2MessageToTimelineItem", propsStart);
@@ -241,9 +244,11 @@ test("V2-only retry gating reads V2 history and progress facts", () => {
   const body = main.slice(start, end);
   expect(body).toContain("requireConversationV2Thread(input.threadId)");
   expect(body).toContain("v2.head(input.threadId).historyRevision");
-  expect(body).toContain("v2.hasRetryBlockingProgress(input.threadId, activityLineId)");
-  expect(body).toContain("listUserMessages(input.threadId)");
-  expect(body).toContain("拒绝读取旧消息表");
+  expect(body).toContain("resolveNonRewindRetryUserMessage(");
+  const retry = readFileSync(join(desktopRoot, "main/conversation-nonrewind-retry-command.ts"), "utf8");
+  expect(retry).toContain("v2.hasRetryBlockingProgress(threadId, identity)");
+  expect(retry).toContain("listUserMessages(threadId)");
+  expect(retry).toContain("拒绝读取旧消息表");
   expect(body).not.toContain("buildCurrentThreadRunProjection");
 });
 

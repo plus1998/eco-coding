@@ -586,7 +586,10 @@ import {
   executeClarificationResolutionCommand,
   failInterruptedInteractionCommands,
 } from "./conversation-interaction-command";
-import { executeNonRewindRetryCommand } from "./conversation-nonrewind-retry-command";
+import {
+  executeNonRewindRetryCommand,
+  resolveNonRewindRetryUserMessage,
+} from "./conversation-nonrewind-retry-command";
 import { executePlanResolutionCommand, recoverInterruptedPlanCommands } from "./conversation-plan-command";
 import { reportConversationRuntimeEventFailure } from "./conversation-runtime-event-failure";
 import { executeConversationRewriteCommand } from "./conversation-rewrite-command";
@@ -13689,21 +13692,12 @@ async function retryThreadFromFailedRequest(input: {
         throw new Error("Codex 会话绑定已丢失，无法继续原有上下文。");
       }
     }
-    if (requiresEmptyTurnForRequestRetry(thread.coreKind) && !input.continueInterrupted) {
-      if (!activityLineId) {
-        throw new Error("找不到可重试的用户消息。");
-      }
-      const hasBlockingProgress = v2.hasRetryBlockingProgress(input.threadId, activityLineId);
-      if (hasBlockingProgress) {
-        throw new Error("本轮已有模型输出或文件改动，无法一键重试。");
-      }
-    }
-    const message = v2
-      .listUserMessages(input.threadId)
-      .find((candidate) => candidate.historyTarget?.activityLineId === activityLineId);
-    if (!message) {
-      throw new Error("V2 中找不到可重试的用户消息，已拒绝读取旧消息表。");
-    }
+    const message = resolveNonRewindRetryUserMessage(
+      v2,
+      input.threadId,
+      activityLineId,
+      requiresEmptyTurnForRequestRetry(thread.coreKind) && !input.continueInterrupted,
+    );
     retryPrompt = message.body.trim() || prompt;
     const v2Attachments = input.continueInterrupted ? [] : parsePromptImageAttachments(message.attachments);
     if (
