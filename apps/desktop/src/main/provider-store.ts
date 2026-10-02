@@ -640,7 +640,7 @@ export class ProviderStore {
     return this.db
       .prepare(`
         SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
-               api_key, upstream_proxy_url, default_model, enabled, created_at, updated_at
+               api_key, auth_method, credential_pool_id, upstream_proxy_url, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
       `)

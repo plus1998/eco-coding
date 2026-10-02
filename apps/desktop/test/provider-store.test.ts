@@ -59,6 +59,50 @@ test.skipIf(!sqliteAvailable)("fresh provider store does not auto-seed providers
   expect(settings.routeProfiles).toHaveLength(0);
 });
 
+test.skipIf(!sqliteAvailable)("provider lookup and partial saves preserve subscription authentication", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-subscription-auth-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+  const input = {
+    id: "eco-coding-chatgpt",
+    name: "ChatGPT OAuth",
+    baseUrl: "https://api.openai.com",
+    apiCompat: "openai_responses" as const,
+    tokenCountMode: "openai_responses" as const,
+    authMethod: "chatgpt_subscription" as const,
+    credentialPoolId: "chatgpt-default",
+    apiKey: "",
+    defaultModel: "gpt-6-astra",
+    enabled: true,
+  };
+  const saved = store.saveProvider(input);
+  expect(saved.authMethod).toBe(input.authMethod);
+  expect(saved.credentialPoolId).toBe(input.credentialPoolId);
+
+  // Settings reads must see the same authentication as the provider list;
+  // otherwise the built-in provider migration emits settings.updated on every read.
+  for (let read = 0; read < 3; read += 1) {
+    expect(store.getProviderWithSecret(input.id)).toEqual({
+      ...store.listProviders()[0],
+      apiKey: "",
+    });
+    expect(store.getProviderWithSecret(input.id)?.updatedAt).toBe(saved.updatedAt);
+  }
+
+  // An edit that omits auth fields must retain the existing subscription binding.
+  const edited = store.saveProvider({
+    id: input.id,
+    name: input.name,
+    baseUrl: input.baseUrl,
+    apiKey: "",
+    defaultModel: input.defaultModel,
+    enabled: true,
+  });
+  expect(edited.authMethod).toBe(input.authMethod);
+  expect(edited.credentialPoolId).toBe(input.credentialPoolId);
+  expect(store.listProviders()[0]?.authMethod).toBe(input.authMethod);
+  expect(store.listProviders()[0]?.credentialPoolId).toBe(input.credentialPoolId);
+});
+
 test.skipIf(!sqliteAvailable)("route profiles have no active flag semantics", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-profiles-"));
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
