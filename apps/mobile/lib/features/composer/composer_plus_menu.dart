@@ -556,13 +556,10 @@ class ComposerSessionModeTag extends StatelessWidget {
       button: true,
       enabled: onClose != null,
       label: exitLabel,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: ComposerToolbarIconButton(
-          onPressed: onClose,
-          tooltip: exitLabel,
-          icon: SessionModeIcon(mode: mode, color: ecoColors(context).accent),
-        ),
+      child: ComposerToolbarIconButton(
+        onPressed: onClose,
+        tooltip: exitLabel,
+        icon: SessionModeIcon(mode: mode, color: ecoColors(context).accent),
       ),
     );
   }
