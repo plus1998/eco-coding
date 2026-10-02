@@ -121,8 +121,8 @@
     "@playwright/test": "^1.61.1",
     "qrcode.react": "^4.2.0",
     "rcedit": "^4.0.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
     "vite": "^7.0.0",
     "zustand": "^5.0.0"
   }

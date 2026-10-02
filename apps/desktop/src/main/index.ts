@@ -634,6 +634,7 @@ import {
   stopGlobalEcoGateway,
 } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
+import { sendToLiveRenderer } from "./renderer-send";
 import {
   armForcedPlanDelegation,
   buildForcedPlanDelegationHookConfig,
@@ -1197,7 +1198,7 @@ const desktopEventCenter = new DesktopEventCenter();
 desktopEventCenter.subscribe(
   createElectronEventSink((channel, payload) => {
     BrowserWindow.getAllWindows().forEach((window) => {
-      window.webContents.send(channel, payload);
+      sendToLiveRenderer(window, channel, payload);
     });
   }),
 );
@@ -1205,7 +1206,7 @@ desktopEventCenter.subscribe(
 function broadcastGitCommitMessageDelta(requestId: string, text: string): void {
   const payload = { requestId, text };
   BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.gitGenerateCommitMessageDelta, payload);
+    sendToLiveRenderer(window, IPC_CHANNELS.gitGenerateCommitMessageDelta, payload);
   });
 }
 function broadcastPackageScriptTerminalLaunch(payload: {
@@ -1216,7 +1217,7 @@ function broadcastPackageScriptTerminalLaunch(payload: {
   taskId?: string;
 }): void {
   BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.workspacePackageScriptTerminal, payload);
+    sendToLiveRenderer(window, IPC_CHANNELS.workspacePackageScriptTerminal, payload);
   });
 }
 let backgroundTerminalTaskRegistry: BackgroundTerminalTaskRegistry;
@@ -1898,6 +1899,13 @@ async function createMainWindow(options: { startupSplash?: boolean; show?: boole
     },
   };
   const window = new BrowserWindow(windowOptions);
+  window.webContents.on("render-process-gone", (_event, details) => {
+    logUpstream("desktop.render-process-gone", {
+      webContentsId: window.webContents.id,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
   if (isStartupSplash) {
     startupSplashWindows.add(window);
     window.on("closed", () => {

@@ -41,5 +41,8 @@
   },
   "overrides": {
     "prismjs": "1.30.0"
+  },
+  "patchedDependencies": {
+    "react-dom@19.2.6": "patches/react-dom@19.2.6.patch"
   }
 }
