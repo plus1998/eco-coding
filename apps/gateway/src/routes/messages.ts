@@ -64,8 +64,13 @@ import {
   isDeepSeekResponsesUpstreamModel,
   sanitizeDeepSeekResponsesCustomTools,
 } from "../upstream/responses-passthrough.js";
-import { extractUpstreamErrorMessage, formatUpstreamHttpError } from "../upstream/upstream-error.js";
+import {
+  extractUpstreamErrorCode,
+  extractUpstreamErrorMessage,
+  formatUpstreamHttpError,
+} from "../upstream/upstream-error.js";
 import { applyUpstreamUserAgent } from "../upstream/user-agent.js";
+import { credentialResolutionErrorResponse, reportRouteCredentialResult, resolveRouteCredential } from "../route-credentials.js";
 import {
   extractUsageFromResponsesStreamEvent,
   normalizeAnthropicUsage,
@@ -131,6 +136,13 @@ export async function handlePostMessages(
     throw error;
   }
 
+  try {
+    route = await resolveRouteCredential(route, config, request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return credentialResolutionErrorResponse(error);
+  }
+
   body.model = route.upstreamModelId;
   const stream = body.stream === true;
   const upstreamUrl = buildUpstreamUrl(route.provider, route.upstreamKind);
@@ -140,9 +152,10 @@ export async function handlePostMessages(
 
   const lifecycle = buildRequestLifecycleContext(route, "messages", onLog, onRequestLifecycle);
 
+  let response: Response;
   switch (route.upstreamKind) {
     case "anthropic-messages":
-      return forwardMessagesNative(
+      response = await forwardMessagesNative(
         route,
         body,
         request.headers,
@@ -153,9 +166,10 @@ export async function handlePostMessages(
         config.upstreamUserAgent,
         lifecycle,
       );
+      break;
     case "responses":
     case "gateway-delegated":
-      return forwardMessagesViaResponses(
+      response = await forwardMessagesViaResponses(
         route,
         body,
         request.headers,
@@ -166,8 +180,9 @@ export async function handlePostMessages(
         config.upstreamUserAgent,
         lifecycle,
       );
+      break;
     case "openai-chat":
-      return forwardMessagesViaOpenAIChat(
+      response = await forwardMessagesViaOpenAIChat(
         route,
         body,
         request.headers,
@@ -177,11 +192,14 @@ export async function handlePostMessages(
         config.upstreamUserAgent,
         lifecycle,
       );
+      break;
     default: {
       const _exhaustive: never = route.upstreamKind;
       return _exhaustive;
     }
   }
+  await reportRouteCredentialResult(route, config, response);
+  return response;
 }
 
 export async function handleGetModels(config: GatewayConfig): Promise<Response> {
@@ -458,6 +476,16 @@ async function forwardMessagesViaResponses(
   );
   responsesBody.model = route.upstreamModelId;
 
+  // The ChatGPT subscription Responses preview rejects max_output_tokens even
+  // though the Anthropic Messages contract requires max_tokens. Remove it
+  // before the first upstream attempt so the SDK does not retry the same turn
+  // through a non-stream fallback after receiving an unsupported-parameter
+  // error. The subscription endpoint still receives stream:true from the
+  // original Messages request.
+  if (route.provider.authMethod === "chatgpt_subscription") {
+    delete (responsesBody as unknown as Record<string, unknown>).max_output_tokens;
+  }
+
   // PI/Claude Messages face never passes through desktop applyResponsesRoutingHints.
   // Inject the same eco_thread_* key so Responses prefix cache can stick across tool turns.
   const responsesThreadId = readThreadIdFromHeaders(clientHeaders);
@@ -534,6 +562,7 @@ async function forwardMessagesViaResponses(
       status: upstreamResponse.status,
       bodyText: text,
     });
+    const upstreamErrorCode = extractUpstreamErrorCode(text);
     const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
     reportLogicalUpstreamFailure(lifecycle, {
       stage: "http",
@@ -542,7 +571,10 @@ async function forwardMessagesViaResponses(
       ...(providerRequestId ? { providerRequestId } : {}),
     });
     if (wantStream) {
-      return anthropicErrorSseResponse(upstreamResponse.status, detailed);
+      return anthropicErrorSseResponse(upstreamResponse.status, detailed, {
+        preserveHttpStatus: route.provider.authMethod === "chatgpt_subscription",
+        ...(upstreamErrorCode ? { errorCode: upstreamErrorCode } : {}),
+      });
     }
     return anthropicErrorResponse(upstreamResponse.status, detailed);
   }
@@ -1367,17 +1399,22 @@ function anthropicErrorResponse(status: number, message: string): Response {
   );
 }
 
-function anthropicErrorSseResponse(status: number, message: string): Response {
+function anthropicErrorSseResponse(
+  status: number,
+  message: string,
+  options: { preserveHttpStatus?: boolean; errorCode?: string } = {},
+): Response {
   // Claude Agent SDK stream path: emit a single error event then close.
   const payload = responsesAnthropicEventToSse({
     type: "error",
     error: { type: "api_error", message: `[${status}] ${message}` },
   } as never);
   return new Response(payload, {
-    status: 200,
+    status: options.preserveHttpStatus ? status : 200,
     headers: {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache",
+      ...(options.errorCode ? { "x-eco-upstream-error-code": options.errorCode } : {}),
     },
   });
 }

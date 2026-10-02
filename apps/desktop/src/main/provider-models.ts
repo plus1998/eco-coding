@@ -97,9 +97,9 @@ export async function listProviderUpstreamModels(
     return resolved;
   }
 
-  // For OAuth/auth.json providers (no API key), return hardcoded OpenAI models.
-  // The ChatGPT OAuth token cannot call /v1/models (missing api.model.read scope).
-  // Same approach as sub2api: use openai.DefaultModels.
+  // auth.json providers without an API key do not expose a usable upstream
+  // /v1/models endpoint. ChatGPT subscription providers are handled in the
+  // desktop IPC layer with their OAuth account pool before reaching this path.
   if (!resolved.apiKey.trim()) {
     return { ok: true, models: OPENAI_BUILTIN_MODELS };
   }

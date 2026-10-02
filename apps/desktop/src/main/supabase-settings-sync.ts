@@ -51,6 +51,8 @@ export interface EcoSyncedProvider {
   version: string;
   apiCompat: string;
   tokenCountMode?: string;
+  authMethod?: string;
+  credentialPoolId?: string;
   defaultModel: string;
   enabled: boolean;
 }

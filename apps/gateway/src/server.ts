@@ -25,6 +25,8 @@ export interface EcoGatewayServer {
   stop: () => void;
   getProviders: () => GatewayProvider[];
   setProviders: (providers: GatewayProvider[]) => void;
+  setCredentialResolver: (resolver: GatewayConfig["resolveCredential"]) => void;
+  setCredentialReporter: (reporter: GatewayConfig["reportCredentialResult"]) => void;
   setUpstreamUserAgent: (upstreamUserAgent: string | undefined) => void;
   setUpstreamProxyUrl: (proxyUrl: string | undefined) => void;
   getUpstreamProxyUrl: () => string | undefined;
@@ -280,6 +282,14 @@ export async function startEcoGateway(
     setProviders: (providers) => {
       config.providers = providers.map(normalizeProvider);
       proxyController?.setProxyRoutes(buildProviderProxyRoutes(config.providers));
+    },
+    setCredentialResolver: (resolver) => {
+      if (resolver) config.resolveCredential = resolver;
+      else delete config.resolveCredential;
+    },
+    setCredentialReporter: (reporter) => {
+      if (reporter) config.reportCredentialResult = reporter;
+      else delete config.reportCredentialResult;
     },
     setUpstreamUserAgent: (upstreamUserAgent) => {
       const trimmed = upstreamUserAgent?.trim();

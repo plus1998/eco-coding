@@ -80,6 +80,11 @@ export function mapCommitModelOptions(options: readonly CommitModelOptionView[])
     providerId: option.providerId,
     providerName: option.providerName,
     providerColor: option.providerColor,
+    ...(option.providerId === "eco-coding-chatgpt"
+      ? { providerIcon: "./provider-icons/openai.svg" }
+      : option.providerId === "openai"
+        ? { providerIcon: "./agent-icons/codex.ico" }
+        : {}),
     modelId: option.modelId,
     label: option.modelLabel,
   }));

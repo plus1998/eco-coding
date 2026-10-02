@@ -15,6 +15,7 @@ import type { UpstreamApiCompat } from "./api-compat";
 
 export interface ListUpstreamModelsRequest {
   providerId?: string;
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
   baseUrl?: string;
   /** Service path prefix, e.g. `/zen` or `/anthropic` (not full `/v1/chat/completions`). */
   requestPath?: string;

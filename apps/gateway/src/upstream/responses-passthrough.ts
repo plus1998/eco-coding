@@ -232,6 +232,7 @@ export async function forwardResponsesPassthrough(
       },
       lifecycle,
       onLog,
+      ...(route.provider.upstreamProxyUrl ? { upstreamProxyUrl: route.provider.upstreamProxyUrl } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

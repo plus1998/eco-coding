@@ -88,12 +88,15 @@ import {
 import {
   app,
   BrowserWindow,
+  type AuthInfo,
+  type Event,
   type BrowserWindowConstructorOptions,
   clipboard,
   dialog,
   ipcMain,
   Menu,
   type NativeImage,
+  type WebContents,
   Notification,
   nativeImage,
   nativeTheme,
@@ -524,6 +527,8 @@ import {
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
 import type { OpenAIAccount, OpenAIAccountService } from "./openai-account-service";
+import type { ChatGptSubscriptionService } from "./chatgpt-subscription-service";
+import { createChatGptSubscriptionFetch, createChatGptSubscriptionFetchForProxy } from "./chatgpt-subscription-fetch";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle, setCodexAccountProxyUrlGetter } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
@@ -1043,23 +1048,84 @@ function getMainWindow(): BrowserWindow | undefined {
  * normal child window on that platform; otherwise users have no way to cancel
  * an in-progress login.
  */
-function createOAuthAuthWindow(parent?: BrowserWindow): BrowserWindow {
+function createOAuthAuthWindow(parent?: BrowserWindow, partition = "oauth-auth-session"): BrowserWindow {
   const isMac = process.platform === "darwin";
   return new BrowserWindow({
     width: 900,
     height: 700,
-    title: "OpenAI Login",
+    title: "Eco Coding · ChatGPT 授权",
+    ...(appIcon ? { icon: appIcon } : {}),
     ...(parent ? { parent } : {}),
     modal: Boolean(parent) && !isMac,
     closable: true,
     ...(isMac ? { titleBarStyle: "default" as const } : {}),
     autoHideMenuBar: true,
     webPreferences: {
-      partition: "oauth-auth-session",
+      partition,
       nodeIntegration: false,
       contextIsolation: true,
     },
   });
+}
+
+/** Configure the shared embedded OAuth session with the desktop outbound proxy. */
+async function configureChatGptOAuthSessionProxy(
+  authSession: ReturnType<typeof session.fromPartition>,
+  rawProxyUrl?: string,
+): Promise<() => void> {
+  const proxyUrl = rawProxyUrl?.trim();
+  let socksBridge: { close: () => void } | undefined;
+  let proxyAuthListener:
+    | ((event: Event, webContents: WebContents, request: string, authInfo: AuthInfo, callback: (username?: string, password?: string) => void) => void)
+    | undefined;
+  try {
+    if (!proxyUrl) {
+      await authSession.setProxy({ mode: "direct" });
+      return () => {};
+    }
+
+    const parsed = new URL(proxyUrl);
+    let proxyHost = parsed.host;
+    if (parsed.protocol === "socks:" || parsed.protocol === "socks5:") {
+      const { startSocksToHttpBridge } = await import("./openai-account-service");
+      const bridge = await startSocksToHttpBridge(proxyUrl);
+      socksBridge = { close: bridge.close };
+      proxyHost = `127.0.0.1:${bridge.port}`;
+    } else if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`OAuth 不支持此代理协议：${parsed.protocol}`);
+    }
+
+    const pacContent = `function FindProxyForURL(url, host) { return "PROXY ${proxyHost}"; }`;
+    const pacDataUri =
+      "data:application/x-ns-proxy-autoconfig;base64," +
+      Buffer.from(pacContent, "utf8").toString("base64");
+    if (parsed.username || parsed.password) {
+      const username = decodeURIComponent(parsed.username);
+      const password = decodeURIComponent(parsed.password);
+      const proxyHostname = parsed.hostname.toLowerCase();
+      const proxyPort = parsed.port ? Number(parsed.port) : undefined;
+      proxyAuthListener = (_event, _webContents, _request, authInfo, callback) => {
+        if (!authInfo.isProxy || authInfo.host.toLowerCase() !== proxyHostname) return;
+        if (proxyPort !== undefined && authInfo.port !== proxyPort) return;
+        callback(username, password);
+      };
+      // Electron's current type declarations omit the app-level `login`
+      // event even though it is still the supported hook for proxy auth.
+      app.on("login" as any, proxyAuthListener as any);
+    }
+    await authSession.setProxy({ mode: "pac_script", pacScript: pacDataUri });
+    let closed = false;
+    return () => {
+      if (closed) return;
+      closed = true;
+      if (proxyAuthListener) app.off("login" as any, proxyAuthListener as any);
+      socksBridge?.close();
+    };
+  } catch (error) {
+    if (proxyAuthListener) app.off("login" as any, proxyAuthListener as any);
+    socksBridge?.close();
+    throw error;
+  }
 }
 
 function getStartupSplashWindow(): BrowserWindow | undefined {
@@ -1186,6 +1252,8 @@ let activeGitOperations = 0;
 const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
+let chatgptSubscriptionService: ChatGptSubscriptionService | undefined;
+let chatgptSubscriptionServicePromise: Promise<ChatGptSubscriptionService> | undefined;
 let agentOrchestrationStore: AgentOrchestrationStore;
 let mcpStore: McpStore;
 let mcpHubGateway: McpHubGateway;
@@ -2307,6 +2375,10 @@ app.whenReady().then(async () => {
   configureEcoGatewayLifecycle({
     ecoDataDir: app.getPath("userData"),
     listProviders: () => {
+      // The built-in ChatGPT provider may have been persisted by an older
+      // version. Migrate it before every Gateway sync so stale auth metadata
+      // cannot bypass the subscription Responses contract.
+      ensureChatGptSubscriptionProvider();
       const routeModels = new Map<string, string[]>();
       for (const profile of providerStore.listRouteProfiles()) {
         for (const route of profile.routes) {
@@ -2325,6 +2397,8 @@ app.whenReady().then(async () => {
           requestPath: provider.requestPath,
           version: provider.version,
           apiKey: provider.apiKey,
+          ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
+          ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
           ...(provider.upstreamProxyUrl ? { upstreamProxyUrl: provider.upstreamProxyUrl } : {}),
           apiCompat: provider.apiCompat,
           defaultModel: provider.defaultModel,
@@ -2340,6 +2414,14 @@ app.whenReady().then(async () => {
     },
     getUpstreamUserAgent: () => resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
     getUpstreamProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
+    getGatewayCredentialResolver: () => async ({ provider }) => {
+      const service = await getChatGptSubscriptionService();
+      return service.resolveCredential(provider);
+    },
+    getGatewayCredentialReporter: () => async ({ accountId, statusCode, errorCode }) => {
+      const service = await getChatGptSubscriptionService();
+      await service.reportCredentialResult({ ...(accountId ? { accountId } : {}), statusCode, ...(errorCode ? { errorCode } : {}) });
+    },
     getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
     resolveEcoThreadIdFromCodex: (codexThreadId) =>
       codexThreadMap.getEcoThreadId(codexThreadId) ??
@@ -3122,10 +3204,90 @@ function getModelSettingsSnapshot(): ModelSettingsSnapshot {
     const authJsonPath = path.join(app.getPath("userData"), "codex", "auth.json");
     openAiAccountActive = existsSync(authJsonPath);
   } catch { /* app not ready yet */ }
+  const chatGptSubscriptionModelId = providerStore
+    .listCandidateModels("eco-coding-chatgpt")[0]?.modelId;
   return {
-    ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore, { openAiAccountActive }),
+    ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore, {
+      openAiAccountActive,
+      ...(chatGptSubscriptionModelId ? { chatGptSubscriptionModelId } : {}),
+    }),
     mcpSettings: mcpStore.getSettings(),
   };
+}
+
+async function getChatGptSubscriptionService(): Promise<ChatGptSubscriptionService> {
+  if (chatgptSubscriptionService) return chatgptSubscriptionService;
+  if (!chatgptSubscriptionServicePromise) {
+    chatgptSubscriptionServicePromise = (async () => {
+      const { ChatGptSubscriptionService } = await import("./chatgpt-subscription-service");
+      const codec = {
+        isAvailable: () => safeStorage.isEncryptionAvailable(),
+        encrypt: (value: string) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+        decrypt: (value: string) => {
+          if (!value.startsWith("safe-v1:")) throw new Error("无效的 ChatGPT 订阅凭据存储格式");
+          return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+        },
+      };
+      const service = new ChatGptSubscriptionService(
+        app.getPath("userData"),
+        codec,
+        createChatGptSubscriptionFetch(() => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get())),
+        createChatGptSubscriptionFetchForProxy,
+      );
+      await service.initialize();
+      chatgptSubscriptionService = service;
+      return service;
+    })().finally(() => {
+      chatgptSubscriptionServicePromise = undefined;
+    });
+  }
+  return chatgptSubscriptionServicePromise;
+}
+
+/** The official OAuth connection is a built-in provider; users should not have to create it manually. */
+function ensureChatGptSubscriptionProvider(): void {
+  const id = "eco-coding-chatgpt";
+  const existing = providerStore.getProviderWithSecret(id);
+  const defaultModel = existing?.defaultModel?.trim() || "gpt-5";
+  const needsMigration =
+    !existing ||
+    existing.name !== "ChatGPT OAuth" ||
+    existing.baseUrl !== "https://api.openai.com" ||
+    existing.requestPath !== "" ||
+    existing.version !== "v1" ||
+    existing.apiCompat !== "openai_responses" ||
+    existing.tokenCountMode !== "openai_responses" ||
+    existing.authMethod !== "chatgpt_subscription" ||
+    existing.credentialPoolId !== "chatgpt-default" ||
+    existing.apiKey !== "" ||
+    existing.enabled !== true ||
+    existing.defaultModel !== defaultModel;
+  if (!needsMigration) return;
+
+  providerStore.saveProvider({
+    id,
+    name: "ChatGPT OAuth",
+    baseUrl: "https://api.openai.com",
+    requestPath: "",
+    version: "v1",
+    apiCompat: "openai_responses",
+    tokenCountMode: "openai_responses",
+    authMethod: "chatgpt_subscription",
+    credentialPoolId: "chatgpt-default",
+    apiKey: "",
+    defaultModel,
+    enabled: true,
+  });
+  if (existing?.apiKey) {
+    providerStore.clearProviderApiKey(id);
+  }
+  emitSettingsUpdated();
+}
+
+function syncChatGptSubscriptionModels(models: Array<{ id: string; displayName?: string }>): void {
+  ensureChatGptSubscriptionProvider();
+  const result = providerStore.syncCandidateModels("eco-coding-chatgpt", models);
+  if (result.changed) emitSettingsUpdated();
 }
 
 function listCodexCatalogRoutesFromSettings(): CodexGatewayCatalogRoute[] {
@@ -5250,7 +5412,10 @@ function registerIpcHandlers(): void {
     });
   });
 
-  registerDesktopCommand(IPC_CHANNELS.modelSettingsGet, async () => getModelSettingsSnapshot());
+  registerDesktopCommand(IPC_CHANNELS.modelSettingsGet, async () => {
+    ensureChatGptSubscriptionProvider();
+    return getModelSettingsSnapshot();
+  });
 
   registerDesktopCommand(IPC_CHANNELS.settingsDigest, async () =>
     computeGlobalSettingsDigest({
@@ -5312,6 +5477,33 @@ function registerIpcHandlers(): void {
     if (!payload || typeof payload !== "object") {
       return { ok: false, error: "Invalid models list request." } as const;
     }
+    if (payload.providerId) {
+      const provider = providerStore.getProviderWithSecret(payload.providerId);
+      if (provider?.authMethod === "chatgpt_subscription" || payload.authMethod === "chatgpt_subscription") {
+        try {
+          const service = await getChatGptSubscriptionService();
+          const models = await service.listModels();
+          syncChatGptSubscriptionModels(models);
+          return { ok: true, models } as const;
+        } catch (error) {
+          return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            ...(provider?.id ? { providerId: provider.id } : {}),
+            ...(provider?.name ? { providerName: provider.name } : {}),
+          } as const;
+        }
+      }
+    } else if (payload.authMethod === "chatgpt_subscription") {
+      try {
+        const service = await getChatGptSubscriptionService();
+        const models = await service.listModels();
+        syncChatGptSubscriptionModels(models);
+        return { ok: true, models } as const;
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) } as const;
+      }
+    }
     return listProviderUpstreamModels(
       providerStore,
       payload,
@@ -5331,6 +5523,165 @@ function registerIpcHandlers(): void {
       resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
       proxyBridgeSettingsStore.get().upstreamProxyUrl,
     );
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountsList, async () => {
+    ensureChatGptSubscriptionProvider();
+    const service = await getChatGptSubscriptionService();
+    return service.listAccounts();
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountCreate, async (payload: { displayName?: string; proxyUrl?: string }) => {
+    ensureChatGptSubscriptionProvider();
+    const service = await getChatGptSubscriptionService();
+    return service.createAccount(payload?.displayName ?? "ChatGPT 账号", payload?.proxyUrl);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountSetProxy, async (payload: { accountId: string; proxyUrl?: string }) => {
+    const service = await getChatGptSubscriptionService();
+    return service.setProxyUrl(payload.accountId, payload.proxyUrl);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountTest, async (payload: { accountId: string; modelId?: string }) => {
+    try {
+      const service = await getChatGptSubscriptionService();
+      return await service.testAccount(payload.accountId, payload.modelId ?? "");
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountDelete, async (payload: { accountId: string }) => {
+    const service = await getChatGptSubscriptionService();
+    await service.deleteAccount(payload.accountId);
+    return { success: true };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountSetEnabled, async (payload: { accountId: string; enabled: boolean }) => {
+    const service = await getChatGptSubscriptionService();
+    return service.setEnabled(payload.accountId, payload.enabled);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountResetAvailability, async (payload: { accountId: string }) => {
+    const service = await getChatGptSubscriptionService();
+    return service.resetAvailability(payload.accountId);
+  });
+
+  const observeChatGptSubscriptionLogin = (
+    login: Awaited<ReturnType<ChatGptSubscriptionService["beginLogin"]>>,
+  ): void => {
+    void login.result.then((account) => {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send("chatgpt-subscription:login-result", { success: true, account });
+        }
+      });
+      emitSettingsUpdated();
+    }).catch((error) => {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send("chatgpt-subscription:login-result", {
+            success: false,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    });
+  };
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountAuthorizationUrl, async (payload: { accountId: string }) => {
+    try {
+      const service = await getChatGptSubscriptionService();
+      // Do not put id_token_hint in a copied URL. The user can select the
+      // already logged-in browser account, and the ID token stays out of
+      // clipboard/history. The saved client ID still preserves its workspace
+      // binding during the code exchange.
+      const login = await service.beginLogin(payload.accountId, { includeAccountHints: false });
+      observeChatGptSubscriptionLogin(login);
+      return {
+        success: true,
+        message: "授权链接已生成，打开后请完成 ChatGPT 授权。",
+        authorizationUrl: login.authorizationUrl,
+      };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountLogin, async (payload: { accountId: string }) => {
+    const service = await getChatGptSubscriptionService();
+    const login = await service.beginLogin(payload.accountId);
+    const mainWin = getMainWindow();
+    // Keep each ChatGPT account's browser cookies and proxy session isolated.
+    // Reusing one Electron partition can silently submit a second account's
+    // existing ChatGPT session during OAuth authorization.
+    const authPartition = `oauth-chatgpt-${payload.accountId}`;
+    const authSession = session.fromPartition(authPartition);
+    const account = service.listAccounts().find((entry) => entry.accountId === payload.accountId);
+    let closeProxy = () => {};
+    let authWindow: BrowserWindow | undefined;
+    let loginSettled = false;
+    try {
+      closeProxy = await configureChatGptOAuthSessionProxy(
+        authSession,
+        account?.proxyUrl || resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
+      );
+      authWindow = createOAuthAuthWindow(mainWin, authPartition);
+      authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+      const cancelLogin = () => {
+        if (loginSettled) return;
+        loginSettled = true;
+        service.cancelLogin(payload.accountId);
+        closeProxy();
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send("chatgpt-subscription:login-result", {
+              success: false,
+              message: "ChatGPT 登录已取消",
+            });
+          }
+        }
+      };
+      authWindow.on("close", cancelLogin);
+      authWindow.on("closed", () => {
+        cancelLogin();
+        closeProxy();
+      });
+      await authWindow.loadURL(login.authorizationUrl);
+    } catch (error) {
+      loginSettled = true;
+      service.cancelLogin(payload.accountId, error instanceof Error ? error.message : String(error));
+      closeProxy();
+      if (authWindow && !authWindow.isDestroyed()) authWindow.destroy();
+      return {
+        success: false,
+        message: `打开 ChatGPT 登录页面失败：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    void login.result.then((account) => {
+      if (loginSettled) return;
+      loginSettled = true;
+      closeProxy();
+      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) win.webContents.send("chatgpt-subscription:login-result", { success: true, account });
+      });
+      emitSettingsUpdated();
+    }).catch((error) => {
+      if (loginSettled) return;
+      loginSettled = true;
+      closeProxy();
+      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send("chatgpt-subscription:login-result", {
+            success: false,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    });
+    return { success: true, message: "ChatGPT OAuth 登录已在内置窗口打开" };
   });
 
   // ─── Codex OAuth Login ──────────────────────────────────────────────────────
@@ -5465,7 +5816,7 @@ function registerIpcHandlers(): void {
       process.stderr.write(`[codex-oauth] login result: ${JSON.stringify(res)}\n`);
       if (res.success) {
         // This flow logs straight into CODEX_HOME/auth.json, which gates the virtual
-        // OpenAI Official provider/model in the settings snapshot.
+        // Codex Auth provider/model in the settings snapshot.
         emitSettingsUpdated();
       }
       BrowserWindow.getAllWindows().forEach((win) => {
@@ -5501,7 +5852,7 @@ function registerIpcHandlers(): void {
     }
     const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable);
     const result = await service.logout();
-    // Logout removes CODEX_HOME/auth.json, which gates the virtual OpenAI Official
+    // Logout removes CODEX_HOME/auth.json, which gates the virtual Codex Auth
     // provider/model in the settings snapshot.
     emitSettingsUpdated();
     return result;
@@ -5557,7 +5908,7 @@ function registerIpcHandlers(): void {
       invalidateGlobalCodexRuntimeFingerprints();
       scheduleCodexGlobalRuntimeRefresh();
       // Deleting the active account removes CODEX_HOME/auth.json, which gates the
-      // virtual OpenAI Official provider/model in the settings snapshot.
+    // virtual Codex Auth provider/model in the settings snapshot.
       emitSettingsUpdated();
     }
     return { success: true };
@@ -5711,7 +6062,7 @@ function registerIpcHandlers(): void {
       scheduleCodexGlobalRuntimeRefresh();
     }
     // setActiveAccount writes (or clears) CODEX_HOME/auth.json, which gates the virtual
-    // OpenAI Official provider/model. Without this the renderer keeps its stale snapshot
+      // Codex Auth provider/model. Without this the renderer keeps its stale snapshot
     // and the config only shows up after an app restart.
     emitSettingsUpdated();
     return { success: true };
@@ -5731,7 +6082,7 @@ function registerIpcHandlers(): void {
       invalidateGlobalCodexRuntimeFingerprints();
       scheduleCodexGlobalRuntimeRefresh();
       // Writing auth.json for the active account can create CODEX_HOME/auth.json,
-      // which gates the virtual OpenAI Official provider/model in the snapshot.
+      // which gates the virtual Codex Auth provider/model in the snapshot.
       emitSettingsUpdated();
     }
     return result;

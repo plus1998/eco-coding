@@ -509,6 +509,51 @@ const api = {
   testProviderConnection(request: TestProviderConnectionRequest): Promise<TestProviderConnectionResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderTest, request);
   },
+  chatGptSubscriptionAccountsList(): Promise<Array<{
+    accountId: string;
+    displayName: string;
+    email?: string;
+    proxyUrl?: string;
+    status: string;
+    enabled: boolean;
+    hasCredentials: boolean;
+    lastErrorCode?: string;
+    cooldownUntil?: number;
+    lastSuccessAt?: number;
+    createdAt: number;
+    updatedAt: number;
+  }>> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountsList);
+  },
+  chatGptSubscriptionAccountCreate(displayName?: string, proxyUrl?: string): Promise<unknown> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountCreate, { displayName, proxyUrl });
+  },
+  chatGptSubscriptionAccountDelete(accountId: string): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountDelete, { accountId });
+  },
+  chatGptSubscriptionAccountSetEnabled(accountId: string, enabled: boolean): Promise<unknown> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountSetEnabled, { accountId, enabled });
+  },
+  chatGptSubscriptionAccountResetAvailability(accountId: string): Promise<unknown> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountResetAvailability, { accountId });
+  },
+  chatGptSubscriptionAccountSetProxy(accountId: string, proxyUrl?: string): Promise<unknown> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountSetProxy, { accountId, proxyUrl });
+  },
+  chatGptSubscriptionAccountTest(accountId: string, modelId: string): Promise<{ success: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountTest, { accountId, modelId });
+  },
+  chatGptSubscriptionAccountLogin(accountId: string): Promise<{ success: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountLogin, { accountId });
+  },
+  chatGptSubscriptionAccountAuthorizationUrl(accountId: string): Promise<{ success: boolean; message: string; authorizationUrl?: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chatGptSubscriptionAccountAuthorizationUrl, { accountId });
+  },
+  onChatGptSubscriptionLoginResult(callback: (result: { success: boolean; message?: string; account?: unknown }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, result: { success: boolean; message?: string; account?: unknown }) => callback(result);
+    ipcRenderer.on("chatgpt-subscription:login-result", listener);
+    return () => ipcRenderer.off("chatgpt-subscription:login-result", listener);
+  },
   codexOAuthGetStatus(): Promise<{ isLoggedIn: boolean; message: string }> {
     return ipcRenderer.invoke(IPC_CHANNELS.codexOAuthGetStatus);
   },

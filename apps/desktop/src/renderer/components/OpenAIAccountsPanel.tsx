@@ -1,6 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, Check, Loader2, LogIn, FileUp, Search, X, Pencil, RefreshCw, MoreHorizontal } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Check,
+  Loader2,
+  LogIn,
+  FileUp,
+  Search,
+  X,
+  Pencil,
+  RefreshCw,
+  MoreHorizontal,
+  Globe2,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface OpenAIAccount {
@@ -36,7 +51,12 @@ interface AccountQuota {
   fetchedAt: number;
 }
 
-function formatResetTime(window: { usedPercent: number; limitWindowSeconds: number; resetAfterSeconds: number; resetAt: number }): string {
+function formatResetTime(window: {
+  usedPercent: number;
+  limitWindowSeconds: number;
+  resetAfterSeconds: number;
+  resetAt: number;
+}): string {
   const seconds = window.resetAfterSeconds;
   if (seconds <= 0) return "";
   if (seconds < 3600) {
@@ -66,7 +86,12 @@ export function OpenAIAccountsPanel() {
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [quotaLoadingId, setQuotaLoadingId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0,
+  });
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -103,6 +128,53 @@ export function OpenAIAccountsPanel() {
     return unsub;
   }, [eco, refresh]);
 
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const close = () => setMenuOpenId(null);
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        !menuRef.current?.contains(event.target as Node) &&
+        !menuTriggerRef.current?.contains(event.target as Node)
+      )
+        close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+        menuTriggerRef.current?.focus();
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const items = Array.from(
+          menuRef.current?.querySelectorAll<HTMLButtonElement>(
+            "button:not(:disabled)",
+          ) ?? [],
+        );
+        const index = items.indexOf(
+          document.activeElement as HTMLButtonElement,
+        );
+        items[
+          (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) %
+            items.length
+        ]?.focus();
+      }
+      if (event.key === "Tab") close();
+    };
+    menuRef.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", close, true);
+    };
+  }, [menuOpenId]);
+
   const refreshQuotas = useCallback(async () => {
     if (!eco || accounts.length === 0) return;
     setQuotaLoading(true);
@@ -110,17 +182,25 @@ export function OpenAIAccountsPanel() {
       const now = Date.now();
       const loggedIn = accounts.filter((a) => a.isLoggedIn);
       const results = await Promise.all(
-        loggedIn.map(async (a): Promise<{ id: string; quota?: AccountQuota; error?: true } | null> => {
-          // Skip if cached within 30s
-          const cached = quotas[a.id];
-          if (cached && now - cached.fetchedAt < 30000) return null;
-          try {
-            const quota = await eco.openAIAccountsQueryQuota(a.id);
-            return quota ? { id: a.id, quota } : { id: a.id, error: true };
-          } catch {
-            return { id: a.id, error: true };
-          }
-        }),
+        loggedIn.map(
+          async (
+            a,
+          ): Promise<{
+            id: string;
+            quota?: AccountQuota;
+            error?: true;
+          } | null> => {
+            // Skip if cached within 30s
+            const cached = quotas[a.id];
+            if (cached && now - cached.fetchedAt < 30000) return null;
+            try {
+              const quota = await eco.openAIAccountsQueryQuota(a.id);
+              return quota ? { id: a.id, quota } : { id: a.id, error: true };
+            } catch {
+              return { id: a.id, error: true };
+            }
+          },
+        ),
       );
       const newQuotas: Record<string, AccountQuota> = { ...quotas };
       const newErrors: Record<string, true> = { ...quotaErrors };
@@ -155,13 +235,23 @@ export function OpenAIAccountsPanel() {
     try {
       if (modalEditId) {
         // Edit mode: update existing account
-        await eco.openAIAccountsUpdate(modalEditId, name, modalProxy.trim() || undefined);
+        await eco.openAIAccountsUpdate(
+          modalEditId,
+          name,
+          modalProxy.trim() || undefined,
+        );
         if (modalMode === "manual" && modalAuthJson.trim()) {
-          await eco.openAIAccountsSetAuthJson(modalEditId, modalAuthJson.trim());
+          await eco.openAIAccountsSetAuthJson(
+            modalEditId,
+            modalAuthJson.trim(),
+          );
         }
       } else {
         // Create mode
-        const account = await eco.openAIAccountsCreate(name, modalProxy.trim() || undefined);
+        const account = await eco.openAIAccountsCreate(
+          name,
+          modalProxy.trim() || undefined,
+        );
         if (modalMode === "manual" && modalAuthJson.trim()) {
           await eco.openAIAccountsSetAuthJson(account.id, modalAuthJson.trim());
         } else if (modalMode === "login") {
@@ -178,7 +268,15 @@ export function OpenAIAccountsPanel() {
     } finally {
       setBusy(false);
     }
-  }, [eco, modalName, modalProxy, modalMode, modalAuthJson, modalEditId, refresh]);
+  }, [
+    eco,
+    modalName,
+    modalProxy,
+    modalMode,
+    modalAuthJson,
+    modalEditId,
+    refresh,
+  ]);
 
   const handleDelete = useCallback(
     async (accountId: string) => {
@@ -194,15 +292,18 @@ export function OpenAIAccountsPanel() {
     [eco, refresh],
   );
 
-  const handleLogin = useCallback(async (accountId: string) => {
-    if (!eco) return;
-    setLoggingInId(accountId);
-    try {
-      await eco.openAIAccountsStartLogin(accountId);
-    } finally {
-      setLoggingInId(null);
-    }
-  }, [eco]);
+  const handleLogin = useCallback(
+    async (accountId: string) => {
+      if (!eco) return;
+      setLoggingInId(accountId);
+      try {
+        await eco.openAIAccountsStartLogin(accountId);
+      } finally {
+        setLoggingInId(null);
+      }
+    },
+    [eco],
+  );
 
   const handleSetActive = useCallback(
     async (accountId: string) => {
@@ -222,7 +323,10 @@ export function OpenAIAccountsPanel() {
     if (!eco || !manualAuthId || !manualAuthContent.trim()) return;
     setBusy(true);
     try {
-      await eco.openAIAccountsSetAuthJson(manualAuthId, manualAuthContent.trim());
+      await eco.openAIAccountsSetAuthJson(
+        manualAuthId,
+        manualAuthContent.trim(),
+      );
       setManualAuthId(null);
       setManualAuthContent("");
       await refresh();
@@ -231,229 +335,414 @@ export function OpenAIAccountsPanel() {
     }
   }, [eco, manualAuthId, manualAuthContent, refresh]);
 
+  const loggedInCount = accounts.filter((account) => account.isLoggedIn).length;
+  const activeAccount = accounts.find(
+    (account) => account.id === activeAccountId,
+  );
+
   return (
-    <section className="mcp-list-section">
-      <div className="mcp-list-toolbar">
-        <span className="mcp-list-toolbar-label">{t("settings.openaiAccounts.title")}</span>
-        <div style={{ display: "flex", gap: 8 }}>
+    <section className="codex-accounts-panel providers-list-section">
+      <div className="codex-accounts-hero">
+        <div className="codex-accounts-heading">
+          <h2>Codex 账号</h2>
+          <p>
+            <ShieldCheck size={14} />
+            Codex 专用 OAuth 登录，账号仅用于 Codex Agent。
+          </p>
+        </div>
+        <button
+          type="button"
+          className="settings-primary-button"
+          disabled={busy}
+          onClick={() => {
+            setModalEditId(null);
+            setModalName(
+              `Codex 账号 ${accounts.length + 1}`,
+            );
+            setModalProxy("");
+            setModalAuthJson("");
+            setModalMode("login");
+            setModalOpen(true);
+          }}
+        >
+          <Plus size={15} />
+          {t("settings.openaiAccounts.addAccount")}
+        </button>
+      </div>
+
+      <div className="codex-accounts-toolbar">
+        <span>
+          {accounts.length} 个账号
+          <span className="codex-toolbar-divider">·</span>
+          {loggedInCount} 个已登录
+        </span>
+        <div className="codex-toolbar-links">
+          {activeAccount ? (
+            <span className="codex-active-summary">
+              <i />
+              当前使用：{activeAccount.name}
+            </span>
+          ) : (
+            <span>尚未选择当前账号</span>
+          )}
           <button
             type="button"
-            className="mcp-icon-button"
+            className="chatgpt-inline-link"
             onClick={() => void refreshQuotas()}
             disabled={quotaLoading || accounts.length === 0}
-            title={t("settings.openaiAccounts.refreshQuota")}
           >
-            <RefreshCw size={16} className={quotaLoading ? "spin" : undefined} />
-          </button>
-          <button type="button" className="mcp-add-button" disabled={busy} onClick={() => { setModalEditId(null); setModalOpen(true); }}>
-            <Plus size={16} />
-            {t("settings.openaiAccounts.addAccount")}
+            <RefreshCw
+              size={13}
+              className={quotaLoading ? "mcp-spin" : undefined}
+            />
+            {quotaLoading
+              ? "刷新中…"
+              : t("settings.openaiAccounts.refreshQuota")}
           </button>
         </div>
       </div>
 
-      {/* Search */}
-      {accounts.length > 1 && (
-        <div className="mcp-field" style={{ marginBottom: 12 }}>
-          <div className="search-input-wrapper">
-            <Search size={14} className="search-input-icon" />
-            <input
-              className="mcp-field-input search-input"
-              type="text"
-              value={searchQuery}
-              placeholder={t("settings.openaiAccounts.searchPlaceholder")}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button type="button" className="search-input-clear" onClick={() => setSearchQuery("")}>
-                <X size={12} />
-              </button>
-            )}
-          </div>
+      {accounts.length > 1 ? (
+        <div className="codex-accounts-search">
+          <Search size={14} className="search-input-icon" />
+          <input
+            className="mcp-field-input search-input"
+            type="text"
+            value={searchQuery}
+            placeholder={t("settings.openaiAccounts.searchPlaceholder")}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              className="search-input-clear"
+              aria-label="清除搜索"
+              onClick={() => setSearchQuery("")}
+            >
+              <X size={12} />
+            </button>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
       {filteredAccounts.length === 0 ? (
-        <p className="mcp-list-empty">
-          {searchQuery
-            ? t("settings.openaiAccounts.noMatch")
-            : t("settings.openaiAccounts.noAccounts")}
-        </p>
+        <div className="codex-empty-state">
+          {searchQuery ? (
+            <>
+              <Search size={24} />
+              <strong>{t("settings.openaiAccounts.noMatch")}</strong>
+            </>
+          ) : (
+            <>
+              <UserRound size={24} />
+              <strong>{t("settings.openaiAccounts.noAccounts")}</strong>
+              <p>添加并登录后，Codex Agent 才能使用该账号。</p>
+              <button
+                type="button"
+                className="settings-primary-button"
+                disabled={busy}
+                onClick={() => {
+                  setModalEditId(null);
+                  setModalName("Codex 账号 1");
+                  setModalProxy("");
+                  setModalAuthJson("");
+                  setModalMode("login");
+                  setModalOpen(true);
+                }}
+              >
+                <Plus size={15} />
+                {t("settings.openaiAccounts.addAccount")}
+              </button>
+            </>
+          )}
+        </div>
       ) : (
-        <ul className="mcp-server-list">
+        <div className="codex-account-list">
           {filteredAccounts.map((account) => {
             const accountQuota = quotas[account.id];
             const primaryWindow = accountQuota?.rateLimit.primaryWindow;
+            const isActive = activeAccountId === account.id;
+            const status = !account.isLoggedIn
+              ? account.authState === "expired"
+                ? "登录已过期"
+                : "需要登录"
+              : isActive
+                ? "当前使用"
+                : "已登录";
+            const statusTone = !account.isLoggedIn
+              ? "danger"
+              : isActive
+                ? "ready"
+                : "muted";
+            const email = accountQuota?.email;
             return (
-            <li
-              key={account.id}
-              className={`mcp-server-row mcp-server-row-grid openai-account-row ${activeAccountId === account.id ? "active" : ""}`}
-            >
-              <span className="mcp-server-name">
-                {account.name}
-                {activeAccountId === account.id && (
-                  <span className="mcp-server-badge">{t("settings.openaiAccounts.active")}</span>
-                )}
-              </span>
-              <span className="mcp-server-meta account-quota-meta">
-                {quotaLoadingId === account.id ? (
-                  <Loader2 size={14} className="mcp-spin" style={{ color: "var(--text-muted)" }} />
-                ) : accountQuota ? (
-                  <>
-                    <span className="account-quota-plan">{accountQuota.planType}</span>
-                    {primaryWindow && (
-                      <span className={accountQuota.rateLimit.limitReached ? "account-quota-limited" : "account-quota-ok"}>
-                        {Math.round(primaryWindow.usedPercent)}%
-                      </span>
-                    )}
-                    {primaryWindow && primaryWindow.resetAfterSeconds > 0 && (
-                      <span className="account-quota-reset">
-                        {formatResetTime(primaryWindow)}
-                      </span>
-                    )}
-                    {accountQuota.resetCreditsAvailable > 0 && (
-                      <span className="account-quota-credits">
-                        {accountQuota.resetCreditsAvailable}x
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <span className="account-quota-none">
-                    {quotaErrors[account.id]
-                      ? t("settings.openaiAccounts.quotaFailed")
-                      : account.authState === "expired"
-                        ? t("settings.openaiAccounts.expired")
-                        : account.isLoggedIn
-                          ? "-"
-                          : t("settings.openaiAccounts.notLoggedIn")}
+              <article
+                key={account.id}
+                className={`codex-account-card ${isActive ? "is-active" : ""}`}
+              >
+                <div className="codex-account-card-main">
+                  <div className="codex-account-avatar">
+                    <img src="./provider-icons/openai.svg" alt="Codex" />
+                  </div>
+                  <div className="codex-account-identity">
+                    <strong title={account.name}>{account.name}</strong>
+                    <span title={email}>
+                      {email ||
+                        (account.isLoggedIn
+                          ? "Codex OAuth 已登录"
+                          : "尚未登录")}
+                    </span>
+                  </div>
+                  <span className={`codex-status-badge is-${statusTone}`}>
+                    <i />
+                    {status}
                   </span>
-                )}
-              </span>
-              <div className="mcp-server-actions">
-                {activeAccountId === account.id ? (
-                  <span className="account-active-dot" title={t("settings.openaiAccounts.active")} />
-                ) : (
+                  <div className="codex-account-actions">
+                    {isActive ? (
+                      <span className="codex-current-label">
+                        <Check size={14} />
+                        当前账号
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="codex-action-primary"
+                        disabled={busy || !account.isLoggedIn}
+                        onClick={() => void handleSetActive(account.id)}
+                      >
+                        <Check size={14} />
+                        设为当前
+                      </button>
+                    )}
+                    {!account.isLoggedIn ? (
+                      <button
+                        type="button"
+                        className="codex-action-secondary"
+                        disabled={busy || loggingInId !== null}
+                        onClick={() => void handleLogin(account.id)}
+                      >
+                        <LogIn size={14} />
+                        登录
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      aria-label={`${account.name} 更多操作`}
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpenId === account.id}
+                      disabled={busy}
+                      onClick={(event) => {
+                        if (menuOpenId === account.id) {
+                          setMenuOpenId(null);
+                          return;
+                        }
+                        menuTriggerRef.current = event.currentTarget;
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
+                        setMenuPos({
+                          top: Math.max(
+                            8,
+                            Math.min(rect.bottom + 4, window.innerHeight - 220),
+                          ),
+                          left: Math.max(
+                            8,
+                            Math.min(rect.right - 180, window.innerWidth - 188),
+                          ),
+                        });
+                        setMenuOpenId(account.id);
+                      }}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="codex-account-meta">
                   <button
                     type="button"
-                    className="mcp-icon-button"
-                    onClick={() => void handleSetActive(account.id)}
-                    disabled={busy || !account.isLoggedIn}
-                    title={t("settings.openaiAccounts.activate")}
+                    className="codex-proxy-link"
+                    disabled={busy}
+                    onClick={() => {
+                      setModalEditId(account.id);
+                      setModalName(account.name);
+                      setModalProxy(account.proxyUrl ?? "");
+                      setModalAuthJson("");
+                      setModalMode("login");
+                      setModalOpen(true);
+                    }}
                   >
-                    <Check size={16} />
+                    <Globe2 size={13} />
+                    {account.proxyUrl ? "独立代理" : "全局代理"}
+                    <span>配置</span>
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="mcp-icon-button"
-                    onClick={(event) => {
-                    if (menuOpenId === account.id) {
-                      setMenuOpenId(null);
-                    } else {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setMenuPos({ top: rect.bottom + 4, left: rect.right - 160 });
-                      setMenuOpenId(account.id);
-                    }
-                  }}
-                >
-                  <MoreHorizontal size={16} />
-                </button>
-                {menuOpenId === account.id &&
-                  createPortal(
-                    <div
-                      className="account-action-menu"
-                      style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
-                      onMouseLeave={() => setMenuOpenId(null)}
-                    >
-                    <button
-                      type="button"
-                      className="account-action-item"
-                      onClick={async () => {
-                        setMenuOpenId(null);
-                        const cached = quotas[account.id];
-                        if (cached && Date.now() - cached.fetchedAt < 30000) return;
-                        setQuotaLoadingId(account.id);
-                        try {
-                          if (!eco) return;
-                          const quota = await eco.openAIAccountsQueryQuota(account.id);
-                          if (quota) {
-                            setQuotas((prev) => ({ ...prev, [account.id]: quota }));
-                            setQuotaErrors((prev) => {
-                              const next = { ...prev };
-                              delete next[account.id];
-                              return next;
-                            });
+                  <span>
+                    {account.lastLogin
+                      ? `最近登录 ${new Date(account.lastLogin).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                      : "尚未登录"}
+                  </span>
+                  <span className="codex-quota-summary">
+                    {quotaLoadingId === account.id ? (
+                      <Loader2 size={13} className="mcp-spin" />
+                    ) : accountQuota ? (
+                      <>
+                        <b>{accountQuota.planType}</b>
+                        {primaryWindow ? (
+                          <em
+                            className={
+                              accountQuota.rateLimit.limitReached
+                                ? "is-limited"
+                                : "is-ok"
+                            }
+                          >
+                            {Math.round(primaryWindow.usedPercent)}% 已使用
+                          </em>
+                        ) : null}
+                        {primaryWindow &&
+                        primaryWindow.resetAfterSeconds > 0 ? (
+                          <span>{formatResetTime(primaryWindow)} 后重置</span>
+                        ) : null}
+                        {accountQuota.resetCreditsAvailable > 0 ? (
+                          <span>
+                            {accountQuota.resetCreditsAvailable} 次重置
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span
+                        className={
+                          quotaErrors[account.id] ? "is-error" : undefined
+                        }
+                      >
+                        {quotaErrors[account.id]
+                          ? t("settings.openaiAccounts.quotaFailed")
+                          : account.isLoggedIn
+                            ? "额度未获取"
+                            : t("settings.openaiAccounts.notLoggedIn")}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {menuOpenId === account.id
+                  ? createPortal(
+                      <div
+                        ref={menuRef}
+                        className="account-action-menu codex-account-action-menu"
+                        role="menu"
+                        aria-label="账号操作"
+                        style={{
+                          position: "fixed",
+                          top: menuPos.top,
+                          left: menuPos.left,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="account-action-item"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            void handleLogin(account.id);
+                          }}
+                          disabled={busy || loggingInId !== null}
+                        >
+                          <LogIn size={14} />
+                          {account.isLoggedIn
+                            ? "重新登录"
+                            : t("settings.openaiAccounts.login")}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="account-action-item"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            setModalEditId(account.id);
+                            setModalName(account.name);
+                            setModalProxy(account.proxyUrl ?? "");
+                            setModalAuthJson("");
+                            setModalMode("login");
+                            setModalOpen(true);
+                          }}
+                          disabled={busy}
+                        >
+                          <Pencil size={14} />
+                          {t("common.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="account-action-item"
+                          onClick={async () => {
+                            setMenuOpenId(null);
+                            if (!eco) return;
+                            setQuotaLoadingId(account.id);
+                            try {
+                              const quota = await eco.openAIAccountsQueryQuota(
+                                account.id,
+                              );
+                              if (quota) {
+                                setQuotas((prev) => ({
+                                  ...prev,
+                                  [account.id]: quota,
+                                }));
+                                setQuotaErrors((prev) => {
+                                  const next = { ...prev };
+                                  delete next[account.id];
+                                  return next;
+                                });
+                              }
+                            } catch {
+                              setQuotaErrors((prev) => ({
+                                ...prev,
+                                [account.id]: true,
+                              }));
+                            } finally {
+                              setQuotaLoadingId(null);
+                            }
+                          }}
+                          disabled={
+                            !account.isLoggedIn || quotaLoadingId === account.id
                           }
-                        } catch {
-                          setQuotas((prev) => {
-                            const next = { ...prev };
-                            delete next[account.id];
-                            return next;
-                          });
-                          setQuotaErrors((prev) => ({ ...prev, [account.id]: true }));
-                        }
-                        finally { setQuotaLoadingId(null); }
-                      }}
-                      disabled={!account.isLoggedIn || quotaLoadingId === account.id}
-                    >
-                      {quotaLoadingId === account.id ? <Loader2 size={14} className="mcp-spin" /> : <RefreshCw size={14} />}
-                      {t("settings.openaiAccounts.refreshQuota")}
-                    </button>
-                    <button
-                      type="button"
-                      className="account-action-item"
-                      onClick={() => {
-                        setMenuOpenId(null);
-                        void handleLogin(account.id);
-                      }}
-                      disabled={busy || loggingInId !== null}
-                    >
-                      <LogIn size={14} />
-                      {t("settings.openaiAccounts.login")}
-                    </button>
-                    <button
-                      type="button"
-                      className="account-action-item"
-                      onClick={async () => {
-                        setMenuOpenId(null);
-                        setModalEditId(account.id);
-                        setModalName(account.name);
-                        setModalProxy(account.proxyUrl ?? "");
-                        setModalAuthJson("");
-                        setModalMode("login");
-                        setModalOpen(true);
-                        if (!eco) return;
-                        const authContent = await eco.openAIAccountsGetAuthJson(account.id);
-                        if (authContent) {
-                          setModalAuthJson(authContent);
-                          setModalMode("manual");
-                        }
-                      }}
-                      disabled={busy}
-                    >
-                      <Pencil size={14} />
-                      {t("common.edit")}
-                    </button>
-                    <button
-                      type="button"
-                      className="account-action-item danger"
-                      onClick={() => {
-                        setMenuOpenId(null);
-                        void handleDelete(account.id);
-                      }}
-                      disabled={busy}
-                    >
-                      <Trash2 size={14} />
-                      {t("common.delete")}
-                    </button>
-                  </div>,
-                  document.body,
-                )}
-              </div>
-            </li>
+                        >
+                          <RefreshCw size={14} />
+                          {t("settings.openaiAccounts.refreshQuota")}
+                        </button>
+                        {!isActive && account.isLoggedIn ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="account-action-item"
+                            onClick={() => {
+                              setMenuOpenId(null);
+                              void handleSetActive(account.id);
+                            }}
+                            disabled={busy}
+                          >
+                            <Check size={14} />
+                            设为当前
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="account-action-item danger"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            void handleDelete(account.id);
+                          }}
+                          disabled={busy}
+                        >
+                          <Trash2 size={14} />
+                          {t("common.delete")}
+                        </button>
+                      </div>,
+                      document.body,
+                    )
+                  : null}
+              </article>
             );
           })}
-        </ul>
+        </div>
       )}
 
       {/* Manual auth inline editor */}
@@ -502,7 +791,11 @@ export function OpenAIAccountsPanel() {
             aria-modal="true"
           >
             <header className="settings-modal-header">
-              <h2 className="settings-modal-title">{modalEditId ? t("settings.openaiAccounts.editAccount") : t("settings.openaiAccounts.addAccount")}</h2>
+              <h2 className="settings-modal-title">
+                {modalEditId
+                  ? t("settings.openaiAccounts.editAccount")
+                  : t("settings.openaiAccounts.addAccount")}
+              </h2>
               <div className="settings-modal-header-actions">
                 <button
                   type="button"
@@ -517,7 +810,9 @@ export function OpenAIAccountsPanel() {
 
             <div className="settings-modal-body openai-account-modal-body">
               <label className="mcp-field">
-                <span className="mcp-field-label">{t("settings.openaiAccounts.name")}</span>
+                <span className="mcp-field-label">
+                  {t("settings.openaiAccounts.name")}
+                </span>
                 <input
                   className="mcp-field-input"
                   type="text"
@@ -530,7 +825,9 @@ export function OpenAIAccountsPanel() {
 
               {/* Proxy - always visible */}
               <label className="mcp-field modal-proxy-field">
-                <span className="mcp-field-label">{t("settings.openaiAccounts.proxy")}</span>
+                <span className="mcp-field-label">
+                  {t("settings.openaiAccounts.proxy")}
+                </span>
                 <input
                   className="mcp-field-input"
                   type="text"
@@ -544,7 +841,11 @@ export function OpenAIAccountsPanel() {
               <div className="modal-mode-toggle">
                 <button
                   type="button"
-                  className={modalMode === "login" ? "modal-mode-btn active" : "modal-mode-btn"}
+                  className={
+                    modalMode === "login"
+                      ? "modal-mode-btn active"
+                      : "modal-mode-btn"
+                  }
                   onClick={() => setModalMode("login")}
                 >
                   <LogIn size={14} />
@@ -552,7 +853,11 @@ export function OpenAIAccountsPanel() {
                 </button>
                 <button
                   type="button"
-                  className={modalMode === "manual" ? "modal-mode-btn active" : "modal-mode-btn"}
+                  className={
+                    modalMode === "manual"
+                      ? "modal-mode-btn active"
+                      : "modal-mode-btn"
+                  }
                   onClick={() => setModalMode("manual")}
                 >
                   <FileUp size={14} />
@@ -575,7 +880,12 @@ export function OpenAIAccountsPanel() {
             </div>
 
             <footer className="settings-modal-footer settings-modal-footer-split">
-              <button type="button" className="settings-modal-cancel" onClick={() => setModalOpen(false)} disabled={busy}>
+              <button
+                type="button"
+                className="settings-modal-cancel"
+                onClick={() => setModalOpen(false)}
+                disabled={busy}
+              >
                 {t("common.cancel")}
               </button>
               <div className="settings-modal-footer-actions">
@@ -584,12 +894,16 @@ export function OpenAIAccountsPanel() {
                   className="plan-button primary"
                   onClick={() => void handleCreate()}
                   disabled={
-                    busy || !modalName.trim() || (modalMode === "manual" && !modalAuthJson.trim())
+                    busy ||
+                    !modalName.trim() ||
+                    (modalMode === "manual" && !modalAuthJson.trim())
                   }
                 >
                   {busy ? <Loader2 size={14} className="mcp-spin" /> : null}
                   {modalMode === "login"
-                    ? (modalEditId ? t("common.save") : t("settings.openaiAccounts.createAndLogin"))
+                    ? modalEditId
+                      ? t("common.save")
+                      : t("settings.openaiAccounts.createAndLogin")
                     : t("settings.openaiAccounts.createWithAuth")}
                 </button>
               </div>

@@ -194,6 +194,44 @@ test.skipIf(!sqliteAvailable)("candidate model manual pricing preserves zero val
   expect(store.listCandidateModels(provider.id)[0]?.manualSpec).toEqual(saved.manualSpec);
 });
 
+test.skipIf(!sqliteAvailable)("upstream model sync adds candidates without overwriting manual metadata", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-candidate-sync-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+  const provider = store.saveProvider({
+    id: "eco-coding-chatgpt",
+    name: "ChatGPT OAuth",
+    baseUrl: "https://api.openai.com",
+    apiKey: "",
+    authMethod: "chatgpt_subscription",
+    defaultModel: "gpt-5",
+    enabled: true,
+  });
+
+  const first = store.syncCandidateModels(provider.id, [
+    { id: "gpt-5.6-luna", displayName: "GPT-5.6 Luna" },
+  ]);
+  expect(first.changed).toBe(true);
+  expect(first.models[0]?.displayName).toBe("GPT-5.6 Luna");
+
+  store.saveCandidateModel({
+    id: first.models[0]!.id,
+    providerId: provider.id,
+    modelId: "gpt-5.6-luna",
+    displayName: "我的模型",
+    manualSpec: { contextTokens: 12345 },
+  });
+  const second = store.syncCandidateModels(provider.id, [
+    { id: "gpt-5.6-luna", displayName: "官方名称" },
+    { id: "gpt-5.6-mini", displayName: "GPT-5.6 Mini" },
+  ]);
+  expect(second.changed).toBe(true);
+  expect(second.models).toHaveLength(2);
+  expect(second.models.find((model) => model.modelId === "gpt-5.6-luna")).toMatchObject({
+    displayName: "我的模型",
+    manualSpec: { contextTokens: 12345 },
+  });
+});
+
 test.skipIf(!sqliteAvailable)("deletes the only unreferenced provider and its candidate models", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-only-"));
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));

@@ -31,6 +31,18 @@ export function extractUpstreamErrorMessage(bodyText: string): string {
   return trimmed.length > 400 ? `${trimmed.slice(0, 397)}…` : trimmed;
 }
 
+/** Extract a machine-readable upstream error code when the body is JSON. */
+export function extractUpstreamErrorCode(bodyText: string): string | undefined {
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: { code?: unknown } };
+    return typeof parsed.error?.code === "string" && parsed.error.code.trim()
+      ? parsed.error.code.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Attribute upstream failures to provider/model/url so Eco UI does not look like an internal fault. */
 export function formatUpstreamHttpError(input: {
   route: ResolvedProviderRoute;
@@ -55,6 +67,9 @@ export function upstreamErrorResponse(input: {
   bodyText: string;
 }): Response {
   const message = formatUpstreamHttpError(input);
+  const errorCode = extractUpstreamErrorCode(input.bodyText);
+  const headers = new Headers({ "content-type": "application/json" });
+  if (errorCode) headers.set("x-eco-upstream-error-code", errorCode);
   return Response.json(
     {
       error: {
@@ -66,6 +81,9 @@ export function upstreamErrorResponse(input: {
         status: input.status,
       },
     },
-    { status: input.status >= 400 && input.status < 600 ? input.status : 502 },
+    {
+      status: input.status >= 400 && input.status < 600 ? input.status : 502,
+      headers,
+    },
   );
 }

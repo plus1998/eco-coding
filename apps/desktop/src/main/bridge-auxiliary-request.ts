@@ -69,11 +69,16 @@ export async function postAuxiliaryBridgeRequest(
   }
 
   const requestUrl = `${bridgeBaseUrl}/v1/messages`;
+  // ChatGPT 订阅的 Responses API 只接受流式请求。辅助请求虽然对产品层
+  // 表现为一次性调用，但 Bridge 仍然可以消费 Anthropic SSE 并聚合文本。
+  // 普通提供商继续沿用非流式请求，避免改变既有行为。
+  const requiresChatGptSubscriptionStream =
+    input.route.provider.authMethod === "chatgpt_subscription";
 
   let body: Record<string, unknown> = {
     ...input.anthropicBody,
     model: input.route.modelId,
-    stream: false,
+    stream: requiresChatGptSubscriptionStream,
   };
   applyRouteMaxOutputTokens(body, input.route.maxOutputTokens);
   body = applyProxyCchToAnthropicMessagesBody(body);

@@ -41,6 +41,8 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
     baseUrl: trimTrailingSlash(provider.baseUrl),
     version,
     models,
+    ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
+    ...(provider.credentialPoolId?.trim() ? { credentialPoolId: provider.credentialPoolId.trim() } : {}),
     ...(requestPath ? { requestPath } : {}),
     ...(upstreamProxyUrl ? { upstreamProxyUrl } : {}),
     ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),

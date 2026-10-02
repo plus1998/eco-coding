@@ -1,12 +1,15 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { LazyOpenAIAccountsPanel } from "./lazy-app-panels";
+import { ChatGPTSubscriptionAccountsPanel } from "./ChatGPTSubscriptionAccountsPanel";
 import {
   ChevronDown,
   ChevronRight,
   Eraser,
   Globe2,
   LinkIcon,
+  Network,
   Plus,
+  Search,
   Settings2,
   Trash2,
   X,
@@ -74,7 +77,7 @@ import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
-export type ModelsSettingsTab = "subagents" | "providers" | "compositionParts" | "openaiAccounts";
+export type ModelsSettingsTab = "subagents" | "providers" | "compositionParts" | "openaiAccounts" | "chatgptAccounts";
 
 type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
 
@@ -118,6 +121,53 @@ interface ModelsCacheEntry {
   error?: string | undefined;
 }
 
+function providerProtocolPresentation(provider: Pick<ProviderConfigView, "apiCompat">) {
+  if (provider.apiCompat === "anthropic") {
+    return { label: "Anthropic API", iconSrc: "./provider-icons/claude.ico" };
+  }
+  if (provider.apiCompat === "openai_responses") {
+    return { label: "OpenAI Responses API", iconSrc: "./provider-icons/openai.svg" };
+  }
+  if (provider.apiCompat === "openai_chat_completions") {
+    return { label: "OpenAI Chat Completions API", iconSrc: "./provider-icons/openai.svg" };
+  }
+  return { label: "自定义 API", iconSrc: undefined };
+}
+
+const OFFICIAL_PROVIDER_HOSTS: Record<string, { label: string; iconSrc: string }> = {
+  "api.openai.com": { label: "OpenAI", iconSrc: "./provider-icons/openai.svg" },
+  "api.anthropic.com": { label: "Anthropic", iconSrc: "./provider-icons/claude.ico" },
+  "api.deepseek.com": { label: "DeepSeek", iconSrc: "./provider-icons/deepseek.ico" },
+  "api.minimax.io": { label: "MiniMax", iconSrc: "./provider-icons/minimax.ico" },
+  "api.moonshot.cn": { label: "Kimi", iconSrc: "./provider-icons/kimi.ico" },
+  "dashscope.aliyuncs.com": { label: "百炼", iconSrc: "./provider-icons/bailian.png" },
+  "tokenhub.tencentmaas.com": { label: "Tencent Hunyuan", iconSrc: "./provider-icons/tencent-hunyuan.png" },
+  "api.xiaomimimo.com": { label: "Xiaomi MiMo", iconSrc: "./provider-icons/xiaomi-mimo.ico" },
+  "opencode.ai": { label: "OpenCode Zen", iconSrc: "./provider-icons/opencode-zen.ico" },
+};
+
+function providerBrandPresentation(provider: Pick<ProviderConfigView, "id" | "baseUrl" | "apiCompat">) {
+  let hostname = "";
+  try {
+    hostname = new URL(provider.baseUrl).hostname.toLowerCase();
+  } catch {
+    // Keep protocol fallback for historical or incomplete URLs.
+  }
+  const official = OFFICIAL_PROVIDER_HOSTS[hostname];
+  if (official) return official;
+  const preset = getProviderPresetById(provider.id);
+  if (preset) {
+    try {
+      if (new URL(preset.baseUrl).hostname.toLowerCase() === hostname) {
+        return { label: preset.name, iconSrc: preset.iconSrc };
+      }
+    } catch {
+      // Keep protocol fallback for an invalid preset URL.
+    }
+  }
+  return providerProtocolPresentation(provider);
+}
+
 export function ModelsSettingsPanel({
   settings,
   mcpServers = [],
@@ -144,7 +194,8 @@ export function ModelsSettingsPanel({
   const { t } = useTranslation();
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string; icon?: string }> = [
     { id: "providers", label: t("settings.models.providers") },
-    { id: "openaiAccounts" as ModelsSettingsTab, label: t("settings.openaiAccounts.title"), icon: "./provider-icons/openai.svg" },
+    { id: "openaiAccounts" as ModelsSettingsTab, label: "Codex 账号", icon: "./provider-icons/openai.svg" },
+    { id: "chatgptAccounts", label: "ChatGPT 账号", icon: "./provider-icons/openai.svg" },
   ];
   const runtimeConfigTabItems: Array<{ id: RuntimeConfigTab; label: string }> = [
     { id: "defaults", label: t("settings.models.runtimeConfigTab.defaults") },
@@ -171,6 +222,7 @@ export function ModelsSettingsPanel({
     PendingMainAgentConfigCreateSeed | undefined
   >();
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
+  const [providerSearchQuery, setProviderSearchQuery] = useState("");
   const [oauthLoginStatus, setOauthLoginStatus] = useState<{ isLoggedIn: boolean; message: string }>({
     isLoggedIn: false,
     message: "",
@@ -395,6 +447,7 @@ export function ModelsSettingsPanel({
         ...(target.version !== undefined && target.version !== "" ? { version: target.version } : {}),
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
         ...(target.id && { providerId: target.id }),
+        ...(target.authMethod && { authMethod: target.authMethod }),
         ...(target.apiKey && { apiKey: target.apiKey }),
       };
       const result = await window.eco.listProviderModels(request);
@@ -672,7 +725,24 @@ export function ModelsSettingsPanel({
     }
   }
 
-  const providerOptions = useMemo(() => settings.providers.filter((p) => p.id !== "openai"), [settings.providers]);
+  // ChatGPT plan connections are managed from the account page, just like
+  // Codex's auth.json. The provider row remains an internal routing object so
+  // agents can select its models, but it must not look like a user-created
+  // provider that can be edited, deleted, or configured with a base URL.
+  const providerOptions = useMemo(
+    () => settings.providers.filter((p) => p.id !== "openai" && p.id !== "eco-coding-chatgpt"),
+    [settings.providers],
+  );
+  const filteredProviderOptions = useMemo(() => {
+    const query = providerSearchQuery.trim().toLowerCase();
+    if (!query) return providerOptions;
+    return providerOptions.filter((provider) =>
+      [provider.name, provider.baseUrl, provider.defaultModel, provider.authMethod ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [providerOptions, providerSearchQuery]);
   return (
     <>
       {providerTestMessage && (
@@ -735,48 +805,73 @@ export function ModelsSettingsPanel({
       )}
 
       {activeTab === "providers" && (
-        <section className="mcp-list-section providers-list-section">
-          <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">{t("settings.models.providers")}</span>
-            <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
-              <Plus size={16} />
+        <section className="provider-list-panel providers-list-section">
+          <div className="provider-list-hero">
+            <div className="provider-list-heading">
+              <h2>{t("settings.models.providers")}</h2>
+              <p>管理 API 服务商、连接方式和默认模型。</p>
+            </div>
+            <button type="button" className="settings-primary-button" disabled={busy} onClick={openCreateProvider}>
+              <Plus size={15} />
               {t("settings.models.addProvider")}
             </button>
           </div>
 
+          <div className="provider-list-toolbar">
+            <span>{providerOptions.length} 个服务商</span>
+            <div className="provider-list-search">
+              <Search size={14} className="provider-list-search-icon" />
+              <input
+                type="search"
+                value={providerSearchQuery}
+                placeholder="搜索服务商、地址或模型"
+                aria-label="搜索服务商"
+                onChange={(event) => setProviderSearchQuery(event.target.value)}
+              />
+              {providerSearchQuery ? <button type="button" aria-label="清除搜索" onClick={() => setProviderSearchQuery("")}><X size={13} /></button> : null}
+            </div>
+          </div>
+
           {providerOptions.length === 0 ? (
-            <p className="mcp-list-empty">{t("settings.models.noProviders")}</p>
+            <div className="provider-list-empty"><strong>{t("settings.models.noProviders")}</strong><span>添加服务商后，可以在 Agent 设置中选择对应模型。</span></div>
+          ) : filteredProviderOptions.length === 0 ? (
+            <div className="provider-list-empty"><Search size={22} /><strong>没有匹配的服务商</strong><span>试试搜索名称、地址或默认模型。</span></div>
           ) : (
-            <ul className="mcp-server-list">
-              {providerOptions.map((provider) => (
-                <li key={provider.id} className="mcp-server-row">
-                  <span className="mcp-server-name">{provider.name}</span>
-                  <div className="mcp-server-actions">
-                    <button
-                      type="button"
-                      className="mcp-icon-button"
-                      onClick={() => openEditProvider(provider)}
-                      aria-label={t("settings.models.configureProvider", { name: provider.name })}
-                      disabled={busy}
-                    >
-                      <Settings2 size={18} />
-                    </button>
-                    <label
-                      className="mcp-toggle mcp-toggle-sm"
-                      title={provider.enabled ? t("common.enabled") : t("common.disabled")}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={provider.enabled}
+            <div className="provider-card-list">
+              {filteredProviderOptions.map((provider) => {
+                const brand = providerBrandPresentation(provider);
+                const protocol = providerProtocolPresentation(provider);
+                const authLabel = provider.authMethod === "oauth" ? "OAuth" : provider.authMethod === "auth_json" ? "Codex Auth" : provider.authMethod === "chatgpt_subscription" ? "ChatGPT 订阅" : "API Key";
+                return (
+                  <article key={provider.id} className={`provider-card ${provider.enabled ? "is-enabled" : "is-disabled"}`}>
+                    <div className="provider-card-main">
+                      <div className="provider-card-avatar">
+                        {brand.iconSrc ? <img src={brand.iconSrc} alt={brand.label} title={brand.label} /> : <Globe2 size={18} aria-label={brand.label} />}
+                      </div>
+                      <div className="provider-card-identity">
+                        <strong title={provider.name}>{provider.name}</strong>
+                        <span title={provider.baseUrl}>{authLabel} · {provider.baseUrl}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={`provider-status-badge ${provider.enabled ? "is-enabled" : "is-disabled"}`}
+                        onClick={() => void toggleProvider(provider)}
                         disabled={busy}
-                        onChange={() => void toggleProvider(provider)}
-                      />
-                      <span className="mcp-toggle-track" aria-hidden />
-                    </label>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                        aria-pressed={provider.enabled}
+                        title={provider.enabled ? "点击停用" : "点击启用"}
+                      ><i />{provider.enabled ? "已启用" : "已停用"}</button>
+                      <div className="provider-card-actions">
+                        <button type="button" className="provider-config-button" onClick={() => openEditProvider(provider)} aria-label={t("settings.models.configureProvider", { name: provider.name })} disabled={busy}><Settings2 size={14} />配置</button>
+                      </div>
+                    </div>
+                    <div className="provider-card-meta">
+                      <span>默认模型：{provider.defaultModel || "未设置"}</span>
+                      <span className="provider-card-protocol">端口类型：{protocol.label}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </section>
       )}
@@ -784,6 +879,9 @@ export function ModelsSettingsPanel({
       {activeTab === "openaiAccounts" && (
         <LazyOpenAIAccountsPanel />
       )}
+
+      {activeTab === "chatgptAccounts" && <ChatGPTSubscriptionAccountsPanel />}
+
 
       {activeTab === "compositionParts" && (
         <>
@@ -850,6 +948,11 @@ export function ModelsSettingsPanel({
                     placeholder={t("composer.route.notConfigured")}
                     searchable
                     searchPlaceholder={t("composer.fieldSelect.searchMainAgent")}
+                    renderOptionIcon={(option) =>
+                      option.value === "__chatgpt_subscription__" ? (
+                        <img src="./provider-icons/openai.svg" alt="" />
+                      ) : null
+                    }
                     invalid={
                       Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
                       !settings.mainAgentConfigs.some(
@@ -1128,6 +1231,10 @@ function ProviderEditorModal({
   }, [form.id]);
 
   const selectedPreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
+  // ChatGPT OAuth is a built-in account connection, not a provider preset
+  // users create manually. It is kept in the preset catalogue for migration
+  // and matching existing records, but never offered in the editor.
+  const visiblePresets = MAINSTREAM_PROVIDER_PRESETS.filter((preset) => preset.id !== "chatgpt-subscription");
   const selectedPresetVariants = selectedPreset ? getProviderPresetEndpointVariants(selectedPreset) : [];
   const endpointOptions: EndpointCompatOption[] =
     selectedPreset && selectedPresetVariants.length > 0
@@ -1213,7 +1320,7 @@ function ProviderEditorModal({
               <div className="mcp-field models-provider-preset-field">
                 <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
                 <ProviderPresetTabs
-                  presets={MAINSTREAM_PROVIDER_PRESETS}
+                  presets={visiblePresets}
                   {...(selectedPresetId === null ? {} : { activePresetId: selectedPresetId })}
                   {...(busy === undefined ? {} : { disabled: busy })}
                   onSelectManual={() => setSelectedPresetId(null)}
@@ -1254,7 +1361,11 @@ function ProviderEditorModal({
 
             <section className="provider-form-section">
               <h3 className="provider-form-section-title">{t("settings.models.provider.authMethod")}</h3>
-              <label className="mcp-field">
+              {form.authMethod === "chatgpt_subscription" ? (
+                <p className="mcp-field-hint">
+                  这是系统自动管理的 ChatGPT 账号连接。请在“ChatGPT 账号”页完成登录；这里不填写 API Key。
+                </p>
+              ) : <label className="mcp-field">
                 <span className="models-provider-label-row">
                   <span className="mcp-field-label">{t("settings.models.provider.apiKey")}</span>
                   {activePreset ? (
@@ -1279,53 +1390,60 @@ function ProviderEditorModal({
                 {hasExistingApiKey && !(form.apiKey ?? "").trim() ? (
                   <span className="mcp-field-hint">{t("settings.models.provider.keepKey")}</span>
                 ) : null}
-              </label>
+              </label>}
             </section>
 
             <section className="provider-form-section">
               <h3 className="provider-form-section-title">{t("settings.models.provider.connection")}</h3>
-              <label className="mcp-field">
-                <span className="mcp-field-label">baseURL</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.baseUrl}
-                  placeholder="https://api.deepseek.com"
-                  onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
-                />
-              </label>
-
-              <div className="mcp-field models-provider-endpoint-row">
-                <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
-                <div className="models-provider-endpoint-stack">
-                  <EndpointCompatSelect
-                    options={endpointOptions}
-                    activeApiCompat={apiCompat}
-                    onChange={handleApiCompatChange}
-                    disabled={endpointDisabled}
-                  />
-                  <input
-                    className="mcp-field-input models-provider-request-path-input"
-                    value={form.requestPath ?? ""}
-                    placeholder={requestPathPlaceholderForApiCompat(apiCompat)}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, requestPath: event.target.value }))
-                    }
-                  />
+              {form.authMethod === "chatgpt_subscription" ? (
+                <div className="provider-fixed-connection">
+                  <div><span>官方 Responses API</span><strong>https://api.openai.com/v1/responses</strong></div>
+                  <p>连接地址由系统固定管理。账号代理在 ChatGPT 账号页单独配置。</p>
                 </div>
-              </div>
+              ) : <>
+                <label className="mcp-field">
+                  <span className="mcp-field-label">baseURL</span>
+                  <input
+                    className="mcp-field-input"
+                    value={form.baseUrl}
+                    placeholder="https://api.deepseek.com"
+                    onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
+                  />
+                </label>
 
-              <label className="mcp-field">
-                <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.version ?? "v1"}
-                  placeholder="v1"
-                  disabled={busy}
-                  onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
-                />
-                <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
-              </label>
+                <div className="mcp-field models-provider-endpoint-row">
+                  <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
+                  <div className="models-provider-endpoint-stack">
+                    <EndpointCompatSelect
+                      options={endpointOptions}
+                      activeApiCompat={apiCompat}
+                      onChange={handleApiCompatChange}
+                      disabled={endpointDisabled}
+                    />
+                    <input
+                      className="mcp-field-input models-provider-request-path-input"
+                      value={form.requestPath ?? ""}
+                      placeholder={requestPathPlaceholderForApiCompat(apiCompat)}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, requestPath: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <label className="mcp-field">
+                  <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
+                  <input
+                    className="mcp-field-input"
+                    value={form.version ?? "v1"}
+                    placeholder="v1"
+                    disabled={busy}
+                    onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
+                  />
+                  <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
+                </label>
+              </>}
             </section>
 
             <section className="provider-form-section provider-advanced-section">
@@ -1352,21 +1470,26 @@ function ProviderEditorModal({
                       prefersReducedMotion ? { duration: 0 } : { type: "spring", bounce: 0, duration: 0.34 }
                     }
                   >
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">{t("settings.models.provider.upstreamProxy")}</span>
-                      <input
-                        className="mcp-field-input"
-                        value={form.upstreamProxyUrl ?? ""}
-                        placeholder="socks5://127.0.0.1:7890"
-                        disabled={busy}
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, upstreamProxyUrl: event.target.value }))
-                        }
-                      />
-                      <span className="mcp-field-hint">
-                        {t("settings.models.provider.upstreamProxyHint")}
-                      </span>
-                    </label>
+                    {form.authMethod === "chatgpt_subscription" ? (
+                      <div className="provider-account-proxy-note">
+                        <Network size={15} />
+                        <span>ChatGPT 使用账号级代理。请到 ChatGPT 账号页为每个账号分别设置。</span>
+                      </div>
+                    ) : <label className="mcp-field">
+                        <span className="mcp-field-label">{t("settings.models.provider.upstreamProxy")}</span>
+                        <input
+                          className="mcp-field-input"
+                          value={form.upstreamProxyUrl ?? ""}
+                          placeholder="socks5://127.0.0.1:7890"
+                          disabled={busy}
+                          onChange={(event) =>
+                            setForm((current) => ({ ...current, upstreamProxyUrl: event.target.value }))
+                          }
+                        />
+                        <span className="mcp-field-hint">
+                          {t("settings.models.provider.upstreamProxyHint")}
+                        </span>
+                      </label>}
                     <label className="mcp-field">
                       <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
                       <select
@@ -1501,6 +1624,8 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     apiCompat: provider?.apiCompat ?? "anthropic",
     tokenCountMode: provider?.tokenCountMode ?? "local_heuristic",
     apiKey: "",
+    ...(provider?.authMethod ? { authMethod: provider.authMethod } : {}),
+    ...(provider?.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
     upstreamProxyUrl: provider?.upstreamProxyUrl ?? "",
     defaultModel: provider?.defaultModel ?? "",
     enabled: provider?.enabled ?? true,

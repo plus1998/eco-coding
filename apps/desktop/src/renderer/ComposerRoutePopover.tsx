@@ -435,11 +435,17 @@ function ComposerRouteCompositionControls({
             invalidLabel={mainAgentInvalidLabel}
             searchable
             searchPlaceholder={t("composer.fieldSelect.searchMainAgent")}
+            renderOptionIcon={(option) =>
+              option.value === "__chatgpt_subscription__" ? (
+                <img src="./provider-icons/openai.svg" alt="" />
+              ) : option.value === "__openai_official__" ? (
+                <img src="./agent-icons/codex.ico" alt="" />
+              ) : null
+            }
             onChange={(value) => void onSelectMainAgentConfig(value)}
           >
             {mainAgentConfigs.map((config) => (
               <option key={config.id} value={config.id}>
-                {config.id === "__openai_official__" ? "🟢 " : ""}
                 {config.name} ({config.modelRef.modelId})
               </option>
             ))}

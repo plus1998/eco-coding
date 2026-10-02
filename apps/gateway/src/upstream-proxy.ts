@@ -5,6 +5,11 @@
 
 export const GATEWAY_SUPPORTED_PROXY_PROTOCOLS = ["http:", "https:", "socks5:", "socks:"] as const;
 
+/** Internal request metadata used to select an account-level proxy without
+ * mutating the shared provider proxy table. Symbol metadata is removed before
+ * the request reaches the underlying fetch implementation. */
+export const UPSTREAM_PROXY_URL = Symbol.for("eco.gateway.upstreamProxyUrl");
+
 export function parseUpstreamProxyUrl(raw: string | undefined): string | undefined {
   const trimmed = raw?.trim();
   if (!trimmed) {
@@ -145,7 +150,14 @@ export function createUpstreamFetchController(initialProxyUrl?: string): Upstrea
   }
 
   const controlledFetch: typeof fetch = async (input, init) => {
-    const activeProxy = resolveProxyForInput(input);
+    const requestInit = init as (RequestInit & { [UPSTREAM_PROXY_URL]?: string }) | undefined;
+    const explicitProxy = requestInit?.[UPSTREAM_PROXY_URL];
+    const activeProxy = explicitProxy ? parseUpstreamProxyUrl(explicitProxy) : resolveProxyForInput(input);
+    if (requestInit && UPSTREAM_PROXY_URL in requestInit) {
+      const sanitized = { ...requestInit } as RequestInit & { [UPSTREAM_PROXY_URL]?: string };
+      delete sanitized[UPSTREAM_PROXY_URL];
+      init = sanitized;
+    }
     if (!activeProxy) {
       return fetch(input, init);
     }

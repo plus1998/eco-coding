@@ -69,6 +69,15 @@ export const IPC_CHANNELS = {
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
   modelProviderTest: "model-provider:test",
+  chatGptSubscriptionAccountsList: "chatgpt-subscription:accounts-list",
+  chatGptSubscriptionAccountCreate: "chatgpt-subscription:account-create",
+  chatGptSubscriptionAccountDelete: "chatgpt-subscription:account-delete",
+  chatGptSubscriptionAccountLogin: "chatgpt-subscription:account-login",
+  chatGptSubscriptionAccountAuthorizationUrl: "chatgpt-subscription:account-authorization-url",
+  chatGptSubscriptionAccountSetEnabled: "chatgpt-subscription:account-set-enabled",
+  chatGptSubscriptionAccountResetAvailability: "chatgpt-subscription:account-reset-availability",
+  chatGptSubscriptionAccountSetProxy: "chatgpt-subscription:account-set-proxy",
+  chatGptSubscriptionAccountTest: "chatgpt-subscription:account-test",
   codexOAuthGetStatus: "codex-oauth:get-status",
   codexOAuthStartLogin: "codex-oauth:start-login",
   codexOAuthLogout: "codex-oauth:logout",
@@ -1236,7 +1245,9 @@ export interface ProviderConfigInput {
   /** Explicit count_tokens implementation; never inferred from apiCompat. */
   tokenCountMode?: ProviderTokenCountMode;
   /** Authentication method: API key or OAuth. */
-  authMethod?: "api_key" | "oauth" | "auth_json";
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  /** Local ChatGPT subscription credential pool. Never contains tokens. */
+  credentialPoolId?: string;
   /** Raw auth.json content for manual authentication. */
   authJsonContent?: string;
   apiKey?: string;
@@ -1259,7 +1270,8 @@ export interface ProviderConfigView {
   apiCompat: UpstreamApiCompat;
   tokenCountMode?: ProviderTokenCountMode;
   /** Authentication method for this provider. */
-  authMethod?: "api_key" | "oauth" | "auth_json";
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  credentialPoolId?: string;
   defaultModel: string;
   enabled: boolean;
   hasApiKey: boolean;

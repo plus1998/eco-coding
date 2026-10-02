@@ -640,6 +640,11 @@ function ResourceNodeCandidateModelFields({
             disabled={busy || providers.length === 0}
             showPlaceholder={providers.length === 0}
             placeholder={t("settings.models.addCandidatesFirst")}
+            renderOptionIcon={(option) =>
+              option.value === "eco-coding-chatgpt" ? (
+                <img src="./provider-icons/openai.svg" alt="" />
+              ) : null
+            }
             onChange={onProviderChange}
           >
             {providers.map((provider) => (

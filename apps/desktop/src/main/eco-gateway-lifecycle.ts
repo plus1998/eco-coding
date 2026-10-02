@@ -32,6 +32,8 @@ export interface EcoProviderForGateway {
   /** API path version segment (e.g. `v1`). Empty/missing → `v1`. */
   version?: string;
   apiKey: string;
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  credentialPoolId?: string;
   /** Per-provider upstream proxy; empty/missing = global proxy setting. */
   upstreamProxyUrl?: string;
   apiCompat: UpstreamApiCompat;
@@ -52,6 +54,8 @@ export interface GatewayProviderPayload {
   requestPath?: string;
   version?: string;
   apiKey: string;
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  credentialPoolId?: string;
   upstreamProxyUrl?: string;
   upstreamModelId: string;
   models: string[];
@@ -65,6 +69,12 @@ export interface EcoGatewayLifecycleOptions {
   getUpstreamUserAgent?: () => string | undefined;
   /** Outbound SOCKS/HTTP proxy URL for gateway upstream fetch. */
   getUpstreamProxyUrl?: () => string | undefined;
+  getGatewayCredentialResolver?: () =>
+    | ((input: { provider: GatewayProvider; request?: Request }) => Promise<{ accessToken: string; accountId?: string; upstreamProxyUrl?: string }>)
+    | undefined;
+  getGatewayCredentialReporter?: () =>
+    | ((input: { provider: GatewayProvider; accountId?: string; statusCode: number; errorCode?: string }) => void | Promise<void>)
+    | undefined;
   /** Hard ceiling for gateway modelMaxOutputTokens (default 32K). */
   getGlobalMaxOutputTokens?: () => number;
   gatewayPort?: number;
@@ -149,6 +159,8 @@ export class EcoGatewayLifecycle {
     );
     const upstreamUserAgent = this.options.getUpstreamUserAgent?.()?.trim() || undefined;
     const upstreamProxyUrl = this.options.getUpstreamProxyUrl?.()?.trim() || undefined;
+    const credentialResolver = this.options.getGatewayCredentialResolver?.();
+    const credentialReporter = this.options.getGatewayCredentialReporter?.();
 
     const log = (message: string) => {
       this.options.onStderr?.(`[eco-gateway] ${message}\n`);
@@ -165,6 +177,8 @@ export class EcoGatewayLifecycle {
           providers: gatewayProviders,
           ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
           ...(upstreamProxyUrl ? { upstreamProxyUrl } : {}),
+          ...(credentialResolver ? { resolveCredential: credentialResolver } : {}),
+          ...(credentialReporter ? { reportCredentialResult: credentialReporter } : {}),
         },
         {
           embedded: true,
@@ -183,6 +197,8 @@ export class EcoGatewayLifecycle {
       this.gateway.setProviders(gatewayProviders);
       this.gateway.setUpstreamUserAgent(upstreamUserAgent);
       this.gateway.setUpstreamProxyUrl(upstreamProxyUrl);
+      this.gateway.setCredentialResolver(credentialResolver);
+      this.gateway.setCredentialReporter(credentialReporter);
       log(`providers updated (${gatewayProviders.length})`);
     }
 
@@ -427,6 +443,8 @@ export function buildGatewayProvidersFromEcoProviders(
       ...(requestPath ? { requestPath } : {}),
       version,
       apiKey: provider.apiKey.trim() || "local-unused",
+      ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
+      ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
       ...(provider.upstreamProxyUrl?.trim() ? { upstreamProxyUrl: provider.upstreamProxyUrl.trim() } : {}),
       upstreamModelId: defaultModel,
       models,

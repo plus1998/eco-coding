@@ -1,4 +1,6 @@
 export { CODEX_TURN_METADATA_HEADER, parseCodexTurnMetadataHeader } from "./codex-turn-metadata.js";
+export { reportRouteCredentialResult, resolveRouteCredential } from "./route-credentials.js";
+export { validateChatGptResponsesRequest } from "./chatgpt-responses-policy.js";
 export { buildProviderProxyRoutes, defaultProviders, loadGatewayConfig, normalizeProvider } from "./provider-config.js";
 export {
   applyGatewayResponsesPromptCacheHints,

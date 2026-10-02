@@ -137,3 +137,35 @@ test("active OpenAI account adds the official model with medium reasoning by def
     thinkingEffort: "medium",
   });
 });
+
+test("synced ChatGPT subscription models add a built-in Agent configuration", () => {
+  const base: ModelSettingsSnapshot = {
+    providers: [],
+    routeProfiles: [],
+    agentTemplates: [],
+    mainAgentConfigs: [],
+    mainAgentPrompts: [],
+    subagentOrchestrations: [],
+  };
+  const merged = mergeAgentRegistrySettings(
+    base,
+    {
+      listAgentTemplates: () => [],
+      listMainAgentConfigs: () => [],
+      listMainAgentPrompts: () => [],
+      listSubagentOrchestrations: () => [],
+    },
+    { chatGptSubscriptionModelId: "gpt-5.6-luna" },
+  );
+
+  expect(merged.mainAgentConfigs[0]).toMatchObject({
+    id: "__chatgpt_subscription__",
+    name: "ChatGPT 订阅",
+    modelRef: {
+      providerId: "eco-coding-chatgpt",
+      modelId: "gpt-5.6-luna",
+      thinkingEffort: "medium",
+    },
+    source: "built_in",
+  });
+});

@@ -90,6 +90,8 @@ function collectPayload(input: {
     version: provider.version,
     apiCompat: provider.apiCompat,
     ...(provider.tokenCountMode ? { tokenCountMode: provider.tokenCountMode } : {}),
+    ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
+    ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
     defaultModel: provider.defaultModel,
     enabled: provider.enabled,
   }));
@@ -212,6 +214,10 @@ async function applyPayload(
             tokenCountMode: provider.tokenCountMode as NonNullable<ProviderConfigInput["tokenCountMode"]>,
           }
         : {}),
+      ...(provider.authMethod
+        ? { authMethod: provider.authMethod as NonNullable<ProviderConfigInput["authMethod"]> }
+        : {}),
+      ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
       defaultModel: provider.defaultModel,
       enabled: provider.enabled,
       // Omit apiKey so existing local key is preserved until secrets pull.
@@ -545,6 +551,8 @@ function applyDomainSecrets(
           version: existing.version,
           apiCompat: existing.apiCompat,
           ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
+          ...(existing.authMethod ? { authMethod: existing.authMethod } : {}),
+          ...(existing.credentialPoolId ? { credentialPoolId: existing.credentialPoolId } : {}),
           defaultModel: existing.defaultModel,
           enabled: existing.enabled,
           apiKey: secret.value,
@@ -563,6 +571,8 @@ function applyDomainSecrets(
           version: existing.version,
           apiCompat: existing.apiCompat,
           ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
+          ...(existing.authMethod ? { authMethod: existing.authMethod } : {}),
+          ...(existing.credentialPoolId ? { credentialPoolId: existing.credentialPoolId } : {}),
           defaultModel: existing.defaultModel,
           enabled: existing.enabled,
           upstreamProxyUrl: secret.value,

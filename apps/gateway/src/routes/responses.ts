@@ -43,6 +43,8 @@ import { forwardResponsesPassthrough } from "../upstream/responses-passthrough.j
 import { upstreamErrorResponse } from "../upstream/upstream-error.js";
 import { applyUpstreamUserAgent } from "../upstream/user-agent.js";
 import { normalizeResponsesUsage } from "../usage-normalize.js";
+import { credentialResolutionErrorResponse, reportRouteCredentialResult, resolveRouteCredential } from "../route-credentials.js";
+import { validateChatGptResponsesRequest } from "../chatgpt-responses-policy.js";
 
 let compactUsageEventSeq = 0;
 
@@ -113,6 +115,25 @@ export async function handlePostResponses(
     throw error;
   }
   route = enrichResolvedRouteWithCodexTurnIdentity(route, codexTurnMetadata);
+  try {
+    route = await resolveRouteCredential(route, config, request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    onLog(`credential resolution failed provider=${route.provider.id}: ${message}`);
+    return credentialResolutionErrorResponse(error);
+  }
+  // The ChatGPT subscription Responses preview rejects max_output_tokens.
+  // Pi/Codex send native Responses requests with this field, so remove it
+  // after routing (where authMethod is known) before applying the preview
+  // policy and forwarding upstream.
+  if (route.provider.authMethod === "chatgpt_subscription") {
+    delete (body as unknown as Record<string, unknown>).max_output_tokens;
+  }
+  const policyError = validateChatGptResponsesRequest(route.provider, body);
+  if (policyError) {
+    onLog(`ChatGPT subscription request rejected provider=${route.provider.id}: ${policyError}`);
+    return Response.json({ error: { message: policyError, type: "unsupported_request" } }, { status: 400 });
+  }
   // Native Responses providers can require reserved tool schemas to match exactly.
   if (route.upstreamKind !== "responses" && route.upstreamKind !== "gateway-delegated") {
     body = normalizeCodexIntegerToolSchemas(body);
@@ -185,6 +206,7 @@ export async function handlePostResponses(
       return _exhaustive;
     }
   }
+  await reportRouteCredentialResult(route, config, upstreamResponse);
   return normalizeResponsesToolArgumentResponse(upstreamResponse, hubNamespace);
 }
 
@@ -237,6 +259,12 @@ export async function handlePostResponsesCompact(
     throw error;
   }
   route = enrichResolvedRouteWithCodexTurnIdentity(route, codexTurnMetadata);
+  try {
+    route = await resolveRouteCredential(route, config, request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return credentialResolutionErrorResponse(error);
+  }
 
   if (route.upstreamKind !== "responses" && route.upstreamKind !== "gateway-delegated") {
     onLog(`POST /v1/responses/compact unsupported provider=${route.provider.id} kind=${route.upstreamKind}`);
@@ -283,12 +311,15 @@ export async function handlePostResponsesCompact(
       },
       lifecycle,
       onLog,
+      ...(route.provider.upstreamProxyUrl ? { upstreamProxyUrl: route.provider.upstreamProxyUrl } : {}),
     });
   } catch (error) {
     const message = errorMessage(error);
     onLog(`compact upstream fetch failed ${upstreamUrl}: ${message}`);
     return invalidCompactResponse(route, upstreamUrl, message);
   }
+
+  await reportRouteCredentialResult(route, config, upstreamResponse);
 
   onLog(`compact upstream ${upstreamUrl} status=${upstreamResponse.status}`);
 
