@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { validateChatGptResponsesRequest } from "../src/chatgpt-responses-policy.js";
 import { GATEWAY_PROVIDER_ID_HEADER } from "../src/provider-router.js";
 import { createGatewayFetchHandler } from "../src/server.js";
 import { reportRouteCredentialResult, resolveRouteCredential } from "../src/route-credentials.js";
-import type { GatewayConfig, GatewayProvider, ResolvedProviderRoute } from "../src/types.js";
+import type {
+  GatewayConfig,
+  GatewayProvider,
+  GatewayUsageEvent,
+  GatewayRequestLifecycleEvent,
+  ResolvedProviderRoute,
+} from "../src/types.js";
+import { UPSTREAM_PROXY_URL } from "../src/upstream-proxy.js";
 
 const provider = {
   id: "eco-coding-chatgpt",
@@ -24,16 +32,330 @@ const validBody = {
   stream: true,
 };
 
+// Sanitized replay of the real OAuth response supplied in the user's log:
+// output_item.done carries the text, response.completed.output is empty.
+const oauthHiSse = readFileSync(new URL("./fixtures/chatgpt-oauth-hi.sse", import.meta.url), "utf8");
+
+const completedResponse = {
+  id: "resp_hi",
+  object: "response",
+  status: "completed",
+  model: "gpt-5",
+  output: [
+    { type: "message", id: "msg_hi", role: "assistant", content: [{ type: "output_text", text: "你好 👋" }] },
+  ],
+  usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15, input_tokens_details: { cached_tokens: 4 } },
+};
+
+function messagesRequest(stream?: boolean, tools?: unknown[]): Request {
+  return new Request("http://127.0.0.1/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", [GATEWAY_PROVIDER_ID_HEADER]: provider.id },
+    body: JSON.stringify({
+      model: "gpt-5",
+      max_tokens: 128,
+      ...(stream !== undefined ? { stream } : {}),
+      messages: [{ role: "user", content: "hi" }],
+      ...(tools ? { tools } : {}),
+    }),
+  });
+}
+
+function terminalSse(response: unknown): string {
+  return `event: response.completed\r\ndata: ${JSON.stringify({ type: "response.completed", response })}\r\n\r\n`;
+}
+
 describe("ChatGPT subscription gateway adapter", () => {
+  for (const stream of [true, false, undefined]) {
+    test(`真实 OAuth 日志回放：缺少 Content-Type，Messages stream=${stream}`, async () => {
+      const usage: GatewayUsageEvent[] = [];
+      const logs: string[] = [];
+      const handler = createGatewayFetchHandler(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          providers: [provider],
+          resolveCredential: async () => ({ accessToken: "oauth-access" }),
+        },
+        async () => new Response(new TextEncoder().encode(oauthHiSse)),
+        (log) => logs.push(log),
+        (event) => {
+          usage.push(event);
+        },
+      );
+      const response = await handler(messagesRequest(stream));
+      expect(response.status).toBe(200);
+      if (stream === true) {
+        expect(response.headers.get("content-type")).toContain("text/event-stream");
+        const sse = await response.text();
+        expect(sse).toContain('"delta":{"type":"text_delta","text":"Hi"}');
+        expect(sse).toContain("message_stop");
+        expect(sse).not.toContain("event: error");
+      } else {
+        expect(response.headers.get("content-type")).toContain("application/json");
+        expect(await response.json()).toMatchObject({
+          content: [{ type: "text", text: "Hi! How can I help you today?" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 7, output_tokens: 13 },
+        });
+      }
+      expect(usage).toHaveLength(1);
+      expect(usage[0]).toMatchObject({ usage: { inputTokens: 7, outputTokens: 13 } });
+      expect(logs.some((log) => log.includes("non-SSE while"))).toBe(false);
+    });
+  }
+
+  test("Codex/Pi 原生 Responses OAuth SSE 缺少 Content-Type 时仍返回流式并上报用量", async () => {
+    const usage: GatewayUsageEvent[] = [];
+    const handler = createGatewayFetchHandler(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        providers: [provider],
+        resolveCredential: async () => ({ accessToken: "oauth-access" }),
+      },
+      async () => new Response(new TextEncoder().encode(oauthHiSse)),
+      () => undefined,
+      (event) => {
+        usage.push(event);
+      },
+    );
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json", [GATEWAY_PROVIDER_ID_HEADER]: provider.id },
+        body: JSON.stringify(validBody),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(await response.text()).toContain('"text": "Hi! How can I help you today?"');
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usage: { inputTokens: 7, outputTokens: 13 }, stream: true });
+  });
+
+  for (const stream of [false, undefined]) {
+    test(`Messages stream=${stream} 使用 OAuth SSE 上游并返回完整 JSON`, async () => {
+      const usage: GatewayUsageEvent[] = [];
+      const lifecycle: GatewayRequestLifecycleEvent[] = [];
+      const logs: string[] = [];
+      let cancelled = false;
+      let upstreamBody: Record<string, unknown> = {};
+      let upstreamInit: RequestInit | undefined;
+      const bytes = new TextEncoder().encode(terminalSse(completedResponse));
+      const handler = createGatewayFetchHandler(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          providers: [provider],
+          resolveCredential: async () => ({
+            accessToken: "oauth-access",
+            accountId: "account-1",
+            upstreamProxyUrl: "socks5://127.0.0.1:19090",
+          }),
+        },
+        async (_input, init) => {
+          upstreamInit = init;
+          upstreamBody = JSON.parse(String(init?.body));
+          // Keep the upstream open and split every UTF-8 character across chunks.
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { headers: { "content-type": "text/event-stream", "x-request-id": "req_hi" } },
+          );
+        },
+        (log) => logs.push(log),
+        (event) => {
+          usage.push(event);
+        },
+        (event) => {
+          lifecycle.push(event);
+        },
+      );
+
+      const response = await handler(messagesRequest(stream));
+      expect(upstreamBody.stream).toBe(true);
+      expect(upstreamBody.store).toBe(false);
+      expect(upstreamBody).not.toHaveProperty("max_output_tokens");
+      expect(new Headers(upstreamInit?.headers).get("authorization")).toBe("Bearer oauth-access");
+      expect((upstreamInit as RequestInit & { [UPSTREAM_PROXY_URL]?: string })[UPSTREAM_PROXY_URL]).toBe(
+        "socks5://127.0.0.1:19090",
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("application/json");
+      expect(await response.json()).toMatchObject({
+        id: "resp_hi",
+        type: "message",
+        content: [{ type: "text", text: "你好 👋" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 8, output_tokens: 3, cache_read_input_tokens: 4 },
+      });
+      expect(cancelled).toBe(true);
+      expect(usage).toHaveLength(1);
+      expect(usage[0]).toMatchObject({
+        usage: { inputTokens: 8, outputTokens: 3, cacheReadTokens: 4 },
+        stream: false,
+      });
+      expect(lifecycle.filter((event) => event.type === "logical.completed")).toHaveLength(1);
+      expect(logs.some((log) => log.includes("downstreamStream=false upstreamStream=true"))).toBe(true);
+    });
+  }
+
+  test("非流式 Messages 聚合 OAuth 工具调用，保留结构化参数与停止原因", async () => {
+    const handler = createGatewayFetchHandler(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        providers: [provider],
+        resolveCredential: async () => ({ accessToken: "oauth-access" }),
+      },
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({
+            type: "response.output_item.done",
+            output_index: 0,
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"hi"}',
+            },
+          })}\n\n` +
+            terminalSse({
+              ...completedResponse,
+              output: [],
+            }),
+          { headers: { "content-type": "application/octet-stream" } },
+        ),
+      () => undefined,
+    );
+    const response = await handler(
+      messagesRequest(false, [
+        { name: "lookup", input_schema: { type: "object", properties: { query: { type: "string" } } } },
+      ]),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      content: [{ type: "tool_use", name: "lookup", input: { query: "hi" } }],
+      stop_reason: "tool_use",
+    });
+  });
+
+  test("API Key 的非流式 Messages 保持原有 JSON 上游协议", async () => {
+    let upstreamBody: Record<string, unknown> = {};
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [{ ...provider, authMethod: "api_key" }] },
+      async (_input, init) => {
+        upstreamBody = JSON.parse(String(init?.body));
+        return Response.json(completedResponse);
+      },
+      () => undefined,
+    );
+    const response = await handler(messagesRequest(false));
+    expect(upstreamBody.stream).toBe(false);
+    expect(upstreamBody).toHaveProperty("max_output_tokens");
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { content: unknown[] }).content).toEqual([
+      { type: "text", text: "你好 👋" },
+    ]);
+  });
+
+  for (const [name, sse, code] of [
+    [
+      "response.failed",
+      `data: ${JSON.stringify({ type: "response.failed", response: { error: { message: "Upstream failed", code: "server_error" } } })}\n\n`,
+      "server_error",
+    ],
+    [
+      "error",
+      `data: ${JSON.stringify({ type: "error", message: "Upstream failed", code: "server_error" })}\n\n`,
+      "server_error",
+    ],
+    ["截断", 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n', "incomplete_stream"],
+  ] as const) {
+    test(`非流式 OAuth 上游 ${name} 返回错误而非空成功`, async () => {
+      const usage: GatewayUsageEvent[] = [];
+      const lifecycle: GatewayRequestLifecycleEvent[] = [];
+      const handler = createGatewayFetchHandler(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          providers: [provider],
+          resolveCredential: async () => ({ accessToken: "oauth-access" }),
+        },
+        async () => new Response(sse, { headers: { "content-type": "text/event-stream" } }),
+        () => undefined,
+        (event) => {
+          usage.push(event);
+        },
+        (event) => {
+          lifecycle.push(event);
+        },
+      );
+      const response = await handler(messagesRequest(false));
+      expect(response.status).toBe(502);
+      expect(response.headers.get("x-eco-upstream-error-code")).toBe(code);
+      expect(await response.json()).toMatchObject({ type: "error", error: { code } });
+      expect(usage).toHaveLength(0);
+      expect(lifecycle.filter((event) => event.type === "logical.failed")).toHaveLength(1);
+      expect(lifecycle.filter((event) => event.type === "logical.completed")).toHaveLength(0);
+    });
+  }
+
+  test("非流式 OAuth 上游 403 保留状态和错误码供账号管理使用", async () => {
+    const reports: unknown[] = [];
+    const handler = createGatewayFetchHandler(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        providers: [provider],
+        resolveCredential: async () => ({ accessToken: "oauth-access", accountId: "account-1" }),
+        reportCredentialResult: (result) => {
+          reports.push(result);
+        },
+      },
+      async () =>
+        Response.json(
+          { error: { message: "Not eligible", code: "subscription_sharing_user_not_eligible" } },
+          { status: 403 },
+        ),
+      () => undefined,
+    );
+    const response = await handler(messagesRequest(false));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: { code: "subscription_sharing_user_not_eligible" },
+    });
+    expect(reports[0]).toMatchObject({
+      accountId: "account-1",
+      statusCode: 403,
+      errorCode: "subscription_sharing_user_not_eligible",
+    });
+  });
   test("accepts the supported Responses preview shape", () => {
     expect(validateChatGptResponsesRequest(provider, validBody as never)).toBeUndefined();
   });
 
   test("rejects required preview violations before upstream fetch", () => {
-    expect(validateChatGptResponsesRequest(provider, { ...validBody, stream: false } as never)).toContain("stream:true");
-    expect(validateChatGptResponsesRequest(provider, { ...validBody, store: true } as never)).toContain("store:false");
-    expect(validateChatGptResponsesRequest(provider, { ...validBody, temperature: 0 } as never)).toContain("temperature");
-    expect(validateChatGptResponsesRequest(provider, { ...validBody, previous_response_id: "resp_1" } as never)).toContain("previous_response_id");
+    expect(validateChatGptResponsesRequest(provider, { ...validBody, stream: false } as never)).toContain(
+      "stream:true",
+    );
+    expect(validateChatGptResponsesRequest(provider, { ...validBody, store: true } as never)).toContain(
+      "store:false",
+    );
+    expect(validateChatGptResponsesRequest(provider, { ...validBody, temperature: 0 } as never)).toContain(
+      "temperature",
+    );
+    expect(
+      validateChatGptResponsesRequest(provider, { ...validBody, previous_response_id: "resp_1" } as never),
+    ).toContain("previous_response_id");
   });
 
   test("resolves a token at request time and reports the selected account", async () => {
@@ -76,7 +398,7 @@ describe("ChatGPT subscription gateway adapter", () => {
       },
       async (_input, init) => {
         upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return Response.json({
+        const response = {
           id: "resp_1",
           object: "response",
           status: "completed",
@@ -90,7 +412,12 @@ describe("ChatGPT subscription gateway adapter", () => {
             },
           ],
           usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-        });
+        };
+        return new Response(
+          `data: ${JSON.stringify({ type: "response.created", response: { ...response, status: "in_progress", output: [] } })}\n\n` +
+            terminalSse(response),
+          { headers: { "content-type": "text/event-stream" } },
+        );
       },
     );
 
@@ -114,6 +441,10 @@ describe("ChatGPT subscription gateway adapter", () => {
     expect(upstreamBody).toBeDefined();
     expect(upstreamBody?.stream).toBe(true);
     expect(upstreamBody).not.toHaveProperty("max_output_tokens");
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const sse = await response.text();
+    expect(sse).toContain('"text":"ok"');
+    expect(sse).toContain("message_stop");
   });
 
   test("流式上游 403 保留原状态并报告订阅资格错误", async () => {
@@ -181,12 +512,15 @@ describe("ChatGPT subscription gateway adapter", () => {
       },
       async (_input, init) => {
         upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return Response.json({
-          error: {
-            message: "The ChatGPT user is not eligible for subscription sharing.",
-            code: "subscription_sharing_user_not_eligible",
+        return Response.json(
+          {
+            error: {
+              message: "The ChatGPT user is not eligible for subscription sharing.",
+              code: "subscription_sharing_user_not_eligible",
+            },
           },
-        }, { status: 403 });
+          { status: 403 },
+        );
       },
     );
 

@@ -272,8 +272,10 @@ export async function forwardResponsesPassthrough(
   }
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
+  const isEventStream = contentType.includes("text/event-stream") ||
+    (route.provider.authMethod === "chatgpt_subscription" && upstreamBody.stream === true);
   const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
-  if (!contentType.includes("text/event-stream") || !upstreamResponse.body) {
+  if (!isEventStream || !upstreamResponse.body) {
     const text = await upstreamResponse.text();
     const parsedJsonUsage = parseResponsesJsonUsage(text, route.upstreamModelId);
     observeResponsesJsonUsage({
