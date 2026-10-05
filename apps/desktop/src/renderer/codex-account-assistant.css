@@ -1,0 +1,51 @@
+:root { color-scheme: light dark; --surface: #ffffff; --canvas: #f5f7fc; --ink: #26324b; --muted: #7b879e; --line: #e4e9f2; --blue: #536de6; --blue-wash: #eef2ff; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: var(--ink); background: var(--canvas); }
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; overflow: hidden; }
+button { font: inherit; cursor: pointer; }
+button:disabled { cursor: default; opacity: .4; }
+button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.assistant-titlebar { height: 46px; padding: 0 15px 0 86px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); -webkit-app-region: drag; font-size: 12px; font-weight: 600; color: var(--muted); }
+.assistant-titlebar button { -webkit-app-region: no-drag; display: grid; place-items: center; border: 0; border-radius: 6px; width: 27px; height: 27px; color: var(--muted); background: transparent; }
+.assistant-titlebar button.is-pinned { color: var(--blue); background: var(--blue-wash); }
+.assistant-body { padding: 19px 19px 16px; max-height: calc(100vh - 46px); overflow-y: auto; }
+.assistant-identity { display: flex; align-items: center; gap: 11px; margin-bottom: 19px; }
+.assistant-monogram { display: grid; place-items: center; width: 37px; height: 37px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 12px; color: var(--blue); background: var(--surface); font-size: 18px; font-weight: 600; }
+.assistant-identity > div:nth-child(2) { min-width: 0; flex: 1; }
+.assistant-eyebrow { font-size: 9px; letter-spacing: 1.5px; color: var(--muted); font-weight: 600; }
+.assistant-identity h1 { margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; letter-spacing: -.35px; font-weight: 600; }
+.assistant-connection { display: grid; place-items: center; width: 20px; height: 20px; background: var(--line); border-radius: 50%; }
+.assistant-connection i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+.assistant-connection.is-connected { background: #e3f4ed; }
+.assistant-connection.is-connected i { background: #309a72; }
+.assistant-credentials { background: var(--surface); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+.assistant-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 12px 13px; gap: 7px; }
+.assistant-field + .assistant-field { border-top: 1px solid var(--line); }
+.assistant-field-label { display: flex; align-items: center; gap: 5px; grid-column: 1/-1; color: var(--muted); font-size: 11px; }
+.assistant-field-value { font-size: 12px; overflow-wrap: anywhere; line-height: 1.7; align-self: center; }
+.assistant-field-value.is-masked { letter-spacing: 2px; color: var(--muted); }
+.assistant-field-actions { display: flex; align-items: center; gap: 5px; }
+.assistant-field-actions button { display: flex; align-items: center; justify-content: center; gap: 3px; padding: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--blue); font-size: 10px; white-space: nowrap; }
+.assistant-field-actions button:hover:not(:disabled) { background: var(--blue-wash); }
+.assistant-reveal { display: grid; place-items: center; margin-left: auto; border: 0; background: transparent; color: var(--muted); padding: 0 2px; }
+.assistant-otp { margin-top: 13px; padding: 13px 14px; border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line)); border-radius: 13px; background: var(--blue-wash); }
+.assistant-otp-heading { display: flex; align-items: center; justify-content: space-between; height: 29px; }
+.assistant-otp-heading > span:first-child { display: flex; align-items: center; gap: 6px; color: var(--blue); font-size: 11px; font-weight: 600; }
+.assistant-countdown { display: grid; width: 29px; height: 29px; place-items: center; position: relative; border-radius: 50%; background: conic-gradient(var(--blue) var(--remaining), var(--line) 0); color: var(--blue); font: 10px "SFMono-Regular", Consolas, monospace; isolation: isolate; }
+.assistant-countdown::before { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--blue-wash); z-index: -1; }
+.assistant-code { display: flex; justify-content: center; gap: 16px; margin: 14px 0 16px; font: 600 31px/1.15 "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: 5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.assistant-otp.is-expiring .assistant-countdown { color: #bd8226; background: conic-gradient(#bd8226 var(--remaining), var(--line) 0); }
+.assistant-code-empty { display: flex; align-items: center; justify-content: center; min-height: 63px; font-size: 11px; line-height: 1.7; color: var(--muted); }
+.assistant-otp-footer { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.assistant-otp-footer > span { color: var(--muted); font-size: 10px; }
+.assistant-inbox { display: flex; align-items: center; gap: 11px; width: 100%; margin-top: 13px; padding: 12px 13px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--ink); }
+.assistant-inbox:hover:not(:disabled) { border-color: var(--blue); }
+.assistant-inbox-icon { display: grid; place-items: center; width: 30px; height: 30px; color: var(--blue); background: var(--blue-wash); border-radius: 8px; }
+.assistant-inbox > span:nth-child(2) { flex: 1; min-width: 0; }
+.assistant-inbox strong { display: block; font-size: 12px; font-weight: 600; }
+.assistant-inbox small { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-inbox > svg { color: var(--muted); }
+.assistant-feedback { min-height: 35px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 10px; color: var(--muted); line-height: 1.5; padding: 7px 0; }
+.assistant-feedback.is-error { color: #c25353; justify-content: flex-start; overflow-wrap: anywhere; }
+.assistant-login { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; border: 0; border-radius: 8px; padding: 8px; background: var(--blue); color: white; font-size: 11px; font-weight: 500; }
+.assistant-load-error { padding: 50px 24px; font-size: 13px; line-height: 1.7; }
+@media (prefers-color-scheme: dark) { :root { --surface: #252a36; --canvas: #1c212c; --ink: #e6eaf4; --muted: #929eb4; --line: #343c4c; --blue: #9aaafa; --blue-wash: #2b3454; } .assistant-connection.is-connected { background: #284438; } .assistant-connection.is-connected i { background: #77c3a2; } .assistant-login { color: #1c212c; } }

@@ -96,6 +96,10 @@ export default defineConfig({
     outDir: "dist/renderer",
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        main: path.resolve(rootDir, "index.html"),
+        accountAssistant: path.resolve(rootDir, "codex-account-assistant.html"),
+      },
       external: ["@anthropic-ai/claude-agent-sdk", "electron"],
       output: {
         manualChunks(id) {

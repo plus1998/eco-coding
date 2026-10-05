@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { startCodexBrowserLogin } from "./codex-browser-login";
 
 /**
  * Codex OAuth Login Service
@@ -27,101 +27,6 @@ function buildLoginEnv(codexHomeDir: string, upstreamProxyUrl?: string): NodeJS.
     env.https_proxy = upstreamProxyUrl;
   }
   return env;
-}
-
-function waitForLoginResult(
-  child: ReturnType<typeof spawn>,
-  codexHomeDir: string,
-): { result: Promise<CodexOAuthLoginResult>; cancel: () => void } {
-  let resolved = false;
-  let resolveResult: (result: CodexOAuthLoginResult) => void = () => {};
-  let pollInterval: ReturnType<typeof setInterval> | undefined;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-
-  const terminateChild = () => {
-    if (child.exitCode !== null || child.killed) return;
-    try {
-      child.kill("SIGTERM");
-    } catch {
-      // The process may exit between the state check and kill().
-    }
-  };
-
-  const result = new Promise<CodexOAuthLoginResult>((resolve) => {
-    resolveResult = resolve;
-
-    const resolveOnce = (loginResult: CodexOAuthLoginResult) => {
-      if (resolved) return;
-      resolved = true;
-      if (pollInterval) clearInterval(pollInterval);
-      if (timeout) clearTimeout(timeout);
-      resolveResult(loginResult);
-    };
-
-    // Watch for auth.json creation (backup in case of a non-zero exit code).
-    const authPath = path.join(codexHomeDir, "auth.json");
-    const checkAuthJson = async (): Promise<boolean> => {
-      try {
-        await fs.access(authPath);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const pollForAuthJson = () => {
-      void checkAuthJson().then((exists) => {
-        if (exists) {
-          resolveOnce({ success: true, message: "登录成功 (auth.json detected)" });
-        }
-      });
-    };
-
-    // Poll for auth.json every 2 seconds.
-    pollInterval = setInterval(pollForAuthJson, 2000);
-
-    child.on("exit", (code) => {
-      // Double-check: even if exit code != 0, auth.json might exist.
-      void checkAuthJson().then((exists) => {
-        resolveOnce(
-          exists
-            ? { success: true, message: "登录成功 (auth.json detected)" }
-            : {
-                success: code === 0,
-                message: code === 0 ? "登录成功" : `登录失败 (exit code ${code})`,
-              },
-        );
-      });
-    });
-
-    child.on("error", (error) => {
-      resolveOnce({
-        success: false,
-        message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    });
-
-    // Hard timeout: 5 minutes max for the entire login flow.
-    timeout = setTimeout(
-      () => {
-        terminateChild();
-        resolveOnce({ success: false, message: "登录超时 (5分钟)" });
-      },
-      5 * 60 * 1000,
-    );
-  });
-
-  return {
-    result,
-    cancel: () => {
-      if (resolved) return;
-      terminateChild();
-      if (pollInterval) clearInterval(pollInterval);
-      if (timeout) clearTimeout(timeout);
-      resolved = true;
-      resolveResult({ success: false, message: "登录已取消" });
-    },
-  };
 }
 
 export class CodexOAuthLoginService {
@@ -192,48 +97,16 @@ export class CodexOAuthLoginService {
     result: Promise<CodexOAuthLoginResult>;
     cancel: () => void;
   } | null> {
-    return new Promise((resolve) => {
-      let authUrl = "";
-      let urlFound = false;
-      let urlTimeout: ReturnType<typeof setTimeout> | undefined;
-
-      const child = spawn(this.codexExecutable, ["login"], {
-        env: buildLoginEnv(this.codexHomeDir, this.upstreamProxyUrl),
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      child.stdout.setEncoding("utf-8");
-      child.stderr.setEncoding("utf-8");
-
-      const handleOutput = (data: string) => {
-        // Log all output for debugging
-        process.stderr.write(`[codex-login] ${data.trim()}\n`);
-
-        // Extract the OAuth authorization URL
-        const urlMatch = data.match(/https:\/\/auth\.openai\.com\/oauth\/authorize\?[^\s]+/);
-        if (urlMatch && !urlFound) {
-          authUrl = urlMatch[0];
-          urlFound = true;
-          if (urlTimeout) clearTimeout(urlTimeout);
-          const loginResult = waitForLoginResult(child, this.codexHomeDir);
-          resolve({
-            authUrl,
-            result: loginResult.result,
-            cancel: loginResult.cancel,
-          });
-        }
-      };
-
-      child.stdout.on("data", handleOutput);
-      child.stderr.on("data", handleOutput);
-
-      // Timeout after 30 seconds if we can't extract the URL
-      urlTimeout = setTimeout(() => {
-        if (!urlFound) {
-          child.kill("SIGTERM");
-          resolve(null);
-        }
-      }, 30000);
+    return startCodexBrowserLogin({
+      executable: this.codexExecutable,
+      codexHomeDir: this.codexHomeDir,
+      env: buildLoginEnv(this.codexHomeDir, this.upstreamProxyUrl),
+      onAuthenticated: async (signal) => {
+        const content = await fs.readFile(path.join(this.codexHomeDir, "auth.json"), "utf8");
+        signal.throwIfAborted();
+        const auth = JSON.parse(content) as { tokens?: { access_token?: string }; access_token?: string };
+        if (!(auth.tokens?.access_token ?? auth.access_token)) throw new Error("auth.json 缺少 access_token");
+      },
     });
   }
 

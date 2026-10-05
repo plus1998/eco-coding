@@ -73,6 +73,8 @@ export interface ApplicationShutdownDeps {
   closeIntegratedWebSearchGateway: () => Promise<void>;
   closeMcpHubGateway: () => Promise<void>;
   stopGlobalCodexRuntime: () => Promise<void>;
+  /** Flush Codex auth.json and close its SQLite account store after the runtime stops. */
+  closeOpenAIAccountService?: () => Promise<void>;
   /** Tear down Cursor ACP process trees Eco spawned this session (tracked only). */
   stopAllAcpRuntimes: () => void;
   stopGlobalEcoGateway: () => Promise<void>;
@@ -258,6 +260,7 @@ export async function shutdownApplicationServices(deps: ApplicationShutdownDeps)
   deps.disposeGitAutoFetcher();
   deps.disposeCenterServerClient();
   await deps.stopGlobalCodexRuntime();
+  await deps.closeOpenAIAccountService?.();
   deps.stopAllAcpRuntimes();
   await deps.stopGlobalEcoGateway();
 }

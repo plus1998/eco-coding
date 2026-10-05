@@ -527,6 +527,9 @@ import {
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
 import type { OpenAIAccount, OpenAIAccountService } from "./openai-account-service";
+import { OpenAIAccountAssistant } from "./openai-account-assistant";
+import type { OpenAIAccountAssistantAction } from "../shared/openai-account";
+import type { OpenAIAccountCreateInput, OpenAIAccountUpdateInput } from "../shared/openai-account";
 import type { ChatGptSubscriptionService } from "./chatgpt-subscription-service";
 import { createChatGptSubscriptionFetch, createChatGptSubscriptionFetchForProxy } from "./chatgpt-subscription-fetch";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle, setCodexAccountProxyUrlGetter } from "./codex-runtime-lifecycle";
@@ -545,6 +548,7 @@ import {
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
   invalidateGlobalCodexRuntimeFingerprints,
   scheduleCodexGlobalRuntimeRefresh,
+  shutdownCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
@@ -1439,6 +1443,7 @@ const codexGatewayUsagePending = new CodexGatewayUsagePendingBuffer({
 });
 let agentLifecycle: AgentLifecycleService;
 let openaiAccountService: OpenAIAccountService | undefined;
+let openaiAccountAssistant: OpenAIAccountAssistant | undefined;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -3104,8 +3109,6 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  // Clean up OpenAI account service watcher
-  openaiAccountService?.dispose();
   // Main-window close already runs full shutdownApplication (stops eco-gateway).
   // Always quit so macOS does not leave a dock-resident process with globalGateway cleared —
   // otherwise activate → new window → Codex/Claude hits "lifecycle is not configured".
@@ -3174,7 +3177,16 @@ installApplicationShutdownHook(
     closeMcpHubGateway: async () => {
       await mcpHubGateway?.close();
     },
-    stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
+    stopGlobalCodexRuntime: async () => {
+      await shutdownCodexGlobalRuntimeRefresh();
+      await stopGlobalCodexRuntimeLifecycle();
+    },
+    closeOpenAIAccountService: async () => {
+      openaiAccountAssistant?.dispose();
+      openaiAccountAssistant = undefined;
+      await openaiAccountService?.dispose();
+      openaiAccountService = undefined;
+    },
     stopAllAcpRuntimes,
     stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
     disposeDesktopUpdateService: () => {
@@ -5879,11 +5891,15 @@ function registerIpcHandlers(): void {
     if (!openaiAccountServicePromise) {
       openaiAccountServicePromise = (async () => {
         const { OpenAIAccountService } = await import("./openai-account-service");
-        const codexExecutable = resolveCodexExecutable();
-        if (!codexExecutable) {
-          throw new Error("Codex CLI not found");
-        }
-        const service = new OpenAIAccountService(app.getPath("userData"), codexExecutable);
+        const service = new OpenAIAccountService(
+          app.getPath("userData"),
+          resolveCodexExecutable,
+          (state) => {
+            for (const window of BrowserWindow.getAllWindows()) {
+              if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.openAIAccountsChanged, state);
+            }
+          },
+        );
         await service.initialize();
         openaiAccountService = service;
         return service;
@@ -5892,6 +5908,56 @@ function registerIpcHandlers(): void {
       });
     }
     return openaiAccountServicePromise;
+  };
+
+  openaiAccountAssistant = new OpenAIAccountAssistant({
+    getDetails: async (accountId) => (await getOpenAIAccountService()).getAccountDetails(accountId),
+    preloadPath: path.join(__dirname, "../preload/index.cjs"),
+    parent: getMainWindow,
+    loadRenderer: async (window, accountId) => {
+      const devUrl = process.env.VITE_DEV_SERVER_URL;
+      if (devUrl) {
+        const url = new URL("codex-account-assistant.html", devUrl);
+        url.searchParams.set("accountId", accountId);
+        await window.loadURL(url.href);
+      } else {
+        await window.loadFile(path.join(__dirname, "../renderer/codex-account-assistant.html"), { query: { accountId } });
+      }
+    },
+  });
+  const requireAccountAssistant = () => {
+    if (!openaiAccountAssistant) throw new Error("登录助手未初始化");
+    return openaiAccountAssistant;
+  };
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsOpenAssistant, async (payload: { accountId: string }) => {
+    await requireAccountAssistant().open(payload.accountId);
+  });
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsAssistantState, async (payload: { accountId: string }) => {
+    return requireAccountAssistant().state(payload.accountId);
+  });
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsAssistantAction, async (payload: { accountId: string; action: OpenAIAccountAssistantAction }) => {
+    return requireAccountAssistant().action(payload.accountId, payload.action);
+  });
+
+  const scheduleOpenAIAccountTransition = (service: OpenAIAccountService) => {
+    invalidateGlobalCodexRuntimeFingerprints();
+    scheduleCodexGlobalRuntimeRefresh({
+      beforePrepare: async () => {
+        try {
+          if (service.getPendingAccountId() === undefined) return;
+          // The global scheduler has already waited for Codex turns to go idle.
+          // Stop the old app-server before saving its final refresh and publishing
+          // credentials for the requested account.
+          await stopGlobalCodexRuntimeLifecycle();
+          await service.flushFinalAuthWriteback();
+          await service.applyPendingTransition();
+          if (service.getPendingAccountId() === undefined) emitSettingsUpdated();
+        } catch (error) {
+          service.reportSyncError(error);
+          throw error;
+        }
+      },
+    });
   };
 
   // Register before any composer request can start Codex. The getter itself awaits
@@ -5908,23 +5974,22 @@ function registerIpcHandlers(): void {
     return svc.listAccounts();
   });
 
-  registerDesktopCommand(IPC_CHANNELS.openAIAccountsCreate, async (payload: { name: string; proxyUrl?: string }) => {
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsCreate, async (payload: OpenAIAccountCreateInput) => {
     const svc = await getOpenAIAccountService();
-    return svc.createAccount(payload.name, payload.proxyUrl);
+    return svc.createAccount(payload);
   });
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsDelete, async (payload: { accountId: string }) => {
     const svc = await getOpenAIAccountService();
     const prevActiveId = await svc.getActiveAccountId();
+    const prevPendingAccountId = svc.getPendingAccountId();
     await svc.deleteAccount(payload.accountId);
     if (prevActiveId === payload.accountId) {
-      invalidateGlobalCodexRuntimeFingerprints();
-      scheduleCodexGlobalRuntimeRefresh();
-      // Deleting the active account removes CODEX_HOME/auth.json, which gates the
-    // virtual Codex Auth provider/model in the settings snapshot.
-      emitSettingsUpdated();
+      scheduleOpenAIAccountTransition(svc);
+    } else if (prevPendingAccountId === payload.accountId) {
+      scheduleOpenAIAccountTransition(svc);
     }
-    return { success: true };
+    return { success: true, pending: prevActiveId === payload.accountId };
   });
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsStartLogin, async (payload: { accountId: string }) => {
@@ -5936,50 +6001,25 @@ function registerIpcHandlers(): void {
       return { success: false, message: "Failed to start login" };
     }
 
-    // Open BrowserWindow with the auth URL
     const mainWin = getMainWindow();
-    const { session } = await import("electron");
-    const authSession = session.fromPartition("oauth-auth-session");
-
-    // Apply proxy from the account's own proxyUrl (for OAuth login only)
-    const proxyUrl = account?.proxyUrl?.trim();
-    let socksBridge: { close: () => void } | null = null;
-    if (proxyUrl) {
-      try {
-        const parsed = new URL(proxyUrl);
-        const protocol = parsed.protocol;
-        let httpProxyHost: string;
-
-        if (protocol.startsWith("socks")) {
-          // Bridge SOCKS → local HTTP for Chromium (supports auth)
-          const { startSocksToHttpBridge } = await import("./openai-account-service");
-          const bridge = await startSocksToHttpBridge(proxyUrl);
-          httpProxyHost = `127.0.0.1:${bridge.port}`;
-          socksBridge = { close: bridge.close };
-          console.log(`[openai-auth] SOCKS bridge started on port ${bridge.port}`);
-        } else {
-          httpProxyHost = `${parsed.host}${parsed.pathname !== "/" ? parsed.pathname : ""}`;
-        }
-
-        const pacContent = `function FindProxyForURL(url, host) {\n            return "PROXY ${httpProxyHost}";\n          }`;
-        const pacDataUri =
-          "data:application/x-ns-proxy-autoconfig;base64," +
-          Buffer.from(pacContent, "utf8").toString("base64");
-        await authSession.setProxy({ mode: "pac_script", pacScript: pacDataUri });
-        console.log(`[openai-auth] Proxy set: PROXY ${httpProxyHost}`);
-      } catch (e) {
-        console.error("[openai-auth] Proxy setup failed:", e);
-      }
+    const partition = `openai-account-auth-${payload.accountId}-${Date.now()}`;
+    const authSession = session.fromPartition(partition);
+    let releaseProxy: () => void;
+    try {
+      releaseProxy = await configureChatGptOAuthSessionProxy(authSession, account?.proxyUrl);
+    } catch (error) {
+      authInfo.cancel();
+      return { success: false, message: `登录代理配置失败：${error instanceof Error ? error.message : String(error)}` };
     }
-
-    const authWindow = createOAuthAuthWindow(mainWin);
+    const authWindow = createOAuthAuthWindow(mainWin, partition);
+    authWindow.setTitle(`Codex 登录 · ${account?.name ?? "账号"}`);
+    requireAccountAssistant().attachLogin(payload.accountId, authWindow);
     let loginCancelled = false;
-    let socksBridgeClosed = false;
+    let proxyReleased = false;
     const closeSocksBridge = () => {
-      if (socksBridgeClosed) return;
-      socksBridgeClosed = true;
-      socksBridge?.close();
-      socksBridge = null;
+      if (proxyReleased) return;
+      proxyReleased = true;
+      releaseProxy();
     };
 
     const cancelLogin = () => {
@@ -5991,6 +6031,7 @@ function registerIpcHandlers(): void {
           win.webContents.send("codex-oauth:login-result", {
             success: false,
             message: "登录已取消",
+            accountId: payload.accountId,
           });
         }
       });
@@ -6006,6 +6047,7 @@ function registerIpcHandlers(): void {
     });
     authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     try {
+      await requireAccountAssistant().open(payload.accountId);
       await authWindow.loadURL(authInfo.authUrl);
     } catch (error) {
       cancelLogin();
@@ -6025,14 +6067,11 @@ function registerIpcHandlers(): void {
       closeSocksBridge();
       if (!authWindow.isDestroyed()) authWindow.close();
       // `codex login` only writes the account's own CODEX_HOME. When this account is
-      // already the active one, the main CODEX_HOME/auth.json still holds the old
-      // (possibly expired) credentials — re-activate it to publish the fresh token.
+      // already active, its fresh credentials are staged in SQLite and then applied
+      // by the idle transition scheduler without replacing a newer switch request.
       if (res.success && payload.accountId === (await svc.getActiveAccountId())) {
         try {
-          await svc.setActiveAccount(payload.accountId);
-          invalidateGlobalCodexRuntimeFingerprints();
-          scheduleCodexGlobalRuntimeRefresh();
-          emitSettingsUpdated();
+          scheduleOpenAIAccountTransition(svc);
         } catch (error) {
           console.error(
             `[openai-accounts] Failed to sync fresh auth.json to CODEX_HOME: ${error instanceof Error ? error.message : String(error)}`,
@@ -6041,7 +6080,7 @@ function registerIpcHandlers(): void {
       }
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
-          win.webContents.send("codex-oauth:login-result", res);
+          win.webContents.send("codex-oauth:login-result", { ...res, accountId: payload.accountId });
         }
       });
     }).catch((error) => {
@@ -6054,6 +6093,7 @@ function registerIpcHandlers(): void {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
           win.webContents.send("codex-oauth:login-result", {
+            accountId: payload.accountId,
             success: false,
             message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
           });
@@ -6066,37 +6106,26 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetActive, async (payload: { accountId: string | null }) => {
     const svc = await getOpenAIAccountService();
-    const prevActiveId = await svc.getActiveAccountId();
+    const prevPendingAccountId = svc.getPendingAccountId();
     await svc.setActiveAccount(payload.accountId);
-    // Credential changed in the main codex dir — the running app-server keeps
-    // the old auth.json in memory, so recycle it after the current turn idles.
-    if (prevActiveId !== payload.accountId) {
-      invalidateGlobalCodexRuntimeFingerprints();
-      scheduleCodexGlobalRuntimeRefresh();
-    }
-    // setActiveAccount writes (or clears) CODEX_HOME/auth.json, which gates the virtual
-      // Codex Auth provider/model. Without this the renderer keeps its stale snapshot
-    // and the config only shows up after an app restart.
-    emitSettingsUpdated();
-    return { success: true };
+    const pending = svc.getPendingAccountId() !== undefined;
+    if (pending || prevPendingAccountId !== undefined) scheduleOpenAIAccountTransition(svc);
+    return { success: true, pending };
   });
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsGetActive, async () => {
     const svc = await getOpenAIAccountService();
     const activeId = await svc.getActiveAccountId();
     const status = await svc.getActiveStatus();
-    return { activeAccountId: activeId, ...status };
+    const pendingAccountId = svc.getPendingAccountId();
+    return { activeAccountId: activeId, ...(pendingAccountId !== undefined ? { pendingAccountId } : {}), syncStatus: svc.getSyncStatus(), ...status };
   });
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetAuthJson, async (payload: { accountId: string; content: string }) => {
     const svc = await getOpenAIAccountService();
     const result = await svc.setAuthJson(payload.accountId, payload.content);
-    if (result.success && payload.accountId === (await svc.getActiveAccountId())) {
-      invalidateGlobalCodexRuntimeFingerprints();
-      scheduleCodexGlobalRuntimeRefresh();
-      // Writing auth.json for the active account can create CODEX_HOME/auth.json,
-      // which gates the virtual Codex Auth provider/model in the snapshot.
-      emitSettingsUpdated();
+    if (result.success && svc.getPendingAccountId() !== undefined) {
+      scheduleOpenAIAccountTransition(svc);
     }
     return result;
   });
@@ -6107,15 +6136,16 @@ function registerIpcHandlers(): void {
     return quota;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.openAIAccountsUpdate, async (payload: { accountId: string; name: string; proxyUrl?: string }) => {
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsUpdate, async (payload: OpenAIAccountUpdateInput) => {
     const svc = await getOpenAIAccountService();
     const prevAccount = (await svc.listAccounts()).find(
       (a: OpenAIAccount) => a.id === payload.accountId,
     );
-    const result = await svc.updateAccount(payload.accountId, payload.name, payload.proxyUrl);
+    const result = await svc.updateAccount(payload);
     if (
       prevAccount &&
-      (prevAccount.proxyUrl?.trim() ?? "") !== (payload.proxyUrl?.trim() ?? "") &&
+      payload.proxyUrl !== undefined &&
+      (prevAccount.proxyUrl?.trim() ?? "") !== payload.proxyUrl.trim() &&
       payload.accountId === (await svc.getActiveAccountId())
     ) {
       // Proxy env vars are baked into the app-server at spawn time.
@@ -6129,6 +6159,24 @@ function registerIpcHandlers(): void {
     const svc = await getOpenAIAccountService();
     const content = await svc.getAuthJsonContent(payload.accountId);
     return content;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsGetDetails, async (payload: { accountId: string }) => {
+    const svc = await getOpenAIAccountService();
+    return svc.getAccountDetails(payload.accountId);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsImport, async (payload: { text: string }) => {
+    const svc = await getOpenAIAccountService();
+    return svc.importAccounts(payload.text);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.openAIAccountsCancelSwitch, async () => {
+    const svc = await getOpenAIAccountService();
+    const hadPendingTransition = svc.getPendingAccountId() !== undefined;
+    const result = await svc.cancelPendingAccountSwitch();
+    if (hadPendingTransition) scheduleOpenAIAccountTransition(svc);
+    return result;
   });
 
   registerDesktopCommand(IPC_CHANNELS.modelRouteProfileTest, async (payload: TestRoleRoutesRequest) => {

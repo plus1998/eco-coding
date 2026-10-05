@@ -282,6 +282,10 @@ let globalRefreshPromise: Promise<void> | undefined;
 let desiredGlobalRuntimeRevision = 0;
 let loadedGlobalRuntimeRevision = -1;
 let refreshPending = false;
+let globalRefreshError: Error | undefined;
+let globalRuntimeRefreshShuttingDown = false;
+let globalRefreshIdleAbortController = new AbortController();
+let beforeGlobalRuntimeRefresh: (() => Promise<void>) | undefined;
 let globalRefreshActiveThreadIds: readonly string[] = [];
 let loadedModelCatalogAliases: readonly string[] = [];
 let loadedGlobalMcpServerNames: readonly string[] = [];
@@ -331,6 +335,10 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
   desiredGlobalRuntimeRevision = 0;
   loadedGlobalRuntimeRevision = -1;
   refreshPending = false;
+  globalRefreshError = undefined;
+  globalRuntimeRefreshShuttingDown = false;
+  globalRefreshIdleAbortController = new AbortController();
+  beforeGlobalRuntimeRefresh = undefined;
   globalRefreshActiveThreadIds = [];
   loadedModelCatalogAliases = [];
   loadedGlobalMcpServerNames = [];
@@ -886,29 +894,51 @@ export function invalidateGlobalCodexRuntimeFingerprints(): void {
 }
 
 /** Queue a settings-driven refresh without interrupting active Codex turns. */
-export function scheduleCodexGlobalRuntimeRefresh(): void {
+export function scheduleCodexGlobalRuntimeRefresh(options?: { beforePrepare?: () => Promise<void> }): void {
+  if (globalRuntimeRefreshShuttingDown) return;
+  if (options?.beforePrepare) beforeGlobalRuntimeRefresh = options.beforePrepare;
   desiredGlobalRuntimeRevision += 1;
   refreshPending = true;
+  globalRefreshError = undefined;
   if (globalRefreshPromise) {
     return;
   }
   globalRefreshPromise = (async () => {
     do {
       const revision = desiredGlobalRuntimeRevision;
-      // Do not write a new catalog/config while another turn is active. The
-      // active app-server continues using the complete loaded baseline.
-      await waitForGlobalCodexRuntimeIdle();
-      // Coalesce every save observed while waiting into the newest snapshot.
-      if (revision !== desiredGlobalRuntimeRevision) {
-        continue;
+      try {
+        // Do not write a new catalog/config while another turn is active. The
+        // active app-server continues using the complete loaded baseline.
+        await waitForGlobalCodexRuntimeIdle(globalRefreshIdleAbortController.signal);
+        if (globalRuntimeRefreshShuttingDown) return;
+        // Coalesce every save observed while waiting into the newest snapshot.
+        if (revision !== desiredGlobalRuntimeRevision) {
+          continue;
+        }
+        const beforePrepare = beforeGlobalRuntimeRefresh;
+        beforeGlobalRuntimeRefresh = undefined;
+        await beforePrepare?.();
+        if (globalRuntimeRefreshShuttingDown) return;
+        if (revision !== desiredGlobalRuntimeRevision) {
+          continue;
+        }
+        await prepareCodexRuntime({ globalOnly: true, globalRuntimeRevision: revision });
+        globalRefreshError = undefined;
+      } catch (error) {
+        if (globalRuntimeRefreshShuttingDown && error === globalRefreshIdleAbortController.signal.reason) return;
+        // A newer request may have superseded the operation that failed. Keep
+        // the refresh coordinator alive and try the latest queued transition.
+        if (revision !== desiredGlobalRuntimeRevision) {
+          continue;
+        }
+        throw error;
       }
-      await prepareCodexRuntime({ globalOnly: true, globalRuntimeRevision: revision });
     } while (loadedGlobalRuntimeRevision !== desiredGlobalRuntimeRevision);
   })()
-    .then(() => undefined)
     .catch((error) => {
+      globalRefreshError = error instanceof Error ? error : new Error(String(error));
       requireDeps().onStderr?.(
-        `[eco-codex] deferred global runtime refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        `[eco-codex] deferred global runtime refresh failed: ${globalRefreshError.message}`,
       );
     })
     .finally(() => {
@@ -917,29 +947,37 @@ export function scheduleCodexGlobalRuntimeRefresh(): void {
     });
 }
 
+/** Stop queued refreshes and wait for in-flight account/config work before shutdown. */
+export async function shutdownCodexGlobalRuntimeRefresh(): Promise<void> {
+  globalRuntimeRefreshShuttingDown = true;
+  beforeGlobalRuntimeRefresh = undefined;
+  globalRefreshIdleAbortController.abort(new Error("Codex runtime refresh is shutting down."));
+  await globalRefreshPromise;
+}
+
 export async function prepareCodexRuntime(
   input: PrepareCodexRuntimeInput = {},
 ): Promise<PreparedCodexRuntime> {
+  if (globalRuntimeRefreshShuttingDown && !input.globalOnly) {
+    throw new Error("Codex runtime is shutting down; new tasks are blocked.");
+  }
   // A thread selecting a just-saved model must wait for the already-scheduled
   // baseline refresh. Keep this outside prepareRuntimeTail: the refresher must
   // later enqueue its own materialization work on that same tail.
-  if (
-    !input.globalOnly &&
-    hasLoadedGlobalRuntimeBaseline() &&
-    (!catalogRoutesAreAvailable(input.requiredCatalogRoutes ?? [], loadedModelCatalogAliases) ||
-      !threadMcpServersAreAvailable(input.threadEnabledMcpServerNames ?? [], loadedGlobalMcpServerNames)) &&
-    refreshPending &&
-    globalRefreshPromise
-  ) {
-    if (globalRefreshActiveThreadIds.length > 0) {
-      input.onConfigReloadWait?.({
-        reason: catalogRoutesAreAvailable(input.requiredCatalogRoutes ?? [], loadedModelCatalogAliases)
-          ? "global_runtime"
-          : "model_catalog",
-        activeThreadIds: globalRefreshActiveThreadIds,
-      });
+  if (!input.globalOnly && refreshPending) {
+    if (globalRefreshPromise) {
+      if (globalRefreshActiveThreadIds.length > 0) {
+        input.onConfigReloadWait?.({
+          reason: catalogRoutesAreAvailable(input.requiredCatalogRoutes ?? [], loadedModelCatalogAliases)
+            ? "global_runtime"
+            : "model_catalog",
+          activeThreadIds: globalRefreshActiveThreadIds,
+        });
+      }
+      await awaitGlobalRuntimeRefresh(globalRefreshPromise, input.signal);
     }
-    await awaitGlobalRuntimeRefresh(globalRefreshPromise, input.signal);
+    if (globalRefreshError) throw globalRefreshError;
+    if (refreshPending) throw new Error("Codex runtime refresh did not complete; new tasks are blocked until it succeeds.");
   }
   const run = prepareRuntimeTail.then(() => prepareCodexRuntimeUnlocked(input));
   prepareRuntimeTail = run.then(
@@ -1494,26 +1532,33 @@ async function ensureIdleCodexAppServerRestartForCatalog(
   lastPreparedMcpFingerprint = "";
 }
 
-async function waitForGlobalCodexRuntimeIdle(): Promise<void> {
+async function waitForGlobalCodexRuntimeIdle(signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
   const client = getGlobalCodexRuntimeLifecycle()?.getClient();
   if (!client?.isInitialized) {
     globalRefreshActiveThreadIds = [];
     return;
   }
   try {
-    await waitForCodexConfigReload({
-      check: async () => {
-        const loadedThreadIds = await listLoadedCodexThreadIds(client);
-        const activeThreadIds = await filterActiveCodexThreadIds(client, loadedThreadIds);
-        return activeThreadIds.length > 0 ? { kind: "busy", activeThreadIds } : { kind: "ready" };
-      },
-      onWaiting: (activeThreadIds) => {
-        globalRefreshActiveThreadIds = activeThreadIds;
-        requireDeps().onStderr?.(
-          `[eco-codex] waiting to refresh global runtime; active threads=${activeThreadIds.join(",")}`,
-        );
-      },
-    });
+    await awaitGlobalRuntimeRefresh(
+      waitForCodexConfigReload({
+        signal,
+        check: async () => {
+          const loadedThreadIds = await listLoadedCodexThreadIds(client);
+          signal.throwIfAborted();
+          const activeThreadIds = await filterActiveCodexThreadIds(client, loadedThreadIds);
+          signal.throwIfAborted();
+          return activeThreadIds.length > 0 ? { kind: "busy", activeThreadIds } : { kind: "ready" };
+        },
+        onWaiting: (activeThreadIds) => {
+          globalRefreshActiveThreadIds = activeThreadIds;
+          requireDeps().onStderr?.(
+            `[eco-codex] waiting to refresh global runtime; active threads=${activeThreadIds.join(",")}`,
+          );
+        },
+      }).then(() => undefined),
+      signal,
+    );
   } finally {
     globalRefreshActiveThreadIds = [];
   }

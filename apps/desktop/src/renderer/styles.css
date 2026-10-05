@@ -8857,63 +8857,115 @@ button.integrated-web-search-clear-key:disabled {
   color: var(--danger, #ff3b30);
 }
 
-/* Codex accounts share the same compact account-console language as ChatGPT accounts. */
-.codex-accounts-panel { gap: 16px; container-type: inline-size; }
-.codex-accounts-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+/* Codex account workspace: identity first, credentials within reach. */
+.codex-accounts-panel { --codex-blue: #536de6; --codex-blue-soft: color-mix(in srgb, var(--codex-blue) 7%, var(--bg-elevated)); gap: 18px; container-type: inline-size; }
+[data-theme="dark"] .codex-accounts-panel { --codex-blue: #a4b3ff; }
+.codex-accounts-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 4px 0 2px; }
 .codex-accounts-heading { min-width: 0; }
-.codex-accounts-heading h2 { margin: 0; color: var(--text-primary); font-size: 16px; font-weight: 600; line-height: 1.4; }
-.codex-accounts-heading p { display: flex; align-items: flex-start; gap: 6px; margin: 6px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
-.codex-accounts-heading p svg { flex: 0 0 auto; margin-top: 2px; }
-.codex-accounts-hero > button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; white-space: nowrap; }
-.codex-accounts-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 12px; }
-.codex-toolbar-divider { margin: 0 8px; }
-.codex-toolbar-links { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-.codex-active-summary { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
-.codex-active-summary i { width: 6px; height: 6px; border-radius: 50%; background: var(--success, #34c759); box-shadow: 0 0 5px color-mix(in srgb, var(--success, #34c759) 70%, transparent); }
-.codex-accounts-search { position: relative; display: flex; align-items: center; }
-.codex-accounts-search .search-input { width: 100%; }
+.codex-accounts-heading h2 { margin: 0; color: var(--text-primary); font-size: 23px; font-weight: 650; letter-spacing: -.7px; line-height: 1.3; }
+.codex-accounts-heading p { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.codex-account-header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.codex-account-header-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 12px; border-radius: 8px; font-size: 12px; white-space: nowrap; }
+.codex-accounts-panel .codex-account-header-actions .settings-primary-button { background: var(--codex-blue); border-color: var(--codex-blue); color: #fff; }
+[data-theme="dark"] .codex-account-header-actions .settings-primary-button { color: #24283b; }
+.codex-current-account { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border: 1px solid color-mix(in srgb, var(--codex-blue) 22%, var(--border-subtle)); border-radius: 13px; background: var(--codex-blue-soft); }
+.codex-current-symbol { display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; color: var(--codex-blue); background: color-mix(in srgb, var(--codex-blue) 9%, var(--bg-elevated)); }
+.codex-current-identity { flex: 1; min-width: 0; }
+.codex-current-eyebrow { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 10px; letter-spacing: .5px; }
+.codex-current-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.codex-current-caption { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 6px; color: var(--text-muted); font-size: 11px; }
+.codex-current-assistant { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--codex-blue) 22%, var(--border-subtle)); border-radius: 8px; background: var(--bg-elevated); color: var(--codex-blue); font: inherit; font-size: 11px; cursor: pointer; }
+.codex-active-summary { display: inline-flex; align-items: center; gap: 7px; color: var(--text-primary); font-size: 13px; font-weight: 600; }
+.codex-active-summary i { width: 5px; height: 5px; border-radius: 50%; background: var(--codex-blue); }
+.codex-accounts-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; color: var(--text-muted); font-size: 11px; }
+.codex-toolbar-divider { margin: 0 8px; color: var(--border-strong); }
+.codex-toolbar-links { display: flex; align-items: center; gap: 16px; }
+.codex-toolbar-links .chatgpt-inline-link { font-size: 11px; }
+.codex-account-controls { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.codex-account-filters { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--bg-input); }
+.codex-account-filters button { display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 6px 9px; border-radius: 6px; color: var(--text-muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.codex-account-filters button span { font-size: 10px; font-variant-numeric: tabular-nums; opacity: .65; }
+.codex-account-filters button.is-selected { background: var(--bg-elevated); color: var(--text-primary); box-shadow: 0 1px 3px #0000000a; font-weight: 600; }
+.codex-accounts-search { position: relative; display: flex; align-items: center; min-width: 0; width: 230px; }
+.codex-accounts-search .search-input { width: 100%; height: 33px; font-size: 11px; border-radius: 8px; background: transparent; }
 .codex-account-list { display: flex; min-height: 0; flex-direction: column; gap: 10px; overflow-y: auto; overscroll-behavior: contain; }
-.codex-account-card { flex: 0 0 auto; min-width: 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-elevated); }
-.codex-account-card.is-active { border-color: color-mix(in srgb, var(--accent) 38%, var(--border-subtle)); background: color-mix(in srgb, var(--accent) 4%, var(--bg-elevated)); }
+.codex-account-card { flex: 0 0 auto; min-width: 0; padding: 16px 18px 13px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--bg-elevated); transition: border-color .16s ease; }
+.codex-account-card:hover { border-color: var(--border-strong); }
+.codex-account-card.is-active { border-color: color-mix(in srgb, var(--codex-blue) 30%, var(--border-subtle)); box-shadow: inset 3px 0 var(--codex-blue); }
 .codex-account-card-main { display: flex; min-width: 0; align-items: center; gap: 12px; }
-.codex-account-avatar { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 8px; background: var(--bg-primary); }
-.codex-account-avatar img { width: 23px; height: 23px; object-fit: contain; }
-.codex-account-identity { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; gap: 4px; }
+.codex-account-avatar { display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; border: 1px solid var(--border-subtle); border-radius: 11px; background: var(--bg-main); color: var(--text-secondary); font-size: 19px; font-weight: 600; }
+.codex-account-card.is-active .codex-account-avatar { color: var(--codex-blue); background: var(--codex-blue-soft); border-color: color-mix(in srgb, var(--codex-blue) 18%, var(--border-subtle)); }
+.codex-account-identity { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; gap: 5px; }
 .codex-account-identity strong { overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.codex-account-identity > span { overflow: hidden; color: var(--text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.codex-status-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 5px; color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 8%, transparent); font-size: 11px; white-space: nowrap; }
-.codex-status-badge i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-.codex-status-badge.is-ready { color: var(--success, #34c759); background: color-mix(in srgb, var(--success, #34c759) 10%, transparent); }
-.codex-status-badge.is-danger { color: var(--danger, #ff3b30); background: color-mix(in srgb, var(--danger, #ff3b30) 10%, transparent); }
-.codex-account-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.codex-action-primary, .codex-action-secondary { display: inline-flex; min-height: 30px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: transparent; color: var(--text-primary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
-.codex-action-primary { border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle)); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent-text); }
-.codex-action-primary:hover:not(:disabled), .codex-action-secondary:hover:not(:disabled) { background: var(--nav-hover-solid); }
+.codex-account-identity > span { overflow: hidden; color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.codex-status-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 5px; color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.codex-status-badge i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.codex-status-badge.is-ready { color: var(--codex-blue); background: var(--codex-blue-soft); }
+.codex-status-badge.is-danger { color: var(--text-muted); }
+.codex-status-badge.is-warning { color: var(--warning, #c99535); background: color-mix(in srgb, var(--warning, #c99535) 8%, transparent); }
+.codex-account-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.codex-action-primary, .codex-action-secondary { display: inline-flex; min-height: 30px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid var(--border-subtle); border-radius: 7px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
+.codex-action-primary { border-color: color-mix(in srgb, var(--codex-blue) 22%, var(--border-subtle)); background: var(--codex-blue-soft); color: var(--codex-blue); }
+.codex-action-primary:hover:not(:disabled), .codex-action-secondary:hover:not(:disabled), .codex-current-assistant:hover { background: var(--nav-hover-solid); }
 .codex-action-primary:disabled, .codex-action-secondary:disabled { cursor: not-allowed; opacity: .45; }
-.codex-current-label { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border-radius: 7px; background: color-mix(in srgb, var(--success, #34c759) 10%, transparent); color: var(--success, #34c759); font-size: 12px; white-space: nowrap; }
-.codex-account-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 12px; padding-left: 44px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-.codex-proxy-link { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; white-space: nowrap; cursor: pointer; }
-.codex-proxy-link span { margin-left: 3px; color: var(--accent-text); }
-.codex-proxy-link:hover span { text-decoration: underline; }
+.codex-account-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 15px; margin-top: 13px; padding-top: 11px; border-top: 1px solid color-mix(in srgb, var(--border-subtle) 65%, transparent); color: var(--text-muted); font-size: 10px; line-height: 1.5; }
+.codex-profile-presence { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.codex-profile-presence span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); opacity: .4; font-size: 10px; }
+.codex-profile-presence span.is-saved { opacity: 1; color: var(--text-secondary); }
+.codex-profile-presence span.is-saved svg { color: var(--codex-blue); }
+.codex-proxy-link { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; white-space: nowrap; cursor: pointer; }
+.codex-proxy-link:hover { color: var(--codex-blue); }
 .codex-proxy-link:disabled { cursor: not-allowed; opacity: .5; }
-.codex-quota-summary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.codex-quota-summary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .codex-quota-summary b { color: var(--text-secondary); font-weight: 500; }
 .codex-quota-summary em { font-style: normal; }
 .codex-quota-summary .is-ok { color: var(--success, #34c759); }
 .codex-quota-summary .is-limited, .codex-quota-summary .is-error { color: var(--danger, #ff3b30); }
 .codex-account-action-menu { width: 180px; z-index: 12000; }
 .codex-account-action-menu .account-action-item { white-space: nowrap; }
-.codex-empty-state { display: flex; min-height: 200px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; border: 1px solid var(--border-subtle); border-radius: 10px; color: var(--text-muted); text-align: center; }
+.codex-account-sync-error, .codex-account-sync-conflict { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--danger) 7%, transparent); color: var(--danger); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.codex-account-sync-conflict { border-color: color-mix(in srgb, #c99535 32%, transparent); background: color-mix(in srgb, #c99535 8%, transparent); color: #c99535; }
+.codex-empty-state { display: flex; min-height: 200px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-muted); text-align: center; }
 .codex-empty-state strong { color: var(--text-primary); font-size: 14px; }
 .codex-empty-state p { margin: 0 0 6px; font-size: 12px; line-height: 1.5; }
 .codex-accounts-panel button:focus-visible, .codex-account-action-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@container (max-width: 520px) {
-  .codex-accounts-hero { flex-wrap: wrap; }
+.openai-secret-field { display: flex; align-items: center; gap: 3px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-input); padding-right: 4px; }
+.openai-secret-field .mcp-field-input { min-width: 0; flex: 1; border: 0; background: transparent; box-shadow: none; }
+.openai-secret-field:focus-within { border-color: var(--accent); }
+.openai-secret-field .mcp-icon-button { flex: 0 0 auto; width: 25px; height: 28px; }
+.openai-profile-fields { margin: 4px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border-subtle); }
+.openai-profile-fields legend { padding: 0 10px 0 0; color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.openai-profile-fields legend span { margin-left: 5px; color: var(--text-muted); font-size: 10px; font-weight: 400; }
+.openai-profile-fields > p { margin: -5px 0 16px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.openai-profile-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 15px 12px; }
+.openai-profile-wide { grid-column: 1/-1; }
+.codex-account-editor .mcp-field-input { border-radius: 8px; font-size: 12px; }
+.codex-account-editor .settings-modal-title, .codex-import-modal .settings-modal-title { font-size: 17px; font-weight: 600; letter-spacing: -.4px; }
+.codex-import-intro { display: flex; align-items: center; gap: 13px; margin-bottom: 20px; }
+.codex-import-icon { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 auto; color: var(--accent-text); background: var(--accent-soft); border-radius: 13px; }
+.codex-import-intro strong { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.codex-import-intro p { margin: 6px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.codex-import-format { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 10px; font-size: 10px; color: var(--text-secondary); }
+.codex-import-format span { padding: 4px 7px; border-radius: 5px; background: var(--bg-input); border: 1px solid var(--border-subtle); }
+.codex-import-format i { font: 10px var(--font-mono); color: var(--text-muted); }
+.codex-import-textarea { min-height: 200px; padding: 12px; font: 11px/1.8 var(--font-mono); border-radius: 10px; }
+.codex-import-help { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-top: 10px; color: var(--text-muted); font-size: 10px; line-height: 1.5; }
+.codex-import-help > span:last-child { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.openai-import-result { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--bg-input); color: var(--text-secondary); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
+@container (max-width: 550px) {
+  .codex-accounts-hero { flex-wrap: wrap; gap: 12px; }
   .codex-account-card-main { flex-wrap: wrap; gap: 10px; }
-  .codex-account-identity { flex-basis: calc(100% - 52px); }
+  .codex-account-identity { flex-basis: calc(100% - 65px); }
   .codex-account-actions { margin-left: auto; }
-  .codex-account-meta { padding-left: 0; }
+  .codex-status-badge { margin-left: 50px; }
 }
+@container (max-width: 450px) {
+  .codex-account-controls { flex-wrap: wrap; gap: 10px; }
+  .codex-accounts-search { width: 100%; }
+  .codex-current-account { padding: 14px; flex-wrap: wrap; }
+  .codex-current-assistant { margin-left: 55px; }
+}
+@media (prefers-reduced-motion: reduce) { .codex-account-card { transition: none; } }
 
 /* Provider list: searchable cards keep endpoint and actions readable at a glance. */
 .provider-list-panel { gap: 16px; container-type: inline-size; }

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { OpenAIAccountService } from "../src/main/openai-account-service";
+import { writeFakeCodexLogin } from "../test-support/fake-codex-login";
 
 const tempDirs: string[] = [];
 
@@ -78,6 +79,7 @@ test("active account proxy is available without listing accounts first", async (
     }),
   );
   await service.setActiveAccount(account.id);
+  await service.applyPendingTransition();
 
   expect(await service.getActiveProxyUrl()).toBe("http://user:secret@127.0.0.1:7890");
 
@@ -88,11 +90,7 @@ test("cancelling an OAuth login settles the result and terminates the codex chil
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-accounts-"));
   tempDirs.push(root);
   const executable = path.join(root, "fake-codex");
-  await fs.writeFile(
-    executable,
-    "#!/bin/sh\nprintf '%s\\n' 'https://auth.openai.com/oauth/authorize?client_id=test'\nsleep 30\n",
-    { encoding: "utf8", mode: 0o755 },
-  );
+  await writeFakeCodexLogin(executable);
 
   const service = new OpenAIAccountService(root, executable);
   await service.initialize();
@@ -214,9 +212,9 @@ test("initialize also pulls a newer CODEX_HOME credential into the account copy"
   const service = new OpenAIAccountService(root, "codex-test");
   await service.initialize();
 
-  expect(
-    await refreshTokenIn(path.join(root, "codex-accounts", accountId, "auth.json")),
-  ).toBe("rt-fresh");
+  const saved = await service.getAuthJsonContent(accountId);
+  if (!saved) throw new Error("Expected SQLite auth.json content");
+  expect(JSON.parse(saved).tokens.refresh_token).toBe("rt-fresh");
   service.dispose();
 });
 
@@ -266,6 +264,8 @@ test("auth reconciliation refuses to copy a different account's tokens into the 
   );
   await new Promise((resolve) => setTimeout(resolve, 400));
 
-  expect(await refreshTokenIn(accountPath)).toBe("rt-mine");
+  const saved = await service.getAuthJsonContent(accountId);
+  if (!saved) throw new Error("Expected the account credential to remain stored");
+  expect(JSON.parse(saved).tokens.refresh_token).toBe("rt-mine");
   service.dispose();
 });

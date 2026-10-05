@@ -13,6 +13,17 @@
 } from "@eco/shared";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopUpdateState } from "../shared/desktop-update";
+import type {
+  OpenAIAccount,
+  OpenAIAccountAssistantAction,
+  OpenAIAccountAssistantActionResult,
+  OpenAIAccountAssistantState,
+  OpenAIAccountCreateInput,
+  OpenAIAccountDetails,
+  OpenAIAccountImportResult,
+  OpenAIAccountSyncStatus,
+  OpenAIAccountUpdateInput,
+} from "../shared/openai-account";
 import type { SupabaseDeploymentConnection, SupabaseDeploymentSnapshot } from "../shared/supabase-deployment";
 import {
   type AgentTemplate,
@@ -567,28 +578,13 @@ const api = {
 
   // ─── OpenAI Account Management ─────────────────────────────────────────────
   openAIAccountsList(): Promise<
-    Array<{
-      id: string;
-      name: string;
-      proxyUrl?: string;
-      isLoggedIn: boolean;
-      authState: "missing" | "configured" | "expired";
-      lastLogin?: string;
-      createdAt: string;
-    }>
+    OpenAIAccount[]
   > {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsList);
   },
 
-  openAIAccountsCreate(name: string, proxyUrl?: string): Promise<{
-    id: string;
-    name: string;
-    proxyUrl?: string;
-    isLoggedIn: boolean;
-    authState: "missing" | "configured" | "expired";
-    createdAt: string;
-  }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsCreate, { name, proxyUrl });
+  openAIAccountsCreate(input: OpenAIAccountCreateInput): Promise<OpenAIAccount> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsCreate, input);
   },
 
   openAIAccountsDelete(accountId: string): Promise<{ success: boolean }> {
@@ -599,7 +595,19 @@ const api = {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsStartLogin, { accountId });
   },
 
-  openAIAccountsSetActive(accountId: string | null): Promise<{ success: boolean }> {
+  openAIAccountsOpenAssistant(accountId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsOpenAssistant, { accountId });
+  },
+
+  openAIAccountsAssistantState(accountId: string): Promise<OpenAIAccountAssistantState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsAssistantState, { accountId });
+  },
+
+  openAIAccountsAssistantAction(accountId: string, action: OpenAIAccountAssistantAction): Promise<OpenAIAccountAssistantActionResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsAssistantAction, { accountId, action });
+  },
+
+  openAIAccountsSetActive(accountId: string | null): Promise<{ success: boolean; pending?: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsSetActive, { accountId });
   },
 
@@ -632,23 +640,45 @@ const api = {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsQueryQuota, { accountId });
   },
 
-  openAIAccountsUpdate(accountId: string, name: string, proxyUrl?: string): Promise<{ success: boolean }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsUpdate, { accountId, name, proxyUrl });
+  openAIAccountsUpdate(input: OpenAIAccountUpdateInput): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsUpdate, input);
   },
 
   openAIAccountsGetAuthJson(accountId: string): Promise<string | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsGetAuthJson, { accountId });
   },
 
+  openAIAccountsGetDetails(accountId: string): Promise<OpenAIAccountDetails> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsGetDetails, { accountId });
+  },
+
+  openAIAccountsImport(text: string): Promise<OpenAIAccountImportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsImport, { text });
+  },
+
+  openAIAccountsCancelSwitch(): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsCancelSwitch);
+  },
+
   openAIAccountsGetActive(): Promise<{
     activeAccountId: string | null;
     isLoggedIn: boolean;
     message: string;
+    pendingAccountId?: string | null;
+    syncStatus: OpenAIAccountSyncStatus;
   }> {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsGetActive);
   },
-  onCodexOauthLoginResult(callback: (result: { success: boolean; message: string }) => void) {
-    ipcRenderer.on("codex-oauth:login-result", (_event, result) => callback(result));
+
+  onOpenAIAccountsChanged(callback: (event: { syncStatus: OpenAIAccountSyncStatus }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, state: { syncStatus: OpenAIAccountSyncStatus }) => callback(state);
+    ipcRenderer.on(IPC_CHANNELS.openAIAccountsChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.openAIAccountsChanged, listener);
+  },
+  onCodexOauthLoginResult(callback: (result: { success: boolean; message: string; accountId?: string }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, result: { success: boolean; message: string; accountId?: string }) => callback(result);
+    ipcRenderer.on("codex-oauth:login-result", listener);
+    return () => ipcRenderer.off("codex-oauth:login-result", listener);
   },
   testRouteProfile(request: TestRoleRoutesRequest): Promise<TestRoleRoutesResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileTest, request);
