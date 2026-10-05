@@ -63,8 +63,12 @@ test("task panel close remains reversible and all close paths share the controll
   expect(taskPanelController).toMatch(
     /pendingTaskPanelTabCloseRef\.current = tabId;\s*dismissTaskPanel\(\);/,
   );
-  expect(appSource).toMatch(
-    /onOpenTerminal=\{\(\) => \{\s*toggleTerminalForCurrentProject\(\);\s*dismissTaskPanel\(\);/,
+  const homeToolController = appSource.slice(
+    appSource.indexOf("const openTaskPanelHomeTool"),
+    appSource.indexOf("const openReviewTaskDrawer"),
+  );
+  expect(homeToolController).toMatch(
+    /if \(tool === "terminal"\) \{[\s\S]*?toggleTerminalForCurrentProject\(\);\s*dismissTaskPanel\(\);/,
   );
 });
 

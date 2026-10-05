@@ -41,11 +41,17 @@ import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { BrowserPanel } from "./BrowserPanel";
+import { TaskPanelTabOrder } from "./TaskPanelTabOrder";
+import { TaskPanelNewTab } from "./TaskPanelNewTab";
 import { useBrowserTaskInstances } from "./browser-state-store";
 import { copyTextToClipboard } from "./clipboard";
 import { i18n } from "./i18n";
 import { ImageLightbox } from "./image-lightbox";
-import { createImageObjectUrlFromBase64, revokeImageObjectUrl, revokeImageObjectUrls } from "./image-object-url";
+import {
+  createImageObjectUrlFromBase64,
+  revokeImageObjectUrl,
+  revokeImageObjectUrls,
+} from "./image-object-url";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -66,6 +72,8 @@ import {
   TASK_PANEL_REVIEW_TAB_ID,
   TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
   type TaskPanelActiveTab,
+  type TaskPanelHomeTool,
+  isNewTaskPanelTabId,
 } from "./task-panel-tabs";
 import "./subagent-task-drawer-home.css";
 
@@ -613,8 +621,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
     };
   }, [artifact.id, t]);
 
-  const title =
-    artifact.title?.trim() || fileName || artifact.sourceRef || t("task.imageDisplay.emptyTitle");
+  const title = artifact.title?.trim() || fileName || artifact.sourceRef || t("task.imageDisplay.emptyTitle");
   const metaParts = [
     t(`task.imageDisplay.source.${artifact.sourceKind}`),
     artifact.width && artifact.height
@@ -643,7 +650,9 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
             {title}
           </p>
         </div>
-        {metaParts.length > 0 ? <span className="image-artifact-detail-meta">{metaParts.join(" · ")}</span> : null}
+        {metaParts.length > 0 ? (
+          <span className="image-artifact-detail-meta">{metaParts.join(" · ")}</span>
+        ) : null}
       </header>
       {loadError ? <p className="image-artifact-error">{loadError}</p> : null}
       {src ? (
@@ -707,7 +716,9 @@ export function SubagentTaskDrawer({
   onSelectBrowser,
   browserInstances,
   onViewedFileChange,
-  onOpenTerminal,
+  onOpenHomeTool,
+  onNavigateNewTab,
+  onSelectNewTab,
   onNewBrowserTab,
   onSelectReviewPath,
   onOpenTerminalTask,
@@ -757,7 +768,9 @@ export function SubagentTaskDrawer({
   onSelectBrowser: (browserId?: string) => void;
   browserInstances?: readonly TaskPanelBrowserInstance[];
   onViewedFileChange: (target: WorkspaceFileReference & { requestId: number }) => void;
-  onOpenTerminal: () => void;
+  onOpenHomeTool: (sourceTabId: string, tool: TaskPanelHomeTool) => void;
+  onNavigateNewTab: (tabId: string, url: string) => Promise<void>;
+  onSelectNewTab: (tabId: string) => void;
   onNewBrowserTab: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
@@ -786,6 +799,8 @@ export function SubagentTaskDrawer({
   const sshBookmarksSelected = activeTab === TASK_PANEL_SSH_BOOKMARKS_TAB_ID;
   const activeBrowserId = parseBrowserTaskTabId(String(activeTab));
   const browserSelected = Boolean(activeBrowserId);
+  const newTabIds = openTabIds.filter(isNewTaskPanelTabId);
+  const newTabSelected = isNewTaskPanelTabId(activeTab);
   const activeImageArtifactId = parseImageGenerationTaskTabId(String(activeTab));
   const imageSelected = Boolean(activeImageArtifactId);
   const activeImageArtifact = imageArtifacts.find((artifact) => artifact.id === activeImageArtifactId);
@@ -840,6 +855,7 @@ export function SubagentTaskDrawer({
     !terminalTasksSelected &&
     !sshBookmarksSelected &&
     !browserSelected &&
+    !newTabSelected &&
     !imageSelected &&
     !imageDisplaySelected
       ? cards.find((card) => card.key === activeTab)
@@ -863,9 +879,40 @@ export function SubagentTaskDrawer({
       aria-label={fullscreen ? t("app.taskPanelFullscreen") : t("app.taskPanel")}
     >
       <header className="subagent-task-panel-topbar">
-        <div className="subagent-task-panel-tabs" role="tablist" aria-label={t("task.tabs")}>
+        <TaskPanelTabOrder openTabIds={openTabIds} label={t("task.tabs")}>
+          {newTabIds.map((tabId) => (
+            <span
+              key={tabId}
+              data-task-panel-tab-id={tabId}
+              className={`subagent-task-panel-tab-shell${activeTab === tabId ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tabId}
+                aria-controls={`subagent-task-tab-${tabId}`}
+                className={`subagent-task-panel-tab subagent-task-panel-tab--new${activeTab === tabId ? " is-active" : ""}`}
+                onClick={() => onSelectNewTab(tabId)}
+              >
+                <Globe size={15} aria-hidden />
+                <span>{t("browser.newTab")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("browser.newTab") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(tabId)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
+          ))}
           {filesOpen ? (
-            <span className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_FILES_TAB_ID}
+              className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--files${
@@ -891,7 +938,10 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {fileViewerOpen ? (
-            <span className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_FILE_VIEWER_TAB_ID}
+              className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--file-viewer${
@@ -923,7 +973,10 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {reviewOpen ? (
-            <span className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_REVIEW_TAB_ID}
+              className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--review${
@@ -958,6 +1011,7 @@ export function SubagentTaskDrawer({
             return (
               <span
                 key={tabId}
+                data-task-panel-tab-id={tabId}
                 className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}${
                   isLoading ? " is-loading" : ""
                 }`}
@@ -996,7 +1050,10 @@ export function SubagentTaskDrawer({
             );
           })}
           {plan && planOpen ? (
-            <span className={`subagent-task-panel-tab-shell${planSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_PLAN_TAB_ID}
+              className={`subagent-task-panel-tab-shell${planSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--plan${
@@ -1025,7 +1082,11 @@ export function SubagentTaskDrawer({
             const tabId = imageGenerationTaskTabId(artifact.id);
             const isActive = activeTab === tabId;
             return (
-              <span key={tabId} className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}>
+              <span
+                key={tabId}
+                data-task-panel-tab-id={tabId}
+                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
+              >
                 <button
                   type="button"
                   className={`subagent-task-panel-tab${isActive ? " is-active" : ""}`}
@@ -1055,7 +1116,11 @@ export function SubagentTaskDrawer({
               artifact.sourceRef?.split(/[\\/]/u).at(-1) ||
               t("task.imageDisplay.title");
             return (
-              <span key={tabId} className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}>
+              <span
+                key={tabId}
+                data-task-panel-tab-id={tabId}
+                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
+              >
                 <button
                   type="button"
                   className={`subagent-task-panel-tab${isActive ? " is-active" : ""}`}
@@ -1090,6 +1155,7 @@ export function SubagentTaskDrawer({
             return (
               <span
                 key={card.key}
+                data-task-panel-tab-id={card.key}
                 className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
                 style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
               >
@@ -1131,7 +1197,10 @@ export function SubagentTaskDrawer({
             );
           })}
           {terminalTasksOpen ? (
-            <span className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID}
+              className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--terminal${
@@ -1157,7 +1226,10 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {sshBookmarksOpen ? (
-            <span className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_SSH_BOOKMARKS_TAB_ID}
+              className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--ssh${
@@ -1191,10 +1263,21 @@ export function SubagentTaskDrawer({
           >
             <Plus size={17} aria-hidden />
           </button>
-        </div>
+        </TaskPanelTabOrder>
       </header>
 
       <div className="subagent-task-panel-body">
+        {newTabIds.map((tabId) => (
+          <div
+            key={tabId}
+            id={`subagent-task-tab-${tabId}`}
+            className={`subagent-task-panel-tab-pane subagent-task-panel-tab-pane--new ${activeTab === tabId ? "is-active" : "is-inactive"}`}
+            role="tabpanel"
+            hidden={activeTab !== tabId}
+          >
+            <TaskPanelNewTab tabId={tabId} onOpenTool={onOpenHomeTool} onNavigate={onNavigateNewTab} />
+          </div>
+        ))}
         {filesSelected ? (
           <div id="subagent-task-tab-files" className="subagent-task-panel-tab-pane" role="tabpanel">
             <WorkspaceFileBrowser workspacePath={workspacePath} />
@@ -1247,10 +1330,7 @@ export function SubagentTaskDrawer({
               <BrowserPanel
                 active={isActive && surfaceActive}
                 browserId={instance.id}
-                onOpenTerminal={onOpenTerminal}
-                onSelectFiles={onSelectFiles}
-                onSelectReview={onSelectReview}
-                onSelectSshBookmarks={onSelectSshBookmarks}
+                onOpenTool={(browserId, tool) => onOpenHomeTool(browserTaskTabId(browserId), tool)}
               />
             </div>
           );

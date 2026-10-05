@@ -406,7 +406,7 @@ import {
   normalizeTaskPanelSessionUiState,
   type TaskPanelSessionUiState,
 } from "./task-panel-session-ui-state";
-import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
+import { addOpenTaskPanelTab, removeOpenTaskPanelTab, replaceOpenTaskPanelTab } from "./task-panel-tab-state";
 import {
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
   TASK_PANEL_FILE_VIEWER_TAB_ID,
@@ -416,6 +416,9 @@ import {
   TASK_PANEL_REVIEW_TAB_ID,
   TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
   type TaskPanelActiveTab,
+  type TaskPanelHomeTool,
+  isNewTaskPanelTabId,
+  newTaskPanelTabId,
 } from "./task-panel-tabs";
 import {
   createProjectTerminalState,
@@ -2016,6 +2019,9 @@ function App() {
   taskPanelActiveTabRef.current = taskPanelActiveTab;
   /** Last `activateBrowserId` already turned into a tab switch — main keeps the field set. */
   const handledActivateBrowserIdRef = useRef<string | undefined>(undefined);
+  /** Home tools replace their blank tab immediately while its guest closes asynchronously. */
+  const replacingBrowserHomeIdsRef = useRef(new Set<string>());
+  const pendingNewTabNavigationsRef = useRef(new Set<string>());
   const taskPanelUiByThreadRef = useRef<Record<string, TaskPanelSessionUiState>>({});
   const taskPanelUiThreadIdRef = useRef<string | undefined>(undefined);
   /** After startThread from landing, keep live panel tabs (browsers opened before first send). */
@@ -5634,11 +5640,17 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = browserStateStore.onStateChange((state) => {
+      // Navigation replaces a local start tab before exposing its newly created guest.
+      if (pendingNewTabNavigationsRef.current.size > 0) return;
       // Agent navigated / created a page: track tabs, but never force-open the work panel.
       // When the panel is already open on a non-browser tab (files / plan / …), do not
       // switch active tab — that would mount BrowserPanel and steal composer focus.
       // Only follow the agent when the human is already watching a browser tab.
-      if (state.revealBrowserId && currentProjectPath) {
+      if (
+        state.revealBrowserId &&
+        currentProjectPath &&
+        !replacingBrowserHomeIdsRef.current.has(state.revealBrowserId)
+      ) {
         const tabId = browserTaskTabId(state.revealBrowserId);
         setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
         if (taskDrawerOpenRef.current && isBrowserTaskTabId(String(taskPanelActiveTabRef.current ?? ""))) {
@@ -5649,7 +5661,11 @@ function App() {
       // User-initiated browser open: switch to the browser tab — but only once per intent.
       // Main keeps `activateBrowserId` set for the page's lifetime, so re-switching on every
       // later emit would drag the user off whatever tab they opened next (files / file viewer).
-      if (state.activateBrowserId && currentProjectPath) {
+      if (
+        state.activateBrowserId &&
+        currentProjectPath &&
+        !replacingBrowserHomeIdsRef.current.has(state.activateBrowserId)
+      ) {
         const tabId = browserTaskTabId(state.activateBrowserId);
         const isNewActivation = handledActivateBrowserIdRef.current !== state.activateBrowserId;
         handledActivateBrowserIdRef.current = state.activateBrowserId;
@@ -5664,6 +5680,7 @@ function App() {
         setOpenTaskPanelTabIds((current) => {
           let next = current;
           for (const instance of state.instances) {
+            if (replacingBrowserHomeIdsRef.current.has(instance.id)) continue;
             next = addOpenTaskPanelTab(next, browserTaskTabId(instance.id));
           }
           return next;
@@ -5685,6 +5702,7 @@ function App() {
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
           tabId === TASK_PANEL_PLAN_TAB_ID ||
           tabId === TASK_PANEL_SSH_BOOKMARKS_TAB_ID ||
+          isNewTaskPanelTabId(tabId) ||
           activeSubagentCards.some((card) => card.key === tabId)
         ) {
           return true;
@@ -5760,6 +5778,13 @@ function App() {
         return;
       }
       setSelectedSubagentAgentId(undefined);
+      if (!resolved.url) {
+        const tabId = newTaskPanelTabId(crypto.randomUUID());
+        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+        setTaskPanelActiveTab(tabId);
+        if (!taskDrawerOpenRef.current) revealTaskPanel();
+        return;
+      }
       void window.eco
         ?.browserOpen?.({
           reveal: true,
@@ -5779,6 +5804,40 @@ function App() {
         });
     },
     [activeThread?.id, currentProjectPath, revealTaskPanel, selectBrowserTaskTab],
+  );
+
+  const navigateNewTaskPanelTab = useCallback(
+    async (sourceTabId: string, url: string) => {
+      const eco = window.eco;
+      if (!eco || !currentProjectPath || pendingNewTabNavigationsRef.current.has(sourceTabId)) return;
+      pendingNewTabNavigationsRef.current.add(sourceTabId);
+      try {
+        const next = await eco.browserOpen({
+          url,
+          reveal: false,
+          newBrowser: true,
+          ...(activeThread?.id ? { threadId: activeThread.id } : { workspacePath: currentProjectPath }),
+        });
+        const browserId = next.focusedBrowserId;
+        if (!browserId) throw new Error("浏览器未返回新页面实例");
+        const tabId = browserTaskTabId(browserId);
+        setOpenTaskPanelTabIds((current) => replaceOpenTaskPanelTab(current, sourceTabId, tabId));
+        if (taskPanelActiveTabRef.current === sourceTabId) {
+          taskPanelActiveTabRef.current = tabId;
+          setTaskPanelActiveTab(tabId);
+        }
+        browserStateStore.setState(next);
+      } catch (error) {
+        showAppMessageError(error instanceof Error ? error.message : String(error));
+      } finally {
+        pendingNewTabNavigationsRef.current.delete(sourceTabId);
+        if (pendingNewTabNavigationsRef.current.size === 0) {
+          const latest = browserStateStore.getState();
+          if (latest) browserStateStore.setState({ ...latest });
+        }
+      }
+    },
+    [activeThread?.id, currentProjectPath, showAppMessageError],
   );
 
   const toggleTaskPanelForCurrentProject = useCallback(() => {
@@ -5808,7 +5867,11 @@ function App() {
     if (!currentProjectPath) {
       return;
     }
-    if (taskDrawerOpen && isBrowserTaskTabId(String(taskPanelActiveTab)) && !taskPanelClosingRef.current) {
+    if (
+      taskDrawerOpen &&
+      (isBrowserTaskTabId(taskPanelActiveTab) || isNewTaskPanelTabId(taskPanelActiveTab)) &&
+      !taskPanelClosingRef.current
+    ) {
       dismissTaskPanel();
       return;
     }
@@ -8351,6 +8414,46 @@ function App() {
   }, [currentProjectPath, handleChangesDiffError, handleChangesDiffLoaded, handleChangesDiffLoadingChange]);
   refreshReviewDiffRef.current = refreshReviewDiff;
 
+  const openTaskPanelHomeTool = useCallback(
+    async (sourceTabId: string, tool: TaskPanelHomeTool) => {
+      const eco = window.eco;
+      if (!eco) return;
+      const browserId = parseBrowserTaskTabId(sourceTabId);
+      if (browserId && replacingBrowserHomeIdsRef.current.has(browserId)) return;
+      if (browserId) replacingBrowserHomeIdsRef.current.add(browserId);
+      try {
+        setSelectedSubagentAgentId(undefined);
+        if (tool === "terminal") {
+          setOpenTaskPanelTabIds((current) => removeOpenTaskPanelTab(current, sourceTabId).tabs);
+          taskPanelActiveTabRef.current = TASK_PANEL_HOME_TAB_ID;
+          setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
+          toggleTerminalForCurrentProject();
+          dismissTaskPanel();
+        } else {
+          const tabId = {
+            review: TASK_PANEL_REVIEW_TAB_ID,
+            files: TASK_PANEL_FILES_TAB_ID,
+            sshBookmarks: TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
+          }[tool];
+          setOpenTaskPanelTabIds((current) => replaceOpenTaskPanelTab(current, sourceTabId, tabId));
+          taskPanelActiveTabRef.current = tabId;
+          setTaskPanelActiveTab(tabId);
+          if (tool === "review") void refreshReviewDiff();
+        }
+        // UI replacement happens in the click batch, before IPC can emit a browser removal.
+        if (browserId) {
+          const next = await eco.browserCloseInstance({ browserId });
+          browserStateStore.setState(next);
+        }
+      } catch (error) {
+        showAppMessageError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (browserId) replacingBrowserHomeIdsRef.current.delete(browserId);
+      }
+    },
+    [dismissTaskPanel, refreshReviewDiff, showAppMessageError, toggleTerminalForCurrentProject],
+  );
+
   const openReviewTaskDrawer = useCallback(async () => {
     setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID));
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
@@ -10152,9 +10255,11 @@ function App() {
               );
               setFileTarget(target);
             }}
-            onOpenTerminal={() => {
-              toggleTerminalForCurrentProject();
-              dismissTaskPanel();
+            onOpenHomeTool={(sourceTabId, tool) => void openTaskPanelHomeTool(sourceTabId, tool)}
+            onNavigateNewTab={navigateNewTaskPanelTab}
+            onSelectNewTab={(tabId) => {
+              setTaskPanelActiveTab(tabId);
+              setSelectedSubagentAgentId(undefined);
             }}
             onNewBrowserTab={openBrowserTaskPanel}
             onSelectReviewPath={setReviewSelectedPath}

@@ -1,10 +1,52 @@
 import { describe, expect, test } from "bun:test";
-import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "../src/renderer/task-panel-tab-state";
+import {
+  addOpenTaskPanelTab,
+  removeOpenTaskPanelTab,
+  replaceOpenTaskPanelTab,
+} from "../src/renderer/task-panel-tab-state";
+import {
+  TASK_PANEL_FILES_TAB_ID,
+  TASK_PANEL_REVIEW_TAB_ID,
+  TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
+} from "../src/renderer/task-panel-tabs";
 
 describe("task panel tab state", () => {
   test("keeps an opened tab without duplicating it", () => {
     expect(addOpenTaskPanelTab(["files", "review"], "files")).toEqual(["files", "review"]);
     expect(addOpenTaskPanelTab(["files"], "review")).toEqual(["files", "review"]);
+  });
+
+  test("replaces only the source new tab when opening a home tool", () => {
+    for (const toolTabId of [
+      TASK_PANEL_FILES_TAB_ID,
+      TASK_PANEL_REVIEW_TAB_ID,
+      TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
+    ]) {
+      expect(
+        replaceOpenTaskPanelTab(
+          ["browser:page", "browser:new", "browser:other-new"],
+          "browser:new",
+          toolTabId,
+        ),
+      ).toEqual(["browser:page", toolTabId, "browser:other-new"]);
+    }
+  });
+
+  test("removes the new tab and reuses an already opened tool tab", () => {
+    expect(
+      replaceOpenTaskPanelTab(
+        [TASK_PANEL_FILES_TAB_ID, "browser:new", TASK_PANEL_REVIEW_TAB_ID],
+        "browser:new",
+        TASK_PANEL_REVIEW_TAB_ID,
+      ),
+    ).toEqual([TASK_PANEL_FILES_TAB_ID, TASK_PANEL_REVIEW_TAB_ID]);
+  });
+
+  test("adds the tool tab after browser state has already removed the source", () => {
+    expect(replaceOpenTaskPanelTab(["browser:page"], "browser:new", TASK_PANEL_FILES_TAB_ID)).toEqual([
+      "browser:page",
+      TASK_PANEL_FILES_TAB_ID,
+    ]);
   });
 
   test("falls back to the neighboring tab when the active tab closes", () => {

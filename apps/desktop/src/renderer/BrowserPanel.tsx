@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { type BrowserViewState, normalizeBrowserNavigateUrl } from "../shared/browser";
 import { useBrowserInstanceIds } from "./browser-state-store";
 import { BrowserWebviewViewportMarker } from "./BrowserWebviewViewportMarker";
+import type { TaskPanelHomeTool } from "./task-panel-tabs";
 
 const ICON_SIZE = 15;
 
@@ -23,10 +24,7 @@ export interface BrowserPanelProps {
   active: boolean;
   /** Eco browser instance id for this task tab. */
   browserId: string;
-  onOpenTerminal: () => void;
-  onSelectFiles: () => void;
-  onSelectReview: () => void;
-  onSelectSshBookmarks: () => void;
+  onOpenTool: (browserId: string, tool: TaskPanelHomeTool) => void;
 }
 
 /**
@@ -37,10 +35,7 @@ export interface BrowserPanelProps {
 export function BrowserPanel({
   active,
   browserId,
-  onOpenTerminal,
-  onSelectFiles,
-  onSelectReview,
-  onSelectSshBookmarks,
+  onOpenTool,
 }: BrowserPanelProps) {
   const { t } = useTranslation();
   const toolHomeTitleId = `browser-tool-home-title-${browserId}`;
@@ -176,19 +171,19 @@ export function BrowserPanel({
             aria-labelledby={toolHomeTitleId}
           >
             <h2 id={toolHomeTitleId}>{t("browser.toolsTitle")}</h2>
-            <button type="button" onClick={onSelectReview}>
+            <button type="button" onClick={() => onOpenTool(browserId, "review")}>
               <ListChecks size={17} aria-hidden />
               <span>{t("task.review")}</span>
             </button>
-            <button type="button" onClick={onOpenTerminal}>
+            <button type="button" onClick={() => onOpenTool(browserId, "terminal")}>
               <Terminal size={17} aria-hidden />
               <span>{t("task.terminal")}</span>
             </button>
-            <button type="button" onClick={onSelectFiles}>
+            <button type="button" onClick={() => onOpenTool(browserId, "files")}>
               <FolderOpen size={17} aria-hidden />
               <span>{t("task.files")}</span>
             </button>
-            <button type="button" onClick={onSelectSshBookmarks}>
+            <button type="button" onClick={() => onOpenTool(browserId, "sshBookmarks")}>
               <KeyRound size={17} aria-hidden />
               <span>{t("app.sshBookmarks.title")}</span>
             </button>
