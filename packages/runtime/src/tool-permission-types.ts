@@ -7,6 +7,9 @@ export interface SdkToolPermissionRequest {
   cwd?: string;
   blockedPath?: string;
   decisionReason?: string;
+  defaultToNo?: boolean;
+  suppressAlwaysAllowRule?: boolean;
+  mcpServer?: { name: string; source: string };
   signal: AbortSignal;
 }
 

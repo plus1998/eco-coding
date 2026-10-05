@@ -112,6 +112,7 @@ import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-
 import {
   type ClaudePromptSessionLine,
   planClaudeUserMessageRebindMappings,
+  resolveClaudeCurrentSessionUserMessageId,
 } from "./claude-user-message-rebind";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import type { PreparedConversationCommandDispatch } from "./conversation-command-dispatch";
@@ -12195,9 +12196,12 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   if (input.rewindTarget && !resolvedTarget) {
     throw new Error("该节点缺少当前 SDK 消息映射，无法安全改写。");
   }
+  const currentTarget = resolvedTarget && thread.coreKind === "claude"
+    ? { ...resolvedTarget, userMessageId: await resolveCurrentClaudeUserMessageId(input.threadId, resolvedTarget.activityLineId) }
+    : resolvedTarget;
   return threadRuntimeCoordinator.continue(thread.coreKind, {
     ...input,
-    ...(resolvedTarget ? { rewindTarget: resolvedTarget } : {}),
+    ...(currentTarget ? { rewindTarget: currentTarget } : {}),
   });
 }
 
@@ -13635,10 +13639,19 @@ async function getThreadUserMessageEdit(
       },
     };
   }
+  let upstreamMessageId = record.upstreamMessageId;
+  if (thread.coreKind === "claude") {
+    try {
+      upstreamMessageId = await resolveCurrentClaudeUserMessageId(threadId, record.activityLineId);
+    } catch (error) {
+      return { threadId, activityLineId, text: record.text, attachments: record.attachments,
+        historyRevision: historyRevision(), capability: { status: "unavailable", reasonCode: "missing_upstream_mapping", reason: errorMessage(error) } };
+    }
+  }
   return {
     threadId,
     activityLineId,
-    upstreamMessageId: record.upstreamMessageId,
+    upstreamMessageId,
     text: record.text,
     attachments: record.attachments,
     historyRevision: historyRevision(),
@@ -14597,13 +14610,14 @@ async function prepareThreadRewindForContinue(input: {
   command?: ThreadHistoryCommandContext;
 }): Promise<EcoSdkResumeOptions | undefined> {
   const storedTarget = conversationStore.getActivityRewindTarget(input.threadId, input.target.activityLineId);
+  const currentUserMessageId = await resolveCurrentClaudeUserMessageId(input.threadId, input.target.activityLineId);
   if (
     !storedTarget?.userMessageId ||
-    (input.target.userMessageId && storedTarget.userMessageId !== input.target.userMessageId)
+    (input.target.userMessageId && currentUserMessageId !== input.target.userMessageId)
   ) {
     throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
   }
-  const storedUserMessageId = storedTarget.userMessageId;
+  const storedUserMessageId = currentUserMessageId;
 
   const session = conversationStore.getSdkSession(input.threadId);
   if (!session?.sessionId) {
@@ -14751,11 +14765,17 @@ async function captureSdkSessionFromEvent(
     ) {
       const userMessageId = (payload as { userMessageId: string }).userMessageId;
       const thread = conversationStore.getThread(threadId);
+      if (thread?.coreKind === "claude") {
+        // A queued SDK input can be absorbed into the running turn as an
+        // attachment, and several inputs can arrive before one echo. Bind only
+        // prompts the persisted session actually exposes, never the newest
+        // unbound Eco message by arrival order.
+        await rebindClaudeUserMessageRecordsFromSession(threadId);
+        scheduleThreadRunProjectionUpdated(threadId);
+        return;
+      }
       const bound = conversationStore.bindLatestUserActivityToSdkMessage(threadId, userMessageId);
       if (bound) {
-        if (thread?.coreKind === "claude") {
-          await rebindClaudeUserMessageRecordsFromSession(threadId);
-        }
         scheduleThreadRunProjectionUpdated(threadId);
       }
     }
@@ -14778,6 +14798,7 @@ async function captureSdkSessionFromEvent(
       threadId,
       event.payload.sessionId,
       worktreePath,
+      { resetPending: event.payload.resetPending === true },
     );
     if (pendingFork) {
       pendingClaudeForksByThread.delete(threadId);
@@ -14795,20 +14816,7 @@ async function rebindClaudeUserMessageRecordsFromSession(
   if (records.length === 0) {
     return [];
   }
-  const sessionLines = await listThreadActivityFromSdkSession(threadId);
-  const userLines: ClaudePromptSessionLine[] = sessionLines
-    .filter(
-      (
-        line,
-      ): line is ThreadActivityLine & {
-        rewindTarget: { activityLineId: string; userMessageId?: string };
-      } => line.role === "user" && Boolean(line.rewindTarget?.activityLineId),
-    )
-    .map((line) => ({
-      activityLineId: line.rewindTarget.activityLineId,
-      text: line.message,
-      upstreamMessageId: line.rewindTarget.userMessageId?.trim() ?? "",
-    }));
+  const userLines = await listClaudePromptSessionLines(threadId);
   if (userLines.length === 0) {
     return [];
   }
@@ -14823,6 +14831,30 @@ async function rebindClaudeUserMessageRecordsFromSession(
   }
   conversationStore.rebindClaudeUserMessageRecords(threadId, plan.mappings);
   return plan.mappings;
+}
+
+async function resolveCurrentClaudeUserMessageId(threadId: string, activityLineId: string): Promise<string> {
+  return resolveClaudeCurrentSessionUserMessageId(
+    conversationStore.ensureClaudeUserMessageRecordsFromRunEvents(threadId),
+    await listClaudePromptSessionLines(threadId),
+    activityLineId,
+  );
+}
+
+async function listClaudePromptSessionLines(threadId: string): Promise<ClaudePromptSessionLine[]> {
+  return (await listThreadActivityFromSdkSession(threadId))
+    .filter(
+      (
+        line,
+      ): line is ThreadActivityLine & {
+        rewindTarget: { activityLineId: string; userMessageId?: string };
+      } => line.role === "user" && Boolean(line.rewindTarget?.activityLineId),
+    )
+    .map((line) => ({
+      activityLineId: line.rewindTarget.activityLineId,
+      text: line.message,
+      upstreamMessageId: line.rewindTarget.userMessageId?.trim() ?? "",
+    }));
 }
 
 async function hydrateClaudeUserMessageEditState(threadId: string): Promise<void> {
@@ -14893,6 +14925,7 @@ function evaluateClaudeResumeDecision(
     sessionCwd,
     nextCwd: cwd || sessionCwd,
     sessionCwdExists: existsSync(sessionCwd),
+    resetPending: session.resetPending === true,
   });
 }
 
@@ -14903,7 +14936,9 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   }
 
   if (decision.kind === "resume") {
-    return { resumeSessionId: decision.sessionId };
+    return decision.resetPending
+      ? { newSessionId: decision.sessionId }
+      : { resumeSessionId: decision.sessionId };
   }
 
   logEcoDiag("sdk_session.resume_decision", {
@@ -15938,6 +15973,17 @@ function lookupUsageBillingPricing(route: UsageBillingPricingRoute) {
 
 function usageBillingEffectsServices() {
   return {
+    reportSdkBillingWarning: (threadId: string, warning: string) =>
+      emitThreadEvent(
+        threadId,
+        "billing.warning",
+        warning === "sdk_session_usage_baseline_missing"
+          ? "当前恢复会话缺少以前的累计用量；首次结果仅建立基线，该轮计费尚未核实。"
+          : "SDK 返回的累计用量发生回退，本次计费已暂停，需核实会话用量。",
+        "system",
+        false,
+      ),
+
     context: createUsageContextService({
       monitor: contextMonitor,
       emitLiveContext: (threadId: string) => contextScheduler.emitLiveFromMonitor(threadId),
@@ -16285,7 +16331,20 @@ async function processSdkStreamPartialUsage(input: SdkStreamPartialBillingReques
   await applySdkStreamPartialBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
 }
 
-async function processSdkRunBilling(input: SdkRunUsageBillingInput): Promise<void> {
+const sdkRunBillingQueues = new Map<string, Promise<void>>();
+function processSdkRunBilling(input: SdkRunUsageBillingInput): Promise<void> {
+  // Pricing lookup is async: preserve result arrival order before checkpoint settlement.
+  const previous = sdkRunBillingQueues.get(input.threadId) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(() => processSdkRunBillingInOrder(input));
+  sdkRunBillingQueues.set(input.threadId, next);
+  void next
+    .finally(() => {
+      if (sdkRunBillingQueues.get(input.threadId) === next) sdkRunBillingQueues.delete(input.threadId);
+    })
+    .catch(() => {});
+  return next;
+}
+async function processSdkRunBillingInOrder(input: SdkRunUsageBillingInput): Promise<void> {
   const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
   const resolved = await resolveSdkRunBillingResolution({
     threadId: input.threadId,
@@ -18205,35 +18264,39 @@ function createThreadToolPermissionHandler(
   const imageGenerationHandler = createImageGenerationToolPermissionHandler(threadId);
   const webSearchHandler = createWebSearchToolPermissionHandler(threadId);
   if (skipExecutionApprovals) {
-    return composeCanUseToolHandlers(
+    return trackSdkHintApproval(
+      composeCanUseToolHandlers(
+        createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
+        createMcpHubNestedToolPermissionHandler([
+          imageGenerationHandler,
+          computerUseHandler,
+          browserOpenHandler,
+          webSearchHandler,
+        ]),
+        imageGenerationHandler,
+        computerUseHandler,
+        browserOpenHandler,
+        webSearchHandler,
+      ),
+    );
+  }
+  const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
+  return trackSdkHintApproval(
+    composeCanUseToolHandlers(
       createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
       createMcpHubNestedToolPermissionHandler([
         imageGenerationHandler,
         computerUseHandler,
         browserOpenHandler,
         webSearchHandler,
+        bashAndFilesystemHandler,
       ]),
       imageGenerationHandler,
       computerUseHandler,
       browserOpenHandler,
       webSearchHandler,
-    );
-  }
-  const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
-  return composeCanUseToolHandlers(
-    createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
-    createMcpHubNestedToolPermissionHandler([
-      imageGenerationHandler,
-      computerUseHandler,
-      browserOpenHandler,
-      webSearchHandler,
       bashAndFilesystemHandler,
-    ]),
-    imageGenerationHandler,
-    computerUseHandler,
-    browserOpenHandler,
-    webSearchHandler,
-    bashAndFilesystemHandler,
+    ),
   );
 }
 
@@ -18300,6 +18363,7 @@ function createWebSearchToolPermissionHandler(
     const cwd = request.cwd?.trim() || thread.sdkCwd || thread.workspacePath || ".";
     const approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
+      ...sdkPermissionApprovalHints(request),
       threadId,
       command: query ? `search ${query}` : request.toolName,
       cwd,
@@ -18322,7 +18386,7 @@ function createWebSearchToolPermissionHandler(
       false,
       bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
     );
-    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    const resolution = await registerSdkHintApproval(threadId, approvalRequest);
     if (isBashApprovalGranted(resolution)) {
       emitThreadEvent(
         threadId,
@@ -18378,6 +18442,7 @@ function createImageGenerationToolPermissionHandler(
     const config = imageGenerationStore.getActiveClientConfig();
     const approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
+      ...sdkPermissionApprovalHints(request),
       threadId,
       command: `create_image count=${count}${request.input.size ? ` size=${String(request.input.size)}` : ""}`,
       cwd:
@@ -18401,7 +18466,7 @@ function createImageGenerationToolPermissionHandler(
       false,
       bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
     );
-    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    const resolution = await registerSdkHintApproval(threadId, approvalRequest);
     if (resolution.decision === "approved") {
       emitThreadEvent(
         threadId,
@@ -18462,6 +18527,7 @@ function createComputerUseToolPermissionHandler(
     const cwd = request.cwd?.trim() || thread.sdkCwd || thread.workspacePath || ".";
     const approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
+      ...sdkPermissionApprovalHints(request),
       threadId,
       command: request.toolName,
       cwd,
@@ -18481,7 +18547,7 @@ function createComputerUseToolPermissionHandler(
       false,
       bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
     );
-    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    const resolution = await registerSdkHintApproval(threadId, approvalRequest);
     if (isBashApprovalGranted(resolution)) {
       emitThreadEvent(
         threadId,
@@ -18546,6 +18612,7 @@ function createBrowserOpenToolPermissionHandler(
     const cwd = request.cwd?.trim() || thread.sdkCwd || thread.workspacePath || ".";
     const approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
+      ...sdkPermissionApprovalHints(request),
       threadId,
       command,
       cwd,
@@ -18568,7 +18635,7 @@ function createBrowserOpenToolPermissionHandler(
       bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
     );
 
-    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    const resolution = await registerSdkHintApproval(threadId, approvalRequest);
     if (isBashApprovalGranted(resolution)) {
       emitThreadEvent(
         threadId,
@@ -18595,6 +18662,73 @@ function createBrowserOpenToolPermissionHandler(
       interrupt: false,
     };
   };
+}
+
+function sdkPermissionApprovalHints(request: SdkToolPermissionRequest) {
+  return {
+    ...(request.defaultToNo !== undefined && { defaultToNo: request.defaultToNo }),
+    ...(request.suppressAlwaysAllowRule !== undefined && {
+      suppressAlwaysAllowRule: request.suppressAlwaysAllowRule,
+    }),
+    ...(request.mcpServer && { mcpServer: request.mcpServer }),
+  };
+}
+const sdkHintApprovalsHandled = new Set<string>();
+function trackSdkHintApproval(
+  handler: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>,
+) {
+  return async (request: SdkToolPermissionRequest): Promise<SdkToolPermissionDecision> => {
+    try {
+      return await handler(request);
+    } finally {
+      sdkHintApprovalsHandled.delete(request.toolUseId);
+    }
+  };
+}
+async function registerSdkHintApproval(
+  threadId: string,
+  request: BashApprovalRequest,
+): Promise<BashApprovalResolution> {
+  const resolution = await registerPendingBashApproval(threadId, request);
+  if (request.defaultToNo || request.suppressAlwaysAllowRule)
+    sdkHintApprovalsHandled.add(request.toolUseId);
+  return resolution;
+}
+async function requestSdkHintApproval(
+  threadId: string,
+  request: SdkToolPermissionRequest,
+): Promise<SdkToolPermissionDecision> {
+  if (sdkHintApprovalsHandled.has(request.toolUseId))
+    return { behavior: "allow", updatedInput: request.input };
+  const thread = conversationStore.getThread(threadId);
+  const agentId = resolveThreadBashApprovalAgentId(threadId, request);
+  if (!thread || !agentId)
+    return { behavior: "deny", message: "Eco could not attribute the SDK permission request." };
+  const approval: BashApprovalRequest = {
+    threadId,
+    toolUseId: request.toolUseId,
+    agentId,
+    command: `${request.toolName} ${JSON.stringify(request.input)}`,
+    cwd: request.cwd || thread.sdkCwd || thread.workspacePath || ".",
+    reason: request.decisionReason || "Claude Code requires explicit approval for this action.",
+    riskScore: 50,
+    riskLevel: "medium",
+    filesystemTool: request.toolName,
+    ...sdkPermissionApprovalHints(request),
+    ...(request.description && { description: request.description }),
+  };
+  emitThreadEvent(
+    threadId,
+    "bash_approval.requested",
+    `等待确认 ${request.toolName}`,
+    "tool",
+    false,
+    bashApprovalEventExtras(approval, "bash_approval.requested"),
+  );
+  const resolution = await registerPendingBashApproval(threadId, approval);
+  return isBashApprovalGranted(resolution)
+    ? { behavior: "allow", updatedInput: request.input }
+    : { behavior: "deny", message: resolution.feedback || `User denied this ${request.toolName} call.` };
 }
 
 function createThreadBashAndFilesystemToolPermissionHandler(
@@ -18625,7 +18759,9 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         ...(request.decisionReason ? { fallbackReason: request.decisionReason } : {}),
       });
       if (!filesystemApproval) {
-        return { behavior: "allow", updatedInput: request.input };
+        return request.defaultToNo || request.suppressAlwaysAllowRule
+          ? requestSdkHintApproval(threadId, request)
+          : { behavior: "allow", updatedInput: request.input };
       }
       if (filesystemApproval.action === "deny") {
         return {
@@ -18646,6 +18782,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
 
       let approvalRequest: BashApprovalRequest = {
         toolUseId: request.toolUseId,
+        ...sdkPermissionApprovalHints(request),
         threadId,
         command: `${request.toolName} ${filesystemPath}`,
         cwd,
@@ -18659,7 +18796,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         description: filesystemApproval.userMessage,
       };
 
-      if (confirmationMode === "auto") {
+      if (confirmationMode === "auto" && !request.defaultToNo && !request.suppressAlwaysAllowRule) {
         const review = await reviewThreadToolApproval(threadId, approvalRequest, {
           toolName: request.toolName,
           toolInput: request.input,
@@ -18713,7 +18850,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
       );
 
-      const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+      const resolution = await registerSdkHintApproval(threadId, approvalRequest);
       if (isBashApprovalGranted(resolution)) {
         emitThreadEvent(
           threadId,
@@ -18742,7 +18879,9 @@ function createThreadBashAndFilesystemToolPermissionHandler(
     }
 
     if (request.toolName !== "Bash") {
-      return { behavior: "allow", updatedInput: request.input };
+      return request.defaultToNo || request.suppressAlwaysAllowRule
+        ? requestSdkHintApproval(threadId, request)
+        : { behavior: "allow", updatedInput: request.input };
     }
 
     const command = readBashCommandInput(request.input);
@@ -18791,6 +18930,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       }
       const deniedApproval: BashApprovalRequest = {
         toolUseId: request.toolUseId,
+        ...sdkPermissionApprovalHints(request),
         threadId,
         command,
         cwd: cwd ?? thread.workspacePath ?? ".",
@@ -18816,7 +18956,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         interrupt: false,
       };
     }
-    if (confirmation.action === "allow") {
+    if (confirmation.action === "allow" && !request.defaultToNo && !request.suppressAlwaysAllowRule) {
       const description = readBashDescriptionInput(request.input);
       emitThreadEvent(threadId, "tool.started", `Tool: Bash · ${description ?? command}`, "tool", false, {
         ...(request.agentId ? { agentId: request.agentId } : {}),
@@ -18842,6 +18982,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
     }
     let approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
+      ...sdkPermissionApprovalHints(request),
       threadId,
       command,
       cwd,
@@ -18853,7 +18994,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       ...(description ? { description } : { description: confirmation.userMessage }),
     };
 
-    if (bashReviewMode === "auto") {
+    if (bashReviewMode === "auto" && !request.defaultToNo && !request.suppressAlwaysAllowRule) {
       const review = await reviewThreadToolApproval(threadId, approvalRequest, {
         toolName: "Bash",
         toolInput: request.input,
@@ -18902,7 +19043,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       ...bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
     });
 
-    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    const resolution = await registerSdkHintApproval(threadId, approvalRequest);
     if (isBashApprovalGranted(threadId, command, resolution)) {
       emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false, {
         ...bashApprovalEventExtras(approvalRequest, "bash_approval.approved"),

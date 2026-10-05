@@ -24,7 +24,7 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
   const sdkRuntime = readSdkFile("sdk.mjs");
 
   expect(packageJson.name).toBe("@anthropic-ai/claude-agent-sdk");
-  expect(packageJson.version).toBe("0.3.266");
+  expect(packageJson.version).toBe("0.3.289");
   expect(typeof packageJson.claudeCodeVersion).toBe("string");
   expectContainsAll(sdkTypes, [
     "prompt: string | AsyncIterable<SDKUserMessage>",
@@ -54,6 +54,12 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
     "thinkingTokens",
     "costBasis",
     "getContextUsage",
+    "defaultToNo",
+    "suppressAlwaysAllowRule",
+    "new_conversation_id",
+    "result_index",
+    "startup_failure_reason",
+    "snapshot?: boolean;",
   ]);
   // TS d.ts still types interrupt as no-arg; runtime accepts { cancelQueued: true } → wire cancel_queued.
   expectContainsAll(sdkRuntime, ["cancelQueued", "cancel_queued"]);

@@ -22,6 +22,15 @@ test("resolveActionKind keeps Write even when fileChange is present", () => {
   expect(resolved.bucket).toBe("writtenFiles");
 });
 
+test("task reads do not count as delegated agents", () => {
+  const reads = ["TaskGet", "TaskList"].map((toolName) => resolveActionKind({ toolName }));
+  expect(reads.map((read) => read.kind)).toEqual(["tool", "tool"]);
+  expect(reads.map((read) => read.bucket)).toEqual(["otherTools", "otherTools"]);
+  expect(summarizeActionGroup(reads, tZh).label).not.toContain("子代理");
+  expect(resolveActionKind({ toolName: "Agent" }).kind).toBe("agent");
+  expect(resolveActionKind({ toolName: "Task" }).kind).toBe("agent");
+});
+
 test("resolveActionKind uses fileChange payload only when the name is unknown", () => {
   expect(
     resolveActionKind({

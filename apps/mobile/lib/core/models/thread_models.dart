@@ -1282,6 +1282,8 @@ class BashApprovalRequest {
     this.filesystemTool,
     this.filesystemPath,
     this.agentId,
+    this.defaultToNo = false,
+    this.suppressAlwaysAllowRule = false,
   });
 
   factory BashApprovalRequest.fromJson(Map<String, dynamic> json) =>
@@ -1298,6 +1300,8 @@ class BashApprovalRequest {
         filesystemTool: json['filesystemTool'] as String?,
         filesystemPath: json['filesystemPath'] as String?,
         agentId: json['agentId'] as String?,
+        defaultToNo: json['defaultToNo'] == true,
+        suppressAlwaysAllowRule: json['suppressAlwaysAllowRule'] == true,
       );
 
   final String toolUseId;
@@ -1312,6 +1316,8 @@ class BashApprovalRequest {
   final String? filesystemTool;
   final String? filesystemPath;
   final String? agentId;
+  final bool defaultToNo;
+  final bool suppressAlwaysAllowRule;
 }
 
 class ThreadPendingFollowUp {

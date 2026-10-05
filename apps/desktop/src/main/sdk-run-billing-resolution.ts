@@ -7,6 +7,7 @@ import {
   resolveSdkRunBillingAttribution,
   type SdkRunBillingAttributionResolver,
 } from "./sdk-run-billing-attribution";
+import { readSdkSessionUsageContext } from "./sdk-session-usage-ledger";
 import {
   resolveSdkRunBillingModels,
   type SdkRunBillingModels,
@@ -83,6 +84,7 @@ export function resolveSdkRunBillingResolutionFromModels(
       : input.bundle.contextUsage;
   // SDK result.usage is cumulative billing — not current window fill. During a turn,
   // stream_partial keeps the meter live; getContextUsage() calibrates once per result.
+  const sdkSessionUsage = readSdkSessionUsageContext(input.usagePayload);
   const effectsInput: ApplySdkRunBillingEffectsInput = {
     threadId: input.threadId,
     role: input.role,
@@ -91,6 +93,7 @@ export function resolveSdkRunBillingResolutionFromModels(
     billingRole,
     contextUsage,
     updateContext: false,
+    ...(sdkSessionUsage && { sdkSessionUsage }),
     ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
     ...(input.billingModels.plannerModelLabel && {
       plannerModelLabel: input.billingModels.plannerModelLabel,

@@ -246,6 +246,8 @@ export interface PlanReadyPayload {
 export interface SessionCapturedPayload {
   sessionId: string;
   cwd: string;
+  /** /clear allocated an empty session which still needs its first persisted turn. */
+  resetPending?: boolean;
 }
 
 export interface SessionTitlePayload {

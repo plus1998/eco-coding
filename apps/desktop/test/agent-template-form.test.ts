@@ -99,12 +99,14 @@ test("buildAgentTemplateFromForm syncs delegation tools with allowDelegation", (
     templateForm({
       allowDelegation: false,
       writeCodebase: true,
+      taskProgress: true,
       advancedDisallowedTools: "",
     }),
   );
-  expect(blocked.defaultTools.disallowed).toEqual(
-    expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput"]),
-  );
+  expect(blocked.defaultTools.disallowed).toEqual(expect.arrayContaining(["Agent", "Task"]));
+  expect(blocked.defaultTools.disallowed).not.toContain("TaskList");
+  expect(blocked.defaultTools.disallowed).not.toContain("TaskGet");
+  expect(blocked.defaultTools.disallowed).not.toContain("TaskOutput");
 
   const allowed = buildAgentTemplateFromForm(
     templateForm({

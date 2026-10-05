@@ -37,6 +37,8 @@ export interface EcoSdkSessionOptions {
 }
 
 export interface EcoSdkResumeOptions {
+  /** Initialize the empty conversation allocated by /clear; no transcript exists to resume yet. */
+  newSessionId?: string;
   /** Resume an existing SDK session by ID. */
   resumeSessionId?: string;
   /** Resume transcript up to and including this SDK message UUID. */

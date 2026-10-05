@@ -15,6 +15,7 @@ import {
   resolveRatesForRoute,
   resolveUsageRoute,
 } from "./billing-resolver";
+import { resolveBuiltInOpenAiDefaultRates } from "./built-in-openai-pricing";
 import {
   PROXY_PENDING_ATTRIBUTION_REASON,
   PROXY_PENDING_PARENT_UNMAPPED_REASON,
@@ -25,7 +26,6 @@ import {
   USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
 import { buildUsageRequestKey } from "./thread-usage-accumulator";
-import { resolveBuiltInOpenAiDefaultRates } from "./built-in-openai-pricing";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
@@ -314,6 +314,7 @@ export interface SdkRunUsageInputModel {
 }
 
 export interface ResolvedSdkRunBillingModel {
+  sdkModelId?: string;
   role?: RuntimeAgentRole;
   modelId: string;
   usage: ParsedUsage;
@@ -351,6 +352,7 @@ export async function resolveSdkRunBillingModels(
       const computedBilling = computeRequestBilling(entry.usage, actualRates, plannerRates);
       return {
         role: billingRole,
+        sdkModelId: entry.modelId,
         modelId: usageRoute?.modelId ?? entry.modelId,
         usage: entry.usage,
         actualRates,

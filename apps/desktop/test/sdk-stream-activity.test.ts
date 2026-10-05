@@ -36,6 +36,30 @@ function sdkBlockKey(activity: CapturedActivity): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
+test("SDK informational, rate limit and requires-action events reach the activity feed", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: CapturedActivity[] = [];
+  for (const payload of [
+    { type: "system", subtype: "informational", content: "Provider warning", level: "warning" },
+    { type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 123 } },
+    { type: "system", subtype: "session_state_changed", state: "requires_action" },
+  ])
+    bridge.handleEvent(
+      "thr_notice",
+      { type: "agent.started", role: "planner", payload },
+      captureActivity(emitted),
+    );
+  expect(emitted.map((event) => event.type)).toEqual([
+    "sdk.notice",
+    "request.rate_limit",
+    "sdk.session_state",
+  ]);
+  expect(emitted[0]?.message).toBe("Provider warning");
+  expect(emitted[1]?.metadata?.rateLimitInfo).toEqual({ status: "rejected", resetsAt: 123 });
+  expect(emitted[2]?.metadata?.state).toBe("requires_action");
+  expect(emitted.every((event) => event.role === "system" && !event.agentId)).toBe(true);
+});
+
 test("throttles durable V2 stream updates while retaining the latest text", async () => {
   const bridge = new SdkStreamActivityBridge();
   const remote: string[] = [];

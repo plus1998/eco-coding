@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { prepareConversationCommandDispatch } from "../src/main/conversation-command-dispatch";
 import { createConversationStore, parseCompactHandoffRecentMessages } from "../src/main/conversation-store";
+import { conversationV2ProviderMessageId } from "../src/main/conversation-v2-provider-events";
 import { buildResourcesFromRouteProfile } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
 import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
@@ -37,6 +38,35 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
+test.skipIf(!sqliteAvailable)(
+  "a clear's initialization intent survives reopening and is consumed only by a persisted turn",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-clear-session-"));
+    const dbPath = path.join(dir, "test.sqlite");
+    const store = await createConversationStore(dbPath);
+    store.saveThread({
+      id: "thr_clear",
+      title: "clear",
+      prompt: "old context",
+      workspacePath: dir,
+      coreKind: "claude",
+      status: "completed",
+      message: "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    store.captureSdkSessionAndConsumeCompactHandoff("thr_clear", "reset-id", dir, { resetPending: true });
+    const reopened = await createConversationStore(dbPath);
+    expect(reopened.getSdkSession("thr_clear")).toEqual({
+      sessionId: "reset-id",
+      cwd: dir,
+      resetPending: true,
+    });
+    reopened.captureSdkSessionAndConsumeCompactHandoff("thr_clear", "reset-id", dir);
+    expect(store.getSdkSession("thr_clear")).toEqual({ sessionId: "reset-id", cwd: dir });
+  },
+);
+
 // These tests exercise the one-time legacy compatibility surface explicitly.
 // Production callers must use the factory default, which is V2-only.
 async function createLegacyConversationStore(dbPath: string) {
@@ -45,6 +75,67 @@ async function createLegacyConversationStore(dbPath: string) {
     requiredStorageMode: "legacy_compat",
   });
 }
+
+test("V2 rewind uses original receipt order after a late UUID bind and tombstones native user/output rows", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "eco-v2-rewind-bind-"));
+  const store = await createConversationStore(path.join(directory, "test.sqlite"));
+  const threadId = "thr_rewind_bind";
+  store.saveThread({
+    id: threadId,
+    title: "rewind",
+    prompt: "first",
+    workspacePath: directory,
+    status: "completed",
+    message: "",
+    coreKind: "claude",
+    createdAt: "2026-10-06T00:00:00Z",
+    updatedAt: "2026-10-06T00:00:00Z",
+  });
+  store.upsertRunAttempt({
+    threadId,
+    attemptId: "run_rewind",
+    phase: "execution",
+    retryIndex: 0,
+    status: "running",
+    startedAt: "2026-10-06T00:00:00Z",
+  });
+  const append = (id: string, body: string, user: boolean) =>
+    store.appendConversationRuntimeEvent({
+      id,
+      threadId,
+      eventType: user ? "thread.status" : "message.final",
+      scope: "main",
+      role: user ? "user" : "planner",
+      runAttemptId: "run_rewind",
+      streamState: "finalized",
+      streamKey: id,
+      message: body,
+      observedAt: "2026-10-06T00:00:00Z",
+      metadata: user ? { liveType: "thread.user_prompt", rewindTarget: { activityLineId: id } } : {},
+    });
+  const first = append("first", "first", true);
+  const target = append("target", "target", true);
+  const answer = append("answer", "answer", false);
+  const future = append("future", "future", true);
+  store.rebindClaudeUserMessageRecords(threadId, [
+    { activityLineId: "target", upstreamMessageId: "target_sdk" },
+  ]);
+  const currentTarget = store
+    .listConversationRuntimeSources(threadId)
+    .find((source) => source.id === "target")!;
+  expect(currentTarget.sequence).toBeGreaterThan(future.sequence);
+  const summary = store.rewindThreadToActivityLine(threadId, "target");
+  expect(summary.cutoffRunSequence).toBe(target.sequence);
+  expect(
+    store.conversationV2().getMessage(threadId, conversationV2ProviderMessageId(first)!)?.isDeleted,
+  ).toBe(false);
+  for (const removed of [target, answer, future]) {
+    expect(
+      store.conversationV2().getMessage(threadId, conversationV2ProviderMessageId(removed)!)?.isDeleted,
+    ).toBe(true);
+  }
+  expect(store.listConversationRuntimeSources(threadId).map((source) => source.id)).toEqual(["first"]);
+});
 
 const presetBundle = buildResourcesFromRouteProfile(
   {

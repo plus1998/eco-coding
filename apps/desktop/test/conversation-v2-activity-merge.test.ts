@@ -535,6 +535,42 @@ function feedEntryMessageId(entry: ThreadRunProjectionMainFeedEntry): string | u
   return typeof messageId === "string" ? messageId : undefined;
 }
 
+test("SDK state notices neither render a request failure nor replace the final answer", () => {
+  const answer = { ...assistantMessage("real-answer", 2, "ECO_289_FIXED_BASH"), providerRole: "planner" };
+  const notice: ConversationMessage = {
+    ...message("idle-notice", 3),
+    role: "system",
+    channel: "commentary",
+    runId: "run_1",
+    body: "Session state: idle",
+  };
+  const state = v2State([answer, notice]);
+  const base = projection([]);
+  base.attempts = [
+    {
+      attemptId: "run_1",
+      phase: "initial",
+      retryIndex: 0,
+      status: "completed",
+      startedAt: "2026-09-16T09:19:40.332Z",
+      endedAt: "2026-09-16T09:40:57.629Z",
+    },
+  ];
+  const merged = mergeConversationV2IntoProjection(base, state);
+  expect(merged.timeline.every((item) => item.eventType !== "api.error")).toBe(true);
+  expect(merged.agents).toHaveLength(0);
+  const sections = buildThreadRunTurnFeedSections(
+    buildThreadRunProjectionViewModel(merged).mainFeedEntries,
+    merged,
+  );
+  const turn = sections.find((section) => section.kind === "turn");
+  if (turn?.kind !== "turn") throw new Error("Missing completed turn");
+  expect(feedEntryMessageId(turn.finalEntry!)).toBe("real-answer");
+  const html = renderToStaticMarkup(createElement(ActivityLogView, { conversationV2: state }));
+  expect(html).toContain("ECO_289_FIXED_BASH");
+  expect(html).not.toContain("连接失败");
+});
+
 test("keeps the V2 order of a turn whose narrative rows left the feed skeleton", () => {
   // The desktop feed skeleton keeps one narrative row per finished segment, so the
   // turn's other messages reach the renderer only through V2 and have no legacy row

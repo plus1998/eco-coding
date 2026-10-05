@@ -18,6 +18,10 @@ import {
   USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
   USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
+import {
+  type AppendSdkSessionUsageInput,
+  buildSdkSessionUsageLedgerEvents,
+} from "./sdk-session-usage-ledger";
 import { projectSubagentMetricsEntriesFromBillingProjection } from "./subagent-metrics-projection";
 import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
 import type {
@@ -198,6 +202,18 @@ export class UsageLedgerCoordinator {
         this.writeError(`[eco] usage ledger shadow write failed: ${errorMessage(error)}\n`);
       }
     }
+  }
+
+  appendSdkSessionUsage(input: AppendSdkSessionUsageInput): string[] {
+    const result = buildSdkSessionUsageLedgerEvents(input, this.store.listUsageLedgerEvents(input.threadId));
+    // Deltas precede checkpoints. A failed write can be retried idempotently;
+    // never silently advance the baseline after a missing billable write.
+    for (const event of result.events) this.store.appendUsageLedgerEvent(event);
+    for (const warning of result.warnings) {
+      this.logDiag?.("usage_ledger.sdk_session_warning", { threadId: input.threadId, warning });
+      this.writeError(`[eco] SDK usage: ${warning} (${input.session.sessionId})\n`);
+    }
+    return result.warnings;
   }
 
   registerProxyPendingAttribution(threadId: string, entry: ProxyUsagePendingEntry): number {

@@ -166,6 +166,7 @@ export interface ThreadListInitialResult {
 export interface ThreadSdkSession {
   sessionId: string;
   cwd: string;
+  resetPending?: boolean;
 }
 
 export interface ThreadCoreSession {
@@ -4007,7 +4008,12 @@ export class ConversationStore {
    * Atomically captures the replacement SDK session and consumes any pending compact handoff.
    * A compacted source session must never be reinstalled as the target session.
    */
-  captureSdkSessionAndConsumeCompactHandoff(threadId: string, sessionId: string, cwd: string): boolean {
+  captureSdkSessionAndConsumeCompactHandoff(
+    threadId: string,
+    sessionId: string,
+    cwd: string,
+    state?: { resetPending?: boolean },
+  ): boolean {
     const targetSessionId = sessionId.trim();
     const targetCwd = cwd.trim();
     if (!targetSessionId) {
@@ -4044,6 +4050,7 @@ export class ConversationStore {
           coreKind: "claude",
           externalSessionId: targetSessionId,
           cwd: targetCwd,
+          ...(state?.resetPending && { metadata: { resetPending: true } }),
         },
         capturedAt,
       );
@@ -4076,7 +4083,12 @@ export class ConversationStore {
     if (!row?.sdk_session_id || !row.sdk_cwd) {
       return undefined;
     }
-    return { sessionId: row.sdk_session_id, cwd: row.sdk_cwd };
+    const session = this.getThreadCoreSession(threadId);
+    return {
+      sessionId: row.sdk_session_id,
+      cwd: row.sdk_cwd,
+      ...(session?.metadata?.resetPending === true && { resetPending: true }),
+    };
   }
 
   clearSdkSession(threadId: string): void {
@@ -5254,7 +5266,7 @@ export class ConversationStore {
         "V2 history rewrite requires an existing conversation and activity identity.",
       );
     }
-    const sources = this.listConversationRuntimeSources(conversationId);
+    const sources = this.listConversationRuntimeSources(conversationId, { historyOrder: true });
     const source = sources
       .filter((event) => {
         const rewindTarget = readRewindTarget(event.metadata);
@@ -5288,9 +5300,11 @@ export class ConversationStore {
     const affectedMessageIds =
       message && boundarySequence === message.createdSeq && sources.length === 0
         ? [message.messageId]
-        : this.listLegacyV2MessageIdsFromRunEvents(conversationId, boundarySequence);
+        : this.listV2MessageIdsFromHistorySequence(conversationId, boundarySequence);
     const affectedProviderInputIds =
-      boundarySequence > 0 ? this.listRuntimeSourceIdsFromSequence(conversationId, boundarySequence) : [];
+      boundarySequence > 0
+        ? sources.filter((event) => event.sequence >= boundarySequence).map((event) => event.id)
+        : [];
     const sourceKey = `v2-only-history:${type}:${stableHash(`${conversationId}:${id}:${boundarySequence}`)}`;
     const eventId = `history_v2_${type === "history.deleted" ? "delete" : "edit"}_${stableHash(sourceKey)}`;
     const summary: ThreadActivityRewindSummary = {
@@ -7173,6 +7187,15 @@ export class ConversationStore {
    * rewind is about to remove. Do not widen this to a timestamp query: an
    * observedAt value is not an ownership boundary.
    */
+  private listV2MessageIdsFromHistorySequence(threadId: string, minimumSequence: number): string[] {
+    // Native receipts already name the materialized message. Recomputing a
+    // legacy identity loses accepted user rows and finalized stream bodies.
+    const rows = this.db.prepare(`SELECT DISTINCT message_id FROM conversation_provider_inputs_v2
+        WHERE conversation_id = ? AND visible = 1 AND first_seq >= ? AND message_id IS NOT NULL
+        ORDER BY message_id`).all(threadId, minimumSequence) as Array<{ message_id: string }>;
+    return rows.map((row) => row.message_id);
+  }
+
   private listLegacyV2MessageIdsFromRunEvents(threadId: string, minimumSequence: number): string[] {
     const indexed = this.v2.hasConversation(threadId) ? this.listConversationRuntimeSources(threadId) : [];
     const rows = (indexed.length > 0 ? indexed : this.listThreadRunEvents(threadId)).filter(
@@ -7228,14 +7251,27 @@ export class ConversationStore {
   }
 
   /** Host source identities reconstructed from the V2 log, with current normalized text. */
-  listConversationRuntimeSources(threadId: string): ThreadRunEvent[] {
+  listConversationRuntimeSources(
+    threadId: string,
+    options: { historyOrder?: boolean } = {},
+  ): ThreadRunEvent[] {
     this.v2.head(threadId);
-    return (
+    const sources = (
       this.db
         .prepare(`SELECT * FROM conversation_provider_events_v2
       WHERE thread_id = ? ORDER BY sequence ASC, id ASC`)
         .all(threadId) as unknown as ThreadRunEventRow[]
     ).map(rowToThreadRunEvent);
+    if (!options.historyOrder) return sources;
+    // Identity/attribution patches advance version_seq, but must never move
+    // an earlier prompt past later work in a destructive history boundary.
+    const firstRows = this.db.prepare(
+      `SELECT input_id, first_seq FROM conversation_provider_inputs_v2 WHERE conversation_id = ?`,
+    ).all(threadId) as Array<{ input_id: string; first_seq: number }>;
+    const firstSequences = new Map(firstRows.map((row) => [row.input_id, row.first_seq]));
+    return sources
+      .map((source) => ({ ...source, sequence: firstSequences.get(source.id)! }))
+      .sort((left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id));
   }
 
   appendThreadRunEvent(event: ThreadRunEventInput): ThreadRunEvent {

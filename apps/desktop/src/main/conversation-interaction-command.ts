@@ -6,6 +6,7 @@ import type {
   ClarificationRequest,
 } from "../shared/ipc";
 import type { BashApprovalResolution } from "./bash-approval-bridge";
+import { assertBashApprovalResolutionAllowed } from "./bash-approval-bridge";
 import type { ConversationCommandJob, ConversationV2Store } from "./conversation-v2-store";
 
 export interface ClarificationResolutionCommandInput {
@@ -175,6 +176,7 @@ export function executeBashApprovalResolutionCommand(
       decision: input.decision,
       ...(input.feedback ? { feedback: input.feedback } : {}),
     };
+    assertBashApprovalResolutionAllowed(pending, resolution);
     if (!deps.resolve(input.toolUseId, resolution)) {
       throw new ConversationV2Error(
         CONVERSATION_V2_ERROR.integrityFailure,

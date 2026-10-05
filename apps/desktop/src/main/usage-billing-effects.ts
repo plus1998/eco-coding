@@ -2,6 +2,7 @@ import { formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
 import { buildUsageSnapshotForRole } from "./billing-orchestration";
 import { readBillingRole, readRouteRole } from "./proxy-usage-pending-settlement";
+import type { SdkSessionUsageContext } from "./sdk-session-usage-ledger";
 import {
   buildSubagentContextObservationInput,
   resolveSubagentBillingMetricsContext,
@@ -31,12 +32,13 @@ export interface UsageBillingUpdatedEvent {
 }
 
 export interface UsageBillingEffectsServices {
+  reportSdkBillingWarning?(threadId: string, warning: string): void;
   context: UsageContextService;
   usageLedger: Pick<
     UsageLedgerCoordinator,
     "appendEvents" | "resolveV2BillingSnapshot" | "reconcileShadow" | "registerProxyPendingAttribution"
   > &
-    Partial<Pick<UsageLedgerCoordinator, "persistSubagentBillingEntries">>;
+    Partial<Pick<UsageLedgerCoordinator, "persistSubagentBillingEntries" | "appendSdkSessionUsage">>;
   /** Legacy-only test/compatibility seam. V2 production billing never reads it. */
   accumulator?: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordContextObservation" | "recordSdkUsage">;
@@ -162,6 +164,7 @@ export async function applySingleUsageBillingEffects(
 }
 
 export interface ApplySdkRunBillingEffectsInput {
+  sdkSessionUsage?: SdkSessionUsageContext;
   threadId: string;
   role: RuntimeAgentRole;
   requestKey: string;
@@ -182,21 +185,30 @@ export async function applySdkRunBillingEffects(
   services: UsageBillingEffectsServices,
   input: ApplySdkRunBillingEffectsInput,
 ): Promise<ThreadBillingSnapshot> {
-  services.usageLedger.appendEvents(
-    buildSdkUsageLedgerEvents({
-      threadId: input.threadId,
-      role: input.role,
-      requestKey: input.requestKey,
-      models: input.models,
-      ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
-      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-      ...(input.ledgerAgentId && { agentId: input.ledgerAgentId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-      metadata: {
-        path: "processSdkRunBilling",
-      },
-    }),
-  );
+  const ledgerInput = {
+    threadId: input.threadId,
+    role: input.role,
+    requestKey: input.requestKey,
+    models: input.models,
+    ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+    ...(input.ledgerAgentId && { agentId: input.ledgerAgentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    metadata: {
+      path: "processSdkRunBilling",
+    },
+  };
+  if (input.sdkSessionUsage) {
+    if (!services.usageLedger.appendSdkSessionUsage)
+      throw new Error("SDK session usage settlement is unavailable");
+    const warnings = services.usageLedger.appendSdkSessionUsage({
+      ...ledgerInput,
+      session: input.sdkSessionUsage,
+    });
+    for (const warning of warnings) services.reportSdkBillingWarning?.(input.threadId, warning);
+  } else {
+    services.usageLedger.appendEvents(buildSdkUsageLedgerEvents(ledgerInput));
+  }
 
   await services.context.applyUpdate({
     threadId: input.threadId,

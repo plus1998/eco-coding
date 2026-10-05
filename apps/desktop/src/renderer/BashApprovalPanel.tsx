@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type BashApprovalChoice,
+  bashApprovalInitialChoiceIndex,
   buildBashApprovalChoices,
+  canSubmitBashApprovalWithEnter,
   formatBashApprovalRememberPrefix,
 } from "../shared/bash-approval-ui";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
@@ -55,9 +57,12 @@ export function BashApprovalPanel({
   const options = useMemo<BashApprovalOption[]>(
     () =>
       buildBashApprovalChoices({
+        ...(request.suppressAlwaysAllowRule !== undefined && {
+          suppressAlwaysAllowRule: request.suppressAlwaysAllowRule,
+        }),
         includeRememberPrefix: !request.filesystemTool && request.kind !== "image_generation",
       }).map((choice) => ({ choice })),
-    [request.filesystemTool, request.kind],
+    [request.filesystemTool, request.kind, request.suppressAlwaysAllowRule],
   );
 
   function resolveChoice(choice: BashApprovalChoice) {
@@ -90,13 +95,18 @@ export function BashApprovalPanel({
     if (!option) {
       return;
     }
-    resolveChoice(option.choice);
+    if (canSubmitBashApprovalWithEnter(option.choice, request.defaultToNo)) resolveChoice(option.choice);
   }
 
   useEffect(() => {
-    setHighlightIndex(0);
+    setHighlightIndex(
+      bashApprovalInitialChoiceIndex(
+        options.map((option) => option.choice),
+        request.defaultToNo,
+      ),
+    );
     setDenyFeedback("");
-  }, [request.toolUseId]);
+  }, [request.toolUseId, request.defaultToNo, options]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -136,7 +146,7 @@ export function BashApprovalPanel({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, denyFeedback, highlightIndex, onResolve, onSkip, options]);
+  }, [busy, denyFeedback, highlightIndex, onResolve, onSkip, options, request.defaultToNo]);
 
   const title =
     request.description?.trim() ||

@@ -2126,6 +2126,9 @@ export interface BashApprovalNetworkPolicyAmendment {
 }
 
 export interface BashApprovalRequest {
+  defaultToNo?: boolean;
+  suppressAlwaysAllowRule?: boolean;
+  mcpServer?: { name: string; source: string };
   toolUseId: string;
   threadId: string;
   command: string;
@@ -2574,7 +2577,7 @@ export interface ThreadUsageLedgerEventView {
   providerRequestId?: string;
   attributionStatus: "attributed" | "pending" | "unattributed";
   attributionReason?: string;
-  usageKind: "request_final" | "request_partial" | "assistant_fallback" | "context";
+  usageKind: "request_final" | "request_partial" | "assistant_fallback" | "context" | "session_total";
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

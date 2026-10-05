@@ -14,6 +14,7 @@ import {
   legacyToolMetadata,
 } from "./conversation-v2-legacy-identity";
 import type { ConversationAppendResult, ConversationV2Store } from "./conversation-v2-store";
+import { isSdkNoticeLiveType } from "./thread-run-event-normalizer";
 
 export interface ProviderConversationAdapterOptions {
   mode?: "migration" | "runtime";
@@ -169,7 +170,10 @@ export function appendProviderEventToConversationV2(
   // gone. It is mirrored as a notice message instead of assistant speech — `channel:
   // "system"` is what the Feed reads as "the provider reported this, the agent did not say
   // it" — so the row keeps its own position in the log and its own identity.
-  if (event.eventType === "api.error") {
+  if (
+    event.eventType === "api.error" ||
+    (event.eventType === "diagnostic" && isSdkNoticeLiveType(liveType))
+  ) {
     // A notice without text says nothing; the legacy projection renders a failure row for it
     // from the request phase, not from this event.
     if (event.message.trim()) {
@@ -179,7 +183,9 @@ export function appendProviderEventToConversationV2(
         "notice",
         {
           role: "system",
-          channel: "system",
+          // The renderer reserves the system channel for connection failures.
+          // Protocol/billing notices use system-role commentary instead.
+          channel: event.eventType === "api.error" ? "system" : "commentary",
           body: event.message,
           status: "final",
           ...(noticeRole ? { providerRole: noticeRole } : {}),
@@ -736,6 +742,13 @@ export function conversationV2MessageIdForLegacyEvent(event: ThreadRunEventInput
 /** Identity of a provider envelope's normalized body, including user prompts and notices. */
 export function conversationV2ProviderMessageId(event: ThreadRunEventInput): string | undefined {
   if (event.eventType === "api.error" && event.message.trim()) return legacyNoticeMessageId(event);
+  if (
+    event.eventType === "diagnostic" &&
+    isSdkNoticeLiveType(String(event.metadata?.liveType ?? "")) &&
+    event.message.trim()
+  ) {
+    return legacyNoticeMessageId(event);
+  }
   if (isLegacyUserPromptRow(event)) return legacyMessageId(event);
   const liveType = typeof event.metadata?.liveType === "string" ? event.metadata.liveType : "";
   if (legacyInteractionType(liveType)) return undefined;

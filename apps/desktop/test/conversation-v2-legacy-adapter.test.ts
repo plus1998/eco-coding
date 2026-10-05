@@ -92,6 +92,37 @@ test("mirrors a provider notice as the row the Feed reads, one row per notice", 
   ]);
 });
 
+test("SDK and billing notices remain system messages after durable V2 projection", () => {
+  const store = createStore();
+  for (const [index, liveType] of [
+    "sdk.notice",
+    "sdk.session_state",
+    "sdk.conversation_reset",
+    "sdk.commands_changed",
+    "request.rate_limit",
+    "billing.warning",
+  ].entries()) {
+    appendLegacyThreadRunEventToConversationV2(
+      store,
+      event({
+        id: `sdk_notice_${index}`,
+        eventType: "diagnostic",
+        role: "system",
+        message: `${liveType} notification`,
+        streamState: "none",
+        streamKey: undefined,
+        metadata: { liveType },
+      }),
+    );
+  }
+  const snapshot = store.bootstrap("thread_legacy");
+  expect(snapshot.messages).toHaveLength(6);
+  expect(
+    snapshot.messages.every((message) => message.role === "system" && message.channel === "commentary"),
+  ).toBe(true);
+  expect(snapshot.agents).toHaveLength(0);
+});
+
 test("maps legacy cumulative stream rows to V2 replace/finalize effects", () => {
   const store = createStore();
   appendLegacyThreadRunEventToConversationV2(store, event({ sequence: 1, message: "a" }));
@@ -367,7 +398,10 @@ test("keeps the execution owner when an approval row belongs to its planner", ()
 
 test("disambiguates a legacy tool ID reused by different runs", () => {
   const store = createStore();
-  for (const [sequence, runAttemptId] of [[1, "run_1"], [2, "run_2"]] as const) {
+  for (const [sequence, runAttemptId] of [
+    [1, "run_1"],
+    [2, "run_2"],
+  ] as const) {
     appendLegacyThreadRunEventToConversationV2(
       store,
       event({

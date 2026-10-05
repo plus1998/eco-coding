@@ -32,6 +32,20 @@ describe("decideClaudeResume", () => {
     ).toEqual({ kind: "resume", sessionId: "sess_1" });
   });
 
+  test("a pending clear preserves explicit initialization intent and still validates cwd", () => {
+    const input = {
+      sessionId: "reset-id",
+      nextRoutes: baseRoutes,
+      sessionCwd: "/tmp/ws",
+      nextCwd: "/tmp/ws",
+      sessionCwdExists: true,
+      resetPending: true,
+    };
+    expect(decideClaudeResume(input)).toEqual({ kind: "resume", sessionId: "reset-id", resetPending: true });
+    expect(decideClaudeResume({ ...input, sessionCorrupt: true })).toMatchObject({ kind: "reject" });
+    expect(decideClaudeResume({ ...input, nextCwd: "/tmp/other" })).toMatchObject({ kind: "reject" });
+  });
+
   test("model/provider switch resumes", () => {
     const next = snapshotClaudeResumeRoutes([
       route({ role: "planner", providerId: "p2", modelId: "m2", apiCompat: "anthropic" }),

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import {
+  bashApprovalInitialChoiceIndex,
   buildBashApprovalChoices,
   buildBashApprovalRememberPrefixLabel,
+  canSubmitBashApprovalWithEnter,
   commandMatchesAnyRememberedBashPrefix,
   commandMatchesRememberedBashPrefix,
   deriveBashApprovalRememberPrefix,
@@ -48,4 +50,14 @@ test("formatBashApprovalDenyMessage includes user feedback when provided", () =>
 
 test("deriveBashApprovalRememberPrefix trims command", () => {
   expect(deriveBashApprovalRememberPrefix("  bun test  ")).toBe("bun test");
+});
+
+test("SDK decline hints suppress persistent grants and prevent a stray Enter approval", () => {
+  const choices = buildBashApprovalChoices({ suppressAlwaysAllowRule: true });
+  expect(choices).toEqual(["approve", "deny", "deny_custom"]);
+  expect(choices[bashApprovalInitialChoiceIndex(choices, true)]).toBe("deny");
+  expect(canSubmitBashApprovalWithEnter("approve", true)).toBe(false);
+  expect(canSubmitBashApprovalWithEnter("approve_remember_prefix", true)).toBe(false);
+  expect(canSubmitBashApprovalWithEnter("deny", true)).toBe(true);
+  expect(canSubmitBashApprovalWithEnter("approve", false)).toBe(true);
 });

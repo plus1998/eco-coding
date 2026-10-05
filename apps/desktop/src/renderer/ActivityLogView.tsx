@@ -590,18 +590,21 @@ function conversationV2MessageToTimelineItem(
   // is what carries the failure text and the retry affordance — so the row keeps the event
   // type the reader and the retry logic look for instead of being flattened into a message.
   const isNotice = message.channel === "system" && !isThinking;
+  const isDiagnostic = message.role === "system" && message.channel === "commentary";
   return {
     id: `conversation-v2:${message.messageId}`,
     sequence: message.createdSeq,
     eventType: isNotice
       ? "api.error"
-      : isThinking
-        ? message.status === "streaming"
-          ? "thinking.delta"
-          : "thinking.final"
-        : message.status === "streaming"
-          ? "message.delta"
-          : "message.final",
+      : isDiagnostic
+        ? "diagnostic"
+        : isThinking
+          ? message.status === "streaming"
+            ? "thinking.delta"
+            : "thinking.final"
+          : message.status === "streaming"
+            ? "message.delta"
+            : "message.final",
     scope: "main",
     // The Feed asks the row's role who wrote it (`role === "planner"` marks a turn's
     // final output) and normalizing it to the channel role left V2 unable to answer.

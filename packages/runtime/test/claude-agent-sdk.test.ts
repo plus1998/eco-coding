@@ -441,7 +441,7 @@ test("includes network tools in default allowed tools", () => {
   const allowedTools = getDefaultAllowedTools();
   expect(allowedTools).toContain("Agent");
   expect(allowedTools).toContain("TaskList");
-  expect(allowedTools).toContain("TaskOutput");
+  expect(allowedTools).toContain("TaskGet");
   expect(allowedTools).toContain("Skill");
   expect(allowedTools).toContain("TaskCreate");
   expect(allowedTools).toContain("TaskUpdate");
@@ -1925,6 +1925,21 @@ test("applyResumeToQueryOptions sets resume, resumeDropsTurn, and forkSession", 
   expect(options.forkSession).toBe(true);
 });
 
+test("a pending clear initializes its allocated ID without loading the old transcript", () => {
+  const options: Record<string, unknown> = {};
+  applyResumeToQueryOptions(options, { newSessionId: "reset-uuid" });
+  expect(options).toEqual({ sessionId: "reset-uuid" });
+  expect(() =>
+    applyResumeToQueryOptions(
+      {},
+      {
+        newSessionId: "reset-uuid",
+        resumeSessionId: "old-uuid",
+      },
+    ),
+  ).toThrow("cannot also resume or fork");
+});
+
 test("resolveResumeSessionAtBeforeUserMessage returns last chain entry before target user", async () => {
   const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
     sessionId: "sess-123",
@@ -2064,6 +2079,13 @@ test("applyClaudeJsonlSessionPersistence applies local JSONL persistence without
 test("readSdkUserMessageCheckpointId reads user message uuid", () => {
   expect(readSdkUserMessageCheckpointId({ type: "assistant" })).toBeUndefined();
   expect(readSdkUserMessageCheckpointId({ type: "user", uuid: "msg-checkpoint-1" })).toBe("msg-checkpoint-1");
+  expect(
+    readSdkUserMessageCheckpointId({
+      type: "user",
+      uuid: "tool-result-uuid",
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "bash", content: "ok" }] },
+    }),
+  ).toBeUndefined();
 });
 
 test("createSessionCapturedEvent and init message helpers", () => {
@@ -2151,14 +2173,22 @@ test("ClaudeAgentSdkDriver does not inject fallback Eco agents without a UI regi
     expect.arrayContaining(["Write", "Bash", "ExitPlanMode", "EnterPlanMode"]),
   );
   expect(capturedOptions[1]?.allowedTools).not.toContain("AskUserQuestion");
-  expect(capturedOptions[1]?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(capturedOptions[1]?.systemPrompt).toEqual({
+    type: "preset",
+    preset: "claude_code",
+    snapshot: false,
+  });
 
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[2]?.allowedTools).toContain("WebSearch");
 
   expect(capturedOptions[2]?.agents).toBeUndefined();
-  expect(capturedOptions[2]?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(capturedOptions[2]?.systemPrompt).toEqual({
+    type: "preset",
+    preset: "claude_code",
+    snapshot: false,
+  });
 });
 
 test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts", async () => {
@@ -2219,7 +2249,7 @@ test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts
   expect(options.allowedTools).toEqual([
     "Agent",
     "TaskList",
-    "TaskOutput",
+    "TaskGet",
     "Read",
     "Glob",
     "Grep",
@@ -2246,8 +2276,6 @@ test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts
       "Bash",
       "Agent",
       "Task",
-      "TaskList",
-      "TaskOutput",
       "Write",
       "Edit",
       "MultiEdit",
@@ -2920,7 +2948,7 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.agents).toBeUndefined();
   const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
-  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code", snapshot: false });
   const settings = capturedOptions[0]?.settings as { permissions?: { deny?: string[] } } | undefined;
   expect(settings?.permissions?.deny).not.toContain("Agent(Plan)");
   expect(settings?.permissions?.deny).toContain("Agent(Explore)");
@@ -3357,7 +3385,7 @@ test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", 
   );
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
   const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
-  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code", snapshot: false });
   const hooks = capturedOptions[0]?.hooks as Partial<Record<string, Array<{ matcher?: string }>>> | undefined;
   expect(hooks?.PermissionRequest ?? []).toHaveLength(0);
   expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher?.includes("ExitPlanMode")) ?? false).toBe(true);
@@ -3514,7 +3542,7 @@ test("maps AgentOutput API-error text as a failed agent.completed event", () => 
             tool_use_id: "call_explore_failed",
             is_error: true,
             content:
-              "Agent terminated early due to an API error: 400 {\"error\":\"No provider route configured for model claude-sonnet-5\"}",
+              'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
           },
         ],
       },
@@ -3525,7 +3553,7 @@ test("maps AgentOutput API-error text as a failed agent.completed event", () => 
         content: [
           {
             type: "text",
-            text: "Agent terminated early due to an API error: 400 {\"error\":\"No provider route configured for model claude-sonnet-5\"}",
+            text: 'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
           },
         ],
       },
@@ -4245,7 +4273,9 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
       signal: new AbortController().signal,
     })) {
       if (event.type === "session.captured" && openHandle) {
-        await openHandle.pushUserMessage("Inject mid-turn", { uuid: "tfu_mid_1" });
+        await openHandle.pushUserMessage("Inject mid-turn", {
+          uuid: "tfu_00000000-0000-4000-8000-000000000001",
+        });
         releaseResult?.();
       }
     }
@@ -4253,7 +4283,10 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
 
   await run;
   expect(streamInputCalls).toBe(0);
-  expect(promptMessages).toEqual([{ text: "Start" }, { text: "Inject mid-turn", uuid: "tfu_mid_1" }]);
+  expect(promptMessages).toEqual([
+    { text: "Start", uuid: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    { text: "Inject mid-turn", uuid: "00000000-0000-4000-8000-000000000001" },
+  ]);
   expect(openHandle?.phase).toBe("closed");
 });
 

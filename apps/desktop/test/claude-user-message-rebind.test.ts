@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import type { ThreadUserMessageRecord } from "../src/main/conversation-store";
 import {
   type ClaudePromptSessionLine,
   planClaudeUserMessageRebindMappings,
+  resolveClaudeCurrentSessionUserMessageId,
 } from "../src/main/claude-user-message-rebind";
+import type { ThreadUserMessageRecord } from "../src/main/conversation-store";
 
 function prompt(activityLineId: string, text: string, upstreamMessageId?: string): ThreadUserMessageRecord {
   return {
@@ -24,6 +25,31 @@ function sessionLine(
 ): ClaudePromptSessionLine {
   return { activityLineId, text, upstreamMessageId };
 }
+
+test("fork UUID resolution verifies the complete prompt sequence without changing origin bindings", () => {
+  const records = [prompt("user:a", "same", "origin_a"), prompt("user:b", "same", "origin_b")];
+  const lines = [sessionLine("fork_a", "same"), sessionLine("fork_b", "same")];
+  expect(resolveClaudeCurrentSessionUserMessageId(records, lines, "user:b")).toBe("fork_b");
+  expect(records[1]?.upstreamMessageId).toBe("origin_b");
+  expect(() => resolveClaudeCurrentSessionUserMessageId(records, [lines[0]!], "user:b")).toThrow("不一致");
+  expect(() =>
+    resolveClaudeCurrentSessionUserMessageId(
+      records,
+      [lines[0]!, sessionLine("fork_b", "different")],
+      "user:b",
+    ),
+  ).toThrow("不一致");
+});
+
+test("a retained SDK UUID is usable after compaction only when its prompt agrees", () => {
+  const records = [prompt("user:a", "first", "origin_a"), prompt("user:b", "second", "origin_b")];
+  expect(
+    resolveClaudeCurrentSessionUserMessageId(records, [sessionLine("origin_b", "second")], "user:b"),
+  ).toBe("origin_b");
+  expect(() =>
+    resolveClaudeCurrentSessionUserMessageId(records, [sessionLine("origin_b", "tool result")], "user:b"),
+  ).toThrow("不一致");
+});
 
 test("planClaudeUserMessageRebindMappings binds unbound prompts positionally", () => {
   const plan = planClaudeUserMessageRebindMappings(

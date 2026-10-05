@@ -229,7 +229,7 @@ export const BUILTIN_PLAN_TOOL_POLICY: EcoToolPolicy = {
     "Agent",
     "Task",
     "TaskList",
-    "TaskOutput",
+    "TaskGet",
     "Bash",
     ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
     ...SDK_TASK_PROGRESS_TOOL_NAMES,
@@ -501,6 +501,9 @@ export function buildClaudeCodeSystemPrompt(options: {
   return {
     type: "preset",
     preset: "claude_code",
+    // Eco rebuilds user rules and orchestration instructions on each resumed query.
+    // SDK 0.3.267+ otherwise freezes the append until compaction.
+    snapshot: false,
     ...(append ? { append } : {}),
     ...(options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
   };
@@ -603,8 +606,7 @@ export function applyIntegratedWebSearchToAgentToolFields(input: {
   const disallowedTools = uniqueToolPatterns([...input.disallowedTools, "WebSearch"]);
   const wantsSearch =
     input.networkWebSearch !== false &&
-    (input.tools.includes("WebSearch") ||
-      (input.tools.length === 0 && input.networkWebSearch === true));
+    (input.tools.includes("WebSearch") || (input.tools.length === 0 && input.networkWebSearch === true));
   if (!wantsSearch) {
     return {
       tools: [...input.tools],
@@ -612,10 +614,7 @@ export function applyIntegratedWebSearchToAgentToolFields(input: {
       mcpServers: [...input.mcpServers],
     };
   }
-  const mcpServers = uniqueToolPatterns([
-    ...input.mcpServers,
-    input.integratedWebSearch.serverName,
-  ]);
+  const mcpServers = uniqueToolPatterns([...input.mcpServers, input.integratedWebSearch.serverName]);
   if (input.tools.length === 0) {
     return { tools: [], disallowedTools, mcpServers };
   }
@@ -771,12 +770,7 @@ function hasAnyToolPattern(allowed: ReadonlySet<string>, tools: readonly string[
 function isDelegationToolPattern(pattern: string): boolean {
   const trimmed = pattern.trim();
   return (
-    trimmed === "Agent" ||
-    trimmed === "Task" ||
-    trimmed === "TaskList" ||
-    trimmed === "TaskOutput" ||
-    trimmed.startsWith("Agent(") ||
-    trimmed.startsWith("Task(")
+    trimmed === "Agent" || trimmed === "Task" || trimmed.startsWith("Agent(") || trimmed.startsWith("Task(")
   );
 }
 

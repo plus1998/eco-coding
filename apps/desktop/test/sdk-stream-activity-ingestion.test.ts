@@ -37,6 +37,7 @@ function createIngestionHarness(agents: AgentInstanceRecord[] = []) {
   } as unknown as AgentLifecycleService;
 
   const metricsRegistry = {
+    roleForAgentId: () => undefined,
     resolveAgentIdByParentToolUse: () => undefined,
     onSubagentStop: () => {},
     linkToolUseToAgent: () => {},
@@ -56,6 +57,28 @@ function createIngestionHarness(agents: AgentInstanceRecord[] = []) {
 
   return { ingestion, appended, abandoned, stoppedSessions };
 }
+
+test("SDK notices before init and after result never become assistant answers or root agent cards", () => {
+  const { ingestion, appended } = createIngestionHarness();
+  for (const payload of [
+    { type: "system", subtype: "session_state_changed", state: "running" },
+    { type: "system", subtype: "informational", content: "Provider notice", level: "warning" },
+    { type: "rate_limit_event", rate_limit_info: { status: "rejected" } },
+    { type: "conversation_reset", new_conversation_id: "next-session" },
+    { type: "system", subtype: "commands_changed", commands: [{ name: "probe" }] },
+    { type: "system", subtype: "session_state_changed", state: "idle" },
+  ]) {
+    ingestion.ingest("thr_notice", {
+      type: "agent.started",
+      role: "planner",
+      agentId: "root-session-before-init",
+      payload,
+    });
+  }
+  expect(appended).toHaveLength(6);
+  expect(appended.every((event) => event.eventType === "diagnostic" && event.role === "system")).toBe(true);
+  expect(appended.every((event) => !event.agentId && event.scope === "main")).toBe(true);
+});
 
 test("failed agent_output still writes agent.abandoned when the store has no instance", () => {
   const { ingestion, appended, abandoned, stoppedSessions } = createIngestionHarness();

@@ -11,11 +11,11 @@ import {
   readHtmlHostMetadataFromToolOutput,
   readImageDisplayMetadataFromToolOutput,
   readSendMessageToolInput,
-  resolveEcoMcpHubSearchCall,
-  resolveEcoMcpHubToolCall,
   resolveEcoHtmlHostToolCall,
   resolveEcoImageDisplayToolCall,
   resolveEcoImageViewToolCall,
+  resolveEcoMcpHubSearchCall,
+  resolveEcoMcpHubToolCall,
   resolvePiMcpProxyDiscoveryCall,
   resolveSkillDisplayName,
 } from "@eco/runtime";
@@ -163,17 +163,15 @@ export class SdkStreamActivityBridge {
         return;
       }
       const display = formatAgentEventDisplay(event);
-      if (!display) {
-        return;
-      }
+      const systemNotice = status.type.startsWith("sdk.") || status.type === "request.rate_limit";
       this.flushPending(threadId, emit);
       emit(
         threadId,
         status.type,
         status.message,
-        String(display.role),
+        systemNotice ? "system" : String(display?.role ?? event.role),
         false,
-        activityAgentId,
+        systemNotice ? undefined : activityAgentId,
         status.metadata ? { metadata: status.metadata } : undefined,
       );
       return;
@@ -574,6 +572,7 @@ function readSdkTaskReconciliationMetadata(payload: unknown): Record<string, unk
     sdkTaskKind: record.sdkKind,
     ...(toolUseId && { sdkTaskToolUseId: toolUseId }),
     ...(status && { sdkTaskStatus: status }),
+    ...(typeof record.reason === "string" && { sdkTaskReason: record.reason }),
     ...(usage ? { sdkTaskUsage: usage } : {}),
   };
 }
@@ -631,8 +630,12 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   const identity = resolveSdkMcpToolIdentity(name, record.input);
   const displayName = identity.displayName;
   const toolInput = identity.toolInput;
-  const { imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery: imageMcpDiscovery } =
-    resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
+  const {
+    imageViewCall,
+    imageDisplayCall,
+    htmlHostCall,
+    mcpDiscovery: imageMcpDiscovery,
+  } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
   const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
   const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
@@ -825,9 +828,44 @@ function resolveSdkAgentStatusActivity(
     return undefined;
   }
   const record = payload as Record<string, unknown>;
+  if (
+    record.type === "rate_limit_event" &&
+    record.rate_limit_info &&
+    typeof record.rate_limit_info === "object"
+  ) {
+    const info = record.rate_limit_info as Record<string, unknown>;
+    return {
+      type: "request.rate_limit",
+      message:
+        info.status === "rejected"
+          ? "Rate limit reached; waiting for quota reset."
+          : `Rate limit: ${String(info.status)}`,
+      metadata: { activityOrigin: "sdk.rate_limit_event", rateLimitInfo: info },
+    };
+  }
+  if (record.type === "conversation_reset")
+    return { type: "sdk.conversation_reset", message: "Conversation context reset.", metadata: record };
   if (record.type !== "system") {
     return undefined;
   }
+  if (record.subtype === "informational" && typeof record.content === "string")
+    return {
+      type: "sdk.notice",
+      message: record.content,
+      metadata: { activityOrigin: "sdk.informational", level: record.level, tag: record.tag },
+    };
+  if (record.subtype === "session_state_changed")
+    return {
+      type: "sdk.session_state",
+      message: `Session state: ${String(record.state)}`,
+      metadata: { activityOrigin: "sdk.session_state_changed", state: record.state },
+    };
+  if (record.subtype === "commands_changed")
+    return {
+      type: "sdk.commands_changed",
+      message: "Available commands updated.",
+      metadata: { activityOrigin: "sdk.commands_changed", commands: record.commands },
+    };
   if (record.subtype === "status") {
     if (record.status === "requesting") {
       return { type: "request.started", message: "Requesting model…" };

@@ -72,7 +72,7 @@ export interface CodexRolePermissionTomlFields {
 }
 
 const CLAUDE_WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
-const CLAUDE_DELEGATION_TOOLS = new Set(["Agent", "Task", "TaskList", "TaskOutput"]);
+const CLAUDE_DELEGATION_TOOLS = new Set(["Agent", "Task", "TaskList", "TaskGet"]);
 
 export function isCodexSandboxMode(value: unknown): value is CodexSandboxMode {
   return typeof value === "string" && (CODEX_SANDBOX_MODES as readonly string[]).includes(value);

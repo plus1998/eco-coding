@@ -3,10 +3,16 @@ import type { ToolPolicy } from "../shared/ipc";
 import { parseList, uniqueValues } from "./agent-template-form-utils";
 import { i18n } from "./i18n";
 
-export const DELEGATION_TOOL_NAMES = ["Agent", "Task", "TaskList", "TaskOutput"] as const;
+export const DELEGATION_TOOL_NAMES = ["Agent", "Task"] as const;
 export const FILESYSTEM_READ_TOOL_NAMES = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
 export const FILESYSTEM_WRITE_TOOL_NAMES = ["Write", "Edit", "MultiEdit", "NotebookEdit"] as const;
-export const TASK_PROGRESS_TOOL_NAMES = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
+export const TASK_PROGRESS_TOOL_NAMES = [
+  "TaskCreate",
+  "TaskGet",
+  "TaskUpdate",
+  "TaskList",
+  "TodoWrite",
+] as const;
 export const NETWORK_TOOL_NAMES = ["WebSearch", "WebFetch"] as const;
 
 export const GROUPED_CAPABILITY_TOOL_NAMES = [
@@ -162,12 +168,7 @@ export const TOOL_CAPABILITY_PRESETS: ToolCapabilityPreset[] = [
 export function isDelegationToolName(value: string): boolean {
   const trimmed = value.trim();
   return (
-    trimmed === "Agent" ||
-    trimmed === "Task" ||
-    trimmed === "TaskList" ||
-    trimmed === "TaskOutput" ||
-    trimmed.startsWith("Agent(") ||
-    trimmed.startsWith("Task(")
+    trimmed === "Agent" || trimmed === "Task" || trimmed.startsWith("Agent(") || trimmed.startsWith("Task(")
   );
 }
 

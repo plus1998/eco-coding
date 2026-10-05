@@ -22,6 +22,30 @@ export interface ClaudeUserMessageRebindPlan {
   }>;
 }
 
+/** Resolve a fork's remapped UUID without mutating the immutable origin binding. */
+export function resolveClaudeCurrentSessionUserMessageId(
+  records: readonly ThreadUserMessageRecord[],
+  userLines: readonly ClaudePromptSessionLine[],
+  activityLineId: string,
+): string {
+  const index = records.findIndex((record) => record.activityLineId === activityLineId);
+  const record = records[index];
+  if (!record) throw new Error("找不到当前历史中的用户消息。");
+  const direct = userLines.find((line) => line.upstreamMessageId === record.upstreamMessageId);
+  if (direct && direct.text.trim() === record.text.trim()) return direct.upstreamMessageId;
+  // The standalone SDK fork remaps UUIDs. Position is a proof only when the
+  // complete active prompt sequence matches the current SDK transcript exactly.
+  if (
+    records.length !== userLines.length ||
+    records.some((value, i) => value.text.trim() !== userLines[i]?.text.trim())
+  ) {
+    throw new Error("当前 SDK 会话的用户历史与本地记录不一致，无法安全定位分叉消息。");
+  }
+  const uuid = userLines[index]?.upstreamMessageId.trim();
+  if (!uuid) throw new Error("当前 SDK 会话缺少该消息的 UUID。");
+  return uuid;
+}
+
 /**
  * Pair Eco's user-prompt records with the provider session's user lines and
  * decide which bindings are safe to persist.

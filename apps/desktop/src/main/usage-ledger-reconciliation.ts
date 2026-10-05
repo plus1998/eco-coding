@@ -135,6 +135,7 @@ function buildLedgerSourceTotals(
   >();
 
   for (const event of events) {
+    if (event.usageKind === "session_total") continue;
     const total = (totals[event.source] ??= createEmptySourceTotals());
     total.inputTokens += event.inputTokens;
     total.outputTokens += event.outputTokens;
@@ -144,6 +145,7 @@ function buildLedgerSourceTotals(
   }
 
   for (const event of costEvents) {
+    if (event.usageKind === "session_total") continue;
     const key = `${event.source}\u001f${event.requestKey ?? event.sourceEventId}`;
     const cost = requestCosts.get(key) ?? {
       source: event.source,

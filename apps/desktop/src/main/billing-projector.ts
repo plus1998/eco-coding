@@ -18,9 +18,9 @@ import type {
   ThreadBillingSourceSnapshot,
   ThreadSubagentBillingSnapshot,
 } from "../shared/ipc";
+import { ledgerEventDuplicateKey } from "../shared/ledger-events-display";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { resolveLedgerSourcePriority } from "./billing-source-priority";
-import { ledgerEventDuplicateKey } from "../shared/ledger-events-display";
 import { readRouteRole } from "./proxy-usage-pending-settlement";
 import type {
   AgentInstanceKind,
@@ -108,7 +108,11 @@ export function selectBillableUsageLedgerEvents(events: readonly UsageLedgerEven
   const selected: UsageLedgerEvent[] = [];
 
   for (const event of events) {
-    if (event.usageKind === "request_partial" || event.usageKind === "context") {
+    if (
+      event.usageKind === "request_partial" ||
+      event.usageKind === "context" ||
+      event.usageKind === "session_total"
+    ) {
       continue;
     }
     if (shouldSkipDuplicateBillableEvent(event, proxyBillableIndex)) {
@@ -191,7 +195,6 @@ export function projectBillingFromUsageLedger(
     }
     if (event.usageKind === "context") {
       contextEvents.push(event);
-      continue;
     }
   }
 
@@ -594,6 +597,7 @@ function collectReportedRequestCosts(
     }
   >();
   for (const event of events) {
+    if (event.usageKind === "session_total") continue;
     const scopedId =
       scope === "agent" ? event.agentId : scope === "runAttempt" ? event.runAttemptId : undefined;
     if (scope !== "source" && !scopedId) {
@@ -787,7 +791,11 @@ function indexProxyBillableEvents(events: readonly UsageLedgerEvent[]): ProxyBil
     if (event.source !== "proxy") {
       continue;
     }
-    if (event.usageKind === "request_partial" || event.usageKind === "context") {
+    if (
+      event.usageKind === "request_partial" ||
+      event.usageKind === "context" ||
+      event.usageKind === "session_total"
+    ) {
       continue;
     }
     if (event.requestKey) {
