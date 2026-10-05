@@ -305,6 +305,7 @@ import {
   filterSkillsForSlash,
   parseSlashQuery,
 } from "./composer-skills";
+import { buildConversationV2CommandEnvelope } from "./conversation-v2-command-envelope";
 import {
   buildThreadRunProjectionViewModel,
   isProjectionUserPromptItem,
@@ -447,9 +448,9 @@ import {
   canEscalateThreadFollowUp,
   formatThreadFollowUpPreview,
   mergeThreadFollowUp,
+  mergeThreadFollowUps,
   queuedThreadFollowUps,
   shouldComposerUseFollowUpQueue,
-  sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
 import {
@@ -1512,6 +1513,7 @@ function App() {
   const [followUpCancelBusyId, setFollowUpCancelBusyId] = useState<string>();
   const [followUpEscalateBusyId, setFollowUpEscalateBusyId] = useState<string>();
   const [followUpQueuePauseBusy, setFollowUpQueuePauseBusy] = useState(false);
+  const followUpQueuePauseRevisionRef = useRef<Record<string, number>>({});
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const editingFollowUpIdRef = useRef<string | undefined>(undefined);
   const editingFollowUpThreadIdRef = useRef<string | undefined>(undefined);
@@ -2494,6 +2496,11 @@ function App() {
         return;
       }
 
+      if (typeof event.followUpQueuePaused === "boolean") {
+        followUpQueuePauseRevisionRef.current[event.threadId] =
+          (followUpQueuePauseRevisionRef.current[event.threadId] ?? 0) + 1;
+      }
+
       if (shouldUpdateThreadSummaryFromLiveEvent(event.type)) {
         setThreads((current) =>
           current.map((thread) => {
@@ -2667,7 +2674,7 @@ function App() {
           void window.eco.listThreadFollowUps(event.threadId).then((result) => {
             setFollowUpsByThread((current) => ({
               ...current,
-              [event.threadId]: sortThreadFollowUps(result.followUps),
+              [event.threadId]: mergeThreadFollowUps(current[event.threadId] ?? [], result.followUps),
             }));
           });
         }
@@ -2932,7 +2939,7 @@ function App() {
           }
           setFollowUpsByThread((current) => ({
             ...current,
-            [selectedThreadId]: sortThreadFollowUps(result.followUps),
+            [selectedThreadId]: mergeThreadFollowUps(current[selectedThreadId] ?? [], result.followUps),
           }));
         });
       }
@@ -5070,7 +5077,7 @@ function App() {
       const threadId = composerContextKey ? threadIdFromComposerContextKey(composerContextKey) : undefined;
       const prevThreadId = prevKey ? threadIdFromComposerContextKey(prevKey) : undefined;
       if (editingFollowUpIdRef.current && prevThreadId) {
-        void releaseThreadFollowUpEditingLock(prevThreadId);
+        void releaseThreadFollowUpEditingLock(prevThreadId).catch((caught) => setError(errorMessage(caught)));
       }
       const promptResolution = resolveComposerContextPrompt(
         composerContextKey,
@@ -7077,7 +7084,10 @@ function App() {
     } else {
       clearPendingBashApprovalForThread(threadId);
     }
-    setFollowUpsByThread((current) => ({ ...current, [threadId]: sortThreadFollowUps(followUps.followUps) }));
+    setFollowUpsByThread((current) => ({
+      ...current,
+      [threadId]: mergeThreadFollowUps(current[threadId] ?? [], followUps.followUps),
+    }));
     refreshConversationV2ProjectionExtras(threadId);
   }
 
@@ -7196,13 +7206,7 @@ function App() {
     setThreads((current) =>
       current.map((thread) => (thread.id === configured.thread.id ? configured.thread : thread)),
     );
-    const clientCommandId = `conversation_send_${input.commandScope}_${stableHash({
-      threadId: input.thread.id,
-      prompt: input.prompt,
-      attachments: input.attachments ?? [],
-      runtimeConfig: input.runtimeConfig,
-      historyRevision: input.historyRevision ?? displayProjection?.historyRevision ?? 0,
-    })}`;
+    const clientCommandId = `conversation_send_${input.commandScope}_${crypto.randomUUID()}`;
     await eco.conversationV2SendMessage({
       principalId: "desktop-local",
       conversationId: input.thread.id,
@@ -7328,35 +7332,23 @@ function App() {
   ): Promise<
     T & { principalId: string; clientCommandId: string; threadId: string; expectedHistoryRevision: number }
   > {
-    if (!window.eco) {
+    const api = window.eco;
+    if (!api) {
       throw new Error("Desktop API is unavailable.");
     }
-    const head = await window.eco.conversationV2Head(threadId);
-    return {
-      ...payload,
-      principalId: "desktop-local",
-      clientCommandId: `command_${operation}_${stableHash({
-        threadId,
-        operation,
-        ...payload,
-        expectedHistoryRevision: head.historyRevision,
-      })}`,
+    return buildConversationV2CommandEnvelope({
       threadId,
-      expectedHistoryRevision: head.historyRevision,
-    };
+      operation,
+      payload,
+      getHead: (id) => api.conversationV2Head(id),
+    });
   }
 
   async function releaseThreadFollowUpEditingLock(threadId: string) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       return;
     }
-    try {
-      await window.eco.setThreadFollowUpEditing(
-        await buildV2CommandEnvelope(threadId, "editing-release", {}),
-      );
-    } catch {
-      // Best-effort unlock; drain resumes on the main process when the lock clears.
-    }
+    await window.eco.setThreadFollowUpEditing(await buildV2CommandEnvelope(threadId, "editing-release", {}));
   }
 
   function restoreComposerAfterFollowUpEdit() {
@@ -7405,17 +7397,23 @@ function App() {
       setComposerRewindTarget(undefined);
       composerRef.current?.focus();
     } catch (caught) {
-      setError(errorMessage(caught));
+      await refreshFollowUpsAfterMutationError(followUp.threadId, caught);
     } finally {
       setFollowUpBusy(false);
     }
   }
 
-  function cancelEditingFollowUp() {
+  async function cancelEditingFollowUp() {
+    const expectedFollowUpId = editingFollowUpIdRef.current;
     const threadId = editingFollowUpThreadIdRef.current ?? selectedThreadIdRef.current;
     if (editingFollowUpIdRef.current && threadId) {
-      void releaseThreadFollowUpEditingLock(threadId);
+      await releaseThreadFollowUpEditingLock(threadId);
     }
+    // A thread switch during the unlock must not clear the new composer/draft.
+    if (
+      editingFollowUpIdRef.current !== expectedFollowUpId ||
+      editingFollowUpThreadIdRef.current !== threadId
+    ) return;
     editingFollowUpIdRef.current = undefined;
     editingFollowUpThreadIdRef.current = undefined;
     setEditingFollowUpId(undefined);
@@ -7486,9 +7484,9 @@ function App() {
           );
           setFollowUpsByThread((current) => ({
             ...current,
-            [activeThread.id]: sortThreadFollowUps(result.followUps),
+            [activeThread.id]: mergeThreadFollowUps(current[activeThread.id] ?? [], result.followUps),
           }));
-          cancelEditingFollowUp();
+          await cancelEditingFollowUp();
         } catch (caught) {
           setError(errorMessage(caught));
         } finally {
@@ -7526,7 +7524,7 @@ function App() {
         );
         setFollowUpsByThread((current) => ({
           ...current,
-          [activeThread.id]: sortThreadFollowUps(result.followUps),
+          [activeThread.id]: mergeThreadFollowUps(current[activeThread.id] ?? [], result.followUps),
         }));
         requestActivityFeedForceScroll();
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
@@ -7634,30 +7632,39 @@ function App() {
     }
   }
 
+  async function refreshFollowUpsAfterMutationError(threadId: string, caught: unknown) {
+    setError(errorMessage(caught));
+    try {
+      const api = window.eco;
+      if (!api) throw new Error("Desktop API is unavailable.");
+      const result = await api.listThreadFollowUps(threadId);
+      setFollowUpsByThread((current) => ({
+        ...current,
+        [threadId]: mergeThreadFollowUps(current[threadId] ?? [], result.followUps),
+      }));
+    } catch (refreshError) {
+      setError(`${errorMessage(caught)}；队列刷新失败：${errorMessage(refreshError)}`);
+    }
+  }
+
   async function reorderQueuedFollowUps(followUpIds: string[]) {
     if (!activeThread || typeof window.eco?.reorderThreadFollowUps !== "function") {
       return;
     }
-    const previous = followUpsByThread[activeThread.id] ?? [];
-    const queuedById = new Map(
-      previous.filter((item) => item.status === "queued").map((item) => [item.id, item]),
-    );
-    const reordered = followUpIds
-      .map((id) => queuedById.get(id))
-      .filter((item): item is ThreadPendingFollowUp => Boolean(item));
-    if (reordered.length !== queuedById.size) {
-      return;
-    }
-    const nonQueued = previous.filter((item) => item.status !== "queued");
-    setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: [...reordered, ...nonQueued] }));
+    const threadId = activeThread.id;
+    setError(undefined);
     try {
       const result = await window.eco.reorderThreadFollowUps(
-        await buildV2CommandEnvelope(activeThread.id, "reorder", { followUpIds }),
+        await buildV2CommandEnvelope(threadId, "reorder", { followUpIds }),
       );
-      setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: result.followUps }));
+      setFollowUpsByThread((current) => ({
+        ...current,
+        [threadId]: mergeThreadFollowUps(current[threadId] ?? [], result.followUps),
+      }));
     } catch (caught) {
-      setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: previous }));
-      setError(errorMessage(caught));
+      // A row may have been delivered during the drag. Never roll back a whole
+      // captured queue over live events; reload current rows and retain the error.
+      await refreshFollowUpsAfterMutationError(threadId, caught);
     }
   }
 
@@ -7674,13 +7681,13 @@ function App() {
       );
       setFollowUpsByThread((current) => ({
         ...current,
-        [followUp.threadId]: sortThreadFollowUps(result.followUps),
+        [followUp.threadId]: mergeThreadFollowUps(current[followUp.threadId] ?? [], result.followUps),
       }));
       if (editingFollowUpId === followUp.id) {
-        cancelEditingFollowUp();
+        await cancelEditingFollowUp();
       }
     } catch (caught) {
-      setError(errorMessage(caught));
+      await refreshFollowUpsAfterMutationError(followUp.threadId, caught);
     } finally {
       setFollowUpCancelBusyId(undefined);
     }
@@ -7693,23 +7700,20 @@ function App() {
     }
     setError(undefined);
     setFollowUpQueuePauseBusy(true);
+    const threadId = activeThread.id;
+    const pauseRevision = followUpQueuePauseRevisionRef.current[threadId] ?? 0;
     try {
-      // Queue pause/resume is a reversible state transition. Its desired payload
-      // can repeat after an automatic error pause, so the stable command hash
-      // would otherwise replay an old receipt instead of applying this click.
-      const command = await buildV2CommandEnvelope(activeThread.id, "queue-paused", { paused });
       const result = await window.eco.setThreadFollowUpQueuePaused(
-        { ...command, clientCommandId: `command_queue-paused_${crypto.randomUUID()}` },
+        await buildV2CommandEnvelope(activeThread.id, "queue-paused", { paused }),
       );
+      if ((followUpQueuePauseRevisionRef.current[threadId] ?? 0) !== pauseRevision) return;
       setThreads((current) =>
         current.map((thread) =>
           thread.id === result.thread.id
             ? {
                 ...thread,
-                ...result.thread,
-                // `rowToThread` omits the optional field when the queue is resumed.
-                // Write the authoritative command result explicitly so a stale
-                // `true` in the renderer cannot turn Resume back into Pause.
+                // Resume can start a run before this receipt arrives. Only update
+                // the queue flag; its captured thread status may already be stale.
                 followUpQueuePaused: result.paused === true,
               }
             : thread,
@@ -7735,13 +7739,13 @@ function App() {
       );
       setFollowUpsByThread((current) => ({
         ...current,
-        [followUp.threadId]: sortThreadFollowUps(result.followUps),
+        [followUp.threadId]: mergeThreadFollowUps(current[followUp.threadId] ?? [], result.followUps),
       }));
       if (editingFollowUpId === followUp.id) {
-        cancelEditingFollowUp();
+        await cancelEditingFollowUp();
       }
     } catch (caught) {
-      setError(errorMessage(caught));
+      await refreshFollowUpsAfterMutationError(followUp.threadId, caught);
     } finally {
       setFollowUpEscalateBusyId(undefined);
     }
@@ -8497,7 +8501,7 @@ function App() {
           );
           setFollowUpsByThread((current) => ({
             ...current,
-            [activeThread.id]: sortThreadFollowUps(result.followUps),
+            [activeThread.id]: mergeThreadFollowUps(current[activeThread.id] ?? [], result.followUps),
           }));
         } catch (caught) {
           setError(errorMessage(caught));
@@ -9731,7 +9735,9 @@ function App() {
     // Only reset when leaving an existing thread into a new landing surface.
     if (leavingThread) {
       if (editingFollowUpIdRef.current && selectedThreadIdRef.current) {
-        void releaseThreadFollowUpEditingLock(selectedThreadIdRef.current);
+        void releaseThreadFollowUpEditingLock(selectedThreadIdRef.current).catch((caught) =>
+          setError(errorMessage(caught)),
+        );
       }
       editingFollowUpIdRef.current = undefined;
       editingFollowUpThreadIdRef.current = undefined;

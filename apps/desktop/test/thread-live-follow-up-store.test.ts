@@ -429,6 +429,26 @@ test.skipIf(!sqliteAvailable)("claims only escalated follow-ups when priority is
   expect(store.getThreadFollowUp("thr_followup", normal.id)?.status).toBe("queued");
 });
 
+test.skipIf(!sqliteAvailable)("a cancelled Guide cannot force-send an unrelated normal row", async () => {
+  const store = await createStore();
+  const normal = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "remain paused" });
+  const guide = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "handle now",
+    priority: "escalated",
+  });
+  store.setThreadFollowUpQueuePaused("thr_followup", true);
+  store.cancelThreadFollowUp("thr_followup", guide.id);
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", {
+    priority: "escalated",
+    deliveryMode: "resume",
+    deliveryBoundary: "forced_interrupt",
+  });
+  expect(claimed).toEqual([]);
+  expect(store.getThreadFollowUp("thr_followup", normal.id)?.status).toBe("queued");
+  expect(store.getThread("thr_followup")?.followUpQueuePaused).toBe(true);
+});
+
 test.skipIf(!sqliteAvailable)("claimQueuedThreadFollowUps skips an excluded follow-up id", async () => {
   const store = await createStore();
   const editing = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "正在编辑" });

@@ -135,6 +135,8 @@ test("shouldBlockThreadFollowUpDrain while follow-up queue is paused", () => {
 });
 
 test("threadAcceptsQueuedFollowUp allows paused drainable statuses", () => {
+  expect(threadAcceptsQueuedFollowUp({ status: "completed", hasEditingFollowUp: true })).toBe(true);
+  expect(threadAcceptsQueuedFollowUp({ status: "completed", hasEditingFollowUp: false })).toBe(false);
   expect(
     threadAcceptsQueuedFollowUp({
       status: "idle",

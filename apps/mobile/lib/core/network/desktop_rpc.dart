@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:uuid/uuid.dart';
+
 import '../models/acp_models.dart';
 import '../models/asr_models.dart';
 import '../models/conversation_v2_models.dart';
@@ -998,10 +1000,7 @@ class DesktopRpc {
       {
         'principalId': principalId,
         'clientCommandId':
-            'run_cancel_${conversationV2StableHash({
-              'threadId': normalizedThreadId,
-              'expectedHistoryRevision': expectedHistoryRevision,
-            })}',
+            'run_cancel_${conversationV2StableHash({'threadId': normalizedThreadId, 'expectedHistoryRevision': expectedHistoryRevision})}',
         'threadId': normalizedThreadId,
         'expectedHistoryRevision': expectedHistoryRevision,
       },
@@ -1332,20 +1331,15 @@ class DesktopRpc {
     if (principalId.isEmpty) {
       throw StateError('Authenticated user id is required for V2 mutations.');
     }
+    final clientCommandId = 'command_${operation}_${const Uuid().v4()}';
     final head = await conversationV2Head(normalizedThreadId);
-    final expectedHistoryRevision = head.historyRevision;
     return {
       'principalId': principalId,
-      'clientCommandId':
-          'command_${operation}_${conversationV2StableHash({
-            'threadId': normalizedThreadId,
-            'operation': operation,
-            ...payload,
-            'expectedHistoryRevision': expectedHistoryRevision,
-          })}',
+      // Each user action owns a fresh identity; transport retries reuse this request.
+      'clientCommandId': clientCommandId,
       'threadId': normalizedThreadId,
       ...payload,
-      'expectedHistoryRevision': expectedHistoryRevision,
+      'expectedHistoryRevision': head.historyRevision,
     };
   }
 
@@ -1379,9 +1373,7 @@ class DesktopRpc {
       operation: 'cancel',
       payload: {'followUpId': followUpId},
     );
-    await _client.invoke(desktopDeviceId, 'thread:follow-up-cancel', [
-      request,
-    ]);
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-cancel', [request]);
   }
 
   Future<void> followUpEscalate({
@@ -1410,9 +1402,7 @@ class DesktopRpc {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-reorder',
-      [
-        request,
-      ],
+      [request],
     );
     final followUps = result['followUps'] as List<dynamic>? ?? [];
     return followUps
@@ -1441,9 +1431,7 @@ class DesktopRpc {
               .toList(),
       },
     );
-    await _client.invoke(desktopDeviceId, 'thread:follow-up-update', [
-      request,
-    ]);
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-update', [request]);
   }
 
   Future<bool> followUpSetEditing({
@@ -1460,9 +1448,7 @@ class DesktopRpc {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-editing',
-      [
-        request,
-      ],
+      [request],
     );
     return result['editing'] as bool? ?? false;
   }
@@ -1479,9 +1465,7 @@ class DesktopRpc {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-queue-paused',
-      [
-        request,
-      ],
+      [request],
     );
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
   }
@@ -1498,9 +1482,7 @@ class DesktopRpc {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:update-runtime-config',
-      [
-        request,
-      ],
+      [request],
     );
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
   }

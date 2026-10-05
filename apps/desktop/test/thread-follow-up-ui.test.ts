@@ -4,6 +4,7 @@ import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
   mergeThreadFollowUp,
+  mergeThreadFollowUps,
   queuedThreadFollowUps,
   shouldComposerUseFollowUpQueue,
 } from "../src/renderer/thread-follow-up-ui";
@@ -72,6 +73,49 @@ test("mergeThreadFollowUp replaces existing records by id", () => {
   const updated = followUp("same", { prompt: "已取消", status: "cancelled" });
 
   expect(mergeThreadFollowUp([original], updated)).toEqual([updated]);
+});
+
+test("saving another edit cannot resurrect a sent row from an older command receipt", () => {
+  const sent = followUp("sent", { status: "applied", updatedAt: "2026-10-05T09:46:20.407Z" });
+  const editing = followUp("editing", { updatedAt: "2026-10-05T09:42:21.405Z" });
+  const oldReceipt = [
+    followUp("sent", { priority: "escalated", updatedAt: "2026-10-05T09:42:58.648Z" }),
+    editing,
+  ];
+  const state = mergeThreadFollowUps([sent, editing], oldReceipt);
+  expect(queuedThreadFollowUps(state).map((row) => row.id)).toEqual(["editing"]);
+  expect(state.find((row) => row.id === "sent")).toEqual(sent);
+});
+
+test("queue lifecycle resists delayed snapshots/events without dropping newly enqueued rows", () => {
+  for (const status of ["applied", "cancelled", "superseded", "failed"] as const) {
+    const terminal = followUp("done", { status, updatedAt: "2026-10-05T10:00:03.000Z" });
+    const stale = followUp("done", { updatedAt: "2026-10-05T10:00:01.000Z" });
+    const state = mergeThreadFollowUps([terminal, followUp("new")], [stale]);
+    expect(queuedThreadFollowUps(state).map((row) => row.id)).toEqual(["new"]);
+    expect(mergeThreadFollowUp(state, { ...stale, updatedAt: terminal.updatedAt })).toEqual(state);
+  }
+  const original = followUp("edit", { prompt: "before", updatedAt: "2026-10-05T10:00:01.000Z" });
+  const updated = { ...original, prompt: "after", updatedAt: "2026-10-05T10:00:02.000Z" };
+  expect(mergeThreadFollowUps([updated], [original])).toEqual([updated]);
+  expect(mergeThreadFollowUps([original], [updated])).toEqual([updated]);
+});
+
+test("a rejected streaming push can requeue its row, but cannot overwrite an applied row", () => {
+  const delivered = followUp("push", {
+    status: "delivered",
+    deliveryMode: "streaming_push",
+    updatedAt: "2026-10-05T10:00:01.000Z",
+  });
+  const requeued = {
+    ...delivered,
+    status: "queued" as const,
+    error: "port closed",
+    updatedAt: "2026-10-05T10:00:02.000Z",
+  };
+  expect(mergeThreadFollowUp([delivered], requeued)).toEqual([requeued]);
+  const applied = { ...delivered, status: "applied" as const, updatedAt: "2026-10-05T10:00:03.000Z" };
+  expect(mergeThreadFollowUps([applied], [delivered, requeued])).toEqual([applied]);
 });
 
 // One test needs localized previews in English. Switching the renderer's language is

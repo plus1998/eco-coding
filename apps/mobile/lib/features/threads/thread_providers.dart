@@ -1474,6 +1474,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   bool _centerConnectionWasInterrupted = false;
   bool _selectedDesktopWasOffline = false;
   bool _projectionSynchronized = false;
+  int _followUpQueuePauseRevision = 0;
+  int _threadLiveRevision = 0;
+  int get followUpQueuePauseRevision => _followUpQueuePauseRevision;
   Future<ThreadSummary?>? _threadLoadInFlight;
 
   String get _composerDraftContextKey => 'thread:$threadId';
@@ -1701,10 +1704,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       // Session bootstrap supplies chrome and pending interactions. The ordered
       // feed, billing, context and subagent facts are owned by the V2 session
       // provider and never come from a legacy projection RPC.
+      final threadRevision = _threadLiveRevision;
       final bootstrap = await rpc.sessionBootstrap(threadId);
       _projectionSynchronized = true;
-      final thread =
+      final loadedThread =
           bootstrap.thread ?? cachedThread ?? await rpc.getThread(threadId);
+      final thread =
+          threadRevision != _threadLiveRevision && state.thread != null
+          ? state.thread
+          : loadedThread;
       final loadedFollowUps = _mergeThreadFollowUps(
         bootstrap.followUps,
         state.followUps,
@@ -1775,6 +1783,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     // session chrome (title etc.) is not left blank.
     if (state.thread == null) {
       unawaited(ensureThreadLoaded());
+    }
+
+    if (live.followUpQueuePaused != null) _followUpQueuePauseRevision += 1;
+    if (live.followUpQueuePaused != null ||
+        shouldUpdateThreadSummaryFromLiveEvent(live.type)) {
+      _threadLiveRevision += 1;
     }
 
     if (isFollowUpThreadLiveEvent(
@@ -1917,6 +1931,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   Future<void> refreshFollowUps() => _refreshFollowUpsFromRpc();
 
+  void applyFollowUpQueuePaused(bool paused, {required int expectedRevision}) {
+    if (expectedRevision != _followUpQueuePauseRevision) return;
+    final thread = state.thread;
+    if (thread == null) return;
+    state = state.copyWith(
+      thread: thread.copyWith(followUpQueuePaused: paused),
+    );
+  }
+
   void applyThreadSummary(ThreadSummary thread) {
     state = state.copyWith(thread: thread);
     ref
@@ -1970,9 +1993,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     try {
       final followUps = await rpc.followUpList(threadId);
       if (!mounted) return;
-      state = state.copyWith(followUps: followUps);
-    } catch (_) {
+      state = state.copyWith(
+        followUps: mergeThreadFollowUps(state.followUps, followUps),
+      );
+    } catch (error) {
       if (!mounted) return;
+      state = state.copyWith(error: error.toString());
     }
   }
 
@@ -1996,11 +2022,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   Future<void> refreshPending() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
+    final threadRevision = _threadLiveRevision;
     final bootstrap = await rpc.sessionBootstrap(threadId);
-    final thread = bootstrap.thread ?? await _resolveThreadSummary(rpc);
+    final loadedThread = bootstrap.thread ?? await _resolveThreadSummary(rpc);
     final pendingPlan =
         bootstrap.pendingPlan ?? await rpc.getPendingPlan(threadId);
     if (!mounted) return;
+    final thread = threadRevision != _threadLiveRevision && state.thread != null
+        ? state.thread
+        : loadedThread;
     state = state.copyWith(
       pendingPlan: pendingPlan,
       clearPlan: pendingPlan == null,
@@ -2008,7 +2038,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       clearBash: bootstrap.pendingBash == null,
       pendingClarification: bootstrap.pendingClarification,
       clearClarification: bootstrap.pendingClarification == null,
-      followUps: bootstrap.followUps,
+      followUps: mergeThreadFollowUps(state.followUps, bootstrap.followUps),
       thread: thread ?? state.thread,
       clearBilling: true,
       clearContext: true,
@@ -2203,11 +2233,7 @@ List<ThreadPendingFollowUp> _mergeThreadFollowUps(
   List<ThreadPendingFollowUp> base,
   List<ThreadPendingFollowUp> overlay,
 ) {
-  var merged = sortThreadFollowUps(base);
-  for (final followUp in overlay) {
-    merged = mergeThreadFollowUp(merged, followUp);
-  }
-  return merged;
+  return mergeThreadFollowUps(base, overlay);
 }
 
 bool _isThreadListLiveEvent(ThreadLiveEvent live) {

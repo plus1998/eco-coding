@@ -585,6 +585,7 @@ import {
   executeFollowUpMutationCommand,
   failInterruptedFollowUpCommands,
 } from "./conversation-follow-up-command";
+import { ThreadFollowUpDrainScheduler } from "./thread-follow-up-drain-scheduler";
 import {
   executeBashApprovalResolutionCommand,
   executeClarificationResolutionCommand,
@@ -1396,7 +1397,7 @@ function runThreadRequestWithLiveRequestLifecycle(
 const conversationRecoveryGate = new ConversationRecoveryGate();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
-const threadFollowUpDrainInFlight = new Set<string>();
+const threadFollowUpDrainScheduler = new ThreadFollowUpDrainScheduler();
 const titleGeneratingThreadIds = new Set<string>();
 const editingThreadFollowUpByThread = new Map<string, string>();
 const threadFollowUpOperationLocks = new Map<string, Promise<void>>();
@@ -1625,6 +1626,21 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
   activeRunBillingState.startRun(threadId);
   getThreadSubagentConcurrencyGate(threadId).clear();
   syncSystemSleepBlocker();
+  if (pendingEscalatedFollowUpDrain.has(threadId)) {
+    queueMicrotask(() => {
+      const thread = conversationStore.getThread(threadId);
+      const followUp = conversationStore
+        .listThreadFollowUps(threadId, { statuses: ["queued"] })
+        .find((item) => item.priority === "escalated");
+      if (thread && followUp && activeRunRuntimeState.hasRun(threadId)) {
+        void requestEscalatedFollowUpInterrupt(thread, followUp).catch((error) => {
+          process.stderr.write(
+            `[eco] failed to interrupt starting follow-up (${threadId}): ${errorMessage(error)}\n`,
+          );
+        });
+      }
+    });
+  }
 }
 
 function finishActiveRun(threadId: string): void {
@@ -8663,14 +8679,17 @@ function registerIpcHandlers(): void {
             }
             // Mid-turn was skipped (blocking approval, editing row, or a port that is not
             // accepting) and the row is still `queued`: "handle now" must fall through to the
-            // interrupt instead of reporting a silent no-op. A run that is still starting up
-            // has nothing to interrupt, so that row simply keeps waiting.
+            // interrupt instead of reporting a silent no-op. A starting run keeps the
+            // request armed until startActiveRun registers its controller.
+            const progressThread = conversationStore.getThread(thread.id);
+            if (!progressThread) throw new Error("Thread was not found.");
             if (
               !canEscalatedFollowUpProgressNow({
                 hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
-                status: thread.status,
+                status: progressThread.status,
               })
             ) {
+              pendingEscalatedFollowUpDrain.add(thread.id);
               const settled =
                 midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
               if (settled.status === "queued") {
@@ -8772,13 +8791,16 @@ function registerIpcHandlers(): void {
           // A skipped mid-turn inject leaves the row `queued`; Guide must not be swallowed
           // by a paused queue (or a non-accepting port) — fall through to interrupt, which
           // arms one forced drain past the pause. When nothing can move (e.g. the run is
-          // still starting up), keep the row queued instead of failing it.
+          // still starting up), keep the request armed until its controller is ready.
+          const progressThread = conversationStore.getThread(thread.id);
+          if (!progressThread) throw new Error("Thread was not found.");
           if (
             !canEscalatedFollowUpProgressNow({
               hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
-              status: thread.status,
+              status: progressThread.status,
             })
           ) {
+            pendingEscalatedFollowUpDrain.add(thread.id);
             return buildThreadFollowUpMutationResult(
               midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
             );
@@ -8818,12 +8840,11 @@ function registerIpcHandlers(): void {
         execute: async () =>
           withThreadFollowUpLock(request.threadId, async () => {
             if (request.followUpId) {
-              editingThreadFollowUpByThread.set(request.threadId, request.followUpId);
               const followUp = conversationStore.getThreadFollowUp(request.threadId, request.followUpId);
               if (!followUp || followUp.status !== "queued") {
-                editingThreadFollowUpByThread.delete(request.threadId);
                 throw new Error("Pending follow-up was not found or can no longer be edited.");
               }
+              editingThreadFollowUpByThread.set(request.threadId, request.followUpId);
               return { editing: true } satisfies ThreadFollowUpEditingResult;
             }
             const released = editingThreadFollowUpByThread.delete(request.threadId);
@@ -8899,6 +8920,10 @@ function registerIpcHandlers(): void {
           }
           // Cancelling the last held row means the pause has nothing left to hold.
           releaseFollowUpQueuePauseWhenEmpty(request.threadId);
+          if (editingThreadFollowUpByThread.get(request.threadId) === followUp.id) {
+            editingThreadFollowUpByThread.delete(request.threadId);
+            void drainQueuedThreadFollowUpsAfterRun(request.threadId);
+          }
           emitThreadFollowUpEvent(followUp, "thread.follow_up.cancelled", "已取消排队的后续消息。");
           return buildThreadFollowUpMutationResult(followUp);
         },
@@ -8963,6 +8988,10 @@ function registerIpcHandlers(): void {
           if (!followUp) {
             throw new Error("Pending follow-up was not found or cannot be updated.");
           }
+          if (editingThreadFollowUpByThread.get(request.threadId) === followUp.id) {
+            editingThreadFollowUpByThread.delete(request.threadId);
+            void drainQueuedThreadFollowUpsAfterRun(request.threadId);
+          }
           emitThreadFollowUpEvent(followUp, "thread.follow_up.updated", "");
           return buildThreadFollowUpMutationResult(followUp);
         },
@@ -8982,6 +9011,8 @@ function registerIpcHandlers(): void {
       v2: conversationStore.conversationV2(),
       errorMessage,
       cancel: async ({ threadId, worktreeDisposition }) => {
+        // Explicit Stop revokes an earlier Guide; cleanup must pause queued rows.
+        pendingEscalatedFollowUpDrain.delete(threadId);
         const owner = conversationStore.getThread(threadId)?.coreKind;
         const hadActiveRun = activeRunRuntimeState.hasRun(threadId);
         if (hadActiveRun) {
@@ -9398,9 +9429,12 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
 }
 
 async function requestEscalatedFollowUpInterrupt(
-  thread: ThreadSummary,
+  snapshot: ThreadSummary,
   followUp: ThreadPendingFollowUp,
 ): Promise<ThreadPendingFollowUp> {
+  // The mid-turn attempt can outlive the run. Use the current settled status.
+  const thread = conversationStore.getThread(snapshot.id);
+  if (!thread) throw new Error("Thread was not found.");
   // Match manual cancel: ACP needs session/cancel + process teardown, not only AbortSignal.
   if (thread.coreKind === "acp") {
     cancelAcpThread(thread.id);
@@ -9445,15 +9479,7 @@ async function requestEscalatedFollowUpInterrupt(
 }
 
 async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<void> {
-  if (threadFollowUpDrainInFlight.has(threadId)) {
-    return;
-  }
-  threadFollowUpDrainInFlight.add(threadId);
-  try {
-    await drainNextQueuedThreadFollowUp(threadId);
-  } finally {
-    threadFollowUpDrainInFlight.delete(threadId);
-  }
+  await threadFollowUpDrainScheduler.drain(threadId, () => drainNextQueuedThreadFollowUp(threadId));
 }
 
 async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
@@ -9492,7 +9518,7 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
     const queued = conversationStore.listThreadFollowUps(threadId, {
       statuses: ["queued"],
     });
-    const claimPriority = queued.some((followUp) => followUp.priority === "escalated")
+    const claimPriority = forceEscalatedDrain || queued.some((followUp) => followUp.priority === "escalated")
       ? "escalated"
       : undefined;
     const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
@@ -9563,6 +9589,8 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
         { followUp: failed },
       );
     }
+  } finally {
+    releaseFollowUpQueuePauseWhenEmpty(threadId);
   }
 }
 
@@ -12612,6 +12640,7 @@ function isPromptImageMediaType(value: unknown): value is PromptImageAttachment[
 function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): boolean {
   return threadAcceptsQueuedFollowUp({
     status,
+    hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
     followUpQueuePaused: Boolean(conversationStore.getThread(threadId)?.followUpQueuePaused),
     hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
     hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
@@ -12648,13 +12677,22 @@ async function tryDeliverFollowUpViaMidTurn(
   const isPi = thread.coreKind === "pi";
   const midTurnLabel = isCodex ? "Codex turn/steer" : isPi ? "PI steer" : "Claude streamInput";
   const claimed = await withThreadFollowUpLock(thread.id, async () => {
+    const currentThread = conversationStore.getThread(thread.id);
+    if (!currentThread) throw new Error("Thread was not found.");
+    const currentFollowUp = conversationStore.getThreadFollowUp(thread.id, followUp.id);
+    if (
+      !currentFollowUp || currentFollowUp.status !== "queued" ||
+      (currentFollowUp.attachments?.length ?? 0) > 0 || !currentFollowUp.prompt.trim()
+    ) {
+      return undefined;
+    }
     if (
       shouldBlockThreadFollowUpDrain({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(thread.id)),
         hasPendingClarification: Boolean(getPendingClarificationForThread(thread.id)),
         hasEditingFollowUp: editingThreadFollowUpByThread.has(thread.id),
-        hasFollowUpQueuePaused: Boolean(thread.followUpQueuePaused),
-        ...(thread.status && { threadStatus: thread.status }),
+        hasFollowUpQueuePaused: Boolean(currentThread.followUpQueuePaused),
+        threadStatus: currentThread.status,
         hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
       })
     ) {
@@ -12698,12 +12736,12 @@ async function tryDeliverFollowUpViaMidTurn(
   }
 
   const push = isCodex
-    ? await codexMidTurnPorts.tryPushUserText(thread.id, prompt, {
+    ? await codexMidTurnPorts.tryPushUserText(thread.id, claimed.prompt.trim(), {
         clientUserMessageId: followUp.id,
       })
     : isPi
-      ? await pushPiMidTurnSteer(thread.id, prompt)
-      : await claudeMidTurnPorts.tryPushUserText(thread.id, prompt, {
+      ? await pushPiMidTurnSteer(thread.id, claimed.prompt.trim())
+      : await claudeMidTurnPorts.tryPushUserText(thread.id, claimed.prompt.trim(), {
           uuid: followUp.id,
         });
 
@@ -12808,9 +12846,9 @@ async function tryDeliverFollowUpViaMidTurn(
   // instead of the earlier queue-acceptance time for Feed ordering.
   await recordUserPrompt(
     thread.id,
-    prompt,
-    followUp.attachments,
-    followUp.conversationMessageId ? [followUp.conversationMessageId] : undefined,
+    claimed.prompt.trim(),
+    claimed.attachments,
+    claimed.conversationMessageId ? [claimed.conversationMessageId] : undefined,
     // Stamp the durable message in the explicit post-push finalization below,
     // rather than at the time this local activity row is assembled.
     { finalizeAcceptedMessages: false },
@@ -12833,6 +12871,7 @@ async function tryDeliverFollowUpViaMidTurn(
     false,
     { followUp: applied },
   );
+  releaseFollowUpQueuePauseWhenEmpty(thread.id);
   return applied;
 }
 

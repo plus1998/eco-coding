@@ -854,6 +854,51 @@ void main() {
     ]);
   });
 
+  test(
+    'each repeated queue action has a fresh command id at an unchanged history revision',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+      for (final action in <Future<void> Function()>[
+        () async {
+          await rpc.followUpSetEditing(threadId: 'thr_1', followUpId: 'fup_1');
+        },
+        () async {
+          await rpc.followUpSetEditing(threadId: 'thr_1');
+        },
+        () => rpc.followUpEnqueue(threadId: 'thr_1', prompt: 'same prompt'),
+        () => rpc.followUpUpdate(
+          threadId: 'thr_1',
+          followUpId: 'fup_1',
+          prompt: 'same prompt',
+        ),
+        () => rpc.followUpEscalate(threadId: 'thr_1', followUpId: 'fup_1'),
+        () => rpc.followUpCancel(threadId: 'thr_1', followUpId: 'fup_1'),
+        () async {
+          await rpc.followUpSetQueuePaused(threadId: 'thr_1', paused: true);
+        },
+        () async {
+          await rpc.followUpSetQueuePaused(threadId: 'thr_1', paused: false);
+        },
+        () async {
+          await rpc.followUpReorder(threadId: 'thr_1', followUpIds: ['fup_1']);
+        },
+      ]) {
+        await action();
+        final first = Map<String, dynamic>.from(
+          client.args!.single as Map<String, dynamic>,
+        );
+        await action();
+        final second = client.args!.single as Map<String, dynamic>;
+        expect(second['clientCommandId'], isNot(first['clientCommandId']));
+        expect(
+          second['expectedHistoryRevision'],
+          first['expectedHistoryRevision'],
+        );
+      }
+    },
+  );
+
   test('followUpSetEditing forwards acquire and release payloads', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -992,6 +1037,23 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'recoveryReason': 'Cursor session failed',
             'revision': 'revision_1',
             'updatedAt': '2026-08-22T00:00:00.000Z',
+          }
+          as T;
+    }
+    if (channel == 'thread:follow-up-queue-paused') {
+      final payload = args.first as Map<String, dynamic>;
+      return {
+            'paused': payload['paused'],
+            'thread': {
+              'id': 'thr_1',
+              'title': 'Thread',
+              'prompt': '',
+              'workspacePath': '/repo',
+              'status': 'completed',
+              'createdAt': '2026-10-05T09:39:00.000Z',
+              'updatedAt': '2026-10-05T09:42:00.000Z',
+              'followUpQueuePaused': payload['paused'],
+            },
           }
           as T;
     }

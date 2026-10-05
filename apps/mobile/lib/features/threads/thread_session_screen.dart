@@ -1253,8 +1253,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (_editingFollowUpId != null && rpc != null) {
       try {
         await rpc.followUpSetEditing(threadId: widget.threadId);
-      } catch (_) {
-        // Best-effort unlock.
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.toString())));
+        }
+        rethrow;
       }
     }
     if (!mounted) return;
@@ -1362,15 +1367,18 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
     setState(() => _followUpQueuePauseBusy = true);
+    final session = ref.read(threadSessionProvider(widget.threadId).notifier);
+    final pauseRevision = session.followUpQueuePauseRevision;
     try {
       final thread = await rpc.followUpSetQueuePaused(
         threadId: widget.threadId,
         paused: paused,
       );
       if (!mounted) return;
-      ref
-          .read(threadSessionProvider(widget.threadId).notifier)
-          .applyThreadSummary(thread);
+      session.applyFollowUpQueuePaused(
+        thread.followUpQueuePaused,
+        expectedRevision: pauseRevision,
+      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(

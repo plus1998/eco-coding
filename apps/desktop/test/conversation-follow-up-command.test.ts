@@ -6,6 +6,7 @@ import {
   failInterruptedFollowUpCommands,
 } from "../src/main/conversation-follow-up-command";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
+import { buildConversationV2CommandEnvelope } from "../src/renderer/conversation-v2-command-envelope";
 
 function harness() {
   const db = new DatabaseSync(":memory:");
@@ -44,17 +45,52 @@ test("follow-up mutation is durable and idempotent after response loss", async (
   });
   expect(state.executions()).toBe(1);
   expect(
-    state.v2.getCommandJob(
-      state.input.principalId,
-      state.input.conversationId,
-      state.input.clientCommandId,
-    ),
+    state.v2.getCommandJob(state.input.principalId, state.input.conversationId, state.input.clientCommandId),
   ).toMatchObject({
     commandType: "followup.mutate",
     status: "completed",
     request: { operation: "update", followUpId: "tfu_1" },
     result: { ok: true, operation: "update", value: { ok: true, value: "receipt" } },
   });
+  state.db.close();
+});
+
+test("repeated user actions at the same history revision execute again, while transport retries do not", async () => {
+  const state = harness();
+  for (const operation of [
+    "enqueue",
+    "update",
+    "editing-acquire",
+    "editing-release",
+    "escalate",
+    "reorder",
+    "queue-paused",
+    "cancel",
+  ]) {
+    const envelope = () =>
+      buildConversationV2CommandEnvelope({
+        threadId: state.input.conversationId,
+        operation,
+        payload: { followUpId: "tfu_1" },
+        getHead: async () => ({ historyRevision: 0 }),
+      });
+    const first = await envelope();
+    const second = await envelope();
+    const command = (request: typeof first) => ({
+      ...state.input,
+      principalId: request.principalId,
+      clientCommandId: request.clientCommandId,
+      expectedHistoryRevision: request.expectedHistoryRevision,
+      operation,
+    });
+    const before = state.executions();
+    await executeFollowUpMutationCommand(command(first), state.deps);
+    await executeFollowUpMutationCommand(command(first), state.deps); // lost-response retry
+    expect(state.executions()).toBe(before + 1);
+    await executeFollowUpMutationCommand(command(second), state.deps); // a new click
+    expect(state.executions()).toBe(before + 2);
+    expect(first.clientCommandId).not.toBe(second.clientCommandId);
+  }
   state.db.close();
 });
 
@@ -83,11 +119,7 @@ test("follow-up mutation failure is durably recorded", async () => {
     }),
   ).rejects.toBe(error);
   expect(
-    state.v2.getCommandJob(
-      state.input.principalId,
-      state.input.conversationId,
-      state.input.clientCommandId,
-    ),
+    state.v2.getCommandJob(state.input.principalId, state.input.conversationId, state.input.clientCommandId),
   ).toMatchObject({ status: "failed", error: { code: "follow_up_mutation_failed", message: error.message } });
   state.db.close();
 });
