@@ -21,6 +21,7 @@ import type {
   OpenAIAccountCreateInput,
   OpenAIAccountDetails,
   OpenAIAccountImportResult,
+  OpenAIAccountQuota,
   OpenAIAccountSyncStatus,
   OpenAIAccountUpdateInput,
 } from "../shared/openai-account";
@@ -614,28 +615,7 @@ const api = {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsSetAuthJson, { accountId, content });
   },
 
-  openAIAccountsQueryQuota(accountId: string): Promise<{
-    planType: string;
-    email: string;
-    rateLimit: {
-      allowed: boolean;
-      limitReached: boolean;
-      primaryWindow: {
-        usedPercent: number;
-        limitWindowSeconds: number;
-        resetAfterSeconds: number;
-        resetAt: number;
-      } | null;
-      secondaryWindow: {
-        usedPercent: number;
-        limitWindowSeconds: number;
-        resetAfterSeconds: number;
-        resetAt: number;
-      } | null;
-    };
-    resetCreditsAvailable: number;
-    fetchedAt: number;
-  } | null> {
+  openAIAccountsQueryQuota(accountId: string): Promise<OpenAIAccountQuota> {
     return ipcRenderer.invoke(IPC_CHANNELS.openAIAccountsQueryQuota, { accountId });
   },
 

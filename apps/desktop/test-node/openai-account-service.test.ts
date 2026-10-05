@@ -23,15 +23,29 @@ function authJson(input: { accountId: string; refreshToken: string; stamp: strin
   }, null, 2);
 }
 
-async function makeService(t: test.TestContext, executable?: string) {
+async function makeService(t: test.TestContext, executable?: string, onAccountsChanged?: ConstructorParameters<typeof OpenAIAccountService>[2]) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-sqlite-"));
-  const service = new OpenAIAccountService(root, executable);
+  const service = new OpenAIAccountService(root, executable, onAccountsChanged);
   await service.initialize();
   t.after(async () => {
     await service.dispose();
     await fs.rm(root, { recursive: true, force: true });
   });
   return { root, service };
+}
+
+function quotaResponse(usedPercent = 24): Response {
+  return Response.json({
+    plan_type: "plus",
+    email: "quota@example.test",
+    rate_limit: {
+      allowed: true,
+      limit_reached: false,
+      primary_window: { used_percent: usedPercent, limit_window_seconds: 18_000, reset_after_seconds: 3_600, reset_at: Math.floor(Date.now() / 1_000) + 3_600 },
+      secondary_window: { used_percent: 41, limit_window_seconds: 604_800, reset_after_seconds: 86_400, reset_at: Math.floor(Date.now() / 1_000) + 86_400 },
+    },
+    rate_limit_reset_credits: { available_count: 2 },
+  });
 }
 
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 3_000): Promise<void> {
@@ -708,3 +722,133 @@ test("a failed account deletion rolls back conflict cleanup in the same transact
   assert.equal((await service.listAccounts()).length, 1);
   assert.equal((db.prepare("SELECT COUNT(*) AS count FROM openai_account_sync_conflicts").get() as { count: number }).count, 1);
 });
+
+test("quota snapshots survive restart and listing cached data makes no network requests", async (t) => {
+  const { root, service } = await makeService(t);
+  const account = await service.createAccount("Quota cache");
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-quota", refreshToken: "quota", stamp: "2026-10-05T01:00:00.000Z" }));
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => quotaResponse());
+  const quota = await service.queryQuota(account.id);
+  assert.equal(quota.planType, "plus");
+  assert.equal(quota.rateLimit.primaryWindow?.usedPercent, 24);
+  assert.equal(quota.rateLimit.secondaryWindow?.usedPercent, 41);
+  assert.equal(quota.resetCreditsAvailable, 2);
+  assert.deepEqual((await service.listAccounts())[0]?.quota, quota);
+  assert.deepEqual((await service.getAccountDetails(account.id)).quota, quota);
+
+  const db = new DatabaseSync(path.join(root, "eco-coding.sqlite"));
+  const row = db.prepare("SELECT quota_json, fetched_at, chatgpt_account_id FROM openai_account_quotas WHERE account_id = ?").get(account.id) as { quota_json: string; fetched_at: number; chatgpt_account_id: string };
+  assert.deepEqual(JSON.parse(row.quota_json), quota);
+  assert.equal(row.fetched_at, quota.fetchedAt);
+  assert.equal(row.chatgpt_account_id, "chatgpt-quota");
+  db.close();
+  await service.dispose();
+
+  const restarted = new OpenAIAccountService(root);
+  try {
+    await restarted.initialize();
+    assert.deepEqual((await restarted.listAccounts())[0]?.quota, quota);
+    assert.equal(fetchMock.mock.callCount(), 1);
+  } finally {
+    await restarted.dispose();
+  }
+});
+
+test("explicit quota refresh updates the snapshot, timestamp, and account-change event", async (t) => {
+  let changeEvents = 0;
+  const { service } = await makeService(t, undefined, () => { changeEvents += 1; });
+  const account = await service.createAccount("Refresh");
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-refresh", refreshToken: "quota", stamp: "2026-10-05T01:00:00.000Z" }));
+  let usedPercent = 24;
+  t.mock.method(globalThis, "fetch", async () => quotaResponse(usedPercent));
+  changeEvents = 0;
+  const first = await service.queryQuota(account.id);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  usedPercent = 39;
+  const second = await service.queryQuota(account.id);
+  assert.equal(second.rateLimit.primaryWindow?.usedPercent, 39);
+  assert.ok(second.fetchedAt > first.fetchedAt);
+  assert.deepEqual((await service.listAccounts())[0]?.quota, second);
+  assert.equal(changeEvents, 2);
+});
+
+test("failed quota refresh preserves the last successful snapshot and timestamp", async (t) => {
+  const { service } = await makeService(t);
+  const account = await service.createAccount("Offline cache");
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-offline", refreshToken: "quota", stamp: "2026-10-05T01:00:00.000Z" }));
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => quotaResponse());
+  const cached = await service.queryQuota(account.id);
+  fetchMock.mock.mockImplementation(async () => new Response("temporarily unavailable", { status: 503 }));
+  await assert.rejects(service.queryQuota(account.id), /status 503/u);
+  assert.deepEqual((await service.listAccounts())[0]?.quota, cached);
+  fetchMock.mock.mockImplementation(async () => { throw new Error("offline"); });
+  await assert.rejects(service.queryQuota(account.id), /quota request failed/u);
+  assert.deepEqual((await service.getAccountDetails(account.id)).quota, cached);
+});
+
+test("quota storage failures are reported and roll back the snapshot update", async (t) => {
+  const { root, service } = await makeService(t);
+  const account = await service.createAccount("Write failure");
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-write", refreshToken: "quota", stamp: "2026-10-05T01:00:00.000Z" }));
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => quotaResponse());
+  const cached = await service.queryQuota(account.id);
+  const db = new DatabaseSync(path.join(root, "eco-coding.sqlite"));
+  t.after(() => db.close());
+  db.exec(`CREATE TRIGGER reject_quota_update BEFORE UPDATE ON openai_account_quotas
+    BEGIN SELECT RAISE(ABORT, 'quota_cache_unavailable'); END;`);
+  fetchMock.mock.mockImplementation(async () => quotaResponse(90));
+  await assert.rejects(service.queryQuota(account.id), /额度已获取，但保存缓存失败：.*quota_cache_unavailable/u);
+  assert.deepEqual((await service.listAccounts())[0]?.quota, cached);
+});
+
+test("token refresh keeps the quota cache but changing the remote account hides it", async (t) => {
+  const { service } = await makeService(t);
+  const account = await service.createAccount("Identity");
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-original", refreshToken: "old", stamp: "2026-10-05T01:00:00.000Z" }));
+  t.mock.method(globalThis, "fetch", async () => quotaResponse());
+  const cached = await service.queryQuota(account.id);
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-original", refreshToken: "new", stamp: "2026-10-05T02:00:00.000Z" }));
+  assert.deepEqual((await service.listAccounts())[0]?.quota, cached);
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-different", refreshToken: "other", stamp: "2026-10-05T03:00:00.000Z" }));
+  assert.equal((await service.listAccounts())[0]?.quota, undefined);
+  assert.equal((await service.getAccountDetails(account.id)).quota, undefined);
+});
+
+test("an in-flight quota response cannot be saved under replaced account credentials", async (t) => {
+  const { service } = await makeService(t);
+  const account = await service.createAccount("Identity race");
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-before", refreshToken: "old", stamp: "2026-10-05T01:00:00.000Z" }));
+  let release!: (response: Response) => void;
+  let started!: () => void;
+  const requested = new Promise<void>((resolve) => { started = resolve; });
+  t.mock.method(globalThis, "fetch", () => {
+    started();
+    return new Promise<Response>((resolve) => { release = resolve; });
+  });
+  const result = service.queryQuota(account.id);
+  await requested;
+  await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-after", refreshToken: "new", stamp: "2026-10-05T02:00:00.000Z" }));
+  const rejected = assert.rejects(result, /账号凭据已变更/u);
+  release(quotaResponse());
+  await rejected;
+  assert.equal((await service.listAccounts())[0]?.quota, undefined);
+});
+
+for (const deferred of [false, true]) {
+  test(`${deferred ? "deferred" : "immediate"} account deletion removes its persisted quota`, async (t) => {
+    const { root, service } = await makeService(t);
+    const account = await service.createAccount("Delete quota");
+    await service.setAuthJson(account.id, authJson({ accountId: "chatgpt-delete", refreshToken: "quota", stamp: "2026-10-05T01:00:00.000Z" }));
+    t.mock.method(globalThis, "fetch", async () => quotaResponse());
+    await service.queryQuota(account.id);
+    if (deferred) {
+      await service.setActiveAccount(account.id);
+      await service.applyPendingTransition();
+    }
+    await service.deleteAccount(account.id);
+    if (deferred) await service.applyPendingTransition();
+    const db = new DatabaseSync(path.join(root, "eco-coding.sqlite"));
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM openai_account_quotas").get() as { count: number }).count, 0);
+    db.close();
+  });
+}

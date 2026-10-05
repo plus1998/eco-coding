@@ -6,6 +6,7 @@ import type {
   OpenAIAccountCreateInput,
   OpenAIAccountImportResult,
   OpenAIAccountProfile,
+  OpenAIAccountQuota,
   OpenAIAccountUpdateInput,
 } from "../shared/openai-account";
 import { parseOpenAIAccountImport, type ParsedOpenAIAccountImportRow } from "./openai-account-import";
@@ -41,6 +42,8 @@ interface AccountRow {
   pickup_url: string | null;
   two_factor_secret: string | null;
   auth_json: string | null;
+  quota_json: string | null;
+  quota_chatgpt_account_id: string | null;
 }
 
 interface LegacyAccount {
@@ -65,12 +68,22 @@ function normalizeOptional(value: string | null): string | undefined {
 }
 
 function mapAccount(row: AccountRow): StoredOpenAIAccount {
+  let quota: OpenAIAccountQuota | undefined;
+  if (row.quota_json !== null && row.auth_json !== null && readChatGptAccountId(row.auth_json) === row.quota_chatgpt_account_id) {
+    try {
+      quota = JSON.parse(row.quota_json) as OpenAIAccountQuota;
+      if (!quota || !Number.isFinite(quota.fetchedAt) || !quota.rateLimit) throw new Error("额度字段或刷新时间无效");
+    } catch (error) {
+      throw new Error(`账号 ${row.name} 的额度缓存损坏：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return {
     id: row.id,
     name: row.name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     authJson: row.auth_json,
+    ...(quota ? { quota } : {}),
     ...(row.proxy_url !== null ? { proxyUrl: row.proxy_url } : {}),
     ...(normalizeOptional(row.email) !== undefined ? { email: row.email as string } : {}),
     ...(normalizeOptional(row.password) !== undefined ? { password: row.password as string } : {}),
@@ -206,6 +219,12 @@ export class OpenAIAccountStore {
         account_auth_json TEXT,
         message TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS openai_account_quotas (
+        account_id TEXT PRIMARY KEY REFERENCES openai_accounts(id) ON DELETE CASCADE,
+        chatgpt_account_id TEXT NOT NULL,
+        quota_json TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL
       );
     `);
     // Existing installations can already contain the first account table from an
@@ -557,16 +576,42 @@ export class OpenAIAccountStore {
   }
 
   list(): StoredOpenAIAccount[] {
-    return (this.db.prepare("SELECT * FROM openai_accounts ORDER BY created_at, rowid").all() as unknown as AccountRow[]).map(mapAccount);
+    return (this.db.prepare(`
+      SELECT a.*, q.quota_json, q.chatgpt_account_id AS quota_chatgpt_account_id
+      FROM openai_accounts a LEFT JOIN openai_account_quotas q ON q.account_id = a.id
+      ORDER BY a.created_at, a.rowid
+    `).all() as unknown as AccountRow[]).map(mapAccount);
   }
 
   get(accountId: string): StoredOpenAIAccount | undefined {
-    const row = this.db.prepare("SELECT * FROM openai_accounts WHERE id = ?").get(accountId) as AccountRow | undefined;
+    const row = this.db.prepare(`
+      SELECT a.*, q.quota_json, q.chatgpt_account_id AS quota_chatgpt_account_id
+      FROM openai_accounts a LEFT JOIN openai_account_quotas q ON q.account_id = a.id
+      WHERE a.id = ?
+    `).get(accountId) as AccountRow | undefined;
     return row ? mapAccount(row) : undefined;
   }
 
   getAuthJson(accountId: string): string | null {
     return this.get(accountId)?.authJson ?? null;
+  }
+
+  saveQuota(accountId: string, chatGptAccountId: string, quota: OpenAIAccountQuota): void {
+    this.transaction(() => {
+      const account = this.get(accountId);
+      if (!account) throw new Error(`OpenAI account not found: ${accountId}`);
+      if (!account.authJson || readChatGptAccountId(account.authJson) !== chatGptAccountId) {
+        throw new Error("账号凭据已变更，请重新刷新额度");
+      }
+      this.db.prepare(`
+        INSERT INTO openai_account_quotas (account_id, chatgpt_account_id, quota_json, fetched_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(account_id) DO UPDATE SET
+          chatgpt_account_id = excluded.chatgpt_account_id,
+          quota_json = excluded.quota_json,
+          fetched_at = excluded.fetched_at
+      `).run(accountId, chatGptAccountId, JSON.stringify(quota), quota.fetchedAt);
+    });
   }
 
   create(input: OpenAIAccountCreateInput): StoredOpenAIAccount {

@@ -12,13 +12,14 @@ import type {
   OpenAIAccount as OpenAIAccountShared,
   OpenAIAccountCreateInput,
   OpenAIAccountDetails,
+  OpenAIAccountQuota,
   OpenAIAccountSyncStatus,
   OpenAIAccountUpdateInput,
 } from "../shared/openai-account";
 import { OpenAIAccountStore } from "./openai-account-store";
 import { startCodexBrowserLogin } from "./codex-browser-login";
 
-export type { OpenAIAccount } from "../shared/openai-account";
+export type { OpenAIAccount, OpenAIAccountQuota } from "../shared/openai-account";
 
 /**
  * OpenAI Account Management Service
@@ -41,29 +42,6 @@ export interface OpenAIAccountStatus {
 export interface OpenAIAccountLoginResult {
   success: boolean;
   message: string;
-}
-
-export interface OpenAIAccountQuota {
-  planType: string;
-  email: string;
-  rateLimit: {
-    allowed: boolean;
-    limitReached: boolean;
-    primaryWindow: {
-      usedPercent: number;
-      limitWindowSeconds: number;
-      resetAfterSeconds: number;
-      resetAt: number;
-    } | null;
-    secondaryWindow: {
-      usedPercent: number;
-      limitWindowSeconds: number;
-      resetAfterSeconds: number;
-      resetAt: number;
-    } | null;
-  };
-  resetCreditsAvailable: number;
-  fetchedAt: number;
 }
 
 const ACCOUNT_ID_PATTERN = /^oa_[A-Za-z0-9_-]+$/;
@@ -642,6 +620,7 @@ export class OpenAIAccountService {
         ...(account.email ? { email: account.email } : {}),
         ...(account.proxyUrl ? { proxyUrl: account.proxyUrl } : {}),
         ...(lastLogin ? { lastLogin } : {}),
+        ...(account.quota ? { quota: account.quota } : {}),
       };
     });
   }
@@ -918,6 +897,7 @@ export class OpenAIAccountService {
     // Get the account's proxy URL.
     const proxyUrl = account.proxyUrl?.trim() || undefined;
 
+    let quota: OpenAIAccountQuota;
     try {
       console.log(
         `[openai-quota] Querying usage for account ${accountId}${proxyUrl ? ` via proxy ${proxyEndpointForLog(proxyUrl)}` : ""}`,
@@ -1043,7 +1023,7 @@ export class OpenAIAccountService {
         };
       };
 
-      return {
+      quota = {
         planType: data.plan_type ?? "unknown",
         email: data.email ?? "",
         rateLimit: {
@@ -1076,5 +1056,14 @@ export class OpenAIAccountService {
       console.error(`[openai-quota] Request failed for ${accountId}.`);
       throw new Error("OpenAI quota request failed.");
     }
+    // Only a successful refresh updates the snapshot and its timestamp. Keep
+    // storage errors distinct from network errors and do not claim success.
+    try {
+      this.getStore().saveQuota(accountId, chatgptAccountId, quota);
+    } catch (error) {
+      throw new Error(`额度已获取，但保存缓存失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+    this.onAccountsChanged?.({ syncStatus: this.syncStatus });
+    return quota;
   }
 }

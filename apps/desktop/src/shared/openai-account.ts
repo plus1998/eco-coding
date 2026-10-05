@@ -16,6 +16,27 @@ export interface OpenAIAccountUpdateInput extends OpenAIAccountProfile {
   proxyUrl?: string;
 }
 
+export interface OpenAIAccountQuotaWindow {
+  usedPercent: number;
+  limitWindowSeconds: number;
+  resetAfterSeconds: number;
+  resetAt: number;
+}
+
+export interface OpenAIAccountQuota {
+  planType: string;
+  email: string;
+  rateLimit: {
+    allowed: boolean;
+    limitReached: boolean;
+    primaryWindow: OpenAIAccountQuotaWindow | null;
+    secondaryWindow: OpenAIAccountQuotaWindow | null;
+  };
+  resetCreditsAvailable: number;
+  /** Time of the last successful quota refresh, in Unix milliseconds. */
+  fetchedAt: number;
+}
+
 export interface OpenAIAccount {
   id: string;
   name: string;
@@ -29,6 +50,7 @@ export interface OpenAIAccount {
   /** The list API exposes profile presence, not the profile secrets themselves. */
   hasProfileData: boolean;
   profileFields?: { email: boolean; password: boolean; pickupUrl: boolean; twoFactorSecret: boolean };
+  quota?: OpenAIAccountQuota;
 }
 
 export interface OpenAIAccountAssistantState {
@@ -65,6 +87,7 @@ export interface OpenAIAccountDetails extends OpenAIAccountProfile {
   createdAt: string;
   updatedAt: string;
   authJson: string | null;
+  quota?: OpenAIAccountQuota;
 }
 
 export interface OpenAIAccountSyncStatus {

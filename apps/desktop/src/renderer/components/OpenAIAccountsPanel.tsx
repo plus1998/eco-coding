@@ -25,51 +25,45 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { OpenAIAccount, OpenAIAccountDetails, OpenAIAccountSyncStatus } from "../../shared/openai-account";
+import type { OpenAIAccount, OpenAIAccountDetails, OpenAIAccountQuota, OpenAIAccountQuotaWindow, OpenAIAccountSyncStatus } from "../../shared/openai-account";
 
-interface AccountQuota {
-  planType: string;
-  email: string;
-  rateLimit: {
-    allowed: boolean;
-    limitReached: boolean;
-    primaryWindow: {
-      usedPercent: number;
-      limitWindowSeconds: number;
-      resetAfterSeconds: number;
-      resetAt: number;
-    } | null;
-    secondaryWindow: {
-      usedPercent: number;
-      limitWindowSeconds: number;
-      resetAfterSeconds: number;
-      resetAt: number;
-    } | null;
-  };
-  resetCreditsAvailable: number;
-  fetchedAt: number;
-}
-
-function formatResetTime(window: {
-  usedPercent: number;
-  limitWindowSeconds: number;
-  resetAfterSeconds: number;
-  resetAt: number;
-}): string {
-  const seconds = window.resetAfterSeconds;
-  if (seconds <= 0) return "";
-  if (seconds < 3600) {
-    const min = Math.ceil(seconds / 60);
-    return `${min}m`;
-  }
+function formatResetTime(window: OpenAIAccountQuotaWindow, fetchedAt: number): string {
+  const resetAt = window.resetAt > 0 ? window.resetAt * 1_000 : fetchedAt + window.resetAfterSeconds * 1_000;
+  const seconds = Math.ceil((resetAt - Date.now()) / 1_000);
+  if (seconds <= 0) return "已到重置时间，待刷新";
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)}m 后重置`;
   if (seconds < 86400) {
     const h = Math.floor(seconds / 3600);
     const m = Math.ceil((seconds % 3600) / 60);
-    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    return `${m > 0 ? `${h}h ${m}m` : `${h}h`} 后重置`;
   }
   const d = Math.floor(seconds / 86400);
   const h = Math.ceil((seconds % 86400) / 3600);
-  return h > 0 ? `${d}d ${h}h` : `${d}d`;
+  return `${h > 0 ? `${d}d ${h}h` : `${d}d`} 后重置`;
+}
+
+export function OpenAIAccountQuotaSummary({ quota, isLoggedIn, loading, error }: {
+  quota: OpenAIAccountQuota | undefined;
+  isLoggedIn: boolean;
+  loading: boolean;
+  error: string | undefined;
+}) {
+  if (!quota && !isLoggedIn) return null;
+  const primary = quota?.rateLimit.primaryWindow;
+  const refreshedAt = quota ? new Date(quota.fetchedAt) : undefined;
+  return <span className="codex-quota-summary" aria-busy={loading}>
+    {loading ? <Loader2 size={13} className="mcp-spin" aria-label="正在刷新额度" /> : null}
+    {quota ? <>
+      <b>{quota.planType}</b>
+      {primary ? <em className={quota.rateLimit.limitReached ? "is-limited" : "is-ok"}>{Math.round(primary.usedPercent)}% 已使用</em> : null}
+      {primary && (primary.resetAt > 0 || primary.resetAfterSeconds > 0) ? <span>{formatResetTime(primary, quota.fetchedAt)}</span> : null}
+      {quota.resetCreditsAvailable > 0 ? <span>{quota.resetCreditsAvailable} 次重置</span> : null}
+      <time className="codex-quota-refreshed-at" dateTime={refreshedAt!.toISOString()} title={refreshedAt!.toLocaleString()}>
+        上次刷新 {refreshedAt!.toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+      </time>
+      {error ? <em className="is-error" title={error} role="status">刷新失败，显示缓存</em> : null}
+    </> : <span className={error ? "is-error" : undefined} title={error}>{error ? "额度刷新失败" : loading ? "正在刷新额度" : "额度未获取"}</span>}
+  </span>;
 }
 
 function ProfileSecretInput({
@@ -205,8 +199,7 @@ export function OpenAIAccountsPanel() {
   const [statusFilter, setStatusFilter] = useState<"all" | "ready" | "missing">("all");
   const [busy, setBusy] = useState(false);
   const [loggingInId, setLoggingInId] = useState<string | null>(null);
-  const [quotas, setQuotas] = useState<Record<string, AccountQuota>>({});
-  const [quotaErrors, setQuotaErrors] = useState<Record<string, true>>({});
+  const [quotaErrors, setQuotaErrors] = useState<Record<string, string>>({});
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [quotaLoadingId, setQuotaLoadingId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -319,51 +312,30 @@ export function OpenAIAccountsPanel() {
     };
   }, [menuOpenId]);
 
+  const refreshAccountQuota = useCallback(async (accountId: string) => {
+    if (!eco) return;
+    try {
+      await eco.openAIAccountsQueryQuota(accountId);
+      setQuotaErrors((previous) => {
+        const next = { ...previous };
+        delete next[accountId];
+        return next;
+      });
+    } catch (error) {
+      setQuotaErrors((previous) => ({ ...previous, [accountId]: error instanceof Error ? error.message : String(error) }));
+    }
+  }, [eco]);
+
   const refreshQuotas = useCallback(async () => {
-    if (!eco || accounts.length === 0) return;
+    if (!eco || accounts.length === 0 || quotaLoading || quotaLoadingId !== null) return;
     setQuotaLoading(true);
     try {
-      const now = Date.now();
-      const loggedIn = accounts.filter((a) => a.isLoggedIn);
-      const results = await Promise.all(
-        loggedIn.map(
-          async (
-            a,
-          ): Promise<{
-            id: string;
-            quota?: AccountQuota;
-            error?: true;
-          } | null> => {
-            // Skip if cached within 30s
-            const cached = quotas[a.id];
-            if (cached && now - cached.fetchedAt < 30000) return null;
-            try {
-              const quota = await eco.openAIAccountsQueryQuota(a.id);
-              return quota ? { id: a.id, quota } : { id: a.id, error: true };
-            } catch {
-              return { id: a.id, error: true };
-            }
-          },
-        ),
-      );
-      const newQuotas: Record<string, AccountQuota> = { ...quotas };
-      const newErrors: Record<string, true> = { ...quotaErrors };
-      for (const r of results) {
-        if (!r) continue;
-        if (r.quota) {
-          newQuotas[r.id] = r.quota;
-          delete newErrors[r.id];
-        } else if (r.error) {
-          delete newQuotas[r.id];
-          newErrors[r.id] = true;
-        }
-      }
-      setQuotas(newQuotas);
-      setQuotaErrors(newErrors);
+      await Promise.all(accounts.filter((account) => account.isLoggedIn).map((account) => refreshAccountQuota(account.id)));
+      await refresh();
     } finally {
       setQuotaLoading(false);
     }
-  }, [accounts, eco, quotaErrors, quotas]);
+  }, [accounts, eco, quotaLoading, quotaLoadingId, refreshAccountQuota, refresh]);
 
   // Filtered accounts
   const filteredAccounts = useMemo(() => {
@@ -655,7 +627,7 @@ export function OpenAIAccountsPanel() {
             type="button"
             className="chatgpt-inline-link"
             onClick={() => void refreshQuotas()}
-            disabled={quotaLoading || accounts.length === 0}
+            disabled={quotaLoading || quotaLoadingId !== null || !accounts.some((account) => account.isLoggedIn)}
           >
             <RefreshCw
               size={13}
@@ -739,8 +711,7 @@ export function OpenAIAccountsPanel() {
       ) : (
         <div className="codex-account-list">
           {filteredAccounts.map((account) => {
-            const accountQuota = quotas[account.id];
-            const primaryWindow = accountQuota?.rateLimit.primaryWindow;
+            const accountQuota = account.quota;
             const isActive = activeAccountId === account.id;
             const isPending = pendingAccountId === account.id || (pendingAccountId !== undefined && isActive);
             const status = pendingAccountId === account.id
@@ -858,47 +829,7 @@ export function OpenAIAccountsPanel() {
                       ? `最近登录 ${new Date(account.lastLogin).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
                       : "尚未登录"}
                   </span>
-                  {account.isLoggedIn ? <span className="codex-quota-summary">
-                    {quotaLoadingId === account.id ? (
-                      <Loader2 size={13} className="mcp-spin" />
-                    ) : accountQuota ? (
-                      <>
-                        <b>{accountQuota.planType}</b>
-                        {primaryWindow ? (
-                          <em
-                            className={
-                              accountQuota.rateLimit.limitReached
-                                ? "is-limited"
-                                : "is-ok"
-                            }
-                          >
-                            {Math.round(primaryWindow.usedPercent)}% 已使用
-                          </em>
-                        ) : null}
-                        {primaryWindow &&
-                        primaryWindow.resetAfterSeconds > 0 ? (
-                          <span>{formatResetTime(primaryWindow)} 后重置</span>
-                        ) : null}
-                        {accountQuota.resetCreditsAvailable > 0 ? (
-                          <span>
-                            {accountQuota.resetCreditsAvailable} 次重置
-                          </span>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span
-                        className={
-                          quotaErrors[account.id] ? "is-error" : undefined
-                        }
-                      >
-                        {quotaErrors[account.id]
-                          ? t("settings.openaiAccounts.quotaFailed")
-                          : account.isLoggedIn
-                            ? "额度未获取"
-                            : t("settings.openaiAccounts.notLoggedIn")}
-                      </span>
-                    )}
-                  </span> : null}
+                  <OpenAIAccountQuotaSummary quota={accountQuota} isLoggedIn={account.isLoggedIn} loading={(quotaLoading && account.isLoggedIn) || quotaLoadingId === account.id} error={quotaErrors[account.id]} />
                 </div>
                 {menuOpenId === account.id
                   ? createPortal(
@@ -950,31 +881,14 @@ export function OpenAIAccountsPanel() {
                             if (!eco) return;
                             setQuotaLoadingId(account.id);
                             try {
-                              const quota = await eco.openAIAccountsQueryQuota(
-                                account.id,
-                              );
-                              if (quota) {
-                                setQuotas((prev) => ({
-                                  ...prev,
-                                  [account.id]: quota,
-                                }));
-                                setQuotaErrors((prev) => {
-                                  const next = { ...prev };
-                                  delete next[account.id];
-                                  return next;
-                                });
-                              }
-                            } catch {
-                              setQuotaErrors((prev) => ({
-                                ...prev,
-                                [account.id]: true,
-                              }));
+                              await refreshAccountQuota(account.id);
+                              await refresh();
                             } finally {
                               setQuotaLoadingId(null);
                             }
                           }}
                           disabled={
-                            !account.isLoggedIn || quotaLoadingId === account.id
+                            !account.isLoggedIn || quotaLoading || quotaLoadingId !== null
                           }
                         >
                           <RefreshCw size={14} />

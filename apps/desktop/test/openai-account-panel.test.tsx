@@ -3,8 +3,23 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   OpenAIAccountProfileFields,
+  OpenAIAccountQuotaSummary,
   OpenAIAccountSwitchStatus,
 } from "../src/renderer/components/OpenAIAccountsPanel";
+import type { OpenAIAccountQuota } from "../src/shared/openai-account";
+
+const cachedQuota: OpenAIAccountQuota = {
+  planType: "plus",
+  email: "demo@example.test",
+  rateLimit: {
+    allowed: true,
+    limitReached: false,
+    primaryWindow: { usedPercent: 37, limitWindowSeconds: 18_000, resetAfterSeconds: 3_600, resetAt: 0 },
+    secondaryWindow: null,
+  },
+  resetCreditsAvailable: 2,
+  fetchedAt: Date.parse("2025-01-01T08:30:00.000Z"),
+};
 
 test("account profile editor renders all four fields and masks secrets by default", () => {
   const markup = renderToStaticMarkup(createElement(OpenAIAccountProfileFields, {
@@ -56,4 +71,45 @@ test("credential replacement on the active account has a distinct pending label"
 
   expect(markup).toContain("凭据待应用：当前账号");
   expect(markup).toContain("取消凭据更新");
+});
+
+test("cached quota shows the last successful refresh time after credentials expire", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountQuotaSummary, {
+    quota: cachedQuota,
+    isLoggedIn: false,
+    loading: false,
+    error: undefined,
+  }));
+  expect(markup).toContain("37% 已使用");
+  expect(markup).toContain("2 次重置");
+  expect(markup).toContain('dateTime="2025-01-01T08:30:00.000Z"');
+  expect(markup).toContain("上次刷新");
+  expect(markup).toContain("已到重置时间，待刷新");
+  expect(markup).not.toContain("1h 后重置");
+});
+
+test("refreshing quota keeps the cached values visible with a loading indicator", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountQuotaSummary, {
+    quota: cachedQuota,
+    isLoggedIn: true,
+    loading: true,
+    error: undefined,
+  }));
+  expect(markup).toContain('aria-busy="true"');
+  expect(markup).toContain('aria-label="正在刷新额度"');
+  expect(markup).toContain("37% 已使用");
+  expect(markup).toContain("上次刷新");
+});
+
+test("quota errors preserve cached values and expose the actual failure", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountQuotaSummary, {
+    quota: cachedQuota,
+    isLoggedIn: true,
+    loading: false,
+    error: "OpenAI quota request failed with status 503.",
+  }));
+  expect(markup).toContain("37% 已使用");
+  expect(markup).toContain("刷新失败，显示缓存");
+  expect(markup).toContain('title="OpenAI quota request failed with status 503."');
+  expect(markup).toContain('dateTime="2025-01-01T08:30:00.000Z"');
 });
