@@ -100,6 +100,17 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
       if (entry.kind == ActivityFeedKind.user)
         _UserPromptBoundary(sequence: entry.sequence, at: entry.at ?? ''),
   ]..sort((left, right) => left.sequence.compareTo(right.sequence));
+  // Acceptance sequences remain unchanged when reordered queue rows are sent.
+  // Time-based lookups need a separate index in actual delivery order.
+  final userBoundariesByTime = [...userBoundaries]
+    ..sort((left, right) {
+      final time = left.at.compareTo(right.at);
+      return time != 0 ? time : left.sequence.compareTo(right.sequence);
+    });
+  final v2TimelineSequences = {
+    for (final item in projection.timeline)
+      if (item.metadata?['v2'] == true) item.sequence,
+  };
   final turnBySegmentKey = <String, _MutableProjectionTurn>{};
   final sections = <_OrderedFeedSection>[];
   final visibleTimelineAttemptIds = projection.timeline
@@ -134,7 +145,19 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
       );
       continue;
     }
-    final boundary = _lastUserBoundaryForEntry(userBoundaries, entry);
+    // V2 tools, including grouped actions, share the same delivery clock as
+    // V2 messages; sequence-based placement can split them from their answer.
+    final useObservedAt =
+        _isStreamNarrativeFeedEntry(entry) ||
+        v2TimelineSequences.contains(entry.sequence) ||
+        entry.actionChildren.any(
+          (child) => v2TimelineSequences.contains(child.sequence),
+        );
+    final boundary = _lastUserBoundaryForEntry(
+      useObservedAt ? userBoundariesByTime : userBoundaries,
+      entry,
+      useObservedAt: useObservedAt,
+    );
     final afterUserSequence = boundary?.sequence ?? 0;
     final segmentKey = '${attempt.attemptId}#after:$afterUserSequence';
     final turn = turnBySegmentKey.putIfAbsent(segmentKey, () {
@@ -216,10 +239,10 @@ int _compareOrderedFeedSections(
 
 _UserPromptBoundary? _lastUserBoundaryForEntry(
   List<_UserPromptBoundary> boundaries,
-  ActivityFeedEntry entry,
-) {
+  ActivityFeedEntry entry, {
+  required bool useObservedAt,
+}) {
   _UserPromptBoundary? found;
-  final useObservedAt = _isStreamNarrativeFeedEntry(entry);
   final entryAt = entry.at ?? '';
   for (final boundary in boundaries) {
     if (useObservedAt) {

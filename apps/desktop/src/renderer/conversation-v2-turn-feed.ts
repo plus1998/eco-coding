@@ -60,6 +60,12 @@ export function buildThreadRunTurnFeedSections(
     }
   }
   userBoundaries.sort((left, right) => left.sequence - right.sequence);
+  // Queued prompts keep their acceptance sequence after delivery updates `at`.
+  // Reordering the queue can therefore invert sequence order and delivery time.
+  // Each boundary lookup must walk an index sorted by the clock it compares.
+  const userBoundariesByTime = [...userBoundaries].sort(
+    (left, right) => left.at.localeCompare(right.at) || left.sequence - right.sequence,
+  );
 
   const sections: OrderedSection[] = [];
   const turnBySegmentKey = new Map<string, MutableTurnSection>();
@@ -85,7 +91,10 @@ export function buildThreadRunTurnFeedSections(
       });
       continue;
     }
-    const boundary = lastUserBoundaryForEntry(userBoundaries, entry);
+    const boundary = lastUserBoundaryForEntry(
+      shouldUseObservedAtForUserBoundary(entry) ? userBoundariesByTime : userBoundaries,
+      entry,
+    );
     const afterUserSequence = boundary?.sequence ?? 0;
     const segmentKey = `${attempt.attemptId}#after:${afterUserSequence}`;
     let turn = turnBySegmentKey.get(segmentKey);
