@@ -16,6 +16,7 @@ afterEach(() => {
   deleteTerminalSessionId(workspaceA, "tab-a");
   deleteTerminalSessionId(workspaceA, "tab-b");
   deleteTerminalSessionId(workspaceA, "tab-c");
+  deleteTerminalSessionId(workspaceA, "tab-ssh");
   deleteTerminalSessionId(workspaceB, "tab-b");
 });
 
@@ -30,7 +31,25 @@ test("keeps terminal sessions per workspace and tab", () => {
     "tab-a": "session-a",
   });
   expect(listTerminalSessionEntriesForProject(workspaceA)).toEqual([
-    { tabId: "tab-a", sessionId: "session-a" },
+    { tabId: "tab-a", sessionId: "session-a", kind: "local" },
+  ]);
+});
+
+test("keeps the SSH tab identity alongside the session", () => {
+  setTerminalSessionId(workspaceA, "tab-ssh", "session-ssh", {
+    kind: "ssh",
+    label: "Prod",
+    endpoint: "root@prod.example.com",
+  });
+
+  expect(listTerminalSessionEntriesForProject(workspaceA)).toEqual([
+    {
+      tabId: "tab-ssh",
+      sessionId: "session-ssh",
+      kind: "ssh",
+      label: "Prod",
+      endpoint: "root@prod.example.com",
+    },
   ]);
 });
 
@@ -47,7 +66,7 @@ test("replaceTerminalSessionsForProject swaps one project's session map", () => 
   setTerminalSessionId(workspaceA, "tab-a", "session-a");
   setTerminalSessionId(workspaceB, "tab-b", "session-b");
 
-  replaceTerminalSessionsForProject(workspaceA, [{ tabId: "tab-c", sessionId: "session-c" }]);
+  replaceTerminalSessionsForProject(workspaceA, [{ tabId: "tab-c", sessionId: "session-c", kind: "local" }]);
 
   expect(getTerminalSessionId(workspaceA, "tab-a")).toBeUndefined();
   expect(getTerminalSessionId(workspaceA, "tab-c")).toBe("session-c");

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { IPty } from "node-pty";
 import * as pty from "node-pty";
-import type { TerminalSessionView, TerminalStreamEvent } from "../shared/ipc";
+import type { TerminalSessionKind, TerminalSessionView, TerminalStreamEvent } from "../shared/ipc";
 import {
   buildWindowsCommandLine,
   needsWindowsShellWrapper,
@@ -20,9 +20,22 @@ export interface InteractiveTerminalManagerOptions {
   outputCoalesceMs?: number;
 }
 
+/**
+ * Identity carried by a PTY so a restored/live session can be re-labelled in the
+ * tab strip. Without it an SSH session would come back as a generic shell tab.
+ */
+export interface TerminalSessionDescriptor {
+  kind?: TerminalSessionKind;
+  label?: string;
+  endpoint?: string;
+}
+
 interface ActiveTerminalSession {
   sessionId: string;
   workspacePath: string;
+  kind: TerminalSessionKind;
+  label?: string;
+  endpoint?: string;
   pty: IPty;
 }
 
@@ -104,6 +117,7 @@ export class InteractiveTerminalManager {
   spawnCommand(
     workspacePath: string,
     command: readonly string[],
+    descriptor?: TerminalSessionDescriptor,
     size?: { cols: number; rows: number },
   ): { sessionId: string } {
     const executable = command[0]?.trim();
@@ -113,9 +127,15 @@ export class InteractiveTerminalManager {
     if (process.platform === "win32" && needsWindowsShellWrapper(executable)) {
       const comspec = process.env.ComSpec?.trim() || "cmd.exe";
       const line = buildWindowsCommandLine([...command]);
-      return this.spawnProcess(workspacePath, comspec, ["/d", "/s", "/c", line], size);
+      return this.spawnProcess(workspacePath, comspec, ["/d", "/s", "/c", line], size, undefined, {
+        kind: "command",
+        ...descriptor,
+      });
     }
-    return this.spawnProcess(workspacePath, executable, command.slice(1), size);
+    return this.spawnProcess(workspacePath, executable, command.slice(1), size, undefined, {
+      kind: "command",
+      ...descriptor,
+    });
   }
 
   spawnCommandWithEnv(
@@ -123,13 +143,14 @@ export class InteractiveTerminalManager {
     executable: string,
     args: readonly string[],
     envOverrides: Record<string, string>,
+    descriptor?: TerminalSessionDescriptor,
     size?: { cols: number; rows: number },
   ): { sessionId: string } {
     const resolvedExecutable = executable.trim();
     if (!resolvedExecutable) {
       throw new Error("Terminal command is required.");
     }
-    return this.spawnProcess(workspacePath, resolvedExecutable, args, size, envOverrides);
+    return this.spawnProcess(workspacePath, resolvedExecutable, args, size, envOverrides, descriptor);
   }
 
   private spawnProcess(
@@ -138,6 +159,7 @@ export class InteractiveTerminalManager {
     args: readonly string[],
     size?: { cols: number; rows: number },
     envOverrides?: Record<string, string>,
+    descriptor?: TerminalSessionDescriptor,
   ): { sessionId: string } {
     const cwd = workspacePath.trim();
     if (!cwd) {
@@ -165,7 +187,16 @@ export class InteractiveTerminalManager {
       throw new Error(`Failed to start interactive terminal: ${detail}`);
     }
 
-    this.sessions.set(sessionId, { sessionId, workspacePath: cwd, pty: ptyProcess });
+    const label = descriptor?.label?.trim();
+    const endpoint = descriptor?.endpoint?.trim();
+    this.sessions.set(sessionId, {
+      sessionId,
+      workspacePath: cwd,
+      kind: descriptor?.kind ?? "local",
+      ...(label ? { label } : {}),
+      ...(endpoint ? { endpoint } : {}),
+      pty: ptyProcess,
+    });
     this.emit({ type: "started", sessionId, workspacePath: cwd });
 
     ptyProcess.onData((data) => {
@@ -241,6 +272,9 @@ export class InteractiveTerminalManager {
       .map((session) => ({
         sessionId: session.sessionId,
         workspacePath: session.workspacePath,
+        kind: session.kind,
+        ...(session.label ? { label: session.label } : {}),
+        ...(session.endpoint ? { endpoint: session.endpoint } : {}),
       }));
   }
 

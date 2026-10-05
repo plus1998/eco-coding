@@ -3254,6 +3254,11 @@ button.sidebar-settings-meta {
   color: var(--terminal-fg);
 }
 
+/* SSH tabs keep the accent glyph so a long tab strip stays scannable at a glance. */
+.terminal-panel-tab.is-ssh .terminal-panel-tab-button svg {
+  color: var(--accent-text);
+}
+
 .terminal-panel-tab-label {
   min-width: 0;
   overflow: hidden;

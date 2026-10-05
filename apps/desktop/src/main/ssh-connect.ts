@@ -2,8 +2,8 @@ import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import type { SshBookmarkPublic } from "../shared/ssh-bookmarks";
-import { SSH_DEFAULT_PORT } from "../shared/ssh-bookmarks";
-import type { InteractiveTerminalManager } from "./interactive-terminal-manager";
+import { SSH_DEFAULT_PORT, sshBookmarkEndpointLabel } from "../shared/ssh-bookmarks";
+import type { InteractiveTerminalManager, TerminalSessionDescriptor } from "./interactive-terminal-manager";
 import { resolveCommandExecutable } from "./resolve-command-executable";
 
 export interface SshConnectSecrets {
@@ -21,7 +21,23 @@ export interface SshConnectInput {
 export interface SshConnectResult {
   sessionId: string;
   label: string;
+  endpoint: string;
   passwordAutoInject: boolean;
+}
+
+/**
+ * Identity stamped on the PTY so every later view of this session (tab strip,
+ * restored live sessions) knows it is an SSH session, not a local shell.
+ */
+export function buildSshSessionDescriptor(
+  bookmark: SshBookmarkPublic,
+): TerminalSessionDescriptor & { label: string; endpoint: string } {
+  const endpoint = sshBookmarkEndpointLabel(bookmark);
+  return {
+    kind: "ssh",
+    label: bookmark.name.trim() || endpoint,
+    endpoint,
+  };
 }
 
 function splitExtraArgs(extraArgs: string | undefined): string[] {
@@ -156,7 +172,8 @@ export async function connectSshBookmark(
     throw new Error("SSH executable is required.");
   }
 
-  const label = input.bookmark.name.trim() || `${input.bookmark.username}@${input.bookmark.host}`;
+  const descriptor = buildSshSessionDescriptor(input.bookmark);
+  const { label, endpoint } = descriptor;
   const password = input.secrets.password?.trim();
   const passwordAutoInject = input.bookmark.authType === "password" && Boolean(password);
 
@@ -166,10 +183,11 @@ export async function connectSshBookmark(
       executable,
       args,
       buildPasswordSpawnEnv(password, input.userDataDir),
+      descriptor,
     ).sessionId;
-    return { sessionId, label, passwordAutoInject: true };
+    return { sessionId, label, endpoint, passwordAutoInject: true };
   }
 
-  const { sessionId } = manager.spawnCommand(workspacePath, command);
-  return { sessionId, label, passwordAutoInject: false };
+  const { sessionId } = manager.spawnCommand(workspacePath, command, descriptor);
+  return { sessionId, label, endpoint, passwordAutoInject: false };
 }

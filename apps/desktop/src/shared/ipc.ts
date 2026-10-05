@@ -842,9 +842,20 @@ export interface TerminalListRequest {
   workspacePath?: string;
 }
 
+/**
+ * What a live PTY is running. The renderer derives the terminal tab identity from
+ * this: an SSH tab must never look like a local shell tab.
+ */
+export type TerminalSessionKind = "local" | "command" | "ssh";
+
 export interface TerminalSessionView {
   sessionId: string;
   workspacePath: string;
+  kind: TerminalSessionKind;
+  /** Tab label supplied when the PTY was spawned (SSH bookmark name). */
+  label?: string;
+  /** SSH endpoint (`user@host[:port]`) shown in the tab tooltip. */
+  endpoint?: string;
 }
 
 export interface TerminalSpawnResult {

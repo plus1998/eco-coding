@@ -425,6 +425,7 @@ import {
   createProjectTerminalState,
   DEFAULT_TERMINAL_HEIGHT,
   getProjectTerminalState,
+  type InjectedTerminalSessionIdentity,
   type ProjectTerminalState,
   readTerminalWorkspaceState,
   resolveTerminalTabForInjectedSession,
@@ -437,6 +438,7 @@ import {
   listTerminalSessionEntriesForProject,
   listTerminalSessionsForProject,
   replaceTerminalSessionsForProject,
+  type TerminalSessionCacheEntry,
 } from "./terminal-session-cache";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import {
@@ -672,13 +674,23 @@ interface ComposerDraft {
 
 interface TerminalProjectSyncResult {
   state?: ProjectTerminalState;
-  cacheEntries: Array<{ tabId: string; sessionId: string }>;
+  cacheEntries: TerminalSessionCacheEntry[];
 }
 
 const RESTORED_TERMINAL_TAB_PREFIX = "session:";
 
 function terminalTabIdForSession(sessionId: string): string {
   return `${RESTORED_TERMINAL_TAB_PREFIX}${sessionId}`;
+}
+
+function cacheEntryForTab(tab: TerminalTabRecord, sessionId: string): TerminalSessionCacheEntry {
+  return {
+    tabId: tab.id,
+    sessionId,
+    kind: tab.kind,
+    ...(tab.label ? { label: tab.label } : {}),
+    ...(tab.endpoint ? { endpoint: tab.endpoint } : {}),
+  };
 }
 
 function buildTerminalStateForLiveSessions(
@@ -695,19 +707,35 @@ function buildTerminalStateForLiveSessions(
   const tabsById = new Map((existing?.tabs ?? []).map((tab) => [tab.id, tab]));
   const tabIdBySessionId = new Map(cachedEntries.map((entry) => [entry.sessionId, entry.tabId]));
   const usedLabels = new Set<string>();
-  const cacheEntries: Array<{ tabId: string; sessionId: string }> = [];
+  const cacheEntries: TerminalSessionCacheEntry[] = [];
 
   const tabs = sessions.map((session, index): TerminalTabRecord => {
     const cachedTabId = tabIdBySessionId.get(session.sessionId);
     const restoredTabId = terminalTabIdForSession(session.sessionId);
     const existingTab = cachedTabId ? tabsById.get(cachedTabId) : tabsById.get(restoredTabId);
     if (existingTab) {
-      usedLabels.add(existingTab.label);
-      cacheEntries.push({ tabId: existingTab.id, sessionId: session.sessionId });
-      return existingTab;
+      // The live PTY owns the identity: a restored SSH tab keeps its bookmark name
+      // even if it was persisted before the session was labelled.
+      const sshEndpoint = session.kind === "ssh" ? session.endpoint?.trim() : "";
+      const tab: TerminalTabRecord =
+        session.kind === "ssh"
+          ? {
+              ...existingTab,
+              kind: "ssh",
+              label: session.label?.trim() || existingTab.label,
+              ...(sshEndpoint ? { endpoint: sshEndpoint } : {}),
+            }
+          : existingTab;
+      usedLabels.add(tab.label);
+      cacheEntries.push(cacheEntryForTab(tab, session.sessionId));
+      return tab;
     }
 
-    const labelBase = workspaceLabel.trim() || i18n.t("app.terminalFallback");
+    // A live SSH PTY keeps its bookmark identity across a renderer reload; only
+    // local shells fall back to the workspace name.
+    const isSsh = session.kind === "ssh";
+    const sshLabel = isSsh ? session.label?.trim() || session.endpoint?.trim() : "";
+    const labelBase = sshLabel || workspaceLabel.trim() || i18n.t("app.terminalFallback");
     const baseLabel = index === 0 ? labelBase : `${labelBase} ${index + 1}`;
     let label = baseLabel;
     let suffix = 2;
@@ -716,8 +744,14 @@ function buildTerminalStateForLiveSessions(
       suffix += 1;
     }
     usedLabels.add(label);
-    const tab = { id: terminalTabIdForSession(session.sessionId), label };
-    cacheEntries.push({ tabId: tab.id, sessionId: session.sessionId });
+    const sshEndpoint = isSsh ? session.endpoint?.trim() : "";
+    const tab: TerminalTabRecord = {
+      id: terminalTabIdForSession(session.sessionId),
+      label,
+      kind: isSsh ? "ssh" : "local",
+      ...(sshEndpoint ? { endpoint: sshEndpoint } : {}),
+    };
+    cacheEntries.push(cacheEntryForTab(tab, session.sessionId));
     return tab;
   });
 
@@ -3703,6 +3737,9 @@ function App() {
         return listTerminalSessionEntriesForProject(workspacePath).map((entry) => ({
           sessionId: entry.sessionId,
           workspacePath,
+          kind: entry.kind,
+          ...(entry.label ? { label: entry.label } : {}),
+          ...(entry.endpoint ? { endpoint: entry.endpoint } : {}),
         }));
       }
       try {
@@ -4027,17 +4064,21 @@ function App() {
     setScriptsDialogOpen(false);
   }, []);
 
-  const openPackageScriptTerminalSession = useCallback(
-    (workspacePath: string, sessionId: string) => {
+  const openTerminalSessionTab = useCallback(
+    (workspacePath: string, sessionId: string, identity?: InjectedTerminalSessionIdentity) => {
       setTerminalByProject((current) => {
         const existing = getProjectTerminalState(current, workspacePath);
         const stored = storedTerminalByProject[workspacePath];
         const workspaceLabel =
           projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
-        const baseState =
+        // An SSH session always owns its own tab, so with nothing open yet the tab
+        // list starts empty and the SSH tab becomes the first one — no stray shell.
+        const baseState: ProjectTerminalState =
           existing && existing.tabs.length > 0
             ? { ...existing, open: true }
-            : createProjectTerminalState(workspaceLabel, true);
+            : identity?.kind === "ssh"
+              ? { open: true, height: DEFAULT_TERMINAL_HEIGHT, tabs: [], activeTabId: "" }
+              : createProjectTerminalState(workspaceLabel, true);
         const sessionByTabId = listTerminalSessionsForProject(
           workspacePath,
           baseState.tabs.map((tab) => tab.id),
@@ -4050,6 +4091,7 @@ function App() {
           workspaceLabel,
           sessionId,
           sessionByTabId,
+          ...identity,
         });
         return {
           ...current,
@@ -4077,17 +4119,17 @@ function App() {
   const openBackgroundTerminalTask = useCallback(
     async (task: BackgroundTerminalTask) => {
       if (!window.eco?.openBackgroundTerminalTask) {
-        openPackageScriptTerminalSession(task.workspacePath, task.sessionId);
+        openTerminalSessionTab(task.workspacePath, task.sessionId);
         return;
       }
       try {
         const resolved = await window.eco.openBackgroundTerminalTask({ taskId: task.taskId });
-        openPackageScriptTerminalSession(resolved.workspacePath, resolved.sessionId);
+        openTerminalSessionTab(resolved.workspacePath, resolved.sessionId);
       } catch {
-        openPackageScriptTerminalSession(task.workspacePath, task.sessionId);
+        openTerminalSessionTab(task.workspacePath, task.sessionId);
       }
     },
-    [openPackageScriptTerminalSession],
+    [openTerminalSessionTab],
   );
 
   const stopBackgroundTerminalTask = useCallback(
@@ -4116,12 +4158,12 @@ function App() {
       dismissPackageScriptRunOverlays();
       void refreshBackgroundTerminalTasks();
       await waitForOverlayDismiss(dismissStartedAt);
-      openPackageScriptTerminalSession(workspacePath, sessionId);
+      openTerminalSessionTab(workspacePath, sessionId);
       void syncPackageScriptTerminalPresentation(sessionId, taskId);
     },
     [
       dismissPackageScriptRunOverlays,
-      openPackageScriptTerminalSession,
+      openTerminalSessionTab,
       refreshBackgroundTerminalTasks,
       syncPackageScriptTerminalPresentation,
       trackPackageScriptTerminalSession,
@@ -4174,7 +4216,7 @@ function App() {
         trackPackageScriptTerminalSession(result.sessionId, scriptMeta, result.taskId);
         void refreshBackgroundTerminalTasks();
         await waitForOverlayDismiss(dismissStartedAt);
-        openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
+        openTerminalSessionTab(currentProjectPath, result.sessionId);
         void syncPackageScriptTerminalPresentation(result.sessionId, result.taskId);
       } catch (error) {
         console.error(error);
@@ -4187,7 +4229,7 @@ function App() {
       currentProjectName,
       currentProjectPath,
       dismissPackageScriptRunOverlays,
-      openPackageScriptTerminalSession,
+      openTerminalSessionTab,
       refreshBackgroundTerminalTasks,
       syncPackageScriptTerminalPresentation,
       trackPackageScriptTerminalSession,
@@ -5521,9 +5563,12 @@ function App() {
           workspacePath: currentProjectPath,
           bookmarkId: bookmark.id,
         });
-        toggleTerminalForCurrentProject();
         dismissTaskPanel();
-        openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
+        openTerminalSessionTab(currentProjectPath, result.sessionId, {
+          kind: "ssh",
+          label: result.label,
+          endpoint: result.endpoint,
+        });
         if (result.passwordAutoInject === false && bookmark.authType === "password") {
           showAppMessageError(t("app.sshBookmarks.passwordManualHint"));
         }
@@ -5534,10 +5579,9 @@ function App() {
     [
       currentProjectPath,
       dismissTaskPanel,
-      openPackageScriptTerminalSession,
+      openTerminalSessionTab,
       showAppMessageError,
       t,
-      toggleTerminalForCurrentProject,
     ],
   );
 

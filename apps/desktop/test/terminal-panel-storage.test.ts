@@ -98,6 +98,66 @@ test("injected sessions reuse idle tabs and never steal a live session", () => {
   expect(alreadyBound.state.tabs).toHaveLength(2);
 });
 
+test("SSH tabs keep their kind and endpoint across a save/restore", () => {
+  const sshTab = createTerminalTab("Prod", "ssh", "root@prod.example.com");
+  const state: ProjectTerminalState = {
+    open: true,
+    height: 280,
+    tabs: [sshTab, createTerminalTab("eco")],
+    activeTabId: sshTab.id,
+  };
+
+  saveTerminalWorkspaceState({ "/tmp/project": state });
+
+  const restored = readTerminalWorkspaceState()["/tmp/project"];
+  expect(restored?.tabs[0]?.kind).toBe("ssh");
+  expect(restored?.tabs[0]?.endpoint).toBe("root@prod.example.com");
+  expect(restored?.tabs[1]?.kind).toBe("local");
+  expect(restored?.tabs[1]?.endpoint).toBeUndefined();
+});
+
+test("an injected SSH session gets its own labelled tab instead of an idle one", () => {
+  const shell = createTerminalTab("eco");
+  const idle = createTerminalTab("eco 2");
+  const base: ProjectTerminalState = {
+    open: false,
+    height: 280,
+    tabs: [shell, idle],
+    activeTabId: idle.id,
+  };
+
+  const assigned = resolveTerminalTabForInjectedSession({
+    state: base,
+    workspaceLabel: "eco",
+    sessionId: "session-ssh",
+    sessionByTabId: { [shell.id]: "session-shell" },
+    kind: "ssh",
+    label: "Prod",
+    endpoint: "root@prod.example.com",
+  });
+
+  const sshTab = assigned.state.tabs.at(-1);
+  expect(assigned.tabId).toBe(sshTab?.id);
+  expect(assigned.state.open).toBe(true);
+  expect(assigned.state.activeTabId).toBe(sshTab?.id);
+  expect(sshTab?.label).toBe("Prod");
+  expect(sshTab?.kind).toBe("ssh");
+  expect(sshTab?.endpoint).toBe("root@prod.example.com");
+  expect(assigned.state.tabs).toHaveLength(3);
+
+  // A second connection to the same bookmark still stays tellable apart.
+  const second = resolveTerminalTabForInjectedSession({
+    state: assigned.state,
+    workspaceLabel: "eco",
+    sessionId: "session-ssh-2",
+    sessionByTabId: {},
+    kind: "ssh",
+    label: "Prod",
+    endpoint: "root@prod.example.com",
+  });
+  expect(second.state.tabs.at(-1)?.label).toBe("Prod 2");
+});
+
 test("uses the active locale for empty and restored terminal labels", () => {
   expect(createTerminalTab(" ").label).toBe("Terminal");
   expect(nextTerminalTabLabel("", [])).toBe("Terminal");

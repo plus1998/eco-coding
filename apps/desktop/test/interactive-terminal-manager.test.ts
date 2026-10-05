@@ -126,8 +126,27 @@ describe("InteractiveTerminalManager", () => {
     expect(manager.get(first.sessionId)?.sessionId).toBe(first.sessionId);
     expect(manager.get(second.sessionId)?.sessionId).toBe(second.sessionId);
     expect(manager.list(workspaceRoot)).toEqual([
-      { sessionId: first.sessionId, workspacePath: workspaceRoot },
-      { sessionId: second.sessionId, workspacePath: workspaceRoot },
+      { sessionId: first.sessionId, workspacePath: workspaceRoot, kind: "local" },
+      { sessionId: second.sessionId, workspacePath: workspaceRoot, kind: "local" },
+    ]);
+  });
+
+  test("carries the SSH identity so a listed session can be re-labelled", () => {
+    const manager = new InteractiveTerminalManager(() => undefined, { outputCoalesceMs: 0 });
+    const { sessionId } = manager.spawnCommand(
+      workspaceRoot,
+      ["ssh", "prod.example.com"],
+      { kind: "ssh", label: "Prod", endpoint: "root@prod.example.com" },
+    );
+
+    expect(manager.list(workspaceRoot)).toEqual([
+      {
+        sessionId,
+        workspacePath: workspaceRoot,
+        kind: "ssh",
+        label: "Prod",
+        endpoint: "root@prod.example.com",
+      },
     ]);
   });
 

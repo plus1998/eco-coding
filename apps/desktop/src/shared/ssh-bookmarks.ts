@@ -43,7 +43,10 @@ export interface SshBookmarkSaveInput {
 
 export interface SshBookmarkConnectResult {
   sessionId: string;
+  /** Bookmark name used as the terminal tab label. */
   label: string;
+  /** `user@host[:port]` used as the terminal tab tooltip. */
+  endpoint: string;
   passwordAutoInject?: boolean;
 }
 

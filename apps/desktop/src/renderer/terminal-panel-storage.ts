@@ -5,9 +5,18 @@ const DEFAULT_HEIGHT = 280;
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 600;
 
+/**
+ * A tab is either a local shell or an SSH session. The tab strip renders a
+ * different glyph per kind so a stack of tabs stays readable.
+ */
+export type TerminalTabKind = "local" | "ssh";
+
 export interface TerminalTabRecord {
   id: string;
   label: string;
+  kind: TerminalTabKind;
+  /** SSH endpoint (`user@host[:port]`) shown in the tab tooltip. */
+  endpoint?: string;
 }
 
 export interface ProjectTerminalState {
@@ -26,10 +35,17 @@ export function createTerminalTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function createTerminalTab(label: string): TerminalTabRecord {
+export function createTerminalTab(
+  label: string,
+  kind: TerminalTabKind = "local",
+  endpoint?: string,
+): TerminalTabRecord {
+  const trimmedEndpoint = endpoint?.trim();
   return {
     id: createTerminalTabId(),
     label: label.trim() || i18n.t("terminal.title"),
+    kind,
+    ...(kind === "ssh" && trimmedEndpoint ? { endpoint: trimmedEndpoint } : {}),
   };
 }
 
@@ -60,7 +76,14 @@ function normalizeTab(value: unknown): TerminalTabRecord | undefined {
   }
   const label =
     typeof record.label === "string" && record.label.trim() ? record.label.trim() : i18n.t("terminal.title");
-  return { id: record.id.trim(), label };
+  const kind = record.kind === "ssh" ? "ssh" : "local";
+  const endpoint = kind === "ssh" && typeof record.endpoint === "string" ? record.endpoint.trim() : "";
+  return {
+    id: record.id.trim(),
+    label,
+    kind,
+    ...(endpoint ? { endpoint } : {}),
+  };
 }
 
 function normalizeProjectTerminalState(
@@ -139,8 +162,7 @@ export function clampTerminalHeight(height: number): number {
   return Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(height)));
 }
 
-export function nextTerminalTabLabel(workspaceLabel: string, existingTabs: TerminalTabRecord[]): string {
-  const base = workspaceLabel.trim() || i18n.t("terminal.title");
+function withUniqueLabel(base: string, existingTabs: TerminalTabRecord[]): string {
   const taken = new Set(existingTabs.map((tab) => tab.label));
   if (!taken.has(base)) {
     return base;
@@ -152,21 +174,55 @@ export function nextTerminalTabLabel(workspaceLabel: string, existingTabs: Termi
   return `${base} ${index}`;
 }
 
+export function nextTerminalTabLabel(workspaceLabel: string, existingTabs: TerminalTabRecord[]): string {
+  return withUniqueLabel(workspaceLabel.trim() || i18n.t("terminal.title"), existingTabs);
+}
+
+export interface InjectedTerminalSessionIdentity {
+  kind?: TerminalTabKind;
+  label?: string;
+  endpoint?: string;
+}
+
 /**
- * Bind an injected PTY (npm script / background task) to a tab without stealing a
- * live session. Occupied tabs keep their current process; idle/empty tabs can be reused.
+ * Bind an injected PTY (npm script / background task / SSH session) to a tab without
+ * stealing a live session. Occupied tabs keep their current process; idle/empty tabs
+ * can be reused.
+ *
+ * An SSH session never takes over an idle local tab: its tab must carry the bookmark
+ * name and the SSH glyph, so it always gets a dedicated tab.
  */
-export function resolveTerminalTabForInjectedSession(options: {
-  state: ProjectTerminalState;
-  workspaceLabel: string;
-  sessionId: string;
-  sessionByTabId: Readonly<Record<string, string | undefined>>;
-}): { state: ProjectTerminalState; tabId: string } {
+export function resolveTerminalTabForInjectedSession(
+  options: {
+    state: ProjectTerminalState;
+    workspaceLabel: string;
+    sessionId: string;
+    sessionByTabId: Readonly<Record<string, string | undefined>>;
+  } & InjectedTerminalSessionIdentity,
+): { state: ProjectTerminalState; tabId: string } {
   const existingTab = options.state.tabs.find((tab) => options.sessionByTabId[tab.id] === options.sessionId);
   if (existingTab) {
     return {
       state: { ...options.state, open: true, activeTabId: existingTab.id },
       tabId: existingTab.id,
+    };
+  }
+
+  if (options.kind === "ssh") {
+    const base =
+      options.label?.trim() ||
+      options.endpoint?.trim() ||
+      options.workspaceLabel.trim() ||
+      i18n.t("terminal.title");
+    const tab = createTerminalTab(withUniqueLabel(base, options.state.tabs), "ssh", options.endpoint);
+    return {
+      state: {
+        ...options.state,
+        open: true,
+        tabs: [...options.state.tabs, tab],
+        activeTabId: tab.id,
+      },
+      tabId: tab.id,
     };
   }
 
