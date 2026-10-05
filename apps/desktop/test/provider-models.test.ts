@@ -46,6 +46,7 @@ import {
   describeProviderCompatRouting,
   listProviderUpstreamModels,
   normalizeRequestPath,
+  OPENAI_BUILTIN_MODELS,
   parseUpstreamModelsPayload,
   resolveModelsListUrl,
   splitBaseUrlAndRequestPath,
@@ -79,6 +80,69 @@ describe("listProviderUpstreamModels", () => {
       providerId: "omlx",
       providerName: "oMLX",
     });
+  });
+
+  test("still queries upstream /v1/models without an API key and surfaces the upstream error", async () => {
+    const previousFetch = globalThis.fetch;
+    const calls: Array<{ url: string; hasAuth: boolean }> = [];
+    globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        hasAuth: Boolean(new Headers(init?.headers ?? {}).get("authorization")),
+      });
+      return new Response(JSON.stringify({ error: { message: "missing credentials" } }), { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const store = {
+      getProviderWithSecret: () => ({
+        id: "plus64",
+        name: "Plus64",
+        baseUrl: "http://localhost:8080",
+        requestPath: "",
+        version: "v1",
+        apiCompat: "openai_chat_completions",
+        apiKey: "",
+        enabled: true,
+        authMethod: "api_key",
+      }),
+    } as unknown as ProviderStore;
+
+    try {
+      const result = await listProviderUpstreamModels(store, { providerId: "plus64" });
+
+      expect(calls).toEqual([{ url: "http://localhost:8080/v1/models", hasAuth: false }]);
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        return;
+      }
+      expect(result.error).toContain("上游 401：missing credentials");
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
+  test("keeps the built-in OpenAI catalogue for Codex Auth (auth.json) providers", async () => {
+    const store = {
+      getProviderWithSecret: () => ({
+        id: "openai",
+        name: "OpenAI",
+        baseUrl: "http://localhost:8080",
+        requestPath: "/v1",
+        version: "v1",
+        apiCompat: "openai_responses",
+        apiKey: "",
+        enabled: true,
+        authMethod: "auth_json",
+      }),
+    } as unknown as ProviderStore;
+
+    const result = await listProviderUpstreamModels(store, { providerId: "openai" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.models.map((model) => model.id)).toEqual(OPENAI_BUILTIN_MODELS.map((model) => model.id));
   });
 });
 

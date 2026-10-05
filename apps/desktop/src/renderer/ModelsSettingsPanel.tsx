@@ -49,7 +49,7 @@ import {
   type PendingMainAgentConfigCreateSeed,
 } from "./AgentCompositionResourcesSection";
 import { EndpointCompatSelect, type EndpointCompatOption } from "./EndpointCompatSelect";
-import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
+import { AppMessage, formatDurationMs, useAppMessage, type AppMessageKind } from "./AppMessage";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
@@ -118,7 +118,24 @@ interface ModelsSettingsPanelProps {
 
 interface ModelsCacheEntry {
   models: UpstreamModelOption[];
+  /** Endpoint the entry was fetched from; a different endpoint must refetch. */
+  signature: string;
   error?: string | undefined;
+}
+
+/**
+ * Model discovery depends on the endpoint, not only on the provider id: editing
+ * baseURL / requestPath / version / apiCompat has to re-run the upstream fetch
+ * instead of replaying the previous provider's list.
+ */
+function modelsRequestSignature(target: ProviderConfigInput): string {
+  return [
+    target.baseUrl?.trim() ?? "",
+    target.requestPath?.trim() ?? "",
+    target.version?.trim() ?? "",
+    target.apiCompat ?? "",
+    target.authMethod ?? "",
+  ].join("|");
 }
 
 function providerProtocolPresentation(provider: Pick<ProviderConfigView, "apiCompat">) {
@@ -348,10 +365,13 @@ export function ModelsSettingsPanel({
   );
   const [modalError, setModalError] = useState<string>();
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
-  const [providerTestMessage, setProviderTestMessage] = useState<{
-    kind: AppMessageKind;
-    message: string;
-  }>();
+  const {
+    state: appMessage,
+    dismiss: dismissAppMessage,
+    showError: showAppMessageError,
+    showSuccess: showAppMessageSuccess,
+    showInfo: showAppMessageInfo,
+  } = useAppMessage();
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
 
@@ -428,67 +448,68 @@ export function ModelsSettingsPanel({
       .finally(() => setModelsDevLoading(false));
   }, [modelsDevOptions.length, modelsDevLoading]);
 
-  const fetchModels = useCallback(async (target: ProviderConfigInput, options?: { silent?: boolean }) => {
-    if (!window.eco) {
-      return;
-    }
-    const cacheKey = target.id ?? "__draft__";
-    setLoadingProviderId(cacheKey);
-    if (!options?.silent) {
-      setModalError(undefined);
-    }
-
-    try {
-      const request = {
-        baseUrl: target.baseUrl,
-        ...(target.requestPath !== undefined && target.requestPath !== ""
-          ? { requestPath: target.requestPath }
-          : {}),
-        ...(target.version !== undefined && target.version !== "" ? { version: target.version } : {}),
-        ...(target.apiCompat && { apiCompat: target.apiCompat }),
-        ...(target.id && { providerId: target.id }),
-        ...(target.authMethod && { authMethod: target.authMethod }),
-        ...(target.apiKey && { apiKey: target.apiKey }),
-      };
-      const result = await window.eco.listProviderModels(request);
-      if (!result.ok) {
-        const error = localizeProviderRequestError(result, t);
-        setModelsCache((current) => ({
-          ...current,
-          [cacheKey]: { models: current[cacheKey]?.models ?? [], error },
-        }));
-        if (!options?.silent) {
-          setModalError(error);
-        }
+  const fetchModels = useCallback(
+    async (target: ProviderConfigInput) => {
+      if (!window.eco) {
         return;
       }
-      setModelsCache((current) => ({
-        ...current,
-        [cacheKey]: { models: result.models },
-      }));
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setModelsCache((current) => ({
-        ...current,
-        [cacheKey]: { models: current[cacheKey]?.models ?? [], error: message },
-      }));
-      if (!options?.silent) {
-        setModalError(message);
+      const cacheKey = target.id ?? "__draft__";
+      const signature = modelsRequestSignature(target);
+      setLoadingProviderId(cacheKey);
+
+      try {
+        const request = {
+          baseUrl: target.baseUrl,
+          ...(target.requestPath !== undefined && target.requestPath !== ""
+            ? { requestPath: target.requestPath }
+            : {}),
+          ...(target.version !== undefined && target.version !== "" ? { version: target.version } : {}),
+          ...(target.apiCompat && { apiCompat: target.apiCompat }),
+          ...(target.id && { providerId: target.id }),
+          ...(target.authMethod && { authMethod: target.authMethod }),
+          ...(target.apiKey && { apiKey: target.apiKey }),
+        };
+        const result = await window.eco.listProviderModels(request);
+        if (!result.ok) {
+          const detail = localizeProviderRequestError(result, t);
+          setModelsCache((current) => ({
+            ...current,
+            [cacheKey]: { models: current[cacheKey]?.models ?? [], signature, error: detail },
+          }));
+          showAppMessageError(t("settings.models.provider.modelsFailed", { detail }));
+          return;
+        }
+        setModelsCache((current) => ({
+          ...current,
+          [cacheKey]: { models: result.models, signature },
+        }));
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setModelsCache((current) => ({
+          ...current,
+          [cacheKey]: { models: current[cacheKey]?.models ?? [], signature, error: message },
+        }));
+        showAppMessageError(t("settings.models.provider.modelsFailed", { detail: message }));
+      } finally {
+        setLoadingProviderId(null);
       }
-    } finally {
-      setLoadingProviderId(null);
-    }
-  }, []);
+    },
+    [showAppMessageError, t],
+  );
 
   useEffect(() => {
     if (!providerModalOpen || !providerForm.id) {
       return;
     }
     const cached = modelsCache[providerForm.id];
-    if (cached?.models.length || cached?.error) {
+    if (cached && cached.signature === modelsRequestSignature(providerForm)) {
       return;
     }
-    void fetchModels(providerForm, { silent: true });
+    // Debounced: the endpoint fields change keystroke by keystroke while editing.
+    const timer = setTimeout(() => {
+      void fetchModels(providerForm);
+    }, 600);
+    return () => clearTimeout(timer);
   }, [providerModalOpen, providerForm, modelsCache, fetchModels]);
 
   const modelsForProvider = useCallback(
@@ -523,7 +544,13 @@ export function ModelsSettingsPanel({
   }
 
   function showProviderTestMessage(kind: AppMessageKind, message: string) {
-    setProviderTestMessage({ kind, message });
+    if (kind === "success") {
+      showAppMessageSuccess(message);
+    } else if (kind === "info") {
+      showAppMessageInfo(message);
+    } else {
+      showAppMessageError(message);
+    }
   }
 
   function closeProviderModal(options?: { clearCreateMainConfigPrompt?: boolean }) {
@@ -745,12 +772,8 @@ export function ModelsSettingsPanel({
   }, [providerOptions, providerSearchQuery]);
   return (
     <>
-      {providerTestMessage && (
-        <AppMessage
-          kind={providerTestMessage.kind}
-          message={providerTestMessage.message}
-          onDismiss={() => setProviderTestMessage(undefined)}
-        />
+      {appMessage && (
+        <AppMessage kind={appMessage.kind} message={appMessage.message} onDismiss={dismissAppMessage} />
       )}
       {mode === "providerSettings" ? (
         <header className="mcp-page-header settings-page-header-with-action">
@@ -1119,7 +1142,6 @@ export function ModelsSettingsPanel({
           }
           models={modalCache?.models ?? []}
           modelsLoading={loadingForProvider(modalProviderId)}
-          modelsError={modalCache?.error}
           modelsDevOptions={modelsDevOptions}
           modelsDevLoading={modelsDevLoading}
           error={modalError}
@@ -1151,7 +1173,6 @@ function ProviderEditorModal({
   hasExistingApiKey,
   models,
   modelsLoading,
-  modelsError,
   modelsDevOptions,
   modelsDevLoading,
   error,
@@ -1170,7 +1191,6 @@ function ProviderEditorModal({
   hasExistingApiKey: boolean;
   models: UpstreamModelOption[];
   modelsLoading: boolean;
-  modelsError?: string | undefined;
   modelsDevOptions: readonly ModelsDevModelOption[];
   modelsDevLoading: boolean;
   error?: string | undefined;
@@ -1203,10 +1223,7 @@ function ProviderEditorModal({
   const prefersReducedMotion = useReducedMotion();
   const activePreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
   const apiCompat = form.apiCompat ?? "anthropic";
-  const modelsErrorMessage = modelsError
-    ? t("settings.models.provider.modelsFailed", { detail: modelsError })
-    : undefined;
-  const formError = modelsErrorMessage ?? error ?? candidateSaveError;
+  const formError = error ?? candidateSaveError;
 
   async function handleSaveProvider() {
     setCandidateSaveError(undefined);

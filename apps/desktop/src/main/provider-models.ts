@@ -97,10 +97,13 @@ export async function listProviderUpstreamModels(
     return resolved;
   }
 
-  // auth.json providers without an API key do not expose a usable upstream
-  // /v1/models endpoint. ChatGPT subscription providers are handled in the
-  // desktop IPC layer with their OAuth account pool before reaching this path.
-  if (!resolved.apiKey.trim()) {
+  // The built-in OpenAI catalogue belongs to Codex Auth (auth.json) only: that
+  // login has no upstream API key and no usable /v1/models endpoint. ChatGPT
+  // subscription providers are handled in the desktop IPC layer with their OAuth
+  // account pool before reaching this path. Any other provider still attempts the
+  // upstream GET /v1/models (local servers often allow an unauthenticated list)
+  // and reports whatever the upstream answers.
+  if (!resolved.apiKey.trim() && resolved.authMethod === "auth_json") {
     return { ok: true, models: OPENAI_BUILTIN_MODELS };
   }
 
@@ -1047,6 +1050,7 @@ function resolveProviderCredentials(
       apiCompat: UpstreamApiCompat;
       apiKey: string;
       upstreamProxyUrl: string;
+      authMethod: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
     }
   | ProviderRequestError {
   const baseUrl = request.baseUrl?.trim();
@@ -1099,6 +1103,7 @@ function resolveProviderCredentials(
       apiCompat: resolvedApiCompat,
       apiKey: resolvedApiKey,
       upstreamProxyUrl: resolvedUpstreamProxyUrl,
+      authMethod: provider.authMethod ?? "api_key",
     };
   }
 
@@ -1119,6 +1124,8 @@ function resolveProviderCredentials(
     apiCompat: inlineApiCompat,
     apiKey: inlineApiKey ?? "",
     upstreamProxyUrl: inlineUpstreamProxyUrl,
+    authMethod:
+      "authMethod" in request && request.authMethod !== undefined ? request.authMethod : "api_key",
   };
 }
 
