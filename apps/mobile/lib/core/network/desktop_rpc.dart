@@ -1905,35 +1905,32 @@ class DesktopRpc {
     return PackageScriptsListResult.fromJson(result);
   }
 
-  Future<Map<String, String>> savePackageScriptArgs({
+  Future<PackageScriptOverridesResult> savePackageScriptArgs({
     required String workspacePath,
     required String script,
-    required String args,
+    String? args,
+    String? prefix,
   }) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'workspace:save-package-script-args',
       [
-        {'workspacePath': workspacePath, 'script': script, 'args': args},
+        {
+          'workspacePath': workspacePath,
+          'script': script,
+          'args': ?args,
+          'prefix': ?prefix,
+        },
       ],
     );
-    final rawArgs = result['scriptArgs'];
-    final scriptArgs = <String, String>{};
-    if (rawArgs is Map) {
-      for (final entry in rawArgs.entries) {
-        final value = entry.value;
-        if (value is String && value.trim().isNotEmpty) {
-          scriptArgs[entry.key.toString()] = value.trim();
-        }
-      }
-    }
-    return scriptArgs;
+    return PackageScriptOverridesResult.fromJson(result);
   }
 
   Future<StartPackageScriptResult> startPackageScript({
     required String workspacePath,
     required String script,
     String? args,
+    String? prefix,
   }) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
@@ -1943,6 +1940,7 @@ class DesktopRpc {
           'workspacePath': workspacePath,
           'script': script,
           if (args != null && args.isNotEmpty) 'args': args,
+          if (prefix != null && prefix.isNotEmpty) 'prefix': prefix,
         },
       ],
       deadlineMs: 120000,

@@ -554,6 +554,12 @@ abstract class AppLocalizations {
   /// **'Cancel'**
   String get commonCancel;
 
+  /// No description provided for @commonSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get commonSave;
+
   /// No description provided for @commonClose.
   ///
   /// In en, this message translates to:
@@ -3301,6 +3307,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Extra arguments: {args}'**
   String threadExtraArgsValue(Object args);
+
+  /// No description provided for @threadCustomizeScript.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize command'**
+  String get threadCustomizeScript;
+
+  /// No description provided for @threadPrefixCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Leading command'**
+  String get threadPrefixCommand;
+
+  /// No description provided for @threadPrefixCommandHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. nvm use 20 && export NODE_ENV=production'**
+  String get threadPrefixCommandHint;
 
   /// No description provided for @threadRun.
   ///

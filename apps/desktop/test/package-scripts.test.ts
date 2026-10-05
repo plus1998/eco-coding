@@ -5,6 +5,7 @@ import path from "node:path";
 import type { BackgroundTerminalTaskRegistry } from "../src/main/background-terminal-tasks";
 import type { InteractiveTerminalManager } from "../src/main/interactive-terminal-manager";
 import {
+  buildPrefixedShellLine,
   listPackageScripts,
   parsePackageManagerField,
   preparePackageScriptRun,
@@ -13,7 +14,7 @@ import {
   runPreparedPackageScriptAsBackgroundTask,
   runPreparedPackageScriptInTerminal,
 } from "../src/main/package-scripts";
-import { buildRunCommand, formatRunCommand } from "../src/shared/package-script-run";
+import { buildRunCommand, formatRunCommand, joinPrefixedCommand } from "../src/shared/package-script-run";
 
 let tempDir = "";
 
@@ -130,6 +131,89 @@ test("preparePackageScriptRun rejects unknown script names", async () => {
   );
 });
 
+test("preparePackageScriptRun runs without a shell when no prefix is set", async () => {
+  await fs.writeFile(
+    path.join(tempDir, "package.json"),
+    JSON.stringify({ packageManager: "npm", scripts: { dev: "vite" } }),
+    "utf8",
+  );
+
+  const prepared = await preparePackageScriptRun(
+    { workspacePath: tempDir, script: "dev" },
+    {
+      args: { dev: "-- --port 3000" },
+      prefixes: {},
+    },
+  );
+
+  expect(prepared.command).toEqual(["npm", "run", "dev", "--", "--port", "3000"]);
+  expect(prepared.commandLabel).toBe("npm run dev -- --port 3000");
+  expect(prepared.prefix).toBeUndefined();
+});
+
+test("preparePackageScriptRun wraps argv in a login shell when a prefix is saved", async () => {
+  await fs.writeFile(
+    path.join(tempDir, "package.json"),
+    JSON.stringify({ packageManager: "npm", scripts: { dev: "vite" } }),
+    "utf8",
+  );
+
+  const prepared = await preparePackageScriptRun(
+    { workspacePath: tempDir, script: "dev" },
+    {
+      args: {},
+      prefixes: { dev: "nvm use 20" },
+    },
+  );
+
+  const shellLine = prepared.command.at(-1);
+  expect(prepared.command[0]).not.toBe("npm");
+  expect(prepared.command).toContain("-c");
+  expect(shellLine).toContain("nvm use 20 && ");
+  expect(shellLine).toContain("npm run dev");
+  expect(prepared.prefix).toBe("nvm use 20");
+  expect(prepared.commandLabel).toBe("nvm use 20 && npm run dev");
+});
+
+test("request prefix overrides the saved prefix and blank falls back to saved", async () => {
+  await fs.writeFile(
+    path.join(tempDir, "package.json"),
+    JSON.stringify({ packageManager: "bun", scripts: { dev: "vite" } }),
+    "utf8",
+  );
+
+  const saved = { args: { dev: "--watch" }, prefixes: { dev: "nvm use 20" } };
+  const adHoc = await preparePackageScriptRun(
+    { workspacePath: tempDir, script: "dev", prefix: "nvm use 18", args: "  " },
+    saved,
+  );
+  expect(adHoc.commandLabel).toBe("nvm use 18 && bun run dev --watch");
+
+  const fallback = await preparePackageScriptRun({ workspacePath: tempDir, script: "dev" }, saved);
+  expect(fallback.commandLabel).toBe("nvm use 20 && bun run dev --watch");
+});
+
+test("buildPrefixedShellLine quotes argv after the prefix", () => {
+  const line = buildPrefixedShellLine("nvm use 20", ["npm", "run", "dev", "--", "--title=a b"]);
+  expect(line.startsWith("nvm use 20 && ")).toBe(true);
+  if (process.platform !== "win32") {
+    expect(line).toBe("nvm use 20 && npm run dev -- '--title=a b'");
+  }
+});
+
+test("joinPrefixedCommand and formatRunCommand include the prefix", () => {
+  expect(joinPrefixedCommand("  ", ["npm", "run", "dev"])).toBe("npm run dev");
+  expect(formatRunCommand("npm", "dev", "--watch", "nvm use 20")).toBe(
+    "nvm use 20 && npm run dev -- --watch",
+  );
+  expect(formatRunCommand("bun", "dev", "--watch", "nvm use 20")).toBe("nvm use 20 && bun run dev --watch");
+});
+
+test("a trailing connector in the prefix is not doubled", () => {
+  expect(buildPrefixedShellLine("nvm use 20 &&", ["npm", "run", "dev"])).toBe("nvm use 20 && npm run dev");
+  expect(formatRunCommand("bun", "dev", "", "source .envrc;")).toBe("source .envrc && bun run dev");
+});
+
 test("runPreparedPackageScriptInTerminal spawns shell and writes command", () => {
   const writes: Array<{ sessionId: string; data: string }> = [];
   const manager = {
@@ -143,6 +227,7 @@ test("runPreparedPackageScriptInTerminal spawns shell and writes command", () =>
     workspacePath: tempDir,
     script: "dev",
     command: ["bun", "run", "dev"],
+    commandLabel: "bun run dev",
   });
 
   expect(result.sessionId).toBe("session_1");
@@ -177,14 +262,16 @@ test("runPreparedPackageScriptAsBackgroundTask registers task metadata", () => {
       workspacePath: tempDir,
       script: "dev",
       command: ["bun", "run", "dev"],
+      commandLabel: "nvm use 20 && bun run dev",
     },
     { threadId: "thr_1" },
   );
 
   expect(result.taskId).toBe("task_1");
   expect(result.sessionId).toBe("session_1");
+  expect(result.commandLabel).toBe("nvm use 20 && bun run dev");
   expect(calls).toHaveLength(1);
-  expect(calls[0]?.label).toBe("脚本 dev");
+  expect(calls[0]?.label).toBe("nvm use 20 && bun run dev");
   expect(calls[0]?.threadId).toBe("thr_1");
   expect(calls[0]?.command.at(-2)).toBe("run");
   expect(calls[0]?.command.at(-1)).toBe("dev");

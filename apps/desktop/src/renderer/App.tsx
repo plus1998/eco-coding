@@ -4137,7 +4137,8 @@ function App() {
         projects.find((item) => item.path === payload.workspacePath)?.name ??
         pathToName(payload.workspacePath);
       const scriptMeta = {
-        command: payload.command.length > 0 ? payload.command.join(" ") : payload.script,
+        command:
+          payload.commandLabel ?? (payload.command.length > 0 ? payload.command.join(" ") : payload.script),
         projectName,
       };
       trackPackageScriptTerminalSession(payload.sessionId, scriptMeta, payload.taskId);
@@ -4149,11 +4150,12 @@ function App() {
   }, [currentProjectPath, presentPackageScriptTerminal, projects, trackPackageScriptTerminalSession]);
 
   const startPackageScript = useCallback(
-    async (scriptName: string, args?: string) => {
+    async (scriptName: string, args?: string, prefix?: string) => {
       if (!currentProjectPath || !window.eco) {
         return;
       }
       const trimmedArgs = args?.trim();
+      const trimmedPrefix = prefix?.trim();
       const dismissStartedAt = performance.now();
       dismissPackageScriptRunOverlays();
       setScriptsBusy(true);
@@ -4162,10 +4164,11 @@ function App() {
           workspacePath: currentProjectPath,
           script: scriptName,
           ...(trimmedArgs && { args: trimmedArgs }),
+          ...(trimmedPrefix && { prefix: trimmedPrefix }),
           ...(activeThread?.id && { threadId: activeThread.id }),
         });
         const scriptMeta = {
-          command: result.command.length > 0 ? result.command.join(" ") : result.script,
+          command: result.commandLabel || result.command.join(" "),
           projectName: currentProjectName,
         };
         trackPackageScriptTerminalSession(result.sessionId, scriptMeta, result.taskId);

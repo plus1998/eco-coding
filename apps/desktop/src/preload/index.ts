@@ -169,6 +169,7 @@ import {
   type RunPackageScriptRequest,
   type RuntimeRoleRouteConfig,
   type SavePackageScriptArgsRequest,
+  type SavePackageScriptArgsResult,
   type SkillCatalogInstallRequest,
   type SkillCatalogInstallResult,
   type SkillCatalogSearchRequest,
@@ -423,9 +424,7 @@ const api = {
   listPackageScripts(workspacePath: string): Promise<PackageScriptsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceListPackageScripts, workspacePath);
   },
-  savePackageScriptArgs(
-    request: SavePackageScriptArgsRequest,
-  ): Promise<{ workspacePath: string; scriptArgs: Record<string, string> }> {
+  savePackageScriptArgs(request: SavePackageScriptArgsRequest): Promise<SavePackageScriptArgsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceSavePackageScriptArgs, request);
   },
   watchPackageJson(workspacePath: string): Promise<{ ok: true }> {

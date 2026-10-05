@@ -99,6 +99,7 @@ function collectPayload(input: {
   const asr = input.asrSettingsStore.listProfiles();
   const image = input.imageGenerationStore.getSettings();
   const orchestration = input.agentOrchestrationStore;
+  const packageScriptOverrides = input.packageScriptArgsStore.getAllSnapshotSync();
 
   return {
     version: 1,
@@ -164,7 +165,8 @@ function collectPayload(input: {
     },
     git: input.gitSettingsStore.get(),
     personalization: input.personalizationSettingsStore.get(),
-    packageScriptArgs: input.packageScriptArgsStore.getAllSync(),
+    packageScriptArgs: packageScriptOverrides.args,
+    packageScriptPrefixes: packageScriptOverrides.prefixes,
     sshBookmarks: input.sshBookmarkStore.getSnapshot().bookmarks,
   };
 }
@@ -378,8 +380,13 @@ async function applyPayload(
   if (payload.personalization !== undefined) {
     input.personalizationSettingsStore.save(normalizePersonalizationSettingsSnapshot(payload.personalization));
   }
-  if (payload.packageScriptArgs !== undefined) {
-    await input.packageScriptArgsStore.replaceAll(payload.packageScriptArgs);
+  if (payload.packageScriptArgs !== undefined || payload.packageScriptPrefixes !== undefined) {
+    // Older cloud snapshots have no prefixes key: keep the local ones.
+    const current = input.packageScriptArgsStore.getAllSnapshotSync();
+    await input.packageScriptArgsStore.replaceAll({
+      args: payload.packageScriptArgs ?? current.args,
+      prefixes: payload.packageScriptPrefixes ?? current.prefixes,
+    });
   }
   if (payload.sshBookmarks !== undefined) {
     input.sshBookmarkStore.replaceMetadata({ bookmarks: payload.sshBookmarks });

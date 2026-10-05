@@ -730,20 +730,42 @@ export interface PackageScriptsListResult {
   packageName?: string;
   packageManager: PackageManagerKind;
   scripts: PackageScriptInfo[];
-  /** Per-script extra args saved on Desktop; synced to Mobile via list RPC. */
+  /** Per-script trailing args saved on Desktop; synced to Mobile via list RPC. */
   scriptArgs: Record<string, string>;
+  /** Per-script leading shell commands (nvm switch, env exports) saved on Desktop. */
+  scriptPrefixes: Record<string, string>;
+}
+
+/** Saved per-script overrides for one workspace: trailing args + leading command. */
+export interface PackageScriptOverrides {
+  args: Record<string, string>;
+  prefixes: Record<string, string>;
 }
 
 export interface SavePackageScriptArgsRequest {
   workspacePath: string;
   script: string;
-  args: string;
+  /** Trailing args. Omitted keeps the stored value; blank clears it. */
+  args?: string;
+  /** Leading shell command. Omitted keeps the stored value; blank clears it. */
+  prefix?: string;
+}
+
+export interface SavePackageScriptArgsResult {
+  workspacePath: string;
+  /** Full per-workspace args map after the write (key kept for Mobile compatibility). */
+  scriptArgs: Record<string, string>;
+  /** Full per-workspace leading-command map after the write. */
+  scriptPrefixes: Record<string, string>;
 }
 
 export interface RunPackageScriptRequest {
   workspacePath: string;
   script: string;
+  /** Ad-hoc trailing args; when blank/omitted the saved value is used. */
   args?: string;
+  /** Ad-hoc leading command; when blank/omitted the saved value is used. */
+  prefix?: string;
   threadId?: string;
 }
 
@@ -752,6 +774,8 @@ export type StartPackageScriptRequest = RunPackageScriptRequest;
 export interface StartPackageScriptResult {
   script: string;
   command: string[];
+  /** Human-readable run line (prefix + argv) for tabs / notifications. */
+  commandLabel: string;
   sessionId: string;
   taskId: string;
 }
@@ -761,6 +785,7 @@ export interface PackageScriptTerminalLaunchPayload {
   sessionId: string;
   script: string;
   command: string[];
+  commandLabel?: string;
   taskId?: string;
 }
 
@@ -2693,6 +2718,7 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
     (record.args === undefined || typeof record.args === "string") &&
+    (record.prefix === undefined || typeof record.prefix === "string") &&
     (record.threadId === undefined || typeof record.threadId === "string")
   );
 }
@@ -2705,7 +2731,8 @@ export function isSavePackageScriptArgsRequest(value: unknown): value is SavePac
   return (
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
-    typeof record.args === "string"
+    (record.args === undefined || typeof record.args === "string") &&
+    (record.prefix === undefined || typeof record.prefix === "string")
   );
 }
 
@@ -2721,6 +2748,7 @@ export function isPackageScriptTerminalLaunchPayload(
     typeof record.sessionId === "string" &&
     typeof record.script === "string" &&
     (record.taskId === undefined || typeof record.taskId === "string") &&
+    (record.commandLabel === undefined || typeof record.commandLabel === "string") &&
     Array.isArray(record.command) &&
     record.command.every((entry) => typeof entry === "string")
   );

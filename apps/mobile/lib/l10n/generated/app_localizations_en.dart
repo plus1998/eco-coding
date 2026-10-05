@@ -310,6 +310,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCancel => 'Cancel';
 
   @override
+  String get commonSave => 'Save';
+
+  @override
   String get commonClose => 'Close';
 
   @override
@@ -1898,6 +1901,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String threadExtraArgsValue(Object args) {
     return 'Extra arguments: $args';
   }
+
+  @override
+  String get threadCustomizeScript => 'Customize command';
+
+  @override
+  String get threadPrefixCommand => 'Leading command';
+
+  @override
+  String get threadPrefixCommandHint =>
+      'e.g. nvm use 20 && export NODE_ENV=production';
 
   @override
   String get threadRun => 'Run';

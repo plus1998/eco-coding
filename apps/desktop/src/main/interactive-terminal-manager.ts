@@ -52,6 +52,23 @@ function resolveInteractiveShell(): { executable: string; args: string[] } {
   return { executable: shell, args: [] };
 }
 
+/**
+ * argv that runs a one-line shell command in the user's login+interactive shell,
+ * so rc-file setup (nvm as a shell function, PATH, aliases) is available for
+ * `&&`-chained prefixes. Only used when a script has a leading command.
+ */
+export function buildShellCommandInvocation(line: string): string[] {
+  if (process.platform === "win32") {
+    const comspec = process.env.ComSpec?.trim() || "cmd.exe";
+    return [comspec, "/d", "/s", "/c", line];
+  }
+  const { executable, args } = resolveInteractiveShell();
+  if (args.includes("-l")) {
+    return [executable, "-l", "-i", "-c", line];
+  }
+  return [executable, "-c", line];
+}
+
 function resolvePtySize(size?: { cols: number; rows: number }): { cols: number; rows: number } {
   const cols = size?.cols;
   const rows = size?.rows;

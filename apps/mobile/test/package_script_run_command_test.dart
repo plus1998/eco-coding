@@ -16,4 +16,25 @@ void main() {
       'pnpm run test -- --watch',
     );
   });
+
+  test('formatRunCommand prefixes leading commands', () {
+    expect(
+      formatRunCommand('npm', 'dev', '--port 3000', 'nvm use 20'),
+      'nvm use 20 && npm run dev -- --port 3000',
+    );
+  });
+
+  test('formatRunCommand drops a trailing connector in the prefix', () {
+    expect(
+      formatRunCommand('bun', 'dev', null, 'nvm use 20 &&'),
+      'nvm use 20 && bun run dev',
+    );
+  });
+
+  test('formatRunCommand ignores blank prefixes', () {
+    expect(
+      formatRunCommand('bun', 'dev', '--watch', '   '),
+      'bun run dev --watch',
+    );
+  });
 }

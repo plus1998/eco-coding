@@ -1221,6 +1221,7 @@ function broadcastPackageScriptTerminalLaunch(payload: {
   sessionId: string;
   script: string;
   command: string[];
+  commandLabel?: string;
   taskId?: string;
 }): void {
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -4563,20 +4564,23 @@ function registerIpcHandlers(): void {
     }
     const trimmed = workspacePath.trim();
     const listing = await listPackageScripts(trimmed);
-    const scriptArgs = await packageScriptArgsStore.getWorkspaceArgs(trimmed);
-    return { ...listing, scriptArgs };
+    const overrides = await packageScriptArgsStore.getWorkspaceOverrides(trimmed);
+    return { ...listing, scriptArgs: overrides.args, scriptPrefixes: overrides.prefixes };
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspaceSavePackageScriptArgs, async (payload: unknown) => {
     if (!isSavePackageScriptArgsRequest(payload)) {
       throw new Error("Invalid save package script args request.");
     }
-    const scriptArgs = await packageScriptArgsStore.saveScriptArgs(
-      payload.workspacePath,
-      payload.script,
-      payload.args,
-    );
-    return { workspacePath: path.resolve(payload.workspacePath), scriptArgs };
+    const overrides = await packageScriptArgsStore.saveScriptOverrides(payload.workspacePath, payload.script, {
+      ...(payload.args !== undefined ? { args: payload.args } : {}),
+      ...(payload.prefix !== undefined ? { prefix: payload.prefix } : {}),
+    });
+    return {
+      workspacePath: path.resolve(payload.workspacePath),
+      scriptArgs: overrides.args,
+      scriptPrefixes: overrides.prefixes,
+    };
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspaceWatchPackageJson, async (workspacePath: unknown) => {
@@ -4591,7 +4595,8 @@ function registerIpcHandlers(): void {
     if (!isRunPackageScriptRequest(payload)) {
       throw new Error("Invalid start package script request.");
     }
-    const prepared = await preparePackageScriptRun(payload);
+    const saved = await packageScriptArgsStore.getWorkspaceOverrides(payload.workspacePath);
+    const prepared = await preparePackageScriptRun(payload, saved);
     const launched = runPreparedPackageScriptAsBackgroundTask(backgroundTerminalTaskRegistry, prepared, {
       ...(payload.threadId?.trim() && {
         threadId: payload.threadId.trim(),
@@ -4600,6 +4605,7 @@ function registerIpcHandlers(): void {
     const result = {
       script: launched.script,
       command: launched.command,
+      commandLabel: launched.commandLabel,
       sessionId: launched.sessionId,
       taskId: launched.taskId,
     };

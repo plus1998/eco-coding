@@ -1,3 +1,5 @@
+import type { PackageScriptOverrides } from "../shared/ipc";
+
 const LEGACY_STORAGE_KEY = "eco.package-script-args";
 
 export type PackageScriptArgsByWorkspace = Record<string, Record<string, string>>;
@@ -52,50 +54,53 @@ function clearLegacyWorkspaceArgs(workspacePath: string): void {
   window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(store));
 }
 
-async function migrateLegacyWorkspaceArgs(workspacePath: string): Promise<Record<string, string>> {
+/** localStorage only ever held trailing args; prefixes were never stored client-side. */
+async function migrateLegacyWorkspaceArgs(workspacePath: string): Promise<PackageScriptOverrides> {
   const legacy = readLegacyStore()[workspacePath];
   if (!legacy || Object.keys(legacy).length === 0 || !window.eco?.savePackageScriptArgs) {
-    return {};
+    return { args: {}, prefixes: {} };
   }
-  let merged: Record<string, string> = {};
+  let merged: PackageScriptOverrides = { args: {}, prefixes: {} };
   for (const [scriptName, args] of Object.entries(legacy)) {
     const result = await window.eco.savePackageScriptArgs({
       workspacePath,
       script: scriptName,
       args,
     });
-    merged = result.scriptArgs;
+    merged = { args: result.scriptArgs, prefixes: result.scriptPrefixes };
   }
   clearLegacyWorkspaceArgs(workspacePath);
   return merged;
 }
 
-export async function readWorkspaceScriptArgs(workspacePath: string): Promise<Record<string, string>> {
+export async function readWorkspaceScriptOverrides(workspacePath: string): Promise<PackageScriptOverrides> {
   if (!window.eco?.listPackageScripts) {
-    return { ...(readLegacyStore()[workspacePath] ?? {}) };
+    return { args: { ...(readLegacyStore()[workspacePath] ?? {}) }, prefixes: {} };
   }
   const listing = await window.eco.listPackageScripts(workspacePath);
-  const fromMain = listing.scriptArgs ?? {};
-  if (Object.keys(fromMain).length > 0) {
+  const args = listing.scriptArgs ?? {};
+  const prefixes = listing.scriptPrefixes ?? {};
+  if (Object.keys(args).length > 0 || Object.keys(prefixes).length > 0) {
     clearLegacyWorkspaceArgs(workspacePath);
-    return { ...fromMain };
+    return { args: { ...args }, prefixes: { ...prefixes } };
   }
   return migrateLegacyWorkspaceArgs(workspacePath);
 }
 
-export async function saveScriptArgs(
+export async function saveScriptOverrides(
   workspacePath: string,
   scriptName: string,
-  args: string,
-): Promise<Record<string, string>> {
+  patch: { args?: string; prefix?: string },
+): Promise<PackageScriptOverrides> {
   if (!window.eco?.savePackageScriptArgs) {
     throw new Error("Desktop API unavailable.");
   }
   const result = await window.eco.savePackageScriptArgs({
     workspacePath,
     script: scriptName,
-    args,
+    ...(patch.args !== undefined ? { args: patch.args } : {}),
+    ...(patch.prefix !== undefined ? { prefix: patch.prefix } : {}),
   });
   clearLegacyWorkspaceArgs(workspacePath);
-  return { ...result.scriptArgs };
+  return { args: { ...result.scriptArgs }, prefixes: { ...result.scriptPrefixes } };
 }

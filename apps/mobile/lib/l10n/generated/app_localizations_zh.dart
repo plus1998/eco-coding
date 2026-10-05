@@ -260,6 +260,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCancel => '取消';
 
   @override
+  String get commonSave => '保存';
+
+  @override
   String get commonClose => '关闭';
 
   @override
@@ -1807,6 +1810,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String threadExtraArgsValue(Object args) {
     return '附加参数：$args';
   }
+
+  @override
+  String get threadCustomizeScript => '自定义命令';
+
+  @override
+  String get threadPrefixCommand => '前置命令';
+
+  @override
+  String get threadPrefixCommandHint =>
+      '例如 nvm use 20 && export NODE_ENV=production';
 
   @override
   String get threadRun => '运行';

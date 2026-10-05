@@ -1204,6 +1204,47 @@ test("mergeDomainIntoPayload replaces only packageScriptArgs", async () => {
   expect(merged.git?.commitMessageInstructions).toBe("Keep local git");
 });
 
+test("packageScriptArgs domain carries prefixes as well as args", async () => {
+  const {
+    buildDomainSyncSummary,
+    domainPayloadEqual,
+    mergeDomainIntoPayload,
+    emptyEcoSyncedSettingsPayload,
+  } = await import("../src/main/supabase-settings-sync");
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    packageScriptArgs: { "/other/project": { build: "--verbose" } },
+    packageScriptPrefixes: { "/other/project": { build: "nvm use 20" } },
+  };
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    packageScriptArgs: { "/tmp/project": { dev: "--port 3000" } },
+    packageScriptPrefixes: { "/tmp/project": { dev: "nvm use 18" } },
+    git: {
+      commitMessageRoleByMainAgentConfigId: {},
+      commitMessageCandidateModelIdByMainAgentConfigId: {},
+      commitMessageInstructions: "Keep local git",
+    },
+  };
+
+  const merged = mergeDomainIntoPayload(local, remote, "packageScriptArgs");
+  expect(merged.packageScriptArgs).toEqual(remote.packageScriptArgs);
+  expect(merged.packageScriptPrefixes).toEqual(remote.packageScriptPrefixes);
+  expect(merged.git?.commitMessageInstructions).toBe("Keep local git");
+
+  // A prefix-only edit is a real domain change.
+  const localPrefixEdit = {
+    ...local,
+    packageScriptPrefixes: { "/tmp/project": { dev: "nvm use 22" } },
+  };
+  expect(domainPayloadEqual(local, localPrefixEdit, "packageScriptArgs")).toBe(false);
+  expect(domainPayloadEqual(local, local, "packageScriptArgs")).toBe(true);
+
+  expect(buildDomainSyncSummary(local, "packageScriptArgs")).toBe("1 · 2");
+  expect(buildDomainSyncSummary(emptyEcoSyncedSettingsPayload(), "packageScriptArgs")).toBe("");
+});
+
 test("mergeDomainIntoPayload replaces only user agent templates for agentLibrary", async () => {
   const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload, syncableAgentTemplates } = await import(
     "../src/main/supabase-settings-sync"

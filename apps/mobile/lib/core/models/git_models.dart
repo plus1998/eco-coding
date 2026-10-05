@@ -367,19 +367,10 @@ class PackageScriptsListResult {
     required this.scripts,
     this.packageName,
     this.scriptArgs = const {},
+    this.scriptPrefixes = const {},
   });
 
   factory PackageScriptsListResult.fromJson(Map<String, dynamic> json) {
-    final rawArgs = json['scriptArgs'];
-    final scriptArgs = <String, String>{};
-    if (rawArgs is Map) {
-      for (final entry in rawArgs.entries) {
-        final value = entry.value;
-        if (value is String && value.trim().isNotEmpty) {
-          scriptArgs[entry.key.toString()] = value.trim();
-        }
-      }
-    }
     return PackageScriptsListResult(
       workspacePath: json['workspacePath'] as String? ?? '',
       hasPackageJson: json['hasPackageJson'] as bool? ?? false,
@@ -391,7 +382,8 @@ class PackageScriptsListResult {
                 PackageScriptInfo.fromJson(entry as Map<String, dynamic>),
           )
           .toList(),
-      scriptArgs: scriptArgs,
+      scriptArgs: _readStringMap(json['scriptArgs']),
+      scriptPrefixes: _readStringMap(json['scriptPrefixes']),
     );
   }
 
@@ -401,6 +393,39 @@ class PackageScriptsListResult {
   final String packageManager;
   final List<PackageScriptInfo> scripts;
   final Map<String, String> scriptArgs;
+
+  /// Leading shell commands (nvm switch, env exports) per script name.
+  final Map<String, String> scriptPrefixes;
+}
+
+Map<String, String> _readStringMap(Object? raw) {
+  final values = <String, String>{};
+  if (raw is Map) {
+    for (final entry in raw.entries) {
+      final value = entry.value;
+      if (value is String && value.trim().isNotEmpty) {
+        values[entry.key.toString()] = value.trim();
+      }
+    }
+  }
+  return values;
+}
+
+/// Saved per-script overrides returned by the save RPC.
+class PackageScriptOverridesResult {
+  const PackageScriptOverridesResult({
+    required this.scriptArgs,
+    required this.scriptPrefixes,
+  });
+
+  factory PackageScriptOverridesResult.fromJson(Map<String, dynamic> json) =>
+      PackageScriptOverridesResult(
+        scriptArgs: _readStringMap(json['scriptArgs']),
+        scriptPrefixes: _readStringMap(json['scriptPrefixes']),
+      );
+
+  final Map<String, String> scriptArgs;
+  final Map<String, String> scriptPrefixes;
 }
 
 class StartPackageScriptResult {
@@ -409,6 +434,7 @@ class StartPackageScriptResult {
     required this.command,
     required this.sessionId,
     required this.taskId,
+    this.commandLabel = '',
   });
 
   factory StartPackageScriptResult.fromJson(Map<String, dynamic> json) =>
@@ -416,6 +442,7 @@ class StartPackageScriptResult {
         sessionId: json['sessionId'] as String? ?? '',
         taskId: json['taskId'] as String? ?? '',
         script: json['script'] as String? ?? '',
+        commandLabel: json['commandLabel'] as String? ?? '',
         command: (json['command'] as List<dynamic>? ?? [])
             .map((entry) => entry as String)
             .toList(),
@@ -425,6 +452,9 @@ class StartPackageScriptResult {
   final String taskId;
   final String script;
   final List<String> command;
+
+  /// Human-readable run line (leading command && argv); empty when unavailable.
+  final String commandLabel;
 }
 
 class BackgroundTerminalTask {

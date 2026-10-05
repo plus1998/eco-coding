@@ -126,6 +126,7 @@
     }
   },
   "commonCancel": "Cancel",
+  "commonSave": "Save",
   "commonClose": "Close",
   "commonRetry": "Retry",
   "commonSubmit": "Submit",
@@ -629,6 +630,9 @@
   "threadNpmScriptsNoMatches": "No matching scripts",
   "threadExtraArgs": "Extra arguments",
   "threadExtraArgsValue": "Extra arguments: {args}",
+  "threadCustomizeScript": "Customize command",
+  "threadPrefixCommand": "Leading command",
+  "threadPrefixCommandHint": "e.g. nvm use 20 && export NODE_ENV=production",
   "threadRun": "Run",
   "threadRunStarting": "Starting",
   "threadRunRunning": "Running",

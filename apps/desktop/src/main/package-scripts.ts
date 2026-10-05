@@ -3,16 +3,17 @@ import path from "node:path";
 import type {
   PackageManagerKind,
   PackageScriptInfo,
+  PackageScriptOverrides,
   PackageScriptsListResult,
   RunPackageScriptRequest,
 } from "../shared/ipc";
-import { buildRunCommand } from "../shared/package-script-run";
+import { buildRunCommand, joinPrefixedCommand, normalizeCommandPrefix } from "../shared/package-script-run";
 import type { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
-import type { InteractiveTerminalManager } from "./interactive-terminal-manager";
+import { buildShellCommandInvocation, type InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { buildShellCommandLine, resolveCommandExecutable } from "./resolve-command-executable";
 import { detectPackageManager } from "./workspace-inspect";
 
-export { buildRunCommand } from "../shared/package-script-run";
+export { buildRunCommand, joinPrefixedCommand } from "../shared/package-script-run";
 
 const PACKAGE_MANAGER_FIELD_RE = /^(npm|pnpm|yarn|bun)(?:(?:@|:)[\w.+-]*)?$/;
 
@@ -84,12 +85,32 @@ export async function listPackageScripts(workspacePath: string): Promise<Package
     packageManager,
     scripts,
     scriptArgs: {},
+    scriptPrefixes: {},
   };
+}
+
+/**
+ * Prefix + package-manager argv as one shell line. The prefix runs in the same
+ * shell, so `nvm use 20` / `export NODE_ENV=production` affect the script.
+ */
+export function buildPrefixedShellLine(prefix: string, command: readonly string[]): string {
+  return `${normalizeCommandPrefix(prefix)} && ${buildShellCommandLine([...command])}`;
+}
+
+export interface PreparedPackageScriptRun {
+  workspacePath: string;
+  script: string;
+  /** argv to spawn; wrapped in a login shell when a prefix is set. */
+  command: string[];
+  /** Human-readable run line (prefix && pm run script -- args). */
+  commandLabel: string;
+  prefix?: string;
 }
 
 export async function preparePackageScriptRun(
   request: RunPackageScriptRequest,
-): Promise<{ workspacePath: string; script: string; command: string[] }> {
+  saved?: PackageScriptOverrides,
+): Promise<PreparedPackageScriptRun> {
   const resolvedPath = path.resolve(request.workspacePath);
   const listing = await listPackageScripts(resolvedPath);
   const scriptName = request.script.trim();
@@ -98,18 +119,24 @@ export async function preparePackageScriptRun(
     throw new Error(`Unknown script: ${scriptName}`);
   }
 
-  const command = buildRunCommand(listing.packageManager, scriptName, request.args);
+  const args = request.args?.trim() || saved?.args?.[scriptName] || undefined;
+  const prefix = request.prefix?.trim() || saved?.prefixes?.[scriptName] || undefined;
+  const argv = buildRunCommand(listing.packageManager, scriptName, args);
+  const command = prefix ? buildShellCommandInvocation(buildPrefixedShellLine(prefix, argv)) : argv;
+
   return {
     workspacePath: resolvedPath,
     script: scriptName,
     command,
+    commandLabel: joinPrefixedCommand(prefix, argv),
+    ...(prefix && { prefix }),
   };
 }
 
 export function runPreparedPackageScriptInTerminal(
   manager: InteractiveTerminalManager,
-  prepared: { workspacePath: string; script: string; command: string[] },
-): { sessionId: string; script: string; command: string[] } {
+  prepared: PreparedPackageScriptRun,
+): { sessionId: string; script: string; command: string[]; commandLabel: string } {
   const executableName = prepared.command[0];
   if (!executableName) {
     throw new Error("Missing executable.");
@@ -120,14 +147,19 @@ export function runPreparedPackageScriptInTerminal(
       : [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
   const { sessionId } = manager.spawn(prepared.workspacePath);
   manager.write(sessionId, `${buildShellCommandLine(resolvedCommand)}\r`);
-  return { sessionId, script: prepared.script, command: resolvedCommand };
+  return {
+    sessionId,
+    script: prepared.script,
+    command: resolvedCommand,
+    commandLabel: prepared.commandLabel,
+  };
 }
 
 export function runPreparedPackageScriptAsBackgroundTask(
   registry: BackgroundTerminalTaskRegistry,
-  prepared: { workspacePath: string; script: string; command: string[] },
+  prepared: PreparedPackageScriptRun,
   options: { threadId?: string } = {},
-): { taskId: string; sessionId: string; script: string; command: string[] } {
+): { taskId: string; sessionId: string; script: string; command: string[]; commandLabel: string } {
   const executableName = prepared.command[0];
   if (!executableName) {
     throw new Error("Missing executable.");
@@ -139,7 +171,7 @@ export function runPreparedPackageScriptAsBackgroundTask(
   const task = registry.start({
     workspacePath: prepared.workspacePath,
     command: resolvedCommand,
-    label: `脚本 ${prepared.script}`,
+    label: prepared.commandLabel,
     ...(options.threadId?.trim() && { threadId: options.threadId.trim() }),
   });
   return {
@@ -147,5 +179,6 @@ export function runPreparedPackageScriptAsBackgroundTask(
     sessionId: task.sessionId,
     script: prepared.script,
     command: resolvedCommand,
+    commandLabel: prepared.commandLabel,
   };
 }

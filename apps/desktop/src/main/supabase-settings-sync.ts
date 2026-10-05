@@ -105,8 +105,10 @@ export interface EcoSyncedSettingsPayload {
   git?: EcoSyncedGitSettings;
   /** Personalization (global user rules). */
   personalization?: EcoSyncedPersonalizationSettings;
-  /** npm/bun/pnpm/yarn script extra args keyed by workspace path, then script name. */
+  /** npm/bun/pnpm/yarn script trailing args keyed by workspace path, then script name. */
   packageScriptArgs?: EcoSyncedPackageScriptArgs;
+  /** Leading shell commands (nvm switch, env exports) for the same workspace/script keys. */
+  packageScriptPrefixes?: EcoSyncedPackageScriptArgs;
   /** SSH bookmark metadata (passwords/keys synced via user_secrets). */
   sshBookmarks?: EcoSyncedSshBookmark[];
 }
@@ -248,6 +250,10 @@ export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSe
       (Boolean(record.packageScriptArgs) &&
         typeof record.packageScriptArgs === "object" &&
         !Array.isArray(record.packageScriptArgs))) &&
+    (record.packageScriptPrefixes === undefined ||
+      (Boolean(record.packageScriptPrefixes) &&
+        typeof record.packageScriptPrefixes === "object" &&
+        !Array.isArray(record.packageScriptPrefixes))) &&
     (record.sshBookmarks === undefined || Array.isArray(record.sshBookmarks))
   );
 }
@@ -426,6 +432,9 @@ export function normalizeEcoSyncedSettingsPayload(
     ...(payload.git !== undefined ? { git: payload.git } : {}),
     ...(payload.personalization !== undefined ? { personalization: payload.personalization } : {}),
     ...(payload.packageScriptArgs !== undefined ? { packageScriptArgs: payload.packageScriptArgs } : {}),
+    ...(payload.packageScriptPrefixes !== undefined
+      ? { packageScriptPrefixes: payload.packageScriptPrefixes }
+      : {}),
     sshBookmarks: payload.sshBookmarks ?? [],
   };
 }
@@ -900,7 +909,10 @@ export function extractDomainPayloadSlice(
     case "personalization":
       return normalized.personalization ?? {};
     case "packageScriptArgs":
-      return normalized.packageScriptArgs ?? {};
+      return {
+        args: normalized.packageScriptArgs ?? {},
+        prefixes: normalized.packageScriptPrefixes ?? {},
+      };
     case "sshBookmarks":
       return normalized.sshBookmarks ?? [];
   }
@@ -970,6 +982,9 @@ export function mergeDomainIntoPayload(
         ...normalizedBase,
         ...(normalizedSource.packageScriptArgs !== undefined
           ? { packageScriptArgs: normalizedSource.packageScriptArgs }
+          : {}),
+        ...(normalizedSource.packageScriptPrefixes !== undefined
+          ? { packageScriptPrefixes: normalizedSource.packageScriptPrefixes }
           : {}),
       };
     case "sshBookmarks":
@@ -1101,12 +1116,18 @@ export function canonicalizeDomainPayloadSlice(domain: EcoSettingsSyncDomain, sl
     case "personalization":
       return normalizePersonalizationSettingsSnapshot(slice);
     case "packageScriptArgs": {
-      const record = slice as Record<string, Record<string, string>>;
-      const sorted: Record<string, Record<string, string>> = {};
-      for (const workspacePath of Object.keys(record).sort((left, right) => left.localeCompare(right))) {
-        sorted[workspacePath] = sortRecordKeys(record[workspacePath] ?? {});
-      }
-      return sorted;
+      const record = slice as { args?: Record<string, Record<string, string>>; prefixes?: Record<string, Record<string, string>> };
+      const sortWorkspaces = (record: Record<string, Record<string, string>> | undefined) => {
+        const sorted: Record<string, Record<string, string>> = {};
+        for (const workspacePath of Object.keys(record ?? {}).sort((left, right) => left.localeCompare(right))) {
+          sorted[workspacePath] = sortRecordKeys(record?.[workspacePath] ?? {});
+        }
+        return sorted;
+      };
+      return {
+        args: sortWorkspaces(record.args),
+        prefixes: sortWorkspaces(record.prefixes),
+      };
     }
     case "sshBookmarks": {
       const record = slice as { bookmarks?: EcoSyncedSshBookmark[] } | EcoSyncedSshBookmark[];
@@ -1165,8 +1186,10 @@ function isDomainSliceEmpty(domain: EcoSettingsSyncDomain, slice: unknown): bool
       return isGitSyncSliceEmpty(slice);
     case "personalization":
       return !(normalizePersonalizationSettingsSnapshot(slice).globalRules ?? "").trim();
-    case "packageScriptArgs":
-      return Object.keys(slice as Record<string, unknown>).length === 0;
+    case "packageScriptArgs": {
+      const record = slice as { args?: Record<string, unknown>; prefixes?: Record<string, unknown> };
+      return Object.keys(record.args ?? {}).length === 0 && Object.keys(record.prefixes ?? {}).length === 0;
+    }
     case "sshBookmarks":
       return ((slice as EcoSyncedSshBookmark[]).length ?? 0) === 0;
   }
@@ -1263,15 +1286,18 @@ export function buildDomainSyncSummary(
       return parts.join(" · ");
     }
     case "packageScriptArgs": {
-      const store = normalized.packageScriptArgs ?? {};
-      const workspaceCount = Object.keys(store).length;
+      const argsByWorkspace = normalized.packageScriptArgs ?? {};
+      const prefixesByWorkspace = normalized.packageScriptPrefixes ?? {};
+      const workspaceCount = new Set([
+        ...Object.keys(argsByWorkspace),
+        ...Object.keys(prefixesByWorkspace),
+      ]).size;
       if (workspaceCount === 0) {
         return "";
       }
-      const scriptCount = Object.values(store).reduce(
-        (total, scripts) => total + Object.keys(scripts).length,
-        0,
-      );
+      const scriptCount =
+        Object.values(argsByWorkspace).reduce((total, scripts) => total + Object.keys(scripts).length, 0) +
+        Object.values(prefixesByWorkspace).reduce((total, scripts) => total + Object.keys(scripts).length, 0);
       return `${workspaceCount} · ${scriptCount}`;
     }
     case "sshBookmarks": {

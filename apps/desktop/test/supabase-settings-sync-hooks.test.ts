@@ -126,3 +126,59 @@ test.skipIf(!sqliteAvailable)(
     ).toThrow("Cloud provider proxy secret references missing provider: missing");
   },
 );
+
+test.skipIf(!sqliteAvailable)(
+  "desktop sync hooks carry package script args and prefixes",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-script-overrides-sync-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const codec = createLocalSecretCodec();
+    const packageScriptArgsStore = createPackageScriptArgsStore(path.join(dir, "package-script-args.json"));
+    const hooks = createDesktopSettingsSyncHooks({
+      providerStore: await createProviderStore(dbPath),
+      asrSettingsStore: await createAsrSettingsStore(dbPath),
+      imageGenerationStore: await createImageGenerationStore(dbPath),
+      workflowSettingsStore: await createWorkflowSettingsStore(dbPath),
+      agentOrchestrationStore: await createAgentOrchestrationStore(dbPath),
+      proxyBridgeSettingsStore: await createProxyBridgeSettingsStore(dbPath),
+      integratedWebSearchSettingsStore: await createIntegratedWebSearchSettingsStore(dbPath, codec),
+      gitSettingsStore: await createGitSettingsStore(dbPath),
+      personalizationSettingsStore: await createPersonalizationSettingsStore(dbPath),
+      packageScriptArgsStore,
+      sshBookmarkStore: await createSshBookmarkStore(dbPath, codec),
+    });
+
+    const workspace = path.join(dir, "repo");
+    await packageScriptArgsStore.saveScriptOverrides(workspace, "dev", {
+      args: "--port 3000",
+      prefix: "nvm use 20",
+    });
+    await packageScriptArgsStore.warmCache();
+
+    const payload = hooks.collectSettingsPayload();
+    expect(payload.packageScriptArgs).toEqual({ [workspace]: { dev: "--port 3000" } });
+    expect(payload.packageScriptPrefixes).toEqual({ [workspace]: { dev: "nvm use 20" } });
+
+    // Cloud snapshot from an older app version: args only, local prefixes survive.
+    await packageScriptArgsStore.saveScriptOverrides(workspace, "dev", { args: "--port 4000" });
+    await hooks.applySettingsPayload({
+      ...payload,
+      packageScriptPrefixes: undefined,
+    });
+    expect(await packageScriptArgsStore.getWorkspaceOverrides(workspace)).toEqual({
+      args: { dev: "--port 3000" },
+      prefixes: { dev: "nvm use 20" },
+    });
+
+    // Full snapshot replaces both maps.
+    await hooks.applySettingsPayload({
+      ...payload,
+      packageScriptArgs: { [workspace]: { build: "--verbose" } },
+      packageScriptPrefixes: { [workspace]: { build: "nvm use 18" } },
+    });
+    expect(await packageScriptArgsStore.getWorkspaceOverrides(workspace)).toEqual({
+      args: { build: "--verbose" },
+      prefixes: { build: "nvm use 18" },
+    });
+  },
+);
