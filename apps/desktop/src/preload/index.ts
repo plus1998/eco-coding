@@ -13,6 +13,7 @@
 } from "@eco/shared";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopUpdateState } from "../shared/desktop-update";
+import type { SupabaseDeploymentConnection, SupabaseDeploymentSnapshot } from "../shared/supabase-deployment";
 import {
   type AgentTemplate,
   type AgentTemplateExportRequest,
@@ -1096,6 +1097,29 @@ const api = {
     settings: IntegratedWebSearchSettingsSaveInput,
   ): Promise<IntegratedWebSearchSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.integratedWebSearchSettingsSave, settings);
+  },
+  getSupabaseDeployment(): Promise<SupabaseDeploymentSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.supabaseDeploymentGet);
+  },
+  authorizeSupabaseDeployment(token: string): Promise<SupabaseDeploymentSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.supabaseDeploymentAuthorize, token);
+  },
+  forgetSupabaseDeployment(): Promise<SupabaseDeploymentSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.supabaseDeploymentForget);
+  },
+  inspectSupabaseDeployment(projectRef: string): Promise<SupabaseDeploymentSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.supabaseDeploymentInspect, projectRef);
+  },
+  runSupabaseDeployment(projectRef: string): Promise<SupabaseDeploymentSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.supabaseDeploymentRun, projectRef);
+  },
+  getSupabaseDeploymentConnection(projectRef: string): Promise<SupabaseDeploymentConnection> {
+    return ipcRenderer.invoke(IPC_CHANNELS.supabaseDeploymentConnection, projectRef);
+  },
+  onSupabaseDeploymentChanged(callback: (snapshot: SupabaseDeploymentSnapshot) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: SupabaseDeploymentSnapshot) => callback(payload);
+    ipcRenderer.on(IPC_CHANNELS.supabaseDeploymentChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.supabaseDeploymentChanged, listener);
   },
   getCenterServerSettings(): Promise<CenterServerSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerSettingsGet);

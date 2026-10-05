@@ -23,8 +23,45 @@ Agent 请遵循 [`.agents/skills/eco-supabase/SKILL.md`](../.agents/skills/eco-s
 
 ## 前置
 
-- Node.js 20+（`npx supabase` / 本仓库脚本）
+- 桌面一键部署：Supabase Cloud 账号、已创建的项目和账号 Personal Access Token。
+- 命令行部署：Node.js 20+（`npx supabase` / 本仓库脚本）
 - Cloud：Supabase 账号；自托管：Docker 主机（见自托管文档资源建议）
+
+---
+
+## 桌面一键部署／更新（仅官方 Cloud）
+
+1. 打开 Eco **设置 → 互联 → 部署** TAB 中的 **Supabase Cloud 部署**。“当前互联” TAB 展示现有连接、同步与设备状态。
+2. 在 [Supabase 账号页面](https://supabase.com/dashboard/account/tokens) 获取 Personal Access Token，填入并授权获取项目。此令牌只保留在主进程内存中，退出应用或点击「清除授权」后失效，不写入客户端连接配置或配置同步。
+3. 选择已创建且状态正常的 Cloud 项目。应用自动检查线上迁移历史、后端发布记录、各函数的版本／状态以及必要的 Auth 和 Realtime 配置。
+4. 按识别结果点击 **一键部署** 或 **一键更新**。线上后端与部署包一致时无需再部署；线上后端、数据库或接口版本更高时禁止旧部署包覆盖。若接口版本兼容且线上状态验证通过，仍可直接连接；需要部署时先升级 Eco 获取匹配的部署包。
+5. 完成后点击 **使用此项目连接**，自动填入 Project URL 和 anon key，再注册／登录 Eco 账号。首次使用仍需在 Supabase Dashboard 创建 Cloud 项目。
+
+此入口使用 [Supabase Management API](https://supabase.com/docs/reference/api/introduction)，无需安装 CLI、Node.js 或 Docker，也无需输入数据库密码。账号／令牌需要具有目标项目的数据库、Edge Functions、Auth、Realtime 配置及读取 API Keys 的权限；缺少权限会显示具体失败信息。
+
+更新只追加缺少的 SQL 迁移，迁移与对应的 `supabase_migrations.schema_migrations` 记录在同一事务提交，兼容后续 CLI `db push`。函数按 `config.toml` 中的 JWT 验证配置发布。部署还会启用邮箱注册、追加邮箱确认回跳地址，并开启 Realtime 私有通道；保留已有回跳地址及邮件确认要求。
+
+全部迁移、函数和配置检查成功后，才写入 `public.eco_deployment_version` 的独立后端版本、接口版本、数据库版本、资源指纹、函数版本，以及部署来源的桌面版本。桌面版本仅用于追踪，不参与更新判断或接口兼容判断。旧版 CLI 安装没有发布记录、或旧桌面部署记录只含桌面版本时，会显示已知数据库版本并提示后端版本未记录；更新验证成功后建立独立后端记录。部分失败会显示步骤和错误，重试时跳过已成功提交的 SQL 迁移。检查失败或迁移历史不一致不会被当成未部署。
+
+### 后端版本维护
+
+`supabase/deployment.json` 是后端部署包的版本来源：
+
+```json
+{
+  "backendVersion": "1.0.0",
+  "apiVersion": 1
+}
+```
+
+- `backendVersion` 使用独立 SemVer。修改后端函数、迁移或部署配置时发布新的后端版本；只修改桌面 UI 或桌面版本时无需修改它。
+- `apiVersion` 标记 Eco 后端的接口契约。兼容的功能更新保持不变；破坏接口兼容的变更需要递增，并同步修改客户端支持的接口版本。它与会话协议、数据库迁移时间戳及桌面版本分别维护。
+- 部署包指纹包含这份清单、SQL、函数内容和 JWT 配置，不包含桌面版本。即使版本号相同，实际资源或线上配置差异也会被检测出来。
+- 已发布迁移只能追加，不能修改。旧记录的桌面版本通过追加迁移保留为 `deployed_by_desktop_version`；缺少或无效的版本清单、部分缺失的线上版本字段都会明确报错。
+
+命令行部署仍按迁移与函数发布流程执行，不会写入未经桌面部署器完整验证的后端版本记录。
+
+此入口只支持官方 Supabase Cloud。下面的命令行及自托管流程仍可单独使用。
 
 ---
 

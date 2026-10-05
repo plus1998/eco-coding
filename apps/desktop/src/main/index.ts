@@ -825,6 +825,8 @@ import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconciliation.js";
 import { SupabaseCenterDesktopClient } from "./supabase-center-client";
+import { SupabaseCloudDeployment } from "./supabase-cloud-deployment";
+import { readSupabaseDeploymentBundle } from "./supabase-deployment-bundle";
 import { createDesktopSettingsSyncHooks } from "./supabase-settings-sync-hooks";
 import { SystemSleepBlocker } from "./system-sleep-blocker";
 import { resolveThreadApprovePlanRoute } from "./thread-approve-plan-route";
@@ -7560,6 +7562,24 @@ function registerIpcHandlers(): void {
     emitSettingsUpdated();
     return { ok: true };
   });
+
+  const supabaseDeployment = new SupabaseCloudDeployment({
+    loadBundle: () => readSupabaseDeploymentBundle(
+      app.isPackaged ? path.join(process.resourcesPath, "supabase") : path.resolve(app.getAppPath(), "../../supabase"),
+      app.getVersion(),
+    ),
+    onChange: (snapshot) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.supabaseDeploymentChanged, snapshot);
+      }
+    },
+  });
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentGet, async () => supabaseDeployment.getSnapshot());
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentAuthorize, async (token: unknown) => supabaseDeployment.authorize(token));
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentForget, async () => supabaseDeployment.forgetAuthorization());
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentInspect, async (ref: unknown) => supabaseDeployment.inspect(ref));
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentRun, async (ref: unknown) => supabaseDeployment.deploy(ref));
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentConnection, async (ref: unknown) => supabaseDeployment.getConnection(ref));
 
   registerDesktopCommand(IPC_CHANNELS.centerServerSettingsGet, async () => centerServerClient.getSnapshot());
 

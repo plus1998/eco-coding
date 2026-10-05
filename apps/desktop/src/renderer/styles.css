@@ -30437,6 +30437,733 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   cursor: not-allowed;
 }
 
+.cs-cloud {
+  --cloud-accent: #087c52;
+  --cloud-button-text: #ffffff;
+  --cloud-surface: var(--card-surface-bg);
+  --cloud-tint: color-mix(in srgb, var(--cloud-accent) 6%, var(--cloud-surface));
+  --cloud-line: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  container-type: inline-size;
+  margin: 0 0 24px;
+  border-color: var(--cloud-line);
+  border-radius: 16px;
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+
+[data-theme="dark"] .cs-cloud {
+  --cloud-accent: #72e2b3;
+  --cloud-button-text: #10392a;
+}
+
+.cs-cloud-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 22px 18px;
+}
+
+.cs-cloud-brand {
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  width: 38px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--cloud-accent) 14%, transparent);
+  border-radius: 11px;
+  background: var(--cloud-tint);
+  color: var(--cloud-accent);
+}
+
+.cs-cloud-brand svg {
+  width: 25px;
+  height: 25px;
+}
+
+.cs-cloud-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.cs-cloud-heading h2 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+}
+
+.cs-cloud-heading p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cs-cloud-authorized {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: var(--cloud-accent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cs-cloud-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 22px 20px;
+}
+
+.cs-cloud-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cs-cloud-field-heading .cs-field-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.cs-cloud-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.cs-cloud-link:hover:not(:disabled) {
+  color: var(--cloud-accent);
+}
+
+.cs-cloud-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs-cloud :is(button, a, summary):focus-visible {
+  outline: 2px solid var(--cloud-accent);
+  outline-offset: 3px;
+}
+
+.cs-cloud-input-wrap {
+  position: relative;
+}
+
+.cs-cloud-input-wrap > svg:first-child {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.cs-cloud .cs-cloud-input {
+  min-height: 44px;
+  padding-inline: 39px 39px;
+  border-color: var(--cloud-line);
+  border-radius: 10px;
+  background: var(--bg-input);
+  font-size: 13px;
+}
+
+.cs-cloud .cs-cloud-input:focus {
+  border-color: var(--cloud-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cloud-accent) 10%, transparent);
+}
+
+.cs-cloud-input::placeholder {
+  color: var(--text-muted);
+}
+
+.cs-cloud-select {
+  appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.cs-cloud-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.cs-cloud-reveal {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.cs-cloud-reveal:hover:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+}
+
+.cs-cloud-project-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.cs-cloud-project-meta .cs-cloud-link {
+  font-family: var(--font-sans);
+  font-size: 10px;
+}
+
+.cs-cloud-status-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.cs-cloud-status-row p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cs-cloud-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--nav-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.cs-cloud-status--update {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.cs-cloud-status--current,
+.cs-cloud-status--compatible,
+.cs-cloud-status--running {
+  background: var(--cloud-tint);
+  color: var(--cloud-accent);
+}
+
+.cs-cloud-status--newer {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+.cs-cloud-status-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cs-cloud-versions {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--cloud-line);
+  border-radius: 11px;
+}
+
+.cs-cloud-version {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 15px 17px;
+}
+
+.cs-cloud-version--target {
+  border-left: 1px solid var(--cloud-line);
+  background: var(--cloud-tint);
+}
+
+.cs-cloud-version-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.cs-cloud-version strong {
+  color: var(--text-heading);
+  font-size: 17px;
+  font-weight: 550;
+  line-height: 1.4;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.cs-cloud-version .is-release {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.cs-cloud-version-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cs-cloud-version-arrow {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border: 1px solid var(--cloud-line);
+  border-radius: 50%;
+  background: var(--cloud-surface);
+  color: var(--cloud-accent);
+  transform: translate(-50%, -50%);
+}
+
+.cs-cloud-version-arrow.is-blocked {
+  color: var(--danger);
+}
+
+.cs-cloud-hint {
+  margin: -8px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.cs-cloud-details {
+  margin-top: 10px;
+}
+
+.cs-cloud-details summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0 0;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  list-style: none;
+  cursor: pointer;
+}
+
+.cs-cloud-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.cs-cloud-details summary > svg {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.cs-cloud-details[open] summary > svg {
+  transform: rotate(90deg);
+}
+
+.cs-cloud-details-meta {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.cs-cloud-details-body {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--cloud-line);
+}
+
+.cs-cloud-technical {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cs-cloud-technical > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.cs-cloud-technical dt {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.cs-cloud-technical dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.cs-cloud-config-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.cs-cloud-config-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.cs-cloud-resource-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cs-cloud-resource-title > span {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.cs-cloud-functions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cs-cloud-functions li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cs-cloud-functions li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.cs-cloud-function-name {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.cs-cloud-function-state {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.cs-cloud-function-state.is-active .cs-cloud-status-dot {
+  color: var(--cloud-accent);
+}
+
+.cs-cloud-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--cloud-line);
+  background: color-mix(in srgb, var(--text-primary) 1.5%, var(--cloud-surface));
+}
+
+.cs-cloud .cs-cloud-primary {
+  min-height: 35px;
+  margin-left: auto;
+  padding: 9px 13px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--cloud-accent);
+  color: var(--cloud-button-text);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cs-cloud .cs-cloud-primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--cloud-accent) 90%, var(--text-primary));
+}
+
+.cs-cloud-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 15%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 4%, var(--cloud-surface));
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.cs-cloud-error > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.cs-cloud-error > div {
+  min-width: 0;
+}
+
+.cs-cloud-error strong {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.cs-cloud-error p {
+  max-height: 130px;
+  margin: 3px 0 0;
+  overflow: auto;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.cs-cloud-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 104px;
+  padding: 22px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.cs-cloud-empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.cs-cloud-empty p {
+  margin: 0;
+  max-width: 300px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.cs-cloud-progress {
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--cloud-accent) 16%, transparent);
+  border-radius: 9px;
+  background: var(--cloud-tint);
+}
+
+.cs-cloud-progress-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--cloud-accent);
+  font-size: 12px;
+}
+
+.cs-cloud-progress-heading strong {
+  font-weight: 500;
+}
+
+.cs-cloud-progress-heading > span {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.cs-cloud-progress-item {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.cs-cloud-success {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--cloud-accent);
+  font-size: 11px;
+}
+
+.cs-cloud-progress progress {
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--cloud-accent) 12%, transparent);
+  appearance: none;
+  accent-color: var(--cloud-accent);
+}
+
+.cs-cloud-progress progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--cloud-accent) 12%, transparent);
+}
+
+.cs-cloud-progress progress::-webkit-progress-value {
+  border-radius: 4px;
+  background: var(--cloud-accent);
+  transition: width 0.2s ease;
+}
+
+.cs-cloud .spin {
+  animation: eco-spin 0.8s linear infinite;
+}
+
+@container (max-width: 440px) {
+  .cs-cloud-header {
+    flex-wrap: wrap;
+    gap: 9px;
+    padding: 18px 16px 16px;
+  }
+
+  .cs-cloud-authorized {
+    display: none;
+  }
+
+  .cs-cloud-content {
+    padding-inline: 16px;
+  }
+
+  .cs-cloud-status-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .cs-cloud-version {
+    padding: 13px 12px;
+  }
+
+  .cs-cloud-version .is-release {
+    font-size: 13px;
+  }
+
+  .cs-cloud-details summary {
+    flex-wrap: wrap;
+  }
+
+  .cs-cloud-details-meta {
+    flex-basis: 100%;
+    margin-left: 17px;
+    text-align: left;
+  }
+
+  .cs-cloud-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 10px;
+    padding-inline: 16px;
+  }
+
+  .cs-cloud-footer > .cs-cloud-link {
+    align-self: center;
+  }
+
+  .cs-cloud .cs-cloud-primary {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-cloud *,
+  .cs-cloud *::before,
+  .cs-cloud *::after {
+    transition: none;
+  }
+
+  .cs-cloud .spin {
+    animation: none;
+  }
+}
+
 .cs-form {
   display: flex;
   flex-direction: column;
@@ -31171,6 +31898,28 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 .cs-tab:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.cs-section-tabs {
+  margin-bottom: 24px;
+}
+
+.cs-section-tabs .cs-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 100px;
+  min-height: 34px;
+}
+
+.cs-section-tabs .cs-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cs-section-panel[hidden] {
+  display: none;
 }
 
 .cs-spin {

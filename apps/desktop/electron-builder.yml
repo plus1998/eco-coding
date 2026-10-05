@@ -33,6 +33,14 @@ asarUnpack:
 
 # Platform agent-browser native binary for CDP-driven Agent tools.
 extraResources:
+  - from: ../../supabase/
+    to: supabase
+    filter:
+      - config.toml
+      - deployment.json
+      - migrations/*.sql
+      - functions/**/*.ts
+      - functions/**/*.json
   - from: packaging/agent-browser/
     to: agent-browser
     filter:
