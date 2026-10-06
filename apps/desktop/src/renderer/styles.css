@@ -6725,6 +6725,27 @@ button.sidebar-settings-meta {
   text-overflow: ellipsis;
 }
 
+.clarification-answer-card--user {
+  margin: 0;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.clarification-answer-card--user .clarification-answer-rows {
+  gap: 12px;
+}
+
+.clarification-answer-card--user .clarification-answer-question,
+.clarification-answer-card--user .clarification-answer-answer {
+  font-size: inherit;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .clarification-top {
   display: flex;
   align-items: flex-start;

@@ -72,6 +72,10 @@ import {
   CONVERSATION_RUNTIME_EVENT_FAILURE_TITLE,
 } from "../shared/conversation-runtime-event-failure";
 import {
+  formatCodexAsyncQuestionReplySummary,
+  parseCodexAsyncQuestionReplyText,
+} from "../shared/codex-async-questions";
+import {
   type ActionGroupBucket,
   type ActionKindPayload,
   formatActionLine,
@@ -5309,6 +5313,8 @@ function UserPromptBlock({
   onRewriteUserMessage?: RewriteUserMessageHandler;
   allowUserMessageRewrite?: boolean;
 }) {
+  const asyncQuestionReplies = useMemo(() => parseCodexAsyncQuestionReplyText(text), [text]);
+  const copyText = asyncQuestionReplies ? formatCodexAsyncQuestionReplySummary(asyncQuestionReplies) : text;
   const bodyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editRequestRef = useRef(0);
@@ -5726,7 +5732,11 @@ function UserPromptBlock({
                 ref={bodyRef}
                 className={["run-log-user-prompt-body", expanded ? "expanded" : "collapsed"].join(" ")}
               >
-                <UserPromptBodyContent text={text} />
+                {asyncQuestionReplies ? (
+                  <ClarificationAnswersCard rows={asyncQuestionReplies} variant="user" />
+                ) : (
+                  <UserPromptBodyContent text={text} />
+                )}
               </div>
               {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
             </div>
@@ -5747,7 +5757,7 @@ function UserPromptBlock({
           延迟挂载 meta 的策略只针对 agent 侧流式输出（turn final summary）。 */}
       <RunLogMessageMeta
         align="end"
-        copyText={text}
+        copyText={copyText}
         {...(createdAt ? { createdAt } : {})}
         {...(allowUserMessageRewrite &&
           onRestorePrompt &&
@@ -5803,10 +5813,16 @@ function parseClarificationAnswersSummary(text: string): Array<{ question: strin
   return rows;
 }
 
-function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; answer: string }> }) {
+function ClarificationAnswersCard({
+  rows,
+  variant,
+}: {
+  rows: Array<{ question: string; answer: string }>;
+  variant?: "user";
+}) {
   return (
     <div
-      className="clarification-answer-card"
+      className={`clarification-answer-card${variant === "user" ? " clarification-answer-card--user" : ""}`}
       role="group"
       aria-label={i18n.t("activity.clarificationAnswer")}
     >

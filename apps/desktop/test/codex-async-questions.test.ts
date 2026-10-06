@@ -5,18 +5,50 @@ import {
   buildCodexAsyncQuestionReplies,
   buildCodexAsyncQuestionReplyText,
   codexAsyncQuestionDedupeKey,
+  formatCodexAsyncQuestionReplySummary,
   hasCodexAsyncQuestions,
   mapCodexAsyncQuestionsToClarification,
+  parseCodexAsyncQuestionReplyText,
   resolveCodexAsyncQuestionRefs,
 } from "../src/shared/codex-async-questions";
 
+test("reply display decodes complete envelopes without losing multiline answers or punctuation", () => {
+  const replies = [
+    {
+      questionItemId: buildCodexAsyncQuestionItemId("item-1", 0),
+      question: "库？；版本 →",
+      answer: 'bun\n保留 <xml> & 引号"',
+    },
+    { questionItemId: buildCodexAsyncQuestionItemId("item-1", 1), question: "时间？", answer: "下周" },
+  ];
+  const text = buildCodexAsyncQuestionReplyText(replies);
+  expect(parseCodexAsyncQuestionReplyText(`\n${text}\n`)).toEqual(replies);
+  expect(formatCodexAsyncQuestionReplySummary(replies)).toBe(
+    '库？；版本 → → bun\n保留 <xml> & 引号"\n时间？ → 下周',
+  );
+  expect(formatCodexAsyncQuestionReplySummary(replies)).not.toContain("questionItemId");
+});
+
+test("reply display does not reinterpret partial, embedded or malformed protocol examples", () => {
+  const valid = buildCodexAsyncQuestionReplyText([
+    { questionItemId: "q1", question: "问题", answer: "回答" },
+  ]);
+  for (const text of [
+    "普通消息",
+    `请看示例：${valid}`,
+    `${valid}\n请解释`,
+    valid.slice(0, -1),
+    "<send_user_message_question_reply>bad JSON</send_user_message_question_reply>",
+    buildCodexAsyncQuestionReplyText([]),
+    '<send_user_message_question_reply>[{"questionItemId":"q1","question":"问题","answer":42}]</send_user_message_question_reply>',
+    '<send_user_message_question_reply>[{"questionItemId":"q1","question":"问题","answer":"回答"},null]</send_user_message_question_reply>',
+  ])
+    expect(parseCodexAsyncQuestionReplyText(text)).toBeUndefined();
+});
+
 test("questionItemId matches the upstream [tool, itemId, index] encoding", () => {
-  expect(buildCodexAsyncQuestionItemId("item-1", 0)).toBe(
-    '["request_user_input_async","item-1",0]',
-  );
-  expect(buildCodexAsyncQuestionItemId("item-1", 2)).toBe(
-    '["request_user_input_async","item-1",2]',
-  );
+  expect(buildCodexAsyncQuestionItemId("item-1", 0)).toBe('["request_user_input_async","item-1",0]');
+  expect(buildCodexAsyncQuestionItemId("item-1", 2)).toBe('["request_user_input_async","item-1",2]');
 });
 
 test("options are suggestions: free text stays allowed and empty option lists drop out", () => {
@@ -90,9 +122,7 @@ test("empty answers are omitted instead of being sent as blank replies", () => {
       refs: refs.refs,
       answers: { toolUseId: "item-1", selections: [["   "], ["答案"]] },
     }),
-  ).toEqual([
-    { questionItemId: '["request_user_input_async","item-1",1]', question: "b", answer: "答案" },
-  ]);
+  ).toEqual([{ questionItemId: '["request_user_input_async","item-1",1]', question: "b", answer: "答案" }]);
 });
 
 test("the dedupe key separates thread, turn and message", () => {

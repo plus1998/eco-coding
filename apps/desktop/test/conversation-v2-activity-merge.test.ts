@@ -13,6 +13,7 @@ import { appendLegacyThreadRunEventToConversationV2 } from "../src/main/conversa
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import {
   ActivityLogView,
+  ConversationV2ProjectionActivityLogView,
   buildConversationV2OnlyProjection,
   mergeConversationV2IntoProjection,
   mergeConversationV2MessagesIntoProjection,
@@ -29,6 +30,7 @@ import {
   isRetryableRequestFailureItem,
 } from "../src/renderer/request-failure-retry";
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
+import { buildCodexAsyncQuestionReplyText } from "../src/shared/codex-async-questions";
 
 function message(messageId: string, createdSeq: number): ConversationMessage {
   return {
@@ -223,6 +225,30 @@ test("renders the follow-up after its accepted message is finalized", () => {
   const merged = mergeConversationV2MessagesIntoProjection(projection([]), v2State([finalized]));
 
   expect(merged.timeline.map((item) => item.text)).toEqual(["same prompt"]);
+});
+
+test("native history and V2 async answer messages render answer cards without showing the wire envelope", () => {
+  const wireText = buildCodexAsyncQuestionReplyText([
+    { questionItemId: "q1", question: "处理方式？", answer: "保留记录\n保留 <原始内容> & 换行" },
+    { questionItemId: "q2", question: "何时执行？", answer: "下周" },
+  ]);
+  const state = v2State([{ ...message("async-answer", 1), body: wireText }]);
+  const native = projection([{ ...legacyUserItem("sdk:async-answer", 1), text: wireText }]);
+  for (const element of [
+    createElement(ActivityLogView, { conversationV2: state }),
+    createElement(ConversationV2ProjectionActivityLogView, { projection: native }),
+  ]) {
+    const html = renderToStaticMarkup(element);
+    expect(html).toContain("clarification-answer-card--user");
+    expect(html).toContain("处理方式？");
+    expect(html).toContain("保留记录\n保留 &lt;原始内容&gt; &amp; 换行");
+    expect(html).toContain("何时执行？");
+    expect(html).toContain("下周");
+    expect(html).not.toContain("send_user_message_question_reply");
+    expect(html).not.toContain("questionItemId");
+  }
+  expect(state.messages.get("async-answer")?.body).toBe(wireText);
+  expect(native.timeline[0]?.text).toBe(wireText);
 });
 
 test("places a finalized queued follow-up after the turn that accepted it", () => {

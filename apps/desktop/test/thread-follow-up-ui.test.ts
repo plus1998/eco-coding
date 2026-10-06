@@ -14,6 +14,7 @@ import {
   resolveFollowUpDeliveryModeForCore,
 } from "../src/shared/thread-follow-up-core";
 import { withTestLanguage } from "./support/test-language";
+import { buildCodexAsyncQuestionReplyText } from "../src/shared/codex-async-questions";
 
 function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): ThreadPendingFollowUp {
   return {
@@ -28,6 +29,15 @@ function followUp(id: string, patch: Partial<ThreadPendingFollowUp> = {}): Threa
     ...patch,
   };
 }
+
+test("async answer queue previews show the question and answer while preserving the wire prompt", () => {
+  const prompt = buildCodexAsyncQuestionReplyText([
+    { questionItemId: "q1", question: "处理方式？", answer: "保留记录" },
+  ]);
+  const row = followUp("async-answer", { prompt });
+  expect(formatThreadFollowUpPreview(row)).toBe("处理方式？ → 保留记录");
+  expect(row.prompt).toBe(prompt);
+});
 
 test("isLiveFollowUpThreadStatus only opens running and queued UI", () => {
   expect(isLiveFollowUpThreadStatus("running")).toBe(true);

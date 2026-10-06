@@ -1,4 +1,8 @@
 import type { ThreadFollowUpPriority, ThreadPendingFollowUp, ThreadStatus } from "../shared/ipc";
+import {
+  formatCodexAsyncQuestionReplySummary,
+  parseCodexAsyncQuestionReplyText,
+} from "../shared/codex-async-questions";
 import { i18n } from "./i18n";
 
 export function isLiveFollowUpThreadStatus(status?: ThreadStatus): boolean {
@@ -77,7 +81,8 @@ function isTerminalFollowUp(item: ThreadPendingFollowUp): boolean {
 }
 
 export function formatThreadFollowUpPreview(followUp: ThreadPendingFollowUp): string {
-  const prompt = followUp.prompt.trim();
+  const replies = parseCodexAsyncQuestionReplyText(followUp.prompt);
+  const prompt = replies ? formatCodexAsyncQuestionReplySummary(replies) : followUp.prompt.trim();
   const imageCount = followUp.attachments?.length ?? 0;
   const clipped = prompt.length > 120 ? `${prompt.slice(0, 117)}...` : prompt;
   const imageLabel = i18n.t("thread.followUpImages", { count: imageCount });

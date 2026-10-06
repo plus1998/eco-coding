@@ -112,6 +112,41 @@ export function buildCodexAsyncQuestionReplyText(replies: readonly CodexAsyncQue
   return `${REPLY_OPEN}${JSON.stringify(replies)}${REPLY_CLOSE}`;
 }
 
+/** Decode only a complete reply envelope; ordinary messages and invalid payloads stay literal. */
+export function parseCodexAsyncQuestionReplyText(text: string): CodexAsyncQuestionReply[] | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith(REPLY_OPEN) || !trimmed.endsWith(REPLY_CLOSE)) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(trimmed.slice(REPLY_OPEN.length, -REPLY_CLOSE.length));
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const replies: CodexAsyncQuestionReply[] = [];
+  for (const row of value) {
+    if (
+      !row ||
+      typeof row !== "object" ||
+      Array.isArray(row) ||
+      typeof row.questionItemId !== "string" ||
+      !row.questionItemId.trim() ||
+      typeof row.question !== "string" ||
+      !row.question.trim() ||
+      typeof row.answer !== "string" ||
+      !row.answer.trim()
+    )
+      return undefined;
+    replies.push({ questionItemId: row.questionItemId, question: row.question, answer: row.answer });
+  }
+  return replies;
+}
+
+/** Human-readable copy and queue preview; the wire envelope remains the stored message body. */
+export function formatCodexAsyncQuestionReplySummary(replies: readonly CodexAsyncQuestionReply[]): string {
+  return replies.map(({ question, answer }) => `${question} → ${answer}`).join("\n");
+}
+
 /**
  * Pair clarification selections with their async question refs.
  *
