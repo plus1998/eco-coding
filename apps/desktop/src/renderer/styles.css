@@ -13451,6 +13451,37 @@ button.markdown-file-ref.run-log-user-prompt-file-ref {
   color: inherit;
 }
 
+/*
+ * Stand-ins for a diagram that is not painted right now. Both keep the height
+ * the diagram already had (inline min-height from the measured paint box) so
+ * releasing or re-mounting it cannot move the rows below.
+ *
+ * The 240px floor is the guess for a diagram this session has never rendered.
+ * The feed caps a diagram at 420px, so the real height sits in (0, 420] and
+ * half of that minimises the worst-case correction when it finally paints.
+ */
+.markdown-code-block--mermaid .markdown-mermaid__deferred,
+.markdown-code-block--mermaid .markdown-mermaid__reserved {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 240px;
+}
+
+.markdown-code-block--mermaid .markdown-mermaid__deferred {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px dashed color-mix(in srgb, var(--markdown-text) 14%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--markdown-text) 3%, transparent);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--markdown-muted);
+}
+
 .markdown-code-block--html {
   background: color-mix(in srgb, var(--markdown-text) 3.5%, transparent);
   border: 1px solid color-mix(in srgb, var(--markdown-text) 8%, transparent);

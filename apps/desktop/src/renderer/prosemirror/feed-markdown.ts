@@ -7,12 +7,9 @@ import { buildHtmlDataNavigateUrl } from "../../shared/browser";
 import { dispatchBrowserHtmlOpen, dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 import { copyTextToClipboard } from "../clipboard";
 import { i18n } from "../i18n";
-import {
-  attachLightboxZoom,
-  formatLightboxZoomPercent,
-} from "../lightbox-zoom";
-import { repairMarkdown } from "../markdown-repair";
+import { attachLightboxZoom, formatLightboxZoomPercent } from "../lightbox-zoom";
 import { copyMermaidAsImage, copyMermaidAsMarkdown } from "../markdown-mermaid-clipboard";
+import { repairMarkdown } from "../markdown-repair";
 import {
   copyTableAsHtml,
   copyTableAsImage,
@@ -42,6 +39,7 @@ import {
   mountMermaidSvgForFeed,
   observeAppTheme,
   readAppTheme,
+  recallMermaidFeedHeight,
   renderMermaidSvg,
 } from "./mermaid-block";
 
@@ -1348,16 +1346,35 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   const showSvg = (svg: string) => {
     body.classList.remove("is-error");
     body.removeAttribute("aria-busy");
-    mountMermaidSvgForFeed(body, svg);
+    mountMermaidSvgForFeed(body, svg, source);
+  };
+
+  /**
+   * Height this diagram already occupied, read from the shared cache rather
+   * than a local copy: the first render records it here and every later
+   * release has to see it.
+   */
+  const reservedHeightPx = () => recallMermaidFeedHeight(source);
+
+  const reservedBox = (className: string, label?: string) => {
+    const box = document.createElement("div");
+    box.className = className;
+    const reserved = reservedHeightPx();
+    if (reserved > 0) {
+      box.style.minHeight = `${reserved}px`;
+    }
+    if (label) {
+      box.textContent = label;
+    } else {
+      box.setAttribute("aria-hidden", "true");
+    }
+    return box;
   };
 
   const showDeferredPreview = () => {
     body.classList.remove("is-error");
     body.removeAttribute("aria-busy");
-    const placeholder = document.createElement("div");
-    placeholder.className = "markdown-mermaid__deferred";
-    placeholder.textContent = "滚动到此处后渲染 Mermaid 预览";
-    body.replaceChildren(placeholder);
+    body.replaceChildren(reservedBox("markdown-mermaid__deferred", i18n.t("markdown.mermaid.deferred")));
   };
 
   const render = () => {
@@ -1389,6 +1406,11 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
     const currentTheme = theme;
     body.classList.remove("is-error");
     body.setAttribute("aria-busy", "true");
+    // Hold the known height while the diagram renders. A diagram that is
+    // already painted keeps its SVG, so a theme switch never flashes blank.
+    if (!body.querySelector(".markdown-mermaid__paint")) {
+      body.replaceChildren(reservedBox("markdown-mermaid__reserved"));
+    }
     void renderMermaidSvg(currentSource, currentTheme)
       .then((svg) => {
         if (disposed || token !== renderToken) return;
@@ -1453,7 +1475,8 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
     // again whenever the user wobbles around it. Render only once the diagram is
     // about to enter the viewport, but keep it mounted until it is a screen or
     // two away, so scroll jitter and short trips stay free.
-    const margin = (px: number) => ({ root, rootMargin: `${px}px 0px`, threshold: 0 });    visibilityObserver = new IntersectionObserver((entries) => {
+    const margin = (px: number) => ({ root, rootMargin: `${px}px 0px`, threshold: 0 });
+    visibilityObserver = new IntersectionObserver((entries) => {
       // Only the enter direction is meaningful here; leaving is handled below.
       if (entries[0]?.isIntersecting) setVisible(true);
     }, margin(MERMAID_FEED_RENDER_AHEAD_PX));
