@@ -177,3 +177,36 @@ test("finalizeThreadRunCleanup can skip clarification cancel and idle fallback",
     "context:thr_minimal:/workspace",
   ]);
 });
+
+test("a normal run finish preserves unanswered async questions but never defers cleanup for them", async () => {
+  const { calls, deps } = createDeps({ thread: { status: "running", message: "still running" } });
+
+  await finalizeThreadRunCleanup(
+    {
+      threadId: "thr_async_question",
+      worktreePath: "/workspace",
+      cancelClarificationsReason: "run finished",
+      idleFallbackMessage: "续聊已结束。",
+    },
+    {
+      ...deps,
+      // index.ts keeps any pending question here (blocking or not): the async question
+      // must survive a normal completion.
+      shouldPreserveClarifications: () => true,
+      // ...while the deferral gate only counts blocking questions.
+      shouldDeferRunCleanupFinish: () => false,
+    },
+  );
+
+  expect(calls).not.toContain("cancel:thr_async_question:run finished");
+  expect(calls).toEqual([
+    "cancel-plan:thr_async_question:run finished",
+    "reset:thr_async_question",
+    "flush:start:thr_async_question",
+    "flush:end:thr_async_question",
+    "finish:thr_async_question",
+    "context:thr_async_question:/workspace",
+    "get:thr_async_question",
+    "idle:thr_async_question:",
+  ]);
+});

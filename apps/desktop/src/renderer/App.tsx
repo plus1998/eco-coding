@@ -249,6 +249,7 @@ import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashAppro
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT, openPublishedHtmlInBrowser } from "./browser-link";
 import { browserStateStore, useBrowserInstanceIds } from "./browser-state-store";
 import { ClarificationPanel } from "./ClarificationPanel";
+import { createClarificationQueueSync } from "./clarification-queue-sync";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
@@ -1537,6 +1538,16 @@ function App() {
   const [pendingClarificationsByThread, setPendingClarificationsByThread] = useState<
     Record<string, ClarificationRequest>
   >({});
+  const [refreshPendingClarificationForThread] = useState(() => createClarificationQueueSync({
+    getPending: (threadId) => {
+      if (!window.eco) throw new Error("Desktop clarification bridge is unavailable.");
+      return window.eco.getPendingClarification(threadId);
+    },
+    apply: (threadId, request) => setPendingClarificationsByThread((current) => {
+      if (current[threadId]?.toolUseId === request?.toolUseId) return current;
+      return request ? { ...current, [threadId]: request } : removeRecordKey(current, threadId);
+    }),
+  }));
   const [clarificationBusy, setClarificationBusy] = useState(false);
   const [pendingBashApprovalsByThread, setPendingBashApprovalsByThread] = useState<
     Record<string, BashApprovalRequest>
@@ -2632,7 +2643,7 @@ function App() {
 
       if (event.type.startsWith("clarification.")) {
         if (event.type === "clarification.requested" && event.clarification) {
-          upsertPendingClarificationForThread(event.threadId, event.clarification);
+          void refreshPendingClarificationForThread(event.threadId).catch((error) => setError(errorMessage(error)));
           const activelyViewed = isThreadActivelyViewed(
             selectedThreadIdRef.current,
             event.threadId,
@@ -2648,13 +2659,7 @@ function App() {
           return;
         }
         if (window.eco) {
-          void window.eco.getPendingClarification(event.threadId).then((clarification) => {
-            if (clarification) {
-              upsertPendingClarificationForThread(event.threadId, clarification);
-            } else {
-              clearPendingClarificationForThread(event.threadId);
-            }
-          });
+          void refreshPendingClarificationForThread(event.threadId).catch((error) => setError(errorMessage(error)));
         }
       }
 
@@ -7860,7 +7865,7 @@ function App() {
     setError(undefined);
     try {
       const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
-      await window.eco.submitClarification({
+      const result = await window.eco.submitClarification({
         principalId: "desktop-local",
         clientCommandId: `clarification_resolve_${stableHash({
           threadId: activeThread.id,
@@ -7873,9 +7878,23 @@ function App() {
         ...answers,
         expectedHistoryRevision,
       });
-      if (activeThread) {
-        clearPendingClarificationForThread(activeThread.id);
+      // An async Codex question is answered by a message into the run, not by the RPC
+      // return. Only an unconfirmed delivery keeps the question open (with its answers)
+      // so the answer can be sent again — everything else is done with it.
+      if (result.delivery?.state === "unknown") {
+        setError(
+          `回答已记录，但未能确认送达 Codex：${result.delivery.message ?? "原因未知"}。可重新提交或忽略。`,
+        );
+        return;
       }
+      if (result.delivery?.state === "queued") {
+        showAppMessageSuccessRef.current(
+          result.delivery.message ?? "回答已排队，将在当前步骤结束后作为普通消息发送。",
+        );
+      } else if (result.delivery) {
+        showAppMessageSuccessRef.current("回答已送达 Codex。");
+      }
+      await refreshPendingClarificationForThread(activeThread.id);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -7901,7 +7920,7 @@ function App() {
         toolUseId: pendingClarification.toolUseId,
         expectedHistoryRevision,
       });
-      clearPendingClarificationForThread(pendingClarification.threadId);
+      await refreshPendingClarificationForThread(pendingClarification.threadId);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {

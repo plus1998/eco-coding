@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
 import {
   CODEX_MODEL_LIST_METHOD,
   listCodexModelCatalog,
@@ -78,6 +80,45 @@ describe("listCodexModelCatalog", () => {
 });
 
 describe("parseCodexModelListPage", () => {
+  test("keeps every catalog model and its reasoning efforts from a real 0.160.1 app-server", () => {
+    // Captured from the pinned 0.160.1 binary (`model/list`, includeHidden: false).
+    // 0.160 added upgrade/serviceTiers/multiAgentVersion/availabilityNux/isDefault
+    // and the `ultra` effort; the parser must keep passing models + efforts through.
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(import.meta.dir, "fixtures/codex-0.160.1-model-list.json"), "utf8"),
+    );
+    const page = parseCodexModelListPage(raw);
+    expect(page.nextCursor).toBeNull();
+    expect(page.data.map((entry) => entry.id)).toEqual([
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+    ]);
+    const sol = page.data[0];
+    expect(sol?.displayName).toBe("GPT-6.1-Sol");
+    expect(sol?.defaultReasoningEffort).toBe("low");
+    expect(sol?.supportedReasoningEfforts).toEqual(["low", "medium", "high", "xhigh", "max", "ultra"]);
+    // A model with fewer tiers keeps its own list instead of inheriting another's.
+    expect(page.data.find((entry) => entry.id === "gpt-6-luna")?.supportedReasoningEfforts).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(page.data.find((entry) => entry.id === "gpt-5.5")?.supportedReasoningEfforts).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+  });
+
   test("accepts a valid empty page", () => {
     expect(parseCodexModelListPage({ data: [], nextCursor: null })).toEqual({
       data: [],

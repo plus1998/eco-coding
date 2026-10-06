@@ -20,6 +20,14 @@ function harness() {
     questions: [],
   };
   let resolutions = 0;
+  // Releasing the pending entry is the caller's job (index.ts does it after an async
+  // delivery is confirmed), so the harness models it explicitly.
+  function release(answers: { toolUseId: string; selections: string[][] }): boolean {
+    if (!pending) return false;
+    pending = undefined;
+    resolutions += 1;
+    return true;
+  }
   const input = {
     principalId: "principal_1",
     clientCommandId: "clarification_command_1",
@@ -36,21 +44,22 @@ function harness() {
       toolUseId: request.toolUseId,
       selections: [],
     }),
-    resolve: () => {
-      if (!pending) return false;
-      pending = undefined;
-      resolutions += 1;
-      return true;
-    },
     errorMessage: (error: unknown) => String(error),
   };
-  return { db, v2, input, deps, resolutions: () => resolutions };
+  return { db, v2, input, deps, release, resolutions: () => resolutions };
 }
 
 test("clarification resolution is idempotent after response loss", () => {
   const state = harness();
-  expect(executeClarificationResolutionCommand(state.input, state.deps)).toEqual({ ok: true });
-  expect(executeClarificationResolutionCommand(state.input, state.deps)).toEqual({ ok: true });
+  const first = executeClarificationResolutionCommand(state.input, state.deps);
+  expect(first).toMatchObject({ ok: true });
+  // The replay returns the same recorded answers instead of re-deriving them.
+  const replay = executeClarificationResolutionCommand(state.input, state.deps);
+  expect(replay).toEqual(first);
+  expect(first.answers).toEqual({ toolUseId: "tool_question_1", selections: [["answer"]] });
+  expect(state.resolutions()).toBe(0);
+  expect(state.release(first.answers)).toBe(true);
+  expect(state.release(replay.answers)).toBe(false);
   expect(state.resolutions()).toBe(1);
   expect(
     state.v2.getCommandJob(state.input.principalId, state.input.conversationId, state.input.clientCommandId),
@@ -66,9 +75,10 @@ test("dismiss resolution reuses its durable ignored answers after pending state 
   const state = harness();
   const { answers: _answers, ...baseInput } = state.input;
   const input = { ...baseInput, resolution: "dismiss" as const };
-  expect(executeClarificationResolutionCommand(input, state.deps)).toEqual({ ok: true });
-  expect(executeClarificationResolutionCommand(input, state.deps)).toEqual({ ok: true });
-  expect(state.resolutions()).toBe(1);
+  const first = executeClarificationResolutionCommand(input, state.deps);
+  expect(first.answers).toEqual({ toolUseId: input.toolUseId, selections: [] });
+  expect(executeClarificationResolutionCommand(input, state.deps)).toEqual(first);
+  expect(state.resolutions()).toBe(0);
   expect(
     state.v2.getCommandJob(input.principalId, input.conversationId, input.clientCommandId),
   ).toMatchObject({
@@ -83,7 +93,8 @@ test("dismiss resolution reuses its durable ignored answers after pending state 
 
 test("missing pending clarification fails durably without pretending it was resolved", () => {
   const state = harness();
-  expect(executeClarificationResolutionCommand(state.input, state.deps)).toEqual({ ok: true });
+  const recorded = executeClarificationResolutionCommand(state.input, state.deps);
+  expect(state.release(recorded.answers)).toBe(true);
   const missing = {
     ...state.input,
     clientCommandId: "missing_pending",
@@ -95,6 +106,7 @@ test("missing pending clarification fails durably without pretending it was reso
   expect(
     state.v2.getCommandJob(missing.principalId, missing.conversationId, missing.clientCommandId),
   ).toMatchObject({ status: "failed", error: { code: CONVERSATION_V2_ERROR.invalidParams } });
+  // The stale command must not have released anything beyond the legitimate first answer.
   expect(state.resolutions()).toBe(1);
   state.db.close();
 });
@@ -107,7 +119,7 @@ test("clarification resolution rejects command id reuse and wrong conversation o
       state.deps,
     ),
   ).toThrow();
-  expect(executeClarificationResolutionCommand(state.input, state.deps)).toEqual({ ok: true });
+  expect(executeClarificationResolutionCommand(state.input, state.deps)).toMatchObject({ ok: true });
   expect(() =>
     executeClarificationResolutionCommand(
       { ...state.input, answers: { toolUseId: state.input.toolUseId, selections: [["changed"]] } },

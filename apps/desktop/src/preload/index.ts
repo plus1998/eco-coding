@@ -88,6 +88,7 @@ import {
   type ClarificationDismissPayload,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
+  type ClarificationSubmitResult,
   type ComposerDraftDeleteRequest,
   type ComposerDraftDeleteResult,
   type ComposerDraftRecord,
@@ -1280,7 +1281,7 @@ const api = {
   getPendingClarification(threadId: string): Promise<ClarificationRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationGetPending, threadId);
   },
-  submitClarification(payload: ClarificationSubmitPayload): Promise<{ ok: true }> {
+  submitClarification(payload: ClarificationSubmitPayload): Promise<ClarificationSubmitResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationSubmit, payload);
   },
   dismissClarification(payload: ClarificationDismissPayload): Promise<{ ok: true }> {

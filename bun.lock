@@ -29,7 +29,7 @@
         "@lezer/lr": "^1.0.0",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@napi-rs/keyring": "^1.3.0",
-        "@openai/codex": "0.153.4",
+        "@openai/codex": "0.160.1",
         "@qwen-code/open-computer-use": "0.2.3",
         "@supabase/supabase-js": "^2.112.3",
         "@tanstack/react-virtual": "^3.13.12",
@@ -89,12 +89,12 @@
         "@anthropic-ai/claude-agent-sdk-darwin-x64": "0.3.289",
         "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.289",
         "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.289",
-        "@openai/codex-darwin-arm64": "npm:@openai/codex@0.153.4-darwin-arm64",
-        "@openai/codex-darwin-x64": "npm:@openai/codex@0.153.4-darwin-x64",
-        "@openai/codex-linux-arm64": "npm:@openai/codex@0.153.4-linux-arm64",
-        "@openai/codex-linux-x64": "npm:@openai/codex@0.153.4-linux-x64",
-        "@openai/codex-win32-arm64": "npm:@openai/codex@0.153.4-win32-arm64",
-        "@openai/codex-win32-x64": "npm:@openai/codex@0.153.4-win32-x64",
+        "@openai/codex-darwin-arm64": "npm:@openai/codex@0.160.1-darwin-arm64",
+        "@openai/codex-darwin-x64": "npm:@openai/codex@0.160.1-darwin-x64",
+        "@openai/codex-linux-arm64": "npm:@openai/codex@0.160.1-linux-arm64",
+        "@openai/codex-linux-x64": "npm:@openai/codex@0.160.1-linux-x64",
+        "@openai/codex-win32-arm64": "npm:@openai/codex@0.160.1-win32-arm64",
+        "@openai/codex-win32-x64": "npm:@openai/codex@0.160.1-win32-x64",
       },
     },
     "apps/gateway": {
@@ -633,19 +633,19 @@
 
     "@napi-rs/keyring-win32-x64-msvc": ["@napi-rs/keyring-win32-x64-msvc@1.3.0", "https://registry.npmmirror.com/@napi-rs/keyring-win32-x64-msvc/-/keyring-win32-x64-msvc-1.3.0.tgz", { "os": "win32", "cpu": "x64" }, "sha512-4DnCWXwDc0HRKwyRlG5y0VhKZW2tNRQfKKfyj6IX/KWfDNyq9hn4n+GL1auyDcOO/v8PwnhmYo2+rOOqCkvvOg=="],
 
-    "@openai/codex": ["@openai/codex@0.153.4", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4.tgz", { "optionalDependencies": { "@openai/codex-darwin-arm64": "npm:@openai/codex@0.153.4-darwin-arm64", "@openai/codex-darwin-x64": "npm:@openai/codex@0.153.4-darwin-x64", "@openai/codex-linux-arm64": "npm:@openai/codex@0.153.4-linux-arm64", "@openai/codex-linux-x64": "npm:@openai/codex@0.153.4-linux-x64", "@openai/codex-win32-arm64": "npm:@openai/codex@0.153.4-win32-arm64", "@openai/codex-win32-x64": "npm:@openai/codex@0.153.4-win32-x64" }, "bin": { "codex": "bin/codex.js" } }, "sha512-wbHDmit7S/YvBGVX1DQmk13xtWblZ2cApeJ/pB7xDZ10Cna+DZc5ij7f0F4OxdsXN4FW1oLT48OpogUI1+8Y2w=="],
+    "@openai/codex": ["@openai/codex@0.160.1", "", { "optionalDependencies": { "@openai/codex-darwin-arm64": "npm:@openai/codex@0.160.1-darwin-arm64", "@openai/codex-darwin-x64": "npm:@openai/codex@0.160.1-darwin-x64", "@openai/codex-linux-arm64": "npm:@openai/codex@0.160.1-linux-arm64", "@openai/codex-linux-x64": "npm:@openai/codex@0.160.1-linux-x64", "@openai/codex-win32-arm64": "npm:@openai/codex@0.160.1-win32-arm64", "@openai/codex-win32-x64": "npm:@openai/codex@0.160.1-win32-x64" }, "bin": { "codex": "bin/codex.js" } }, "sha512-f1yrJhwgimKQI1kYQlxdPJcFwkNZxZrbz7Hf89EAcnLqkQ7TiESzr2FgSZn13Ga5RuHjlVUfurzwq10wk9zw2g=="],
 
-    "@openai/codex-darwin-arm64": ["@openai/codex@0.153.4-darwin-arm64", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4-darwin-arm64.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-B1qhN3fa1ay0R0wGziXqgwSkB5icpYChNKHhtBHff/0UtSTC7z+l8aTtvMlGjH3E8HEvY3+njIJelM9CAAoVWg=="],
+    "@openai/codex-darwin-arm64": ["@openai/codex@0.160.1-darwin-arm64", "", { "os": "darwin", "cpu": "arm64" }, "sha512-6Znu97O7+Ie/cnUpsWLx6NlcPc7DNuj6sAs58xpt0/tKRgx4+xgE9zca1YrwqQUBjUQO1HexudyimmhpZjdWlA=="],
 
-    "@openai/codex-darwin-x64": ["@openai/codex@0.153.4-darwin-x64", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4-darwin-x64.tgz", { "os": "darwin", "cpu": "x64" }, "sha512-vnSbbPzfoDZmmyzsxswsDDXQ06IVFBzkQU7/hroB3ji93Ok2utcsq8Psfk2tjF5r9mEx8RWFJhzuTGHG26/NDA=="],
+    "@openai/codex-darwin-x64": ["@openai/codex@0.160.1-darwin-x64", "", { "os": "darwin", "cpu": "x64" }, "sha512-Q33hmY6BxhoQRgCo4f/xS20yMxORnilQMNdr5w1bXSkXGYAty8/z9odcHbsNYUM6m0fNle12DHLQ5F0Dpfji3A=="],
 
-    "@openai/codex-linux-arm64": ["@openai/codex@0.153.4-linux-arm64", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4-linux-arm64.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-QKdjYLYV4hXIuUQDP3P6F4NXuWFoKo9WUoV4nAREIx55kiUyi8UsYdsVobkeXir5n/maEQgYMCKLHVma4rNPiw=="],
+    "@openai/codex-linux-arm64": ["@openai/codex@0.160.1-linux-arm64", "", { "os": "linux", "cpu": "arm64" }, "sha512-JLyjBlmjPvwTaicHemw+y5xQSz3Uja2r7F/xkvS8gFufTA2g132Ak+0fo35xnJ/k2uc9fTtjm0LrsEGI78L6Ng=="],
 
-    "@openai/codex-linux-x64": ["@openai/codex@0.153.4-linux-x64", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4-linux-x64.tgz", { "os": "linux", "cpu": "x64" }, "sha512-x1EcwBlY3AObM1VTUHNM2AzAJQsyreGdagpF+qFiYi/Oa30VBktvvG0C6tLtCzqW6hjZNWkGZQWmeVk7MuJKWg=="],
+    "@openai/codex-linux-x64": ["@openai/codex@0.160.1-linux-x64", "", { "os": "linux", "cpu": "x64" }, "sha512-sIDhqV+bsZKKVaVFVY5iB+pAzyOz2XRm3H1KXCsSJwGj5p98qnrT0Fweo1Hfe7WnyTp8mfBNdbVzUeO+mHYugA=="],
 
-    "@openai/codex-win32-arm64": ["@openai/codex@0.153.4-win32-arm64", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4-win32-arm64.tgz", { "os": "win32", "cpu": "arm64" }, "sha512-/FBh42976ltF1kxDoPQBg1Q6+hwChRU5/sm5dfeC8kFVQMvOCGoGeY5d8rRZGVJE8XojlXo74VQb0sHowcfgBw=="],
+    "@openai/codex-win32-arm64": ["@openai/codex@0.160.1-win32-arm64", "", { "os": "win32", "cpu": "arm64" }, "sha512-PCGz2kVUBKKzyKv/cqo/1WqWN8GVUyk9sk0LyWIyXftdU0t+SSsGp45c2I6iOitm88ftGB3LxFHpTMnaiIKU7w=="],
 
-    "@openai/codex-win32-x64": ["@openai/codex@0.153.4-win32-x64", "https://registry.npmmirror.com/@openai/codex/-/codex-0.153.4-win32-x64.tgz", { "os": "win32", "cpu": "x64" }, "sha512-lMkB43kJZH0VFr+hoXc11qqR7QtQIbkr07ALgj4urKL1osNyUyuy1iXd3Vzz2iCYvBUCSw7I0l/W1cEPGx9euQ=="],
+    "@openai/codex-win32-x64": ["@openai/codex@0.160.1-win32-x64", "", { "os": "win32", "cpu": "x64" }, "sha512-yyqykHtHNhm0ZViofGozz9a4ffUyXDsiyRu9Q2hPNg/cu4uzSsovNr5kDmzBXPFWAilmlZuNkwpw1W7uae2nlg=="],
 
     "@pkgr/core": ["@pkgr/core@0.1.2", "https://registry.npmmirror.com/@pkgr/core/-/core-0.1.2.tgz", {}, "sha512-fdDH1LSGfZdTH2sxdpVMw31BanV28K/Gry0cVFxaNP77neJSkd82mM8ErPNYs9e+0O7SdHBLTDzDgwUuy18RnQ=="],
 

@@ -25,6 +25,7 @@ import {
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
+  type CodexAsyncQuestionsInput,
   type EcoSubagentAttributionHooks,
   evaluateFilesystemReadConfirmation,
   evaluateFilesystemWriteConfirmation,
@@ -229,8 +230,11 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerSyncDomain,
   type CenterServerTestConnectionRequest,
+  type ClarificationAnswers,
+  type ClarificationAsyncDelivery,
   type ClarificationDismissPayload,
   type ClarificationSubmitPayload,
+  type ClarificationSubmitResult,
   type CoderTodoItem,
   hasCompleteOrchestrationSelection,
   IPC_CHANNELS,
@@ -387,6 +391,20 @@ import {
   threadHasPriorAgentOutput,
 } from "../shared/thread-continuation";
 import {
+  configureCodexAsyncQuestionBridge,
+  deliverAsyncClarificationAnswers,
+  handleCodexAsyncQuestions,
+  isTrackedCodexAsyncQuestion,
+  markCodexAsyncQuestionDismissed,
+  prepareAsyncClarificationReply,
+  releasePendingClarification,
+} from "./codex-async-question-bridge";
+import {
+  describeFollowUpDelivery,
+  scheduledAcceptedMessageDelivery,
+  terminalAcceptedMessageDelivery,
+} from "../shared/conversation-message-delivery";
+import {
   buildPlanExecutionFailureMessage,
   persistThreadSummaryMessage,
   planExecutionFailurePrefix,
@@ -518,6 +536,7 @@ import {
   formatClarificationAnswersSummary,
   getPendingClarificationByToolUseId,
   getPendingClarificationForThread,
+  hasPendingBlockingClarificationForThread,
   registerPendingClarification,
   submitClarification,
 } from "./clarification-bridge";
@@ -591,6 +610,7 @@ import {
   executeBashApprovalResolutionCommand,
   executeClarificationResolutionCommand,
   failInterruptedInteractionCommands,
+  recoverAsyncClarificationCommands,
 } from "./conversation-interaction-command";
 import {
   executeNonRewindRetryCommand,
@@ -2858,6 +2878,7 @@ app.whenReady().then(async () => {
         message: "",
       });
     },
+    onCodexAsyncQuestions: (input) => handleCodexAsyncQuestions(input),
     onStderr: (message) => process.stderr.write(`${message}\n`),
   });
   configureCodexApprovalBridge({
@@ -2906,38 +2927,6 @@ app.whenReady().then(async () => {
         clientUserMessageId: `approval-feedback:${toolUseId}`,
       });
     },
-    injectAsyncClarificationAnswers: async ({ ecoThreadId, codexThreadId, turnId, toolUseId, text }) => {
-      const phase = codexMidTurnPorts.getPhase(ecoThreadId);
-      if (phase === "accepting") {
-        const pushed = await codexMidTurnPorts.tryPushUserText(ecoThreadId, text, {
-          clientUserMessageId: `async-clarification:${toolUseId}`,
-        });
-        if (!pushed.ok) {
-          throw new Error(`Codex async clarification was not delivered: ${pushed.reason}`);
-        }
-        return;
-      }
-      const client = getGlobalCodexRuntimeLifecycle()?.getClient();
-      if (!client) {
-        throw new Error("Codex async clarification cannot be delivered because Codex is not running.");
-      }
-      // Turn may still be active without an Eco mid-turn port (or already past accepting).
-      // Prefer steer; if the turn is gone, surface the gap instead of silently dropping answers.
-      try {
-        await steerCodexTurn(client, {
-          threadId: codexThreadId,
-          turnId,
-          input: [{ type: "text", text }],
-          clientUserMessageId: `async-clarification:${toolUseId}`,
-        });
-      } catch (error) {
-        throw new Error(
-          `Codex async clarification inject failed (turn may have completed before the user answered): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    },
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
     emitThreadLive: (event) => {
@@ -2973,6 +2962,29 @@ app.whenReady().then(async () => {
         status: patch.status as ThreadSummary["status"],
         message: patch.message,
       }),
+  });
+  configureCodexAsyncQuestionBridge({
+    getThread: (threadId) => conversationStore.getThread(threadId),
+    emitEvent: (threadId, type, message, role, extras) =>
+      emitThreadEvent(threadId, type, message, role, false, extras),
+    registerPending: (threadId, toolUseId, parsed) =>
+      registerPendingClarification(threadId, toolUseId, parsed),
+    getPending: (toolUseId) => getPendingClarificationByToolUseId(toolUseId),
+    submitPending: (toolUseId, answers) => submitClarification(toolUseId, answers),
+    headHistoryRevision: (threadId) => conversationStore.conversationV2().head(threadId).historyRevision,
+    enqueueFollowUp: (request) => enqueueThreadFollowUpCommand(request),
+    sendMessage: (input) => {
+      const accepted = conversationStore.conversationV2().sendMessage({
+        principalId: input.principalId,
+        conversationId: input.conversationId,
+        clientCommandId: input.clientCommandId,
+        text: input.text,
+      });
+      return { messageId: accepted.messageId, turnId: accepted.turnId };
+    },
+    scheduleAcceptedMessage: (input) => scheduleAcceptedConversationMessage(input),
+    errorMessage: (error) => errorMessage(error),
+    logDiag: (event, payload) => logEcoDiag(event, payload),
   });
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
@@ -7919,7 +7931,11 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid clarification dismiss payload.");
     }
     requireConversationV2Thread(payload.threadId);
-    executeClarificationResolutionCommand(
+    // A dismissal is deliberately never forwarded to an async question: upstream treats
+    // "no reply" as unanswered, and the synthetic skip text exists only to satisfy the
+    // blocking RPC that must return something.
+    markCodexAsyncQuestionDismissed(payload.toolUseId);
+    const resolution = executeClarificationResolutionCommand(
       {
         principalId: payload.principalId,
         clientCommandId: payload.clientCommandId,
@@ -7932,10 +7948,10 @@ function registerIpcHandlers(): void {
         v2: conversationStore.conversationV2(),
         getPending: getPendingClarificationByToolUseId,
         buildDismissAnswers: buildIgnoredClarificationAnswers,
-        resolve: submitClarification,
         errorMessage,
       },
     );
+    releasePendingClarification(payload.toolUseId, resolution.answers);
     // Do not emit a placeholder clarification.answered here — the awaiting AskUserQuestion /
     // Codex handler emits the real summary (with toolUseId) once submitClarification resolves.
     return { ok: true as const };
@@ -7946,7 +7962,7 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid clarification payload.");
     }
     requireConversationV2Thread(payload.threadId);
-    executeClarificationResolutionCommand(
+    const resolution = executeClarificationResolutionCommand(
       {
         principalId: payload.principalId,
         clientCommandId: payload.clientCommandId,
@@ -7964,13 +7980,28 @@ function registerIpcHandlers(): void {
         v2: conversationStore.conversationV2(),
         getPending: getPendingClarificationByToolUseId,
         buildDismissAnswers: buildIgnoredClarificationAnswers,
-        resolve: submitClarification,
+        buildAsyncReplyText: prepareAsyncClarificationReply,
         errorMessage,
       },
     );
     // Real clarification.answered is emitted by the pending-handler awaiter with toolUseId so
-    // the feed can anchor the answer next to the AskUserQuestion tool / request.
-    return { ok: true as const };
+    // the feed can anchor the answer next to the AskUserQuestion tool / request. Async
+    // questions have no awaiter, so their answer must be delivered to the run here.
+    const delivery = await deliverAsyncClarificationAnswers({
+      threadId: payload.threadId,
+      toolUseId: payload.toolUseId,
+      answers: resolution.answers,
+      commandIdempotencyKey: payload.clientCommandId,
+      principalId: payload.principalId,
+      ...(resolution.asyncMessage ? { acceptedMessage: resolution.asyncMessage } : {}),
+    });
+    // An unconfirmed async delivery keeps the question pending with its answers, so the user
+    // can retry (same command id ⇒ same recorded answer) or dismiss it. Everything else —
+    // blocking RPC answers, confirmed and queued deliveries — releases it now.
+    if (delivery?.state !== "unknown") {
+      releasePendingClarification(payload.toolUseId, resolution.answers);
+    }
+    return { ok: true as const, ...(delivery ? { delivery } : {}) } satisfies ClarificationSubmitResult;
   });
 
   registerDesktopCommand(IPC_CHANNELS.bashApprovalGetPending, async (threadId: unknown) => {
@@ -8592,26 +8623,41 @@ function registerIpcHandlers(): void {
     );
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadFollowUpEnqueue, async (payload: unknown) => {
-    const request = parseThreadFollowUpEnqueueRequest(payload);
-    return executeFollowUpMutationCommand(
-      {
-        principalId: request.principalId,
-        clientCommandId: request.clientCommandId,
-        conversationId: request.threadId,
-        expectedHistoryRevision: request.expectedHistoryRevision,
-        operation: "enqueue",
-        request: {
-          prompt: request.prompt,
-          ...(request.priority ? { priority: request.priority } : {}),
-          ...(request.followUpDeliveryMode ? { followUpDeliveryMode: request.followUpDeliveryMode } : {}),
-          ...(request.attachments?.length ? { attachmentsHash: stableHash(request.attachments) } : {}),
-        },
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpEnqueue, async (payload: unknown) =>
+    enqueueThreadFollowUpCommand(parseThreadFollowUpEnqueueRequest(payload)),
+  );
+
+  registerRemainingDesktopCommands();
+}
+
+/**
+ * Enqueue a follow-up message for a thread.
+ *
+ * Extracted from the IPC registration so in-process callers (async Codex question
+ * answers) reuse the same V2 acceptance, idempotent client command id, queue row,
+ * mid-turn steer and post-run continuation instead of inventing a second path.
+ */
+function enqueueThreadFollowUpCommand(
+  request: ThreadFollowUpEnqueueRequest,
+): Promise<ThreadFollowUpMutationResult> {
+  return executeFollowUpMutationCommand(
+    {
+      principalId: request.principalId,
+      clientCommandId: request.clientCommandId,
+      conversationId: request.threadId,
+      expectedHistoryRevision: request.expectedHistoryRevision,
+      operation: "enqueue",
+      request: {
+        prompt: request.prompt,
+        ...(request.priority ? { priority: request.priority } : {}),
+        ...(request.followUpDeliveryMode ? { followUpDeliveryMode: request.followUpDeliveryMode } : {}),
+        ...(request.attachments?.length ? { attachmentsHash: stableHash(request.attachments) } : {}),
       },
-      {
-        v2: conversationStore.conversationV2(),
-        errorMessage,
-        execute: async () => {
+    },
+    {
+      v2: conversationStore.conversationV2(),
+      errorMessage,
+      execute: async () => {
           const thread = conversationStore.getThread(request.threadId);
           if (!thread) {
             throw new Error("Thread was not found.");
@@ -8730,11 +8776,12 @@ function registerIpcHandlers(): void {
             emitThreadFollowUpEvent(settled, "thread.follow_up.queued", formatFollowUpQueuedMessage(settled));
           }
           return buildThreadFollowUpMutationResult(settled);
-        },
       },
-    );
-  });
+    },
+  );
+}
 
+function registerRemainingDesktopCommands(): void {
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpEscalate, async (payload: unknown) => {
     const request = parseThreadFollowUpEscalateRequest(payload);
     return executeFollowUpMutationCommand(
@@ -9356,10 +9403,12 @@ async function retryDeferredRunCleanupIfNeeded(threadId: string): Promise<void> 
   if (!deferred) {
     return;
   }
+  // Only a blocking question holds the run open; an unanswered async Codex question must
+  // not keep the cleanup deferred forever.
   if (
     shouldDeferRunCleanupFinish({
       hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
-      hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+      hasPendingClarification: hasPendingBlockingClarificationForThread(threadId),
     })
   ) {
     return;
@@ -9370,10 +9419,11 @@ async function retryDeferredRunCleanupIfNeeded(threadId: string): Promise<void> 
 
 async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput): Promise<void> {
   await awaitThreadRunUserGates(input.threadId);
+  // Async Codex questions are answerable after the run; they never gate the cleanup.
   if (
     shouldDeferRunCleanupFinish({
       hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(input.threadId)),
-      hasPendingClarification: Boolean(getPendingClarificationForThread(input.threadId)),
+      hasPendingClarification: hasPendingBlockingClarificationForThread(input.threadId),
     })
   ) {
     deferredRunCleanupByThread.set(input.threadId, input);
@@ -9396,7 +9446,7 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
     shouldDeferRunCleanupFinish: (threadId) =>
       shouldDeferRunCleanupFinish({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
-        hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+        hasPendingClarification: hasPendingBlockingClarificationForThread(threadId),
       }),
     resetSdkStream: (threadId) => {
       sdkStreamBridge.flushPendingAndReset(threadId, (id, type, message, role, stream, agentId, extras) => {
@@ -9500,7 +9550,9 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
     if (
       shouldBlockThreadFollowUpDrain({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
-        hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+        // Non-blocking questions must not stall the queue: the run finished, and the user
+        // may answer the question much later (or never).
+        hasPendingClarification: hasPendingBlockingClarificationForThread(threadId),
         hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
         hasFollowUpQueuePaused: Boolean(thread?.followUpQueuePaused) && !forceEscalatedDrain,
         ...(thread?.status && { threadStatus: thread.status }),
@@ -12040,25 +12092,16 @@ function recoverQueuedConversationV2Messages(): void {
 
 async function scheduleAcceptedConversationMessage(
   input: AcceptedConversationMessageSchedule,
-): Promise<void> {
+): Promise<ClarificationAsyncDelivery> {
   conversationRecoveryGate.assertReady(input.conversationId);
   const thread = conversationStore.getThread(input.conversationId);
   // A V2 stream may exist independently of this desktop runtime. In that
   // case the durable acceptance is still correct; another execution owner
   // may consume it.
-  if (!thread) return;
+  if (!thread) return { state: "unknown", message: "对话不存在，回答未确认投递。" };
   const currentMessage = conversationStore.conversationV2().getMessage(input.conversationId, input.messageId);
-  // A tombstoned acceptance (deleted follow-up) must never start a run.
-  if (
-    !currentMessage ||
-    currentMessage.isDeleted ||
-    currentMessage.status === "final" ||
-    currentMessage.status === "failed" ||
-    currentMessage.status === "cancelled" ||
-    currentMessage.status === "deleted"
-  ) {
-    return;
-  }
+  const terminalDelivery = terminalAcceptedMessageDelivery(currentMessage, thread.coreKind === "codex");
+  if (terminalDelivery) return { ...terminalDelivery, followUpMessageId: input.messageId };
 
   const queueIt =
     thread.status === "running" ||
@@ -12077,7 +12120,7 @@ async function scheduleAcceptedConversationMessage(
           followUp.status !== "cancelled" &&
           followUp.status !== "failed",
       );
-    if (existingQueued) return;
+    if (existingQueued) return describeFollowUpDelivery(existingQueued);
     const persistedAttachments = input.attachments?.length
       ? await promptImageFileStore.persistMessageAttachments(
           thread.id,
@@ -12093,7 +12136,7 @@ async function scheduleAcceptedConversationMessage(
       conversationMessageId: input.messageId,
     });
     emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
-    return;
+    return describeFollowUpDelivery(followUp);
   }
 
   try {
@@ -12106,6 +12149,13 @@ async function scheduleAcceptedConversationMessage(
         ? { requireResumeForInterrupted: true }
         : {}),
     });
+    const delivered = scheduledAcceptedMessageDelivery(
+      conversationStore.conversationV2().getMessage(input.conversationId, input.messageId),
+      thread.coreKind === "codex",
+    );
+    // Dispatching a run is not a provider acknowledgment. Local finalization alone
+    // has no SDK item id, so a newly scheduled answer remains queued until that bind arrives.
+    return { ...delivered, followUpMessageId: input.messageId };
   } catch (error) {
     const reason = errorMessage(error);
     markAcceptedConversationMessageFailed(input, reason);
@@ -12653,6 +12703,9 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
     hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
     followUpQueuePaused: Boolean(conversationStore.getThread(threadId)?.followUpQueuePaused),
     hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
+    // Any pending question, blocking or not: this is the acceptance gate that lets a
+    // finished thread take one more message while a question is still on screen — which
+    // is exactly how an async answer gets back into the conversation.
     hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
     hasPendingBashApproval: Boolean(getPendingBashApprovalForThread(threadId)),
     hasPendingPlanApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
@@ -12699,7 +12752,8 @@ async function tryDeliverFollowUpViaMidTurn(
     if (
       shouldBlockThreadFollowUpDrain({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(thread.id)),
-        hasPendingClarification: Boolean(getPendingClarificationForThread(thread.id)),
+        // An async question must not block mid-turn delivery of an unrelated follow-up.
+        hasPendingClarification: hasPendingBlockingClarificationForThread(thread.id),
         hasEditingFollowUp: editingThreadFollowUpByThread.has(thread.id),
         hasFollowUpQueuePaused: Boolean(currentThread.followUpQueuePaused),
         threadStatus: currentThread.status,
@@ -13152,6 +13206,7 @@ function recoverOrphanedRunningThreads(logStartupStage?: (stage: string) => void
     });
     logEcoDiag("conversation-v2.recovery-blocked", { threadId, code: failure.code, reason: failure.message });
   }
+  recoverAsyncClarificationCommands(conversationStore.conversationV2());
   failInterruptedInteractionCommands(conversationStore.conversationV2());
   failInterruptedCancelCommands(conversationStore.conversationV2());
   failInterruptedFollowUpCommands(conversationStore.conversationV2());

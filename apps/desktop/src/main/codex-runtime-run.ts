@@ -217,6 +217,10 @@ export interface CodexRuntimeRunDeps {
     ConstructorParameters<typeof CodexEventAdapter>[0]["onTurnPlanUpdated"]
   >;
   onCodexPlanReady?: NonNullable<ConstructorParameters<typeof CodexEventAdapter>[0]["onPlanReady"]>;
+  /** Codex 0.160 `agentMessage` items carrying `delivery: "async"` + questions. */
+  onCodexAsyncQuestions?: NonNullable<
+    ConstructorParameters<typeof CodexEventAdapter>[0]["onAsyncQuestions"]
+  >;
   onStderr?: (message: string) => void;
 }
 
@@ -414,6 +418,7 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
       onTurnPlanUpdated: config.onCodexTurnPlanUpdated,
     }),
     ...(config.onCodexPlanReady && { onPlanReady: config.onCodexPlanReady }),
+    ...(config.onCodexAsyncQuestions && { onAsyncQuestions: config.onCodexAsyncQuestions }),
   });
 }
 

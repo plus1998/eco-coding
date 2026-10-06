@@ -30,6 +30,7 @@
     "./codex-app-server-driver": "./src/codex-app-server-driver.ts",
     "./codex-turn-interrupt": "./src/codex-turn-interrupt.ts",
     "./codex-turn-steer": "./src/codex-turn-steer.ts",
+    "./codex-version": "./src/codex-version.ts",
     "./codex-fork": "./src/codex-fork.ts",
     "./codex-rollback": "./src/codex-rollback.ts",
     "./agent-mission": "./src/agent-mission.ts",

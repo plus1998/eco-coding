@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CodexAppServerClient } from "@eco/runtime";
-import { buildCodexAppServerEnv, CodexRuntimeLifecycle } from "../src/main/codex-runtime-lifecycle";
+import {
+  buildCodexAppServerEnv,
+  CodexRuntimeLifecycle,
+  setCodexAccountProxyUrlGetter,
+} from "../src/main/codex-runtime-lifecycle";
 
 const realAppServerTest = process.env.ECO_CODEX_REAL_APP_SERVER_TEST === "1" ? test : test.skip;
 
@@ -34,10 +38,17 @@ realAppServerTest(
         });
       },
     });
+    let proxyGatewayRequests = 0;
     const proxyServer = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: () => new Response("proxy must not receive loopback requests", { status: 502 }),
+      fetch: (request) => {
+        const url = new URL(request.url);
+        if (url.hostname === "127.0.0.1" && url.port === String(targetServer.port)) {
+          proxyGatewayRequests += 1;
+        }
+        return new Response("proxy must not receive loopback requests", { status: 502 });
+      },
     });
     fs.mkdirSync(codexHomeDir, { recursive: true });
     fs.writeFileSync(
@@ -55,15 +66,31 @@ realAppServerTest(
       ].join("\n"),
     );
 
-    const originalProxyEnv = snapshotProxyEnv();
-    applyProxyEnv(`http://127.0.0.1:${proxyServer.port}`);
+    const proxyUrl = `http://127.0.0.1:${proxyServer.port}`;
+    let proxyLookups = 0;
+    setCodexAccountProxyUrlGetter(() => {
+      proxyLookups += 1;
+      return proxyUrl;
+    });
     let lifecycle: CodexRuntimeLifecycle | undefined;
     let client: CodexAppServerClient | undefined;
     try {
-      const env = buildCodexAppServerEnv(process.env, codexHomeDir);
+      // Keep proxy configuration out of the test runner: Bun fetch retains proxy
+      // state even after process.env is restored, breaking later loopback tests.
+      const env = buildCodexAppServerEnv(
+        {
+          ...process.env,
+          HTTP_PROXY: proxyUrl,
+          HTTPS_PROXY: proxyUrl,
+          NO_PROXY: undefined,
+          no_proxy: undefined,
+        },
+        codexHomeDir,
+      );
       expect(env.NO_PROXY).toContain("127.0.0.1");
       lifecycle = new CodexRuntimeLifecycle({ ecoDataDir, codexExecutable });
       client = await lifecycle.start();
+      expect(proxyLookups).toBe(1);
       const thread = await client.request<{ thread: { id: string } }>("thread/start", {
         cwd: workspace,
         model: "test-model",
@@ -78,10 +105,11 @@ realAppServerTest(
         sandboxPolicy: { type: "readOnly" },
       });
       await completed;
+      expect(proxyGatewayRequests).toBe(0);
     } finally {
       client?.close();
       await lifecycle?.stop();
-      restoreProxyEnv(originalProxyEnv);
+      setCodexAccountProxyUrlGetter(undefined);
       targetServer.stop(true);
       proxyServer.stop(true);
       removeTempDirBestEffort(ecoDataDir);
@@ -90,43 +118,6 @@ realAppServerTest(
   },
   30_000,
 );
-
-const PROXY_ENV_KEYS = [
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "ALL_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "all_proxy",
-  "no_proxy",
-] as const;
-
-function snapshotProxyEnv(): Record<string, string | undefined> {
-  return Object.fromEntries(PROXY_ENV_KEYS.map((key) => [key, process.env[key]]));
-}
-
-function applyProxyEnv(proxyUrl: string): void {
-  process.env.HTTP_PROXY = proxyUrl;
-  process.env.HTTPS_PROXY = proxyUrl;
-  process.env.ALL_PROXY = proxyUrl;
-  process.env.http_proxy = proxyUrl;
-  process.env.https_proxy = proxyUrl;
-  process.env.all_proxy = proxyUrl;
-  delete process.env.NO_PROXY;
-  delete process.env.no_proxy;
-}
-
-function restoreProxyEnv(snapshot: Record<string, string | undefined>): void {
-  for (const key of PROXY_ENV_KEYS) {
-    const value = snapshot[key];
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
 
 function removeTempDirBestEffort(directory: string): void {
   try {

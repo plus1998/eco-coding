@@ -38,7 +38,6 @@ import {
   cancelClarificationsForThread,
   formatClarificationAnswersSummary,
   registerPendingClarification,
-  submitClarification,
 } from "./clarification-bridge";
 import { cancelPlanApprovalsForThread, registerPendingPlanApproval } from "./plan-approval-bridge";
 import { applyThreadPlanReadyEffects, type ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
@@ -47,8 +46,6 @@ export const CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL = "item/commandExecution/r
 export const CODEX_FILE_CHANGE_REQUEST_APPROVAL = "item/fileChange/requestApproval";
 export const CODEX_PERMISSIONS_REQUEST_APPROVAL = "item/permissions/requestApproval";
 export const CODEX_TOOL_REQUEST_USER_INPUT = "item/tool/requestUserInput";
-/** Codex 0.153+ non-blocking structured questions (model catalog may enable). */
-export const CODEX_TOOL_REQUEST_USER_INPUT_ASYNC = "item/tool/requestUserInputAsync";
 export const CODEX_MCP_SERVER_ELICITATION_REQUEST = "mcpServer/elicitation/request";
 
 type PendingMcpToolCall = {
@@ -219,17 +216,6 @@ export interface CodexApprovalBridgeDeps {
     toolUseId: string;
     text: string;
   }) => Promise<void>;
-  /**
-   * Deliver async clarification answers after the non-blocking request returned `accepted`.
-   * Prefer mid-turn steer / queue inject; do not block the original server request.
-   */
-  injectAsyncClarificationAnswers?: (input: {
-    ecoThreadId: string;
-    codexThreadId: string;
-    turnId: string;
-    toolUseId: string;
-    text: string;
-  }) => Promise<void>;
 }
 
 export interface CodexApprovalBridge {
@@ -261,8 +247,7 @@ export async function handleCodexServerRequest(
       return handlePermissionsRequestApproval(deps, requireRequestParams(method, params));
     case CODEX_TOOL_REQUEST_USER_INPUT:
     case LEGACY_TOOL_REQUEST_USER_INPUT:
-    case CODEX_TOOL_REQUEST_USER_INPUT_ASYNC:
-      return handleToolRequestUserInput(deps, method, requireRequestParams(method, params));
+      return handleToolRequestUserInput(deps, requireRequestParams(method, params));
     case CODEX_MCP_SERVER_ELICITATION_REQUEST:
       return handleMcpServerElicitationRequest(deps, requireRequestParams(method, params));
     default:
@@ -875,34 +860,37 @@ async function handleMcpServerElicitationRequest(
   }
 }
 
+/**
+ * Answer a blocking `item/tool/requestUserInput` server request.
+ *
+ * This is the only question path that is a JSON-RPC server request: app-server awaits
+ * the response and the model call cannot finish without it. Non-blocking questions in
+ * Codex 0.160 arrive as `agentMessage` items with `delivery: "async"` instead — there
+ * is no `requestUserInputAsync` method, and no answer is ever fabricated on a timer.
+ *
+ * `isBlocking` is a hint about whether the question holds the turn (upstream sends
+ * `mode == Plan`), not about whether this RPC must be answered — it always must.
+ */
 async function handleToolRequestUserInput(
   deps: CodexApprovalBridgeDeps,
-  method: string,
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  const asyncDelivery =
-    method === CODEX_TOOL_REQUEST_USER_INPUT_ASYNC ||
-    params.async === true ||
-    params.delivery === "async" ||
-    params.mode === "async";
   const codexThreadId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "threadId");
-  const turnId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "turnId");
+  requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "turnId");
   const itemId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "itemId");
   const ecoThreadId = deps.resolveEcoThreadId(codexThreadId);
   const rawQuestions = validateToolRequestUserInputQuestions(params.questions);
-  const autoResolutionMs = validateAutoResolutionMs(params.autoResolutionMs);
+  const isBlocking = validateIsBlocking(params.isBlocking);
 
   const mappedClarification = mapCodexToolQuestionsToClarification(ecoThreadId, itemId, rawQuestions);
   const clarificationRequest = {
     ...mappedClarification.request,
-    delivery: asyncDelivery ? ("async" as const) : ("sync" as const),
+    delivery: "sync" as const,
   };
   deps.emitThreadLive({
     threadId: ecoThreadId,
     type: "clarification.requested",
-    message: asyncDelivery
-      ? "Codex 需要你回答几个问题（异步，任务可继续）。"
-      : "Planner 需要你回答几个问题。",
+    message: isBlocking ? "Planner 需要你回答几个问题。" : "Codex 需要你回答几个问题（任务可继续）。",
     role: "planner",
     clarification: clarificationRequest,
     tool: buildClarificationToolMetadata(itemId, "started"),
@@ -912,82 +900,23 @@ async function handleToolRequestUserInput(
     message: "",
   });
 
-  const pendingAnswers = registerPendingClarification(ecoThreadId, itemId, {
+  const answers = await registerPendingClarification(ecoThreadId, itemId, {
     questions: mappedClarification.request.questions,
-    delivery: clarificationRequest.delivery,
+    delivery: "sync",
+    blocking: isBlocking,
   });
-  let autoResolutionTimer: ReturnType<typeof setTimeout> | undefined;
-  if (autoResolutionMs !== undefined) {
-    autoResolutionTimer = setTimeout(() => {
-      submitClarification(itemId, {
-        toolUseId: itemId,
-        selections: mappedClarification.request.questions.map(() => [IGNORED_CLARIFICATION_ANSWER]),
-      });
-    }, autoResolutionMs);
-  }
-
-  const finishAnswers = async (answers: ClarificationAnswers) => {
-    deps.updateThreadStatus(ecoThreadId, {
-      status: "running",
-      message: "",
-    });
-    deps.emitThreadLive({
-      threadId: ecoThreadId,
-      type: "clarification.answered",
-      message: formatClarificationAnswersSummary(mappedClarification.request, answers),
-      role: "planner",
-      tool: buildClarificationToolMetadata(itemId, "completed"),
-    });
-    return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
-  };
-
-  if (asyncDelivery) {
-    void pendingAnswers
-      .finally(() => {
-        if (autoResolutionTimer !== undefined) {
-          clearTimeout(autoResolutionTimer);
-        }
-      })
-      .then(async (answers) => {
-        const mapped = await finishAnswers(answers);
-        const summary = formatClarificationAnswersSummary(mappedClarification.request, answers);
-        const inject = deps.injectAsyncClarificationAnswers ?? deps.injectCodexApprovalFeedback;
-        if (!inject) {
-          throw new Error(
-            "Codex async clarification answers cannot be delivered: no injectAsyncClarificationAnswers handler.",
-          );
-        }
-        await inject({
-          ecoThreadId,
-          codexThreadId,
-          turnId,
-          toolUseId: itemId,
-          text: [
-            "Async clarification answers (user responded after request_user_input_async accepted):",
-            summary,
-            "",
-            `Structured answers JSON: ${JSON.stringify(mapped)}`,
-          ].join("\n"),
-        });
-      })
-      .catch((error) => {
-        deps.emitThreadLive({
-          threadId: ecoThreadId,
-          type: "clarification.failed",
-          message: error instanceof Error ? error.message : String(error),
-          role: "system",
-          tool: buildClarificationToolMetadata(itemId, "failed"),
-        });
-      });
-    return { accepted: true };
-  }
-
-  const answers = await pendingAnswers.finally(() => {
-    if (autoResolutionTimer !== undefined) {
-      clearTimeout(autoResolutionTimer);
-    }
+  deps.updateThreadStatus(ecoThreadId, {
+    status: "running",
+    message: "",
   });
-  return finishAnswers(answers);
+  deps.emitThreadLive({
+    threadId: ecoThreadId,
+    type: "clarification.answered",
+    message: formatClarificationAnswersSummary(mappedClarification.request, answers),
+    role: "planner",
+    tool: buildClarificationToolMetadata(itemId, "completed"),
+  });
+  return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
 }
 
 function handlePlanItemCompleted(deps: CodexApprovalBridgeDeps, params: Record<string, unknown>): void {
@@ -1222,15 +1151,17 @@ function validateOptionalStringArray(method: string, value: unknown, key: string
   }
 }
 
-function validateAutoResolutionMs(value: unknown): number | undefined {
+/**
+ * `isBlocking` gates whether the question holds the run. app-server always sends it,
+ * and deserializes a missing value as `true` (`ToolRequestUserInputParams::deserialize`),
+ * so an absent field must not be read as "non-blocking".
+ */
+function validateIsBlocking(value: unknown): boolean {
   if (value === undefined || value === null) {
-    return undefined;
+    return true;
   }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw invalidServerRequestParams(
-      CODEX_TOOL_REQUEST_USER_INPUT,
-      "autoResolutionMs must be a non-negative integer or null.",
-    );
+  if (typeof value !== "boolean") {
+    throw invalidServerRequestParams(CODEX_TOOL_REQUEST_USER_INPUT, "isBlocking must be a boolean.");
   }
   return value;
 }
@@ -1277,14 +1208,17 @@ function validateToolRequestUserInputQuestions(value: unknown): Record<string, u
         `questions[${index}] requests secret input, which Eco cannot present without exposing it.`,
       );
     }
-    if (!Array.isArray(question.options) || question.options.length === 0) {
+    // `options` is nullable in 0.160.1 (`Array<ToolRequestUserInputOption> | null`) and
+    // may legitimately be empty: the question then only accepts free text, which Eco's
+    // clarification panel already offers through its custom-answer row.
+    if (question.options !== undefined && question.options !== null && !Array.isArray(question.options)) {
       throw invalidServerRequestParams(
         CODEX_TOOL_REQUEST_USER_INPUT,
-        `questions[${index}].options must be a non-empty array.`,
+        `questions[${index}].options must be an array or null.`,
       );
     }
     const optionLabels = new Set<string>();
-    for (const [optionIndex, option] of question.options.entries()) {
+    for (const [optionIndex, option] of (question.options ?? []).entries()) {
       if (
         !isRecord(option) ||
         typeof option.label !== "string" ||
@@ -2463,7 +2397,8 @@ function mapCodexToolQuestionsToClarification(
     }
     const question = entry.question as string;
     const header = entry.header as string;
-    const options = (entry.options as Record<string, unknown>[]).map((option) => {
+    // 0.160.1 serializes `options` as `Array<...> | null`; null means free text only.
+    const options = ((entry.options as Record<string, unknown>[] | null | undefined) ?? []).map((option) => {
       const label = option.label as string;
       const description = option.description as string;
       return description ? { label, description } : { label };

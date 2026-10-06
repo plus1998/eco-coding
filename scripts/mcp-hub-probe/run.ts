@@ -12,6 +12,7 @@
 
 import http from "node:http";
 import { randomUUID, createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -37,6 +38,7 @@ import { createPiMcpExtensionFactory } from "../../packages/runtime/src/pi-mcp-a
 import { piMcpToolAllowlist } from "../../packages/runtime/src/pi-mcp";
 import { AcpAgentDriver } from "../../packages/runtime/src/acp-agent-driver";
 import { toAcpMcpServers } from "../../packages/runtime/src/acp-mcp";
+import { readCodexDependencyPins, readCodexCliVersion } from "../../packages/runtime/src/codex-version";
 
 type Identity = "A" | "B" | "A-child";
 type ApprovalDecision = "allow" | "reject";
@@ -49,6 +51,9 @@ type SessionRecord = {
 };
 
 type ProbeLog = Record<string, unknown>;
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const codexHarnessExecutable = path.join(repoRoot, "apps/desktop/node_modules/.bin/codex");
 
 const VIRTUAL_TOOLS: Record<string, McpToolDefinition> = {
   echo_context: {
@@ -956,10 +961,12 @@ async function main() {
         node: process.version,
         bun: process.versions.bun ?? "unknown",
         ecoDesktop: "0.1.0-beta.12",
-        claudeAgentSdk: "0.3.266",
+        claudeAgentSdk: "0.3.289",
         claudeAgentSdkRootResolverObserved: "0.3.223 (not used by real Claude harness)",
-        codexDependency: "0.153.4",
-        codexCliHarness: "0.158.0-alpha.2.1",
+        codexDependency: readCodexDependencyPins(
+          JSON.parse(readFileSync(path.join(repoRoot, "apps/desktop/package.json"), "utf8")),
+        ).version,
+        codexCliHarness: readCodexCliVersion(codexHarnessExecutable) ?? "not installed",
         piCodingAgent: "0.85.1",
         piMcpAdapter: "2.23.0",
         acpAgent: "fake-acp-agent probe v0.1.0 (Cursor ACP 未验证)",

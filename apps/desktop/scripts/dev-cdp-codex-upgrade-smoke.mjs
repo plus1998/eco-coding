@@ -1,9 +1,17 @@
 /**
- * CDP smoke for Codex 0.153.4 upgrade scenarios against a running Dev app.
+ * CDP smoke for the current Codex upgrade scenarios against a running Dev app.
+ * The expected version comes from this app's package.json, not a hardcoded string.
  *
  * ECO_DEV_CDP_URL=http://127.0.0.1:9366 bun scripts/dev-cdp-codex-upgrade-smoke.mjs
  */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+
+const expectedCodexVersion = JSON.parse(
+  fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf8"),
+).dependencies["@openai/codex"];
 
 const cdpUrl = process.env.ECO_DEV_CDP_URL?.trim() || "http://127.0.0.1:9366";
 const timeoutMs = Number.parseInt(process.env.ECO_SMOKE_TIMEOUT_MS ?? "180000", 10);
@@ -87,8 +95,8 @@ try {
   const version = String(availability?.codex?.version ?? "");
   if (!availability?.codex?.available) {
     fail("core_availability", availability);
-  } else if (!/\b0\.153\.4\b/.test(version)) {
-    fail("codex_version", `expected 0.153.4, got ${version}`);
+  } else if (version !== expectedCodexVersion) {
+    fail("codex_version", `expected ${expectedCodexVersion}, got ${version}`);
   } else {
     pass("codex_version", version);
   }

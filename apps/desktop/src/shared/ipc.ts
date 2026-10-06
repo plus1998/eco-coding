@@ -2118,6 +2118,34 @@ export interface ClarificationDismissPayload {
   expectedHistoryRevision: number;
 }
 
+/**
+ * What happened to an async answer after it was recorded.
+ *
+ * The answer is persisted first, so a submission is never lost; this reports only
+ * whether the Codex run actually received it. `unknown` means we cannot tell —
+ * the UI must keep the answer on screen and must not resend on its own.
+ */
+export interface ClarificationAsyncDelivery {
+  state: "delivered" | "queued" | "unknown";
+  /** Follow-up row carrying the answer, when one was created. */
+  followUpId?: string;
+  /** Queued conversation message the follow-up row points at. */
+  followUpMessageId?: string;
+  /** Human-readable reason for `unknown` / `queued`. */
+  message?: string;
+}
+
+/**
+ * Result of answering or dismissing a question.
+ *
+ * `delivery` is present only for async questions: a blocking `item/tool/requestUserInput`
+ * RPC is answered by the response itself, so there is nothing to confirm separately.
+ */
+export interface ClarificationSubmitResult {
+  ok: true;
+  delivery?: ClarificationAsyncDelivery;
+}
+
 export type BashApprovalKind = "command" | "file_change" | "network" | "image_generation" | "mcp";
 
 export interface BashApprovalNetworkPolicyAmendment {

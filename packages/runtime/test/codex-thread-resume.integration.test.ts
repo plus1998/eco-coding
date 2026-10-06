@@ -6,8 +6,18 @@ import path from "node:path";
 import { CodexAppServerClient } from "../src/codex-app-server-client";
 import { recordAppliedCodexThreadConfig } from "../src/codex-thread-config-fingerprint";
 import { resumeCodexThread } from "../src/codex-thread-resume";
+import {
+  parseCodexAppServerUserAgentVersion,
+  readCodexCliVersion,
+  readCodexDependencyPins,
+} from "../src/codex-version";
 
 const realAppServerTest = process.env.ECO_CODEX_REAL_APP_SERVER_TEST === "1" ? test : test.skip;
+
+/** The dependency pin the app ships; `packages/runtime/test` → repo root → apps/desktop. */
+const appCodexPin = readCodexDependencyPins(
+  JSON.parse(fs.readFileSync(path.resolve(import.meta.dir, "../../../apps/desktop/package.json"), "utf8")),
+).version;
 
 interface ThreadConfigResponse {
   model: string;
@@ -89,7 +99,11 @@ realAppServerTest(
 
     try {
       const initialized = await client.initialize();
-      expect(initialized.userAgent).toMatch(/codex-cli 0\.150\./);
+      // Verify the running app-server against the real binary and the dependency pin.
+      // The handshake now sends `<clientName>/<serverVersion> (…)` instead of the
+      // removed `codex-cli <version>` banner, so parse the server token, not a banner.
+      expect(readCodexCliVersion(codexExecutable)).toBe(appCodexPin);
+      expect(parseCodexAppServerUserAgentVersion(initialized.userAgent ?? "")).toBe(appCodexPin);
 
       const initialModel = "gpt-5.1-codex-mini";
       const resumedModel = "gpt-5.2-codex";

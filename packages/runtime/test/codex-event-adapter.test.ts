@@ -3027,3 +3027,118 @@ test("dispatch maps model safety buffering and auth recovery to thread.status", 
   expect(events[1]?.message).toContain("Refreshing credentials");
   expect(events[2]?.message).toContain("Credential refresh finished");
 });
+
+/**
+ * Codex 0.160 `request_user_input_async`: the model's questions arrive as an `agentMessage`
+ * item (`id` = tool call id, `delivery: "async"`, `phase: "final_answer"`) instead of a
+ * server request. Upstream emits the same item on `item/started` and `item/completed`.
+ */
+const ASYNC_QUESTIONS_ITEM = {
+  type: "agentMessage",
+  id: "item_async_q",
+  text: "需要确认两件事",
+  phase: "final_answer",
+  delivery: "async",
+  questions: [
+    { title: "用哪个包管理器？", options: ["bun", "npm"] },
+    { title: "是否需要迁移历史数据？", options: null },
+  ],
+};
+
+test("dispatch surfaces async questions from item/started and item/completed", () => {
+  const seen: Array<{ ecoThreadId: string; itemId: string; turnId?: string | undefined; titles: string[] }> = [];
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId,
+    recordThreadRunEvent: () => {},
+    onAsyncQuestions: (input) =>
+      seen.push({
+        ecoThreadId: input.ecoThreadId,
+        itemId: input.itemId,
+        turnId: input.turnId,
+        titles: input.questions.map((question) => question.title),
+      }),
+  });
+
+  adapter.dispatch("item/started", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: ASYNC_QUESTIONS_ITEM,
+  });
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: ASYNC_QUESTIONS_ITEM,
+  });
+
+  expect(seen).toHaveLength(2);
+  expect(seen[0]).toEqual({
+    ecoThreadId: ECO_THREAD,
+    itemId: "item_async_q",
+    turnId: "turn_async",
+    titles: ["用哪个包管理器？", "是否需要迁移历史数据？"],
+  });
+  // The same item twice: deduplication is the consumer's job (thread + turn + item id).
+  expect(seen[1]).toEqual(seen[0]);
+});
+
+test("dispatch ignores ordinary agent messages and malformed question payloads", () => {
+  const seen: string[] = [];
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId,
+    recordThreadRunEvent: () => {},
+    onAsyncQuestions: (input) => seen.push(input.itemId),
+  });
+
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: { type: "agentMessage", id: "item_plain", text: "普通回复" },
+  });
+  // `delivery: "async"` but no questions: not a question message.
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: { type: "agentMessage", id: "item_no_q", text: "x", delivery: "async", questions: [] },
+  });
+  // Questions without a title cannot be addressed back to the model.
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: {
+      type: "agentMessage",
+      id: "item_bad_q",
+      text: "x",
+      delivery: "async",
+      questions: [{ options: ["a"] }],
+    },
+  });
+  // Sync delivery on an agent message is not an async question.
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: { ...ASYNC_QUESTIONS_ITEM, id: "item_sync", delivery: "sync" },
+  });
+
+  expect(seen).toEqual([]);
+});
+
+test("async questions from an unmapped Codex thread flush once the mapping lands", () => {
+  const seen: Array<{ ecoThreadId: string; itemId: string }> = [];
+  let mapping: string | undefined;
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId: (codexThreadId) => mapping ?? codexThreadId,
+    recordThreadRunEvent: () => {},
+    onAsyncQuestions: (input) => seen.push({ ecoThreadId: input.ecoThreadId, itemId: input.itemId }),
+  });
+
+  adapter.dispatch("item/completed", {
+    threadId: "codex_unmapped_thread",
+    turnId: "turn_async",
+    item: { ...ASYNC_QUESTIONS_ITEM, id: "item_pending_q" },
+  });
+  expect(seen).toEqual([]);
+
+  mapping = "thr_eco_after_map";
+  adapter.flushPendingEventsForThread("codex_unmapped_thread");
+  expect(seen).toEqual([{ ecoThreadId: "thr_eco_after_map", itemId: "item_pending_q" }]);
+});
