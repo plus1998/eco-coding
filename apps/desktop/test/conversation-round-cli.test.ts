@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,19 +12,31 @@ afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function relocatedCheckout() {
-  const temporaryRoot = mkdtempSync(path.join(tmpdir(), "eco-round-cli-test-"));
-  temporaryRoots.push(temporaryRoot);
-  // Use the CLI's Node filesystem semantics: Bun preserves Windows 8.3 names
-  // such as RUNNER~1 while Node's module loader expands them to runneradmin.
+/**
+ * Windows keeps an 8.3 short name for a temp path when the long one does not fit
+ * (`C:\Users\runneradmin\...` is also `C:\Users\RUNNER~1\...`), and the runtimes disagree
+ * about which form a path is printed in: Bun's cwd/module resolution always expands to the
+ * long name, while Node keeps whatever the caller passed for both `process.cwd()` and plain
+ * `realpathSync`. `realpathSync.native` asks the filesystem instead, so it returns the same
+ * long form in every child and keeps these assertions from comparing two spellings of one
+ * directory.
+ */
+function canonicalPath(target: string) {
+  if (!existsSync(target)) return path.resolve(target);
   const canonical = spawnSync("node", [
     "--input-type=module", "-e",
-    'import { realpathSync } from "node:fs"; process.stdout.write(realpathSync(process.argv[1]));',
-    temporaryRoot,
+    'import { realpathSync } from "node:fs"; process.stdout.write(realpathSync.native(process.argv[1]));',
+    target,
   ], { encoding: "utf8" });
   if (canonical.error) throw canonical.error;
   if (canonical.status !== 0) throw new Error(canonical.stderr);
-  const root = canonical.stdout;
+  return canonical.stdout;
+}
+
+function relocatedCheckout() {
+  const temporaryRoot = mkdtempSync(path.join(tmpdir(), "eco-round-cli-test-"));
+  temporaryRoots.push(temporaryRoot);
+  const root = canonicalPath(temporaryRoot);
   for (const relative of [
     "scripts/conversation-round/replay.mjs",
     "scripts/conversation-round/lib",
@@ -58,7 +70,7 @@ test("CLI replays the checked-in PI recording after checkout relocation", () => 
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
   const payload = JSON.parse(result.stdout.slice(result.stdout.indexOf("{")));
   expect(payload.ok).toBe(true);
-  expect(payload.fixtureDir.startsWith(path.join(root, "scripts/conversation-round/fixtures"))).toBe(true);
+  expect(canonicalPath(payload.fixtureDir).startsWith(canonicalPath(path.join(root, "scripts/conversation-round/fixtures")))).toBe(true);
   expect(`${result.stdout}\n${result.stderr}`).toMatch(/4 pass/);
 }, 15_000);
 
@@ -70,8 +82,13 @@ test("missing recordings fail the replay and retain the actual error in PI regre
   expect(result.status).toBe(1);
   const payload = JSON.parse(result.stdout);
   expect(payload.failed).toBe(1);
-  expect(payload.steps[0].detail).toContain("Fixture directory missing");
-  expect(payload.steps[0].detail).toContain(pointerPath);
+  const detail: string = payload.steps[0].detail;
+  expect(detail).toContain("Fixture directory missing");
+  // The failing child prints the pointer path in its own runtime's spelling, so assert the
+  // canonical paths match instead of requiring one literal form.
+  expect(canonicalPath(detail.match(/Fixture directory missing for ([^;\r\n]+)/)?.[1] ?? "")).toBe(
+    canonicalPath(pointerPath),
+  );
 }, 15_000);
 
 test("prefers the current checkout even if the recorder's old absolute directory exists", () => {
