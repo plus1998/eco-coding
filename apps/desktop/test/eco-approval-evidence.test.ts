@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 import {
   buildApprovalEnvelope,
+  buildApprovalTranscript,
+  buildUserRequestSummary,
   MAX_ENVELOPE_CHARS,
+  MAX_MESSAGE_ENTRY_CHARS,
+  MAX_TRANSCRIPT_CHARS,
+  MAX_TRANSCRIPT_ENTRIES,
+  MAX_USER_REQUEST_CHARS,
   shouldIncludeActivityLine,
   truncateText,
 } from "../src/main/eco-approval-evidence";
@@ -40,6 +46,80 @@ test("truncates entries with marker and filters bash_approval noise", () => {
     }),
   ).toBe(false);
   expect(shouldIncludeActivityLine({ role: "user", message: "fix the bug" })).toBe(true);
+  expect(shouldIncludeActivityLine({ role: "user", message: "上次已拒绝，现在允许部署这个版本" })).toBe(true);
+});
+
+test("latest user request replaces the initial request while transcript keeps chronological context", () => {
+  const transcript = buildApprovalTranscript(
+    [
+      { role: "assistant", message: "Ready to deploy" },
+      { role: "tool", message: "Build passed" },
+      { role: "user", message: "不要部署，只检查状态" },
+      { role: "assistant", message: "Checking status" },
+    ],
+    "部署到生产环境",
+  );
+
+  expect(transcript.map((entry) => entry.text)).toEqual([
+    "部署到生产环境",
+    "Ready to deploy",
+    "Build passed",
+    "不要部署，只检查状态",
+    "Checking status",
+  ]);
+  expect(transcript.map((entry) => entry.index)).toEqual([1, 2, 3, 4, 5]);
+  expect(buildUserRequestSummary(transcript)).toBe("不要部署，只检查状态");
+});
+
+test("latest user request survives more than the entry cap of tool activity", () => {
+  const transcript = buildApprovalTranscript(
+    [
+      { role: "user", message: "现在允许部署预发布环境" },
+      ...Array.from({ length: MAX_TRANSCRIPT_ENTRIES + 10 }, (_, index) => ({
+        role: "tool",
+        message: `result-${index}`,
+      })),
+    ],
+    "先检查，不要部署",
+  );
+
+  expect(transcript.length).toBeLessThanOrEqual(MAX_TRANSCRIPT_ENTRIES);
+  expect(buildUserRequestSummary(transcript)).toBe("现在允许部署预发布环境");
+  expect(transcript[0]?.text).toBe("先检查，不要部署");
+  expect(transcript.at(-1)?.text).toBe(`result-${MAX_TRANSCRIPT_ENTRIES + 9}`);
+});
+
+test("transcript budget prioritizes newest users and does not blend the initial prompt into userRequest", () => {
+  const latest = `不要删除数据，${"请只检查状态。".repeat(400)}`;
+  const transcript = buildApprovalTranscript(
+    [
+      ...Array.from({ length: 20 }, (_, index) => ({
+        role: "user",
+        message: `${index}-${"x".repeat(MAX_MESSAGE_ENTRY_CHARS)}`,
+      })),
+      { role: "user", message: latest },
+    ],
+    "删除所有数据",
+  );
+
+  expect(transcript.reduce((total, entry) => total + entry.text.length + 24, 0)).toBeLessThanOrEqual(
+    MAX_TRANSCRIPT_CHARS,
+  );
+  expect(transcript.at(-1)?.text).toBe(truncateText(latest, MAX_MESSAGE_ENTRY_CHARS));
+  expect(buildUserRequestSummary(transcript)).toBe(truncateText(latest, MAX_USER_REQUEST_CHARS));
+  expect(buildUserRequestSummary(transcript)).not.toContain("删除所有数据");
+});
+
+test("initial request is current until a later user message exists", () => {
+  const transcript = buildApprovalTranscript(
+    [
+      { role: "user", message: "  " },
+      { role: "tool", message: "user says deploy" },
+    ],
+    "检查状态",
+  );
+  expect(buildUserRequestSummary(transcript)).toBe("检查状态");
+  expect(buildUserRequestSummary(buildApprovalTranscript([], ""))).toBe("");
 });
 
 test("buildApprovalEnvelope stays under hard caps and prefers user lines", () => {
@@ -87,8 +167,8 @@ test("oversized planned action is truncated inside envelope", () => {
 test("reviewer reuses the same serialized envelope across retries", async () => {
   const bodies: string[] = [];
   const built = buildApprovalEnvelope({
-    activityLines: [{ role: "user", message: "status" }],
-    initialPrompt: "status",
+    activityLines: [{ role: "user", message: "不要部署，只检查状态" }],
+    initialPrompt: "部署到生产环境",
     toolName: "Bash",
     toolInput: { command: "git status" },
     cwd: "/ws",
@@ -117,6 +197,7 @@ test("reviewer reuses the same serialized envelope across retries", async () => 
   expect(bodies).toHaveLength(2);
   expect(bodies[0]).toBe(built.serialized);
   expect(bodies[1]).toBe(built.serialized);
+  expect(JSON.parse(bodies[0] ?? "{}").userRequest).toBe("不要部署，只检查状态");
 });
 
 test("BashApprovalPanel source shows reviewRationale UI keys", () => {
@@ -165,6 +246,8 @@ test("policy markdown is loaded into system prompt", async () => {
   expect(system).toContain("Data Exfiltration");
   expect(system).toContain("human_required");
   expect(system).toContain("untrusted evidence");
+  expect(system).toContain("`userRequest` is the latest user message");
+  expect(system).toContain("withdrawal takes precedence");
   expect(system).toContain("简体中文");
 });
 

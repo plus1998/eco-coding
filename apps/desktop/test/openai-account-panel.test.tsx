@@ -1,0 +1,115 @@
+import { expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  OpenAIAccountProfileFields,
+  OpenAIAccountQuotaSummary,
+  OpenAIAccountSwitchStatus,
+} from "../src/renderer/components/OpenAIAccountsPanel";
+import type { OpenAIAccountQuota } from "../src/shared/openai-account";
+
+const cachedQuota: OpenAIAccountQuota = {
+  planType: "plus",
+  email: "demo@example.test",
+  rateLimit: {
+    allowed: true,
+    limitReached: false,
+    primaryWindow: { usedPercent: 37, limitWindowSeconds: 18_000, resetAfterSeconds: 3_600, resetAt: 0 },
+    secondaryWindow: null,
+  },
+  resetCreditsAvailable: 2,
+  fetchedAt: Date.parse("2025-01-01T08:30:00.000Z"),
+};
+
+test("account profile editor renders all four fields and masks secrets by default", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountProfileFields, {
+    email: "demo@example.test",
+    password: "fictional password",
+    pickupUrl: "https://pickup.example.test/?key=demo",
+    twoFactorSecret: "JBSWY3DPEHPK3PXP",
+    instanceKey: "test-account",
+    onEmailChange: () => undefined,
+    onPasswordChange: () => undefined,
+    onPickupUrlChange: () => undefined,
+    onTwoFactorSecretChange: () => undefined,
+  }));
+
+  expect(markup).toMatch(/type="email"[^>]*value="demo@example\.test"/u);
+  expect(markup).toContain('type="url"');
+  expect(markup).toContain('value="https://pickup.example.test/?key=demo"');
+  expect(markup).toMatch(/type="password"[^>]*value="fictional password"/u);
+  expect(markup).toMatch(/type="password"[^>]*value="JBSWY3DPEHPK3PXP"/u);
+  expect(markup).toContain('aria-label="显示内容"');
+  expect(markup).toContain('aria-label="复制密码"');
+  expect(markup).toContain('aria-label="复制2FA 密钥"');
+});
+
+test("pending account switch shows the last target and a cancel action", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountSwitchStatus, {
+    activeAccountId: "account-current",
+    activeAccountName: "当前账号",
+    pendingAccountId: "account-target",
+    pendingAccountName: "目标账号",
+    busy: false,
+    onCancel: () => undefined,
+  }));
+
+  expect(markup).toContain("待切换：目标账号");
+  expect(markup).toContain("取消切换");
+  expect(markup).toContain('class="codex-active-summary"');
+});
+
+test("credential replacement on the active account has a distinct pending label", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountSwitchStatus, {
+    activeAccountId: "account-current",
+    activeAccountName: "当前账号",
+    pendingAccountId: "account-current",
+    pendingAccountName: "当前账号",
+    busy: false,
+    onCancel: () => undefined,
+  }));
+
+  expect(markup).toContain("凭据待应用：当前账号");
+  expect(markup).toContain("取消凭据更新");
+});
+
+test("cached quota shows the last successful refresh time after credentials expire", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountQuotaSummary, {
+    quota: cachedQuota,
+    isLoggedIn: false,
+    loading: false,
+    error: undefined,
+  }));
+  expect(markup).toContain("37% 已使用");
+  expect(markup).toContain("2 次重置");
+  expect(markup).toContain('dateTime="2025-01-01T08:30:00.000Z"');
+  expect(markup).toContain("上次刷新");
+  expect(markup).toContain("已到重置时间，待刷新");
+  expect(markup).not.toContain("1h 后重置");
+});
+
+test("refreshing quota keeps the cached values visible with a loading indicator", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountQuotaSummary, {
+    quota: cachedQuota,
+    isLoggedIn: true,
+    loading: true,
+    error: undefined,
+  }));
+  expect(markup).toContain('aria-busy="true"');
+  expect(markup).toContain('aria-label="正在刷新额度"');
+  expect(markup).toContain("37% 已使用");
+  expect(markup).toContain("上次刷新");
+});
+
+test("quota errors preserve cached values and expose the actual failure", () => {
+  const markup = renderToStaticMarkup(createElement(OpenAIAccountQuotaSummary, {
+    quota: cachedQuota,
+    isLoggedIn: true,
+    loading: false,
+    error: "OpenAI quota request failed with status 503.",
+  }));
+  expect(markup).toContain("37% 已使用");
+  expect(markup).toContain("刷新失败，显示缓存");
+  expect(markup).toContain('title="OpenAI quota request failed with status 503."');
+  expect(markup).toContain('dateTime="2025-01-01T08:30:00.000Z"');
+});

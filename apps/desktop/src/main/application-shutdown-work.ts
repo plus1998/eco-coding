@@ -7,7 +7,10 @@ import {
   shouldBypassQuitConfirmation,
 } from "./application-quit-bypass";
 
-export { setApplicationQuitBypassConfirmation, shouldBypassQuitConfirmation } from "./application-quit-bypass";
+export {
+  setApplicationQuitBypassConfirmation,
+  shouldBypassQuitConfirmation,
+} from "./application-quit-bypass";
 
 export interface RunningThreadSnapshot {
   threadId: string;
@@ -67,11 +70,15 @@ export interface ApplicationShutdownDeps {
   stopAllBackgroundTasks: () => void;
   killAllInteractiveTerminals: () => void;
   disposeBrowserHost: () => void;
+  stopAllPiRuntimes: () => Promise<void>;
   closeImageGenerationGateway: () => Promise<void>;
   closeImageViewGateway: () => Promise<void>;
   closeImageDisplayGateway: () => Promise<void>;
   closeIntegratedWebSearchGateway: () => Promise<void>;
+  closeMcpHubGateway: () => Promise<void>;
   stopGlobalCodexRuntime: () => Promise<void>;
+  /** Flush Codex auth.json and close its SQLite account store after the runtime stops. */
+  closeOpenAIAccountService?: () => Promise<void>;
   /** Tear down Cursor ACP process trees Eco spawned this session (tracked only). */
   stopAllAcpRuntimes: () => void;
   stopGlobalEcoGateway: () => Promise<void>;
@@ -242,6 +249,7 @@ export async function interruptAllRunningWork(deps: ApplicationShutdownDeps): Pr
 }
 
 export async function shutdownApplicationServices(deps: ApplicationShutdownDeps): Promise<void> {
+  await deps.stopAllPiRuntimes();
   deps.disposeSystemSleepBlocker();
   deps.disposeDesktopUpdateService();
   deps.disposeBrowserHost();
@@ -249,6 +257,7 @@ export async function shutdownApplicationServices(deps: ApplicationShutdownDeps)
   await deps.closeImageViewGateway();
   await deps.closeImageDisplayGateway();
   await deps.closeIntegratedWebSearchGateway();
+  await deps.closeMcpHubGateway();
   deps.clearCodexSubagentRuntimeLimit();
   deps.flushAllThreadMetrics();
   deps.disposeCodexGatewayUsagePending();
@@ -256,6 +265,7 @@ export async function shutdownApplicationServices(deps: ApplicationShutdownDeps)
   deps.disposeGitAutoFetcher();
   deps.disposeCenterServerClient();
   await deps.stopGlobalCodexRuntime();
+  await deps.closeOpenAIAccountService?.();
   deps.stopAllAcpRuntimes();
   await deps.stopGlobalEcoGateway();
 }

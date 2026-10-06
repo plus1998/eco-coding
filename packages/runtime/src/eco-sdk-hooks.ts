@@ -15,6 +15,7 @@ import type {
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import { truncateToolOutputForHistory } from "./codex-output-truncation.js";
+import { buildForcedPlanDelegationContract } from "./forced-plan-delegation.js";
 import {
   readPlanFileContent,
   readPlanFromPhaseTranscript,
@@ -42,6 +43,7 @@ import {
   parseMcpToolServerName,
   resolveToolPermissionEntryForActor,
   sanitizeMcpServerName,
+  sdkAgentKeyForOrchestrationAgent,
 } from "./agent-orchestration.js";
 import {
   isSubagentEnabled,
@@ -72,7 +74,13 @@ export interface EcoTaskTrackerHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onSubagentStop(input: { agentId: string; agentType: string }): void;
+  onSubagentStop(input: {
+    agentId: string;
+    agentType: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }): void;
   onStop(status: "completed" | "blocked" | "cancelled"): void;
   peekPendingCoderTodoId?: () => string | undefined;
 }
@@ -133,6 +141,39 @@ export function createBrowserOpenApprovalPreToolHook(
   };
 }
 
+/** Match Claude-native WebSearch and Eco integrated web-search MCP tool. */
+export function isEcoWebSearchApprovalToolName(toolName: string): boolean {
+  const name = toolName.trim().toLowerCase();
+  if (!name) {
+    return false;
+  }
+  if (name === "websearch" || name === "web_search") {
+    return true;
+  }
+  return name.includes("eco_web_search");
+}
+
+export function createWebSearchApprovalPreToolHook(
+  resolveMode?: () => "always_allow" | "always_ask",
+): HookCallback | undefined {
+  if (!resolveMode) {
+    return undefined;
+  }
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (resolveMode() !== "always_ask") {
+      return {};
+    }
+    if (!isEcoWebSearchApprovalToolName(preInput.tool_name)) {
+      return {};
+    }
+    return askTool(preInput.tool_name, "Agent is about to run a web search.");
+  };
+}
+
 export interface EcoSubagentSessionHooks {
   phase: SubagentRunPhase;
   threadId: string;
@@ -148,6 +189,9 @@ export interface EcoSubagentSessionHooks {
     agentType: string;
     agentTranscriptPath?: string;
     transcriptPath?: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
   }): void | Promise<void>;
   /** SDK stream paired parent_tool_use_id with a SubagentStart agent id. */
   onDelegationLinked?(input: {
@@ -189,6 +233,61 @@ export interface EcoSubagentAttributionHooks {
   onSubagentRegistered?(input: { role: RuntimeAgentRole; agentId?: string; parentToolUseId?: string }): void;
 }
 
+/**
+ * "指定子代理执行已批准计划": host-supplied one-shot delegation contract. When present,
+ * the parent turn's Agent/Task spawn is rewritten to the canonical task and restricted to
+ * the chosen role.
+ */
+export interface ForcedPlanDelegationHookConfig {
+  /** Target role key from the thread's locked orchestration snapshot. */
+  agentKey: string;
+  /** Canonical task (verbatim plan + optional user message) the parent must send. */
+  canonicalTask: string;
+  /** One-shot claim; `ok: false` denies a wrong-target or repeat delegation. */
+  claimSpawn: (input: {
+    toolUseId?: string;
+    agentKey: string;
+  }) => { ok: true } | { ok: false; reason: string };
+  /** Mark the claim as started only after the SDK emits SubagentStart. */
+  confirmSpawn?: (input: { agentKey: string; toolUseIds: readonly string[] }) => void;
+}
+
+export function createForcedPlanDelegationSubagentStartHook(
+  resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
+): HookCallback | undefined {
+  if (!resolveConfig) {
+    return undefined;
+  }
+  return async (input) => {
+    if (input.hook_event_name !== "SubagentStart") {
+      return {};
+    }
+    const config = resolveConfig();
+    if (!config) {
+      return {};
+    }
+    const started = input as SubagentStartHookInput;
+    // Claude Agent SDK reports Eco's registered agents as `general-purpose` in
+    // SubagentStart, even though the spawn was rewritten to `eco_<role>`. The
+    // armed delegation already pins the only allowed target, so use that
+    // target for the launch confirmation when the SDK emits its generic key.
+    const agentKey =
+      (started.agent_type === SDK_GENERAL_PURPOSE_AGENT_KEY
+        ? config.agentKey
+        : normalizeSdkBuiltinOrEcoAgentRole(started.agent_type)) ??
+      normalizeSdkSubagentType(started.agent_type) ??
+      started.agent_type;
+    config.confirmSpawn?.({
+      agentKey,
+      // The SDK's SubagentStart callback `toolUseID` is a hook invocation id,
+      // not the parent Agent tool id. Use only ids explicitly carried by the
+      // event; otherwise the one-shot role claim is the source of truth.
+      toolUseIds: collectSubagentStartParentToolUseIdCandidates(started, undefined),
+    });
+    return {};
+  };
+}
+
 export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
@@ -200,6 +299,8 @@ export interface EcoHookContext {
   exitPlanCaptureState?: { capturedToolUseIds: Set<string> };
   /** Execution resume: only this previously approved deferred ExitPlanMode call may complete. */
   approvedExitPlanToolUseId?: string;
+  /** Forced one-shot plan delegation (see `ForcedPlanDelegationHookConfig`). */
+  resolveForcedPlanDelegation?: () => ForcedPlanDelegationHookConfig | undefined;
   /** Explicit current phase boundary; do not infer Agent mode from available callbacks. */
   planModeToolPolicy?: PlanModeToolPolicy;
   taskTracker?: EcoTaskTrackerHooks;
@@ -224,6 +325,11 @@ export interface EcoHookContext {
    * canUseTool can show the approval card (including under bypassPermissions).
    */
   resolveBrowserOpenApprovalMode?: () => "always_allow" | "always_ask";
+  /**
+   * Web search approval. When `always_ask`, PreToolUse returns ask so
+   * canUseTool can show the approval card (including under bypassPermissions).
+   */
+  resolveWebSearchApprovalMode?: () => "always_allow" | "always_ask";
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
@@ -777,6 +883,124 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
   };
 }
 
+/** Canonical comparison key for an Eco/Codex/SDK agent role (tolerates `eco_` prefixes). */
+function canonicalForcedAgentKey(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return "";
+  }
+  const role = normalizeSdkSubagentType(value);
+  if (role) {
+    return role;
+  }
+  return trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+}
+
+/**
+ * Force the parent turn's Agent/Task spawn to the chosen subagent and canonical task.
+ * Subagent actors are ignored: only the main agent may consume the armed delegation.
+ */
+/** Tools the parent may not use while a forced delegation is armed (it must not do the work). */
+const FORCED_DELEGATION_PARENT_DENY_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]);
+
+export function createForcedPlanDelegationPreToolHook(
+  resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
+): HookCallback {
+  return async (input) => {
+    if (!resolveConfig || input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    const isSpawn = preInput.tool_name === "Agent" || preInput.tool_name === "Task";
+    if (!isSpawn && !FORCED_DELEGATION_PARENT_DENY_TOOLS.has(preInput.tool_name)) {
+      return {};
+    }
+    if (resolveToolPermissionActor(preInput) !== "main") {
+      return {};
+    }
+    const config = resolveConfig();
+    if (!config) {
+      return {};
+    }
+    if (!isSpawn) {
+      // The user chose a subagent: the parent must delegate instead of editing the workspace.
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            `用户已指定由子代理「${config.agentKey}」执行该已批准的计划，主代理不得自行修改工作区。` +
+            `请调用 Agent 工具（subagent_type: ${config.agentKey}）委派该计划。`,
+        },
+      };
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const requested = canonicalForcedAgentKey(readAgentSubagentType(toolInput) ?? "");
+    const target = canonicalForcedAgentKey(config.agentKey);
+    const toolUseId =
+      typeof preInput.tool_use_id === "string" && preInput.tool_use_id.trim()
+        ? preInput.tool_use_id.trim()
+        : undefined;
+    const claim = config.claimSpawn({
+      ...(toolUseId ? { toolUseId } : {}),
+      agentKey: requested || target,
+    });
+    if (!claim.ok) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: claim.reason,
+        },
+      };
+    }
+    const updatedInput: Record<string, unknown> = { ...toolInput, prompt: config.canonicalTask };
+    if (target) {
+      // The SDK resolves agents by their registered `eco_<key>` name, not the bare role key.
+      updatedInput.subagent_type = sdkAgentKeyForOrchestrationAgent(config.agentKey);
+      delete updatedInput.agent_type;
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput,
+      },
+    };
+  };
+}
+
+/**
+ * Injects the forced-delegation contract right after the approved plan is submitted, so
+ * the resumed parent turn knows it must delegate (the bridge path has no other prompt).
+ */
+export function createForcedPlanDelegationPostToolHook(
+  resolveConfig?: () => ForcedPlanDelegationHookConfig | undefined,
+): HookCallback {
+  return async (input) => {
+    if (!resolveConfig || input.hook_event_name !== "PostToolUse") {
+      return {};
+    }
+    const postInput = input as PostToolUseHookInput;
+    if (postInput.tool_name !== "ExitPlanMode") {
+      return {};
+    }
+    if (resolveToolPermissionActor(postInput) !== "main") {
+      return {};
+    }
+    const config = resolveConfig();
+    if (!config) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: buildForcedPlanDelegationContract({ agentKey: config.agentKey }),
+      },
+    };
+  };
+}
+
 export function createNonEcoSubagentDenyPreToolHook(
   allowedAgentKeys: readonly string[] = [],
   allowedSdkBuiltinAgentKeys: readonly string[] = [],
@@ -955,7 +1179,7 @@ export function createToolPermissionPreToolHook(
   };
 }
 
-function resolveToolPermissionActor(input: PreToolUseHookInput): "main" | string {
+function resolveToolPermissionActor(input: { agent_id?: string; agent_type?: string }): "main" | string {
   if (typeof input.agent_id === "string" && input.agent_id.trim()) {
     return typeof input.agent_type === "string" && input.agent_type.trim()
       ? input.agent_type.trim()
@@ -1490,6 +1714,42 @@ export function createSubagentStartHook(handlers: {
   };
 }
 
+/**
+ * Claude Agent SDK SubagentStopHookInput has no `failed` field (0.3.266).
+ * Infer terminal failure from extra fields some emitters attach, or from the
+ * documented Agent-tool error text (`Agent terminated early due to an API error`).
+ * https://code.claude.com/docs/en/errors
+ */
+export function inferSubagentStopFailure(input: SubagentStopHookInput): {
+  failed?: boolean;
+  cancelled?: boolean;
+  reason?: string;
+} {
+  const extra = input as SubagentStopHookInput & Record<string, unknown>;
+  const reasonCandidates = [
+    extra.last_assistant_message,
+    extra.reason,
+    extra.error,
+    extra.stopReason,
+    extra.stop_reason,
+  ];
+  const reason = reasonCandidates
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim();
+  const cancelled = extra.cancelled === true || extra.status === "stopped" || extra.status === "killed";
+  const failedExplicit =
+    extra.failed === true || extra.status === "failed" || extra.is_error === true || extra.isError === true;
+  const failedFromMessage = Boolean(
+    reason && /terminated early due to an API error|API Error:\s*\d{3}/i.test(reason),
+  );
+  const failed = failedExplicit || failedFromMessage;
+  return {
+    ...(failed && { failed: true }),
+    ...(cancelled && { cancelled: true }),
+    ...(reason && { reason }),
+  };
+}
+
 export function createSubagentStopHook(handlers: {
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
@@ -1501,6 +1761,7 @@ export function createSubagentStopHook(handlers: {
     }
     const stopped = input as SubagentStopHookInput;
     const agentType = normalizeSdkSubagentType(stopped.agent_type) ?? stopped.agent_type;
+    const outcome = inferSubagentStopFailure(stopped);
     const payload = {
       agentId: stopped.agent_id,
       agentType,
@@ -1508,6 +1769,7 @@ export function createSubagentStopHook(handlers: {
         agentTranscriptPath: stopped.agent_transcript_path.trim(),
       }),
       ...(stopped.transcript_path?.trim() && { transcriptPath: stopped.transcript_path.trim() }),
+      ...outcome,
     };
     handlers.runtimeLimit?.onStop(payload);
     handlers.taskTracker?.onSubagentStop(payload);
@@ -1603,7 +1865,8 @@ export function createClassifierContextPostToolHook(): HookCallback {
 const CLASSIFIER_CONTEXT_MAX_CHARS = 240;
 
 function buildPostToolClassifierContext(post: PostToolUseHookInput): string {
-  const toolName = typeof post.tool_name === "string" && post.tool_name.trim() ? post.tool_name.trim() : "Tool";
+  const toolName =
+    typeof post.tool_name === "string" && post.tool_name.trim() ? post.tool_name.trim() : "Tool";
   const outcome = summarizeToolResponseForClassifier(post.tool_response);
   const combined = outcome ? `${toolName}: ${outcome}` : toolName;
   if (combined.length <= CLASSIFIER_CONTEXT_MAX_CHARS) {
@@ -1715,6 +1978,18 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     );
   }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
+  pushHook(hooks, "PreToolUse", createForcedPlanDelegationPreToolHook(ctx.resolveForcedPlanDelegation));
+  pushHook(
+    hooks,
+    "SubagentStart",
+    createForcedPlanDelegationSubagentStartHook(ctx.resolveForcedPlanDelegation),
+  );
+  pushHook(
+    hooks,
+    "PostToolUse",
+    createForcedPlanDelegationPostToolHook(ctx.resolveForcedPlanDelegation),
+    "ExitPlanMode",
+  );
   pushHook(
     hooks,
     "PreToolUse",
@@ -1735,6 +2010,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     }),
   );
   pushHook(hooks, "PreToolUse", createBrowserOpenApprovalPreToolHook(ctx.resolveBrowserOpenApprovalMode));
+  pushHook(hooks, "PreToolUse", createWebSearchApprovalPreToolHook(ctx.resolveWebSearchApprovalMode));
   pushHook(hooks, "PreToolUse", createSubagentLaunchGatePreToolHook(ctx.subagentLaunchGate), "Agent|Task");
   const subagentLaunchRegistry =
     ctx.subagentLaunchRegistry ??

@@ -173,7 +173,7 @@ export function resolveScreenRecordingAppLabel(input?: {
   }
   return resolveDevScreenRecordingHostLabel({
     ancestorCommands: input?.ancestorCommands ?? [],
-    termProgram: input?.termProgram,
-    fallback: input?.fallback,
+    ...(input?.termProgram === undefined ? {} : { termProgram: input.termProgram }),
+    ...(input?.fallback === undefined ? {} : { fallback: input.fallback }),
   });
 }

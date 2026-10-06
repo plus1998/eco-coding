@@ -38,5 +38,8 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      - name: Static analysis
+        run: flutter analyze
+
       - name: Test
         run: flutter test

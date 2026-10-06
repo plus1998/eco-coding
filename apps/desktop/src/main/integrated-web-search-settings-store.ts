@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
+import {
+  isWebSearchApprovalMode,
+  type WebSearchApprovalMode,
+} from "../shared/integrated-web-search";
 import type {
   IntegratedWebSearchProvider,
   IntegratedWebSearchSettingsSaveInput,
@@ -20,6 +24,7 @@ export function defaultIntegratedWebSearchSettings(): IntegratedWebSearchSetting
     enabled: false,
     provider: "tavily",
     hasApiKey: false,
+    approvalMode: "always_allow",
   };
 }
 
@@ -38,6 +43,7 @@ interface StoredIntegratedWebSearchSettings {
   enabled: boolean;
   provider: IntegratedWebSearchProvider;
   encryptedApiKey: string;
+  approvalMode: WebSearchApprovalMode;
 }
 
 export class IntegratedWebSearchSettingsStore {
@@ -62,6 +68,7 @@ export class IntegratedWebSearchSettingsStore {
       enabled: stored.enabled,
       provider: stored.provider,
       hasApiKey: stored.encryptedApiKey.length > 0,
+      approvalMode: stored.approvalMode,
     };
   }
 
@@ -73,7 +80,15 @@ export class IntegratedWebSearchSettingsStore {
     if (!this.secretCodec.isAvailable()) {
       throw new Error("Integrated Web Search API key is stored but local secret storage is unavailable.");
     }
-    const decrypted = this.secretCodec.decrypt(stored.encryptedApiKey).trim();
+    let decrypted: string;
+    try {
+      decrypted = this.secretCodec.decrypt(stored.encryptedApiKey).trim();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Integrated Web Search API Key 解密失败，请在设置中重新输入并保存。原始错误：${reason}`,
+      );
+    }
     return decrypted || undefined;
   }
 
@@ -81,6 +96,9 @@ export class IntegratedWebSearchSettingsStore {
     const current = this.readStored();
     const enabled = input.enabled ?? current.enabled;
     const provider = input.provider ?? current.provider;
+    const approvalMode = isWebSearchApprovalMode(input.approvalMode)
+      ? input.approvalMode
+      : current.approvalMode;
     let encryptedApiKey = current.encryptedApiKey;
     if (input.apiKey !== undefined) {
       const trimmed = input.apiKey.trim();
@@ -97,6 +115,7 @@ export class IntegratedWebSearchSettingsStore {
       enabled,
       provider: normalizeIntegratedWebSearchProvider(provider),
       encryptedApiKey,
+      approvalMode,
     };
     this.writeStored(next);
     return this.get();
@@ -107,12 +126,12 @@ export class IntegratedWebSearchSettingsStore {
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
       .get(INTEGRATED_WEB_SEARCH_SETTINGS_KEY) as { value_json: string } | undefined;
     if (!row) {
-      return { enabled: false, provider: "tavily", encryptedApiKey: "" };
+      return { enabled: false, provider: "tavily", encryptedApiKey: "", approvalMode: "always_allow" };
     }
     try {
       return normalizeStoredIntegratedWebSearchSettings(JSON.parse(row.value_json));
     } catch {
-      return { enabled: false, provider: "tavily", encryptedApiKey: "" };
+      return { enabled: false, provider: "tavily", encryptedApiKey: "", approvalMode: "always_allow" };
     }
   }
 
@@ -138,13 +157,14 @@ export function normalizeIntegratedWebSearchProvider(value: unknown): Integrated
 
 function normalizeStoredIntegratedWebSearchSettings(value: unknown): StoredIntegratedWebSearchSettings {
   if (!value || typeof value !== "object") {
-    return { enabled: false, provider: "tavily", encryptedApiKey: "" };
+    return { enabled: false, provider: "tavily", encryptedApiKey: "", approvalMode: "always_allow" };
   }
   const record = value as Record<string, unknown>;
   const enabled = record.enabled === true;
   const provider = normalizeIntegratedWebSearchProvider(record.provider);
   const encryptedApiKey = typeof record.encryptedApiKey === "string" ? record.encryptedApiKey : "";
-  return { enabled, provider, encryptedApiKey };
+  const approvalMode = isWebSearchApprovalMode(record.approvalMode) ? record.approvalMode : "always_allow";
+  return { enabled, provider, encryptedApiKey, approvalMode };
 }
 
 export function isIntegratedWebSearchSettingsSaveInput(
@@ -163,6 +183,9 @@ export function isIntegratedWebSearchSettingsSaveInput(
     record.provider !== "tavily" &&
     record.provider !== "doubao"
   ) {
+    return false;
+  }
+  if (record.approvalMode !== undefined && !isWebSearchApprovalMode(record.approvalMode)) {
     return false;
   }
   if (record.apiKey !== undefined && typeof record.apiKey !== "string") {
@@ -185,6 +208,9 @@ export function isIntegratedWebSearchSettingsSnapshot(
     return false;
   }
   if (typeof record.hasApiKey !== "boolean") {
+    return false;
+  }
+  if (!isWebSearchApprovalMode(record.approvalMode)) {
     return false;
   }
   return true;

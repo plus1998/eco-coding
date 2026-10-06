@@ -76,6 +76,60 @@ export {
 export type { EventStore, SecretStore, ThreadRecord } from "./store";
 export { InMemoryEventStore, InMemorySecretStore, redactSecrets } from "./store";
 
+export {
+  CONVERSATION_V2_DEFAULT_MAX_BYTES,
+  CONVERSATION_V2_EFFECT_VERSION,
+  CONVERSATION_V2_ERROR,
+  CONVERSATION_V2_MAX_PAGE_SIZE,
+  CONVERSATION_V2_MAX_SYNC_EVENTS,
+  CONVERSATION_V2_PROTOCOL_VERSION,
+  CONVERSATION_V2_SCHEMA_VERSION,
+  ConversationV2Error,
+  compareConversationMessagePosition,
+  decodeConversationCursor,
+  encodeConversationCursor,
+  estimateConversationBytes,
+  limitConversationToolSummaryPayload,
+  stableHash,
+  stableJson,
+} from "./conversation-v2";
+export {
+  ECO_MCP_HUB_TOOL_NAMES,
+  ecoMcpHubNamespace,
+  ecoMcpHubServerName,
+} from "./eco-mcp-hub";
+export type {
+  ConversationAgent,
+  ConversationBootstrap,
+  ConversationCapabilities,
+  ConversationCursor,
+  ConversationDetailItem,
+  ConversationDetailsPage,
+  ConversationEffect,
+  ConversationEventInput,
+  ConversationEventRecord,
+  ConversationEventType,
+  ConversationHead,
+  ConversationMessage,
+  ConversationMessageHistoryTarget,
+  ConversationMessageChannel,
+  ConversationMessageRole,
+  ConversationMessageStatus,
+  ConversationMessagesPage,
+  ConversationRun,
+  ConversationRunStatus,
+  ConversationSendMessageResult,
+  ConversationSyncEffect,
+  ConversationSyncPage,
+  ConversationToolsPage,
+  ConversationToolCall,
+  ConversationToolStatus,
+  ConversationTodo,
+  ConversationTodoStatus,
+  ConversationTurnSummary,
+  ConversationV2ErrorCode,
+} from "./conversation-v2";
+
 export type {
   PasswordWrappedVaultKey,
   VaultClaimKeyPair,
@@ -192,6 +246,8 @@ export interface PlanReadyPayload {
 export interface SessionCapturedPayload {
   sessionId: string;
   cwd: string;
+  /** /clear allocated an empty session which still needs its first persisted turn. */
+  resetPending?: boolean;
 }
 
 export interface SessionTitlePayload {

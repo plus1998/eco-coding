@@ -1,8 +1,4 @@
 import { ipcMain, type WebContents } from "electron";
-import {
-  buildThreadRunProjectionDetail,
-  parseThreadRunProjectionDetailRequest,
-} from "../main/thread-run-projection-detail";
 import type { BrowserViewState } from "../shared/browser";
 import { defaultBrowserSettings } from "../shared/browser";
 import { defaultComputerUseSettings } from "../shared/computer-use";
@@ -12,14 +8,10 @@ import { IPC_CHANNELS } from "../shared/ipc";
 import { DEMO_THREAD_ID, DEMO_WORKSPACE_PATH } from "./constants";
 import {
   getDemoFeedReplayState,
-  resolveDemoFeedReplayFullProjection,
-  resolveDemoFeedReplayProjection,
 } from "./feed-replay-bootstrap";
 import {
-  demoBillingSnapshot,
   demoCandidateModels,
   demoCenterServerSettings,
-  demoContextSnapshot,
   demoCoreAvailability,
   demoGitSettings,
   demoGitStatus,
@@ -29,11 +21,7 @@ import {
   demoProvider,
   demoProxyBridgeSettings,
   demoIntegratedWebSearchSettings,
-  demoRunProjection,
-  demoSubagentMetrics,
-  demoSubagentSessions,
   demoThreads,
-  demoUsageLedgerEvents,
   demoWorkflowSettings,
   demoWorkspace,
   demoWorkspaceInspect,
@@ -59,68 +47,10 @@ function effectiveDemoThreadId(payload: unknown): string | undefined {
 
 function buildDemoSessionBootstrapForThread(threadId: string) {
   const thread = effectiveDemoThreads().find((entry) => entry.id === threadId);
-  const replayProjection = resolveDemoFeedReplayProjection(threadId);
   return {
     thread,
     followUps: [],
-    subagentSessions:
-      replayProjection?.subagentTimings ?? (threadId === DEMO_THREAD_ID ? demoSubagentSessions : []),
-    usage: {
-      ...(replayProjection?.billing
-        ? { billing: replayProjection.billing }
-        : threadId === DEMO_THREAD_ID
-          ? { billing: demoBillingSnapshot }
-          : {}),
-      ...(replayProjection?.context
-        ? { context: replayProjection.context }
-        : threadId === DEMO_THREAD_ID
-          ? { context: demoContextSnapshot }
-          : {}),
-    },
   };
-}
-
-function effectiveRunProjection(threadId: string | undefined) {
-  if (!threadId) {
-    return undefined;
-  }
-  const replayProjection = resolveDemoFeedReplayProjection(threadId);
-  if (replayProjection) {
-    return replayProjection;
-  }
-  return threadId === DEMO_THREAD_ID ? demoRunProjection : undefined;
-}
-
-function effectiveRunProjectionDetail(payload: unknown) {
-  const request = parseThreadRunProjectionDetailRequest(payload);
-  if (!request) {
-    return undefined;
-  }
-  const fullProjection =
-    resolveDemoFeedReplayFullProjection(request.threadId) ??
-    (request.threadId === DEMO_THREAD_ID ? demoRunProjection : undefined);
-  if (!fullProjection) {
-    return undefined;
-  }
-  return buildThreadRunProjectionDetail(fullProjection, request);
-}
-
-function replaySubagentMetrics(threadId: string): typeof demoSubagentMetrics {
-  const projection = resolveDemoFeedReplayProjection(threadId);
-  if (!projection) {
-    return threadId === DEMO_THREAD_ID ? demoSubagentMetrics : [];
-  }
-  return projection.agents.map((agent) => ({
-    agentId: agent.agentId,
-    role: agent.role,
-    status: agent.status === "active" ? "active" : "stopped",
-    inputTokens: agent.usage?.inputTokens ?? 0,
-    outputTokens: agent.usage?.outputTokens ?? 0,
-    cacheReadTokens: agent.usage?.cacheReadTokens ?? 0,
-    cacheCreationTokens: agent.usage?.cacheCreationTokens ?? 0,
-    contextOccupied: agent.context?.occupied ?? 0,
-    ecoCostUsd: agent.usage?.ecoCostUsd ?? 0,
-  }));
 }
 
 const DEMO_UPDATE_CURRENT = "0.1.0-beta.2";
@@ -421,26 +351,7 @@ const handlers: Partial<Record<string, DemoHandler>> = {
     effectiveDemoThreads().find((thread) => thread.id === effectiveDemoThreadId(payload)),
   [IPC_CHANNELS.threadSessionBootstrap]: (payload) =>
     buildDemoSessionBootstrapForThread(effectiveDemoThreadId(payload) ?? DEMO_THREAD_ID),
-  [IPC_CHANNELS.threadRunProjectionGet]: (payload) => effectiveRunProjection(effectiveDemoThreadId(payload)),
-  [IPC_CHANNELS.threadRunProjectionDetailGet]: (payload) => effectiveRunProjectionDetail(payload),
-  [IPC_CHANNELS.threadSubagentSessionsList]: (payload) => {
-    const threadId = effectiveDemoThreadId(payload);
-    if (!threadId) {
-      return [];
-    }
-    const projection = resolveDemoFeedReplayProjection(threadId);
-    return projection?.subagentTimings ?? (threadId === DEMO_THREAD_ID ? demoSubagentSessions : []);
-  },
-  [IPC_CHANNELS.threadSubagentMetricsList]: (payload) =>
-    replaySubagentMetrics(effectiveDemoThreadId(payload) ?? ""),
-  [IPC_CHANNELS.threadGetUsageSnapshot]: (payload) =>
-    resolveDemoThreadId(payload) === DEMO_THREAD_ID
-      ? { billing: demoBillingSnapshot, context: demoContextSnapshot }
-      : {},
-  [IPC_CHANNELS.threadUsageLedgerEventsList]: (payload) =>
-    resolveDemoThreadId(payload) === DEMO_THREAD_ID ? demoUsageLedgerEvents : [],
   [IPC_CHANNELS.threadFollowUpList]: () => ({ followUps: [] }),
-  [IPC_CHANNELS.threadTodoList]: () => [],
   [IPC_CHANNELS.threadGetPendingPlan]: () => undefined,
   [IPC_CHANNELS.threadGetApprovedPlan]: () => undefined,
   [IPC_CHANNELS.clarificationGetPending]: () => undefined,

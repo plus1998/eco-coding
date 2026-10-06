@@ -1,4 +1,8 @@
 import type {
+  ThreadRunProjectionRequestSpan,
+  ThreadRunProjectionSnapshot,
+} from "./conversation-v2-projection";
+import type {
   ImageGenerationArtifact,
   ImageGenerationArtifactListRequest,
   ImageGenerationArtifactReadRequest,
@@ -8,14 +12,9 @@ import type {
   ImageGenerationSettingsSaveInput,
   ImageGenerationSettingsSnapshot,
 } from "./image-generation";
-import type {
-  IntegrationAvailabilitySnapshot,
-  IntegrationsEnabledSettings,
-  ProjectIntegrationsSettingsSnapshot,
-} from "./integrations";
+import type { IntegrationAvailabilitySnapshot, IntegrationsEnabledSettings } from "./integrations";
 import type { McpSettingsSnapshot } from "./mcp";
 import type { ThreadRunToolMetadata } from "./thread-run-events";
-import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 
 export const IPC_CHANNELS = {
   appMenuCommand: "app:menu-command",
@@ -36,6 +35,7 @@ export const IPC_CHANNELS = {
   appConsumePendingThreadOpen: "app:consume-pending-thread-open",
   appThreadOpenRequested: "app:thread-open-requested",
   coreAvailabilityGet: "core:availability-get",
+  clipboardReadText: "clipboard:read-text",
   cursorModelsList: "cursor:models-list",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
@@ -48,6 +48,10 @@ export const IPC_CHANNELS = {
   workspaceWriteFile: "workspace:write-file",
   workspaceInspect: "workspace:inspect",
   workspaceOpenInFileManager: "workspace:open-in-file-manager",
+  workspaceOpenFileExternally: "workspace:open-file-externally",
+  workspaceOpenContainingFolder: "workspace:open-containing-folder",
+  workspaceGetAssociatedApps: "workspace:get-associated-apps",
+  workspaceOpenFileWithApp: "workspace:open-file-with-app",
   workspaceListPackageScripts: "workspace:list-package-scripts",
   workspaceSavePackageScriptArgs: "workspace:save-package-script-args",
   workspaceWatchPackageJson: "workspace:watch-package-json",
@@ -65,6 +69,35 @@ export const IPC_CHANNELS = {
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
   modelProviderTest: "model-provider:test",
+  chatGptSubscriptionAccountsList: "chatgpt-subscription:accounts-list",
+  chatGptSubscriptionAccountCreate: "chatgpt-subscription:account-create",
+  chatGptSubscriptionAccountDelete: "chatgpt-subscription:account-delete",
+  chatGptSubscriptionAccountLogin: "chatgpt-subscription:account-login",
+  chatGptSubscriptionAccountAuthorizationUrl: "chatgpt-subscription:account-authorization-url",
+  chatGptSubscriptionAccountSetEnabled: "chatgpt-subscription:account-set-enabled",
+  chatGptSubscriptionAccountResetAvailability: "chatgpt-subscription:account-reset-availability",
+  chatGptSubscriptionAccountSetProxy: "chatgpt-subscription:account-set-proxy",
+  chatGptSubscriptionAccountTest: "chatgpt-subscription:account-test",
+  codexOAuthGetStatus: "codex-oauth:get-status",
+  codexOAuthStartLogin: "codex-oauth:start-login",
+  codexOAuthLogout: "codex-oauth:logout",
+  openAIAccountsList: "openai-accounts:list",
+  openAIAccountsCreate: "openai-accounts:create",
+  openAIAccountsDelete: "openai-accounts:delete",
+  openAIAccountsStartLogin: "openai-accounts:start-login",
+  openAIAccountsSetActive: "openai-accounts:set-active",
+  openAIAccountsGetActive: "openai-accounts:get-active",
+  openAIAccountsSetAuthJson: "openai-accounts:set-auth-json",
+  openAIAccountsQueryQuota: "openai-accounts:query-quota",
+  openAIAccountsUpdate: "openai-accounts:update",
+  openAIAccountsGetAuthJson: "openai-accounts:get-auth-json",
+  openAIAccountsGetDetails: "openai-accounts:get-details",
+  openAIAccountsImport: "openai-accounts:import",
+  openAIAccountsCancelSwitch: "openai-accounts:cancel-switch",
+  openAIAccountsChanged: "openai-accounts:changed",
+  openAIAccountsOpenAssistant: "openai-accounts:open-assistant",
+  openAIAccountsAssistantState: "openai-accounts:assistant-state",
+  openAIAccountsAssistantAction: "openai-accounts:assistant-action",
   modelRouteProfileTest: "model-route-profile:test",
   modelRouteProfileSave: "model-route-profile:save",
   modelRouteProfileDelete: "model-route-profile:delete",
@@ -93,27 +126,31 @@ export const IPC_CHANNELS = {
   promptImageUploadBegin: "prompt-image:upload-begin",
   promptImageUploadChunk: "prompt-image:upload-chunk",
   promptImageUploadFinish: "prompt-image:upload-finish",
+  promptImageReadChunk: "prompt-image:read-chunk",
   threadSessionBootstrap: "thread:session-bootstrap",
-  threadActivityList: "thread:activity-list",
+  conversationCapabilities: "conversation:capabilities",
+  conversationBootstrap: "conversation:bootstrap",
+  conversationProjection: "conversation:projection",
+  conversationMessagesPage: "conversation:messages-page",
+  conversationDetailsPage: "conversation:details-page",
+  conversationToolsPage: "conversation:tools-page",
+  conversationSync: "conversation:sync",
+  conversationHead: "conversation:head",
+  conversationMessageGet: "conversation:message-get",
+  conversationRunGet: "conversation:run-get",
+  conversationDetailGet: "conversation:detail-get",
+  conversationSendMessage: "conversation:send-message",
   threadUserMessageEditGet: "thread:user-message-edit-get",
   threadRewriteFromMessage: "thread:rewrite-from-message",
   threadRetryFromMessage: "thread:retry-from-message",
-  threadRunProjectionGet: "thread:run-projection-get",
-  threadRunProjectionDetailGet: "thread:run-projection-detail-get",
-  threadProjectionFocusReport: "thread:projection-focus-report",
-  threadSubagentSessionsList: "thread:subagent-sessions-list",
-  threadSubagentMetricsList: "thread:subagent-metrics-list",
   threadDelete: "thread:delete",
   threadRegenerateTitle: "thread:regenerate-title",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
   threadGetAppliedDiff: "thread:get-applied-diff",
   threadRevertAppliedDiff: "thread:revert-applied-diff",
-  threadRewindCheckpoint: "thread:rewind-checkpoint",
-  threadListCheckpoints: "thread:list-checkpoints",
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
-  threadContinue: "thread:continue",
   threadFollowUpEnqueue: "thread:follow-up-enqueue",
   threadFollowUpEscalate: "thread:follow-up-escalate",
   threadFollowUpEditing: "thread:follow-up-editing",
@@ -124,9 +161,6 @@ export const IPC_CHANNELS = {
   threadFollowUpCancel: "thread:follow-up-cancel",
   threadGetPendingPlan: "thread:get-pending-plan",
   threadGetApprovedPlan: "thread:get-approved-plan",
-  threadGetUsageSnapshot: "thread:get-usage-snapshot",
-  threadUsageLedgerEventsList: "thread:usage-ledger-events-list",
-  threadTodoList: "thread:todo-list",
   clarificationGetPending: "clarification:get-pending",
   clarificationSubmit: "clarification:submit",
   clarificationDismiss: "clarification:dismiss",
@@ -171,6 +205,13 @@ export const IPC_CHANNELS = {
   integratedWebSearchSettingsGet: "integrated-web-search-settings:get",
   integratedWebSearchSettingsSave: "integrated-web-search-settings:save",
   centerServerSettingsGet: "center-server-settings:get",
+  supabaseDeploymentGet: "supabase-deployment:get",
+  supabaseDeploymentAuthorize: "supabase-deployment:authorize",
+  supabaseDeploymentForget: "supabase-deployment:forget",
+  supabaseDeploymentInspect: "supabase-deployment:inspect",
+  supabaseDeploymentRun: "supabase-deployment:run",
+  supabaseDeploymentConnection: "supabase-deployment:connection",
+  supabaseDeploymentChanged: "supabase-deployment:changed",
   centerServerSettingsSave: "center-server-settings:save",
   centerServerRegisterDesktop: "center-server:register-desktop",
   centerServerSignUp: "center-server:sign-up",
@@ -312,7 +353,6 @@ export type {
   CenterServerDevicePresenceView,
   CenterServerDeviceView,
   CenterServerRegisterDesktopRequest,
-  EcoConnectDeepLink,
   CenterServerRegisterDesktopResult,
   CenterServerRemoveConnectionOptions,
   CenterServerRemoveConnectionResult,
@@ -332,6 +372,7 @@ export type {
   CenterServerVaultClaimView,
   CenterServerVaultStatus,
   CenterServerVaultSyncState,
+  EcoConnectDeepLink,
 } from "./center-server";
 
 export { parseEcoConnectDeepLink } from "./center-server";
@@ -349,6 +390,24 @@ export interface CursorModelOption {
   current: boolean;
   default: boolean;
 }
+export type {
+  ThreadRunProjectionAgent,
+  ThreadRunProjectionAgentKind,
+  ThreadRunProjectionAgentStatus,
+  ThreadRunProjectionAttempt,
+  ThreadRunProjectionAttemptStatus,
+  ThreadRunProjectionContext,
+  ThreadRunProjectionDetailKind,
+  ThreadRunProjectionDetailRequest,
+  ThreadRunProjectionDetailResult,
+  ThreadRunProjectionDiagnostic,
+  ThreadRunProjectionDiagnosticCode,
+  ThreadRunProjectionRequestSpan,
+  ThreadRunProjectionRequestStatus,
+  ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
+  ThreadRunProjectionUsage,
+} from "./conversation-v2-projection";
 export type {
   CursorAgentInfo,
   CursorAgentLayout,
@@ -428,29 +487,23 @@ export type {
   ThreadRunEventScope,
   ThreadRunEventStreamState,
   ThreadRunEventType,
+  ThreadRunImageViewMetadata,
   ThreadRunToolMetadata,
   ThreadRunWebSearchMetadata,
 } from "./thread-run-events";
-export type {
-  ThreadRunProjectionAgent,
-  ThreadRunProjectionAgentKind,
-  ThreadRunProjectionAgentStatus,
-  ThreadRunProjectionAttempt,
-  ThreadRunProjectionAttemptStatus,
-  ThreadRunProjectionContext,
-  ThreadRunProjectionDetailKind,
-  ThreadRunProjectionDetailRequest,
-  ThreadRunProjectionDetailResult,
-  ThreadRunProjectionDiagnostic,
-  ThreadRunProjectionDiagnosticCode,
-  ThreadRunProjectionRequestSpan,
-  ThreadRunProjectionRequestStatus,
-  ThreadRunProjectionSnapshot,
-  ThreadRunProjectionTimelineItem,
-  ThreadRunProjectionUsage,
-} from "./thread-run-projection";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
+
+/** V2-owned projection extras used by the desktop Feed panels. */
+export interface ConversationV2ProjectionExtras {
+  requestSpans: ThreadRunProjectionRequestSpan[];
+  billing?: ThreadBillingSnapshot;
+  /** V2-owned per-request billing observations used by the events breakdown. */
+  ledgerEvents?: ThreadUsageLedgerEventView[];
+  context?: ThreadContextSnapshot;
+  subagentTimings?: ThreadSubagentSessionTiming[];
+  subagentMetrics?: ThreadSubagentMetricsSummary[];
+}
 
 export type {
   ImageDisplayArtifact,
@@ -480,7 +533,14 @@ export type ImageViewReadResult =
   | {
       ok: true;
       dataBase64: string;
-      mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml" | "image/x-icon" | "image/bmp";
+      mimeType:
+        | "image/png"
+        | "image/jpeg"
+        | "image/gif"
+        | "image/webp"
+        | "image/svg+xml"
+        | "image/x-icon"
+        | "image/bmp";
       path: string;
       fileName: string;
       bytes: number;
@@ -670,20 +730,42 @@ export interface PackageScriptsListResult {
   packageName?: string;
   packageManager: PackageManagerKind;
   scripts: PackageScriptInfo[];
-  /** Per-script extra args saved on Desktop; synced to Mobile via list RPC. */
+  /** Per-script trailing args saved on Desktop; synced to Mobile via list RPC. */
   scriptArgs: Record<string, string>;
+  /** Per-script leading shell commands (nvm switch, env exports) saved on Desktop. */
+  scriptPrefixes: Record<string, string>;
+}
+
+/** Saved per-script overrides for one workspace: trailing args + leading command. */
+export interface PackageScriptOverrides {
+  args: Record<string, string>;
+  prefixes: Record<string, string>;
 }
 
 export interface SavePackageScriptArgsRequest {
   workspacePath: string;
   script: string;
-  args: string;
+  /** Trailing args. Omitted keeps the stored value; blank clears it. */
+  args?: string;
+  /** Leading shell command. Omitted keeps the stored value; blank clears it. */
+  prefix?: string;
+}
+
+export interface SavePackageScriptArgsResult {
+  workspacePath: string;
+  /** Full per-workspace args map after the write (key kept for Mobile compatibility). */
+  scriptArgs: Record<string, string>;
+  /** Full per-workspace leading-command map after the write. */
+  scriptPrefixes: Record<string, string>;
 }
 
 export interface RunPackageScriptRequest {
   workspacePath: string;
   script: string;
+  /** Ad-hoc trailing args; when blank/omitted the saved value is used. */
   args?: string;
+  /** Ad-hoc leading command; when blank/omitted the saved value is used. */
+  prefix?: string;
   threadId?: string;
 }
 
@@ -692,6 +774,8 @@ export type StartPackageScriptRequest = RunPackageScriptRequest;
 export interface StartPackageScriptResult {
   script: string;
   command: string[];
+  /** Human-readable run line (prefix + argv) for tabs / notifications. */
+  commandLabel: string;
   sessionId: string;
   taskId: string;
 }
@@ -701,6 +785,7 @@ export interface PackageScriptTerminalLaunchPayload {
   sessionId: string;
   script: string;
   command: string[];
+  commandLabel?: string;
   taskId?: string;
 }
 
@@ -757,9 +842,20 @@ export interface TerminalListRequest {
   workspacePath?: string;
 }
 
+/**
+ * What a live PTY is running. The renderer derives the terminal tab identity from
+ * this: an SSH tab must never look like a local shell tab.
+ */
+export type TerminalSessionKind = "local" | "command" | "ssh";
+
 export interface TerminalSessionView {
   sessionId: string;
   workspacePath: string;
+  kind: TerminalSessionKind;
+  /** Tab label supplied when the PTY was spawned (SSH bookmark name). */
+  label?: string;
+  /** SSH endpoint (`user@host[:port]`) shown in the tab tooltip. */
+  endpoint?: string;
 }
 
 export interface TerminalSpawnResult {
@@ -1114,7 +1210,8 @@ export type {
   BrowserSetVisibleRequest,
   BrowserViewState,
 } from "./browser";
-
+export type { BrowserAgentPresenceEvent } from "./browser-agent-presence";
+export { BROWSER_AGENT_PRESENCE_IDLE_MS } from "./browser-agent-presence";
 export type {
   ComputerUseActionApprovalMode,
   ComputerUseSettingsSnapshot,
@@ -1125,13 +1222,12 @@ export {
   normalizeComputerUseSettingsSnapshot,
 } from "./computer-use";
 
-export type { BrowserAgentPresenceEvent } from "./browser-agent-presence";
-export { BROWSER_AGENT_PRESENCE_IDLE_MS } from "./browser-agent-presence";
-
 export interface ProxyBridgeSettingsSnapshot {
+  /** 出站代理总开关；关闭时忽略 upstreamProxyUrl */
+  enabled?: boolean;
   /** 留空：透传 SDK User-Agent；非空：覆盖透传 */
   upstreamUserAgent?: string;
-  /** 出站 HTTP/HTTPS/SOCKS5 代理 URL（gateway upstream）；留空直连 */
+  /** 出站 HTTP/HTTPS/SOCKS5 代理 URL（gateway upstream + 在线升级）；留空直连 */
   upstreamProxyUrl?: string;
 }
 
@@ -1141,17 +1237,20 @@ export interface IntegratedWebSearchSettingsSnapshot {
   enabled: boolean;
   provider: IntegratedWebSearchProvider;
   hasApiKey: boolean;
+  approvalMode: WebSearchApprovalMode;
 }
 
 export interface IntegratedWebSearchSettingsSaveInput {
   enabled?: boolean;
   provider?: IntegratedWebSearchProvider;
+  approvalMode?: WebSearchApprovalMode;
   /** Empty string clears the stored key. */
   apiKey?: string;
 }
 
 import type { AgentTemplate } from "./agent-orchestration";
 import type { UpstreamApiCompat } from "./api-compat";
+import type { WebSearchApprovalMode } from "./integrated-web-search";
 import type { ProviderTokenCountMode } from "./provider-token-count";
 import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
 
@@ -1195,7 +1294,18 @@ export interface ProviderConfigInput {
   apiCompat?: UpstreamApiCompat;
   /** Explicit count_tokens implementation; never inferred from apiCompat. */
   tokenCountMode?: ProviderTokenCountMode;
+  /** Authentication method: API key or OAuth. */
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  /** Local ChatGPT subscription credential pool. Never contains tokens. */
+  credentialPoolId?: string;
+  /** Raw auth.json content for manual authentication. */
+  authJsonContent?: string;
   apiKey?: string;
+  /**
+   * Per-provider upstream proxy (http/https/socks5). Empty/missing means this
+   * provider follows the global outbound proxy setting.
+   */
+  upstreamProxyUrl?: string;
   defaultModel: string;
   enabled: boolean;
 }
@@ -1209,10 +1319,15 @@ export interface ProviderConfigView {
   version: string;
   apiCompat: UpstreamApiCompat;
   tokenCountMode?: ProviderTokenCountMode;
+  /** Authentication method for this provider. */
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  credentialPoolId?: string;
   defaultModel: string;
   enabled: boolean;
   hasApiKey: boolean;
   apiKeyPreview?: string;
+  /** Set only when the provider has a per-provider upstream proxy. */
+  upstreamProxyUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1377,6 +1492,10 @@ export interface PromptImageAttachment {
   data?: string;
   /** Absolute path under Eco userData prompt-images store. */
   path?: string;
+  /** Content-addressed durable reference. Local paths must never be the V2 wire identity. */
+  contentRef?: string;
+  /** Original byte length for bounded remote reads and integrity checks. */
+  byteLength?: number;
 }
 
 export interface PromptImageStageRequest {
@@ -1388,6 +1507,8 @@ export interface PromptImageStageRequest {
 
 export interface PromptImageStageResult {
   path: string;
+  contentRef: string;
+  byteLength: number;
 }
 
 export interface PromptImageReleaseRequest {
@@ -1405,6 +1526,8 @@ export interface PromptImageUploadBeginResult {
   path: string;
   receivedBytes: number;
   complete: boolean;
+  contentRef?: string;
+  byteLength?: number;
 }
 
 export interface PromptImageUploadChunkRequest {
@@ -1428,6 +1551,26 @@ export interface PromptImageUploadFinishRequest {
 
 export interface PromptImageUploadFinishResult {
   path: string;
+  contentRef: string;
+  byteLength: number;
+}
+
+export interface PromptImageReadChunkRequest {
+  contextKey: string;
+  contentRef: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  offset: number;
+  maxBytes?: number;
+}
+
+export interface PromptImageReadChunkResult {
+  contentRef: string;
+  mediaType: PromptImageAttachment["mediaType"];
+  offset: number;
+  nextOffset: number;
+  totalBytes: number;
+  complete: boolean;
+  data: string;
 }
 
 export interface ModelSettingsSnapshot {
@@ -1483,12 +1626,28 @@ export interface ThreadPendingPlan {
 
 /** Approve execution of the pending plan captured from the planner. */
 export interface ThreadApprovePlanRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
+  expectedHistoryRevision: number;
   /** @deprecated UI no longer edits plan text; ignored if sent. */
   plan?: string;
   /** @deprecated UI no longer edits plan text; ignored if sent. */
   analysis?: string;
   runtimeConfig?: ThreadRuntimeConfigInput;
+  /**
+   * Which agent executes the approved plan. Omitted (or `main`) preserves the
+   * legacy main-agent execution; `subagent` forces a one-shot delegation to the
+   * named role from the thread's locked orchestration snapshot.
+   */
+  executionTarget?: import("@eco/runtime/forced-plan-delegation").PlanExecutionTarget;
+}
+
+export interface ThreadDismissPlanRequest {
+  principalId: string;
+  clientCommandId: string;
+  threadId: string;
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadSummary {
@@ -1588,29 +1747,22 @@ export interface ThreadStartRequest {
 }
 
 export interface ThreadUpdateRuntimeConfigRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   runtimeConfig: ThreadRuntimeConfigInput;
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadStartResult {
   thread: ThreadSummary;
 }
 
-export interface ThreadContinueRequest {
-  threadId: string;
-  prompt: string;
-  attachments?: PromptImageAttachment[];
-  /** Continue by replacing this prior user activity and pruning everything after it. */
-  rewindTarget?: ThreadActivityRewindTarget;
-  /** Optional update before sending the next message. */
-  runtimeConfig?: ThreadRuntimeConfigInput;
-}
-
 export interface ThreadContinueResult {
   thread: ThreadSummary;
 }
 
-/** Renderer → Main: which threads should keep projection working memory warm. */
+/** Internal compatibility type retained for migration-only projection tests. */
 export interface ThreadProjectionFocusReport {
   selectedThreadId?: string;
   feedThreadId?: string;
@@ -1622,7 +1774,7 @@ export type ThreadUserMessageEditReasonCode =
   | "thread_running"
   | "unsupported_core"
   | "missing_upstream_mapping"
-  | "missing_checkpoint"
+  | "missing_durable_attachment"
   | "workspace_unavailable"
   | "history_changed"
   | "invalid_message"
@@ -1650,6 +1802,8 @@ export interface ThreadUserMessageEditGetResult {
 }
 
 export interface ThreadRewriteFromMessageRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   activityLineId: string;
   prompt: string;
@@ -1659,6 +1813,8 @@ export interface ThreadRewriteFromMessageRequest {
 }
 
 export interface ThreadRetryFromMessageRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   /** Stored user-message id when available; ACP fallback may only have feed text. */
   activityLineId?: string;
@@ -1667,6 +1823,10 @@ export interface ThreadRetryFromMessageRequest {
   hasImages?: boolean;
   expectedHistoryRevision: number;
   runtimeConfig?: ThreadRuntimeConfigInput;
+  /** Continue a settled Codex turn with empty app-server input. */
+  continueInterrupted?: boolean;
+  /** Terminal run being continued; rejects stale UI actions. */
+  sourceAttemptId?: string;
 }
 
 export interface ThreadResumeSubagentRequest {
@@ -1709,12 +1869,17 @@ export interface ThreadPendingFollowUp {
   deliveryBoundary?: ThreadFollowUpBoundary;
   queuePosition?: number;
   error?: string;
+  /** V2 message accepted before the legacy runtime queue was created. */
+  conversationMessageId?: string;
 }
 
 export interface ThreadFollowUpEnqueueRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+  expectedHistoryRevision: number;
   priority?: ThreadFollowUpPriority;
   /**
    * Per-message override of the default follow-up delivery mode
@@ -1724,20 +1889,29 @@ export interface ThreadFollowUpEnqueueRequest {
 }
 
 export interface ThreadFollowUpEscalateRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   followUpId?: string;
   prompt?: string;
   attachments?: PromptImageAttachment[];
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadFollowUpCancelRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   followUpId: string;
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadFollowUpEditingRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   followUpId?: string;
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadFollowUpEditingResult {
@@ -1745,8 +1919,11 @@ export interface ThreadFollowUpEditingResult {
 }
 
 export interface ThreadFollowUpQueuePausedRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   paused: boolean;
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadFollowUpQueuePausedResult {
@@ -1755,15 +1932,21 @@ export interface ThreadFollowUpQueuePausedResult {
 }
 
 export interface ThreadFollowUpUpdateRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   followUpId: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadFollowUpReorderRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
   followUpIds: string[];
+  expectedHistoryRevision: number;
 }
 
 export interface ThreadFollowUpListResult {
@@ -1776,6 +1959,14 @@ export interface ThreadFollowUpMutationResult extends ThreadFollowUpListResult {
 
 export interface ThreadDeleteResult {
   ok: true;
+  alreadyDeleted: boolean;
+}
+
+export interface ThreadDeleteRequest {
+  principalId: string;
+  clientCommandId: string;
+  threadId: string;
+  expectedHistoryRevision: number;
 }
 
 export interface ComposerDraftRecord {
@@ -1822,7 +2013,10 @@ export interface ThreadRollbackResult {
 export type WorktreeCancelDisposition = "apply" | "keep" | "discard";
 
 export interface ThreadCancelRequest {
+  principalId: string;
+  clientCommandId: string;
   threadId: string;
+  expectedHistoryRevision: number;
   worktreeDisposition?: WorktreeCancelDisposition;
 }
 
@@ -1848,22 +2042,6 @@ export interface WorktreeStatusResult {
 export interface WorktreeApplyResult {
   ok: true;
   files: string[];
-  message: string;
-}
-
-export interface FileCheckpointRecord {
-  userMessageId: string;
-  activityLineId?: string;
-  createdAt: string;
-}
-
-export interface ThreadRewindCheckpointRequest {
-  threadId: string;
-  userMessageId: string;
-}
-
-export interface ThreadRewindCheckpointResult {
-  ok: boolean;
   message: string;
 }
 
@@ -1923,12 +2101,52 @@ export interface ClarificationAnswers {
 }
 
 export interface ClarificationSubmitPayload {
+  principalId: string;
+  clientCommandId: string;
+  threadId: string;
   toolUseId: string;
   selections: string[][];
   customInputIndices?: number[];
+  expectedHistoryRevision: number;
 }
 
-export type BashApprovalKind = "command" | "file_change" | "network" | "image_generation";
+export interface ClarificationDismissPayload {
+  principalId: string;
+  clientCommandId: string;
+  threadId: string;
+  toolUseId: string;
+  expectedHistoryRevision: number;
+}
+
+/**
+ * What happened to an async answer after it was recorded.
+ *
+ * The answer is persisted first, so a submission is never lost; this reports only
+ * whether the Codex run actually received it. `unknown` means we cannot tell —
+ * the UI must keep the answer on screen and must not resend on its own.
+ */
+export interface ClarificationAsyncDelivery {
+  state: "delivered" | "queued" | "unknown";
+  /** Follow-up row carrying the answer, when one was created. */
+  followUpId?: string;
+  /** Queued conversation message the follow-up row points at. */
+  followUpMessageId?: string;
+  /** Human-readable reason for `unknown` / `queued`. */
+  message?: string;
+}
+
+/**
+ * Result of answering or dismissing a question.
+ *
+ * `delivery` is present only for async questions: a blocking `item/tool/requestUserInput`
+ * RPC is answered by the response itself, so there is nothing to confirm separately.
+ */
+export interface ClarificationSubmitResult {
+  ok: true;
+  delivery?: ClarificationAsyncDelivery;
+}
+
+export type BashApprovalKind = "command" | "file_change" | "network" | "image_generation" | "mcp";
 
 export interface BashApprovalNetworkPolicyAmendment {
   host: string;
@@ -1936,6 +2154,9 @@ export interface BashApprovalNetworkPolicyAmendment {
 }
 
 export interface BashApprovalRequest {
+  defaultToNo?: boolean;
+  suppressAlwaysAllowRule?: boolean;
+  mcpServer?: { name: string; source: string };
   toolUseId: string;
   threadId: string;
   command: string;
@@ -1966,10 +2187,14 @@ export type BashApprovalDecision =
   | "cancelled";
 
 export interface BashApprovalResolvePayload {
+  principalId: string;
+  clientCommandId: string;
+  threadId: string;
   toolUseId: string;
   decision: BashApprovalDecision;
   /** When denying, optional instructions for Eco on how to adjust. */
   feedback?: string;
+  expectedHistoryRevision: number;
 }
 
 /** Result of `bash-approval:resolve`. `alreadyResolved` is true when the tool use was already gone (idempotent). */
@@ -2196,19 +2421,12 @@ export interface ThreadBillingSnapshot {
   diagnostics?: ThreadBillingDiagnostic[];
 }
 
-export interface ThreadUsageSnapshotResult {
-  billing?: ThreadBillingSnapshot;
-  context?: ThreadContextSnapshot;
-}
-
 export interface ThreadSessionBootstrapResult {
   thread?: ThreadSummary;
   followUps: ThreadPendingFollowUp[];
   pendingPlan?: ThreadPendingPlan;
   pendingBash?: BashApprovalRequest;
   pendingClarification?: ClarificationRequest;
-  subagentSessions: ThreadSubagentSessionTiming[];
-  usage: ThreadUsageSnapshotResult;
 }
 
 export interface RoutePricingRates {
@@ -2274,6 +2492,7 @@ export interface ModelsDevModelOption {
 export interface ThreadSubagentSessionTiming {
   agentId: string;
   role: RuntimeAgentRole;
+  phase?: "planning" | "execution" | "ask";
   status: "active" | "stopped" | "handed_off";
   startedAt: string;
   lastActiveAt: string;
@@ -2295,6 +2514,8 @@ export interface ThreadSubagentMetricsSummary {
   contextLimit?: number;
   ecoCostUsd: number;
   modelId?: string;
+  lastRequestKey?: string;
+  ecoCostBreakdown?: TokenCostBreakdown;
 }
 
 export interface ThreadLiveEvent {
@@ -2308,14 +2529,13 @@ export interface ThreadLiveEvent {
   titleGenerating?: boolean;
   role?: RuntimeAgentRole | "system" | "thinking" | "tool" | "user";
   stream?: boolean;
-  /** Set when the main process persisted this event as a thread_activity row. */
+  /** Set when the main process persisted this event in the durable V2 activity source. */
   activityLine?: ThreadActivityLine;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt" | "planFilePath">;
   planApproval?: PlanApprovalRequest;
   clarification?: ClarificationRequest;
   bashApproval?: BashApprovalRequest;
   followUp?: ThreadPendingFollowUp;
-  todoList?: CoderTodoItem[];
   usage?: ThreadUsageSnapshot;
   modelId?: string;
   /** Cumulative SDK-estimated cost across all query() calls in this thread. */
@@ -2335,8 +2555,6 @@ export interface ThreadLiveEvent {
   /** ACP/Codex/PI session id captured for resume; patches ThreadSummary.externalSessionId. */
   externalSessionId?: string;
   tool?: ThreadRunToolMetadata;
-  /** Desktop-only unthrottled SDK stream overlay. Never forwarded through the event center. */
-  localStream?: ThreadLocalStreamUpdate;
   /** Restore composer after a zero-output ACP start failure discarded the turn. */
   composerRestore?: {
     prompt: string;
@@ -2351,19 +2569,6 @@ export interface ThreadLiveEvent {
   threadPrompt?: string;
   /** Present when follow-up auto-drain pause state changes (or on failed/blocked). */
   followUpQueuePaused?: boolean;
-}
-
-export interface ThreadLocalStreamUpdate {
-  threadId: string;
-  streamKey: string;
-  text: string;
-  role: string;
-  channel: "message" | "thinking";
-  streaming: boolean;
-  observedAt: string;
-  agentId?: string;
-  /** Present from the first thinking overlay frame so the Feed does not flip kinds. */
-  reasoningDisplay?: "summary" | "raw";
 }
 
 export interface ThreadApiErrorInfo {
@@ -2400,7 +2605,7 @@ export interface ThreadUsageLedgerEventView {
   providerRequestId?: string;
   attributionStatus: "attributed" | "pending" | "unattributed";
   attributionReason?: string;
-  usageKind: "request_final" | "request_partial" | "assistant_fallback" | "context";
+  usageKind: "request_final" | "request_partial" | "assistant_fallback" | "context" | "session_total";
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -2555,6 +2760,7 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
     (record.args === undefined || typeof record.args === "string") &&
+    (record.prefix === undefined || typeof record.prefix === "string") &&
     (record.threadId === undefined || typeof record.threadId === "string")
   );
 }
@@ -2567,7 +2773,8 @@ export function isSavePackageScriptArgsRequest(value: unknown): value is SavePac
   return (
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
-    typeof record.args === "string"
+    (record.args === undefined || typeof record.args === "string") &&
+    (record.prefix === undefined || typeof record.prefix === "string")
   );
 }
 
@@ -2583,6 +2790,7 @@ export function isPackageScriptTerminalLaunchPayload(
     typeof record.sessionId === "string" &&
     typeof record.script === "string" &&
     (record.taskId === undefined || typeof record.taskId === "string") &&
+    (record.commandLabel === undefined || typeof record.commandLabel === "string") &&
     Array.isArray(record.command) &&
     record.command.every((entry) => typeof entry === "string")
   );
@@ -2756,7 +2964,6 @@ export function isStorageCleanupRequest(
   const action = record.action;
   if (
     action !== "clearLogs" &&
-    action !== "clearCodexCheckpoints" &&
     action !== "clearCodexHomeCaches" &&
     action !== "clearClaudeSessions" &&
     action !== "clearPiAgent" &&

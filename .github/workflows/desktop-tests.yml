@@ -1,0 +1,123 @@
+name: Desktop tests
+
+# The desktop (bun) suite is the only net under the Feed and the conversation store,
+# and it had no CI job at all: `bun test` ran on developer machines and nowhere else,
+# which is how 40 failures — half of them order-dependent — sat on `main` while the
+# suite looked usable. This job runs the suite through the gate script, which names
+# every known failure on each run and fails on any failure that is not already listed
+# in test-baseline.json (that list is empty as of 2026-09-17).
+#
+# Local equivalent: `node scripts/test-gate.mjs`
+# The Flutter suite is a separate toolchain and has its own workflow
+# (.github/workflows/mobile-tests.yml).
+#
+# `pi-smoke` is the second job: the PI runtime's worker + wasm paths are
+# platform-specific, and the only place they otherwise ran was a developer's Mac.
+on:
+  push:
+    branches:
+      - main
+      - beta
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Bun test (desktop + packages)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Setup Node
+        # The gate script and the PI SDK runtime both run on Node, so pin the
+        # version here instead of inheriting whatever the image ships.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.21.1"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild and verify desktop native modules
+        # --ignore-scripts skips node-pty's Linux build; never rely on a developer's existing binary.
+        run: bun run --cwd apps/desktop postinstall
+
+      - name: Desktop suite through the gate (strict)
+        # `--strict` also fails when a listed known failure starts passing, now that the list
+        # is empty (see docs/plans/feed-regression-test-plan.md 4.17).
+        run: node scripts/test-gate.mjs --strict
+
+      - name: PI upgrade regression
+        # The gate runs the desktop and package suites, but none of them pin the PI dependency
+        # graph, resolve PI through its own entry point, or drive a real session against a real
+        # MCP Hub — so a green `bun test` could still be running a stale pre-1.0.3 build. This
+        # entry point reports all four together and fails if any is red. No credentials: the
+        # model is a local deterministic Anthropic API and the Hub binds a loopback port.
+        run: node scripts/pi-regression.mjs
+
+      - name: Type check the desktop app
+        # Keep this blocking: the V2-only storage boundary spans main, preload, renderer and
+        # shared protocol types, so a stale or incompatible type is a release failure.
+        # Build the referenced workspace projects first; a clean CI checkout has no dist/*.d.ts
+        # outputs, and TypeScript otherwise reports TS6305 and cascades into misleading `any`s.
+        run: |
+          bunx tsc -b apps/desktop/tsconfig.json --pretty false
+          bunx tsc --noEmit -p apps/desktop/tsconfig.json
+
+  pi-smoke:
+    # The PI runtime is not platform-neutral: the codemode sandbox spawns a worker thread,
+    # compiles QuickJS through `WebAssembly.compile()`, and both the worker entry and the
+    # wasm are located from `import.meta.url` / `createRequire`. Those are the parts that
+    # break per-OS, and until now they only ever ran on developer Macs.
+    #
+    # No credentials, so this can run on every PR: the model is a local deterministic
+    # Anthropic API bound to a loopback port and the Hub is a loopback MCP server.
+    #
+    # Linux is in the matrix even though the `desktop` job also runs the regression there.
+    # Steps run in order, so a red gate step skips everything after it — the Linux leg here
+    # is what keeps the PI result available when the wider suite is already failing.
+    name: PI smoke (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # mac-x64 shares the platform leg in .github/workflows/release.yml; the OS is what
+        # this smoke varies, and macos-15-intel mostly buys queue time.
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: macos-15
+            platform: mac-arm64
+          - os: windows-2025
+            platform: win-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.21.1"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild and verify desktop native modules
+        run: bun run --cwd apps/desktop postinstall
+
+      - name: PI regression (Worker + WASM + MCP)
+        run: node scripts/pi-regression.mjs

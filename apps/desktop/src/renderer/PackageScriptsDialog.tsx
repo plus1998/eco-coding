@@ -3,10 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
-import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
+import type { PackageManagerKind, PackageScriptInfo, PackageScriptOverrides } from "../shared/ipc";
 import { formatRunCommand } from "../shared/package-script-run";
 import { copyTextToClipboard } from "./clipboard";
-import { readWorkspaceScriptArgs, saveScriptArgs } from "./package-script-args-storage";
+import { readWorkspaceScriptOverrides, saveScriptOverrides } from "./package-script-args-storage";
 import { PACKAGE_SCRIPT_OVERLAY_TRANSITION_MS } from "./package-script-ui";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
@@ -24,7 +24,7 @@ interface PackageScriptsDialogProps {
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
   onClose: () => void;
-  onRun: (scriptName: string, args?: string) => void | Promise<void>;
+  onRun: (scriptName: string, args?: string, prefix?: string) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
 }
 
@@ -51,13 +51,16 @@ export function PackageScriptsDialog({
 }: PackageScriptsDialogProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
-  const [scriptArgsByName, setScriptArgsByName] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<PackageScriptOverrides>({ args: {}, prefixes: {} });
   const [editingScript, setEditingScript] = useState<string | null>(null);
   const [draftArgs, setDraftArgs] = useState("");
+  const [draftPrefix, setDraftPrefix] = useState("");
   const [copiedScript, setCopiedScript] = useState<string | null>(null);
   const [present, setPresent] = useState(open);
   const [entered, setEntered] = useState(false);
   const argsInputRef = useRef<HTMLInputElement>(null);
+  const prefixInputRef = useRef<HTMLInputElement>(null);
+  const focusedEditorRef = useRef<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -78,13 +81,14 @@ export function PackageScriptsDialog({
       setQuery("");
       setEditingScript(null);
       setDraftArgs("");
+      setDraftPrefix("");
       setCopiedScript(null);
       return;
     }
     let cancelled = false;
-    void readWorkspaceScriptArgs(workspacePath).then((args) => {
+    void readWorkspaceScriptOverrides(workspacePath).then((next) => {
       if (!cancelled) {
-        setScriptArgsByName(args);
+        setOverrides(next);
       }
     });
     const focusTimer = window.setTimeout(() => searchRef.current?.focus(), 40);
@@ -96,11 +100,17 @@ export function PackageScriptsDialog({
 
   useEffect(() => {
     if (!editingScript) {
+      focusedEditorRef.current = null;
       return;
     }
-    argsInputRef.current?.focus();
-    argsInputRef.current?.select();
-  }, [editingScript]);
+    if (focusedEditorRef.current === editingScript) {
+      return;
+    }
+    focusedEditorRef.current = editingScript;
+    const target = draftPrefix ? prefixInputRef.current : argsInputRef.current;
+    target?.focus();
+    target?.select();
+  }, [draftPrefix, editingScript]);
 
   useEffect(() => {
     if (!open) {
@@ -114,6 +124,7 @@ export function PackageScriptsDialog({
       if (editingScript) {
         setEditingScript(null);
         setDraftArgs("");
+        setDraftPrefix("");
         return;
       }
       onClose();
@@ -122,12 +133,16 @@ export function PackageScriptsDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [editingScript, onClose, open]);
 
-  const commitScriptArgs = useCallback(
-    async (scriptName: string, nextArgs: string) => {
-      const saved = await saveScriptArgs(workspacePath, scriptName, nextArgs);
-      setScriptArgsByName(saved);
+  const commitScriptOverrides = useCallback(
+    async (scriptName: string, nextArgs: string, nextPrefix: string) => {
+      const saved = await saveScriptOverrides(workspacePath, scriptName, {
+        args: nextArgs,
+        prefix: nextPrefix,
+      });
+      setOverrides(saved);
       setEditingScript(null);
       setDraftArgs("");
+      setDraftPrefix("");
     },
     [workspacePath],
   );
@@ -135,14 +150,15 @@ export function PackageScriptsDialog({
   const openArgsEditor = useCallback(
     (scriptName: string) => {
       setEditingScript(scriptName);
-      setDraftArgs(scriptArgsByName[scriptName] ?? "");
+      setDraftArgs(overrides.args[scriptName] ?? "");
+      setDraftPrefix(overrides.prefixes[scriptName] ?? "");
     },
-    [scriptArgsByName],
+    [overrides],
   );
 
   const copyScriptCommand = useCallback(
-    async (scriptName: string, args?: string) => {
-      const command = formatRunCommand(packageManager, scriptName, args);
+    async (scriptName: string, args?: string, prefix?: string) => {
+      const command = formatRunCommand(packageManager, scriptName, args, prefix);
       const ok = await copyTextToClipboard(command);
       if (!ok) {
         return;
@@ -251,14 +267,27 @@ export function PackageScriptsDialog({
             ) : (
               <ul className="package-scripts-list">
                 {filteredScripts.map((entry) => {
-                  const savedArgs = scriptArgsByName[entry.name] ?? "";
-                  const isEditingArgs = editingScript === entry.name;
-                  const runCommand = formatRunCommand(packageManager, entry.name, savedArgs || undefined);
+                  const savedArgs = overrides.args[entry.name] ?? "";
+                  const savedPrefix = overrides.prefixes[entry.name] ?? "";
+                  const hasOverrides = Boolean(savedArgs || savedPrefix);
+                  const isEditing = editingScript === entry.name;
+                  const runCommand = formatRunCommand(
+                    packageManager,
+                    entry.name,
+                    savedArgs || undefined,
+                    savedPrefix || undefined,
+                  );
                   const isCopied = copiedScript === entry.name;
+                  const overrideSummary = [
+                    savedPrefix ? t("dialog.scripts.prefixValue", { prefix: savedPrefix }) : "",
+                    savedArgs ? t("dialog.scripts.argsValue", { args: savedArgs }) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
                   return (
                     <li
                       key={entry.name}
-                      className={["package-scripts-item", isEditingArgs ? "is-editing" : ""]
+                      className={["package-scripts-item", isEditing ? "is-editing" : ""]
                         .filter(Boolean)
                         .join(" ")}
                     >
@@ -267,9 +296,9 @@ export function PackageScriptsDialog({
                           <span className="package-scripts-item-name">{entry.name}</span>
                           <span
                             className="package-scripts-item-command"
-                            title={savedArgs ? runCommand : entry.command}
+                            title={hasOverrides ? runCommand : entry.command}
                           >
-                            {savedArgs ? runCommand : entry.command}
+                            {hasOverrides ? runCommand : entry.command}
                           </span>
                         </div>
                         <div className="package-scripts-item-actions">
@@ -277,21 +306,17 @@ export function PackageScriptsDialog({
                             type="button"
                             className={[
                               "package-scripts-action-btn",
-                              savedArgs ? "is-active" : "",
-                              isEditingArgs ? "is-editing" : "",
+                              hasOverrides ? "is-active" : "",
+                              isEditing ? "is-editing" : "",
                             ]
                               .filter(Boolean)
                               .join(" ")}
-                            aria-label={t("dialog.scripts.argsFor", { name: entry.name })}
-                            title={
-                              savedArgs
-                                ? t("dialog.scripts.argsValue", { args: savedArgs })
-                                : t("dialog.scripts.args")
-                            }
+                            aria-label={t("dialog.scripts.customizeFor", { name: entry.name })}
+                            title={overrideSummary || t("dialog.scripts.customize")}
                             disabled={busy}
                             onClick={() => {
-                              if (isEditingArgs) {
-                                void commitScriptArgs(entry.name, draftArgs);
+                              if (isEditing) {
+                                void commitScriptOverrides(entry.name, draftArgs, draftPrefix);
                                 return;
                               }
                               openArgsEditor(entry.name);
@@ -315,7 +340,13 @@ export function PackageScriptsDialog({
                                 : t("dialog.scripts.copy", { name: runCommand })
                             }
                             disabled={busy}
-                            onClick={() => void copyScriptCommand(entry.name, savedArgs || undefined)}
+                            onClick={() =>
+                              void copyScriptCommand(
+                                entry.name,
+                                savedArgs || undefined,
+                                savedPrefix || undefined,
+                              )
+                            }
                           >
                             <Copy size={14} aria-hidden />
                           </button>
@@ -325,7 +356,9 @@ export function PackageScriptsDialog({
                             aria-label={t("dialog.scripts.runFor", { name: entry.name })}
                             title={t("dialog.scripts.run")}
                             disabled={busy}
-                            onClick={() => void onRun(entry.name, savedArgs || undefined)}
+                            onClick={() =>
+                              void onRun(entry.name, savedArgs || undefined, savedPrefix || undefined)
+                            }
                           >
                             {busy ? (
                               <Loader2 size={14} className="spinning" aria-hidden />
@@ -335,31 +368,80 @@ export function PackageScriptsDialog({
                           </button>
                         </div>
                       </div>
-                      {isEditingArgs ? (
-                        <div className="package-scripts-args-row">
-                          <input
-                            ref={argsInputRef}
-                            type="text"
-                            className="package-scripts-args-input"
-                            value={draftArgs}
-                            placeholder={t("dialog.scripts.args")}
-                            aria-label={t("dialog.scripts.argsFor", { name: entry.name })}
-                            disabled={busy}
-                            onChange={(event) => setDraftArgs(event.target.value)}
-                            onBlur={() => void commitScriptArgs(entry.name, draftArgs)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                void commitScriptArgs(entry.name, draftArgs);
-                              }
-                              if (event.key === "Escape") {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                setEditingScript(null);
-                                setDraftArgs("");
-                              }
-                            }}
-                          />
+                      {isEditing ? (
+                        <div className="package-scripts-override-grid">
+                          <label className="package-scripts-field">
+                            <span className="package-scripts-field-label">{t("dialog.scripts.prefix")}</span>
+                            <input
+                              ref={prefixInputRef}
+                              type="text"
+                              className="package-scripts-args-input"
+                              value={draftPrefix}
+                              placeholder={t("dialog.scripts.prefixPlaceholder")}
+                              aria-label={t("dialog.scripts.prefixFor", { name: entry.name })}
+                              disabled={busy}
+                              onChange={(event) => setDraftPrefix(event.target.value)}
+                              onBlur={(event) => {
+                                if (
+                                  (event.relatedTarget as HTMLElement | null)?.closest(
+                                    ".package-scripts-override-grid",
+                                  )
+                                ) {
+                                  return;
+                                }
+                                void commitScriptOverrides(entry.name, draftArgs, draftPrefix);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void commitScriptOverrides(entry.name, draftArgs, draftPrefix);
+                                }
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setEditingScript(null);
+                                  setDraftArgs("");
+                                  setDraftPrefix("");
+                                }
+                              }}
+                            />
+                          </label>
+                          <label className="package-scripts-field">
+                            <span className="package-scripts-field-label">{t("dialog.scripts.args")}</span>
+                            <input
+                              ref={argsInputRef}
+                              type="text"
+                              className="package-scripts-args-input"
+                              value={draftArgs}
+                              placeholder={t("dialog.scripts.argsPlaceholder")}
+                              aria-label={t("dialog.scripts.argsFor", { name: entry.name })}
+                              disabled={busy}
+                              onChange={(event) => setDraftArgs(event.target.value)}
+                              onBlur={(event) => {
+                                if (
+                                  (event.relatedTarget as HTMLElement | null)?.closest(
+                                    ".package-scripts-override-grid",
+                                  )
+                                ) {
+                                  return;
+                                }
+                                void commitScriptOverrides(entry.name, draftArgs, draftPrefix);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void commitScriptOverrides(entry.name, draftArgs, draftPrefix);
+                                }
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setEditingScript(null);
+                                  setDraftArgs("");
+                                  setDraftPrefix("");
+                                }
+                              }}
+                            />
+                          </label>
                         </div>
                       ) : null}
                     </li>

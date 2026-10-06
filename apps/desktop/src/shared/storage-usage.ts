@@ -2,7 +2,6 @@ export type StorageCategoryId =
   | "database"
   | "logs"
   | "claudeSessions"
-  | "codexCheckpoints"
   | "codexHome"
   | "piAgent"
   | "otherUserData";
@@ -35,7 +34,6 @@ export type StorageCleanupOlderThanUnit = "hours" | "days";
 
 export type StorageCleanupAction =
   | "clearLogs"
-  | "clearCodexCheckpoints"
   | "clearCodexHomeCaches"
   | "clearClaudeSessions"
   | "clearPiAgent"
@@ -56,7 +54,6 @@ export interface StorageCleanupRequest {
     /** For clearOldConversations: hours or days. Required with olderThanValue. */
     olderThanUnit?: StorageCleanupOlderThanUnit;
     /**
-     * For clearCodexCheckpoints: remove dirs whose thread is not in DB.
      * For clearClaudeSessions: remove only Eco worktree project dirs with no active Eco session.
      * For clearPiAgent orphansOnly: remove pi-agent/<threadId> dirs with no matching Eco thread.
      * Full clearPiAgent also deletes Eco threads whose coreKind is pi.

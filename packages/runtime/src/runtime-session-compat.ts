@@ -89,13 +89,18 @@ export async function forkClaudeSessionAt(input: {
   sessionId: string;
   dir: string;
   upToMessageId: string;
+  title?: string;
   loadSdk?: () => Promise<{
-    forkSession?: (sessionId: string, options?: { dir?: string; upToMessageId?: string }) => Promise<unknown>;
+    forkSession?: (
+      sessionId: string,
+      options?: { dir?: string; upToMessageId?: string; title?: string },
+    ) => Promise<unknown>;
   }>;
 }): Promise<string> {
   const sessionId = input.sessionId.trim();
   const dir = input.dir.trim();
   const upToMessageId = input.upToMessageId.trim();
+  const title = input.title?.trim();
   if (!sessionId || !dir || !upToMessageId) {
     throw new Error("Claude session id, directory and fork point are required.");
   }
@@ -105,14 +110,18 @@ export async function forkClaudeSessionAt(input: {
     : ((await import("@anthropic-ai/claude-agent-sdk")) as {
         forkSession?: (
           sessionId: string,
-          options?: { dir?: string; upToMessageId?: string },
+          options?: { dir?: string; upToMessageId?: string; title?: string },
         ) => Promise<unknown>;
       });
   if (typeof sdk.forkSession !== "function") {
     throw new Error("Claude SDK forkSession is unavailable; cannot safely fork history.");
   }
 
-  const result = await sdk.forkSession(sessionId, { dir, upToMessageId });
+  const result = await sdk.forkSession(sessionId, {
+    dir,
+    upToMessageId,
+    ...(title ? { title } : {}),
+  });
   const forkedSessionId =
     result && typeof result === "object" && typeof (result as { sessionId?: unknown }).sessionId === "string"
       ? (result as { sessionId: string }).sessionId.trim()
@@ -124,4 +133,44 @@ export async function forkClaudeSessionAt(input: {
     throw new Error("Claude SDK forkSession returned the source session; refusing local history rewrite.");
   }
   return forkedSessionId;
+}
+
+/**
+ * Resolve a fork created by a prior command attempt after the caller lost the
+ * forkSession() response. The recovery title must be unique per durable command.
+ */
+export async function findClaudeSessionByRecoveryTitle(input: {
+  dir: string;
+  title: string;
+  loadSdk?: () => Promise<{
+    listSessions?: (options?: { dir?: string }) => Promise<unknown>;
+  }>;
+}): Promise<string | undefined> {
+  const dir = input.dir.trim();
+  const title = input.title.trim();
+  if (!dir || !title) {
+    throw new Error("Claude session directory and recovery title are required.");
+  }
+  const sdk = input.loadSdk
+    ? await input.loadSdk()
+    : ((await import("@anthropic-ai/claude-agent-sdk")) as {
+        listSessions?: (options?: { dir?: string }) => Promise<unknown>;
+      });
+  if (typeof sdk.listSessions !== "function") {
+    throw new Error("Claude SDK listSessions is unavailable; cannot recover fork state.");
+  }
+  const listed = await sdk.listSessions({ dir });
+  if (!Array.isArray(listed)) {
+    throw new Error("Claude SDK listSessions returned an invalid result.");
+  }
+  const matches = listed.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const record = value as { sessionId?: unknown; customTitle?: unknown };
+    const sessionId = typeof record.sessionId === "string" ? record.sessionId.trim() : "";
+    return sessionId && record.customTitle === title ? [sessionId] : [];
+  });
+  if (matches.length > 1) {
+    throw new Error(`Claude fork recovery title matched multiple sessions: ${title}.`);
+  }
+  return matches[0];
 }

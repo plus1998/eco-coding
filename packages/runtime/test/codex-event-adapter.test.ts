@@ -325,9 +325,159 @@ test("eco_image_view MCP calls project imageView metadata from absolute path arg
   expect(events[0]?.metadata?.tool).toEqual(
     expect.objectContaining({
       name: "mcp__eco_image_view__view_image",
-      imageView: { path: "/tmp/shot.png" },
+      // `question` is the deprecated alias of `prompt`; either one is what the vision
+      // model was asked, and the Feed shows it beside the answer.
+      imageView: { path: "/tmp/shot.png", prompt: "找报错" },
     }),
   );
+});
+
+test("per-thread MCP Hub wrapper calls unwrap to the nested tool for the Feed", () => {
+  // Codex sessions register the Hub under `eco_mcp_<hash>_<threadSuffix>`; the
+  // wrapper call carries the real tool id in `arguments.name`.
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_view",
+      item: {
+        id: "item_hub_view_1",
+        type: "mcpToolCall",
+        server: "eco_mcp_4b6e103b_thr_1790688274221",
+        tool: "call_tool",
+        arguments: {
+          name: "eco_image_view:view_image",
+          arguments: { path: "/tmp/shot.png", prompt: "描述这张图" },
+        },
+      },
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_view",
+      item: {
+        id: "item_hub_view_1",
+        type: "mcpToolCall",
+        server: "eco_mcp_4b6e103b_thr_1790688274221",
+        tool: "call_tool",
+        status: "completed",
+        arguments: {
+          name: "eco_image_view:view_image",
+          arguments: { path: "/tmp/shot.png", prompt: "描述这张图" },
+        },
+        aggregatedOutput: "这是一张终端截图。",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/shot.png", prompt: "描述这张图" },
+    }),
+  );
+  const completed = events.find((event) => event.id === "tre:codex:tool:item_hub_view_1:done");
+  expect(completed?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/shot.png", prompt: "描述这张图" },
+      outputPreview: "这是一张终端截图。",
+    }),
+  );
+});
+
+test("eco_image_view MCP completion carries the vision answer as the tool output", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_done",
+      item: {
+        id: "item_mcp_view_done",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        status: "completed",
+        arguments: { path: "/tmp/shot.png", prompt: "找报错" },
+        aggregatedOutput: "第 3 行的类型不匹配。",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      imageView: { path: "/tmp/shot.png", prompt: "找报错" },
+      outputPreview: "第 3 行的类型不匹配。",
+    }),
+  );
+});
+
+test("eco_image_view MCP completion reads the answer out of a raw MCP result envelope", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_envelope",
+      item: {
+        id: "item_mcp_view_envelope",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        status: "completed",
+        arguments: { path: "/tmp/shot.png", prompt: "找报错" },
+        result: { content: [{ type: "text", text: "第 3 行的类型不匹配。" }] },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool?.outputPreview).toBe("第 3 行的类型不匹配。");
+});
+
+test("eco_image_view MCP completion keeps both halves of a real call", () => {
+  // Values taken from a live call: a long multi-line prompt and an answer that arrives as a
+  // raw MCP content envelope rather than a flattened string.
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_live",
+      item: {
+        type: "mcpToolCall",
+        id: "call_00_ET_1enklUHENuk398PNWfYx2663",
+        server: "eco_image_view",
+        tool: "view_image",
+        arguments: {
+          path: "/Users/plus/img_0_76f9aad9eac302601f1b04ac.png",
+          prompt: "请详细描述这张图片的全部内容：包括画面中的文字（逐字列出）。",
+        },
+        status: "completed",
+        result: { content: [{ type: "text", text: "## 整体印象\n\n这是一幅数字拼贴图像。" }] },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: {
+        path: "/Users/plus/img_0_76f9aad9eac302601f1b04ac.png",
+        prompt: "请详细描述这张图片的全部内容：包括画面中的文字（逐字列出）。",
+      },
+      outputPreview: "## 整体印象\n\n这是一幅数字拼贴图像。",
+    }),
+  );
+});
+
+test("eco_image_view MCP start does not invent an output before the answer exists", () => {  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view_start",
+      item: {
+        id: "item_mcp_view_start",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        arguments: { path: "/tmp/shot.png", prompt: "找报错" },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool?.outputPreview).toBeUndefined();
 });
 
 test("eco_image_view MCP calls with relative path do not attach imageView", () => {
@@ -427,6 +577,58 @@ test("eco_web_search MCP completed calls attach webSearch results", () => {
           },
         ],
       }),
+    }),
+  );
+});
+
+test("Eco MCP Hub calls expose the nested tool in Codex activity metadata", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_call",
+      item: {
+        id: "item_hub_call_1",
+        type: "mcpToolCall",
+        server: "eco_mcp",
+        tool: "call_tool",
+        status: "completed",
+        arguments: {
+          name: "eco_image_view:view_image",
+          arguments: { path: "/tmp/hub-shot.png", prompt: "描述" },
+        },
+        aggregatedOutput: "一张截图",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/hub-shot.png", prompt: "描述" },
+    }),
+  );
+  expect(events[0]?.message).toContain("mcp__eco_image_view__view_image");
+});
+
+test("Eco MCP Hub search calls remain classified as MCP discovery", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_hub_search",
+      item: {
+        id: "item_hub_search_1",
+        type: "mcpToolCall",
+        server: "eco_mcp",
+        tool: "search_tools",
+        arguments: { query: "image" },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_mcp__search_tools",
+      mcpDiscovery: { kind: "search" },
     }),
   );
 });
@@ -2824,4 +3026,119 @@ test("dispatch maps model safety buffering and auth recovery to thread.status", 
   expect(events[1]?.metadata?.liveType).toBe("codex.auth_recovery");
   expect(events[1]?.message).toContain("Refreshing credentials");
   expect(events[2]?.message).toContain("Credential refresh finished");
+});
+
+/**
+ * Codex 0.160 `request_user_input_async`: the model's questions arrive as an `agentMessage`
+ * item (`id` = tool call id, `delivery: "async"`, `phase: "final_answer"`) instead of a
+ * server request. Upstream emits the same item on `item/started` and `item/completed`.
+ */
+const ASYNC_QUESTIONS_ITEM = {
+  type: "agentMessage",
+  id: "item_async_q",
+  text: "需要确认两件事",
+  phase: "final_answer",
+  delivery: "async",
+  questions: [
+    { title: "用哪个包管理器？", options: ["bun", "npm"] },
+    { title: "是否需要迁移历史数据？", options: null },
+  ],
+};
+
+test("dispatch surfaces async questions from item/started and item/completed", () => {
+  const seen: Array<{ ecoThreadId: string; itemId: string; turnId?: string | undefined; titles: string[] }> = [];
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId,
+    recordThreadRunEvent: () => {},
+    onAsyncQuestions: (input) =>
+      seen.push({
+        ecoThreadId: input.ecoThreadId,
+        itemId: input.itemId,
+        turnId: input.turnId,
+        titles: input.questions.map((question) => question.title),
+      }),
+  });
+
+  adapter.dispatch("item/started", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: ASYNC_QUESTIONS_ITEM,
+  });
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: ASYNC_QUESTIONS_ITEM,
+  });
+
+  expect(seen).toHaveLength(2);
+  expect(seen[0]).toEqual({
+    ecoThreadId: ECO_THREAD,
+    itemId: "item_async_q",
+    turnId: "turn_async",
+    titles: ["用哪个包管理器？", "是否需要迁移历史数据？"],
+  });
+  // The same item twice: deduplication is the consumer's job (thread + turn + item id).
+  expect(seen[1]).toEqual(seen[0]);
+});
+
+test("dispatch ignores ordinary agent messages and malformed question payloads", () => {
+  const seen: string[] = [];
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId,
+    recordThreadRunEvent: () => {},
+    onAsyncQuestions: (input) => seen.push(input.itemId),
+  });
+
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: { type: "agentMessage", id: "item_plain", text: "普通回复" },
+  });
+  // `delivery: "async"` but no questions: not a question message.
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: { type: "agentMessage", id: "item_no_q", text: "x", delivery: "async", questions: [] },
+  });
+  // Questions without a title cannot be addressed back to the model.
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: {
+      type: "agentMessage",
+      id: "item_bad_q",
+      text: "x",
+      delivery: "async",
+      questions: [{ options: ["a"] }],
+    },
+  });
+  // Sync delivery on an agent message is not an async question.
+  adapter.dispatch("item/completed", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_async",
+    item: { ...ASYNC_QUESTIONS_ITEM, id: "item_sync", delivery: "sync" },
+  });
+
+  expect(seen).toEqual([]);
+});
+
+test("async questions from an unmapped Codex thread flush once the mapping lands", () => {
+  const seen: Array<{ ecoThreadId: string; itemId: string }> = [];
+  let mapping: string | undefined;
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId: (codexThreadId) => mapping ?? codexThreadId,
+    recordThreadRunEvent: () => {},
+    onAsyncQuestions: (input) => seen.push({ ecoThreadId: input.ecoThreadId, itemId: input.itemId }),
+  });
+
+  adapter.dispatch("item/completed", {
+    threadId: "codex_unmapped_thread",
+    turnId: "turn_async",
+    item: { ...ASYNC_QUESTIONS_ITEM, id: "item_pending_q" },
+  });
+  expect(seen).toEqual([]);
+
+  mapping = "thr_eco_after_map";
+  adapter.flushPendingEventsForThread("codex_unmapped_thread");
+  expect(seen).toEqual([{ ecoThreadId: "thr_eco_after_map", itemId: "item_pending_q" }]);
 });

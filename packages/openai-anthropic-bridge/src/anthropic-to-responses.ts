@@ -538,7 +538,8 @@ function anthropicThinkingBlockToResponsesItem(
   if (block.type === "redacted_thinking" && block.data !== undefined && block.data !== "") {
     item.encrypted_content = block.data;
   }
-  if ((item.content?.length ?? 0) === 0 && item.encrypted_content === undefined) {
+  const content = Array.isArray(item.content) ? item.content : [];
+  if (content.length === 0 && item.encrypted_content === undefined) {
     return undefined;
   }
   return item;

@@ -1,7 +1,7 @@
 import { replayGatewayClientRoundFeedSelector } from "../feed-replay/gateway-client-round-feed-replay";
 import { GATEWAY_PROFILE_DISPLAY_NAMES } from "../feed-replay/gateway-client-round-fixture";
 import type { ThreadSummary } from "../shared/ipc";
-import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionSnapshot } from "../shared/conversation-v2-projection";
 import { DEMO_WORKSPACE_PATH } from "./constants";
 import { demoLog } from "./demo-log";
 import { hydrateDemoFeedReplayTurnDetails } from "./feed-replay-turn-hydrate";

@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { prepareConversationCommandDispatch } from "../src/main/conversation-command-dispatch";
 import { createConversationStore, parseCompactHandoffRecentMessages } from "../src/main/conversation-store";
+import { conversationV2ProviderMessageId } from "../src/main/conversation-v2-provider-events";
 import { buildResourcesFromRouteProfile } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
 import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
@@ -34,6 +37,105 @@ const sqliteAvailable = await (async () => {
     return false;
   }
 })();
+
+test.skipIf(!sqliteAvailable)(
+  "a clear's initialization intent survives reopening and is consumed only by a persisted turn",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-clear-session-"));
+    const dbPath = path.join(dir, "test.sqlite");
+    const store = await createConversationStore(dbPath);
+    store.saveThread({
+      id: "thr_clear",
+      title: "clear",
+      prompt: "old context",
+      workspacePath: dir,
+      coreKind: "claude",
+      status: "completed",
+      message: "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    store.captureSdkSessionAndConsumeCompactHandoff("thr_clear", "reset-id", dir, { resetPending: true });
+    const reopened = await createConversationStore(dbPath);
+    expect(reopened.getSdkSession("thr_clear")).toEqual({
+      sessionId: "reset-id",
+      cwd: dir,
+      resetPending: true,
+    });
+    reopened.captureSdkSessionAndConsumeCompactHandoff("thr_clear", "reset-id", dir);
+    expect(store.getSdkSession("thr_clear")).toEqual({ sessionId: "reset-id", cwd: dir });
+  },
+);
+
+// These tests exercise the one-time legacy compatibility surface explicitly.
+// Production callers must use the factory default, which is V2-only.
+async function createLegacyConversationStore(dbPath: string) {
+  return createConversationStore(dbPath, {
+    freshStorageMode: "legacy_compat",
+    requiredStorageMode: "legacy_compat",
+  });
+}
+
+test("V2 rewind uses original receipt order after a late UUID bind and tombstones native user/output rows", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "eco-v2-rewind-bind-"));
+  const store = await createConversationStore(path.join(directory, "test.sqlite"));
+  const threadId = "thr_rewind_bind";
+  store.saveThread({
+    id: threadId,
+    title: "rewind",
+    prompt: "first",
+    workspacePath: directory,
+    status: "completed",
+    message: "",
+    coreKind: "claude",
+    createdAt: "2026-10-06T00:00:00Z",
+    updatedAt: "2026-10-06T00:00:00Z",
+  });
+  store.upsertRunAttempt({
+    threadId,
+    attemptId: "run_rewind",
+    phase: "execution",
+    retryIndex: 0,
+    status: "running",
+    startedAt: "2026-10-06T00:00:00Z",
+  });
+  const append = (id: string, body: string, user: boolean) =>
+    store.appendConversationRuntimeEvent({
+      id,
+      threadId,
+      eventType: user ? "thread.status" : "message.final",
+      scope: "main",
+      role: user ? "user" : "planner",
+      runAttemptId: "run_rewind",
+      streamState: "finalized",
+      streamKey: id,
+      message: body,
+      observedAt: "2026-10-06T00:00:00Z",
+      metadata: user ? { liveType: "thread.user_prompt", rewindTarget: { activityLineId: id } } : {},
+    });
+  const first = append("first", "first", true);
+  const target = append("target", "target", true);
+  const answer = append("answer", "answer", false);
+  const future = append("future", "future", true);
+  store.rebindClaudeUserMessageRecords(threadId, [
+    { activityLineId: "target", upstreamMessageId: "target_sdk" },
+  ]);
+  const currentTarget = store
+    .listConversationRuntimeSources(threadId)
+    .find((source) => source.id === "target")!;
+  expect(currentTarget.sequence).toBeGreaterThan(future.sequence);
+  const summary = store.rewindThreadToActivityLine(threadId, "target");
+  expect(summary.cutoffRunSequence).toBe(target.sequence);
+  expect(
+    store.conversationV2().getMessage(threadId, conversationV2ProviderMessageId(first)!)?.isDeleted,
+  ).toBe(false);
+  for (const removed of [target, answer, future]) {
+    expect(
+      store.conversationV2().getMessage(threadId, conversationV2ProviderMessageId(removed)!)?.isDeleted,
+    ).toBe(true);
+  }
+  expect(store.listConversationRuntimeSources(threadId).map((source) => source.id)).toEqual(["first"]);
+});
 
 const presetBundle = buildResourcesFromRouteProfile(
   {
@@ -109,7 +211,7 @@ test.skipIf(!sqliteAvailable)("migrates old activity table before sdk user messa
   `);
   db.close();
 
-  await createConversationStore(dbPath);
+  await createLegacyConversationStore(dbPath);
 
   const migrated = new sqlite.DatabaseSync(dbPath);
   const columns = migrated.prepare(`PRAGMA table_info(thread_activity)`).all() as Array<{ name: string }>;
@@ -583,7 +685,7 @@ test.skipIf(!sqliteAvailable)(
 
 test.skipIf(!sqliteAvailable)("deleteThread removes thread-owned records", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-delete-thread-"));
-  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
   const thread: ThreadSummary = {
     id: "thr_delete",
     title: "Delete",
@@ -616,9 +718,80 @@ test.skipIf(!sqliteAvailable)("deleteThread removes thread-owned records", async
   expect(store.deleteThread(thread.id)).toBe(false);
 });
 
+test.skipIf(!sqliteAvailable)(
+  "thread delete keeps its durable receipt outside the deleted conversation",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-delete-thread-command-"));
+    const databasePath = path.join(dir, "eco-coding.sqlite");
+    const store = await createConversationStore(databasePath);
+    const thread: ThreadSummary = {
+      id: "thr_delete_command",
+      title: "Delete command",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "",
+      createdAt: "2026-09-17T00:00:00.000Z",
+      updatedAt: "2026-09-17T00:00:00.000Z",
+    };
+    store.saveThread(thread);
+    store.conversationV2().ensureConversation(thread.id);
+    const command = {
+      principalId: "principal_delete",
+      threadId: thread.id,
+      clientCommandId: "delete_command_1",
+      expectedHistoryRevision: 0,
+    };
+
+    expect(store.acceptThreadDeleteCommand(command)).toMatchObject({ status: "accepted" });
+    expect(() => store.acceptThreadDeleteCommand({ ...command, expectedHistoryRevision: 1 })).toThrow();
+    expect(() =>
+      store.acceptThreadDeleteCommand({
+        ...command,
+        principalId: "competing_principal",
+        clientCommandId: "competing_delete_command",
+      }),
+    ).toThrow("different accepted delete command");
+
+    const faultDb = new DatabaseSync(databasePath);
+    faultDb.exec(`
+      CREATE TRIGGER fail_thread_delete_receipt_test
+      BEFORE DELETE ON threads
+      WHEN OLD.id = 'thr_delete_command'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced thread delete rollback');
+      END;
+    `);
+    faultDb.close();
+    expect(() => store.completeThreadDeleteCommand(command)).toThrow("forced thread delete rollback");
+    expect(store.getThread(thread.id)).toBeDefined();
+    expect(store.conversationV2().hasConversation(thread.id)).toBe(true);
+    expect(
+      store.getThreadDeleteCommand(command.principalId, command.threadId, command.clientCommandId),
+    ).toMatchObject({ status: "accepted" });
+
+    const repairDb = new DatabaseSync(databasePath);
+    repairDb.exec("DROP TRIGGER fail_thread_delete_receipt_test");
+    repairDb.close();
+    expect(store.completeThreadDeleteCommand(command)).toMatchObject({
+      status: "completed",
+      result: { ok: true, deleted: true, threadId: thread.id },
+    });
+    expect(store.getThread(thread.id)).toBeUndefined();
+    expect(store.conversationV2().hasConversation(thread.id)).toBe(false);
+    expect(store.completeThreadDeleteCommand(command)).toMatchObject({
+      status: "completed",
+      result: { ok: true, deleted: true, threadId: thread.id },
+    });
+    expect(() =>
+      store.acceptThreadDeleteCommand({ ...command, clientCommandId: "delete_command_2" }),
+    ).toThrow("existing V2 conversation");
+  },
+);
+
 test.skipIf(!sqliteAvailable)("rewindThreadToActivityLine prunes target and later thread state", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-rewind-thread-"));
-  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
   const thread: ThreadSummary = {
     id: "thr_rewind",
     title: "Rewind",
@@ -763,16 +936,17 @@ test.skipIf(!sqliteAvailable)("rewindThreadToActivityLine prunes target and late
     userMessageId: "user-first",
   });
   expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual(["evt_first"]);
-  expect(store.listFileCheckpoints(thread.id).map((checkpoint) => checkpoint.userMessageId)).toEqual([
-    "user-first",
-  ]);
+  expect(store.getUserMessageRecord(thread.id, "act_first")?.upstreamMessageId).toBe("user-first");
   expect(store.getPendingPlan(thread.id)).toBeUndefined();
   expect(store.listCoderTodos(thread.id)).toEqual([]);
   expect(store.getThreadMetrics(thread.id)).toBeUndefined();
   expect(store.getAppliedDiff(thread.id)).toBeUndefined();
   expect(store.listCompactionArchives(thread.id)).toEqual([]);
-  expect(store.listRunAttempts(thread.id)).toEqual([]);
-  expect(store.listAgentInstances(thread.id)).toEqual([]);
+  // Rewind tombstones display history; execution facts remain recoverable in V2.
+  expect(store.listRunAttempts(thread.id)).toEqual([
+    expect.objectContaining({ attemptId: "attempt_future" }),
+  ]);
+  expect(store.listAgentInstances(thread.id)).toEqual([expect.objectContaining({ agentId: "agent_future" })]);
   expect(store.listUsageLedgerEvents(thread.id)).toEqual([]);
   expect(store.listSubagentSessions(thread.id)).toEqual([]);
   expect(store.listSubagentMetrics(thread.id)).toEqual([]);
@@ -782,7 +956,7 @@ test.skipIf(!sqliteAvailable)(
   "discardThreadTurnFromActivityLine drops the user turn but keeps earlier history and todos",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-discard-unstarted-"));
-    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
     const thread: ThreadSummary = {
       id: "thr_discard",
       title: "Discard",
@@ -874,7 +1048,7 @@ test.skipIf(!sqliteAvailable)(
   "rewindThreadToActivityLine supports SDK-derived virtual activity ids",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-rewind-sdk-thread-"));
-    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
     const thread: ThreadSummary = {
       id: "thr_rewind_sdk",
       title: "Rewind SDK",
@@ -903,10 +1077,26 @@ test.skipIf(!sqliteAvailable)(
       userMessageId: "user-first",
     });
 
+    const keepEvent = store.appendThreadRunEvent({
+      id: "evt_keep_v2_message",
+      threadId: thread.id,
+      sequence: 2,
+      eventType: "message.final",
+      scope: "main",
+      role: "assistant",
+      streamKey: "assistant-before-target",
+      streamState: "finalized",
+      message: "must keep",
+      // Deliberately after the rewind timestamp: time is not an ownership boundary.
+      observedAt: "3000-01-01T00:00:01.000Z",
+    });
+    const keepMessageId = keepEvent.metadata?.conversationV2MessageId;
+    expect(typeof keepMessageId).toBe("string");
+
     store.appendThreadRunEvent({
       id: "evt_target",
       threadId: thread.id,
-      sequence: 2,
+      sequence: 3,
       eventType: "thread.status",
       scope: "main",
       role: "user",
@@ -915,32 +1105,598 @@ test.skipIf(!sqliteAvailable)(
       observedAt: "2999-01-01T00:00:02.000Z",
     });
     store.bindLatestUserRunEventToSdkMessage(thread.id, "user-target");
-    store.appendThreadRunEvent({
+    const removedEvent = store.appendThreadRunEvent({
       id: "evt_future",
       threadId: thread.id,
-      sequence: 3,
-      eventType: "thread.status",
+      sequence: 4,
+      eventType: "message.final",
       scope: "main",
-      streamState: "none",
-      message: "future",
-      observedAt: "3000-01-01T00:00:03.000Z",
+      role: "assistant",
+      streamKey: "assistant-after-target",
+      streamState: "finalized",
+      message: "must remove",
+      observedAt: "3001-01-01T00:00:03.000Z",
     });
+    const removedMessageId = removedEvent.metadata?.conversationV2MessageId;
+    expect(typeof removedMessageId).toBe("string");
 
-    const summary = store.rewindThreadToActivityLine(thread.id, "sdk:user-target");
+    const command = store.conversationV2().acceptCommand({
+      principalId: "user_rewind",
+      conversationId: thread.id,
+      clientCommandId: "command_rewind_1",
+      commandType: "history.rewrite",
+      request: { activityLineId: "sdk:user-target", prompt: "replacement" },
+      expectedHistoryRevision: 0,
+    });
+    store
+      .conversationV2()
+      .beginCommandExecution(command.principalId, command.conversationId, command.clientCommandId);
+    store
+      .conversationV2()
+      .recordCommandCheckpoint(
+        command.principalId,
+        command.conversationId,
+        command.clientCommandId,
+        "history.sdk_fork_skipped",
+        { reason: "test" },
+      );
+
+    const summary = store.rewindThreadToActivityLine(thread.id, "sdk:user-target", {
+      principalId: command.principalId,
+      clientCommandId: command.clientCommandId,
+    });
 
     expect(summary).toMatchObject({
       activityLineId: "sdk:user-target",
       userMessageId: "user-target",
-      cutoffRunSequence: 2,
+      cutoffRunSequence: 3,
       removedActivityCount: 0,
       removedRunEventCount: 2,
     });
-    expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual(["evt_first"]);
-    expect(store.listThreadRunEvents(thread.id)[0]?.streamKey).toBe("sdk:user-first");
-    expect(store.listFileCheckpoints(thread.id).map((checkpoint) => checkpoint.userMessageId)).toEqual([
-      "user-first",
+    expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual([
+      "evt_first",
+      "evt_keep_v2_message",
     ]);
+    expect(store.listThreadRunEvents(thread.id)[0]?.streamKey).toBe("sdk:user-first");
+    expect(store.getUserMessageRecord(thread.id, "sdk:user-first")?.upstreamMessageId).toBe("user-first");
+    expect(store.conversationV2().getMessage(thread.id, keepMessageId as string)).toMatchObject({
+      body: "must keep",
+      isDeleted: false,
+    });
+    expect(store.conversationV2().getMessage(thread.id, removedMessageId as string)).toMatchObject({
+      body: "must remove",
+      isDeleted: true,
+      status: "deleted",
+    });
+    expect(
+      store
+        .conversationV2()
+        .getCommandJob(command.principalId, command.conversationId, command.clientCommandId)
+        ?.checkpoints.at(-1),
+    ).toMatchObject({
+      name: "history.local_rewrite_committed",
+      payload: {
+        activityLineId: "sdk:user-target",
+        cutoffRunSequence: 3,
+        historyRevision: 1,
+      },
+    });
     expect(store.listActivityLines(thread.id)).toEqual([]);
+  },
+);
+
+test.skipIf(!sqliteAvailable)("atomically clears a pending plan with its V2 command checkpoint", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-plan-command-clear-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_plan_command_clear",
+    title: "Plan command clear",
+    prompt: "Implement the plan",
+    workspacePath: "/repo",
+    status: "awaiting_plan",
+    createdAt: "2026-09-17T00:00:00.000Z",
+    updatedAt: "2026-09-17T00:00:00.000Z",
+    message: "",
+    coreKind: "codex",
+  };
+  store.saveThread(thread);
+  store.savePendingPlan({
+    threadId: thread.id,
+    userPrompt: thread.prompt,
+    analysis: "analysis",
+    plan: "1. implement",
+    workspacePath: thread.workspacePath,
+    worktreePath: thread.workspacePath,
+    routesJson: "[]",
+  });
+  const v2 = store.conversationV2();
+  v2.ensureConversation(thread.id);
+  const command = v2.acceptCommand({
+    principalId: "principal_plan_clear",
+    conversationId: thread.id,
+    clientCommandId: "plan_clear_1",
+    commandType: "plan.resolve",
+    request: { resolution: "approve", input: {}, context: { pendingPlan: { plan: "1. implement" } } },
+    expectedHistoryRevision: 0,
+  });
+  v2.beginCommandExecution(command.principalId, command.conversationId, command.clientCommandId);
+  v2.recordCommandCheckpoint(
+    command.principalId,
+    command.conversationId,
+    command.clientCommandId,
+    "plan.context_frozen",
+    { contextHash: "hash_1" },
+  );
+  const agentRuntimeConfig = {
+    ...buildThreadRuntimeConfigFromDefaults({
+      settings,
+      workflowDefaults: {
+        sessionMode: "plan",
+        defaultOrchestrationSelection: presetBundle.selection,
+      },
+    }),
+    sessionMode: "agent" as const,
+  };
+  store.saveThreadRuntimeConfigForPlanCommand(
+    thread.id,
+    agentRuntimeConfig,
+    { principalId: command.principalId, clientCommandId: command.clientCommandId },
+    { coreKind: "codex", sessionMode: "agent" },
+  );
+  expect(store.getThreadRuntimeConfig(thread.id)?.sessionMode).toBe("agent");
+  v2.recordCommandCheckpoint(
+    command.principalId,
+    command.conversationId,
+    command.clientCommandId,
+    "plan.snapshot_persisted",
+    { snapshotPath: "/repo/.eco/approved-plans/thr_plan_command_clear.md" },
+  );
+
+  store.clearPendingPlanForCommand(thread.id, {
+    principalId: command.principalId,
+    clientCommandId: command.clientCommandId,
+  });
+  expect(store.getPendingPlan(thread.id)).toBeUndefined();
+  expect(
+    v2.getCommandJob(command.principalId, thread.id, command.clientCommandId)?.checkpoints.at(-1),
+  ).toMatchObject({
+    name: "plan.pending_cleared",
+  });
+
+  store.savePendingPlan({
+    threadId: thread.id,
+    userPrompt: thread.prompt,
+    analysis: "analysis",
+    plan: "2. keep after rollback",
+    workspacePath: thread.workspacePath,
+    worktreePath: thread.workspacePath,
+    routesJson: "[]",
+  });
+  const wrongCommand = v2.acceptCommand({
+    principalId: "principal_plan_clear",
+    conversationId: thread.id,
+    clientCommandId: "history_clear_wrong_type",
+    commandType: "history.delete",
+    request: { activityLineId: "line_1" },
+    expectedHistoryRevision: 0,
+  });
+  v2.beginCommandExecution(
+    wrongCommand.principalId,
+    wrongCommand.conversationId,
+    wrongCommand.clientCommandId,
+  );
+  expect(() =>
+    store.saveThreadRuntimeConfigForPlanCommand(
+      thread.id,
+      { ...agentRuntimeConfig, sessionMode: "plan" },
+      { principalId: wrongCommand.principalId, clientCommandId: wrongCommand.clientCommandId },
+      { coreKind: "codex", sessionMode: "plan" },
+    ),
+  ).toThrow();
+  expect(store.getThreadRuntimeConfig(thread.id)?.sessionMode).toBe("agent");
+  expect(() =>
+    store.clearPendingPlanForCommand(thread.id, {
+      principalId: wrongCommand.principalId,
+      clientCommandId: wrongCommand.clientCommandId,
+    }),
+  ).toThrow();
+  expect(store.getPendingPlan(thread.id)?.plan).toBe("2. keep after rollback");
+});
+
+test.skipIf(!sqliteAvailable)(
+  "atomically binds plan dispatch without letting attempt terminal overwrite its receipt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-plan-command-dispatch-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_plan_command_dispatch",
+      title: "Plan command dispatch",
+      prompt: "Implement",
+      workspacePath: "/repo",
+      status: "awaiting_plan",
+      createdAt: "2026-09-17T00:00:00.000Z",
+      updatedAt: "2026-09-17T00:00:00.000Z",
+      message: "",
+      coreKind: "codex",
+    };
+    store.saveThread(thread);
+    store.savePendingPlan({
+      threadId: thread.id,
+      userPrompt: thread.prompt,
+      analysis: "analysis",
+      plan: "Implement",
+      workspacePath: thread.workspacePath,
+      worktreePath: thread.workspacePath,
+      routesJson: "[]",
+    });
+    const v2 = store.conversationV2();
+    v2.ensureConversation(thread.id);
+    const command = v2.acceptCommand({
+      principalId: "principal_plan_dispatch",
+      conversationId: thread.id,
+      clientCommandId: "plan_dispatch_1",
+      commandType: "plan.resolve",
+      request: { resolution: "approve", input: {}, context: { pendingPlan: { plan: "Implement" } } },
+      expectedHistoryRevision: 0,
+    });
+    v2.beginCommandExecution(command.principalId, command.conversationId, command.clientCommandId);
+    v2.recordCommandCheckpoint(
+      command.principalId,
+      command.conversationId,
+      command.clientCommandId,
+      "plan.context_frozen",
+      { contextHash: "hash_1" },
+    );
+    const prepared = prepareConversationCommandDispatch({
+      v2,
+      job: command,
+      coreKind: "claude",
+      actionKind: "plan_approval",
+      phase: "execution",
+      checkpointScope: "plan",
+    });
+    store.upsertRunAttempt(
+      {
+        threadId: thread.id,
+        attemptId: prepared.plannedAttemptId,
+        phase: "execution",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-09-17T00:00:01.000Z",
+        metadata: { commandDispatch: prepared.commandDispatch },
+      },
+      prepared.commandDispatch,
+    );
+    expect(
+      v2.getCommandJob(command.principalId, thread.id, command.clientCommandId)?.checkpoints.at(-1),
+    ).toMatchObject({
+      name: "plan.runtime_dispatched",
+      payload: {
+        dispatchId: prepared.commandDispatch.dispatchId,
+        runAttemptId: prepared.plannedAttemptId,
+      },
+    });
+    store.clearPendingPlanForCommand(thread.id, {
+      principalId: command.principalId,
+      clientCommandId: command.clientCommandId,
+    });
+    expect(store.getPendingPlan(thread.id)).toBeUndefined();
+    expect(
+      v2
+        .getCommandJob(command.principalId, thread.id, command.clientCommandId)
+        ?.checkpoints.map((checkpoint) => checkpoint.name),
+    ).toEqual([
+      "execution.claimed",
+      "plan.context_frozen",
+      "plan.runtime_dispatch_prepared",
+      "plan.runtime_dispatched",
+      "plan.pending_cleared",
+    ]);
+
+    v2.completeCommand(command.principalId, thread.id, command.clientCommandId, {
+      ok: true,
+      resolution: "approve",
+      thread: { id: thread.id, status: "running" },
+    });
+    store.upsertRunAttempt({
+      threadId: thread.id,
+      attemptId: prepared.plannedAttemptId,
+      phase: "execution",
+      retryIndex: 0,
+      status: "completed",
+      startedAt: "2026-09-17T00:00:01.000Z",
+      endedAt: "2026-09-17T00:00:02.000Z",
+      metadata: { commandDispatch: prepared.commandDispatch },
+    });
+    expect(v2.getCommandJob(command.principalId, thread.id, command.clientCommandId)).toMatchObject({
+      status: "completed",
+      result: { ok: true, resolution: "approve" },
+    });
+    expect(store.listRunAttempts(thread.id)).toContainEqual(
+      expect.objectContaining({ attemptId: prepared.plannedAttemptId, status: "completed" }),
+    );
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "atomically binds a prepared history command to its first V2 run attempt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-command-dispatch-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_command_dispatch",
+      title: "Command dispatch",
+      prompt: "rewrite",
+      workspacePath: "/tmp/project",
+      status: "running",
+      message: "",
+      createdAt: "2026-09-17T00:00:00.000Z",
+      updatedAt: "2026-09-17T00:00:00.000Z",
+    };
+    store.saveThread(thread);
+    const v2 = store.conversationV2();
+    v2.ensureConversation(thread.id);
+    const command = v2.acceptCommand({
+      principalId: "principal_dispatch",
+      conversationId: thread.id,
+      clientCommandId: "command_dispatch_1",
+      commandType: "history.retry",
+      request: { rewind: false, activityLineId: "sdk:user-1", prompt: "retry", attachments: [] },
+      expectedHistoryRevision: 0,
+    });
+    v2.beginCommandExecution(command.principalId, command.conversationId, command.clientCommandId);
+    const commandDispatch = {
+      principalId: command.principalId,
+      clientCommandId: command.clientCommandId,
+      dispatchId: "dispatch_1",
+    };
+    v2.recordCommandCheckpoint(
+      command.principalId,
+      command.conversationId,
+      command.clientCommandId,
+      "history.runtime_dispatch_prepared",
+      { dispatchId: commandDispatch.dispatchId, plannedAttemptId: "attempt_planned" },
+    );
+
+    store.upsertRunAttempt(
+      {
+        threadId: thread.id,
+        attemptId: "attempt_planned",
+        phase: "continuation",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-09-17T00:00:01.000Z",
+        metadata: { commandDispatch },
+      },
+      commandDispatch,
+    );
+
+    expect(store.listRunAttempts(thread.id)).toEqual([
+      expect.objectContaining({
+        attemptId: "attempt_planned",
+        status: "running",
+        metadata: { commandDispatch },
+      }),
+    ]);
+    expect(v2.getRun(thread.id, "attempt_planned")).toMatchObject({
+      runId: "attempt_planned",
+      status: "running",
+    });
+    expect(
+      v2
+        .getCommandJob(command.principalId, command.conversationId, command.clientCommandId)
+        ?.checkpoints.at(-1),
+    ).toMatchObject({
+      name: "history.runtime_dispatched",
+      payload: {
+        dispatchId: "dispatch_1",
+        runAttemptId: "attempt_planned",
+        phase: "continuation",
+        retryIndex: 0,
+      },
+    });
+    expect(() =>
+      store.upsertRunAttempt(
+        {
+          threadId: thread.id,
+          attemptId: "attempt_planned",
+          phase: "continuation",
+          retryIndex: 0,
+          status: "running",
+          startedAt: "2026-09-17T00:00:02.000Z",
+          metadata: { commandDispatch },
+        },
+        commandDispatch,
+      ),
+    ).toThrow("must be recovered, not dispatched again");
+
+    store.upsertRunAttempt({
+      threadId: thread.id,
+      attemptId: "attempt_planned",
+      phase: "continuation",
+      retryIndex: 0,
+      status: "completed",
+      startedAt: "2026-09-17T00:00:01.000Z",
+      endedAt: "2026-09-17T00:00:04.000Z",
+      metadata: { commandDispatch },
+    });
+    expect(v2.getRun(thread.id, "attempt_planned")).toMatchObject({
+      runId: "attempt_planned",
+      status: "completed",
+      endedAt: "2026-09-17T00:00:04.000Z",
+    });
+    expect(
+      v2.getCommandJob(command.principalId, command.conversationId, command.clientCommandId),
+    ).toMatchObject({
+      status: "completed",
+      result: {
+        dispatchId: "dispatch_1",
+        runAttemptId: "attempt_planned",
+        status: "completed",
+        endedAt: "2026-09-17T00:00:04.000Z",
+      },
+    });
+    expect(() =>
+      store.upsertRunAttempt({
+        threadId: thread.id,
+        attemptId: "attempt_bad_command_metadata",
+        phase: "continuation",
+        retryIndex: 0,
+        status: "failed",
+        startedAt: "2026-09-17T00:00:05.000Z",
+        endedAt: "2026-09-17T00:00:06.000Z",
+        metadata: { commandDispatch: { dispatchId: "missing-command-owner" } },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "integrity_failure",
+      }),
+    );
+    expect(
+      store
+        .listRunAttempts(thread.id)
+        .some((attempt) => attempt.attemptId === "attempt_bad_command_metadata"),
+    ).toBe(false);
+
+    const rollbackCommand = v2.acceptCommand({
+      principalId: "principal_dispatch",
+      conversationId: thread.id,
+      clientCommandId: "command_dispatch_rollback",
+      commandType: "history.retry",
+      request: { activityLineId: "sdk:user-2" },
+      expectedHistoryRevision: 0,
+    });
+    v2.beginCommandExecution(
+      rollbackCommand.principalId,
+      rollbackCommand.conversationId,
+      rollbackCommand.clientCommandId,
+    );
+    v2.recordCommandCheckpoint(
+      rollbackCommand.principalId,
+      rollbackCommand.conversationId,
+      rollbackCommand.clientCommandId,
+      "history.sdk_fork_skipped",
+      { reason: "test" },
+    );
+    v2.recordCommandCheckpoint(
+      rollbackCommand.principalId,
+      rollbackCommand.conversationId,
+      rollbackCommand.clientCommandId,
+      "history.local_rewrite_committed",
+      { historyRevision: 2 },
+    );
+    const rollbackDispatch = {
+      principalId: rollbackCommand.principalId,
+      clientCommandId: rollbackCommand.clientCommandId,
+      dispatchId: "dispatch_rollback",
+    };
+    v2.recordCommandCheckpoint(
+      rollbackCommand.principalId,
+      rollbackCommand.conversationId,
+      rollbackCommand.clientCommandId,
+      "history.runtime_dispatch_prepared",
+      {
+        dispatchId: rollbackDispatch.dispatchId,
+        plannedAttemptId: "attempt_conflict",
+      },
+    );
+    v2.ensureConversation("thr_other_command_dispatch");
+    v2.append({
+      conversationId: "thr_other_command_dispatch",
+      eventId: "existing_conflicting_run",
+      type: "run.started",
+      turnId: "attempt_conflict",
+      runId: "attempt_conflict",
+      occurredAt: "2026-09-17T00:00:00.000Z",
+      payload: {
+        status: "running",
+        authority: "lifecycle",
+        timingQuality: "recorded",
+        startedAt: "2026-09-17T00:00:00.000Z",
+      },
+    });
+
+    expect(() =>
+      store.upsertRunAttempt(
+        {
+          threadId: thread.id,
+          attemptId: "attempt_conflict",
+          phase: "continuation",
+          retryIndex: 0,
+          status: "running",
+          startedAt: "2026-09-17T00:00:03.000Z",
+          metadata: { commandDispatch: rollbackDispatch },
+        },
+        rollbackDispatch,
+      ),
+    ).toThrow();
+    expect(store.listRunAttempts(thread.id).some((attempt) => attempt.attemptId === "attempt_conflict")).toBe(
+      false,
+    );
+    expect(
+      v2
+        .getCommandJob(
+          rollbackCommand.principalId,
+          rollbackCommand.conversationId,
+          rollbackCommand.clientCommandId,
+        )
+        ?.checkpoints.at(-1)?.name,
+    ).toBe("history.runtime_dispatch_prepared");
+
+    const missingAttemptCommand = v2.acceptCommand({
+      principalId: "principal_dispatch",
+      conversationId: thread.id,
+      clientCommandId: "command_missing_attempt",
+      commandType: "history.retry",
+      request: { activityLineId: "sdk:user-3" },
+      expectedHistoryRevision: 0,
+    });
+    v2.beginCommandExecution(
+      missingAttemptCommand.principalId,
+      missingAttemptCommand.conversationId,
+      missingAttemptCommand.clientCommandId,
+    );
+    for (const [name, payload] of [
+      ["history.sdk_fork_skipped", { reason: "test" }],
+      ["history.local_rewrite_committed", { historyRevision: 3 }],
+      [
+        "history.runtime_dispatch_prepared",
+        { dispatchId: "dispatch_missing", plannedAttemptId: "attempt_missing" },
+      ],
+      ["history.runtime_dispatched", { dispatchId: "dispatch_missing", runAttemptId: "attempt_missing" }],
+    ] as const) {
+      v2.recordCommandCheckpoint(
+        missingAttemptCommand.principalId,
+        missingAttemptCommand.conversationId,
+        missingAttemptCommand.clientCommandId,
+        name,
+        payload,
+      );
+    }
+
+    expect(store.reconcileRecoverableHistoryCommands(thread.id)).toEqual([
+      expect.objectContaining({
+        kind: "redispatch_prepared",
+        plannedAttemptId: "attempt_conflict",
+      }),
+      expect.objectContaining({
+        kind: "integrity_failure",
+        reason: "Dispatched command is missing its durable run attempt.",
+      }),
+    ]);
+    expect(
+      v2.getCommandJob(
+        missingAttemptCommand.principalId,
+        missingAttemptCommand.conversationId,
+        missingAttemptCommand.clientCommandId,
+      ),
+    ).toMatchObject({
+      status: "failed",
+      error: {
+        code: "integrity_failure",
+        reason: "Dispatched command is missing its durable run attempt.",
+      },
+    });
   },
 );
 
@@ -948,7 +1704,7 @@ test.skipIf(!sqliteAvailable)(
   "rekeys thread run events when provider request id replaces local placeholder",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-run-event-rekey-"));
-    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
     const thread: ThreadSummary = {
       id: "thr_rekey",
       title: "Rekey",
@@ -1059,11 +1815,471 @@ test.skipIf(!sqliteAvailable)("surfaces ACP core session id on thread summaries"
   );
 });
 
+test.skipIf(!sqliteAvailable)("native Claude user-message rebind stays entirely in V2 storage", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-native-claude-rebind-"));
+  const dbPath = path.join(dir, "eco-coding.sqlite");
+  const store = await createConversationStore(dbPath);
+  const now = "2026-08-11T00:00:00.000Z";
+  const threadId = "thr_native_claude_rebind";
+  store.saveThread({
+    id: threadId,
+    title: "Native Claude rebind",
+    prompt: "native prompt",
+    workspacePath: "/tmp/project",
+    status: "running",
+    message: "working",
+    createdAt: now,
+    updatedAt: now,
+    coreKind: "claude",
+    coreLockedAt: now,
+  });
+
+  store.appendConversationRuntimeEvent({
+    id: "native_user_prompt",
+    threadId,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamState: "none",
+    message: "native prompt",
+    observedAt: now,
+    metadata: { liveType: "thread.user_prompt" },
+  });
+
+  const bound = store.bindLatestUserActivityToSdkMessage(threadId, "claude-sdk-user");
+  expect(bound?.rewindTarget).toEqual({
+    activityLineId: "native_user_prompt",
+    userMessageId: "claude-sdk-user",
+  });
+  expect(store.getUserMessageForEdit(threadId, "native_user_prompt")).toMatchObject({
+    text: "native prompt",
+    upstreamMessageId: "claude-sdk-user",
+    provider: "claude",
+  });
+  expect(store.listConversationUserMessageRecords(threadId)).toEqual([
+    expect.objectContaining({
+      activityLineId: "native_user_prompt",
+      text: "native prompt",
+      upstreamMessageId: "claude-sdk-user",
+      provider: "claude",
+    }),
+  ]);
+  expect(() => store.listConversationUserMessageRecords("thr_missing_v2_stream")).toThrow(
+    /Conversation V2 user-message stream is unavailable/,
+  );
+
+  const inspection = new DatabaseSync(dbPath, { readOnly: true });
+  const legacyCounts = inspection
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name IN ('thread_activity', 'thread_user_messages')
+       ORDER BY name`,
+    )
+    .all() as Array<{ name: string }>;
+  expect(legacyCounts).toEqual([]);
+  inspection.close();
+});
+
+test.skipIf(!sqliteAvailable)(
+  "native Codex SDK binding assigns the first immutable history target after a pending prompt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-native-codex-bind-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const store = await createConversationStore(dbPath);
+    const now = "2026-09-18T00:00:00.000Z";
+    const threadId = "thr_native_codex_bind";
+    store.saveThread({
+      id: threadId,
+      title: "Native Codex bind",
+      prompt: "bind me",
+      workspacePath: "/tmp/project",
+      status: "running",
+      message: "working",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+    store.conversationV2().append({
+      conversationId: threadId,
+      eventId: "codex_message_created",
+      sourceEventKey: "desktop:user:codex:message",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_codex_bind",
+      messageId: "message_user_pending",
+      payload: { role: "user", body: "bind me", status: "final" },
+    });
+    store.appendConversationRuntimeEvent({
+      id: "codex_prompt_source",
+      threadId,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "bind me",
+      observedAt: now,
+      metadata: {
+        liveType: "thread.user_prompt",
+        conversationV2MessageId: "message_user_pending",
+        rewindTarget: { activityLineId: "codex-pending:one" },
+      },
+    });
+
+    const bound = store.bindLatestUserRunEventToSdkMessage(threadId, "codex-item-1");
+    const boundHead = store.conversationV2().head(threadId).lastSeq;
+
+    expect(bound?.rewindTarget).toEqual({
+      activityLineId: "sdk:codex-item-1",
+      userMessageId: "codex-item-1",
+    });
+    expect(store.bindLatestUserRunEventToSdkMessage(threadId, "codex-item-1")).toEqual(bound);
+    expect(store.conversationV2().head(threadId).lastSeq).toBe(boundHead);
+    expect(store.conversationV2().getMessage(threadId, "message_user_pending")).toMatchObject({
+      historyTarget: {
+        activityLineId: "sdk:codex-item-1",
+        userMessageId: "codex-item-1",
+      },
+    });
+    expect(store.listConversationRuntimeSources(threadId)).toEqual([
+      expect.objectContaining({
+        id: "codex_prompt_source",
+        streamKey: "sdk:codex-item-1",
+        metadata: expect.objectContaining({
+          rewindTarget: {
+            activityLineId: "sdk:codex-item-1",
+            userMessageId: "codex-item-1",
+          },
+        }),
+      }),
+    ]);
+    expect(store.conversationV2().listUserMessages(threadId)).toHaveLength(1);
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "startup repair removes an old Codex user-item echo without deleting the accepted prompt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-native-codex-duplicate-repair-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-09-18T00:00:00.000Z";
+    const threadId = "thr_native_codex_duplicate_repair";
+    store.saveThread({
+      id: threadId,
+      title: "Native Codex duplicate repair",
+      prompt: "same prompt",
+      workspacePath: "/tmp/project",
+      status: "running",
+      message: "working",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+    store.conversationV2().append({
+      conversationId: threadId,
+      eventId: "accepted-message",
+      sourceEventKey: "desktop:user:accepted-message",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_local",
+      messageId: "message_user_local",
+      payload: { role: "user", body: "same prompt", status: "final" },
+    });
+    store.appendConversationRuntimeEvent({
+      id: "local-prompt",
+      threadId,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "same prompt",
+      observedAt: now,
+      metadata: {
+        liveType: "thread.user_prompt",
+        conversationV2MessageId: "message_user_local",
+        rewindTarget: { activityLineId: "codex-pending:local" },
+      },
+    });
+    store.appendConversationRuntimeEvent({
+      id: "sdk-user-echo",
+      threadId,
+      eventType: "message.final",
+      scope: "main",
+      role: "user",
+      streamState: "finalized",
+      message: "same prompt",
+      observedAt: "2026-09-18T00:00:01.000Z",
+      streamKey: "codex-user-item",
+      metadata: {
+        liveType: "message.user",
+        itemType: "userMessage",
+        rewindTarget: { activityLineId: "codex-user-item", userMessageId: "codex-user-item" },
+      },
+    });
+
+    expect(store.conversationV2().listUserMessages(threadId)).toHaveLength(2);
+    expect(store.reconcileConversationV2CodexUserMessageDuplicates(threadId)).toEqual({
+      scanned: 1,
+      repaired: 1,
+      ambiguous: 0,
+    });
+    expect(store.conversationV2().listUserMessages(threadId)).toEqual([
+      expect.objectContaining({
+        messageId: "message_user_local",
+        historyTarget: { activityLineId: "sdk:codex-user-item", userMessageId: "codex-user-item" },
+      }),
+    ]);
+    expect(store.listConversationRuntimeSources(threadId)).toEqual([
+      expect.objectContaining({ id: "local-prompt" }),
+    ]);
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "startup repair removes only the queued accepted row when an older runtime created a second prompt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-accepted-prompt-duplicate-repair-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-09-18T00:00:00.000Z";
+    const threadId = "thr_accepted_prompt_duplicate_repair";
+    store.saveThread({
+      id: threadId,
+      title: "Accepted prompt duplicate repair",
+      prompt: "same prompt",
+      workspacePath: "/tmp/project",
+      status: "running",
+      message: "working",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+    const accepted = store.conversationV2().sendMessage({
+      principalId: "desktop-local",
+      conversationId: threadId,
+      clientCommandId: "command-accepted-duplicate",
+      text: "same prompt",
+    });
+    store.conversationV2().append({
+      conversationId: threadId,
+      eventId: "runtime-created-duplicate",
+      sourceEventKey: "desktop:user:accepted-duplicate-runtime",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_runtime_duplicate",
+      messageId: "message_user_runtime_duplicate",
+      payload: { role: "user", body: "same prompt", status: "final" },
+    });
+    store.appendConversationRuntimeEvent({
+      id: "runtime-duplicate-prompt-source",
+      threadId,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "same prompt",
+      observedAt: now,
+      streamKey: "codex-pending:duplicate",
+      metadata: {
+        liveType: "thread.user_prompt",
+        conversationV2MessageId: "message_user_runtime_duplicate",
+        rewindTarget: { activityLineId: "codex-pending:duplicate" },
+      },
+    });
+
+    expect(store.conversationV2().listUserMessages(threadId)).toHaveLength(2);
+    expect(store.reconcileConversationV2AcceptedPromptDuplicates(threadId)).toEqual({
+      scanned: 1,
+      repaired: 1,
+      ambiguous: 0,
+    });
+    expect(store.conversationV2().listUserMessages(threadId)).toEqual([
+      expect.objectContaining({ messageId: "message_user_runtime_duplicate" }),
+    ]);
+    expect(store.conversationV2().getMessage(threadId, accepted.messageId)).toMatchObject({
+      isDeleted: true,
+      status: "deleted",
+    });
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "startup repair scans only the conversations that still hold a queued prompt",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-accepted-prompt-duplicate-scan-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-09-18T00:00:00.000Z";
+    const duplicateThreadId = "thr_accepted_prompt_duplicate_scan";
+    const idleThreadId = "thr_accepted_prompt_duplicate_idle";
+    for (const id of [duplicateThreadId, idleThreadId]) {
+      store.saveThread({
+        id,
+        title: "Accepted prompt duplicate scan",
+        prompt: "same prompt",
+        workspacePath: "/tmp/project",
+        status: "running",
+        message: "working",
+        createdAt: now,
+        updatedAt: now,
+        coreKind: "codex",
+        coreLockedAt: now,
+      });
+    }
+    store.conversationV2().ensureConversation(idleThreadId);
+
+    const accepted = store.conversationV2().sendMessage({
+      principalId: "desktop-local",
+      conversationId: duplicateThreadId,
+      clientCommandId: "command-accepted-duplicate-scan",
+      text: "same prompt",
+    });
+    store.conversationV2().append({
+      conversationId: duplicateThreadId,
+      eventId: "runtime-created-duplicate-scan",
+      sourceEventKey: "desktop:user:accepted-duplicate-scan-runtime",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_runtime_duplicate_scan",
+      messageId: "message_user_runtime_duplicate_scan",
+      payload: { role: "user", body: "same prompt", status: "final" },
+    });
+    store.appendConversationRuntimeEvent({
+      id: "runtime-duplicate-prompt-source-scan",
+      threadId: duplicateThreadId,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "same prompt",
+      observedAt: now,
+      streamKey: "codex-pending:duplicate-scan",
+      metadata: {
+        liveType: "thread.user_prompt",
+        conversationV2MessageId: "message_user_runtime_duplicate_scan",
+        rewindTarget: { activityLineId: "codex-pending:duplicate-scan" },
+      },
+    });
+
+    // The idle stream is skipped because its prompt is no longer queued, so the
+    // startup sweep never walks that conversation's event log.
+    expect(store.reconcileAllConversationV2AcceptedPromptDuplicates()).toEqual({
+      conversations: 1,
+      scanned: 1,
+      repaired: 1,
+      ambiguous: 0,
+    });
+    expect(store.conversationV2().getMessage(duplicateThreadId, accepted.messageId)).toMatchObject({
+      isDeleted: true,
+      status: "deleted",
+    });
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "one-time conversation repairs are recorded and never scanned twice",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-v2-repair-bookkeeping-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-09-18T00:00:00.000Z";
+    const threadId = "thr_v2_repair_bookkeeping";
+    store.saveThread({
+      id: threadId,
+      title: "Repair bookkeeping",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+    store.conversationV2().append({
+      conversationId: threadId,
+      eventId: "bookkeeping-message",
+      sourceEventKey: "desktop:user:bookkeeping-message",
+      type: "message.created",
+      occurredAt: now,
+      turnId: "turn_bookkeeping",
+      messageId: "message_user_bookkeeping",
+      payload: { role: "user", body: "hello", status: "final" },
+    });
+
+    // Nothing queued and no runtime echo: both repairs record the conversation
+    // as done instead of leaving it in the scan set.
+    expect(store.reconcileConversationV2AcceptedPromptDuplicates(threadId)).toEqual({
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+    expect(store.reconcileConversationV2CodexUserMessageDuplicates(threadId)).toEqual({
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+    expect(store.reconcileAllConversationV2AcceptedPromptDuplicates()).toEqual({
+      conversations: 0,
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+    expect(store.reconcileAllConversationV2CodexUserMessageDuplicates()).toEqual({
+      conversations: 0,
+      scanned: 0,
+      repaired: 0,
+      ambiguous: 0,
+    });
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "native Claude prompt without provider identity never gets a synthetic rewind target",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-native-claude-unbound-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = "2026-08-11T00:00:00.000Z";
+    const threadId = "thr_native_claude_unbound";
+    store.saveThread({
+      id: threadId,
+      title: "Native Claude unbound",
+      prompt: "unbound prompt",
+      workspacePath: "/tmp/project",
+      status: "failed",
+      message: "failed",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "claude",
+      coreLockedAt: now,
+    });
+    store.appendConversationRuntimeEvent({
+      id: "native_unbound_prompt",
+      threadId,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "unbound prompt",
+      observedAt: now,
+      metadata: { liveType: "thread.user_prompt" },
+    });
+
+    expect(store.getActivityRewindTarget(threadId, "native_unbound_prompt")).toBeUndefined();
+    expect(store.getActivityRewindTarget(threadId, "sdk:provider-only")).toBeUndefined();
+    expect(store.listConversationUserMessageRecords(threadId)).toEqual([
+      expect.objectContaining({
+        activityLineId: "native_unbound_prompt",
+        text: "unbound prompt",
+      }),
+    ]);
+  },
+);
+
 test.skipIf(!sqliteAvailable)(
   "getUserMessageForEdit recovers Codex image prompts before SDK bind",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-image-retry-"));
-    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
     const now = new Date().toISOString();
     const threadId = "thr_codex_image_retry";
     store.saveThread({
@@ -1114,7 +2330,7 @@ test.skipIf(!sqliteAvailable)(
   "getUserMessageForEdit falls back to prompt previews when Codex pending attachments are missing",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-image-preview-fallback-"));
-    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco-coding.sqlite"));
     const now = new Date().toISOString();
     const threadId = "thr_codex_preview_only";
     store.saveThread({

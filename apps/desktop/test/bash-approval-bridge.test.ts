@@ -45,6 +45,30 @@ test("registers and resolves pending Bash approvals", async () => {
   expect(getPendingBashApprovalForThread("thread_1")).toBeUndefined();
 });
 
+test("SDK suppressed persistent rules cannot be granted by desktop or mobile resolution", async () => {
+  const pending = registerPendingBashApproval("thread_sdk_hint", {
+    toolUseId: "sdk_hint",
+    threadId: "thread_sdk_hint",
+    command: "example",
+    cwd: "/repo",
+    reason: "SDK requires one-time approval",
+    riskScore: 50,
+    riskLevel: "medium",
+    agentId: "planner",
+    defaultToNo: true,
+    suppressAlwaysAllowRule: true,
+  });
+  expect(() => resolvePendingBashApproval("sdk_hint", { decision: "approved_remember_prefix" })).toThrow(
+    "forbids persistent",
+  );
+  expect(getPendingBashApprovalByToolUseId("sdk_hint")).toBeDefined();
+  expect(() => resolveBashApprovalIdempotent("sdk_hint", { decision: "approved_for_session" })).toThrow(
+    "forbids persistent",
+  );
+  expect(resolvePendingBashApproval("sdk_hint", { decision: "approved" })).toBe(true);
+  await expect(pending).resolves.toEqual({ decision: "approved" });
+});
+
 test("idempotent resolve succeeds twice without throwing (PC/mobile race)", async () => {
   const pending = registerPendingBashApproval("thread_race", {
     toolUseId: "tool_race_1",

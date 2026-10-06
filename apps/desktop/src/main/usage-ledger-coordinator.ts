@@ -18,6 +18,10 @@ import {
   USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
   USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
+import {
+  type AppendSdkSessionUsageInput,
+  buildSdkSessionUsageLedgerEvents,
+} from "./sdk-session-usage-ledger";
 import { projectSubagentMetricsEntriesFromBillingProjection } from "./subagent-metrics-projection";
 import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
 import type {
@@ -198,6 +202,18 @@ export class UsageLedgerCoordinator {
         this.writeError(`[eco] usage ledger shadow write failed: ${errorMessage(error)}\n`);
       }
     }
+  }
+
+  appendSdkSessionUsage(input: AppendSdkSessionUsageInput): string[] {
+    const result = buildSdkSessionUsageLedgerEvents(input, this.store.listUsageLedgerEvents(input.threadId));
+    // Deltas precede checkpoints. A failed write can be retried idempotently;
+    // never silently advance the baseline after a missing billable write.
+    for (const event of result.events) this.store.appendUsageLedgerEvent(event);
+    for (const warning of result.warnings) {
+      this.logDiag?.("usage_ledger.sdk_session_warning", { threadId: input.threadId, warning });
+      this.writeError(`[eco] SDK usage: ${warning} (${input.session.sessionId})\n`);
+    }
+    return result.warnings;
   }
 
   registerProxyPendingAttribution(threadId: string, entry: ProxyUsagePendingEntry): number {
@@ -526,6 +542,21 @@ export class UsageLedgerCoordinator {
     }
   }
 
+  /**
+   * Resolve the billing snapshot from the V2 usage ledger only.
+   *
+   * This is the production path after cutover. A missing projection is an
+   * integrity failure: returning an in-memory V1 aggregate here would make a
+   * partially written ledger look like valid billing.
+   */
+  resolveV2BillingSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot {
+    const projection = this.projectBilling(threadId, plannerModelLabel);
+    if (!projection?.snapshot) {
+      throw new Error(`V2 usage ledger billing projection is unavailable: ${threadId}`);
+    }
+    return withBillingDiagnostics(projection.snapshot);
+  }
+
   projectBillingSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot | undefined {
     try {
       const snapshot = this.projectBilling(threadId, plannerModelLabel)?.snapshot;
@@ -587,25 +618,23 @@ export class UsageLedgerCoordinator {
         return;
       }
       const result = reconcileUsageLedgerWithBilling(events, billing);
-      const projection = projectBillingFromUsageLedger({
-        events,
-        agents: this.store.listAgentInstances(threadId),
-        ...(billing.plannerModelLabel && { plannerModelLabel: billing.plannerModelLabel }),
-      });
-      const projectionResult = reconcileBillingProjectionWithLegacy(projection, billing, {
-        subagentMetrics: this.metrics.listEntries(threadId),
-      });
-      if (result.ok && projectionResult.ok) {
+      if (result.ok) {
         return;
       }
+      const hasAccountingMismatch = result.issues.some((issue) => issue.type !== "unattributed_usage");
       this.logDiagThrottled?.(
         `usage-ledger-reconcile:${threadId}`,
-        "usage_ledger.reconcile_mismatch",
+        hasAccountingMismatch ? "usage_ledger.reconcile_mismatch" : "usage_ledger.attribution_gap",
         {
           threadId: shortThreadId(threadId),
           sourceReconciliation: summarizeUsageLedgerReconciliation(result),
-          projection: summarizeUsageLedgerBillingProjection(projection),
-          projectionReconciliation: summarizeBillingProjectionReconciliation(projectionResult),
+          projection: summarizeUsageLedgerBillingProjection({
+            ...projectBillingFromUsageLedger({
+              events,
+              agents: this.store.listAgentInstances(threadId),
+              ...(billing.plannerModelLabel && { plannerModelLabel: billing.plannerModelLabel }),
+            }),
+          }),
         },
         1000,
       );

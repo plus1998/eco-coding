@@ -13,6 +13,21 @@ import { DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT, resolveEffectiveContextLimit } fro
 
 export const ECO_MODEL_CATALOG_FILE_NAME = "eco-model-catalog.json";
 
+export type CodexMultiAgentVersion = "v1" | "v2";
+
+/**
+ * Codex Multi-Agent v2 is available to the GPT-5.6 Terra tier and above,
+ * including the GPT-6 family.
+ * Keep this decision in one place so catalog aliases and thread config cannot
+ * disagree about which child-agent protocol a model should use.
+ */
+export function resolveCodexMultiAgentVersion(modelId: string): CodexMultiAgentVersion {
+  const normalized = modelId.trim();
+  return /^gpt-5\.6-(?:sol|terra)(?:$|[-_.])/iu.test(normalized) || /^gpt-6(?:$|[-_.])/iu.test(normalized)
+    ? "v2"
+    : "v1";
+}
+
 /** Manual capability overrides that may be applied onto a catalog alias entry. */
 export interface CodexCatalogManualCapabilities {
   contextTokens?: number;
@@ -109,6 +124,8 @@ export interface CodexBundledModelEntry {
   support_verbosity?: boolean;
   supports_image_detail_original?: boolean;
   supports_search_tool?: boolean;
+  multi_agent_version?: CodexMultiAgentVersion;
+  multi_agent_reasoning_effort?: string;
   use_responses_lite?: boolean;
   base_instructions?: string;
   [key: string]: unknown;
@@ -411,6 +428,11 @@ export function buildAliasCatalogEntry(
       : `Eco gateway route alias for ${route.providerId}/${route.modelId}.`;
   entry.visibility = "list";
   entry.supported_in_api = true;
+  // The freeform template is currently GPT-5.6 Sol (v2). Do not let unknown
+  // or lower-tier upstream models inherit its child-agent protocol by clone.
+  entry.multi_agent_version = knownNativeMatch
+    ? template.multi_agent_version ?? resolveCodexMultiAgentVersion(route.modelId)
+    : "v1";
   // Always register freeform apply_patch so Eco coding routes can edit files.
   entry.apply_patch_tool_type = "freeform";
   // Unknown third-party models (Grok, DeepSeek, …) must not inherit GPT code mode.

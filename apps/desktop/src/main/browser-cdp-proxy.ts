@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
-import type { Input, WebContents } from "electron";
+import type { WebContents } from "electron";
 import { FORBIDDEN_CDP_PORT } from "../shared/dev-cdp";
 import {
   isBrowserAgentPresenceCdpMethod,
@@ -509,7 +509,25 @@ function focusGuestWebContents(wc: WebContents): void {
   }
 }
 
-function modifiersFromCdp(params: Record<string, unknown>): NonNullable<Input["modifiers"]> {
+type ElectronInputModifier =
+  | "shift"
+  | "control"
+  | "ctrl"
+  | "alt"
+  | "meta"
+  | "command"
+  | "cmd"
+  | "iskeypad"
+  | "isautorepeat"
+  | "leftbuttondown"
+  | "middlebuttondown"
+  | "rightbuttondown"
+  | "capslock"
+  | "numlock"
+  | "left"
+  | "right";
+
+function modifiersFromCdp(params: Record<string, unknown>): ElectronInputModifier[] {
   const mods: Array<"shift" | "ctrl" | "alt" | "meta"> = [];
   const bitmap = Number(params.modifiers ?? 0);
   if (bitmap & 1) mods.push("alt");
@@ -541,7 +559,7 @@ function resolveSendInputKeyCode(params: Record<string, unknown>): string {
   return code;
 }
 
-function mapCdpKeyEventToSendInput(params: Record<string, unknown>): Input | null {
+function mapCdpKeyEventToSendInput(params: Record<string, unknown>): GuestSendInputEvent | null {
   const eventType = params.type;
   if (eventType !== "keyDown" && eventType !== "keyUp" && eventType !== "char") {
     return null;
@@ -705,7 +723,7 @@ function guestDispatchKeyViaSendInputEvent(wc: WebContents, params: Record<strin
   if (!mapped) {
     throw new Error(`Unsupported CDP key event: ${JSON.stringify(params)}`);
   }
-  wc.sendInputEvent(mapped as GuestSendInputEvent);
+  wc.sendInputEvent(mapped);
 }
 
 function mapCdpMouseButton(params: Record<string, unknown>): "left" | "middle" | "right" {
@@ -733,13 +751,13 @@ export function mapCdpMouseEventToSendInput(params: Record<string, unknown>): Gu
   const clickCount = Number.isFinite(clickCountRaw) && clickCountRaw > 0 ? clickCountRaw : 1;
 
   if (eventType === "mousePressed") {
-    return { type: "mouseDown", x, y, button, clickCount, ...mods };
+    return { type: "mouseDown", x, y, button, clickCount, ...mods } as GuestSendInputEvent;
   }
   if (eventType === "mouseReleased") {
-    return { type: "mouseUp", x, y, button, clickCount, ...mods };
+    return { type: "mouseUp", x, y, button, clickCount, ...mods } as GuestSendInputEvent;
   }
   if (eventType === "mouseMoved") {
-    return { type: "mouseMove", x, y, ...mods };
+    return { type: "mouseMove", x, y, ...mods } as GuestSendInputEvent;
   }
   if (eventType === "mouseWheel") {
     const deltaX = Number(params.deltaX ?? 0);
@@ -751,7 +769,7 @@ export function mapCdpMouseEventToSendInput(params: Record<string, unknown>): Gu
       deltaX: Number.isFinite(deltaX) ? deltaX : 0,
       deltaY: Number.isFinite(deltaY) ? deltaY : 0,
       ...mods,
-    };
+    } as GuestSendInputEvent;
   }
   return null;
 }

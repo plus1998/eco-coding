@@ -216,10 +216,10 @@ describe("thread run message block rules", () => {
     // The original feed bug came from three private copies of these rules drifting apart.
     const { readFileSync } = await import("node:fs");
     const sources = {
-      projection: readFileSync(new URL("../src/main/thread-run-projection.ts", import.meta.url), "utf8"),
+      projection: readFileSync(new URL("../src/main/conversation-v2-runtime-projection.ts", import.meta.url), "utf8"),
       store: readFileSync(new URL("../src/main/conversation-store.ts", import.meta.url), "utf8"),
       timelineItems: readFileSync(
-        new URL("../src/main/thread-feed-timeline-items.ts", import.meta.url),
+        new URL("../src/main/legacy-feed-skeleton-timeline-items.ts", import.meta.url),
         "utf8",
       ),
     };

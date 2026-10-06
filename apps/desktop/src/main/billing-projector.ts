@@ -18,9 +18,9 @@ import type {
   ThreadBillingSourceSnapshot,
   ThreadSubagentBillingSnapshot,
 } from "../shared/ipc";
+import { ledgerEventDuplicateKey } from "../shared/ledger-events-display";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { resolveLedgerSourcePriority } from "./billing-source-priority";
-import { ledgerEventDuplicateKey } from "../shared/ledger-events-display";
 import { readRouteRole } from "./proxy-usage-pending-settlement";
 import type {
   AgentInstanceKind,
@@ -94,6 +94,41 @@ export interface UsageLedgerBillingProjection {
   eventCount: number;
 }
 
+/**
+ * Select the billable ledger rows that the V2 billing projection is allowed to
+ * consume.  Proxy rows are authoritative when an SDK row represents the same
+ * invocation, and duplicate rows from the same source are collapsed by the
+ * stable ledger display key.  Keeping this selection in one place prevents
+ * reconciliation from comparing raw shadow rows with the deduplicated V2
+ * projection.
+ */
+export function selectBillableUsageLedgerEvents(events: readonly UsageLedgerEvent[]): UsageLedgerEvent[] {
+  const proxyBillableIndex = indexProxyBillableEvents(events);
+  const seenBillableRequestKeys = new Set<string>();
+  const selected: UsageLedgerEvent[] = [];
+
+  for (const event of events) {
+    if (
+      event.usageKind === "request_partial" ||
+      event.usageKind === "context" ||
+      event.usageKind === "session_total"
+    ) {
+      continue;
+    }
+    if (shouldSkipDuplicateBillableEvent(event, proxyBillableIndex)) {
+      continue;
+    }
+    const duplicateKey = ledgerEventDuplicateKey(event);
+    if (seenBillableRequestKeys.has(duplicateKey)) {
+      continue;
+    }
+    seenBillableRequestKeys.add(duplicateKey);
+    selected.push(event);
+  }
+
+  return selected;
+}
+
 interface MutableSourceState {
   source: UsageLedgerSource;
   total: ParsedUsage;
@@ -153,10 +188,6 @@ export function projectBillingFromUsageLedger(
   const contextEvents: UsageLedgerEvent[] = [];
   let unresolvedEventCount = 0;
 
-  const proxyBillableIndex = indexProxyBillableEvents(input.events);
-  // A billable row observed twice for the same invocation is counted once; see loop.
-  const seenBillableRequestKeys = new Set<string>();
-
   for (const event of input.events) {
     if (event.usageKind === "request_partial") {
       unsettledPartialEvents.push(event);
@@ -164,19 +195,13 @@ export function projectBillingFromUsageLedger(
     }
     if (event.usageKind === "context") {
       contextEvents.push(event);
-      continue;
     }
-    if (shouldSkipDuplicateBillableEvent(event, proxyBillableIndex)) {
-      continue;
-    }
-    // A billable row observed twice for the same invocation (same source + usage kind +
-    // usage fingerprint — e.g. legacy PI double usage emission) is counted once; the
-    // first observation wins. Distinct models from one SDK result keep separate rows.
-    const duplicateKey = ledgerEventDuplicateKey(event);
-    if (seenBillableRequestKeys.has(duplicateKey)) {
-      continue;
-    }
-    seenBillableRequestKeys.add(duplicateKey);
+  }
+
+  // A billable row observed twice for the same invocation (same source + usage kind +
+  // usage fingerprint — e.g. legacy PI double usage emission) is counted once; the
+  // first observation wins. Distinct models from one SDK result keep separate rows.
+  for (const event of selectBillableUsageLedgerEvents(input.events)) {
     const usage = usageFromEvent(event);
     const billing = resolveEventBilling(event, input.resolveRates);
     if (!billing.pricingResolved) {
@@ -203,11 +228,8 @@ export function projectBillingFromUsageLedger(
   const sourceBreakdown = buildSourceBreakdown(sources);
   const priority = input.primarySourcePriority ?? resolveLedgerSourcePriority(sourceBreakdown);
   const nonVisionSources = new Set(
-    input.events
-      .filter(
-        (event) =>
-          event.role !== "vision" && event.usageKind !== "request_partial" && event.usageKind !== "context",
-      )
+    selectBillableUsageLedgerEvents(input.events)
+      .filter((event) => event.role !== "vision")
       .map((event) => event.source),
   );
   const primarySource =
@@ -575,6 +597,7 @@ function collectReportedRequestCosts(
     }
   >();
   for (const event of events) {
+    if (event.usageKind === "session_total") continue;
     const scopedId =
       scope === "agent" ? event.agentId : scope === "runAttempt" ? event.runAttemptId : undefined;
     if (scope !== "source" && !scopedId) {
@@ -768,7 +791,11 @@ function indexProxyBillableEvents(events: readonly UsageLedgerEvent[]): ProxyBil
     if (event.source !== "proxy") {
       continue;
     }
-    if (event.usageKind === "request_partial" || event.usageKind === "context") {
+    if (
+      event.usageKind === "request_partial" ||
+      event.usageKind === "context" ||
+      event.usageKind === "session_total"
+    ) {
       continue;
     }
     if (event.requestKey) {

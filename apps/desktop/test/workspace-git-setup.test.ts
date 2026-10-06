@@ -11,6 +11,13 @@ import {
 } from "../src/main/workspace-git-setup";
 import { inspectWorkspace, resolveGitExecutable } from "../src/main/workspace-inspect";
 
+const TEST_GIT_IDENTITY_ARGS = [
+  "-c",
+  "user.name=Eco Coding Test",
+  "-c",
+  "user.email=eco-coding-test@localhost",
+];
+
 function createRunner(): GitCommandRunner {
   return async (command, cwd) => {
     const executable = command[0] === "git" ? resolveGitExecutable() : command[0]!;
@@ -70,7 +77,7 @@ test("prepareWorkspaceGit is idempotent when repo already has commits", async ()
   execFileSync(resolveGitExecutable(), ["init", "-b", "main"], { cwd: root });
   await fs.writeFile(path.join(root, "README.md"), "# ok\n");
   execFileSync(resolveGitExecutable(), ["add", "README.md"], { cwd: root });
-  execFileSync(resolveGitExecutable(), ["commit", "-m", "seed"], { cwd: root });
+  execFileSync(resolveGitExecutable(), [...TEST_GIT_IDENTITY_ARGS, "commit", "-m", "seed"], { cwd: root });
 
   const info = await prepareWorkspaceGit(root, run);
   expect(info.hasGitCommits).toBe(true);

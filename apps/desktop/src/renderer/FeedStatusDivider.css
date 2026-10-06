@@ -1,0 +1,56 @@
+.feed-status-divider {
+  display: grid;
+  grid-template-columns: minmax(28px, 1fr) minmax(0, auto) minmax(28px, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.feed-status-divider-line {
+  height: 1px;
+  min-width: 0;
+  background: color-mix(in srgb, var(--border-subtle) 72%, transparent);
+}
+
+.feed-status-divider-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: min(760px, 78vw);
+}
+
+.feed-status-divider-kind-icon,
+.feed-status-divider-info {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.feed-status-divider-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.feed-status-divider-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 520px) {
+  .feed-status-divider {
+    grid-template-columns: minmax(16px, 1fr) minmax(0, auto) minmax(16px, 1fr);
+    gap: 9px;
+    font-size: 12px;
+  }
+
+  .feed-status-divider-content {
+    max-width: calc(100vw - 72px);
+  }
+}

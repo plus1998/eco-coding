@@ -1,15 +1,17 @@
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
+
 export const ECO_IMAGE_GENERATION_MCP_SERVER = "eco_image_generation";
 export const ECO_IMAGE_GENERATION_TOOL = "create_image";
 export const ECO_IMAGE_GENERATION_FULL_TOOL = `mcp__${ECO_IMAGE_GENERATION_MCP_SERVER}__${ECO_IMAGE_GENERATION_TOOL}`;
 export const IMAGE_GENERATION_TASK_TAB_PREFIX = "image:";
 
 /** Upstream HTTP wall clock for create_image (generations / edits). */
-export const IMAGE_GENERATION_REQUEST_TIMEOUT_MS = 300_000;
+export const IMAGE_GENERATION_REQUEST_TIMEOUT_MS = 600_000;
 /**
  * Agent-facing MCP tool-call timeout (Claude `timeout`, Pi `requestTimeoutMs`,
  * Codex `tool_timeout_sec`). Default SDK/Codex tool timeout is 60s — too short for drawing.
  */
-export const IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS = 300_000;
+export const IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS = 600_000;
 export const IMAGE_GENERATION_CODEX_TOOL_TIMEOUT_SEC = Math.ceil(
   IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS / 1000,
 );
@@ -166,7 +168,9 @@ export function buildImageGenerationPromptAppend(input: {
     : "Image-to-image is disabled on this profile; do not pass input_images.";
   return [
     "Built-in Creative Drawing (Eco) is enabled for this conversation.",
-    `Use only \`${ECO_IMAGE_GENERATION_FULL_TOOL}\`; do not use the built-in imagegen Skill or another image tool.`,
+    "Use only Eco's Creative Drawing tool; do not use the built-in imagegen Skill or another image tool.",
+    buildEcoMcpHubToolUsage({ server: ECO_IMAGE_GENERATION_MCP_SERVER, tool: ECO_IMAGE_GENERATION_TOOL }),
+    `When the direct tool \`${ECO_IMAGE_GENERATION_FULL_TOOL}\` is explicitly listed, use it.`,
     `Active profile: ${input.profileName}; provider=${input.provider}; model=${input.model}.`,
     providerParameters,
     imageToImage,

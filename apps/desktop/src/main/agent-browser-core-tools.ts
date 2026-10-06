@@ -83,7 +83,7 @@ const TOOL_DEFINITIONS: Record<
         url: {
           type: "string",
           minLength: 1,
-          description: "Absolute URL to open (http/https or about:).",
+          description: "Absolute URL to open (http/https, file://, or about:) or a local file path.",
         },
       },
     }),
@@ -316,7 +316,9 @@ const TOOL_DEFINITIONS: Record<
   },
 };
 
-export function agentBrowserCoreToolsCatalog(): Array<Record<string, unknown>> {
+import type { McpToolDefinition } from "./mcp-streamable-http";
+
+export function agentBrowserCoreToolsCatalog(): McpToolDefinition[] {
   return AGENT_BROWSER_CORE_TOOL_NAMES.map((name) => {
     const def = TOOL_DEFINITIONS[name];
     return {

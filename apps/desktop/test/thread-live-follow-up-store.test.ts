@@ -1,9 +1,14 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { discardAbandonedAcceptedPrompts } from "../src/main/conversation-follow-up-accepted-prompt";
 import { createConversationStore } from "../src/main/conversation-store";
+import { PromptImageFileStore } from "../src/main/prompt-image-file-store";
 import type { ThreadSummary } from "../src/shared/ipc";
+import { abandonedFollowUpsForConversationMessage } from "../src/shared/thread-follow-up-drain";
 
 const sqliteAvailable = await (async () => {
   try {
@@ -34,6 +39,198 @@ async function createStore() {
   return store;
 }
 
+async function createLegacyStore(dbPath: string) {
+  return createConversationStore(dbPath, {
+    freshStorageMode: "legacy_compat",
+    requiredStorageMode: "legacy_compat",
+  });
+}
+
+test.skipIf(!sqliteAvailable)(
+  "cutover materializes legacy follow-up attachments into V2 objects",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-follow-up-cutover-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const attachmentsRoot = path.join(dir, "prompt-images");
+    const sourcePath = path.join(attachmentsRoot, "legacy", "prompt.png");
+    const bytes = Buffer.from("legacy follow-up image");
+    await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+    await fs.writeFile(sourcePath, bytes);
+
+    const store = await createLegacyStore(dbPath);
+    store.saveThread(thread("thr_followup_cutover"));
+    const db = new DatabaseSync(dbPath);
+    db.prepare(
+      `INSERT INTO thread_pending_followups (
+       id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
+       source_run_attempt_id, target_run_attempt_id, queued_during_phase,
+       delivery_boundary, error, queue_position, created_at, updated_at,
+       delivered_at, applied_at, conversation_message_id
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL)`,
+    ).run(
+      "tfu_legacy_attachment",
+      "thr_followup_cutover",
+      "migrate this",
+      JSON.stringify([{ mediaType: "image/png", path: sourcePath }]),
+      "normal",
+      "queued",
+      "queued",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+    );
+    db.close();
+
+    store.setPromptImageFileStore(new PromptImageFileStore(dir, { rootDir: attachmentsRoot }));
+    store.switchToV2OnlyStorage();
+
+    const attachment = store.listThreadFollowUps("thr_followup_cutover")[0]?.attachments?.[0];
+    expect(attachment).toEqual({
+      mediaType: "image/png",
+      contentRef: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      byteLength: bytes.length,
+    });
+    expect(attachment).not.toHaveProperty("path");
+    expect(attachment).not.toHaveProperty("data");
+    expect(store.getConversationStorageMode()).toBe("v2_only");
+
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      (
+        verify
+          .prepare(
+            `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'thread_pending_followups'`,
+          )
+          .get() as { name?: string } | undefined
+      )?.name,
+    ).toBeUndefined();
+    verify.close();
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "cutover rejects legacy follow-up attachments without a durable store",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-follow-up-cutover-blocked-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const store = await createLegacyStore(dbPath);
+    store.saveThread(thread("thr_followup_cutover_blocked"));
+    const db = new DatabaseSync(dbPath);
+    db.prepare(
+      `INSERT INTO thread_pending_followups (
+       id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
+       source_run_attempt_id, target_run_attempt_id, queued_during_phase,
+       delivery_boundary, error, queue_position, created_at, updated_at,
+       delivered_at, applied_at, conversation_message_id
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL)`,
+    ).run(
+      "tfu_legacy_attachment_blocked",
+      "thr_followup_cutover_blocked",
+      "do not lose this",
+      JSON.stringify([{ mediaType: "image/png", data: "aGVsbG8=" }]),
+      "normal",
+      "queued",
+      "queued",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+    );
+    db.close();
+
+    expect(() => store.switchToV2OnlyStorage()).toThrow("Durable prompt image store is required");
+    expect(store.getConversationStorageMode()).toBe("legacy_compat");
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      (verify.prepare(`SELECT COUNT(*) AS count FROM thread_pending_followups`).get() as { count: number })
+        .count,
+    ).toBe(1);
+    verify.close();
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "V2-only reopen migrates a leftover legacy follow-up before retiring its table",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-follow-up-reopen-cutover-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const attachmentsRoot = path.join(dir, "prompt-images");
+    const sourcePath = path.join(attachmentsRoot, "legacy", "reopen.png");
+    const bytes = Buffer.from("reopen follow-up image");
+    await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+    await fs.writeFile(sourcePath, bytes);
+
+    const initial = await createConversationStore(dbPath, { freshStorageMode: "v2_only" });
+    initial.saveThread(thread("thr_followup_reopen_cutover"));
+    (initial as unknown as { db: DatabaseSync }).db.close();
+
+    const seed = new DatabaseSync(dbPath);
+    seed.exec(`
+      CREATE TABLE thread_pending_followups (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        attachments_json TEXT,
+        priority TEXT NOT NULL,
+        status TEXT NOT NULL,
+        delivery_mode TEXT NOT NULL,
+        source_run_attempt_id TEXT,
+        target_run_attempt_id TEXT,
+        queued_during_phase TEXT,
+        delivery_boundary TEXT,
+        error TEXT,
+        queue_position INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        delivered_at TEXT,
+        applied_at TEXT,
+        conversation_message_id TEXT
+      )
+    `);
+    seed
+      .prepare(
+        `INSERT INTO thread_pending_followups (
+           id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "tfu_reopen_legacy_attachment",
+        "thr_followup_reopen_cutover",
+        "reopen this",
+        JSON.stringify([{ mediaType: "image/png", path: sourcePath }]),
+        "normal",
+        "queued",
+        "queued",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z",
+      );
+    seed.close();
+
+    const reopened = await createConversationStore(dbPath, {
+      requiredStorageMode: "v2_only",
+      promptImageFileStore: new PromptImageFileStore(dir, { rootDir: attachmentsRoot }),
+    });
+    const attachment = reopened.listThreadFollowUps("thr_followup_reopen_cutover")[0]?.attachments?.[0];
+    expect(attachment).toEqual({
+      mediaType: "image/png",
+      contentRef: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      byteLength: bytes.length,
+    });
+    expect(attachment).not.toHaveProperty("path");
+
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    expect(
+      (
+        verify
+          .prepare(
+            `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'thread_pending_followups'`,
+          )
+          .get() as { name?: string } | undefined
+      )?.name,
+    ).toBeUndefined();
+    verify.close();
+    (reopened as unknown as { db: DatabaseSync }).db.close();
+  },
+);
+
 test.skipIf(!sqliteAvailable)("persists and orders queued follow-ups by priority", async () => {
   const store = await createStore();
 
@@ -43,6 +240,7 @@ test.skipIf(!sqliteAvailable)("persists and orders queued follow-ups by priority
     attachments: [{ mediaType: "image/png", data: "abc" }],
     sourceRunAttemptId: "attempt_1",
     queuedDuringPhase: "execution",
+    conversationMessageId: "message_v2_1",
   });
   const escalated = store.enqueueThreadFollowUp({
     threadId: "thr_followup",
@@ -63,6 +261,7 @@ test.skipIf(!sqliteAvailable)("persists and orders queued follow-ups by priority
   expect(listed[1]).toMatchObject({
     sourceRunAttemptId: "attempt_1",
     queuedDuringPhase: "execution",
+    conversationMessageId: "message_v2_1",
   });
 });
 
@@ -118,6 +317,38 @@ test.skipIf(!sqliteAvailable)("cancels only queued follow-ups", async () => {
   const delivered = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "已交付" });
   store.updateThreadFollowUpStatus("thr_followup", delivered.id, { status: "delivered" });
   expect(store.cancelThreadFollowUp("thr_followup", delivered.id)).toBeUndefined();
+});
+
+test.skipIf(!sqliteAvailable)("a cancelled follow-up leaves no queued acceptance for recovery", async () => {
+  const store = await createStore();
+  const v2 = store.conversationV2();
+  const accepted = v2.sendMessage({
+    principalId: "desktop-local",
+    conversationId: "thr_followup",
+    clientCommandId: "cmd_follow_up_ghost",
+    text: "auth.json 有 2 个路径",
+  });
+  const queued = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "auth.json 有 2 个路径",
+    conversationMessageId: accepted.messageId,
+  });
+  expect(store.cancelThreadFollowUp("thr_followup", queued.id)?.status).toBe("cancelled");
+  // The queue row is gone but its acceptance is still the only place that prompt lives.
+  expect(v2.getMessage("thr_followup", accepted.messageId)?.status).toBe("queued");
+
+  const abandoned = abandonedFollowUpsForConversationMessage(
+    store.listThreadFollowUps("thr_followup"),
+    accepted.messageId,
+  );
+  expect(abandoned.map((row) => row.id)).toEqual([queued.id]);
+
+  discardAbandonedAcceptedPrompts(v2, {
+    conversationId: "thr_followup",
+    messageIds: abandoned.map((row) => row.conversationMessageId ?? ""),
+    reason: "follow-up-cancelled",
+  });
+  expect(v2.listQueuedUserMessages()).toEqual([]);
 });
 
 test.skipIf(!sqliteAvailable)("updates queued follow-up prompt and attachments", async () => {
@@ -196,6 +427,26 @@ test.skipIf(!sqliteAvailable)("claims only escalated follow-ups when priority is
 
   expect(claimed.map((item) => item.id)).toEqual([escalated.id]);
   expect(store.getThreadFollowUp("thr_followup", normal.id)?.status).toBe("queued");
+});
+
+test.skipIf(!sqliteAvailable)("a cancelled Guide cannot force-send an unrelated normal row", async () => {
+  const store = await createStore();
+  const normal = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "remain paused" });
+  const guide = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "handle now",
+    priority: "escalated",
+  });
+  store.setThreadFollowUpQueuePaused("thr_followup", true);
+  store.cancelThreadFollowUp("thr_followup", guide.id);
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", {
+    priority: "escalated",
+    deliveryMode: "resume",
+    deliveryBoundary: "forced_interrupt",
+  });
+  expect(claimed).toEqual([]);
+  expect(store.getThreadFollowUp("thr_followup", normal.id)?.status).toBe("queued");
+  expect(store.getThread("thr_followup")?.followUpQueuePaused).toBe(true);
 });
 
 test.skipIf(!sqliteAvailable)("claimQueuedThreadFollowUps skips an excluded follow-up id", async () => {

@@ -1,38 +1,38 @@
 {
   "skills_listed": {
     "ok": true,
-    "detail": "skills entries=1"
+    "detail": "skills/list has entries"
   },
   "skill_invoked_or_mentioned": {
     "ok": true,
-    "detail": "skill evidence found in items/text"
+    "detail": "skill evidence in recording"
   },
   "file_written": {
     "ok": true,
-    "detail": "workspace files: smoke-note.txt"
+    "detail": "file write evidence in recording"
   },
   "file_read_back": {
     "ok": true,
-    "detail": "read/content verified"
+    "detail": "read-back evidence in recording"
   },
   "mcp_tool_called": {
     "ok": true,
-    "detail": "native mcpToolCall tools=smoke_ping,eco_smoke/smoke_ping"
+    "detail": "mcp tools=smoke_ping"
   },
   "subagent_spawned": {
     "ok": true,
-    "detail": "spawn evidence; childThreads=01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3"
+    "detail": "spawn evidence in recording"
   },
   "subagent_turn_events": {
     "ok": true,
-    "detail": "subagent lifecycle events observed"
+    "detail": "subagent lifecycle in recording"
   },
   "turn_completed": {
     "ok": true,
-    "detail": "turn/completed observed"
+    "detail": "turn/completed in recording"
   },
   "marker_in_assistant": {
     "ok": true,
-    "detail": "marker LCMTI7H7XI found"
+    "detail": "marker LCMTI7H7XI in recording"
   }
 }

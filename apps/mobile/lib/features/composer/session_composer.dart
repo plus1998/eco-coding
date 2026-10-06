@@ -299,7 +299,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: BackdropFilter(
@@ -333,14 +333,14 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                padding: const EdgeInsets.fromLTRB(4, 14, 4, 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (widget.onRestoreDraft != null)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: ecoColors(context).dangerSoft,
@@ -385,7 +385,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                       ),
                     if (widget.attachments.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
                         child: SizedBox(
                           height: 72,
                           child: ListView.separated(
@@ -404,43 +404,46 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           ),
                         ),
                       ),
-                    TextField(
-                      controller: widget.controller,
-                      focusNode: _focusNode,
-                      minLines: 1,
-                      maxLines: 6,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: _canSend ? (_) => _handleSend() : null,
-                      decoration: InputDecoration(
-                        hintText:
-                            widget.inputHint ??
-                            (widget.followUpMode
-                                ? context.l10n.composerRequestChanges
-                                : (widget.hasActivity
-                                      ? context.l10n.composerFollowUp
-                                      : context.l10n.composerSendHint)),
-                        filled: false,
-                        fillColor: Colors.transparent,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
-                        errorBorder: InputBorder.none,
-                        focusedErrorBorder: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                        hintStyle: TextStyle(
-                          color: ecoColors(context).textMuted,
-                          fontSize: 17,
-                          letterSpacing: -0.2,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: TextField(
+                        controller: widget.controller,
+                        focusNode: _focusNode,
+                        minLines: 1,
+                        maxLines: 6,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: _canSend ? (_) => _handleSend() : null,
+                        decoration: InputDecoration(
+                          hintText:
+                              widget.inputHint ??
+                              (widget.followUpMode
+                                  ? context.l10n.composerRequestChanges
+                                  : (widget.hasActivity
+                                        ? context.l10n.composerFollowUp
+                                        : context.l10n.composerSendHint)),
+                          filled: false,
+                          fillColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          focusedErrorBorder: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                          hintStyle: TextStyle(
+                            color: ecoColors(context).textMuted,
+                            fontSize: 17,
+                            letterSpacing: -0.2,
+                          ),
                         ),
-                      ),
-                      style: TextStyle(
-                        fontSize: 17,
-                        height: 1.35,
-                        letterSpacing: -0.2,
-                        color: ecoColors(context).textHeading,
-                        backgroundColor: Colors.transparent,
+                        style: TextStyle(
+                          fontSize: 17,
+                          height: 1.35,
+                          letterSpacing: -0.2,
+                          color: ecoColors(context).textHeading,
+                          backgroundColor: Colors.transparent,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -504,7 +507,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 2),
                         if (showSpeechInput) ...[
                           ComposerToolbarIconButton(
                             onPressed: _handleSpeechInput,
@@ -523,7 +525,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                                   : ecoColors(context).textSecondary,
                             ),
                           ),
-                          const SizedBox(width: 2),
                         ],
                         if (widget.followUpMode)
                           _hasContent

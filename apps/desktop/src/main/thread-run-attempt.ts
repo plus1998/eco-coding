@@ -1,5 +1,10 @@
 import type { RequestAttemptResult } from "./request-retry";
-import type { RunAttemptPhase, RunAttemptRecord, RunAttemptStatus } from "./usage-ledger";
+import type {
+  RunAttemptCommandDispatch,
+  RunAttemptPhase,
+  RunAttemptRecord,
+  RunAttemptStatus,
+} from "./usage-ledger";
 
 export interface RunAttemptContext {
   threadId: string;
@@ -12,6 +17,9 @@ export interface ThreadRunAttemptLifecycle {
     threadId: string;
     phase: RunAttemptPhase;
     retryIndex: number;
+    attemptId?: string;
+    metadata?: Record<string, unknown>;
+    commandDispatch?: RunAttemptCommandDispatch;
   }): Pick<RunAttemptRecord, "attemptId">;
   finishRunAttempt(threadId: string, status: Exclude<RunAttemptStatus, "running">): void;
 }
@@ -33,6 +41,9 @@ export interface RunThreadRequestWithLifecycleInput {
   settlements: ThreadRunAttemptSettlementQueue;
   /** 0-based retry index for this attempt (0 = first attempt). */
   retryIndex?: number;
+  attemptId?: string;
+  metadata?: Record<string, unknown>;
+  commandDispatch?: RunAttemptCommandDispatch;
 }
 
 export function runThreadRequestWithLifecycle(
@@ -43,6 +54,9 @@ export function runThreadRequestWithLifecycle(
       threadId: input.threadId,
       phase: input.phase,
       retryIndex: input.retryIndex ?? 0,
+      ...(input.attemptId && { attemptId: input.attemptId }),
+      ...(input.metadata && { metadata: input.metadata }),
+      ...(input.commandDispatch && { commandDispatch: input.commandDispatch }),
     });
     const context: RunAttemptContext = {
       threadId: input.threadId,

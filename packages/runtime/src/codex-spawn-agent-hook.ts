@@ -94,6 +94,24 @@ if (!normalizedToolName.includes("spawnagent")) {
 }
 
 const toolInput = readSpawnToolInput(payload);
+
+// "指定子代理执行已批准计划": when the host armed a one-shot forced delegation, the
+// first spawn for the chosen role must carry the canonical task verbatim, and any
+// other role is denied outright — no silent fallback to a different subagent.
+const forcedOutcome = claimForcedPlanDelegation(toolInput);
+if (forcedOutcome && forcedOutcome.deny) {
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: forcedOutcome.reason,
+      },
+    }),
+  );
+  process.exit(0);
+}
+
 const hasMessage =
   typeof toolInput.message === "string" && toolInput.message.trim().length > 0;
 const hasTaskName =
@@ -202,6 +220,72 @@ function readSpawnToolInput(payload) {
     return { ...raw };
   }
   return {};
+}
+
+// One-shot claim of the armed forced delegation for the requested role. Returns
+// undefined when nothing is armed (normal turns), { deny, reason } to block a wrong
+// target, or { claimed: true } after rewriting toolInput.message in place.
+function claimForcedPlanDelegation(toolInput) {
+  const codexHome = process.env.CODEX_HOME ? process.env.CODEX_HOME.trim() : "";
+  if (!codexHome) {
+    return undefined;
+  }
+  const directory = path.join(codexHome, "eco-forced-plan-delegations");
+  let entries;
+  try {
+    entries = fs.readdirSync(directory);
+  } catch {
+    return undefined;
+  }
+  const armed = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const filePath = path.join(directory, entry);
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (
+        parsed &&
+        typeof parsed.agentRole === "string" &&
+        typeof parsed.canonicalTask === "string" &&
+        parsed.canonicalTask.trim()
+      ) {
+        armed.push({
+          filePath,
+          agentRole: parsed.agentRole.trim().toLowerCase(),
+          canonicalTask: parsed.canonicalTask,
+        });
+      }
+    } catch {
+      // Corrupt arms cannot authorize a spawn.
+    }
+  }
+  if (armed.length === 0) {
+    return undefined;
+  }
+  const agentType =
+    typeof toolInput.agent_type === "string" ? toolInput.agent_type.trim().toLowerCase() : "";
+  const match = agentType ? armed.find((candidate) => candidate.agentRole === agentType) : undefined;
+  if (!match) {
+    const targets = armed.map((candidate) => candidate.agentRole).join(", ");
+    return {
+      deny: true,
+      reason:
+        "Eco: 已批准的计划只能由指定子代理（" +
+        targets +
+        "）执行；本次 spawn_agent 目标为「" +
+        (agentType || "未指定") +
+        "」，已被拒绝。",
+    };
+  }
+  try {
+    fs.unlinkSync(match.filePath);
+  } catch {
+    return { deny: true, reason: "Eco: 计划委派只能执行一次，重复委派已被拒绝。" };
+  }
+  toolInput.message = match.canonicalTask;
+  return { claimed: true };
 }
 
 process.stdout.write(

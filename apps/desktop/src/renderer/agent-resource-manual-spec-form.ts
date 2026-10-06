@@ -140,6 +140,7 @@ export function prefillManualSpecFormFromHints(
     maxOutputTokens: formatManualTokenValue(maxOutputTokens),
     supportsImageInput: booleanToTriState(supportsImageInput),
     supportsReasoning: booleanToTriState(supportsReasoning),
+    supportsNativeWebSearch: true,
     priceMultiplier: "1",
     inputPerM: formatManualRateValue(catalogPrice?.rates?.inputPerM),
     outputPerM: formatManualRateValue(catalogPrice?.rates?.outputPerM),

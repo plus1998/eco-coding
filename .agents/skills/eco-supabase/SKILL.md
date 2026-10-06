@@ -21,6 +21,10 @@ Eco **无官方节点**。客户端只要 **Project URL + anon key**（禁止 `s
 Schema / 函数：[supabase/](../../../supabase/)  
 设计：[docs/superpowers/specs/2026-08-20-supabase-center-design.md](../../../docs/superpowers/specs/2026-08-20-supabase-center-design.md)
 
+**桌面 Cloud 一键入口：** 设置 → 互联 → 部署 TAB → Supabase Cloud 部署。“当前互联” TAB 展示现有连接与状态。使用账号 Personal Access Token 获取项目，自动识别首次部署／更新／已是最新；不要求 CLI、Docker 或数据库密码。应用内仅支持官方 Cloud，自托管继续使用下方命令行流程。详见部署文档「桌面一键部署／更新」。
+
+**后端版本：** 独立维护 `supabase/deployment.json` 的 `backendVersion`（SemVer）与 `apiVersion`（接口契约）。后端资源变更需要发布后端版本；破坏接口兼容时递增接口版本并同步客户端支持声明。桌面版本只记录部署来源，不能用于判断后端更新或接口兼容。不要修改已发布迁移，也不要手写未经部署器验证的成功版本记录。
+
 ## 何时用本 Skill
 
 - 「帮我初始化 / 部署 Supabase」

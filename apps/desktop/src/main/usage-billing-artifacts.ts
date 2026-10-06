@@ -15,6 +15,7 @@ import {
   resolveRatesForRoute,
   resolveUsageRoute,
 } from "./billing-resolver";
+import { resolveBuiltInOpenAiDefaultRates } from "./built-in-openai-pricing";
 import {
   PROXY_PENDING_ATTRIBUTION_REASON,
   PROXY_PENDING_PARENT_UNMAPPED_REASON,
@@ -132,8 +133,21 @@ export async function resolveSingleUsageBillingArtifacts(
 
   const actualLookup = usageRoute ? await input.lookupPricing(usageRoute) : null;
   const plannerLookup = plannerRoute ? await input.lookupPricing(plannerRoute) : null;
-  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
-  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  let actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
+  let plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  // Built-in OpenAI (ChatGPT/auth.json) Codex models are not served through the
+  // gateway and are not in the models.dev catalog, so the lookups above return
+  // nothing. Fall back to public list prices so the billing card can show cost.
+  if (input.providerId === "openai") {
+    const pricingModelId = resolvedModelId ?? input.modelId;
+    if (!actualRates && pricingModelId) {
+      actualRates = resolveBuiltInOpenAiDefaultRates(pricingModelId);
+    }
+    const plannerModelId = plannerRoute?.modelId ?? pricingModelId;
+    if (!plannerRates && plannerModelId) {
+      plannerRates = resolveBuiltInOpenAiDefaultRates(plannerModelId);
+    }
+  }
   const requestKey =
     input.requestKey ??
     buildUsageRequestKey({
@@ -300,6 +314,7 @@ export interface SdkRunUsageInputModel {
 }
 
 export interface ResolvedSdkRunBillingModel {
+  sdkModelId?: string;
   role?: RuntimeAgentRole;
   modelId: string;
   usage: ParsedUsage;
@@ -337,6 +352,7 @@ export async function resolveSdkRunBillingModels(
       const computedBilling = computeRequestBilling(entry.usage, actualRates, plannerRates);
       return {
         role: billingRole,
+        sdkModelId: entry.modelId,
         modelId: usageRoute?.modelId ?? entry.modelId,
         usage: entry.usage,
         actualRates,

@@ -200,6 +200,7 @@ export function buildSubagentMissionAttributedRunEvent(
 }
 
 function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): ThreadRunEventType | undefined {
+  if (isSdkNoticeLiveType(input.liveType)) return "diagnostic";
   if (input.apiError || input.liveType === "thread.api_error") {
     return "api.error";
   }
@@ -246,6 +247,18 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     return "thread.status";
   }
   return input.stream ? "message.delta" : "message.final";
+}
+
+/** Protocol notices are system content, never assistant answers or agent lifecycle. */
+export function isSdkNoticeLiveType(liveType: string): boolean {
+  return (
+    liveType === "sdk.notice" ||
+    liveType === "sdk.session_state" ||
+    liveType === "sdk.conversation_reset" ||
+    liveType === "sdk.commands_changed" ||
+    liveType === "request.rate_limit" ||
+    liveType === "billing.warning"
+  );
 }
 
 function resolveThreadRunEventScope(input: {

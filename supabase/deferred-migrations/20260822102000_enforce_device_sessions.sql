@@ -1,6 +1,7 @@
--- Deferred breaking enforcement. Do not apply until supported Desktop and
--- Mobile clients have rolled out device-session-register and existing users
--- have reconnected to prove their device secret.
+-- Device-scoped enforcement source. Supported Desktop and Mobile clients now
+-- register device sessions before using private data or Realtime. Keep this
+-- source aligned with the promoted migration so a future maintenance replay
+-- cannot restore the pre-enforcement CAS or secret whitelist.
 
 create or replace function public.eco_current_device_owns_binding(binding_id uuid)
 returns boolean
@@ -373,7 +374,9 @@ begin
       nonce text,
       key_version int
     )
-    where s.secret_kind not in ('provider', 'asr', 'image', 'workflow', 'proxy')
+    where s.secret_kind not in (
+      'provider', 'provider-proxy', 'asr', 'image', 'workflow', 'proxy', 'ssh'
+    )
       or nullif(s.secret_key, '') is null
       or nullif(s.ciphertext, '') is null
       or nullif(s.nonce, '') is null
@@ -402,14 +405,14 @@ begin
 
   if current_revision is null then
     if p_expected_revision is not null then
-      raise exception 'settings_sync_conflict' using errcode = '40001';
+      raise sqlstate 'PT409' using message = 'settings_sync_conflict';
     end if;
     next_revision := 1;
     insert into public.user_settings (user_id, payload, updated_at, revision)
     values (account_id, p_payload, changed_at, next_revision);
   else
     if p_expected_revision is null or current_revision <> p_expected_revision then
-      raise exception 'settings_sync_conflict' using errcode = '40001';
+      raise sqlstate 'PT409' using message = 'settings_sync_conflict';
     end if;
     next_revision := current_revision + 1;
     update public.user_settings as us

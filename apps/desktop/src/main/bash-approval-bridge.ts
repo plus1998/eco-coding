@@ -70,6 +70,7 @@ export function resolvePendingBashApproval(toolUseId: string, resolution: BashAp
   if (!entry) {
     return false;
   }
+  assertBashApprovalResolutionAllowed(entry.request, resolution);
   pending.delete(toolUseId);
   entry.resolve(resolution);
   return true;
@@ -82,13 +83,12 @@ export function resolvePendingBashApproval(toolUseId: string, resolution: BashAp
 export function resolveBashApprovalIdempotent(
   toolUseId: string,
   resolution: BashApprovalResolution,
-):
-  | { ok: true; alreadyResolved: false; request: BashApprovalRequest }
-  | { ok: true; alreadyResolved: true } {
+): { ok: true; alreadyResolved: false; request: BashApprovalRequest } | { ok: true; alreadyResolved: true } {
   const entry = pending.get(toolUseId);
   if (!entry) {
     return { ok: true, alreadyResolved: true };
   }
+  assertBashApprovalResolutionAllowed(entry.request, resolution);
   pending.delete(toolUseId);
   entry.resolve(resolution);
   return { ok: true, alreadyResolved: false, request: entry.request };
@@ -118,5 +118,22 @@ export function cancelBashApprovalsForThread(threadId: string, reason: string): 
     }
     pending.delete(toolUseId);
     entry.reject(new Error(reason));
+  }
+}
+
+export function assertBashApprovalResolutionAllowed(
+  request: BashApprovalRequest,
+  resolution: BashApprovalResolution,
+): void {
+  if (
+    request.suppressAlwaysAllowRule &&
+    [
+      "approved_remember_prefix",
+      "approved_for_session",
+      "approved_execpolicy_amendment",
+      "approved_network_policy_amendment",
+    ].includes(resolution.decision)
+  ) {
+    throw new Error("This SDK permission request forbids persistent approval rules.");
   }
 }

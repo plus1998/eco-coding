@@ -98,10 +98,10 @@ function extractLeadingStatusCode(text: string): { statusCode?: number; rest: st
   };
 }
 
-function extractJsonPayload(text: string): { jsonText?: string; remainder: string } {
+function extractJsonPayload(text: string): string | undefined {
   const start = text.indexOf("{");
   if (start < 0) {
-    return { remainder: text.trim() };
+    return undefined;
   }
 
   let depth = 0;
@@ -134,16 +134,12 @@ function extractJsonPayload(text: string): { jsonText?: string; remainder: strin
     if (char === "}") {
       depth -= 1;
       if (depth === 0) {
-        const jsonText = text.slice(start, index + 1);
-        return {
-          jsonText,
-          remainder: text.slice(index + 1).trim(),
-        };
+        return text.slice(start, index + 1);
       }
     }
   }
 
-  return { remainder: text.trim() };
+  return undefined;
 }
 
 /** Parse SDK structured `error` attribute from stream/tool payloads. */
@@ -155,7 +151,7 @@ export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadAp
 
   const withoutSse = stripSseArtifacts(trimmed);
   const { statusCode, rest } = extractLeadingStatusCode(withoutSse);
-  const { jsonText, remainder } = extractJsonPayload(rest);
+  const jsonText = extractJsonPayload(rest);
 
   let code: string | undefined;
   let rawMessage: string | undefined;
@@ -172,8 +168,13 @@ export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadAp
   }
 
   if (!rawMessage) {
-    const cleanedRemainder = stripSseArtifacts(remainder || rest || withoutSse);
-    rawMessage = cleanedRemainder || undefined;
+    // The JSON payload carried no error fields, so this is not an API error
+    // envelope and the text around it is the message. Falling back to the text
+    // *after* the payload (as this used to) showed users mid-sentence fragments
+    // for any internal error that embeds JSON — e.g. the history-target
+    // conflict message, whose own JSON blobs sit in the middle of the sentence.
+    const cleaned = stripSseArtifacts(rest || withoutSse);
+    rawMessage = cleaned || undefined;
   }
 
   if (!statusCode && !code && !rawMessage) {
@@ -195,6 +196,14 @@ export function parseSdkApiErrorAttribute(raw: string, model?: string): ThreadAp
 export function formatApiErrorUserMessage(info: ThreadApiErrorInfo): string {
   const code = info.code?.toLowerCase();
   const status = info.statusCode;
+  const normalized = info.message.toLowerCase();
+
+  if (
+    normalized.includes("unsupported input item type: agent_message") ||
+    normalized.includes("unsupported content part type: encrypted_content")
+  ) {
+    return "当前 Provider 不支持 Codex 子代理的加密 agent_message；请改用 PI/Claude 或支持 Codex Multi-Agent 的 Responses Provider。";
+  }
 
   if (code === "upstream_error" || (status === 502 && !info.message)) {
     return "上游模型服务暂时不可用，请稍后重试或切换 Provider。";
@@ -228,14 +237,14 @@ export function formatApiErrorUserMessage(info: ThreadApiErrorInfo): string {
     return "上游模型请求失败，请稍后重试。";
   }
 
-  const normalized = raw.toLowerCase();
-  if (normalized.includes("upstream request failed")) {
+  const normalizedRaw = raw.toLowerCase();
+  if (normalizedRaw.includes("upstream request failed")) {
     return "上游模型服务暂时不可用，请稍后重试或切换 Provider。";
   }
-  if (normalized.includes("model not found")) {
+  if (normalizedRaw.includes("model not found")) {
     return "模型不存在或无权访问，请检查 Provider 配置与模型 ID。";
   }
-  if (normalized.includes("rate limit") || normalized.includes("too many requests")) {
+  if (normalizedRaw.includes("rate limit") || normalizedRaw.includes("too many requests")) {
     return "上游模型请求过于频繁，请稍后重试或切换 Provider。";
   }
 

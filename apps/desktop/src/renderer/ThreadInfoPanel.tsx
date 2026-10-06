@@ -24,6 +24,7 @@ import type {
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadStatus,
+  ThreadUsageLedgerEventView,
   WorkspaceDiffResult,
   WorkspaceInfo,
 } from "../shared/ipc";
@@ -40,6 +41,7 @@ import { ContextCard } from "./ContextCard";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
 import { i18n } from "./i18n";
+import { RollingBillingAmount } from "./RollingBillingAmount";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 import type { RuntimeAgentThemes } from "./runtime-agent-theme";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
@@ -49,6 +51,7 @@ import { WorkspaceGitSection } from "./WorkspaceGitSection";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   context?: ThreadContextSnapshot;
   contextTokens?: number;
 }
@@ -209,11 +212,14 @@ function ContextOccupancyRing({
 function BillingFloatPillLabel({
   billing,
   minimal = false,
+  resetKey,
 }: {
   billing?: ThreadBillingSnapshot;
   minimal?: boolean;
+  resetKey?: string;
 }) {
   const cost = billing?.ecoCostUsd ?? 0;
+  const formattedCost = formatBillingPillCost(billing);
   if (minimal) {
     return (
       <span
@@ -225,7 +231,11 @@ function BillingFloatPillLabel({
           .filter(Boolean)
           .join(" ")}
       >
-        {formatBillingPillCost(billing)}
+        <RollingBillingAmount
+          value={cost}
+          formatted={formattedCost}
+          {...(resetKey !== undefined && { resetKey })}
+        />
       </span>
     );
   }
@@ -233,7 +243,11 @@ function BillingFloatPillLabel({
     <span className="thread-info-float-pill-label">
       <span>{i18n.t("billing.title")}</span>
       <span className={cost > 0 ? "thread-info-float-pill-cost" : "thread-info-float-pill-cost is-empty"}>
-        {formatBillingPillCost(billing)}
+        <RollingBillingAmount
+          value={cost}
+          formatted={formattedCost}
+          {...(resetKey !== undefined && { resetKey })}
+        />
       </span>
     </span>
   );
@@ -264,21 +278,23 @@ function ContextFloatPillLabel({
 
 function BillingFloatingCard({
   billing,
-  threadId,
+  ledgerEvents,
   threadStatus,
   tokenBadge,
   plannerLabel,
   showBilling,
   agentDisplayNames,
+  resetKey,
   onDismiss,
 }: {
   billing?: ThreadBillingSnapshot;
-  threadId?: string;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
   showBilling: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  resetKey?: string;
   onDismiss: () => void;
 }) {
   const showComparison = Boolean(billing && shouldShowBillingSavings(billing.savedUsd));
@@ -322,7 +338,13 @@ function BillingFloatingCard({
                   </ThreadInfoHelpButton>
                 ) : null}
               </span>
-              <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
+              <strong>
+                <RollingBillingAmount
+                  value={billing.ecoCostUsd}
+                  formatted={formatCostUsd(billing.ecoCostUsd)}
+                  {...(resetKey !== undefined && { resetKey })}
+                />
+              </strong>
             </span>
           </div>
           {showComparison ? (
@@ -358,8 +380,8 @@ function BillingFloatingCard({
       {showBilling && billing ? (
         <UsageBreakdownPanel
           billing={billing}
+          {...(ledgerEvents && { ledgerEvents })}
           variant="full"
-          {...(threadId !== undefined && { threadId })}
           {...(agentDisplayNames && { agentDisplayNames })}
         />
       ) : null}
@@ -581,6 +603,7 @@ export function ThreadInfoFloatStack({
   threadId,
   showBillingSection,
   billing,
+  ledgerEvents,
   threadStatus,
   tokenBadge,
   plannerLabel,
@@ -599,6 +622,7 @@ export function ThreadInfoFloatStack({
   threadId?: string;
   showBillingSection: boolean;
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
@@ -642,6 +666,7 @@ export function ThreadInfoFloatStack({
               <BillingFloatPillLabel
                 minimal={variant === "composer"}
                 {...(billing !== undefined && { billing })}
+                {...(threadId !== undefined && { resetKey: threadId })}
               />
             }
             ariaLabel={t("billing.comparisonCurrent", {
@@ -656,12 +681,13 @@ export function ThreadInfoFloatStack({
             {(closePanel) => (
               <BillingFloatingCard
                 {...(billing !== undefined && { billing })}
-                {...(threadId !== undefined && { threadId })}
+                {...(ledgerEvents && { ledgerEvents })}
                 {...(threadStatus !== undefined && { threadStatus })}
                 tokenBadge={tokenBadge}
                 plannerLabel={plannerLabel}
                 showBilling={showBilling}
                 {...(agentDisplayNames && { agentDisplayNames })}
+                {...(threadId !== undefined && { resetKey: threadId })}
                 onDismiss={closePanel}
               />
             )}
@@ -838,6 +864,7 @@ export function ThreadInfoPanel({
           showBillingSection={showBillingSection}
           {...(hostUiFeatures !== undefined && { hostUiFeatures })}
           {...(billing !== undefined && { billing })}
+          {...(usageSummary?.ledgerEvents && { ledgerEvents: usageSummary.ledgerEvents })}
           {...(threadStatus !== undefined && { threadStatus })}
           tokenBadge={tokenBadge}
           plannerLabel={plannerLabel}

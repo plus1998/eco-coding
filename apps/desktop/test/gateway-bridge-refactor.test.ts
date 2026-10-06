@@ -332,6 +332,7 @@ describe("1B: 辅助 HTTP 只打 Bridge，不直连 provider baseUrl", () => {
       url: string;
       providerHeader: string | null;
       requestedModel: string | null;
+      stream: unknown;
     }> = [];
     const route: AnthropicProxyRoute = {
       role: "planner",
@@ -355,6 +356,7 @@ describe("1B: 辅助 HTTP 只打 Bridge，不直连 provider baseUrl", () => {
           url,
           providerHeader: headers.get(GATEWAY_PROVIDER_ID_HEADER),
           requestedModel: headers.get(GATEWAY_REQUESTED_MODEL_HEADER),
+          stream: (JSON.parse(String(init?.body)) as { stream?: unknown }).stream,
         });
         // Real fetch through system would use global fetch; here we force through bridge only
         // and reject if tester tries provider base.
@@ -371,12 +373,49 @@ describe("1B: 辅助 HTTP 只打 Bridge，不直连 provider baseUrl", () => {
     expect(bridgeFetches.every((f) => f.url.includes("/v1/messages"))).toBe(true);
     expect(bridgeFetches.every((f) => f.providerHeader === "provider_1")).toBe(true);
     expect(bridgeFetches.every((f) => f.requestedModel === "real-model")).toBe(true);
+    expect(bridgeFetches.every((f) => f.stream === false)).toBe(true);
     expect(bridgeFetches.every((f) => !f.requestedModel?.startsWith("eco-aux-"))).toBe(true);
     expect(bridgeFetches.every((f) => !f.url.startsWith(providerBase))).toBe(true);
     // Gateway did hit real upstream with native messages
     expect(upstreamHits.some((p) => p.includes("/v1/messages"))).toBe(true);
 
     upstream.stop(true);
+  });
+
+  test("H3 ChatGPT 订阅辅助请求使用 stream:true", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    const route: AnthropicProxyRoute = {
+      role: "planner",
+      provider: providerSecret({
+        baseUrl: "https://api.openai.com",
+        authMethod: "chatgpt_subscription",
+      }),
+      modelId: "gpt-5.6-luna",
+      apiCompat: "openai_responses",
+    };
+
+    const result = await postAuxiliaryBridgeRequest({
+      route,
+      anthropicBody: {
+        model: "ignored-alias",
+        max_tokens: 32,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      logEventPrefix: "refactor-test-chatgpt-aux",
+      fetcher: async (_input, init) => {
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json({
+          id: "msg_chatgpt",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "text", text: "aux-ok" }],
+        });
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.text).toBe("aux-ok");
+    expect(seenBody?.stream).toBe(true);
   });
 });
 

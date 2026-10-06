@@ -753,6 +753,53 @@ test("tool progress uses direct parent id while summary does not inherit context
   expect(summary[0]?.agentId).toBe("sess");
 });
 
+test("tool summaries recover Hub wrapper arguments from the streamed tool use", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "u_hub_started",
+      session_id: "sess",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_hub_call",
+            name: "mcp__eco_mcp__call_tool",
+            input: {
+              name: "eco_image_view:view_image",
+              arguments: { path: "/tmp/hub.png", prompt: "描述" },
+            },
+          },
+        ],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  const summary = mapSdkMessageToEvents(
+    {
+      type: "tool_use_summary",
+      uuid: "u_hub_summary",
+      session_id: "sess",
+      tool_use_id: "toolu_hub_call",
+      tool_name: "mcp__eco_mcp__call_tool",
+      summary: "completed",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(summary[0]?.payload).toMatchObject({
+    tool_name: "mcp__eco_mcp__call_tool",
+    input: {
+      name: "eco_image_view:view_image",
+      arguments: { path: "/tmp/hub.png", prompt: "描述" },
+    },
+  });
+});
+
 test("message_start propagates one exact message id to streamed text, thinking, tool, and usage", () => {
   const ctx = createSdkStreamContext();
   registerSubagentOnStreamContext(ctx, {

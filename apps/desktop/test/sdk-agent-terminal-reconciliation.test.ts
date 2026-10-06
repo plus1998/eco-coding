@@ -94,3 +94,40 @@ test("AgentOutput identity conflict is explicit and does not mutate attribution"
     },
   });
 });
+
+test("failed AgentOutput still reconciles parent identity", () => {
+  const links: Array<{ parentToolUseId: string; agentId: string }> = [];
+  const diagnostics: Array<{ topic: string; fields: Record<string, unknown> }> = [];
+  const handled = reconcileSdkAgentTerminalEvent(
+    "thr_agent_output_failed",
+    {
+      type: "agent.completed",
+      agentId: "agent_explore_failed",
+      role: "explore",
+      payload: {
+        type: "agent_output",
+        status: "failed",
+        failed: true,
+        agentId: "agent_explore_failed",
+        tool_use_id: "call_explore_failed",
+      },
+    },
+    {
+      linkParentToolUse(parentToolUseId, agentId) {
+        links.push({ parentToolUseId, agentId });
+      },
+      settlePendingByParent() {
+        return 0;
+      },
+      logDiagnostic: (topic, fields) => diagnostics.push({ topic, fields }),
+    },
+  );
+
+  expect(handled).toBe(true);
+  expect(links).toEqual([{ parentToolUseId: "call_explore_failed", agentId: "agent_explore_failed" }]);
+  expect(diagnostics.at(-1)?.fields).toMatchObject({
+    status: "reconciled",
+    failed: true,
+    terminalStatus: "failed",
+  });
+});

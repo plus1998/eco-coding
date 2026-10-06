@@ -15,6 +15,8 @@ export interface ComposerImageAttachment {
   id: string;
   mediaType: PromptImageAttachment["mediaType"];
   path?: string;
+  contentRef?: string;
+  byteLength?: number;
   data?: string;
   previewUrl: string;
 }
@@ -52,6 +54,8 @@ export function toPromptImageAttachments(
       return {
         mediaType: attachment.mediaType,
         path,
+        ...(attachment.contentRef ? { contentRef: attachment.contentRef } : {}),
+        ...(attachment.byteLength !== undefined ? { byteLength: attachment.byteLength } : {}),
       };
     }
     const data = attachment.data?.trim();
@@ -60,6 +64,8 @@ export function toPromptImageAttachments(
     }
     return {
       mediaType: attachment.mediaType,
+      ...(attachment.contentRef ? { contentRef: attachment.contentRef } : {}),
+      ...(attachment.byteLength !== undefined ? { byteLength: attachment.byteLength } : {}),
       data,
     };
   });
@@ -75,6 +81,8 @@ export function fromPromptImageAttachments(
       id: `img_edit_${index}_${Math.random().toString(36).slice(2, 8)}`,
       mediaType: attachment.mediaType,
       ...(path ? { path } : {}),
+      ...(attachment.contentRef ? { contentRef: attachment.contentRef } : {}),
+      ...(attachment.byteLength !== undefined ? { byteLength: attachment.byteLength } : {}),
       ...(data ? { data } : {}),
       previewUrl: data ? createImageObjectUrlFromBase64(attachment.mediaType, data) : "",
     };

@@ -4,6 +4,15 @@ export interface PiCoreAvailability {
   reason?: string;
 }
 
+/**
+ * The PI release Eco is built against. Eco drives the official MCP extension and
+ * the codemode sandbox, both of which landed in 1.0.0.
+ */
+export const PI_MINIMUM_VERSION = "1.0.3";
+
+/** Exports the driver calls directly; a missing one means a pre-1.0.3 install. */
+const PI_REQUIRED_EXPORTS = ["createAgentSession", "createMcpExtension", "createCodemodeExtension"] as const;
+
 let cached: PiCoreAvailability | undefined;
 
 /** Reset in-process probe cache (tests only). */
@@ -14,6 +23,12 @@ export function resetPiCoreAvailabilityCache(): void {
 /**
  * Probe whether `@earendil-works/pi-coding-agent` can be loaded.
  * Failures are explicit — never silent-fallback to another Core.
+ *
+ * The probe checks the exports Eco actually calls, not just that the package
+ * resolves. A stale install sitting earlier on the resolution path (an old
+ * hoisted link shadowing the pinned one) loads fine and then breaks deep inside
+ * session setup, so the missing export is reported here with the version that
+ * was really loaded.
  */
 export async function probePiCoreAvailability(): Promise<PiCoreAvailability> {
   if (cached) {
@@ -25,10 +40,15 @@ export async function probePiCoreAvailability(): Promise<PiCoreAvailability> {
       typeof (mod as { VERSION?: string }).VERSION === "string"
         ? (mod as { VERSION: string }).VERSION
         : undefined;
-    if (typeof mod.createAgentSession !== "function") {
+    const missing = PI_REQUIRED_EXPORTS.filter(
+      (name) => typeof (mod as unknown as Record<string, unknown>)[name] !== "function",
+    );
+    if (missing.length > 0) {
       cached = {
         available: false,
-        reason: "PI coding-agent package loaded but createAgentSession is missing.",
+        reason:
+          `PI coding-agent ${version ?? "(unknown version)"} is missing ${missing.join(", ")}. ` +
+          `Eco requires the official MCP and codemode extensions from PI ${PI_MINIMUM_VERSION}.`,
       };
       return cached;
     }

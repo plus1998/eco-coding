@@ -21,9 +21,6 @@ supabase/aliyun-region
 *.log
 *.tsbuildinfo
 
-# Generated Node-loadable build of pi-mcp-adapter (ships as .ts on npm)
-packages/runtime/vendor/
-
 # Local reference clones
 .codex-ref/
 
@@ -56,3 +53,6 @@ apps/desktop/.playwright-cli/
 # Supabase CLI local state
 supabase/.branches
 supabase/.temp
+
+# Electron startup test build artifacts
+apps/desktop/release-startup-test*/

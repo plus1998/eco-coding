@@ -13,7 +13,9 @@ import { computeRouteFingerprint } from "../shared/route-fingerprint";
  * Eco compact is NOT a resume decision: continuation orchestration builds the handoff
  * prompt and starts a new session without calling resume.
  */
-export type ClaudeResumeDecision = { kind: "resume"; sessionId: string } | { kind: "reject"; reason: string };
+export type ClaudeResumeDecision =
+  | { kind: "resume"; sessionId: string; resetPending?: boolean }
+  | { kind: "reject"; reason: string };
 
 export interface ClaudeResumeRouteSnapshot {
   fingerprint: string;
@@ -33,6 +35,8 @@ export interface DecideClaudeResumeInput {
   sessionCwdExists: boolean;
   /** True when the stored session is known corrupt / unreadable. */
   sessionCorrupt?: boolean;
+  /** /clear allocated this ID, but it has no persisted turn yet. */
+  resetPending?: boolean;
 }
 
 export function snapshotClaudeResumeRoutes(
@@ -84,7 +88,7 @@ export function decideClaudeResume(input: DecideClaudeResumeInput): ClaudeResume
 
   // cwd + integrity passed — resume stored session (including apiCompat / model drift).
   // Route fingerprints remain for diagnostics / noteSdkSessionRouteChange only.
-  return { kind: "resume", sessionId };
+  return { kind: "resume", sessionId, ...(input.resetPending && { resetPending: true }) };
 }
 
 function normalizeCwd(value: string): string {

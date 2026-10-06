@@ -7,8 +7,9 @@
  * return HTTP 202 with an empty body — not 200 + a fake JSON-RPC result.
  * @see https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#sending-messages-to-the-server
  */
-import type http from "node:http";
+
 import { randomUUID } from "node:crypto";
+import type http from "node:http";
 
 export const ECO_MCP_HTTP_PATH = "/mcp";
 
@@ -29,7 +30,12 @@ export type McpStreamableHttpHandlers = {
   serverName: string;
   instructions?: string;
   /** Return tool catalog (same shape as /v1/tools/list `tools`). */
-  listTools: (input: { authToken?: string; headers: http.IncomingHttpHeaders }) => Promise<{
+  listTools: (input: {
+    authToken?: string;
+    headers: http.IncomingHttpHeaders;
+    /** Aborted when the MCP client disconnects before the response is written. */
+    signal: AbortSignal;
+  }) => Promise<{
     tools: McpToolDefinition[];
   }>;
   /** Execute a tool (same shape as /v1/tools/call result). */
@@ -38,6 +44,8 @@ export type McpStreamableHttpHandlers = {
     arguments: Record<string, unknown>;
     authToken?: string;
     headers: http.IncomingHttpHeaders;
+    /** Aborted when the MCP client disconnects before the response is written. */
+    signal: AbortSignal;
   }) => Promise<McpToolCallResult>;
 };
 
@@ -49,6 +57,131 @@ type JsonRpcRequest = {
   method?: string;
   params?: Record<string, unknown>;
 };
+
+type ActiveMcpRequest = {
+  method: string;
+  controller: AbortController;
+};
+
+type McpSessionState = {
+  inFlight: Map<string, ActiveMcpRequest>;
+  lastUsedAt: number;
+};
+
+/**
+ * Streamable HTTP requests arrive on separate HTTP connections. Keep the
+ * in-flight table outside a single request so a later
+ * `notifications/cancelled` POST can reach the request it names. The key
+ * includes the server's trusted control secret, the bearer auth identity and
+ * the server-issued MCP session ID; a request ID alone is never sufficient.
+ */
+const mcpSessions = new Map<string, McpSessionState>();
+const MCP_SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
+const MCP_SESSION_MAX_COUNT = 4096;
+
+function pruneMcpSessions(now = Date.now()): void {
+  for (const [key, state] of mcpSessions) {
+    if (state.inFlight.size === 0 && now - state.lastUsedAt >= MCP_SESSION_IDLE_TTL_MS) {
+      mcpSessions.delete(key);
+    }
+  }
+  if (mcpSessions.size <= MCP_SESSION_MAX_COUNT) return;
+  const idle = [...mcpSessions.entries()]
+    .filter(([, state]) => state.inFlight.size === 0)
+    .sort(([, left], [, right]) => left.lastUsedAt - right.lastUsedAt);
+  for (const [key] of idle) {
+    if (mcpSessions.size <= MCP_SESSION_MAX_COUNT) break;
+    mcpSessions.delete(key);
+  }
+}
+
+function jsonRpcIdKey(id: unknown): string | undefined {
+  if (typeof id === "string" || typeof id === "number") {
+    return `${typeof id}:${String(id)}`;
+  }
+  return undefined;
+}
+
+function authScopeKey(
+  handlers: McpStreamableHttpHandlers,
+  options: { controlSecret?: string } | undefined,
+  authToken: string | undefined,
+): string {
+  // The control secret is checked before this function is reached, so it is
+  // the trusted local-gateway identity even when no bearer token is present.
+  return JSON.stringify([handlers.serverName, options?.controlSecret ?? "", authToken ?? ""]);
+}
+
+function sessionKey(scope: string, sessionId: string): string {
+  return `${scope}\u0000${sessionId}`;
+}
+
+function registerSession(scope: string, sessionId: string): McpSessionState {
+  pruneMcpSessions();
+  const key = sessionKey(scope, sessionId);
+  let state = mcpSessions.get(key);
+  if (!state) {
+    state = { inFlight: new Map(), lastUsedAt: Date.now() };
+    mcpSessions.set(key, state);
+  } else {
+    state.lastUsedAt = Date.now();
+  }
+  return state;
+}
+
+function getSession(scope: string, sessionId: string | undefined): McpSessionState | undefined {
+  pruneMcpSessions();
+  if (!sessionId) return undefined;
+  const state = mcpSessions.get(sessionKey(scope, sessionId));
+  if (state) state.lastUsedAt = Date.now();
+  return state;
+}
+
+function abortError(reason: unknown): Error {
+  if (reason instanceof Error) return reason;
+  const error = new Error(typeof reason === "string" && reason.trim() ? reason : "MCP request cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function cancelMcpRequest(state: McpSessionState | undefined, params: unknown): void {
+  if (!state || !isRecord(params)) return;
+  const requestId = jsonRpcIdKey(params.requestId);
+  if (!requestId) return;
+  const active = state.inFlight.get(requestId);
+  if (!active || active.method === "initialize") return;
+  const reason = typeof params.reason === "string" ? params.reason : "MCP request cancelled";
+  active.controller.abort(abortError(reason));
+}
+
+function beginMcpRequest(
+  state: McpSessionState | undefined,
+  id: JsonRpcId,
+  method: string,
+  parentSignal?: AbortSignal,
+): { signal: AbortSignal; finish: () => void } | { duplicate: true } {
+  const controller = new AbortController();
+  const key = jsonRpcIdKey(id);
+  if (!state || !key) {
+    return { signal: controller.signal, finish: () => undefined };
+  }
+  if (state.inFlight.has(key)) {
+    return { duplicate: true };
+  }
+  const active = { method, controller };
+  state.inFlight.set(key, active);
+  const onParentAbort = () => controller.abort(parentSignal?.reason);
+  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  return {
+    signal: controller.signal,
+    finish: () => {
+      parentSignal?.removeEventListener("abort", onParentAbort);
+      if (state.inFlight.get(key) === active) {
+        state.inFlight.delete(key);
+      }
+    },
+  };
+}
 
 function extractBearer(headers: http.IncomingHttpHeaders): string | undefined {
   const auth = headers.authorization;
@@ -86,9 +219,10 @@ function sendEmpty(
   response.end();
 }
 
-async function readRawBody(request: http.IncomingMessage): Promise<string> {
+async function readRawBody(request: http.IncomingMessage, signal?: AbortSignal): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
+    signal?.throwIfAborted();
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -150,46 +284,63 @@ export async function handleMcpStreamableHttpRequest(
     return true;
   }
 
-  const raw = await readRawBody(request).catch((error) => {
-    throw error;
-  });
-  let parsed: unknown;
   try {
-    parsed = raw.trim() ? JSON.parse(raw) : {};
-  } catch {
-    sendJson(response, 400, { error: "invalid json" });
-    return true;
-  }
-
-  const messages = Array.isArray(parsed) ? parsed : [parsed];
-  const authToken = extractBearer(request.headers);
-  const sessionHeader =
-    typeof request.headers["mcp-session-id"] === "string"
-      ? request.headers["mcp-session-id"]
-      : undefined;
-  let sessionId = sessionHeader?.trim() || undefined;
-  const responses: unknown[] = [];
-  let sawNotification = false;
-  let sawRequest = false;
-
-  for (const entry of messages) {
-    if (!isRecord(entry)) continue;
-    if (isJsonRpcNotification(entry)) {
-      sawNotification = true;
-      continue;
-    }
-    const msg = entry as JsonRpcRequest;
-    const method = typeof msg.method === "string" ? msg.method : "";
-    if (!method) {
-      continue;
-    }
-    sawRequest = true;
-    const id = (msg.id ?? null) as JsonRpcId;
+    // Streamable HTTP explicitly says a transport disconnect is not a
+    // cancellation signal. A handler therefore receives a signal only when a
+    // matching `notifications/cancelled` arrives on the same auth/session
+    // scope. A body read that is interrupted simply ends this HTTP exchange;
+    // any already-running handler is allowed to finish.
+    const raw = await readRawBody(request);
+    let parsed: unknown;
     try {
-      if (method === "initialize") {
-        if (!sessionId) {
-          sessionId = randomUUID();
+      parsed = raw.trim() ? JSON.parse(raw) : {};
+    } catch {
+      if (response.destroyed) return true;
+      sendJson(response, 400, { error: "invalid json" });
+      return true;
+    }
+
+    const messages = Array.isArray(parsed) ? parsed : [parsed];
+    const authToken = extractBearer(request.headers);
+    const authScope = authScopeKey(handlers, options, authToken);
+    const sessionHeader =
+      typeof request.headers["mcp-session-id"] === "string" ? request.headers["mcp-session-id"] : undefined;
+    let sessionId = sessionHeader?.trim() || undefined;
+    let sessionState = getSession(authScope, sessionId);
+    // Eco's built-in gateways historically accepted authenticated one-shot
+    // calls without an MCP initialize handshake. Preserve that compatibility
+    // while keeping the cancellation table scoped to the bearer identity.
+    if (!sessionState && !sessionId && authToken) {
+      sessionId = `bearer:${authToken}`;
+      sessionState = registerSession(authScope, sessionId);
+    }
+    const responses: unknown[] = [];
+    let sawNotification = false;
+    let sawRequest = false;
+
+    for (const entry of messages) {
+      if (!isRecord(entry)) continue;
+      const method = typeof entry.method === "string" ? entry.method : "";
+      if (isJsonRpcNotification(entry)) {
+        sawNotification = true;
+        if (method === "notifications/cancelled") {
+          cancelMcpRequest(sessionState, entry.params);
         }
+        continue;
+      }
+      const msg = entry as JsonRpcRequest;
+      if (!method) {
+        continue;
+      }
+      sawRequest = true;
+      const id = (msg.id ?? null) as JsonRpcId;
+
+      if (method === "initialize") {
+        // Initialization starts a new server-issued session. Never reuse a
+        // caller-supplied ID: doing so would let two logical sessions share a
+        // cancellation namespace.
+        sessionId = randomUUID();
+        sessionState = registerSession(authScope, sessionId);
         const protocolVersion =
           typeof msg.params?.protocolVersion === "string" && msg.params.protocolVersion.trim()
             ? msg.params.protocolVersion.trim()
@@ -206,69 +357,142 @@ export async function handleMcpStreamableHttpRequest(
         });
         continue;
       }
-      if (method === "ping") {
-        responses.push({ jsonrpc: "2.0", id, result: {} });
-        continue;
+
+      // Once the server has issued a session ID, every request that expects a
+      // response must carry that ID. This also prevents a request from one
+      // session from entering another session's cancellation table.
+      if (!sessionState) {
+        // Recovery for an expired or unknown session: an authenticated
+        // client may still hold a session ID the server has already evicted
+        // (idle TTL) or never registered for this auth scope — notably when
+        // a tool call waited for user approval while the session idled out.
+        // Issuing a fresh session ID and echoing it in the Mcp-Session-Id
+        // response header lets conforming clients (e.g. rmcp) adopt it
+        // transparently. The scope key keeps the new session out of any
+        // other session's cancellation table. Anonymous requests must still
+        // start with a fresh initialize handshake.
+        if (sessionId && authToken) {
+          sessionId = randomUUID();
+          sessionState = registerSession(authScope, sessionId);
+        } else {
+          if (!response.destroyed) {
+            sendJson(response, 400, { error: "missing or invalid MCP session id" });
+          }
+          return true;
+        }
       }
-      if (method === "tools/list") {
-        const listed = await handlers.listTools({
-          ...(authToken ? { authToken } : {}),
-          headers: request.headers,
-        });
+
+      let operation: ReturnType<typeof beginMcpRequest> | undefined;
+      try {
+        if (method === "ping") {
+          responses.push({ jsonrpc: "2.0", id, result: {} });
+          continue;
+        }
+        if (method === "tools/list") {
+          operation = beginMcpRequest(sessionState, id, method);
+          if ("duplicate" in operation) {
+            responses.push({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32600, message: "request id is already in progress" },
+            });
+            continue;
+          }
+          const listed = await handlers.listTools({
+            ...(authToken ? { authToken } : {}),
+            headers: request.headers,
+            signal: operation.signal,
+          });
+          if (operation.signal.aborted) continue;
+          responses.push({
+            jsonrpc: "2.0",
+            id,
+            result: { tools: listed.tools ?? [] },
+          });
+          continue;
+        }
+        if (method === "tools/call") {
+          const params = isRecord(msg.params) ? msg.params : {};
+          const name = typeof params.name === "string" ? params.name : "";
+          if (!name) {
+            throw new Error("tools/call requires name");
+          }
+          const args = isRecord(params.arguments) ? params.arguments : {};
+          operation = beginMcpRequest(sessionState, id, method);
+          if ("duplicate" in operation) {
+            responses.push({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32600, message: "request id is already in progress" },
+            });
+            continue;
+          }
+          const result = await handlers.callTool({
+            name,
+            arguments: args,
+            ...(authToken ? { authToken } : {}),
+            headers: request.headers,
+            signal: operation.signal,
+          });
+          if (operation.signal.aborted) continue;
+          responses.push({ jsonrpc: "2.0", id, result });
+          continue;
+        }
         responses.push({
           jsonrpc: "2.0",
           id,
-          result: { tools: listed.tools ?? [] },
+          error: { code: -32601, message: `Method not found: ${method}` },
         });
-        continue;
-      }
-      if (method === "tools/call") {
-        const params = isRecord(msg.params) ? msg.params : {};
-        const name = typeof params.name === "string" ? params.name : "";
-        if (!name) {
-          throw new Error("tools/call requires name");
+      } catch (error) {
+        if (operation && "signal" in operation && operation.signal.aborted) continue;
+        if (response.destroyed) return true;
+        responses.push({
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32000,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+      } finally {
+        if (operation && "finish" in operation) {
+          operation.finish();
         }
-        const args = isRecord(params.arguments) ? params.arguments : {};
-        const result = await handlers.callTool({
-          name,
-          arguments: args,
-          ...(authToken ? { authToken } : {}),
-          headers: request.headers,
-        });
-        responses.push({ jsonrpc: "2.0", id, result });
-        continue;
       }
-      responses.push({
-        jsonrpc: "2.0",
-        id,
-        error: { code: -32601, message: `Method not found: ${method}` },
-      });
-    } catch (error) {
-      responses.push({
-        jsonrpc: "2.0",
-        id,
-        error: {
-          code: -32000,
-          message: error instanceof Error ? error.message : String(error),
-        },
-      });
     }
-  }
 
-  // Spec: notification-only POST → 202 Accepted, empty body (Codex handshake).
-  if (!sawRequest && sawNotification) {
-    sendEmpty(response, 202, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
+    // Spec: notification-only POST → 202 Accepted, empty body (Codex handshake).
+    if (!sawRequest && sawNotification) {
+      if (response.destroyed) return true;
+      sendEmpty(response, 202, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
+      return true;
+    }
+
+    if (!sawRequest) {
+      if (response.destroyed) return true;
+      sendJson(response, 400, { error: "expected JSON-RPC request or notification" });
+      return true;
+    }
+
+    // A request that was cancelled must not receive a JSON-RPC response. End
+    // the corresponding POST with an empty accepted response so the HTTP
+    // exchange does not hang; mixed batches still return surviving responses.
+    if (responses.length === 0) {
+      if (response.destroyed) return true;
+      sendEmpty(response, 202, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
+      return true;
+    }
+
+    const body = Array.isArray(parsed) ? responses : (responses[0] ?? { jsonrpc: "2.0", result: {} });
+    if (response.destroyed) return true;
+    sendJson(response, 200, body, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
     return true;
+  } catch (error) {
+    if (request.destroyed || response.destroyed) {
+      return true;
+    }
+    throw error;
   }
-
-  if (!sawRequest) {
-    sendJson(response, 400, { error: "expected JSON-RPC request or notification" });
-    return true;
-  }
-
-  const body = Array.isArray(parsed) ? responses : (responses[0] ?? { jsonrpc: "2.0", result: {} });
-  sendJson(response, 200, body, sessionId ? { "Mcp-Session-Id": sessionId } : undefined);
-  return true;
 }
 
 export function mcpHttpUrl(controlBaseUrl: string): string {

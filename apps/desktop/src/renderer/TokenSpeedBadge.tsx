@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type {
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionTimelineItem,
-} from "../shared/thread-run-projection";
+} from "../shared/conversation-v2-projection";
 import { i18n } from "./i18n";
 import { useTokenSpeedDisplayMode } from "./token-speed-preferences";
 import {
@@ -53,8 +53,6 @@ export function TokenSpeedBadge({ requestSpan, item, streamedText }: TokenSpeedB
     return null;
   }
 
-  const label = segments.map(formatTokenSpeedSegmentPlain).join(" · ");
-
   const hintKey =
     stats.tokenSource === "usage" ? "activity.tokenSpeed.usageHint" : "activity.tokenSpeed.estimatedHint";
   const tooltipLines: string[] = [i18n.t(hintKey)];
@@ -71,7 +69,18 @@ export function TokenSpeedBadge({ requestSpan, item, streamedText }: TokenSpeedB
       aria-live="polite"
       title={tooltipLines.join("\n")}
     >
-      {label}
+      {segments.map((segment, index) => (
+        // One group per stat, separator included: a wrapped row may break before
+        // a stat, never between the dot and it or between a number and its unit.
+        <span className="run-log-token-speed-item" key={segment.key}>
+          {index > 0 ? (
+            <span className="run-log-token-speed-sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
+          <span className="run-log-token-speed-segment">{formatTokenSpeedSegmentPlain(segment)}</span>
+        </span>
+      ))}
     </span>
   );
 }

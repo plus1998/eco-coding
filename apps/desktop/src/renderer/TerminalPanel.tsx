@@ -1,4 +1,4 @@
-import { Clock3, Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { Clock3, Loader2, Plus, Server, Terminal as TerminalIcon, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GhosttyTerminal, type TerminalDimensions } from "./GhosttyTerminal";
@@ -84,7 +84,11 @@ export function TerminalPanel({
       // to an idle/new tab instead of replacing this session.
       return;
     }
-    setTerminalSessionId(workspacePath, activeTab.id, injectedSessionId);
+    setTerminalSessionId(workspacePath, activeTab.id, injectedSessionId, {
+      kind: activeTab.kind,
+      ...(activeTab.label ? { label: activeTab.label } : {}),
+      ...(activeTab.endpoint ? { endpoint: activeTab.endpoint } : {}),
+    });
     setSessionsByTabId((current) => ({ ...current, [activeTab.id]: injectedSessionId }));
     setErrorsByTabId((current) => {
       const next = { ...current };
@@ -146,7 +150,9 @@ export function TerminalPanel({
           cols: dimensions.cols,
           rows: dimensions.rows,
         });
-        setTerminalSessionId(workspacePath, tabId, result.sessionId);
+        // This path spawns a local shell; SSH sessions arrive through the injected
+        // session effect above, never here.
+        setTerminalSessionId(workspacePath, tabId, result.sessionId, { kind: "local" });
         setSessionsByTabId((current) => ({ ...current, [tabId]: result.sessionId }));
         return result.sessionId;
       } catch (spawnError) {
@@ -406,17 +412,24 @@ export function TerminalPanel({
       <div className="terminal-panel-tabs" role="tablist" aria-label={t("terminal.tabs")}>
         {state.tabs.map((tab) => {
           const isActive = tab.id === state.activeTabId;
+          const isSsh = tab.kind === "ssh";
+          const classNames = ["terminal-panel-tab", isSsh ? "is-ssh" : "", isActive ? "is-active" : ""];
           return (
-            <div key={tab.id} className={isActive ? "terminal-panel-tab is-active" : "terminal-panel-tab"}>
+            <div key={tab.id} className={classNames.filter(Boolean).join(" ")}>
               <button
                 type="button"
                 className="terminal-panel-tab-button"
                 role="tab"
                 aria-selected={isActive}
                 aria-controls={`terminal-panel-tab-${tab.id}`}
+                title={isSsh && tab.endpoint ? `${tab.label} · ${tab.endpoint}` : tab.label}
                 onClick={() => handleSelectTab(tab.id)}
               >
-                <TerminalIcon size={13} strokeWidth={1.75} aria-hidden />
+                {isSsh ? (
+                  <Server size={13} strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <TerminalIcon size={13} strokeWidth={1.75} aria-hidden />
+                )}
                 <span className="terminal-panel-tab-label">{tab.label}</span>
               </button>
               <button

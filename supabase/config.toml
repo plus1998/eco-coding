@@ -9,7 +9,7 @@ port = 54321
 
 [db]
 port = 54322
-major_version = 15
+major_version = 17
 
 [studio]
 enabled = true

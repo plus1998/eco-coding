@@ -2,13 +2,18 @@ import { IMAGE_VIEW_MAX_BYTES } from "./image-view-reader";
 
 const FETCH_TIMEOUT_MS = 30_000;
 
-export async function fetchImageDisplayUrl(url: string): Promise<{ data: Buffer }> {
+export async function fetchImageDisplayUrl(url: string, signal?: AbortSignal): Promise<{ data: Buffer }> {
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") {
     throw new Error("Only HTTPS image URLs are supported.");
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const onAbort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) {
+    controller.abort(signal.reason);
+  }
   try {
     const response = await fetch(url, {
       method: "GET",
@@ -33,5 +38,6 @@ export async function fetchImageDisplayUrl(url: string): Promise<{ data: Buffer 
     return { data: Buffer.from(arrayBuffer) };
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", onAbort);
   }
 }

@@ -3,6 +3,7 @@ import type { ModelPricingLookup, ParsedUsage } from "@eco/runtime";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import {
@@ -25,7 +26,6 @@ import {
   type UsageLedgerEvent,
 } from "../src/main/usage-ledger";
 import {
-  type UsageLedgerBillingSnapshotSelectionOptions,
   UsageLedgerCoordinator,
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
@@ -35,6 +35,19 @@ const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
 
 function usage(inputTokens = 10_000): ParsedUsage {
   return { inputTokens, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+}
+
+function stubBillingSnapshot(primarySource: "proxy" | "sdk"): ThreadBillingSnapshot {
+  return {
+    totalTokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 },
+    sourceReportedCostUsd: 0,
+    plannerTokenCostUsd: 0,
+    ecoCostUsd: 0,
+    savedUsd: 0,
+    savedPct: 0,
+    pricingResolved: true,
+    primarySource,
+  };
 }
 
 const provider: ProviderConfigSecret = {
@@ -183,7 +196,7 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
 });
 
 test("applySingleUsageBillingEffects requests verified ledger projection by default", async () => {
-  const selectionOptions: UsageLedgerBillingSnapshotSelectionOptions[] = [];
+  const selectionOptions: Array<{ plannerModelLabel?: string }> = [];
   const emitted: UsageBillingUpdatedEvent[] = [];
   const services: UsageBillingEffectsServices = {
     context: createUsageContextService({
@@ -200,12 +213,11 @@ test("applySingleUsageBillingEffects requests verified ledger projection by defa
     }),
     usageLedger: {
       appendEvents: () => undefined,
-      resolveBillingSnapshot: (_threadId, legacyBilling, options) => {
-        selectionOptions.push(options ?? {});
+      resolveV2BillingSnapshot: (_threadId, plannerModelLabel) => {
+        selectionOptions.push({ ...(plannerModelLabel ? { plannerModelLabel } : {}) });
         return {
-          snapshot: legacyBilling,
-          source: "legacy",
-          legacySnapshot: legacyBilling,
+          ...stubBillingSnapshot("sdk"),
+          ...(plannerModelLabel ? { plannerModelLabel } : {}),
         };
       },
       reconcileShadow: () => undefined,
@@ -236,7 +248,6 @@ test("applySingleUsageBillingEffects requests verified ledger projection by defa
 
   expect(selectionOptions).toEqual([
     {
-      useLedgerProjection: true,
       plannerModelLabel: "Claude Sonnet · Test Provider",
     },
   ]);
@@ -433,7 +444,7 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
 });
 
 test("applySdkRunBillingEffects requests verified ledger projection by default", async () => {
-  const selectionOptions: UsageLedgerBillingSnapshotSelectionOptions[] = [];
+  const selectionOptions: Array<{ plannerModelLabel?: string }> = [];
   const services: UsageBillingEffectsServices = {
     context: createUsageContextService({
       monitor: {
@@ -449,12 +460,11 @@ test("applySdkRunBillingEffects requests verified ledger projection by default",
     }),
     usageLedger: {
       appendEvents: () => undefined,
-      resolveBillingSnapshot: (_threadId, legacyBilling, options) => {
-        selectionOptions.push(options ?? {});
+      resolveV2BillingSnapshot: (_threadId, plannerModelLabel) => {
+        selectionOptions.push({ ...(plannerModelLabel ? { plannerModelLabel } : {}) });
         return {
-          snapshot: legacyBilling,
-          source: "legacy",
-          legacySnapshot: legacyBilling,
+          ...stubBillingSnapshot("sdk"),
+          ...(plannerModelLabel ? { plannerModelLabel } : {}),
         };
       },
       reconcileShadow: () => undefined,
@@ -490,13 +500,12 @@ test("applySdkRunBillingEffects requests verified ledger projection by default",
 
   expect(selectionOptions).toEqual([
     {
-      useLedgerProjection: true,
       plannerModelLabel: "Claude Sonnet · Test Provider",
     },
   ]);
 });
 
-test("applySingleUsageBillingEffects does not backfill legacy subagent metrics when ledger projection is unavailable", async () => {
+test("applySingleUsageBillingEffects fails closed when the V2 ledger projection is unavailable", async () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const legacySubagentUsageCalls: Array<
     Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>
@@ -552,20 +561,19 @@ test("applySingleUsageBillingEffects does not backfill legacy subagent metrics w
     requestKey: "proxy:coder:req_no_backfill",
   });
 
-  const billing = await applySingleUsageBillingEffects(services, {
-    threadId,
-    artifacts,
-    updateContext: true,
-    agentId: "agent_coder",
-  });
+  await expect(
+    applySingleUsageBillingEffects(services, {
+      threadId,
+      artifacts,
+      updateContext: true,
+      agentId: "agent_coder",
+    }),
+  ).rejects.toThrow("V2 usage ledger billing projection is unavailable");
 
   const [entry] = registry.listEntries(threadId);
   expect(legacySubagentUsageCalls).toHaveLength(0);
   expect(entry?.usage.inputTokens).toBe(0);
   expect(entry?.ecoCostUsd).toBe(0);
-  expect(billing.primarySource).toBe("proxy");
-  expect(billing.ecoCostUsd).toBeGreaterThan(0);
-  expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });
 
 test("applySingleUsageBillingEffects persists authoritative ledger subagent metrics", async () => {
@@ -650,7 +658,7 @@ test("applySingleUsageBillingEffects persists authoritative ledger subagent metr
   expect(persistedRows.at(-1)?.ecoCostUsd).toBeGreaterThan(0);
 });
 
-test("applySdkRunBillingEffects does not backfill legacy subagent metrics when ledger projection is unavailable", async () => {
+test("applySdkRunBillingEffects fails closed when the V2 ledger projection is unavailable", async () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const legacySubagentUsageCalls: Array<
     Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>
@@ -708,29 +716,28 @@ test("applySdkRunBillingEffects does not backfill legacy subagent metrics when l
     lookupPricing,
   });
 
-  const billing = await applySdkRunBillingEffects(services, {
-    threadId,
-    role: "coder",
-    requestKey: "sdk-result:event_no_backfill",
-    models: billingModels.models,
-    billingRole: "coder",
-    contextUsage: usage(1_500),
-    updateContext: true,
-    totalCostUsd: 0.03,
-    ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
-    runAttemptId: "attempt_no_backfill",
-    ledgerAgentId: "agent_coder",
-    resolvedSubagentId: "agent_coder",
-  });
+  await expect(
+    applySdkRunBillingEffects(services, {
+      threadId,
+      role: "coder",
+      requestKey: "sdk-result:event_no_backfill",
+      models: billingModels.models,
+      billingRole: "coder",
+      contextUsage: usage(1_500),
+      updateContext: true,
+      totalCostUsd: 0.03,
+      ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
+      runAttemptId: "attempt_no_backfill",
+      ledgerAgentId: "agent_coder",
+      resolvedSubagentId: "agent_coder",
+    }),
+  ).rejects.toThrow("V2 usage ledger billing projection is unavailable");
 
   const [entry] = registry.listEntries(threadId);
   expect(legacySubagentUsageCalls).toHaveLength(0);
   expect(entry?.usage.inputTokens).toBe(0);
   expect(entry?.usage.outputTokens).toBe(0);
   expect(entry?.ecoCostUsd).toBe(0);
-  expect(billing.primarySource).toBe("sdk");
-  expect(billing.sourceReportedCostUsd).toBe(0.03);
-  expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });
 
 test("applySingleUsageBillingEffects keeps unresolved proxy context out of role-level snapshots", async () => {

@@ -5,8 +5,10 @@ import {
   LoaderCircle,
   MessageCirclePlus,
   MoreHorizontal,
+  Pencil,
   Pin,
   PinOff,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { type DragEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -43,6 +45,9 @@ interface ProjectSidebarTreeProps {
   onPinProject: (path: string) => void;
   onUnpinProject: (path: string) => void;
   onRemoveProject: (path: string) => void;
+  onRenameProject: (path: string, name: string) => void;
+  onResetProjectName: (path: string) => void;
+  customProjectNames?: Readonly<Record<string, string>> | undefined;
   onPinThread: (threadId: string) => void;
   onUnpinThread: (threadId: string) => void;
   deletingThreadId?: string | undefined;
@@ -81,6 +86,9 @@ export function ProjectSidebarTree({
   onPinProject,
   onUnpinProject,
   onRemoveProject,
+  onRenameProject,
+  onResetProjectName,
+  customProjectNames,
   onPinThread,
   onUnpinThread,
   deletingThreadId,
@@ -94,8 +102,36 @@ export function ProjectSidebarTree({
   const [draggingPath, setDraggingPath] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ path: string; position: ProjectReorderPosition }>();
   const [openMenuPath, setOpenMenuPath] = useState<string>();
+  const [renamingPath, setRenamingPath] = useState<string>();
+  const [renameDraft, setRenameDraft] = useState("");
+  const renameDraftRef = useRef("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
   const treeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (renamingPath) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renamingPath]);
+
+  function startRenameProject(projectPath: string, currentName: string) {
+    renameDraftRef.current = currentName;
+    setRenameDraft(currentName);
+    setRenamingPath(projectPath);
+    setOpenMenuPath(undefined);
+  }
+
+  function commitRenameProject() {
+    const projectPath = renamingPath;
+    if (!projectPath) {
+      setRenamingPath(undefined);
+      return;
+    }
+    setRenamingPath(undefined);
+    onRenameProject(projectPath, renameDraftRef.current);
+  }
 
   useLayoutEffect(() => {
     if (!revealTarget) {
@@ -309,31 +345,58 @@ export function ProjectSidebarTree({
             onDragOver={(event) => handleProjectRowDragOver(event, project.path, project.isHome)}
             onDrop={(event) => handleProjectRowDrop(event, project.path, project.isHome)}
           >
-            <button
-              type="button"
-              className="project-group-toggle"
-              aria-expanded={!collapsed}
-              aria-label={
-                collapsed
-                  ? t("projectTree.expandProject", { name: project.name })
-                  : t("projectTree.collapseProject", { name: project.name })
-              }
-              onClick={() => onToggleProjectCollapsed(project.path)}
-            >
-              {project.pinned && !project.isHome ? (
-                <span className="project-pin-indicator" title={t("projectTree.pinned")} aria-hidden>
-                  <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
-                </span>
-              ) : null}
-              {project.isHome ? (
-                <Home size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
-              ) : collapsed ? (
-                <Folder size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
-              ) : (
-                <FolderOpen size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
-              )}
-              <span>{project.name}</span>
-            </button>
+            {renamingPath === project.path ? (
+              <div className="project-group-rename">
+                <input
+                  ref={renameInputRef}
+                  type="text"
+                  className="project-rename-input"
+                  value={renameDraft}
+                  placeholder={t("projectTree.renamePlaceholder", { name: project.name })}
+                  aria-label={t("projectTree.renameProject", { name: project.name })}
+                  onChange={(event) => {
+                    renameDraftRef.current = event.target.value;
+                    setRenameDraft(event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitRenameProject();
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      setRenamingPath(undefined);
+                    }
+                  }}
+                  onBlur={commitRenameProject}
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="project-group-toggle"
+                aria-expanded={!collapsed}
+                aria-label={
+                  collapsed
+                    ? t("projectTree.expandProject", { name: project.name })
+                    : t("projectTree.collapseProject", { name: project.name })
+                }
+                onClick={() => onToggleProjectCollapsed(project.path)}
+              >
+                {project.pinned && !project.isHome ? (
+                  <span className="project-pin-indicator" title={t("projectTree.pinned")} aria-hidden>
+                    <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
+                  </span>
+                ) : null}
+                {project.isHome ? (
+                  <Home size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+                ) : collapsed ? (
+                  <Folder size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+                ) : (
+                  <FolderOpen size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+                )}
+                <span>{project.name}</span>
+              </button>
+            )}
             <span
               className={
                 openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
@@ -357,11 +420,10 @@ export function ProjectSidebarTree({
                   </button>
                   {openMenuPath === project.path ? (
                     <div className="project-menu" role="menu">
-                      <button
-                        type="button"
-                        className="project-menu-item"
-                        role="menuitem"
-                        onClick={() => {
+                      <ProjectActionMenu
+                        pinned={Boolean(project.pinned)}
+                        hasCustomName={Boolean(customProjectNames?.[project.path])}
+                        onTogglePin={() => {
                           if (project.pinned) {
                             onUnpinProject(project.path);
                           } else {
@@ -369,26 +431,18 @@ export function ProjectSidebarTree({
                           }
                           setOpenMenuPath(undefined);
                         }}
-                      >
-                        {project.pinned ? (
-                          <PinOff size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
-                        ) : (
-                          <Pin size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
-                        )}
-                        <span>{project.pinned ? t("projectTree.unpin") : t("projectTree.pin")}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="project-menu-item danger"
-                        role="menuitem"
-                        onClick={() => {
+                        onStartRename={() => {
+                          startRenameProject(project.path, project.name);
+                        }}
+                        onResetName={() => {
+                          onResetProjectName(project.path);
+                          setOpenMenuPath(undefined);
+                        }}
+                        onRemove={() => {
                           onRemoveProject(project.path);
                           setOpenMenuPath(undefined);
                         }}
-                      >
-                        <Trash2 size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
-                        <span>{t("projectTree.remove")}</span>
-                      </button>
+                      />
                     </div>
                   ) : null}
                 </span>
@@ -516,9 +570,9 @@ export function ProjectSidebarTree({
                             }}
                           >
                             {isThreadPinned ? (
-                              <PinOff size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
+                              <PinOff size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
                             ) : (
-                              <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
+                              <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
                             )}
                           </button>
                         ) : null}
@@ -542,7 +596,7 @@ export function ProjectSidebarTree({
                                 aria-hidden
                               />
                             ) : (
-                              <Trash2 size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
+                              <Trash2 size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
                             )}
                           </button>
                         ) : null}
@@ -597,6 +651,72 @@ export function ProjectSidebarTree({
       ) : null}
       {renderProjectSection(t("nav.projects"), displayProjectTree)}
     </div>
+  );
+}
+
+export interface ProjectActionMenuProps {
+  pinned: boolean;
+  hasCustomName: boolean;
+  onTogglePin: () => void;
+  onStartRename: () => void;
+  onResetName: () => void;
+  onRemove: () => void;
+}
+
+export function ProjectActionMenu({
+  pinned,
+  hasCustomName,
+  onTogglePin,
+  onStartRename,
+  onResetName,
+  onRemove,
+}: ProjectActionMenuProps) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <button
+        type="button"
+        className="project-menu-item"
+        role="menuitem"
+        onClick={onTogglePin}
+      >
+        {pinned ? (
+          <PinOff size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+        ) : (
+          <Pin size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+        )}
+        <span>{pinned ? t("projectTree.unpin") : t("projectTree.pin")}</span>
+      </button>
+      <button
+        type="button"
+        className="project-menu-item"
+        role="menuitem"
+        onClick={onStartRename}
+      >
+        <Pencil size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+        <span>{t("projectTree.rename")}</span>
+      </button>
+      {hasCustomName ? (
+        <button
+          type="button"
+          className="project-menu-item"
+          role="menuitem"
+          onClick={onResetName}
+        >
+          <RotateCcw size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+          <span>{t("projectTree.resetName")}</span>
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="project-menu-item danger"
+        role="menuitem"
+        onClick={onRemove}
+      >
+        <Trash2 size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+        <span>{t("projectTree.remove")}</span>
+      </button>
+    </>
   );
 }
 

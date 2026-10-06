@@ -252,7 +252,12 @@ describe("anthropic-messages golden SSE", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("request-id")).toBe("req_anthropic_json_01");
+    // `request-id` is the client-facing identity: the Claude Agent SDK reads it as the
+    // assistant message's request id, so the Gateway stamps the ECO logical id (Codex's turn
+    // id for a Codex request). The provider's own id travels as separate metadata and is what
+    // the usage event reports.
+    expect(response.headers.get("request-id")).toBe("turn-json-01");
+    expect(response.headers.get("x-eco-provider-request-id")).toBe("req_anthropic_json_01");
     expect((await response.json()) as { id?: string }).toMatchObject({ id: "msg_json01" });
     expect(usageEvents).toHaveLength(1);
     expect(usageEvents[0]).toMatchObject({

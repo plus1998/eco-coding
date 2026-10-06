@@ -14,6 +14,10 @@ class FakeLifecycleStore implements AgentLifecycleStore {
     this.agents.set(`${record.threadId}:${record.agentId}`, record);
   }
 
+  listAgentInstances(threadId: string): AgentInstanceRecord[] {
+    return [...this.agents.values()].filter((agent) => agent.threadId === threadId);
+  }
+
   getAttempt(threadId: string, attemptId: string): RunAttemptRecord | undefined {
     return this.attempts.get(`${threadId}:${attemptId}`);
   }
@@ -76,6 +80,34 @@ test("AgentLifecycleService records run attempts and planner agent lifecycle", (
   expect(service.currentRunAttemptId("thr_lifecycle")).toBeUndefined();
   expect(service.usageRunAttemptId("thr_lifecycle")).toBe("attempt_execution_0");
   expect(service.usagePlannerAgentId("thr_lifecycle")).toBe("planner:attempt_execution_0");
+});
+
+test("AgentLifecycleService persists a caller-planned command attempt identity", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  const commandDispatch = {
+    principalId: "principal_1",
+    clientCommandId: "command_1",
+    dispatchId: "dispatch_1",
+  };
+
+  const attempt = service.startRunAttempt({
+    threadId: "thr_command",
+    phase: "continuation",
+    retryIndex: 0,
+    attemptId: "attempt_planned",
+    metadata: { commandDispatch },
+    commandDispatch,
+  });
+
+  expect(attempt).toMatchObject({
+    attemptId: "attempt_planned",
+    metadata: { commandDispatch },
+  });
+  expect(store.getAttempt("thr_command", "attempt_planned")).toMatchObject({
+    status: "running",
+    metadata: { commandDispatch },
+  });
 });
 
 test("AgentLifecycleService requires explicit parent tool use for interleaved subagents", () => {
@@ -213,6 +245,68 @@ test("AgentLifecycleService stops subagents explicitly before run finalizer", ()
   service.finishRunAttempt("thr_lifecycle", "completed");
 
   expect(store.getAgent("thr_lifecycle", "agent_coder")?.status).toBe("stopped");
+});
+
+test("AgentLifecycleService abandons a persisted subagent missing from activeAgents", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_stale_active", phase: "execution", retryIndex: 0 });
+  store.upsertAgentInstance({
+    threadId: "thr_stale_active",
+    agentId: "agent_explore",
+    role: "explore",
+    kind: "subagent",
+    status: "active",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  service.abandonSubagent({
+    threadId: "thr_stale_active",
+    agentId: "agent_explore",
+    role: "explore",
+  });
+
+  expect(store.getAgent("thr_stale_active", "agent_explore")?.status).toBe("abandoned");
+});
+
+test("AgentLifecycleService does not mint a phantom card when abandon has no instance", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_no_instance", phase: "execution", retryIndex: 0 });
+
+  service.abandonSubagent({
+    threadId: "thr_no_instance",
+    agentId: "agent_explore",
+    role: "explore",
+  });
+
+  expect(store.getAgent("thr_no_instance", "agent_explore")).toBeUndefined();
+});
+
+test("AgentLifecycleService overlays abandoned onto a stopped subagent", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_overlay_abandon", phase: "execution", retryIndex: 0 });
+  service.startSubagent({
+    threadId: "thr_overlay_abandon",
+    agentId: "agent_explore",
+    role: "explore",
+  });
+  service.stopSubagent({
+    threadId: "thr_overlay_abandon",
+    agentId: "agent_explore",
+    role: "explore",
+  });
+  expect(store.getAgent("thr_overlay_abandon", "agent_explore")?.status).toBe("stopped");
+
+  service.abandonSubagent({
+    threadId: "thr_overlay_abandon",
+    agentId: "agent_explore",
+    role: "explore",
+  });
+
+  expect(store.getAgent("thr_overlay_abandon", "agent_explore")?.status).toBe("abandoned");
 });
 
 test("AgentLifecycleService abandons a failed subagent before run finalizer", () => {

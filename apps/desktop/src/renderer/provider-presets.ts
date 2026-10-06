@@ -18,6 +18,8 @@ export interface ProviderPresetDefinition {
   apiCompat: UpstreamApiCompat;
   defaultModel: string;
   apiKeyUrl: string;
+  authMethod?: ProviderConfigInput["authMethod"];
+  credentialPoolId?: string;
   /** Alternate request endpoints still belonging to this provider preset. */
   endpointVariants?: ProviderEndpointVariant[];
 }
@@ -38,6 +40,19 @@ function compareProviderPresets(a: ProviderPresetDefinition, b: ProviderPresetDe
 }
 
 const PROVIDER_PRESET_DEFINITIONS: ProviderPresetDefinition[] = [
+  {
+    id: "chatgpt-subscription",
+    name: "ChatGPT OAuth",
+    iconSrc: "./provider-icons/openai.svg",
+    baseUrl: "https://api.openai.com",
+    requestPath: "",
+    version: "v1",
+    apiCompat: "openai_responses",
+    defaultModel: "gpt-5",
+    apiKeyUrl: "https://chatgpt.com/settings/usage",
+    authMethod: "chatgpt_subscription",
+    credentialPoolId: "chatgpt-default",
+  },
   {
     id: "openai",
     name: "OpenAI",
@@ -216,9 +231,12 @@ export function presetSupportsEndpoint(
 }
 
 export function formBelongsToProviderPreset(
-  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "version">,
+  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "version" | "authMethod">,
   preset: ProviderPresetDefinition,
 ): boolean {
+  if ((form.authMethod ?? "api_key") !== (preset.authMethod ?? "api_key")) {
+    return false;
+  }
   if (normalizeComparable(form.baseUrl) !== normalizeComparable(preset.baseUrl)) {
     return false;
   }
@@ -226,7 +244,7 @@ export function formBelongsToProviderPreset(
 }
 
 export function findPresetForForm(
-  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "version">,
+  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "version" | "authMethod">,
 ): ProviderPresetDefinition | undefined {
   return MAINSTREAM_PROVIDER_PRESETS.find((preset) => formBelongsToProviderPreset(form, preset));
 }
@@ -269,12 +287,15 @@ export function applyProviderPreset(
 ): ProviderConfigInput {
   return {
     ...form,
+    ...(preset.id === "chatgpt-subscription" && !form.id ? { id: "eco-coding-chatgpt" } : {}),
     name: preset.name,
     baseUrl: preset.baseUrl,
     requestPath: preset.requestPath,
     version: preset.version,
     apiCompat: preset.apiCompat,
     defaultModel: preset.defaultModel,
+    authMethod: preset.authMethod ?? "api_key",
+    credentialPoolId: preset.credentialPoolId ?? "",
     enabled: true,
   };
 }

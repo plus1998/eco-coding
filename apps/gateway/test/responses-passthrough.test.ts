@@ -4,6 +4,7 @@ import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/t
 import {
   collectResponsesSseEvents,
   isOfficialOpenAIResponsesBaseUrl,
+  sanitizeLongCatResponsesAgentMessages,
   sanitizeThirdPartyResponsesSoftFailFields,
 } from "../src/upstream/responses-passthrough.js";
 import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
@@ -21,6 +22,52 @@ const UPSTREAM_SSE = [
 ].join("\n");
 
 describe("responses passthrough", () => {
+  test("preserves reserved tool schemas for a native Responses upstream", async () => {
+    const provider: GatewayProvider = {
+      id: "native",
+      name: "Native Responses mock",
+      upstreamKind: "responses",
+      baseUrl: "https://mock.native.test",
+      apiKey: "test-key",
+      upstreamModelId: "gpt-6-sol",
+      models: ["gpt-6-sol"],
+    };
+    const tools = [
+      {
+        type: "namespace",
+        name: "collaboration",
+        tools: [
+          {
+            type: "function",
+            name: "wait_agent",
+            parameters: {
+              type: "object",
+              properties: { timeout_ms: { type: "number" } },
+            },
+          },
+        ],
+      },
+    ];
+    const handler = createTestGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        const upstreamBody = JSON.parse(String(init?.body)) as { tools: unknown };
+        expect(upstreamBody.tools).toEqual(tools);
+        return Response.json({ id: "resp_native", object: "response", model: "gpt-6-sol", output: [] });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "gpt-6-sol", input: [], tools }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   test("malformed reserved V1 aliases return 400 without reaching upstream", async () => {
     const malformed = "eco_route_v1.bad";
     const provider: GatewayProvider = {
@@ -542,6 +589,90 @@ describe("responses passthrough", () => {
     );
     expect(official.dropped).toEqual([]);
     expect((official.body as { include?: unknown }).include).toEqual(["reasoning.encrypted_content"]);
+  });
+
+  test("LongCat converts plain Codex agent_message handoffs to standard user messages", () => {
+    const input = [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "delegate" }],
+      },
+      {
+        type: "agent_message",
+        id: "agent_msg_1",
+        author: "/root/coder",
+        recipient: "/root/coder",
+        content: [{ type: "input_text", text: "Run the requested task." }],
+      },
+    ];
+    const result = sanitizeLongCatResponsesAgentMessages(
+      { model: "LongCat-2.0", input } as never,
+      "https://api.longcat.chat/openai",
+    );
+    expect(result.converted).toBe(1);
+    expect(result.encrypted).toBe(0);
+    expect(result.body.input).toEqual([
+      input[0],
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Run the requested task." }],
+      },
+    ]);
+  });
+
+  test("LongCat leaves encrypted agent_message handoffs fail-closed", () => {
+    const item = {
+      type: "agent_message",
+      encrypted_content: "opaque-ciphertext",
+      content: [{ type: "input_text", text: "unavailable" }],
+    };
+    const result = sanitizeLongCatResponsesAgentMessages(
+      { model: "LongCat-2.0", input: [item] } as never,
+      "https://api.longcat.chat/openai",
+    );
+    expect(result.converted).toBe(0);
+    expect(result.encrypted).toBe(1);
+    expect(result.body.input).toEqual([item]);
+  });
+
+  test("LongCat leaves a handoff with an encrypted content part fail-closed", () => {
+    const result = sanitizeLongCatResponsesAgentMessages(
+      {
+        model: "LongCat-2.0",
+        input: [
+          {
+            type: "agent_message",
+            content: [
+              { type: "input_text", text: "Run the task." },
+              { type: "encrypted_content", data: "opaque" },
+            ],
+          },
+        ],
+      } as never,
+      "https://api.longcat.chat/openai",
+    );
+    expect(result.converted).toBe(0);
+    expect(result.encrypted).toBe(1);
+    expect(result.body.input).toEqual([
+      {
+        type: "agent_message",
+        content: [
+          { type: "input_text", text: "Run the task." },
+          { type: "encrypted_content", data: "opaque" },
+        ],
+      },
+    ]);
+  });
+
+  test("LongCat handoff sanitizer does not affect other Responses providers", () => {
+    const body = {
+      model: "vendor-model",
+      input: [{ type: "agent_message", content: [{ type: "input_text", text: "task" }] }],
+    };
+    const result = sanitizeLongCatResponsesAgentMessages(body as never, "https://example.test");
+    expect(result).toEqual({ body, converted: 0, encrypted: 0 });
   });
 
   test("synthesizes response.completed with tool outputs after post-tool stall", async () => {

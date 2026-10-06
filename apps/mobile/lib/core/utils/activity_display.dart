@@ -3,7 +3,7 @@ import 'dart:ui' show Color;
 import '../../l10n/generated/app_localizations.dart';
 import '../models/thread_models.dart';
 import '../models/thread_runtime_config.dart';
-import '../models/thread_run_projection.dart';
+import '../models/conversation_v2_projection_models.dart';
 import '../theme/subagent_theme.dart' as subagent_theme;
 import 'agent_mission.dart';
 import 'feed_action_kind.dart';
@@ -498,6 +498,10 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
     durationMs: durationMs is int ? durationMs : null,
     status: status?.isNotEmpty == true ? status : null,
     readTargetPath: _readToolTargetPath(json['readTarget']),
+    readTargetLineRange: _readToolTargetLineRange(
+      json['readTarget'],
+      detail: detail,
+    ),
     grepPattern: _grepToolTargetPattern(json['grepTarget']),
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
     webSearch: _readWebSearchMetadata(json['webSearch']),
@@ -608,6 +612,42 @@ String? _grepToolTargetPattern(dynamic value) {
   return pattern?.isNotEmpty == true ? pattern : null;
 }
 
+/// Mirrors desktop `formatReadLineRange`: `L12`, `L12-40`.
+String? formatReadLineRange(int? offset, int? limit) {
+  if (offset == null || offset < 1) return null;
+  if (limit == null || limit < 1) return 'L$offset';
+  final end = offset + limit - 1;
+  return end <= offset ? 'L$offset' : 'L$offset-$end';
+}
+
+String? _readToolTargetLineRange(dynamic value, {String? detail}) {
+  if (value is Map) {
+    final range = formatReadLineRange(
+      _positiveInt(value['offset']),
+      _positiveInt(value['limit']),
+    );
+    if (range != null) return range;
+  }
+  // Legacy runtimes stored the range inside the detail as `path:L12-40`.
+  final match = RegExp(
+    r':L(\d+)(?:-(\d+))?$',
+  ).firstMatch(detail?.trim() ?? '');
+  if (match == null) return null;
+  final offset = int.tryParse(match.group(1) ?? '');
+  final end = int.tryParse(match.group(2) ?? '');
+  if (offset == null) return null;
+  return formatReadLineRange(
+    offset,
+    end == null ? null : (end - offset + 1).clamp(1, 1 << 31),
+  );
+}
+
+int? _positiveInt(dynamic value) {
+  if (value is! num) return null;
+  final rounded = value.truncate();
+  return rounded >= 1 ? rounded : null;
+}
+
 String? resolveStructuredBashDescription({
   ThreadRunToolMetadata? tool,
   ThreadRunBashApprovalMetadata? bashApproval,
@@ -639,9 +679,28 @@ String formatStructuredToolActionLabel(
   }
   return formatToolDisplayLabel(
     bashApproval?.toolName ?? tool.name,
-    bashApproval?.detail ?? tool.detail,
+    bashApproval?.detail ??
+        // Structured targets survive even when the runtime did not send a
+        // display detail; the desktop `formatThreadRunToolDetailLabel` also
+        // prefers the read target over the raw detail.
+        structuredToolTargetDetail(tool) ??
+        tool.detail,
     l10n,
   );
+}
+
+/// `fileName:L12-40` / `pattern · scope` for tools whose runtime metadata
+/// carries a structured target instead of a display detail.
+String? structuredToolTargetDetail(ThreadRunToolMetadata tool) {
+  final path = tool.readTargetPath?.trim();
+  if (path != null && path.isNotEmpty) {
+    final name = pathBasename(path);
+    final range = tool.readTargetLineRange?.trim();
+    return range == null || range.isEmpty ? name : '$name:$range';
+  }
+  final pattern = tool.grepPattern?.trim();
+  if (pattern != null && pattern.isNotEmpty) return pattern;
+  return null;
 }
 
 ThreadRunToolMetadata? toolMetadataFromBashApproval(
@@ -701,6 +760,7 @@ class ThreadRunToolMetadata {
     this.durationMs,
     this.status,
     this.readTargetPath,
+    this.readTargetLineRange,
     this.grepPattern,
     this.fileChange,
     this.webSearch,
@@ -719,6 +779,10 @@ class ThreadRunToolMetadata {
   final int? durationMs;
   final String? status;
   final String? readTargetPath;
+
+  /// `L12-40` style range parsed from the read target `offset`/`limit` (or from
+  /// the legacy `path:L12-40` detail). Desktop renders the same suffix.
+  final String? readTargetLineRange;
   final String? grepPattern;
   final ThreadRunFileChangeMetadata? fileChange;
   final ThreadRunWebSearchMetadata? webSearch;
@@ -1028,6 +1092,12 @@ String pathBasename(String filePath) {
   final list = segments.toList();
   if (list.isEmpty) return filePath;
   return list.last;
+}
+
+/// Mirrors the runtime `isReadToolName` used by the desktop read-target parser.
+bool isReadToolName(String? toolName) {
+  final name = toolName?.trim().toLowerCase() ?? '';
+  return name == 'read' || name == 'notebookread';
 }
 
 bool _isPath(String token) {

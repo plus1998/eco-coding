@@ -27,7 +27,11 @@ export function reconcileSdkAgentTerminalEvent(
     return false;
   }
   const payload = event.payload;
-  if (payload.type !== "agent_output" || payload.status !== "completed") {
+  if (payload.type !== "agent_output") {
+    return false;
+  }
+  const failed = payload.failed === true || payload.status === "failed" || payload.status === "error";
+  if (payload.status !== "completed" && !failed) {
     return false;
   }
 
@@ -74,6 +78,7 @@ export function reconcileSdkAgentTerminalEvent(
     status: parentToolUseId ? "reconciled" : "missing_parent_tool_use_id",
     agentId: eventAgentId,
     role: event.role,
+    ...(failed && { failed: true, terminalStatus: "failed" }),
     ...(parentToolUseId && { parentToolUseId }),
     ...(typeof payload.totalTokens === "number" && { terminalTotalTokens: payload.totalTokens }),
     ...(typeof payload.totalToolUseCount === "number" && {

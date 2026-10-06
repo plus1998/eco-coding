@@ -1,5 +1,5 @@
 import type { ThreadRunEvent } from "../shared/ipc";
-import type { ThreadRunProjectionAgent } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionAgent } from "../shared/conversation-v2-projection";
 import type { RpcLogEntry } from "./conversation-round-fixture";
 
 export const REPLAY_SCENARIO_CHECKLIST_KEYS = [

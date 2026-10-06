@@ -40,6 +40,43 @@ function pipeJsonChunksToAnthropicEvents(payloads: string[]): AnthropicStreamEve
 }
 
 describe("chat stream → anthropic SSE sequence", () => {
+  test("parallel calls with a repeated upstream ID retain separate tool identities", () => {
+    const chunks: ChatCompletionsChunk[] = [
+      {
+        id: "chatcmpl-duplicate",
+        object: "chat.completion.chunk",
+        created: 0,
+        model: "model",
+        choices: [{
+          index: 0,
+          delta: {
+            tool_calls: [
+              { index: 0, id: "call_same", type: "function", function: { name: "Read", arguments: '{"file_path":"a"}' } },
+              { index: 1, id: "call_same", type: "function", function: { name: "Read", arguments: '{"file_path":"b"}' } },
+            ],
+          },
+          finish_reason: "tool_calls",
+        }],
+      },
+    ];
+    const events = pipeChatStreamToAnthropicEvents(chunks);
+    const ids = events
+      .filter((event) => event.type === "content_block_start" && event.content_block?.type === "tool_use")
+      .map((event) => event.content_block?.id);
+    expect(ids).toEqual(["call_same", "call_same__eco_2"]);
+    const args = new Map<number, string>();
+    for (const event of events) {
+      if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+        args.set(event.index ?? 0, "");
+      }
+      if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta") {
+        args.set(event.index ?? 0, (args.get(event.index ?? 0) ?? "") + event.delta.partial_json);
+      }
+    }
+    expect([...args.values()].map((value) => JSON.parse(value).file_path)).toEqual(["a", "b"]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
   test("tool-only stream has valid content_block indices", () => {
     const chunks: ChatCompletionsChunk[] = [
       {

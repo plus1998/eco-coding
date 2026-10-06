@@ -254,20 +254,19 @@ export class SupabaseRealtimeRpc {
     }
 
     const envelope = wrapEcoRpcForBroadcast(message);
-    const result = await entry.channel.send({
-      type: "broadcast",
-      event: ECO_REALTIME_BROADCAST_EVENT,
-      payload: envelope,
-    });
+    let result: Awaited<ReturnType<RealtimeChannel["send"]>>;
+    try {
+      result = await entry.channel.send({
+        type: "broadcast",
+        event: ECO_REALTIME_BROADCAST_EVENT,
+        payload: envelope,
+      });
+    } catch (error) {
+      this.discardPending(requestId);
+      throw error;
+    }
     if (result !== "ok") {
-      if (requestId) {
-        const pending = this.pending.get(requestId);
-        if (pending) {
-          clearTimeout(pending.timer);
-          this.pending.delete(requestId);
-          pending.reject(new Error(`Realtime broadcast send failed: ${result}`));
-        }
-      }
+      this.discardPending(requestId);
       throw new Error(`Realtime broadcast send failed: ${result}`);
     }
 
@@ -517,6 +516,18 @@ export class SupabaseRealtimeRpc {
       pending.reject(error);
     }
     this.pending.clear();
+  }
+
+  private discardPending(requestId: string | undefined): void {
+    if (!requestId) {
+      return;
+    }
+    const pending = this.pending.get(requestId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.pending.delete(requestId);
   }
 }
 

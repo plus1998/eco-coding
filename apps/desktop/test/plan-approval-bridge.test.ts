@@ -1,10 +1,15 @@
 import { expect, test } from "bun:test";
 import {
+  acknowledgePlanApprovalContinuation,
+  bindPendingPlanApprovalCommand,
   cancelPlanApprovalsForThread,
+  clearPlanApprovalCommandBinding,
   getPendingPlanApprovalByToolUseId,
+  getPendingPlanApprovalCommand,
   getPendingPlanApprovalForThread,
   registerPendingPlanApproval,
   resolvePendingPlanApproval,
+  waitForPlanApprovalContinuation,
 } from "../src/main/plan-approval-bridge";
 
 test("registers and resolves pending plan approvals", async () => {
@@ -81,4 +86,56 @@ test("cancels pending plan approvals for a thread", async () => {
   await expect(pending).rejects.toThrow("cancelled by user");
   expect(getPendingPlanApprovalForThread("thread_2")).toBeUndefined();
   expect(resolvePendingPlanApproval("tool_plan_2", "denied")).toBe(false);
+});
+
+test("waits for durable command binding acknowledgement after the bridge is resolved", async () => {
+  const pending = registerPendingPlanApproval("thread_durable", {
+    toolUseId: "tool_plan_durable",
+    threadId: "thread_durable",
+    userPrompt: "Add feature",
+    analysis: "Analysis",
+    plan: "## Plan\n\nShip it.",
+  });
+
+  expect(
+    bindPendingPlanApprovalCommand("tool_plan_durable", {
+      principalId: "principal_durable",
+      clientCommandId: "command_durable",
+    }),
+  ).toBe(true);
+  expect(getPendingPlanApprovalCommand("tool_plan_durable")).toEqual({
+    principalId: "principal_durable",
+    clientCommandId: "command_durable",
+  });
+  const continuation = waitForPlanApprovalContinuation("tool_plan_durable", 1000);
+  expect(resolvePendingPlanApproval("tool_plan_durable", "approved")).toBe(true);
+  await expect(pending).resolves.toBe("approved");
+  expect(acknowledgePlanApprovalContinuation("tool_plan_durable")).toBe(true);
+  await expect(continuation).resolves.toBeUndefined();
+  clearPlanApprovalCommandBinding("tool_plan_durable");
+  expect(getPendingPlanApprovalCommand("tool_plan_durable")).toBeUndefined();
+});
+
+test("rejects a command binding mismatch instead of handing a bridge to another command", () => {
+  const pending = registerPendingPlanApproval("thread_binding", {
+    toolUseId: "tool_plan_binding",
+    threadId: "thread_binding",
+    userPrompt: "Add feature",
+    analysis: "Analysis",
+    plan: "## Plan\n\nShip it.",
+  });
+  expect(
+    bindPendingPlanApprovalCommand("tool_plan_binding", {
+      principalId: "principal_a",
+      clientCommandId: "command_a",
+    }),
+  ).toBe(true);
+  expect(
+    bindPendingPlanApprovalCommand("tool_plan_binding", {
+      principalId: "principal_b",
+      clientCommandId: "command_b",
+    }),
+  ).toBe(false);
+  cancelPlanApprovalsForThread("thread_binding", "test cleanup");
+  return expect(pending).rejects.toThrow("test cleanup");
 });

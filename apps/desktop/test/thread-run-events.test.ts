@@ -2,8 +2,16 @@ import { expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createConversationStore } from "../src/main/conversation-store";
+import { stableHash } from "@eco/shared";
+import { createConversationStore as createStore } from "../src/main/conversation-store";
 import type { ThreadRunEventInput, ThreadSummary } from "../src/shared/ipc";
+
+async function createLegacyConversationStore(dbPath: string) {
+  return createStore(dbPath, {
+    freshStorageMode: "legacy_compat",
+    requiredStorageMode: "legacy_compat",
+  });
+}
 
 const sqliteAvailable = await (async () => {
   try {
@@ -48,7 +56,7 @@ function makeEvent(input: Partial<ThreadRunEventInput> = {}): ThreadRunEventInpu
 
 test.skipIf(!sqliteAvailable)("conversation store persists thread run events in sequence order", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-"));
-  const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
   store.saveThread(makeThread());
 
   const first = store.appendThreadRunEvent(makeEvent());
@@ -82,13 +90,60 @@ test.skipIf(!sqliteAvailable)("conversation store persists thread run events in 
   expect(events[1]?.agentId).toBe("agent_coder_a");
   expect(events[1]?.metadata?.source).toBe("sdk");
   expect(events[1]?.sequence).toBe(merged.sequence);
+
+  const conversationV2MessageId = first.metadata?.conversationV2MessageId;
+  expect(typeof conversationV2MessageId).toBe("string");
+  if (typeof conversationV2MessageId !== "string") {
+    throw new Error("legacy message should expose its V2 identity");
+  }
+  expect(store.conversationV2().getMessage("thr_run_events", conversationV2MessageId)?.messageId).toBe(
+    conversationV2MessageId,
+  );
+
+  const db = (store as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): void } } }).db;
+  db.prepare(`UPDATE thread_run_events SET metadata_json = ? WHERE id = ?`).run(
+    JSON.stringify({ source: "sdk" }),
+    first.id,
+  );
+  expect(store.listThreadRunEvents("thr_run_events").find((event) => event.id === first.id)?.metadata)
+    .toMatchObject({
+      source: "sdk",
+      conversationV2MessageId,
+    });
+});
+
+test.skipIf(!sqliteAvailable)("legacy and V2 event writes roll back together", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-atomic-"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
+  store.saveThread(makeThread());
+  const event = makeEvent({
+    id: "atomic_event",
+    sequence: 1,
+    streamKey: "atomic_stream",
+    message: "legacy message",
+  });
+  const sourceBase = `legacy:${event.threadId}:${event.id}:${event.sequence}:${stableHash(event)}`;
+  store.conversationV2().append({
+    conversationId: event.threadId,
+    eventId: "conflicting_v2_event",
+    sourceEventKey: `${sourceBase}:create`,
+    type: "message.created",
+    occurredAt: event.observedAt,
+    messageId: "conflicting_message",
+    payload: { role: "assistant", body: "different" },
+  });
+
+  expect(() => store.appendThreadRunEvent(event)).toThrow();
+  expect(store.listThreadRunEvents(event.threadId)).toHaveLength(0);
+  expect(store.conversationV2().head(event.threadId).lastSeq).toBe(1);
+  expect(store.conversationV2().getMessage(event.threadId, "conflicting_message")).toBeDefined();
 });
 
 test.skipIf(!sqliteAvailable)(
   "conversation store removes internal web citations from run events",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-citations-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
     store.saveThread(makeThread());
 
     const event = store.appendThreadRunEvent(
@@ -104,7 +159,7 @@ test.skipIf(!sqliteAvailable)(
   "conversation store upgrades duplicate tool events with richer metadata",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-upgrade-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
     store.saveThread(makeThread());
 
     const generic = store.appendThreadRunEvent(
@@ -150,7 +205,7 @@ test.skipIf(!sqliteAvailable)(
   "conversation store tolerates malformed thread run event metadata",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-bad-json-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
     store.saveThread(makeThread());
     store.appendThreadRunEvent(makeEvent());
 
@@ -159,13 +214,14 @@ test.skipIf(!sqliteAvailable)(
 
     const events = store.listThreadRunEvents("thr_run_events");
     expect(events).toHaveLength(1);
-    expect(events[0]?.metadata).toBeUndefined();
+    expect(typeof events[0]?.metadata?.conversationV2MessageId).toBe("string");
+    expect(events[0]?.metadata?.source).toBeUndefined();
   },
 );
 
 test.skipIf(!sqliteAvailable)("conversation store clears thread run events by thread", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-clear-"));
-  const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
   store.saveThread(makeThread());
   store.appendThreadRunEvent(makeEvent());
 
@@ -176,7 +232,7 @@ test.skipIf(!sqliteAvailable)("conversation store clears thread run events by th
 
 test.skipIf(!sqliteAvailable)("conversation store upserts cumulative stream text in place", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-stream-"));
-  const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
   store.saveThread(makeThread());
   const id = "tre:stream:thr_run_events:message.delta:stream_1";
 
@@ -201,7 +257,7 @@ test.skipIf(!sqliteAvailable)(
   "conversation store upserts Codex cumulative stream text in place",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-codex-stream-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
     store.saveThread(makeThread());
     const id = "tre:codex:message.delta:codex-thread:turn:item";
 
@@ -226,7 +282,7 @@ test.skipIf(!sqliteAvailable)(
   "projection reads collapse legacy stream history and apply a source bound",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-projection-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
     store.saveThread(makeThread());
     store.appendThreadRunEvent(makeEvent({ id: "legacy_1", streamKey: "legacy", message: "一" }));
     store.appendThreadRunEvent(makeEvent({ id: "legacy_2", streamKey: "legacy", message: "一段" }));
@@ -251,7 +307,7 @@ test.skipIf(!sqliteAvailable)(
 
 test.skipIf(!sqliteAvailable)("bounded projection reads are cached and updated incrementally", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-cache-"));
-  const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+  const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
   store.saveThread(makeThread());
   const streamId = "tre:stream:thr_run_events:message.delta:stream_cache";
   store.appendThreadRunEvent(makeEvent({ id: streamId, streamKey: "stream_cache", message: "一" }));
@@ -297,7 +353,7 @@ test.skipIf(!sqliteAvailable)(
   "unbounded projection cache (maxEvents=0) keeps growing instead of wiping on append",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-full-cache-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyConversationStore(path.join(dir, "eco.sqlite"));
     store.saveThread(makeThread());
     store.appendThreadRunEvent(
       makeEvent({
@@ -335,7 +391,7 @@ test.skipIf(!sqliteAvailable)(
 test.skipIf(!sqliteAvailable)("conversation store enables WAL mode", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-wal-"));
   const dbPath = path.join(dir, "eco.sqlite");
-  await createConversationStore(dbPath);
+  await createLegacyConversationStore(dbPath);
   const sqlite = await import("node:sqlite");
   const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
   const row = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };

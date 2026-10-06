@@ -197,6 +197,83 @@ test("SubagentStart and SubagentStop update todo status", () => {
   expect(store.getTodos()[0]?.status).toBe("completed");
 });
 
+test("SubagentStop failed marks the linked todo blocked and keeps the API error", () => {
+  const { store, hooks } = createTracker([
+    {
+      id: "thr_1:task:0",
+      threadId: "thr_1",
+      title: "Explore repo",
+      detail: "Explore repo",
+      status: "pending",
+      position: 0,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
+
+  hooks.onSubagentStart({ agentId: "agent_explore", agentType: "explore", todoId: "thr_1:task:0" });
+  hooks.onSubagentStop({
+    agentId: "agent_explore",
+    agentType: "explore",
+    failed: true,
+    reason: "Agent terminated early due to an API error: 400",
+  });
+
+  expect(store.getTodos()[0]).toMatchObject({
+    status: "blocked",
+    detail: "Agent terminated early due to an API error: 400",
+  });
+});
+
+test("failed task_notification overlays a completed todo", () => {
+  const { store, tracker, hooks } = createTracker();
+  hooks.onTaskCreated({ taskId: "task_fail", subject: "Explore repo" });
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_fail", status: "completed" });
+  expect(store.getTodos()[0]?.status).toBe("completed");
+
+  tracker.handleTaskProgress({
+    sdkKind: "task_notification",
+    task_id: "task_fail",
+    status: "failed",
+    summary: "API Error: 400 No provider route configured",
+  } satisfies SdkTodoUpdatedPayload);
+
+  expect(store.getTodos()[0]).toMatchObject({
+    status: "blocked",
+    detail: "API Error: 400 No provider route configured",
+  });
+});
+
+test("completed TaskUpdate does not hide a blocked todo", () => {
+  const { store, hooks } = createTracker();
+  hooks.onTaskCreated({ taskId: "task_blocked", subject: "Explore repo" });
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_blocked", status: "failed" });
+  expect(store.getTodos()[0]?.status).toBe("blocked");
+
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_blocked", status: "completed" });
+  expect(store.getTodos()[0]?.status).toBe("blocked");
+
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_blocked", status: "in_progress" });
+  expect(store.getTodos()[0]?.status).toBe("blocked");
+});
+
+test("SubagentStop failed matches a constructed SDK task id without a start link", () => {
+  const { store, hooks } = createTracker();
+  hooks.onTaskCreated({ taskId: "agent_explore", subject: "Explore repo" });
+  expect(store.getTodos()[0]?.status).toBe("pending");
+
+  hooks.onSubagentStop({
+    agentId: "agent_explore",
+    agentType: "explore",
+    failed: true,
+    reason: "Agent terminated early due to an API error: 400",
+  });
+
+  expect(store.getTodos()[0]).toMatchObject({
+    status: "blocked",
+    detail: "Agent terminated early due to an API error: 400",
+  });
+});
+
 test("SubagentStart does not mark the first pending todo without a structured link", () => {
   const { store, hooks } = createTracker([
     {

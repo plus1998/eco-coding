@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildSdkUsageLedgerEvents, buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
+import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
 import { reconcileUsageLedgerWithBilling } from "../src/main/usage-ledger-reconciliation";
 import type {
   BillingUsageSource,
@@ -162,6 +163,41 @@ test("reconcileUsageLedgerWithBilling prefers per-model reported cost over sdk r
   );
 
   expect(result.issues.filter((issue) => issue.type === "reported_cost_mismatch")).toEqual([]);
+});
+
+test("reconcileUsageLedgerWithBilling follows V2 shadow-row selection", () => {
+  const usage = { inputTokens: 500, outputTokens: 50, cacheReadTokens: 20, cacheCreationTokens: 0 };
+  const proxyEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_reconcile_shadow",
+    role: "coder",
+    source: "proxy",
+    sourceEventId: "proxy:request",
+    requestKey: "proxy:request",
+    providerRequestId: "provider:request",
+    usage,
+    modelId: "coder-model",
+    agentId: "agent_coder",
+    reportedCostUsd: 0.5,
+  });
+  const sdkShadowEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_reconcile_shadow",
+    role: "coder",
+    source: "sdk",
+    sourceEventId: "sdk:request",
+    requestKey: "sdk:request",
+    usage,
+    modelId: "coder-model",
+    agentId: "agent_coder",
+    reportedCostUsd: 0.5,
+  });
+  const events = [proxyEvent, sdkShadowEvent];
+  const projection = projectBillingFromUsageLedger({ events });
+
+  expect(projection.snapshot?.sourceBreakdown?.sdk).toBeUndefined();
+  expect(reconcileUsageLedgerWithBilling(events, projection.snapshot)).toMatchObject({
+    ok: true,
+    issues: [],
+  });
 });
 
 test("reconcileUsageLedgerWithBilling reports missing ledger source and unattributed usage", () => {

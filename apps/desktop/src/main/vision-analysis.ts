@@ -1,14 +1,16 @@
 import type { PromptImageAttachment, RuntimeRoleRouteConfig } from "../shared/ipc";
 import {
   BUILTIN_VISION_AGENT_ROLE,
+  buildImageViewRequestBody,
   buildVisionAnalysisRequestBody,
+  readImageViewResponse,
   readVisionAnalysisResponse,
 } from "../shared/prompt-image-vision";
 import type { RuntimeRoute } from "./billing-resolver";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { ECO_PROXY_BILLING_HEADERS } from "./proxy-billing-stamp";
 
-const maxSubagentRuntimeMs = resolveOrchestrationGuardrails().maxSubagentRuntimeMs;
+const maxVisionRequestRuntimeMs = resolveOrchestrationGuardrails().maxSubagentRuntimeMs;
 
 export interface VisionAnalysisRequest {
   threadId: string;
@@ -41,6 +43,30 @@ export interface VisionAnalysisHost {
     failed: boolean;
     report?: string;
   }): void;
+}
+
+export interface ImageViewHost {
+  resolveRoute(threadId: string, routesOverride?: readonly RuntimeRoleRouteConfig[]): RuntimeRoute;
+  startProxy(
+    route: RuntimeRoute,
+    attachments: readonly PromptImageAttachment[],
+    stamp: {
+      threadId: string;
+      runAttemptId?: string;
+    },
+  ): Promise<{ baseUrl: string; apiKey: string; aliasModelId: string; close(): Promise<void> }>;
+  registerBilling(threadId: string, agentId: string): void;
+  unregisterBilling(threadId: string, agentId: string): void;
+}
+
+export interface ImageViewRequest {
+  threadId: string;
+  prompt: string;
+  attachments: readonly PromptImageAttachment[];
+  billingAgentId: string;
+  signal?: AbortSignal;
+  routesOverride?: readonly RuntimeRoleRouteConfig[];
+  runAttemptId?: string;
 }
 
 export async function runVisionAnalysis(
@@ -103,8 +129,8 @@ export async function runVisionAnalysis(
         }),
       ),
       signal: input.signal
-        ? AbortSignal.any([input.signal, AbortSignal.timeout(maxSubagentRuntimeMs)])
-        : AbortSignal.timeout(maxSubagentRuntimeMs),
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(maxVisionRequestRuntimeMs)])
+        : AbortSignal.timeout(maxVisionRequestRuntimeMs),
     });
     const payload = (await response.json()) as unknown;
     if (!response.ok) {
@@ -127,6 +153,71 @@ export async function runVisionAnalysis(
         ...(report ? { report } : {}),
       });
     }
+  }
+}
+
+export async function runImageView(input: ImageViewRequest, host: ImageViewHost): Promise<string> {
+  const prompt = input.prompt.trim();
+  if (!prompt) {
+    throw new Error("image_view 调用必须提供 prompt。");
+  }
+  const sourceRoute = host.resolveRoute(input.threadId, input.routesOverride);
+  if (!sourceRoute) {
+    throw new Error("image_view 缺少可用的模型路由。");
+  }
+  if (sourceRoute.manualSpec?.supportsImageInput === false) {
+    const label = sourceRoute.role === BUILTIN_VISION_AGENT_ROLE ? "视觉模型" : "主 Agent 模型";
+    throw new Error(`${label} ${sourceRoute.modelId} 已明确配置为不支持图片输入。`);
+  }
+
+  const imageViewRoute: RuntimeRoute = {
+    ...sourceRoute,
+    role: BUILTIN_VISION_AGENT_ROLE,
+  };
+  host.registerBilling(input.threadId, input.billingAgentId);
+
+  let proxy: Awaited<ReturnType<ImageViewHost["startProxy"]>> | undefined;
+  try {
+    proxy = await host.startProxy(imageViewRoute, input.attachments, {
+      threadId: input.threadId,
+      ...(input.runAttemptId ? { runAttemptId: input.runAttemptId } : {}),
+    });
+    if (!proxy.aliasModelId) {
+      throw new Error("image_view 没有生成可调用的模型别名。");
+    }
+    const response = await fetch(`${proxy.baseUrl.replace(/\/$/, "")}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": proxy.apiKey,
+        [ECO_PROXY_BILLING_HEADERS.agentId]: input.billingAgentId,
+        [ECO_PROXY_BILLING_HEADERS.billingRole]: BUILTIN_VISION_AGENT_ROLE,
+        ...(input.runAttemptId ? { [ECO_PROXY_BILLING_HEADERS.runAttemptId]: input.runAttemptId } : {}),
+      },
+      body: JSON.stringify(
+        buildImageViewRequestBody({
+          model: proxy.aliasModelId,
+          prompt,
+          ...(imageViewRoute.manualSpec?.maxOutputTokens
+            ? { maxTokens: imageViewRoute.manualSpec.maxOutputTokens }
+            : {}),
+        }),
+      ),
+      signal: input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(maxVisionRequestRuntimeMs)])
+        : AbortSignal.timeout(maxVisionRequestRuntimeMs),
+    });
+    const payload = (await response.json()) as unknown;
+    if (!response.ok) {
+      throw new Error(`image_view 请求失败（HTTP ${response.status}）：${readVisionError(payload)}`);
+    }
+    return readImageViewResponse(payload);
+  } catch (error) {
+    throw new Error(`图片查看失败：${errorMessage(error)}`);
+  } finally {
+    await proxy?.close().catch(() => {});
+    host.unregisterBilling(input.threadId, input.billingAgentId);
   }
 }
 

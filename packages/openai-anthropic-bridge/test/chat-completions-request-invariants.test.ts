@@ -21,6 +21,9 @@ function assertChatInvariants(messages: ChatMessage[]): void {
     }
     if (m.role === "tool") {
       expect(m.tool_call_id).toBeTruthy();
+      // Chat Completions upstreams reject non-string tool content with 400
+      // ("tool messages must contain string content").
+      expect(typeof m.content).toBe("string");
     }
   }
 }
@@ -44,6 +47,17 @@ describe("responses → chat request invariants (sub2api parity)", () => {
     });
     expect(chatReq.stream).toBe(true);
     expect(chatReq.stream_options).toEqual({ include_usage: true });
+  });
+
+  test("omits tool_choice when a Responses request has no tools", () => {
+    const chatReq = responsesToChatCompletionsRequest({
+      model: "local-model",
+      input: "[]",
+      tool_choice: "auto",
+    });
+
+    expect(chatReq.tools).toBeUndefined();
+    expect(chatReq.tool_choice).toBeUndefined();
   });
 
   test("single tool call attaches pending reasoning to assistant message", () => {
@@ -116,5 +130,55 @@ describe("responses → chat request invariants (sub2api parity)", () => {
     assertChatInvariants(messages);
     expect(messages.filter((m) => m.role === "tool").length).toBe(1);
     expect(messages.find((m) => m.role === "tool")?.tool_call_id).toBe("call_ok");
+  });
+
+  test("flattens function_call_output part arrays to string tool content (pi image tool results)", () => {
+    const messages = convertGolden([
+      { type: "message", role: "user", content: [{ type: "input_text", text: "read logo.png" }] },
+      { type: "function_call", call_id: "call_img", name: "read", arguments: '{"path":"logo.png"}' },
+      {
+        type: "function_call_output",
+        call_id: "call_img",
+        output: [
+          { type: "input_text", text: "Image: logo.png" },
+          { type: "input_image", detail: "auto", image_url: "data:image/png;base64,AAAA" },
+        ],
+      },
+    ]);
+    assertChatInvariants(messages);
+    const tool = messages.find((m) => m.role === "tool");
+    expect(tool?.content).toBe("Image: logo.png\n[image: image/png]");
+  });
+
+  test("keeps user message part arrays intact", () => {
+    const messages = convertGolden([
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "describe" },
+          { type: "input_image", detail: "auto", image_url: "data:image/png;base64,AAAA" },
+        ],
+      },
+    ]);
+    const user = messages.find((m) => m.role === "user");
+    expect(Array.isArray(user?.content)).toBe(true);
+  });
+
+  test("flattens image-only function_call_output to placeholder string", () => {
+    const messages = convertGolden([
+      { type: "message", role: "user", content: [{ type: "input_text", text: "screenshot" }] },
+      { type: "function_call", call_id: "c_shot", name: "bash", arguments: '{"command":"x"}' },
+      {
+        type: "function_call_output",
+        call_id: "c_shot",
+        output: [
+          { type: "input_image", detail: "auto", image_url: "data:image/png;base64,QUJD" },
+        ],
+      },
+    ]);
+    assertChatInvariants(messages);
+    const tool = messages.find((m) => m.role === "tool");
+    expect(tool?.content).toBe("[image: image/png]");
   });
 });

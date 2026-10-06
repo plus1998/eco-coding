@@ -9,8 +9,8 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/html_host_models.dart';
 import '../../core/models/image_generation_models.dart';
+import '../../core/models/conversation_v2_models.dart';
 import '../../core/models/thread_models.dart';
-import '../../core/providers/app_providers.dart';
 import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -20,7 +20,6 @@ import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../../core/utils/package_script_search.dart';
 import '../../core/utils/strip_ansi.dart';
-import '../../core/utils/thread_todo_live.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
@@ -314,43 +313,40 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
   }
 
   Future<List<CoderTodoItem>> _loadTodos() async {
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) return const [];
-    final todos = await rpc.listThreadTodos(widget.threadId);
+    final todos = ref
+        .read(conversationV2SessionProvider(widget.threadId))
+        .todos
+        .map(_coderTodoFromV2)
+        .toList(growable: false);
     todos.sort((left, right) => left.position.compareTo(right.position));
     return todos;
   }
 
   Future<void> _refresh() async {
+    await ref
+        .read(conversationV2SessionProvider(widget.threadId).notifier)
+        .refresh();
+    if (!mounted) return;
     setState(() => _future = _loadTodos());
     await _future;
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(ecoEventsProvider, (_, next) {
-      next.whenData((event) {
-        final todos = threadTodoListFromLiveEvent(
-          threadId: widget.threadId,
-          envelopeThreadId: event.threadId,
-          payload: event.payload,
+    ref.listen(
+      conversationV2SessionProvider(
+        widget.threadId,
+      ).select((state) => state.todos),
+      (_, todos) {
+        if (!mounted) return;
+        setState(
+          () => _future = Future.value(
+            todos.map(_coderTodoFromV2).toList(growable: false)
+              ..sort((left, right) => left.position.compareTo(right.position)),
+          ),
         );
-        if (todos == null || !mounted) return;
-        setState(() => _future = Future.value(todos));
-      });
-    });
-    ref.listen(connectionStatusProvider, (previous, next) {
-      next.whenData((status) {
-        if (!mounted ||
-            !shouldReloadThreadTodosAfterConnection(
-              previous: previous?.valueOrNull?.state,
-              current: status.state,
-            )) {
-          return;
-        }
-        setState(() => _future = _loadTodos());
-      });
-    });
+      },
+    );
     final eco = ecoColors(context);
     return SafeArea(
       child: Column(
@@ -398,6 +394,16 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
     );
   }
 }
+
+CoderTodoItem _coderTodoFromV2(ConversationV2Todo todo) => CoderTodoItem(
+  id: todo.todoId,
+  threadId: todo.conversationId,
+  title: todo.title,
+  detail: todo.detail,
+  status: todo.status,
+  position: todo.position,
+  updatedAt: todo.updatedAt,
+);
 
 class _TodoRow extends StatelessWidget {
   const _TodoRow({required this.todo});
@@ -599,8 +605,10 @@ class _NpmScriptsSheet extends ConsumerStatefulWidget {
 class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   late Future<PackageScriptsListResult> _future;
   Map<String, String> _scriptArgsByName = {};
+  Map<String, String> _scriptPrefixesByName = {};
   String? _editingScript;
   final TextEditingController _argsInputController = TextEditingController();
+  final TextEditingController _prefixInputController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   bool _running = false;
   bool _stopping = false;
@@ -615,7 +623,11 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     _future = _loadScripts();
   }
 
-  Future<void> _commitScriptArgs(String scriptName, String nextArgs) async {
+  Future<void> _commitScriptOverrides(
+    String scriptName,
+    String nextArgs,
+    String nextPrefix,
+  ) async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
       return;
@@ -624,17 +636,21 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
       workspacePath: widget.workspacePath,
       script: scriptName,
       args: nextArgs,
+      prefix: nextPrefix,
     );
     if (!mounted) return;
     setState(() {
-      _scriptArgsByName = saved;
+      _scriptArgsByName = saved.scriptArgs;
+      _scriptPrefixesByName = saved.scriptPrefixes;
       _editingScript = null;
       _argsInputController.clear();
+      _prefixInputController.clear();
     });
   }
 
   void _openArgsEditor(String scriptName) {
     _argsInputController.text = _scriptArgsByName[scriptName] ?? '';
+    _prefixInputController.text = _scriptPrefixesByName[scriptName] ?? '';
     setState(() => _editingScript = scriptName);
   }
 
@@ -642,6 +658,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   void dispose() {
     _taskPollTimer?.cancel();
     _argsInputController.dispose();
+    _prefixInputController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -698,20 +715,24 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     }
     final listing = await rpc.listPackageScripts(widget.workspacePath);
     var scriptArgs = Map<String, String>.from(listing.scriptArgs);
-    if (scriptArgs.isEmpty) {
+    var scriptPrefixes = Map<String, String>.from(listing.scriptPrefixes);
+    if (scriptArgs.isEmpty && scriptPrefixes.isEmpty) {
       final legacy = await readWorkspaceScriptArgs(widget.workspacePath);
       if (legacy.isNotEmpty) {
         for (final entry in legacy.entries) {
-          scriptArgs = await rpc.savePackageScriptArgs(
+          final saved = await rpc.savePackageScriptArgs(
             workspacePath: widget.workspacePath,
             script: entry.key,
             args: entry.value,
           );
+          scriptArgs = saved.scriptArgs;
+          scriptPrefixes = saved.scriptPrefixes;
         }
         await clearWorkspaceScriptArgs(widget.workspacePath);
       }
     }
     _scriptArgsByName = scriptArgs;
+    _scriptPrefixesByName = scriptPrefixes;
     return listing;
   }
 
@@ -724,6 +745,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     PackageScriptInfo script, {
     required String packageManager,
     String? args,
+    String? prefix,
   }) async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null || _running || (_activeTask?.isActive ?? false)) {
@@ -738,6 +760,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
         workspacePath: widget.workspacePath,
         script: script.name,
         args: args,
+        prefix: prefix,
       );
       if (!mounted) return;
       setState(() {
@@ -869,13 +892,21 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                               ...filteredScripts.map((script) {
                                 final savedArgs =
                                     _scriptArgsByName[script.name] ?? '';
+                                final savedPrefix =
+                                    _scriptPrefixesByName[script.name] ?? '';
+                                final hasOverrides =
+                                    savedArgs.isNotEmpty ||
+                                    savedPrefix.isNotEmpty;
                                 final isEditingArgs =
                                     _editingScript == script.name;
-                                final displayCommand = savedArgs.isNotEmpty
+                                final displayCommand = hasOverrides
                                     ? formatRunCommand(
                                         listing.packageManager,
                                         script.name,
-                                        savedArgs,
+                                        savedArgs.isEmpty ? null : savedArgs,
+                                        savedPrefix.isEmpty
+                                            ? null
+                                            : savedPrefix,
                                       )
                                     : script.command;
                                 return Padding(
@@ -907,19 +938,21 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                 ),
                                               ),
                                               IconButton(
-                                                tooltip: savedArgs.isNotEmpty
+                                                tooltip: hasOverrides
                                                     ? context.l10n
                                                           .threadExtraArgsValue(
-                                                            savedArgs,
+                                                            savedPrefix.isEmpty
+                                                                ? savedArgs
+                                                                : '$savedPrefix && $savedArgs',
                                                           )
                                                     : context
                                                           .l10n
-                                                          .threadExtraArgs,
+                                                          .threadCustomizeScript,
                                                 icon: Icon(
                                                   EcoIcons.rename,
                                                   size: 18,
                                                   color:
-                                                      savedArgs.isNotEmpty ||
+                                                      hasOverrides ||
                                                           isEditingArgs
                                                       ? eco.accent
                                                       : eco.textMuted,
@@ -928,9 +961,11 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                     ? null
                                                     : () {
                                                         if (isEditingArgs) {
-                                                          _commitScriptArgs(
+                                                          _commitScriptOverrides(
                                                             script.name,
                                                             _argsInputController
+                                                                .text,
+                                                            _prefixInputController
                                                                 .text,
                                                           );
                                                           return;
@@ -957,32 +992,115 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                             savedArgs.isNotEmpty
                                                             ? savedArgs
                                                             : null,
+                                                        prefix:
+                                                            savedPrefix
+                                                                .isNotEmpty
+                                                            ? savedPrefix
+                                                            : null,
                                                       ),
                                               ),
                                             ],
                                           ),
                                           if (isEditingArgs)
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                top: 8,
-                                              ),
-                                              child: TextField(
-                                                controller:
-                                                    _argsInputController,
-                                                autofocus: true,
-                                                decoration: InputDecoration(
-                                                  isDense: true,
-                                                  hintText: context
-                                                      .l10n
-                                                      .threadExtraArgs,
-                                                ),
-                                                enabled: !isRunning,
-                                                onSubmitted: (value) =>
-                                                    _commitScriptArgs(
-                                                      script.name,
-                                                      value,
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 8,
+                                                      ),
+                                                  child: TextField(
+                                                    controller:
+                                                        _prefixInputController,
+                                                    autofocus: true,
+                                                    enabled: !isRunning,
+                                                    textInputAction:
+                                                        TextInputAction.next,
+                                                    decoration: InputDecoration(
+                                                      isDense: true,
+                                                      labelText: context
+                                                          .l10n
+                                                          .threadPrefixCommand,
+                                                      hintText: context
+                                                          .l10n
+                                                          .threadPrefixCommandHint,
                                                     ),
-                                              ),
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 8,
+                                                      ),
+                                                  child: TextField(
+                                                    controller:
+                                                        _argsInputController,
+                                                    enabled: !isRunning,
+                                                    textInputAction:
+                                                        TextInputAction.done,
+                                                    decoration: InputDecoration(
+                                                      isDense: true,
+                                                      labelText: context
+                                                          .l10n
+                                                          .threadExtraArgs,
+                                                    ),
+                                                    onSubmitted: (value) =>
+                                                        _commitScriptOverrides(
+                                                          script.name,
+                                                          value,
+                                                          _prefixInputController
+                                                              .text,
+                                                        ),
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 4,
+                                                      ),
+                                                  child: Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.end,
+                                                    children: [
+                                                      TextButton(
+                                                        onPressed: isRunning
+                                                            ? null
+                                                            : () => setState(() {
+                                                                _editingScript =
+                                                                    null;
+                                                                _argsInputController
+                                                                    .clear();
+                                                                _prefixInputController
+                                                                    .clear();
+                                                              }),
+                                                        child: Text(
+                                                          context
+                                                              .l10n
+                                                              .commonCancel,
+                                                        ),
+                                                      ),
+                                                      FilledButton(
+                                                        onPressed: isRunning
+                                                            ? null
+                                                            : () => _commitScriptOverrides(
+                                                                script.name,
+                                                                _argsInputController
+                                                                    .text,
+                                                                _prefixInputController
+                                                                    .text,
+                                                              ),
+                                                        child: Text(
+                                                          context
+                                                              .l10n
+                                                              .commonSave,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
                                             )
                                           else
                                             Text(
@@ -1532,10 +1650,8 @@ class _HtmlHostArtifactsSheetState
     if (url.isEmpty || artifact.status != 'completed') return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => _HtmlHostPageViewer(
-          title: artifact.displayTitle,
-          url: url,
-        ),
+        builder: (context) =>
+            _HtmlHostPageViewer(title: artifact.displayTitle, url: url),
       ),
     );
   }
@@ -1592,7 +1708,9 @@ class _HtmlHostArtifactsSheetState
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      subtitle: Text(_statusLabel(artifact.status, context.l10n)),
+                      subtitle: Text(
+                        _statusLabel(artifact.status, context.l10n),
+                      ),
                       enabled:
                           artifact.status == 'completed' &&
                           artifact.publicUrl.trim().isNotEmpty,

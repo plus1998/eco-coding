@@ -8,16 +8,17 @@ import {
   isEcoAgentBrowserRuntimeServerName,
   requiresBrowserOpenApproval,
 } from "../shared/browser";
+import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
 import {
   type ComputerUseActionApprovalMode,
   isEcoComputerUseRuntimeServerName,
   requiresComputerUseActionApproval,
 } from "../shared/computer-use";
-import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
-import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_HTML_HOST_MCP_SERVER, ECO_HTML_HOST_TOOL } from "../shared/html-host-tool";
+import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_IMAGE_GENERATION_MCP_SERVER, ECO_IMAGE_GENERATION_TOOL } from "../shared/image-generation";
 import { ECO_IMAGE_VIEW_MCP_SERVER, ECO_IMAGE_VIEW_TOOL } from "../shared/image-view-tool";
+import { ECO_WEB_SEARCH_MCP_SERVER, type WebSearchApprovalMode } from "../shared/integrated-web-search";
 import type {
   BashApprovalRequest,
   ClarificationAnswers,
@@ -37,7 +38,6 @@ import {
   cancelClarificationsForThread,
   formatClarificationAnswersSummary,
   registerPendingClarification,
-  submitClarification,
 } from "./clarification-bridge";
 import { cancelPlanApprovalsForThread, registerPendingPlanApproval } from "./plan-approval-bridge";
 import { applyThreadPlanReadyEffects, type ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
@@ -46,9 +46,22 @@ export const CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL = "item/commandExecution/r
 export const CODEX_FILE_CHANGE_REQUEST_APPROVAL = "item/fileChange/requestApproval";
 export const CODEX_PERMISSIONS_REQUEST_APPROVAL = "item/permissions/requestApproval";
 export const CODEX_TOOL_REQUEST_USER_INPUT = "item/tool/requestUserInput";
-/** Codex 0.153+ non-blocking structured questions (model catalog may enable). */
-export const CODEX_TOOL_REQUEST_USER_INPUT_ASYNC = "item/tool/requestUserInputAsync";
 export const CODEX_MCP_SERVER_ELICITATION_REQUEST = "mcpServer/elicitation/request";
+
+type PendingMcpToolCall = {
+  codexThreadId: string;
+  itemId: string;
+  serverName: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+};
+
+/**
+ * Codex currently sends MCP tool approval as an elicitation whose payload can
+ * identify only the wrapper server. Keep the preceding item/started payload so
+ * the approval card can show the actual Hub target and arguments.
+ */
+const pendingMcpToolCalls = new Map<string, PendingMcpToolCall[]>();
 
 /**
  * Detect Codex / MCP “Allow the X MCP server to run tool "Y"?” tool-run confirmations.
@@ -100,6 +113,26 @@ export function shouldAutoAcceptEcoBrowserToolElicitation(input: {
   }
   // always_ask: still auto-accept non-navigation tools
   return !requiresBrowserOpenApproval(toolName);
+}
+
+/**
+ * Whether Eco should accept an eco_web_search tool-run elicitation without UI.
+ * - always_allow: all eco web-search tool-run confirms auto-accept
+ * - always_ask: never auto-accept (user confirms before each search)
+ */
+export function shouldAutoAcceptEcoWebSearchToolElicitation(input: {
+  serverName: string;
+  message: string;
+  approvalMode: WebSearchApprovalMode;
+}): boolean {
+  const server = input.serverName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-");
+  if (server !== ECO_WEB_SEARCH_MCP_SERVER) {
+    return false;
+  }
+  return input.approvalMode === "always_allow";
 }
 
 /**
@@ -161,14 +194,15 @@ export interface CodexApprovalBridgeDeps {
    */
   getComputerUseActionApprovalMode?: () => ComputerUseActionApprovalMode;
   /**
+   * Web search approval (settings). Used to auto-accept Codex MCP tool-run
+   * elicitations for eco_web_search when mode is always_allow.
+   */
+  getWebSearchApprovalMode?: () => WebSearchApprovalMode;
+  /**
    * Codex image MCP has no per-thread auth token. Register a claim when the
    * elicitation is accepted so create_image can bind to this Eco thread.
    */
-  noteUpcomingImageGenerationTool?: (
-    ecoThreadId: string,
-    toolName: string,
-    toolUseId?: string,
-  ) => void;
+  noteUpcomingImageGenerationTool?: (ecoThreadId: string, toolName: string, toolUseId?: string) => void;
   reviewApproval?: (
     ecoThreadId: string,
     request: BashApprovalRequest,
@@ -176,17 +210,6 @@ export interface CodexApprovalBridgeDeps {
   ) => Promise<{ action: "allow" | "human_required" | "deny"; rationale: string }>;
   /** Injects custom rejection feedback before the approval response resumes Codex. */
   injectCodexApprovalFeedback?: (input: {
-    ecoThreadId: string;
-    codexThreadId: string;
-    turnId: string;
-    toolUseId: string;
-    text: string;
-  }) => Promise<void>;
-  /**
-   * Deliver async clarification answers after the non-blocking request returned `accepted`.
-   * Prefer mid-turn steer / queue inject; do not block the original server request.
-   */
-  injectAsyncClarificationAnswers?: (input: {
     ecoThreadId: string;
     codexThreadId: string;
     turnId: string;
@@ -202,6 +225,7 @@ export interface CodexApprovalBridge {
 }
 
 export function createCodexApprovalBridge(deps: CodexApprovalBridgeDeps): CodexApprovalBridge {
+  pendingMcpToolCalls.clear();
   return {
     handleServerRequest: (method, params) => handleCodexServerRequest(deps, method, params),
     handleNotification: (method, params) => handleCodexApprovalNotification(deps, method, params),
@@ -223,8 +247,7 @@ export async function handleCodexServerRequest(
       return handlePermissionsRequestApproval(deps, requireRequestParams(method, params));
     case CODEX_TOOL_REQUEST_USER_INPUT:
     case LEGACY_TOOL_REQUEST_USER_INPUT:
-    case CODEX_TOOL_REQUEST_USER_INPUT_ASYNC:
-      return handleToolRequestUserInput(deps, method, requireRequestParams(method, params));
+      return handleToolRequestUserInput(deps, requireRequestParams(method, params));
     case CODEX_MCP_SERVER_ELICITATION_REQUEST:
       return handleMcpServerElicitationRequest(deps, requireRequestParams(method, params));
     default:
@@ -240,9 +263,17 @@ export function handleCodexApprovalNotification(
   method: string,
   params: unknown,
 ): void {
-  if (method !== "item/completed" || !isRecord(params)) {
+  if (!isRecord(params)) {
     return;
   }
+  if (method === "item/started") {
+    rememberPendingMcpToolCall(params);
+    return;
+  }
+  if (method !== "item/completed") {
+    return;
+  }
+  forgetPendingMcpToolCall(params);
   handlePlanItemCompleted(deps, params);
 }
 
@@ -500,11 +531,94 @@ async function handleMcpServerElicitationRequest(
     "threadId",
   );
   const ecoThreadId = deps.resolveEcoThreadId(codexThreadId);
-  const serverName = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "serverName");
+  const rawServerName = requireNonEmptyRequestString(
+    CODEX_MCP_SERVER_ELICITATION_REQUEST,
+    params,
+    "serverName",
+  );
   const mode = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "mode");
-  const message = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
+  const rawMessage = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
   validateNullableStringFields(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, ["turnId"]);
   const turnId = readString(params, "turnId");
+  const nestedHubCall = resolvePendingHubCall(codexThreadId, rawServerName);
+  const serverName = nestedHubCall?.serverName ?? rawServerName;
+  const message = nestedHubCall
+    ? buildMcpToolApprovalMessage(nestedHubCall.serverName, nestedHubCall.toolName, nestedHubCall.arguments)
+    : rawMessage;
+  const parsedToolName = mode === "form" ? parseMcpToolRunElicitationMessage(serverName, message) : undefined;
+  const approvalMode = deps.getApprovalMode?.(ecoThreadId) ?? "always";
+
+  // MCP tool-run confirmations are a separate Codex request category from
+  // command/file approvals. Route the global Eco approval modes through the
+  // same bridge before applying integration-specific policies below.
+  if (parsedToolName && (approvalMode === "allow_all" || approvalMode === "auto")) {
+    const toolName = parsedToolName;
+    const toolInput = nestedHubCall?.arguments ?? {};
+    const isImageGenerationTool =
+      serverName.trim().toLowerCase() === ECO_IMAGE_GENERATION_MCP_SERVER &&
+      toolName.endsWith(`__${ECO_IMAGE_GENERATION_TOOL}`);
+    const toolUseId = createMcpElicitationToolUseId(serverName);
+    const thread = deps.getThread(ecoThreadId);
+    if (!thread) {
+      return { action: "decline" };
+    }
+    let approvalRequest: BashApprovalRequest = {
+      toolUseId,
+      threadId: ecoThreadId,
+      command: toolName,
+      cwd: deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath,
+      reason: `Agent 请求调用 MCP 工具 ${serverName}/${toolName}。`,
+      riskScore: 60,
+      riskLevel: "medium",
+      agentId: deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`,
+      description: message.trim() || `调用 MCP 工具 ${serverName}/${toolName}`,
+      kind: "mcp",
+      filesystemTool: "MCP",
+      filesystemPath: `${serverName}/${toolName}`,
+    };
+
+    if (approvalMode === "allow_all") {
+      if (isImageGenerationTool) {
+        deps.noteUpcomingImageGenerationTool?.(ecoThreadId, ECO_IMAGE_GENERATION_TOOL, toolUseId);
+      }
+      return { action: "accept", content: {} };
+    }
+
+    const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
+      toolName,
+      toolInput,
+    });
+    if (automatic?.action === "allow") {
+      if (isImageGenerationTool) {
+        deps.noteUpcomingImageGenerationTool?.(ecoThreadId, ECO_IMAGE_GENERATION_TOOL, toolUseId);
+      }
+      emitAutomaticApproval(deps, { ...approvalRequest, reviewRationale: automatic.rationale }, toolName);
+      return { action: "accept", content: {} };
+    }
+    if (automatic?.action === "deny") {
+      emitAutomaticDenial(deps, approvalRequest, automatic.rationale);
+      return { action: "decline" };
+    }
+    if (automatic?.action === "human_required") {
+      approvalRequest = { ...approvalRequest, reviewRationale: automatic.rationale };
+    }
+
+    emitBashApprovalRequested(deps, approvalRequest, `MCP ${serverName}/${toolName}`);
+    const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+    if (resolution.feedback?.trim() && turnId && deps.injectCodexApprovalFeedback) {
+      await deps.injectCodexApprovalFeedback({
+        ecoThreadId,
+        codexThreadId,
+        turnId,
+        toolUseId,
+        text: ["MCP approval feedback:", resolution.feedback.trim()].join("\n"),
+      });
+    }
+    if (resolution.decision === "approved" || resolution.decision === "approved_for_session") {
+      return { action: "accept", content: {} };
+    }
+    return { action: "decline" };
+  }
 
   const openApprovalMode = deps.getBrowserOpenApprovalMode?.() ?? "always_allow";
   const autoAccept = shouldAutoAcceptEcoBrowserToolElicitation({
@@ -523,6 +637,16 @@ async function handleMcpServerElicitationRequest(
     actionApprovalMode: computerUseActionMode,
   });
   if (autoAcceptComputerUse && mode === "form") {
+    return { action: "accept", content: {} };
+  }
+
+  const webSearchApprovalMode = deps.getWebSearchApprovalMode?.() ?? "always_allow";
+  const autoAcceptWebSearch = shouldAutoAcceptEcoWebSearchToolElicitation({
+    serverName,
+    message,
+    approvalMode: webSearchApprovalMode,
+  });
+  if (autoAcceptWebSearch && mode === "form") {
     return { action: "accept", content: {} };
   }
 
@@ -548,6 +672,55 @@ async function handleMcpServerElicitationRequest(
     parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(`__${ECO_HTML_HOST_TOOL}`)
   ) {
     return { action: "accept", content: {} };
+  }
+
+  // Generic external MCP tool-run confirmations still use Eco's approval
+  // surface in the normal interactive mode. Built-in integrations above keep
+  // their dedicated approval settings and clarification UX.
+  const normalizedServerName = serverName.trim().toLowerCase();
+  const isDedicatedEcoServer =
+    isEcoAgentBrowserRuntimeServerName(normalizedServerName) ||
+    isEcoComputerUseRuntimeServerName(normalizedServerName) ||
+    normalizedServerName === ECO_WEB_SEARCH_MCP_SERVER ||
+    normalizedServerName === ECO_IMAGE_VIEW_MCP_SERVER ||
+    normalizedServerName === ECO_IMAGE_DISPLAY_MCP_SERVER ||
+    normalizedServerName === ECO_HTML_HOST_MCP_SERVER ||
+    normalizedServerName === ECO_IMAGE_GENERATION_MCP_SERVER;
+  if (parsedToolName && !isDedicatedEcoServer) {
+    const thread = deps.getThread(ecoThreadId);
+    if (!thread) {
+      return { action: "decline" };
+    }
+    const toolUseId = createMcpElicitationToolUseId(serverName);
+    const approvalRequest: BashApprovalRequest = {
+      toolUseId,
+      threadId: ecoThreadId,
+      command: parsedToolName,
+      cwd: deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath,
+      reason: `Agent 请求调用 MCP 工具 ${serverName}/${parsedToolName}。`,
+      riskScore: 60,
+      riskLevel: "medium",
+      agentId: deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`,
+      description: message.trim() || `调用 MCP 工具 ${serverName}/${parsedToolName}`,
+      kind: "mcp",
+      filesystemTool: "MCP",
+      filesystemPath: `${serverName}/${parsedToolName}`,
+    };
+    emitBashApprovalRequested(deps, approvalRequest, `MCP ${serverName}/${parsedToolName}`);
+    const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+    if (resolution.feedback?.trim() && turnId && deps.injectCodexApprovalFeedback) {
+      await deps.injectCodexApprovalFeedback({
+        ecoThreadId,
+        codexThreadId,
+        turnId,
+        toolUseId,
+        text: ["MCP approval feedback:", resolution.feedback.trim()].join("\n"),
+      });
+    }
+    if (resolution.decision === "approved" || resolution.decision === "approved_for_session") {
+      return { action: "accept", content: {} };
+    }
+    return { action: "decline" };
   }
 
   if (
@@ -687,34 +860,37 @@ async function handleMcpServerElicitationRequest(
   }
 }
 
+/**
+ * Answer a blocking `item/tool/requestUserInput` server request.
+ *
+ * This is the only question path that is a JSON-RPC server request: app-server awaits
+ * the response and the model call cannot finish without it. Non-blocking questions in
+ * Codex 0.160 arrive as `agentMessage` items with `delivery: "async"` instead — there
+ * is no `requestUserInputAsync` method, and no answer is ever fabricated on a timer.
+ *
+ * `isBlocking` is a hint about whether the question holds the turn (upstream sends
+ * `mode == Plan`), not about whether this RPC must be answered — it always must.
+ */
 async function handleToolRequestUserInput(
   deps: CodexApprovalBridgeDeps,
-  method: string,
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  const asyncDelivery =
-    method === CODEX_TOOL_REQUEST_USER_INPUT_ASYNC ||
-    params.async === true ||
-    params.delivery === "async" ||
-    params.mode === "async";
   const codexThreadId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "threadId");
-  const turnId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "turnId");
+  requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "turnId");
   const itemId = requireNonEmptyRequestString(CODEX_TOOL_REQUEST_USER_INPUT, params, "itemId");
   const ecoThreadId = deps.resolveEcoThreadId(codexThreadId);
   const rawQuestions = validateToolRequestUserInputQuestions(params.questions);
-  const autoResolutionMs = validateAutoResolutionMs(params.autoResolutionMs);
+  const isBlocking = validateIsBlocking(params.isBlocking);
 
   const mappedClarification = mapCodexToolQuestionsToClarification(ecoThreadId, itemId, rawQuestions);
   const clarificationRequest = {
     ...mappedClarification.request,
-    delivery: asyncDelivery ? ("async" as const) : ("sync" as const),
+    delivery: "sync" as const,
   };
   deps.emitThreadLive({
     threadId: ecoThreadId,
     type: "clarification.requested",
-    message: asyncDelivery
-      ? "Codex 需要你回答几个问题（异步，任务可继续）。"
-      : "Planner 需要你回答几个问题。",
+    message: isBlocking ? "Planner 需要你回答几个问题。" : "Codex 需要你回答几个问题（任务可继续）。",
     role: "planner",
     clarification: clarificationRequest,
     tool: buildClarificationToolMetadata(itemId, "started"),
@@ -724,82 +900,23 @@ async function handleToolRequestUserInput(
     message: "",
   });
 
-  const pendingAnswers = registerPendingClarification(ecoThreadId, itemId, {
+  const answers = await registerPendingClarification(ecoThreadId, itemId, {
     questions: mappedClarification.request.questions,
-    delivery: clarificationRequest.delivery,
+    delivery: "sync",
+    blocking: isBlocking,
   });
-  let autoResolutionTimer: ReturnType<typeof setTimeout> | undefined;
-  if (autoResolutionMs !== undefined) {
-    autoResolutionTimer = setTimeout(() => {
-      submitClarification(itemId, {
-        toolUseId: itemId,
-        selections: mappedClarification.request.questions.map(() => [IGNORED_CLARIFICATION_ANSWER]),
-      });
-    }, autoResolutionMs);
-  }
-
-  const finishAnswers = async (answers: ClarificationAnswers) => {
-    deps.updateThreadStatus(ecoThreadId, {
-      status: "running",
-      message: "",
-    });
-    deps.emitThreadLive({
-      threadId: ecoThreadId,
-      type: "clarification.answered",
-      message: formatClarificationAnswersSummary(mappedClarification.request, answers),
-      role: "planner",
-      tool: buildClarificationToolMetadata(itemId, "completed"),
-    });
-    return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
-  };
-
-  if (asyncDelivery) {
-    void pendingAnswers
-      .finally(() => {
-        if (autoResolutionTimer !== undefined) {
-          clearTimeout(autoResolutionTimer);
-        }
-      })
-      .then(async (answers) => {
-        const mapped = await finishAnswers(answers);
-        const summary = formatClarificationAnswersSummary(mappedClarification.request, answers);
-        const inject = deps.injectAsyncClarificationAnswers ?? deps.injectCodexApprovalFeedback;
-        if (!inject) {
-          throw new Error(
-            "Codex async clarification answers cannot be delivered: no injectAsyncClarificationAnswers handler.",
-          );
-        }
-        await inject({
-          ecoThreadId,
-          codexThreadId,
-          turnId,
-          toolUseId: itemId,
-          text: [
-            "Async clarification answers (user responded after request_user_input_async accepted):",
-            summary,
-            "",
-            `Structured answers JSON: ${JSON.stringify(mapped)}`,
-          ].join("\n"),
-        });
-      })
-      .catch((error) => {
-        deps.emitThreadLive({
-          threadId: ecoThreadId,
-          type: "clarification.failed",
-          message: error instanceof Error ? error.message : String(error),
-          role: "system",
-          tool: buildClarificationToolMetadata(itemId, "failed"),
-        });
-      });
-    return { accepted: true };
-  }
-
-  const answers = await pendingAnswers.finally(() => {
-    if (autoResolutionTimer !== undefined) {
-      clearTimeout(autoResolutionTimer);
-    }
+  deps.updateThreadStatus(ecoThreadId, {
+    status: "running",
+    message: "",
   });
-  return finishAnswers(answers);
+  deps.emitThreadLive({
+    threadId: ecoThreadId,
+    type: "clarification.answered",
+    message: formatClarificationAnswersSummary(mappedClarification.request, answers),
+    role: "planner",
+    tool: buildClarificationToolMetadata(itemId, "completed"),
+  });
+  return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
 }
 
 function handlePlanItemCompleted(deps: CodexApprovalBridgeDeps, params: Record<string, unknown>): void {
@@ -1034,15 +1151,17 @@ function validateOptionalStringArray(method: string, value: unknown, key: string
   }
 }
 
-function validateAutoResolutionMs(value: unknown): number | undefined {
+/**
+ * `isBlocking` gates whether the question holds the run. app-server always sends it,
+ * and deserializes a missing value as `true` (`ToolRequestUserInputParams::deserialize`),
+ * so an absent field must not be read as "non-blocking".
+ */
+function validateIsBlocking(value: unknown): boolean {
   if (value === undefined || value === null) {
-    return undefined;
+    return true;
   }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw invalidServerRequestParams(
-      CODEX_TOOL_REQUEST_USER_INPUT,
-      "autoResolutionMs must be a non-negative integer or null.",
-    );
+  if (typeof value !== "boolean") {
+    throw invalidServerRequestParams(CODEX_TOOL_REQUEST_USER_INPUT, "isBlocking must be a boolean.");
   }
   return value;
 }
@@ -1089,14 +1208,17 @@ function validateToolRequestUserInputQuestions(value: unknown): Record<string, u
         `questions[${index}] requests secret input, which Eco cannot present without exposing it.`,
       );
     }
-    if (!Array.isArray(question.options) || question.options.length === 0) {
+    // `options` is nullable in 0.160.1 (`Array<ToolRequestUserInputOption> | null`) and
+    // may legitimately be empty: the question then only accepts free text, which Eco's
+    // clarification panel already offers through its custom-answer row.
+    if (question.options !== undefined && question.options !== null && !Array.isArray(question.options)) {
       throw invalidServerRequestParams(
         CODEX_TOOL_REQUEST_USER_INPUT,
-        `questions[${index}].options must be a non-empty array.`,
+        `questions[${index}].options must be an array or null.`,
       );
     }
     const optionLabels = new Set<string>();
-    for (const [optionIndex, option] of question.options.entries()) {
+    for (const [optionIndex, option] of (question.options ?? []).entries()) {
       if (
         !isRecord(option) ||
         typeof option.label !== "string" ||
@@ -2275,7 +2397,8 @@ function mapCodexToolQuestionsToClarification(
     }
     const question = entry.question as string;
     const header = entry.header as string;
-    const options = (entry.options as Record<string, unknown>[]).map((option) => {
+    // 0.160.1 serializes `options` as `Array<...> | null`; null means free text only.
+    const options = ((entry.options as Record<string, unknown>[] | null | undefined) ?? []).map((option) => {
       const label = option.label as string;
       const description = option.description as string;
       return description ? { label, description } : { label };
@@ -2325,6 +2448,101 @@ function mapClarificationAnswersToCodexToolResponse(
   }
 
   return { answers: Object.fromEntries(answerEntries) };
+}
+
+function rememberPendingMcpToolCall(params: Record<string, unknown>): void {
+  const codexThreadId = readString(params, "threadId");
+  const item = isRecord(params.item) ? params.item : undefined;
+  if (!codexThreadId || !item || readString(item, "type") !== "mcpToolCall") {
+    return;
+  }
+  const itemId = readString(item, "id");
+  const serverName = readString(item, "server");
+  const toolName = readString(item, "tool");
+  const argumentsValue = readMcpArguments(item);
+  if (!itemId || !serverName || !toolName || !argumentsValue) {
+    return;
+  }
+  const existing = pendingMcpToolCalls.get(codexThreadId) ?? [];
+  const next = existing.filter((call) => call.itemId !== itemId);
+  next.push({ codexThreadId, itemId, serverName, toolName, arguments: argumentsValue });
+  // A malformed/abandoned turn must not grow this process-global cache forever.
+  pendingMcpToolCalls.set(codexThreadId, next.slice(-32));
+}
+
+function forgetPendingMcpToolCall(params: Record<string, unknown>): void {
+  const codexThreadId = readString(params, "threadId");
+  const item = isRecord(params.item) ? params.item : undefined;
+  const itemId = item ? readString(item, "id") : undefined;
+  if (!codexThreadId || !itemId) {
+    return;
+  }
+  const next = (pendingMcpToolCalls.get(codexThreadId) ?? []).filter((call) => call.itemId !== itemId);
+  if (next.length > 0) pendingMcpToolCalls.set(codexThreadId, next);
+  else pendingMcpToolCalls.delete(codexThreadId);
+}
+
+function resolvePendingHubCall(
+  codexThreadId: string,
+  wrapperServerName: string,
+): { itemId: string; serverName: string; toolName: string; arguments: Record<string, unknown> } | undefined {
+  if (!wrapperServerName.trim().toLowerCase().startsWith("eco_mcp")) {
+    return undefined;
+  }
+  const calls = pendingMcpToolCalls.get(codexThreadId) ?? [];
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index];
+    if (!call || call.serverName.trim().toLowerCase() !== wrapperServerName.trim().toLowerCase()) {
+      continue;
+    }
+    if (call.toolName.trim().toLowerCase() !== "call_tool") {
+      continue;
+    }
+    const nestedName = readString(call.arguments, "name");
+    const separator = nestedName?.indexOf(":") ?? -1;
+    if (!nestedName || separator <= 0 || separator === nestedName.length - 1) {
+      return undefined;
+    }
+    const nestedArguments = isRecord(call.arguments.arguments) ? call.arguments.arguments : {};
+    return {
+      itemId: call.itemId,
+      serverName: nestedName.slice(0, separator),
+      toolName: nestedName.slice(separator + 1),
+      arguments: nestedArguments,
+    };
+  }
+  return undefined;
+}
+
+function buildMcpToolApprovalMessage(
+  serverName: string,
+  toolName: string,
+  argumentsValue: Record<string, unknown>,
+): string {
+  let encoded = "{}";
+  try {
+    encoded = JSON.stringify(argumentsValue);
+  } catch {
+    encoded = "[unserializable arguments]";
+  }
+  if (encoded.length > 4000) encoded = `${encoded.slice(0, 3997)}...`;
+  return `Allow the ${serverName} MCP server to run tool "${toolName}" with arguments ${encoded}?`;
+}
+
+function readMcpArguments(item: Record<string, unknown>): Record<string, unknown> | undefined {
+  for (const key of ["arguments", "args", "input", "params", "toolInput", "tool_input"] as const) {
+    const value = item[key];
+    if (isRecord(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (isRecord(parsed)) return parsed;
+      } catch {
+        // Ignore non-JSON diagnostics fields.
+      }
+    }
+  }
+  return undefined;
 }
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {

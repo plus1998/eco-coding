@@ -23,6 +23,7 @@ test("mainstream provider presets are sorted alphabetically by display name", ()
   expect(MAINSTREAM_PROVIDER_PRESETS.map((preset) => preset.id)).toEqual([
     "anthropic",
     "bailian",
+    "chatgpt-subscription",
     "deepseek",
     "kimi",
     "minimax",
@@ -39,7 +40,7 @@ test("default new provider preset stays OpenAI even when presets are sorted", ()
 });
 
 test("mainstream provider presets are valid service roots", () => {
-  expect(MAINSTREAM_PROVIDER_PRESETS).toHaveLength(9);
+  expect(MAINSTREAM_PROVIDER_PRESETS).toHaveLength(10);
 
   const ids = new Set<string>();
   for (const preset of MAINSTREAM_PROVIDER_PRESETS) {

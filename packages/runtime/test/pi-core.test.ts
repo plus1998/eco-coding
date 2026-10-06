@@ -194,10 +194,7 @@ test("PI thinking close keeps the same reasoningDisplay as the open stream", () 
 });
 
 test("mapPiSessionEvent surfaces PI compaction lifecycle", () => {
-  const start = mapPiSessionEventToAgentEvents(
-    { type: "compaction_start", reason: "threshold" },
-    makeCtx(),
-  );
+  const start = mapPiSessionEventToAgentEvents({ type: "compaction_start", reason: "threshold" }, makeCtx());
   expect(start).toHaveLength(1);
   expect(start[0]?.type).toBe("context.compaction.started");
   expect(start[0]?.payload).toEqual({ source: "pi", sessionId: "sess_1", reason: "threshold" });
@@ -273,6 +270,79 @@ test("mapPiSessionEvent emits tool_result_error for failed PI tools", () => {
       message: "Found 2 occurrences of the text",
     },
   });
+});
+
+test("mapPiSessionEvent keeps PI's structuredContent on a successful tool result", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents(
+    { type: "tool_execution_start", toolCallId: "tc_bash", toolName: "bash", args: { command: "ls" } },
+    ctx,
+  );
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "tc_bash",
+      toolName: "bash",
+      result: {
+        content: [{ type: "text", text: "a.txt" }],
+        details: {},
+        structuredContent: { output: "a.txt", truncated: false, exit_code: 0 },
+      },
+      isError: false,
+    },
+    ctx,
+  );
+  expect(end[0]?.payload).toMatchObject({
+    type: "tool_result",
+    content: "a.txt",
+    structuredContent: { output: "a.txt", truncated: false, exit_code: 0 },
+  });
+});
+
+test("mapPiSessionEvent links a nested tool call to its parent instead of the subagent key", () => {
+  const ctx = makeCtx();
+  const start = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "code_1/1",
+      toolName: "read",
+      args: { path: "a.txt" },
+      parentToolCallId: "code_1",
+    },
+    ctx,
+  );
+  expect(start[0]?.payload).toMatchObject({
+    type: "tool_use",
+    tool_use_id: "code_1/1",
+    parent_tool_call_id: "code_1",
+  });
+  expect(start[0]?.payload).not.toHaveProperty("parent_tool_use_id");
+
+  // A tool end without the field still finds the link captured at start.
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "code_1/1",
+      toolName: "read",
+      result: { content: [{ type: "text", text: "body" }] },
+      isError: false,
+    },
+    ctx,
+  );
+  expect(end[0]?.payload).toMatchObject({
+    type: "tool_result",
+    tool_use_id: "code_1/1",
+    parent_tool_call_id: "code_1",
+  });
+});
+
+test("mapPiSessionEvent leaves a top-level tool call without a parent link", () => {
+  const ctx = makeCtx();
+  const start = mapPiSessionEventToAgentEvents(
+    { type: "tool_execution_start", toolCallId: "tc_top", toolName: "bash", args: { command: "ls" } },
+    ctx,
+  );
+  expect(start[0]?.payload).not.toHaveProperty("parent_tool_call_id");
 });
 
 test("mapPiSessionEvent emits usage.recorded from message_end", () => {

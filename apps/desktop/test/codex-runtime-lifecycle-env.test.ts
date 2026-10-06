@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { buildCodexAppServerEnv } from "../src/main/codex-runtime-lifecycle";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import {
+  buildCodexAppServerEnv,
+  CodexRuntimeLifecycle,
+  setCodexAccountProxyUrlGetter,
+} from "../src/main/codex-runtime-lifecycle";
 
 describe("Codex app-server environment", () => {
   test("bypasses proxies for the local Eco gateway", () => {
@@ -28,5 +35,19 @@ describe("Codex app-server environment", () => {
 
     expect(env.NO_PROXY).toBe("internal.example.test,LOCALHOST,metadata.google.internal,127.0.0.1,::1");
     expect(env.no_proxy).toBe(env.NO_PROXY);
+  });
+
+  test("fails closed when the configured account proxy is invalid", async () => {
+    const ecoDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-proxy-"));
+    setCodexAccountProxyUrlGetter(() => "ftp://user:secret@proxy.example.test:21");
+    try {
+      const lifecycle = new CodexRuntimeLifecycle({ ecoDataDir, codexExecutable: "unused" });
+      await expect(lifecycle.start()).rejects.toThrow(
+        "Configured OpenAI account proxy could not be initialized",
+      );
+    } finally {
+      setCodexAccountProxyUrlGetter(undefined);
+      await fs.rm(ecoDataDir, { recursive: true, force: true });
+    }
   });
 });

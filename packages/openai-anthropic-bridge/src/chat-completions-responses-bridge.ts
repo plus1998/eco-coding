@@ -13,10 +13,7 @@ import {
   lookupChatName,
 } from "./codex-tool-context.js";
 import { bytesTrimSpace, jsonMarshal, jsonParse } from "./json.js";
-import {
-  classifyChatMessageReasoning,
-  classifiedToResponsesReasoningFields,
-} from "./reasoning-classify.js";
+import { classifyChatMessageReasoning, classifiedToResponsesReasoningFields } from "./reasoning-classify.js";
 import type {
   ChatCompletionsChunk,
   ChatCompletionsRequest,
@@ -103,9 +100,13 @@ export function responsesToChatCompletionsRequest(
   }
   if (toolContext.chatTools.length > 0) {
     out.tools = toolContext.chatTools;
-  }
-  if (req.tool_choice !== undefined && req.tool_choice !== null) {
-    out.tool_choice = responsesToolChoiceToChatToolChoice(req.tool_choice);
+    // OpenAI-compatible Chat Completions servers require `tools` whenever
+    // `tool_choice` is present. Responses requests can carry `tool_choice: auto`
+    // while their tool list is empty (for example after MCP tools are unloaded),
+    // so only forward the choice when there is a tool list to choose from.
+    if (req.tool_choice !== undefined && req.tool_choice !== null) {
+      out.tool_choice = responsesToolChoiceToChatToolChoice(req.tool_choice);
+    }
   }
 
   return out;
@@ -257,7 +258,7 @@ function buildChatMessagesFromItems(
         messages.push({
           role: "tool",
           tool_call_id: rawString(item.call_id),
-          content: responsesFunctionCallOutputToChatContent(item.output),
+          content: flattenChatToolContent(responsesFunctionCallOutputToChatContent(item.output)),
         });
         pendingReasoning = "";
         pendingReasoningItem = undefined;
@@ -348,7 +349,11 @@ function appendAssistantToolCall(
 function responsesInputReasoningItemToChat(item: Record<string, string>): ChatReasoningItem | undefined {
   const summary: ResponsesSummary[] = [];
   const content: ResponsesContentPart[] = [];
-  const collectParts = (raw: string | undefined, into: Array<{ type: string; text: string }>, defaultType: string) => {
+  const collectParts = (
+    raw: string | undefined,
+    into: Array<{ type: string; text?: string | undefined }>,
+    defaultType: string,
+  ) => {
     const summaryRaw = bytesTrimSpace(raw ?? "");
     if (summaryRaw === "" || summaryRaw === "null") {
       return;
@@ -413,6 +418,53 @@ function responsesFunctionCallOutputToChatContent(raw: string | undefined): unkn
     /* rawString below handles JSON string literals */
   }
   return rawString(raw);
+}
+
+/**
+ * Chat Completions `role: "tool"` messages must contain string content;
+ * upstreams reject part arrays with 400 "tool messages must contain string
+ * content". Responses `function_call_output` items may carry content part
+ * arrays — pi sends text + input_image parts when a tool result includes
+ * images — so flatten them: keep text and describe images with a compact
+ * placeholder. Images cannot travel inside a chat tool message, and
+ * text-only chat upstreams may reject image parts even in user messages.
+ */
+function flattenChatToolContent(content: unknown): unknown {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  const lines: string[] = [];
+  for (const part of content) {
+    if (part === null || typeof part !== "object") {
+      continue;
+    }
+    const record = part as Partial<ChatContentPart>;
+    if (record.type === "text" && typeof record.text === "string" && record.text !== "") {
+      lines.push(record.text);
+      continue;
+    }
+    if (record.type === "image_url") {
+      lines.push(imageToolPlaceholder(record.image_url?.url));
+    }
+  }
+  if (lines.length === 0) {
+    return "";
+  }
+  return lines.join("\n");
+}
+
+function imageToolPlaceholder(url: string | undefined): string {
+  const trimmed = bytesTrimSpace(url ?? "");
+  if (trimmed === "") {
+    return "[image]";
+  }
+  if (trimmed.startsWith("data:")) {
+    const headerEnd = trimmed.indexOf(",");
+    const header = trimmed.slice("data:".length, headerEnd === -1 ? undefined : headerEnd);
+    const mime = header.split(";")[0]?.trim() ?? "";
+    return mime === "" ? "[image]" : `[image: ${mime}]`;
+  }
+  return `[image: ${trimmed}]`;
 }
 
 /** Preserve parsed JSON value types when re-encoding fields as raw JSON. */
@@ -885,19 +937,13 @@ function chatMessageToResponsesOutput(
   const outputs: ResponsesOutput[] = [];
   const classified = classifyChatMessageReasoning(message);
   const fields = classifiedToResponsesReasoningFields(classified);
-  if (
-    fields.summary.length > 0 ||
-    fields.content.length > 0 ||
-    fields.encrypted_content !== undefined
-  ) {
+  if (fields.summary.length > 0 || fields.content.length > 0 || fields.encrypted_content !== undefined) {
     outputs.push({
       type: "reasoning",
       id: message.reasoning_items?.[0]?.id ?? generateItemId(),
       summary: fields.summary,
       ...(fields.content.length > 0 ? { content: fields.content } : {}),
-      ...(fields.encrypted_content !== undefined
-        ? { encrypted_content: fields.encrypted_content }
-        : {}),
+      ...(fields.encrypted_content !== undefined ? { encrypted_content: fields.encrypted_content } : {}),
     });
   }
 
@@ -934,7 +980,7 @@ function chatToolCallToResponsesOutput(
   const spec = lookupChatName(toolContext, chatName);
   const common = {
     id,
-    call_id: toolCall.id ?? "",
+    call_id: ensureChatToolCallId(toolCall),
     status: "completed",
   };
   if (spec?.kind === "custom") {
@@ -960,6 +1006,20 @@ function chatToolCallToResponsesOutput(
     ...(spec?.namespace ? { namespace: spec.namespace } : {}),
     arguments: arguments_,
   };
+}
+
+function isUsableChatToolCallId(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function ensureChatToolCallId(toolCall: ChatToolCall): string {
+  const callId = toolCall.id;
+  if (isUsableChatToolCallId(callId)) {
+    return callId;
+  }
+  const generated = generateItemId();
+  toolCall.id = generated;
+  return generated;
 }
 
 function emptyResponsesMessageOutput(): ResponsesOutput {
@@ -1188,7 +1248,7 @@ export function chatCompletionsChunkToResponsesEvents(
         events.push(...closeChatReasoningItem(state));
         const copyCall: ChatToolCall = {
           ...toolCall,
-          id: toolCall.id !== undefined && toolCall.id !== "" ? toolCall.id : generateItemId(),
+          id: isUsableChatToolCallId(toolCall.id) ? toolCall.id : generateItemId(),
           type: "function",
           function: {
             name: toolCall.function.name ?? "",
@@ -1210,7 +1270,7 @@ export function chatCompletionsChunkToResponsesEvents(
           }),
         );
       } else {
-        if (toolCall.id !== undefined && toolCall.id !== "") {
+        if (isUsableChatToolCallId(toolCall.id)) {
           stored.id = toolCall.id;
         }
         // Argument-only deltas often omit `function.name` (null/undefined). Do not
@@ -1235,7 +1295,7 @@ export function chatCompletionsChunkToResponsesEvents(
               output_index: outputIndex,
               item_id: state.toolItemIds.get(idx) ?? "",
               delta: argsDelta,
-              call_id: stored.id ?? "",
+              call_id: ensureChatToolCallId(stored),
               name: toolName,
             }),
           );
@@ -1471,6 +1531,7 @@ function closeChatToolItems(state: ChatCompletionsToResponsesStreamState): Respo
     if (itemID === undefined) {
       continue;
     }
+    const callId = ensureChatToolCallId(toolCall);
     let arguments_ = toolCall.function.arguments ?? "";
     const toolName = toolCall.function.name ?? "";
     const isCustom = isCustomToolChatName(state.toolContext, toolName);
@@ -1485,7 +1546,7 @@ function closeChatToolItems(state: ChatCompletionsToResponsesStreamState): Respo
         chatToResponsesEvent(state, "response.custom_tool_call_input.done", {
           output_index: outputIndex,
           item_id: itemID,
-          call_id: toolCall.id ?? "",
+          call_id: callId,
           name: toolName,
           input,
         }),
@@ -1499,7 +1560,7 @@ function closeChatToolItems(state: ChatCompletionsToResponsesStreamState): Respo
         chatToResponsesEvent(state, "response.function_call_arguments.done", {
           output_index: outputIndex,
           item_id: itemID,
-          call_id: toolCall.id ?? "",
+          call_id: callId,
           name: toolName,
           arguments: arguments_,
         }),

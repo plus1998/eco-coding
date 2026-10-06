@@ -1,4 +1,4 @@
-import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
+import { ecoAgentBrowserToolSuffix, hasNamedAgentBrowserLabel, isEcoAgentBrowserToolName } from "./browser";
 import { isEcoComputerUseToolName } from "./computer-use";
 import { isEcoHtmlHostToolName } from "./html-host-tool";
 import { isEcoImageDisplayToolName } from "./image-display-tool";
@@ -99,7 +99,8 @@ const ALIASES: Record<string, ActionKind> = {
   powershell: "command",
   agent: "agent",
   task: "agent",
-  tasklist: "agent",
+  tasklist: "tool",
+  taskget: "tool",
   taskoutput: "agent",
   taskcreate: "taskCreate",
   taskupdate: "taskUpdate",
@@ -430,7 +431,11 @@ export function formatActionLine(
       });
     }
     if (resolved.namedSuffix) {
-      return t(`activity.named.${resolved.namedSuffix}`);
+      // Only the tool names the catalogs know get their own label; an unlisted one
+      // (a new browser tool, for example) must not render the raw i18n key.
+      return hasNamedAgentBrowserLabel(resolved.namedSuffix)
+        ? t(`activity.named.${resolved.namedSuffix}`)
+        : t("activity.named.browser");
     }
     return t("activity.done.tool.fallback");
   }

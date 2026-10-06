@@ -87,6 +87,7 @@ export function ComposerThreadUsagePills({
         showContext={showContext}
         {...(hostUiFeatures !== undefined && { hostUiFeatures })}
         {...(billing !== undefined && { billing })}
+        {...(usageSummary?.ledgerEvents && { ledgerEvents: usageSummary.ledgerEvents })}
         {...(threadStatus !== undefined && { threadStatus })}
         tokenBadge={tokenBadge}
         plannerLabel={plannerLabel}

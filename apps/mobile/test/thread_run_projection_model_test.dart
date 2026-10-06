@@ -1,4 +1,4 @@
-import 'package:eco_mobile/core/models/thread_run_projection.dart';
+import 'package:eco_mobile/core/models/conversation_v2_projection_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -109,7 +109,7 @@ void main() {
     // Characterization of the cross-repo contract: `historyRevision` changes
     // mean "rewrite / compaction — trust me wholesale". The desktop live wire
     // therefore has to send the complete skeleton whenever it bumps the
-    // revision (see apps/desktop/src/main/thread-run-projection-feed.ts and
+    // revision (see apps/desktop/src/main/legacy-feed-replay-projection.ts and
     // mobile-remote-event-publisher.ts); a delta here silently drops history.
     final current = _projection(
       historyRevision: 1,

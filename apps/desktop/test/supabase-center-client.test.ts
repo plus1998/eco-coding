@@ -35,6 +35,37 @@ function testAccessJwt(sub = USER_ID, expiresInSeconds = 3600, tokenId = "initia
 const ACCESS_JWT = testAccessJwt();
 const REFRESHED_ACCESS_JWT = testAccessJwt(USER_ID, 7200, "refreshed");
 
+test("supabase center client reports HTML hosting availability transitions once", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+  });
+  let available = true;
+  const transitions: boolean[] = [];
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: (async () =>
+      available
+        ? new Response("<!doctype html>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          })
+        : new Response("missing", { status: 404 })) as typeof fetch,
+    now: fixedNow,
+    onHtmlHostingCapabilityChange: (capability) => transitions.push(capability.available),
+  });
+
+  await client.refreshHtmlHostingCapability({ force: true });
+  await client.refreshHtmlHostingCapability({ force: true });
+  available = false;
+  await client.refreshHtmlHostingCapability({ force: true });
+
+  expect(transitions).toEqual([true, false]);
+  client.dispose();
+});
+
 test("supabase center client signs in, registers device, and marks connected", async () => {
   const store = createFakeStore();
   const fetchCalls: string[] = [];

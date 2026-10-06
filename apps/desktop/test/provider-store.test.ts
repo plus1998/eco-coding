@@ -59,6 +59,50 @@ test.skipIf(!sqliteAvailable)("fresh provider store does not auto-seed providers
   expect(settings.routeProfiles).toHaveLength(0);
 });
 
+test.skipIf(!sqliteAvailable)("provider lookup and partial saves preserve subscription authentication", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-subscription-auth-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+  const input = {
+    id: "eco-coding-chatgpt",
+    name: "ChatGPT OAuth",
+    baseUrl: "https://api.openai.com",
+    apiCompat: "openai_responses" as const,
+    tokenCountMode: "openai_responses" as const,
+    authMethod: "chatgpt_subscription" as const,
+    credentialPoolId: "chatgpt-default",
+    apiKey: "",
+    defaultModel: "gpt-6-astra",
+    enabled: true,
+  };
+  const saved = store.saveProvider(input);
+  expect(saved.authMethod).toBe(input.authMethod);
+  expect(saved.credentialPoolId).toBe(input.credentialPoolId);
+
+  // Settings reads must see the same authentication as the provider list;
+  // otherwise the built-in provider migration emits settings.updated on every read.
+  for (let read = 0; read < 3; read += 1) {
+    expect(store.getProviderWithSecret(input.id)).toEqual({
+      ...store.listProviders()[0],
+      apiKey: "",
+    });
+    expect(store.getProviderWithSecret(input.id)?.updatedAt).toBe(saved.updatedAt);
+  }
+
+  // An edit that omits auth fields must retain the existing subscription binding.
+  const edited = store.saveProvider({
+    id: input.id,
+    name: input.name,
+    baseUrl: input.baseUrl,
+    apiKey: "",
+    defaultModel: input.defaultModel,
+    enabled: true,
+  });
+  expect(edited.authMethod).toBe(input.authMethod);
+  expect(edited.credentialPoolId).toBe(input.credentialPoolId);
+  expect(store.listProviders()[0]?.authMethod).toBe(input.authMethod);
+  expect(store.listProviders()[0]?.credentialPoolId).toBe(input.credentialPoolId);
+});
+
 test.skipIf(!sqliteAvailable)("route profiles have no active flag semantics", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-profiles-"));
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
@@ -194,6 +238,44 @@ test.skipIf(!sqliteAvailable)("candidate model manual pricing preserves zero val
   expect(store.listCandidateModels(provider.id)[0]?.manualSpec).toEqual(saved.manualSpec);
 });
 
+test.skipIf(!sqliteAvailable)("upstream model sync adds candidates without overwriting manual metadata", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-candidate-sync-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+  const provider = store.saveProvider({
+    id: "eco-coding-chatgpt",
+    name: "ChatGPT OAuth",
+    baseUrl: "https://api.openai.com",
+    apiKey: "",
+    authMethod: "chatgpt_subscription",
+    defaultModel: "gpt-5",
+    enabled: true,
+  });
+
+  const first = store.syncCandidateModels(provider.id, [
+    { id: "gpt-5.6-luna", displayName: "GPT-5.6 Luna" },
+  ]);
+  expect(first.changed).toBe(true);
+  expect(first.models[0]?.displayName).toBe("GPT-5.6 Luna");
+
+  store.saveCandidateModel({
+    id: first.models[0]!.id,
+    providerId: provider.id,
+    modelId: "gpt-5.6-luna",
+    displayName: "我的模型",
+    manualSpec: { contextTokens: 12345 },
+  });
+  const second = store.syncCandidateModels(provider.id, [
+    { id: "gpt-5.6-luna", displayName: "官方名称" },
+    { id: "gpt-5.6-mini", displayName: "GPT-5.6 Mini" },
+  ]);
+  expect(second.changed).toBe(true);
+  expect(second.models).toHaveLength(2);
+  expect(second.models.find((model) => model.modelId === "gpt-5.6-luna")).toMatchObject({
+    displayName: "我的模型",
+    manualSpec: { contextTokens: 12345 },
+  });
+});
+
 test.skipIf(!sqliteAvailable)("deletes the only unreferenced provider and its candidate models", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-only-"));
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
@@ -295,4 +377,66 @@ test.skipIf(!sqliteAvailable)("rejects deleting an unknown provider", async () =
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
 
   expect(() => store.deleteProvider("missing")).toThrow("找不到 Provider：missing");
+});
+
+test.skipIf(!sqliteAvailable)("per-provider upstream proxy persists, validates, and clears", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-proxy-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const saved = store.saveProvider({
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    upstreamProxyUrl: " socks5://127.0.0.1:7890 ",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(saved.upstreamProxyUrl).toBe("socks5://127.0.0.1:7890");
+  expect(store.getProviderWithSecret(saved.id)?.upstreamProxyUrl).toBe("socks5://127.0.0.1:7890");
+
+  // Omitting the field keeps the existing value; empty string clears it.
+  const kept = store.saveProvider({
+    id: saved.id,
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    apiKey: "k2",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(kept.upstreamProxyUrl).toBe("socks5://127.0.0.1:7890");
+  const cleared = store.saveProvider({
+    id: saved.id,
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    upstreamProxyUrl: "  ",
+    apiKey: "k2",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(cleared.upstreamProxyUrl).toBeUndefined();
+
+  store.saveProvider({
+    id: saved.id,
+    name: "ProxyProvider",
+    baseUrl: "https://api.example.com",
+    upstreamProxyUrl: "socks5://127.0.0.1:7890",
+    apiKey: "k2",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  store.clearProviderUpstreamProxy(saved.id);
+  expect(store.getProviderWithSecret(saved.id)?.upstreamProxyUrl).toBeUndefined();
+  expect(() => store.clearProviderUpstreamProxy("missing")).toThrow("找不到 Provider：missing");
+
+  expect(() =>
+    store.saveProvider({
+      id: saved.id,
+      name: "ProxyProvider",
+      baseUrl: "https://api.example.com",
+      upstreamProxyUrl: "ftp://127.0.0.1:21",
+      apiKey: "k2",
+      defaultModel: "m1",
+      enabled: true,
+    }),
+  ).toThrow(/无效的上游代理 URL/);
 });

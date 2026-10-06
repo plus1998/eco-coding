@@ -199,9 +199,9 @@ class _TablePreviewSheet extends StatelessWidget {
                     child: Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: eco.textHeading,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: eco.textHeading,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -261,7 +261,6 @@ class _MarkdownTableView extends StatefulWidget {
     required this.scrollable,
     required this.showScrollBar,
     this.includeOuterBorder = true,
-    this.viewportWidth,
   });
 
   final MarkdownTable table;
@@ -271,8 +270,6 @@ class _MarkdownTableView extends StatefulWidget {
   final bool scrollable;
   final bool showScrollBar;
   final bool includeOuterBorder;
-  /// When set, horizontal scroll viewport uses this width for layout.
-  final double? viewportWidth;
 
   @override
   State<_MarkdownTableView> createState() => _MarkdownTableViewState();
@@ -362,12 +359,7 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
       ],
     );
 
-    if (widget.viewportWidth == null) return tableColumn;
-
-    return SizedBox(
-      width: widget.viewportWidth,
-      child: tableColumn,
-    );
+    return tableColumn;
   }
 
   Widget _cell({
@@ -381,7 +373,9 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
         text,
         style: style,
         maxLines: maxLines,
-        overflow: maxLines == null ? TextOverflow.visible : TextOverflow.ellipsis,
+        overflow: maxLines == null
+            ? TextOverflow.visible
+            : TextOverflow.ellipsis,
         softWrap: true,
       ),
     );
@@ -524,13 +518,15 @@ class _HorizontalTableScrollBarState extends State<_HorizontalTableScrollBar> {
                           final maxExtent =
                               widget.controller.position.maxScrollExtent;
                           if (maxExtent <= 0) return;
-                          final localX =
-                              details.localPosition.dx.clamp(0.0, trackWidth);
+                          final localX = details.localPosition.dx.clamp(
+                            0.0,
+                            trackWidth,
+                          );
                           final targetFraction = trackWidth <= thumbWidth
                               ? 0.0
                               : ((localX - thumbWidth / 2) /
-                                      (trackWidth - thumbWidth))
-                                  .clamp(0.0, 1.0);
+                                        (trackWidth - thumbWidth))
+                                    .clamp(0.0, 1.0);
                           widget.controller.jumpTo(targetFraction * maxExtent);
                         },
                         child: Stack(

@@ -7,12 +7,9 @@ import { buildHtmlDataNavigateUrl } from "../../shared/browser";
 import { dispatchBrowserHtmlOpen, dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 import { copyTextToClipboard } from "../clipboard";
 import { i18n } from "../i18n";
-import {
-  attachLightboxZoom,
-  formatLightboxZoomPercent,
-} from "../lightbox-zoom";
-import { repairMarkdown } from "../markdown-repair";
+import { attachLightboxZoom, formatLightboxZoomPercent } from "../lightbox-zoom";
 import { copyMermaidAsImage, copyMermaidAsMarkdown } from "../markdown-mermaid-clipboard";
+import { repairMarkdown } from "../markdown-repair";
 import {
   copyTableAsHtml,
   copyTableAsImage,
@@ -42,6 +39,7 @@ import {
   mountMermaidSvgForFeed,
   observeAppTheme,
   readAppTheme,
+  recallMermaidFeedHeight,
   renderMermaidSvg,
 } from "./mermaid-block";
 
@@ -465,6 +463,63 @@ export function createFeedMarkdownDoc(text: string): PMNode {
     ]);
   }
   return rewriteFileReferences(doc);
+}
+
+/** A top-level Markdown block with its source range, from the real tokenizer. */
+export interface FeedMarkdownBlockRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * Top-level block ranges of `text` as the tokenizer sees them.
+ *
+ * Streaming rendering needs to know which part of a growing response can no
+ * longer change. The line-oriented scan in `streaming-markdown-partition` is a
+ * cheap approximation and misses constructs whose block structure spans lines
+ * in non-obvious ways (GFM tables without a leading pipe, setext headings,
+ * lists that merge across a blank line). The tokenizer's `map` is authoritative,
+ * so the doc builder uses it to decide what is safe to freeze.
+ */
+export function feedMarkdownBlockRanges(text: string): FeedMarkdownBlockRange[] {
+  if (!text) {
+    return [];
+  }
+  let tokens: Array<{ level: number; map: [number, number] | null }>;
+  try {
+    tokens = tokenizer.parse(text, {}) as unknown as Array<{ level: number; map: [number, number] | null }>;
+  } catch {
+    return [];
+  }
+
+  // Line offsets once, so each token map lookup is O(1) instead of a rescan.
+  const lineOffsets = [0];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === "\n") {
+      lineOffsets.push(i + 1);
+    }
+  }
+  const offsetOfLine = (lineIndex: number): number => {
+    if (lineIndex <= 0) {
+      return 0;
+    }
+    return lineIndex < lineOffsets.length ? lineOffsets[lineIndex]! : text.length;
+  };
+
+  const ranges: FeedMarkdownBlockRange[] = [];
+  for (const token of tokens) {
+    // Only level-0 block tokens carry a source line range; nested inline tokens
+    // are level 1+ and would duplicate their parent's range.
+    if (token.level !== 0 || !token.map) {
+      continue;
+    }
+    const start = offsetOfLine(token.map[0]);
+    const end = offsetOfLine(token.map[1]);
+    if (end > start) {
+      ranges.push({ start, end });
+    }
+  }
+  return ranges;
 }
 
 function escapeHtml(value: string): string {
@@ -1179,6 +1234,43 @@ function createTableNodeView(): {
   };
 }
 
+export type MermaidFeedViewPlan = "source" | "deferred" | "cached-svg" | "render";
+
+/**
+ * Distance ahead of the feed viewport at which a Mermaid diagram is rendered.
+ * Rendering before the diagram is on screen keeps scroll smooth.
+ */
+export const MERMAID_FEED_RENDER_AHEAD_PX = 480;
+
+/**
+ * Distance from the feed viewport at which a rendered diagram releases its SVG.
+ * Deliberately far past the render margin: one shared boundary makes a diagram
+ * mount and release again every time the user wobbles around it, and each
+ * release drops the SVG plus its ResizeObserver. The feed scroller is roughly
+ * one 620px screen, so this keeps every diagram within about four screens
+ * mounted; the virtualizer window is the real bound on how many stay alive.
+ */
+export const MERMAID_FEED_RELEASE_BEYOND_PX = 2_400;
+
+/**
+ * Decide how a feed Mermaid block paints itself.
+ *
+ * A block that leaves the viewport releases its heavyweight SVG but keeps the
+ * cached markup so expand/copy still work from the toolbar. That cached markup
+ * must be re-mounted when the block scrolls back in; treating the released state
+ * as "already rendered" left every released diagram stuck on its placeholder.
+ */
+export function planMermaidFeedView(input: {
+  hasSource: boolean;
+  previewOpen: boolean;
+  visible: boolean;
+  hasCachedSvg: boolean;
+}): MermaidFeedViewPlan {
+  if (!input.previewOpen || !input.hasSource) return "source";
+  if (!input.visible) return "deferred";
+  return input.hasCachedSvg ? "cached-svg" : "render";
+}
+
 function createMermaidCodeBlockNodeView(node: PMNode): {
   dom: HTMLElement;
   contentDOM: null;
@@ -1210,6 +1302,11 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
 
   let disposed = false;
   let renderToken = 0;
+  let renderTimer: number | undefined;
+  let visible = typeof IntersectionObserver === "undefined";
+  let visibilityObserver: IntersectionObserver | undefined;
+  let releaseObserver: IntersectionObserver | undefined;
+  let visibilitySetupFrame: number | undefined;
   let theme: MermaidAppTheme = readAppTheme();
 
   const syncPreviewButton = () => {
@@ -1249,33 +1346,71 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   const showSvg = (svg: string) => {
     body.classList.remove("is-error");
     body.removeAttribute("aria-busy");
-    mountMermaidSvgForFeed(body, svg);
+    mountMermaidSvgForFeed(body, svg, source);
   };
 
-  const applyView = () => {
-    if (!previewOpen) {
-      showSource();
-      syncPreviewButton();
-      return;
+  /**
+   * Height this diagram already occupied, read from the shared cache rather
+   * than a local copy: the first render records it here and every later
+   * release has to see it.
+   */
+  const reservedHeightPx = () => recallMermaidFeedHeight(source);
+
+  const reservedBox = (className: string, label?: string) => {
+    const box = document.createElement("div");
+    box.className = className;
+    const reserved = reservedHeightPx();
+    if (reserved > 0) {
+      box.style.minHeight = `${reserved}px`;
     }
-    if (lastSvg) {
-      showSvg(lastSvg);
+    if (label) {
+      box.textContent = label;
+    } else {
+      box.setAttribute("aria-hidden", "true");
     }
-    syncPreviewButton();
+    return box;
+  };
+
+  const showDeferredPreview = () => {
+    body.classList.remove("is-error");
+    body.removeAttribute("aria-busy");
+    body.replaceChildren(reservedBox("markdown-mermaid__deferred", i18n.t("markdown.mermaid.deferred")));
   };
 
   const render = () => {
+    const hasSource = source.trim().length > 0;
+    const plan = planMermaidFeedView({
+      hasSource,
+      previewOpen,
+      visible,
+      hasCachedSvg: lastSvg.length > 0,
+    });
+    // Any in-flight Mermaid render belongs to an older view state.
     const token = ++renderToken;
-    const currentSource = source;
-    const currentTheme = theme;
-    body.classList.remove("is-error");
-    if (!currentSource.trim()) {
-      lastSvg = "";
+    if (plan === "source") {
+      if (!hasSource) lastSvg = "";
       showSource();
       syncPreviewButton();
       return;
     }
-    if (previewOpen) body.setAttribute("aria-busy", "true");
+    if (plan === "deferred") {
+      showDeferredPreview();
+      return;
+    }
+    if (plan === "cached-svg") {
+      showSvg(lastSvg);
+      syncPreviewButton();
+      return;
+    }
+    const currentSource = source;
+    const currentTheme = theme;
+    body.classList.remove("is-error");
+    body.setAttribute("aria-busy", "true");
+    // Hold the known height while the diagram renders. A diagram that is
+    // already painted keeps its SVG, so a theme switch never flashes blank.
+    if (!body.querySelector(".markdown-mermaid__paint")) {
+      body.replaceChildren(reservedBox("markdown-mermaid__reserved"));
+    }
     void renderMermaidSvg(currentSource, currentTheme)
       .then((svg) => {
         if (disposed || token !== renderToken) return;
@@ -1293,6 +1428,87 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
       });
   };
 
+  const scheduleRender = () => {
+    if (renderTimer !== undefined) {
+      window.clearTimeout(renderTimer);
+    }
+    renderTimer = window.setTimeout(() => {
+      renderTimer = undefined;
+      render();
+    }, 160);
+  };
+
+  const setVisible = (next: boolean) => {
+    if (next === visible) return;
+    visible = next;
+    if (visible) {
+      // render() re-mounts the cached SVG or renders it for the first time.
+      if (previewOpen) scheduleRender();
+    } else if (previewOpen) {
+      // Keep the source and toolbar, but release the heavyweight SVG and
+      // its ResizeObserver while the diagram is far outside the viewport.
+      renderToken += 1;
+      if (renderTimer !== undefined) {
+        window.clearTimeout(renderTimer);
+        renderTimer = undefined;
+      }
+      showDeferredPreview();
+    }
+  };
+
+  const setupVisibilityObserver = (attempt = 0) => {
+    if (disposed || visibilityObserver) return;
+
+    // A ProseMirror node view is constructed before its DOM node is attached.
+    // Waiting until it is connected is required so that closest() finds the
+    // real scrolling feed instead of falling back to the browser viewport.
+    if (!wrap.isConnected && attempt < 10) {
+      visibilitySetupFrame = window.requestAnimationFrame(() => {
+        visibilitySetupFrame = undefined;
+        setupVisibilityObserver(attempt + 1);
+      });
+      return;
+    }
+
+    const root = wrap.closest<HTMLElement>(".activity-messages");
+    // Two margins, not one: a single boundary makes a diagram mount and release
+    // again whenever the user wobbles around it. Render only once the diagram is
+    // about to enter the viewport, but keep it mounted until it is a screen or
+    // two away, so scroll jitter and short trips stay free.
+    const margin = (px: number) => ({ root, rootMargin: `${px}px 0px`, threshold: 0 });
+    visibilityObserver = new IntersectionObserver((entries) => {
+      // Only the enter direction is meaningful here; leaving is handled below.
+      if (entries[0]?.isIntersecting) setVisible(true);
+    }, margin(MERMAID_FEED_RENDER_AHEAD_PX));
+    releaseObserver = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (entry && !entry.isIntersecting) setVisible(false);
+    }, margin(MERMAID_FEED_RELEASE_BEYOND_PX));
+    visibilityObserver.observe(wrap);
+    releaseObserver.observe(wrap);
+    render();
+  };
+
+  // Chromium only recomputes IntersectionObserver targets while the window is
+  // being rendered. Callbacks stop arriving while the app is occluded,
+  // minimized, or on another Space, so a diagram first seen in those conditions
+  // would keep its placeholder. The native visibilitychange/focus events make
+  // both observers re-report the current intersection once rendering resumes.
+  const resyncObservedVisibility = () => {
+    if (disposed || !visibilityObserver || document.visibilityState !== "visible") return;
+    for (const observer of [visibilityObserver, releaseObserver]) {
+      if (!observer) continue;
+      observer.unobserve(wrap);
+      observer.observe(wrap);
+    }
+  };
+  document.addEventListener("visibilitychange", resyncObservedVisibility);
+  window.addEventListener("focus", resyncObservedVisibility);
+
+  if (typeof IntersectionObserver !== "undefined") {
+    setupVisibilityObserver();
+  }
+
   expandBtn?.addEventListener("click", (event) => {
     event.preventDefault();
     if (!previewOpen || !lastSvg) return;
@@ -1302,15 +1518,18 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   previewBtn?.addEventListener("click", (event) => {
     event.preventDefault();
     previewOpen = !previewOpen;
-    applyView();
-    if (previewOpen && !lastSvg) render();
+    render();
   });
 
-  render();
+  if (typeof IntersectionObserver === "undefined") {
+    render();
+  }
   const stopTheme = observeAppTheme((next) => {
     if (next === theme) return;
     theme = next;
-    render();
+    // The cached markup was painted with the previous theme.
+    lastSvg = "";
+    scheduleRender();
   });
 
   return {
@@ -1323,11 +1542,23 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
       if (nextSource === source) return true;
       source = nextSource;
       lastSvg = "";
-      render();
+      scheduleRender();
       return true;
     },
     destroy() {
       disposed = true;
+      if (visibilitySetupFrame !== undefined) {
+        window.cancelAnimationFrame(visibilitySetupFrame);
+        visibilitySetupFrame = undefined;
+      }
+      document.removeEventListener("visibilitychange", resyncObservedVisibility);
+      window.removeEventListener("focus", resyncObservedVisibility);
+      visibilityObserver?.disconnect();
+      releaseObserver?.disconnect();
+      if (renderTimer !== undefined) {
+        window.clearTimeout(renderTimer);
+        renderTimer = undefined;
+      }
       closeCopyMenu?.();
       stopTheme();
       dismissMarkdownLightbox();

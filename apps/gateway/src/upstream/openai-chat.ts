@@ -156,6 +156,7 @@ export async function forwardOpenAIChat(
       },
       lifecycle,
       onLog,
+      ...(route.provider.upstreamProxyUrl ? { upstreamProxyUrl: route.provider.upstreamProxyUrl } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -25,7 +25,9 @@ test("recognizes Eco image view MCP names", () => {
 test("image view names module stays usable in the Vite renderer", () => {
   const source = readFileSync(new URL("../src/eco-image-view-names.ts", import.meta.url), "utf8");
   expect(source).not.toContain("node:");
-  expect(source).not.toContain("pi-mcp-adapter");
+  // Renderer-safe: must not pull the Node-only PI runtime (the guard named the
+  // removed pi-mcp-adapter before PI 1.0.3).
+  expect(source).not.toContain("@earendil-works/");
   expect(namedIsEcoImageViewToolName(NAMED_FULL_TOOL)).toBe(true);
 });
 
@@ -70,6 +72,28 @@ test("readImageViewPathFromToolArgs unwraps PI mcp proxy view_image calls", () =
     name: ECO_IMAGE_VIEW_FULL_TOOL,
     path: "/tmp/shot.png",
   });
+});
+
+test("PI mcp proxy view_image calls keep the caller's prompt, not just the path", () => {
+  // 真实 PI 会话里这一句（server 字段缺省，tool 写成 <server>_<tool>）：
+  //   mcp({ tool: "eco_image_view_view_image", args: { path, prompt } })
+  expect(
+    resolveEcoImageViewToolCall("mcp", {
+      tool: "eco_image_view_view_image",
+      args: { path: "/tmp/left_circle.png", prompt: "这幅图是奖章正面。请回答：(1) 人像特征" },
+    }),
+  ).toEqual({
+    name: ECO_IMAGE_VIEW_FULL_TOOL,
+    path: "/tmp/left_circle.png",
+    prompt: "这幅图是奖章正面。请回答：(1) 人像特征",
+  });
+  // 旧字段 question 仍按同一个提示词读取。
+  expect(
+    resolveEcoImageViewToolCall("mcp", {
+      tool: "eco_image_view_view_image",
+      args: { path: "/tmp/left_circle.png", question: "找报错" },
+    }),
+  ).toEqual({ name: ECO_IMAGE_VIEW_FULL_TOOL, path: "/tmp/left_circle.png", prompt: "找报错" });
 });
 
 test("resolvePiMcpProxyDiscoveryCall labels PI mcp search/action probes", () => {

@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures/electron-app";
+import { sendConversationV2 } from "./helpers/conversation-v2";
 
 test("Codex bash approval completes thread with marker", async ({ ecoPage: page }) => {
   const marker = process.env.ECO_SMOKE_MARKER ?? `CODEX_APPROVAL_${Date.now()}`;
@@ -20,14 +21,16 @@ test("Codex bash approval completes thread with marker", async ({ ecoPage: page 
       : "No idle Codex thread is available for approval smoke testing.",
   ).toBeTruthy();
 
-  await page.evaluate(async ({ threadId, prompt }) => window.eco.continueThread({ threadId, prompt }), {
-    threadId: codexThread!.id,
-    prompt: [
+  await sendConversationV2(
+    page,
+    codexThread!.id,
+    [
       `Run this shell command: sleep 2 && printf ${marker}.`,
       "Do not modify files.",
       `After it completes, reply only with ${marker}.`,
     ].join(" "),
-  });
+    "codex-approval",
+  );
 
   const startedAt = Date.now();
   let approval: Awaited<ReturnType<typeof page.evaluate<unknown, string>>> | undefined;

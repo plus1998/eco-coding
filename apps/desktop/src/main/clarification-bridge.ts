@@ -18,6 +18,14 @@ export function buildClarificationToolMetadata(
 interface PendingClarification {
   threadId: string;
   request: ClarificationRequest;
+  /**
+   * Whether the run genuinely waits for this answer.
+   *
+   * A sync `item/tool/requestUserInput` RPC always awaits its response, but app-server
+   * sends `isBlocking: false` when the question does not hold the turn (Default mode)
+   * and `true` in Plan mode. Async `agentMessage` questions never block by construction.
+   */
+  blocking: boolean;
   promise: Promise<ClarificationAnswers>;
   resolve: (answers: ClarificationAnswers) => void;
   reject: (error: Error) => void;
@@ -31,6 +39,7 @@ export function registerPendingClarification(
   parsed: {
     questions: ClarificationRequest["questions"];
     delivery?: ClarificationRequest["delivery"];
+    blocking?: boolean;
   },
 ): Promise<ClarificationAnswers> {
   if (pending.has(toolUseId)) {
@@ -51,6 +60,7 @@ export function registerPendingClarification(
       questions: parsed.questions,
       ...(parsed.delivery ? { delivery: parsed.delivery } : {}),
     },
+    blocking: parsed.blocking ?? true,
     promise,
     resolve: resolveAnswers,
     reject: rejectAnswers,
@@ -80,6 +90,27 @@ export function getPendingClarificationForThread(threadId: string): Clarificatio
 
 export function getPendingClarificationByToolUseId(toolUseId: string): ClarificationRequest | undefined {
   return pending.get(toolUseId)?.request;
+}
+
+/**
+ * The pending clarification that actually holds up run cleanup / follow-up drain.
+ *
+ * Non-blocking entries (async Codex questions, `isBlocking: false` sync requests) stay
+ * answerable in the panel but must never gate the run or the queue.
+ */
+export function getPendingBlockingClarificationForThread(
+  threadId: string,
+): ClarificationRequest | undefined {
+  for (const entry of pending.values()) {
+    if (entry.threadId === threadId && entry.blocking) {
+      return entry.request;
+    }
+  }
+  return undefined;
+}
+
+export function hasPendingBlockingClarificationForThread(threadId: string): boolean {
+  return getPendingBlockingClarificationForThread(threadId) !== undefined;
 }
 
 export function submitClarification(toolUseId: string, answers: ClarificationAnswers): boolean {

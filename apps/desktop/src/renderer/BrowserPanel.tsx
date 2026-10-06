@@ -1,8 +1,21 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, LoaderCircle, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  FolderOpen,
+  Globe,
+  KeyRound,
+  ListChecks,
+  LoaderCircle,
+  RefreshCw,
+  Terminal,
+} from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type BrowserViewState, normalizeBrowserNavigateUrl } from "../shared/browser";
+import { useBrowserInstanceIds } from "./browser-state-store";
 import { BrowserWebviewViewportMarker } from "./BrowserWebviewViewportMarker";
+import type { TaskPanelHomeTool } from "./task-panel-tabs";
 
 const ICON_SIZE = 15;
 
@@ -11,6 +24,7 @@ export interface BrowserPanelProps {
   active: boolean;
   /** Eco browser instance id for this task tab. */
   browserId: string;
+  onOpenTool: (browserId: string, tool: TaskPanelHomeTool) => void;
 }
 
 /**
@@ -18,17 +32,25 @@ export interface BrowserPanelProps {
  * {@link browserWebviewPool} in {@link BrowserWebviewLayer}; this panel only
  * publishes viewport bounds via {@link BrowserWebviewViewportMarker}.
  */
-export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
+export function BrowserPanel({
+  active,
+  browserId,
+  onOpenTool,
+}: BrowserPanelProps) {
   const { t } = useTranslation();
+  const toolHomeTitleId = `browser-tool-home-title-${browserId}`;
   const [state, setState] = useState<BrowserViewState | undefined>();
   const [address, setAddress] = useState("");
   const addressInputId = useId();
+  /** Main drops a closed browser from its guest list — never focus a page that is gone. */
+  const liveBrowserIds = useBrowserInstanceIds();
 
   const instance = state?.instances.find((item) => item.id === browserId);
   const displayUrl = instance?.url ?? state?.url ?? "about:blank";
   const canGoBack = instance?.canGoBack ?? state?.canGoBack ?? false;
   const canGoForward = instance?.canGoForward ?? state?.canGoForward ?? false;
   const isLoading = instance?.isLoading ?? state?.isLoading ?? false;
+  const showToolHome = state !== undefined && !isLoading && displayUrl === "about:blank";
 
   useEffect(() => {
     void window.eco?.getBrowserState?.().then((next) => {
@@ -39,7 +61,7 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
   }, [browserId]);
 
   useEffect(() => {
-    if (!active) {
+    if (!active || !liveBrowserIds.includes(browserId)) {
       return;
     }
     void window.eco?.browserFocus?.({ browserId, reveal: true });
@@ -50,7 +72,7 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
         setAddress(url === "about:blank" ? "" : url);
       }
     });
-  }, [active, browserId]);
+  }, [active, browserId, liveBrowserIds]);
 
   useEffect(() => {
     const unsubscribe = window.eco?.onBrowserStateChanged?.((next) => {
@@ -142,7 +164,33 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
           <ExternalLink size={ICON_SIZE} />
         </button>
       </div>
-      <BrowserWebviewViewportMarker browserId={browserId} active={active} />
+      <div className="browser-panel-content">
+        {showToolHome ? (
+          <section
+            className="task-panel-home-actions browser-panel-tool-home"
+            aria-labelledby={toolHomeTitleId}
+          >
+            <h2 id={toolHomeTitleId}>{t("browser.toolsTitle")}</h2>
+            <button type="button" onClick={() => onOpenTool(browserId, "review")}>
+              <ListChecks size={17} aria-hidden />
+              <span>{t("task.review")}</span>
+            </button>
+            <button type="button" onClick={() => onOpenTool(browserId, "terminal")}>
+              <Terminal size={17} aria-hidden />
+              <span>{t("task.terminal")}</span>
+            </button>
+            <button type="button" onClick={() => onOpenTool(browserId, "files")}>
+              <FolderOpen size={17} aria-hidden />
+              <span>{t("task.files")}</span>
+            </button>
+            <button type="button" onClick={() => onOpenTool(browserId, "sshBookmarks")}>
+              <KeyRound size={17} aria-hidden />
+              <span>{t("app.sshBookmarks.title")}</span>
+            </button>
+          </section>
+        ) : null}
+        <BrowserWebviewViewportMarker browserId={browserId} active={active} />
+      </div>
     </div>
   );
 }

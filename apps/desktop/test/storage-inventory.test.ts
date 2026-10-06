@@ -31,8 +31,12 @@ test("measurePathBytes sums files without following symlinks", async () => {
 });
 
 test("encodeClaudeProjectDirName matches Claude projects folder style", () => {
-  expect(encodeClaudeProjectDirName("/Users/me/repo")).toBe("-Users-me-repo");
-  expect(isEcoClaudeProjectDirName("-Users-me-repo--eco-worktrees-thr-1")).toBe(true);
+  // Claude 用「把绝对路径里每个非字母数字字符换成 -」命名 projects/ 子目录，路径会先被解析成
+  // 绝对路径，所以断言规则本身（尾部保留、只剩字母数字和 -），而不是某台机器上的盘符写法。
+  const encoded = encodeClaudeProjectDirName("/Users/me/repo");
+  expect(encoded.endsWith("-Users-me-repo")).toBe(true);
+  expect(encoded).toMatch(/^[A-Za-z0-9-]+$/);
+  expect(isEcoClaudeProjectDirName(`${encoded}--eco-worktrees-thr-1`)).toBe(true);
   expect(isEcoClaudeProjectDirName("-Users-me-other-project")).toBe(false);
 });
 
@@ -40,12 +44,16 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
   const userDataDir = path.join(tempDir, "userData");
   const logsDir = path.join(tempDir, "logs");
   const dbPath = path.join(userDataDir, "eco-coding.sqlite");
-  const checkpointsDir = path.join(userDataDir, "codex-file-checkpoints");
   const codexHomeDir = path.join(userDataDir, "codex");
   const claudeProjectsDir = path.join(tempDir, "claude-projects");
   const claudeFileHistoryDir = path.join(tempDir, "claude-file-history");
 
-  await fs.mkdir(path.join(checkpointsDir, "thr_1", "items"), { recursive: true });
+  // Leftover orphan dir that previously would have been its own category now
+  // falls into otherUserData.
+  const leftoverCheckpointsDir = path.join(userDataDir, "codex-file-checkpoints");
+  await fs.mkdir(path.join(leftoverCheckpointsDir, "ghost", "items"), { recursive: true });
+  await fs.writeFile(path.join(leftoverCheckpointsDir, "ghost", "items", "x.bin"), "Z".repeat(40));
+
   await fs.mkdir(path.join(codexHomeDir, "eco-pending-spawns"), { recursive: true });
   await fs.mkdir(logsDir, { recursive: true });
   await fs.mkdir(path.join(claudeProjectsDir, "proj-a"), { recursive: true });
@@ -54,7 +62,6 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
   await fs.writeFile(dbPath, "A".repeat(100));
   await fs.writeFile(`${dbPath}-wal`, "B".repeat(20));
   await fs.writeFile(path.join(logsDir, "upstream-2026-01-01.log"), "C".repeat(30));
-  await fs.writeFile(path.join(checkpointsDir, "thr_1", "items", "x.bin"), "D".repeat(40));
   await fs.writeFile(path.join(codexHomeDir, "config.toml"), "E".repeat(15));
   await fs.writeFile(path.join(userDataDir, "models-dev-pricing.json"), "F".repeat(25));
   await fs.writeFile(path.join(claudeProjectsDir, "proj-a", "session-1.jsonl"), "J".repeat(50));
@@ -68,7 +75,6 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
     paths: {
       userDataDir,
       databasePath: dbPath,
-      codexCheckpointsDir: checkpointsDir,
       logsDir,
       codexHomeDir,
       claudeProjectsDir,
@@ -79,17 +85,17 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
   });
 
   expect(snapshot.unmetered).toEqual([]);
-  expect(snapshot.categories).toHaveLength(7);
+  expect(snapshot.categories).toHaveLength(6);
 
   const byId = Object.fromEntries(snapshot.categories.map((category) => [category.id, category]));
   expect(byId.database?.bytes).toBe(120);
   expect(byId.logs?.bytes).toBe(30);
   expect(byId.claudeSessions?.bytes).toBe(50 + 12);
   expect(byId.claudeSessions?.path).toBe(claudeProjectsDir);
-  expect(byId.codexCheckpoints?.bytes).toBe(40);
   expect(byId.codexHome?.bytes).toBe(15);
   expect(byId.piAgent?.bytes).toBe(18);
   expect(byId.piAgent?.path).toBe(piAgentDir);
-  expect(byId.otherUserData?.bytes).toBe(25);
-  expect(snapshot.totalBytes).toBe(120 + 30 + 62 + 40 + 15 + 18 + 25);
+  // models-dev-pricing.json (25) + leftover codex-file-checkpoints (40) both land here.
+  expect(byId.otherUserData?.bytes).toBe(25 + 40);
+  expect(snapshot.totalBytes).toBe(120 + 30 + 62 + 15 + 18 + 25 + 40);
 });

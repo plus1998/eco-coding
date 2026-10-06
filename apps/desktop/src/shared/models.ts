@@ -15,6 +15,7 @@ import type { UpstreamApiCompat } from "./api-compat";
 
 export interface ListUpstreamModelsRequest {
   providerId?: string;
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
   baseUrl?: string;
   /** Service path prefix, e.g. `/zen` or `/anthropic` (not full `/v1/chat/completions`). */
   requestPath?: string;
@@ -22,6 +23,8 @@ export interface ListUpstreamModelsRequest {
   version?: string;
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
+  /** Per-provider upstream proxy override (draft form value); falls back to global proxy. */
+  upstreamProxyUrl?: string;
 }
 
 export type ProviderRequestErrorCode =
@@ -50,6 +53,8 @@ export interface TestProviderConnectionRequest {
   version?: string;
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
+  /** Per-provider upstream proxy override (draft form value); falls back to global proxy. */
+  upstreamProxyUrl?: string;
   defaultModel?: string;
   thinkingEffort?: typeof ROUTE_TEST_THINKING_EFFORT;
 }

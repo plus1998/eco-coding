@@ -31,6 +31,8 @@ export async function hydratePromptAttachmentsForComposerRestore(
         mediaType: attachment.mediaType,
         data: inline,
         ...(attachment.path?.trim() ? { path: attachment.path.trim() } : {}),
+        ...(attachment.contentRef?.trim() ? { contentRef: attachment.contentRef.trim() } : {}),
+        ...(attachment.byteLength !== undefined ? { byteLength: attachment.byteLength } : {}),
       });
       continue;
     }
@@ -43,6 +45,8 @@ export async function hydratePromptAttachmentsForComposerRestore(
         mediaType: attachment.mediaType,
         data,
         ...(attachment.path?.trim() ? { path: attachment.path.trim() } : {}),
+        ...(attachment.contentRef?.trim() ? { contentRef: attachment.contentRef.trim() } : {}),
+        ...(attachment.byteLength !== undefined ? { byteLength: attachment.byteLength } : {}),
       });
     } catch {
       // Skip unreadable attachments rather than failing the whole restore.

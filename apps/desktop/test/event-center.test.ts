@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createElectronEventSink, DesktopEventCenter } from "../src/main/event-center";
+import { ConversationV2Error, CONVERSATION_V2_ERROR } from "@eco/shared";
 import {
   classifyThreadLiveEventForCenter,
   EVENT_CENTER_JSON_RPC_ERROR,
@@ -54,7 +55,7 @@ test("classifies thread live events for event center topics", () => {
         type: "thread.run_projection_updated",
       }),
     ),
-  ).toBe("thread.projection");
+  ).toBe("thread.lifecycle");
 
   expect(classifyThreadLiveEventForCenter(makeThreadEvent({ stream: true }))).toBe("thread.stream");
 
@@ -129,6 +130,35 @@ test("publishes center envelopes and JSON-RPC event notifications", () => {
   expect((seen[0] as { notification: { method: string } }).notification.method).toBe(
     EVENT_CENTER_JSON_RPC_METHODS.event,
   );
+});
+
+test("publishes committed conversation effects as durable-sync hints", () => {
+  const center = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const seen: unknown[] = [];
+  center.subscribe({
+    publish(envelope) {
+      seen.push(envelope);
+    },
+  });
+
+  const envelope = center.publish({
+    kind: "conversation.sync_effect",
+    threadId: "thr_event_center",
+    aggregateKey: "conversation:thr_event_center",
+    payload: {
+      conversationId: "thr_event_center",
+      storeEpoch: "epoch_1",
+      effect: {
+        seq: 1,
+        effectVersion: 1,
+        effectHash: "hash_1",
+        effect: { type: "noop", reason: "fixture" },
+      },
+    },
+  });
+
+  expect(envelope.kind).toBe("conversation.sync_effect");
+  expect(seen).toHaveLength(1);
 });
 
 test("electron sink preserves legacy desktop event channels", () => {
@@ -278,6 +308,32 @@ test("reports unregistered JSON-RPC commands explicitly", async () => {
     error: {
       code: EVENT_CENTER_JSON_RPC_ERROR.methodNotFound,
       message: `Desktop command is not registered: ${IPC_CHANNELS.threadStart}`,
+    },
+  });
+});
+
+test("keeps V2 domain error codes in JSON-RPC data", async () => {
+  const center = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  center.registerCommand(IPC_CHANNELS.conversationHead, () => {
+    throw new ConversationV2Error(CONVERSATION_V2_ERROR.epochMismatch, "epoch changed", {
+      expected: "epoch_2",
+    });
+  });
+
+  const response = await center.handleJsonRpcMessage({
+    jsonrpc: "2.0",
+    id: "req_v2_error",
+    method: EVENT_CENTER_JSON_RPC_METHODS.invoke,
+    params: {
+      channel: IPC_CHANNELS.conversationHead,
+      args: ["thread_1"],
+    },
+  });
+
+  expect(response).toMatchObject({
+    error: {
+      code: EVENT_CENTER_JSON_RPC_ERROR.invalidParams,
+      data: { conversationCode: CONVERSATION_V2_ERROR.epochMismatch, expected: "epoch_2" },
     },
   });
 });

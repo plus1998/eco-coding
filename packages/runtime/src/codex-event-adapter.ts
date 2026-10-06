@@ -25,7 +25,9 @@ import {
 import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spawn-role-queue.js";
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
-import { readImageViewPathFromToolArgs } from "./eco-image-view-tool.js";
+import { resolveEcoMcpHubSearchCall, resolveEcoMcpHubToolCall } from "./eco-mcp-hub-tool.js";
+import { resolveEcoImageViewToolCall } from "./eco-image-view-tool.js";
+import { readMcpToolOutputText } from "./mcp-tool-output-text.js";
 import {
   isAgentBrowserScreenshotToolName,
   isEcoImageDisplayToolName,
@@ -54,6 +56,7 @@ export type CodexThreadRunEventType =
   | "run.attempt.started"
   | "run.attempt.completed"
   | "run.attempt.failed"
+  | "run.attempt.cancelled"
   | "message.delta"
   | "message.final"
   | "thinking.delta"
@@ -129,6 +132,35 @@ export interface CodexThreadRunEventInput {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * One `request_user_input_async` question as app-server serializes it onto the
+ * `agentMessage` item (`AsyncUserInputQuestion`). `options: null` = free text only.
+ */
+export interface CodexAsyncUserInputQuestion {
+  title: string;
+  options: string[] | null;
+}
+
+/**
+ * A Codex 0.160 async question message.
+ *
+ * Async questions are *not* a server request: `request_user_input_async` emits an
+ * `agentMessage` item whose `id` is the tool call id, carrying `delivery: "async"`
+ * and the questions. The turn keeps running, and the reply arrives later as an
+ * ordinary user message. `itemId` is therefore the question identity used to build
+ * the `questionItemId` the upstream reply envelope expects.
+ */
+export interface CodexAsyncQuestionsInput {
+  ecoThreadId: string;
+  codexThreadId: string;
+  turnId?: string | undefined;
+  /** agentMessage item id == `request_user_input_async` call id. */
+  itemId: string;
+  /** Item text: the joined question titles (what the feed shows as the message). */
+  message: string;
+  questions: CodexAsyncUserInputQuestion[];
+}
+
 export interface CodexEventAdapterOptions {
   /** Map Codex `threadId` from notifications to Eco thread id. */
   resolveEcoThreadId: (codexThreadId: string) => string;
@@ -153,6 +185,12 @@ export interface CodexEventAdapterOptions {
   onTokenUsageUpdated?: (resolution: CodexContextSnapshotResolution) => void;
   /** Called with the authoritative main-thread task snapshot from `turn/plan/updated`. */
   onTurnPlanUpdated?: (input: CodexTurnPlanUpdatedInput) => void;
+  /**
+   * Called for `agentMessage` items carrying `delivery: "async"` + questions.
+   * Fired for both `item/started` and `item/completed` (upstream emits the same
+   * item twice); consumers must dedupe by thread + turn + message id.
+   */
+  onAsyncQuestions?: (input: CodexAsyncQuestionsInput) => void;
   /** Called when app-server completes a native Plan item. */
   onPlanReady?: (input: {
     ecoThreadId: string;
@@ -196,6 +234,8 @@ type AdapterContext = CodexEventAdapterOptions & {
   reasoningStartedAtByItemId: Map<string, string>;
   agentMessageTextByItemId: Map<string, string>;
   pendingEventsByCodexThreadId: Map<string, EmitInput[]>;
+  /** Async question messages that arrived before their Codex thread was attributed. */
+  pendingAsyncQuestionsByCodexThreadId: Map<string, Omit<CodexAsyncQuestionsInput, "ecoThreadId">[]>;
   /** Dedupe agent.started from spawn item + thread/started for the same child. */
   emittedAgentStartedIds: Set<string>;
   /** Same absolute path from native imageView + eco_image_view MCP → one Feed card. */
@@ -268,6 +308,10 @@ export class CodexEventAdapter {
    * Buffer until parent eco thread id is known — never write an unmapped Codex id.
    */
   private readonly pendingEventsByCodexThreadId = new Map<string, EmitInput[]>();
+  private readonly pendingAsyncQuestionsByCodexThreadId = new Map<
+    string,
+    Omit<CodexAsyncQuestionsInput, "ecoThreadId">[]
+  >();
   private readonly emittedAgentStartedIds = new Set<string>();
   private readonly emittedImageViewPaths = new Set<string>();
   private readonly emittedImageDisplayArtifacts = new Set<string>();
@@ -287,6 +331,7 @@ export class CodexEventAdapter {
       reasoningStartedAtByItemId: this.reasoningStartedAtByItemId,
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
+      pendingAsyncQuestionsByCodexThreadId: this.pendingAsyncQuestionsByCodexThreadId,
       emittedAgentStartedIds: this.emittedAgentStartedIds,
       emittedImageViewPaths: this.emittedImageViewPaths,
       emittedImageDisplayArtifacts: this.emittedImageDisplayArtifacts,
@@ -305,14 +350,20 @@ export class CodexEventAdapter {
 
   /** Replay events buffered while a child Codex thread lacked parent attribution. */
   flushPendingEventsForThread(codexThreadId: string): void {
-    const pending = this.pendingEventsByCodexThreadId.get(codexThreadId.trim());
-    if (!pending?.length) {
+    const id = codexThreadId.trim();
+    const pending = this.pendingEventsByCodexThreadId.get(id);
+    const pendingQuestions = this.pendingAsyncQuestionsByCodexThreadId.get(id);
+    if (!pending?.length && !pendingQuestions?.length) {
       return;
     }
-    this.pendingEventsByCodexThreadId.delete(codexThreadId.trim());
+    this.pendingEventsByCodexThreadId.delete(id);
+    this.pendingAsyncQuestionsByCodexThreadId.delete(id);
     const ctx = this.buildContext();
-    for (const input of pending) {
+    for (const input of pending ?? []) {
       emit(ctx, input);
+    }
+    for (const input of pendingQuestions ?? []) {
+      dispatchAsyncQuestions(ctx, input);
     }
     this.eventCounter = ctx.eventCounter;
   }
@@ -322,7 +373,10 @@ export class CodexEventAdapter {
    * established so children that only had a parent link can resolve.
    */
   flushAllPendingEvents(): void {
-    const pendingThreadIds = [...this.pendingEventsByCodexThreadId.keys()];
+    const pendingThreadIds = new Set([
+      ...this.pendingEventsByCodexThreadId.keys(),
+      ...this.pendingAsyncQuestionsByCodexThreadId.keys(),
+    ]);
     for (const codexThreadId of pendingThreadIds) {
       this.flushPendingEventsForThread(codexThreadId);
     }
@@ -719,6 +773,10 @@ function handleItemStarted(ctx: AdapterContext, params: Record<string, unknown>)
     }
     return;
   }
+  if (itemType === "agentMessage") {
+    handleItemAsyncQuestions(ctx, params, item);
+    return;
+  }
   if (itemType === "contextCompaction") {
     emitContextCompactionLifecycle(ctx, params, item, "started");
     return;
@@ -903,6 +961,7 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
   }
 
   if (itemType === "agentMessage") {
+    handleItemAsyncQuestions(ctx, params, item);
     const text = readString(item, "text") ?? ctx.agentMessageTextByItemId.get(itemId) ?? "";
     ctx.agentMessageTextByItemId.delete(itemId);
     emit(ctx, {
@@ -1443,14 +1502,27 @@ function emitMcpToolEvent(
   const toolName = `mcp__${server}__${tool}`;
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
-  let imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
+  const hubCall = resolveEcoMcpHubToolCall(toolName, mcpInput);
+  const hubSearch = resolveEcoMcpHubSearchCall(toolName, mcpInput);
+  const displayToolName = hubCall?.name ?? toolName;
+  const displayInput = hubCall?.args ?? mcpInput;
+  const imageViewCall = resolveEcoImageViewToolCall(displayToolName, displayInput);
+  let imageViewPath = imageViewCall?.path;
+  const imageViewReference = imageViewCall?.ref;
   if (
     !imageViewPath &&
     eventType === "tool.completed" &&
-    isAgentBrowserScreenshotToolName(toolName)
+    isAgentBrowserScreenshotToolName(displayToolName)
   ) {
     imageViewPath = readAbsolutePathFromMcpToolOutput(item);
   }
+  // The vision answer is the only place the caller's prompt is answered; without it the
+  // Feed card can show the image but never what was asked or answered. Read it off the
+  // completed item and let it ride the same output channel bash already uses.
+  const imageViewResult =
+    imageViewPath && eventType === "tool.completed" ? readMcpToolOutputText(item) : undefined;
+  const imageViewOutputPreview = imageViewResult ? createToolOutputPreview(imageViewResult) : undefined;
+  const imageViewPrompt = imageViewPath ? imageViewCall?.prompt : undefined;
   if (imageViewPath) {
     if (eventType === "tool.started") {
       if (ctx.emittedImageViewPaths.has(imageViewPath)) {
@@ -1460,7 +1532,7 @@ function emitMcpToolEvent(
     }
   }
   let imageDisplayMeta =
-    isEcoImageDisplayToolName(toolName) && eventType === "tool.completed"
+    isEcoImageDisplayToolName(displayToolName) && eventType === "tool.completed"
       ? readImageDisplayMetadataFromToolOutput(item)
       : undefined;
   if (imageDisplayMeta && eventType === "tool.completed") {
@@ -1471,17 +1543,19 @@ function emitMcpToolEvent(
   }
   const imageDisplayArtifactId = imageDisplayMeta?.artifactId;
   const htmlHostMeta =
-    isEcoHtmlHostToolName(toolName) && eventType === "tool.completed"
+    isEcoHtmlHostToolName(displayToolName) && eventType === "tool.completed"
       ? readHtmlHostMetadataFromToolOutput(item)
       : undefined;
-  const urlHint = readMcpToolUrlHint(item, mcpInput);
-  const ecoWebSearchQuery = isEcoWebSearchToolName(toolName) ? readEcoWebSearchQuery(mcpInput) : undefined;
+  const urlHint = readMcpToolUrlHint(item, displayInput);
+  const ecoWebSearchQuery = isEcoWebSearchToolName(displayToolName)
+    ? readEcoWebSearchQuery(displayInput)
+    : undefined;
   const ecoWebSearchParsed =
-    isEcoWebSearchToolName(toolName) && eventType !== "tool.started"
+    isEcoWebSearchToolName(displayToolName) && eventType !== "tool.started"
       ? parseEcoWebSearchToolOutput(item)
       : undefined;
   const ecoWebSearch =
-    isEcoWebSearchToolName(toolName)
+    isEcoWebSearchToolName(displayToolName)
       ? {
           mode: "search" as const,
           actionType: "search" as const,
@@ -1502,15 +1576,22 @@ function emitMcpToolEvent(
       : undefined;
   const detailParts = imageViewPath
     ? [imageViewPath]
-    : imageDisplayArtifactId
-      ? [imageDisplayArtifactId]
-      : htmlHostMeta?.publicUrl
-        ? [htmlHostMeta.publicUrl]
-        : ecoWebSearchQuery
-          ? [ecoWebSearchQuery]
-          : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+    : imageViewReference
+      ? [imageViewReference]
+      : imageDisplayArtifactId
+        ? [imageDisplayArtifactId]
+        : htmlHostMeta?.publicUrl
+          ? [htmlHostMeta.publicUrl]
+          : ecoWebSearchQuery
+            ? [ecoWebSearchQuery]
+            : [formatMcpToolTarget(displayToolName, `${server}/${tool}`), ...(urlHint ? [urlHint] : [])];
   const messageHint =
-    imageViewPath ?? imageDisplayArtifactId ?? htmlHostMeta?.publicUrl ?? ecoWebSearchQuery ?? urlHint;
+    imageViewPath ??
+    imageViewReference ??
+    imageDisplayArtifactId ??
+    htmlHostMeta?.publicUrl ??
+    ecoWebSearchQuery ??
+    urlHint;
 
   emit(ctx, {
     eventType,
@@ -1518,7 +1599,7 @@ function emitMcpToolEvent(
     turnId,
     itemId,
     role: "tool",
-    message: messageHint ? `Tool: ${toolName} · ${messageHint}` : `Tool: ${toolName}`,
+    message: messageHint ? `Tool: ${displayToolName} · ${messageHint}` : `Tool: ${displayToolName}`,
     streamState: eventType === "tool.started" ? "streaming" : "finalized",
     stableEventId: `tre:codex:tool:${itemId}:${eventType === "tool.started" ? "started" : "done"}`,
     metadata: {
@@ -1527,15 +1608,19 @@ function emitMcpToolEvent(
       logicalEntityId: itemId,
       itemId,
       itemType: "mcpToolCall",
-      ...(mcpInput ? { mcpInput } : {}),
+      ...(displayInput ? { mcpInput: displayInput } : {}),
       ...(urlHint ? { url: urlHint } : {}),
       tool: {
-        name: toolName,
+        name: displayToolName,
         detail: detailParts.join(" · "),
         toolUseId: itemId,
         status: toolStatus,
         ...(durationMs !== undefined ? { durationMs } : {}),
-        ...(imageViewPath ? { imageView: { path: imageViewPath } } : {}),
+        ...(imageViewPath
+          ? { imageView: { path: imageViewPath, ...(imageViewPrompt ? { prompt: imageViewPrompt } : {}) } }
+          : {}),
+        ...(imageViewOutputPreview?.text ? { outputPreview: imageViewOutputPreview.text } : {}),
+        ...(imageViewOutputPreview?.truncated ? { outputPreviewTruncated: true } : {}),
         ...(imageDisplayMeta
           ? {
               imageDisplay: {
@@ -1558,9 +1643,15 @@ function emitMcpToolEvent(
             }
           : {}),
         ...(ecoWebSearch ? { webSearch: ecoWebSearch } : {}),
+        ...(hubSearch ? { mcpDiscovery: { kind: "search" as const } } : {}),
       },
     },
   });
+}
+
+function formatMcpToolTarget(toolName: string, fallback: string): string {
+  const match = toolName.match(/^mcp__([^_]+(?:_[^_]+)*)__(.+)$/);
+  return match?.[1] && match[2] ? `${match[1]}/${match[2]}` : fallback;
 }
 
 /** Best-effort MCP tool arguments blob (Codex field names vary). */
@@ -2373,6 +2464,88 @@ function readItemPayload(params: Record<string, unknown>): Record<string, unknow
 
 function readItemType(item: Record<string, unknown>): string | undefined {
   return readString(item, "type");
+}
+
+/** Same thread resolution as `emit`; buffers until the Codex thread maps to an Eco thread. */
+function dispatchAsyncQuestions(
+  ctx: AdapterContext,
+  input: Omit<CodexAsyncQuestionsInput, "ecoThreadId">,
+): void {
+  const attribution = ctx.resolveThreadAttribution?.(input.codexThreadId);
+  const mappedThreadId = ctx.resolveEcoThreadId(input.codexThreadId);
+  const ecoThreadId = attribution?.ecoThreadId?.trim() || mappedThreadId;
+  if (!attribution?.ecoThreadId && ecoThreadId === input.codexThreadId) {
+    const pending = ctx.pendingAsyncQuestionsByCodexThreadId.get(input.codexThreadId) ?? [];
+    pending.push(input);
+    ctx.pendingAsyncQuestionsByCodexThreadId.set(input.codexThreadId, pending);
+    return;
+  }
+  ctx.onAsyncQuestions?.({ ...input, ecoThreadId });
+}
+
+const ASYNC_AGENT_MESSAGE_DELIVERY = "async";
+
+/**
+ * Read `delivery` + `questions` off an `agentMessage` item.
+ * Returns undefined for ordinary messages and for malformed question payloads.
+ */
+function readAsyncQuestionsFromItem(
+  item: Record<string, unknown>,
+): { message: string; questions: CodexAsyncUserInputQuestion[] } | undefined {
+  if (readString(item, "delivery") !== ASYNC_AGENT_MESSAGE_DELIVERY) {
+    return undefined;
+  }
+  const rawQuestions = item.questions;
+  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+    return undefined;
+  }
+  const questions: CodexAsyncUserInputQuestion[] = [];
+  for (const entry of rawQuestions) {
+    if (!isRecord(entry)) {
+      return undefined;
+    }
+    const title = readString(entry, "title")?.trim();
+    if (!title) {
+      return undefined;
+    }
+    const rawOptions = entry.options;
+    if (rawOptions !== undefined && rawOptions !== null && !Array.isArray(rawOptions)) {
+      return undefined;
+    }
+    const options = Array.isArray(rawOptions)
+      ? rawOptions.filter((option): option is string => typeof option === "string")
+      : null;
+    questions.push({ title, options });
+  }
+  return { message: readString(item, "text") ?? "", questions };
+}
+
+/**
+ * Surface async questions from both `item/started` and `item/completed`: upstream
+ * emits the same item for both, and only `item/completed` is delivery-guaranteed,
+ * so a consumer that sees just one of them must still show the question.
+ */
+function handleItemAsyncQuestions(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  item: Record<string, unknown>,
+): void {
+  const parsed = readAsyncQuestionsFromItem(item);
+  if (!parsed) {
+    return;
+  }
+  const codexThreadId = readCodexThreadId(params);
+  const itemId = readCodexItemId(params, item);
+  if (!codexThreadId || !itemId) {
+    return;
+  }
+  dispatchAsyncQuestions(ctx, {
+    codexThreadId,
+    turnId: readCodexTurnId(params),
+    itemId,
+    message: parsed.message,
+    questions: parsed.questions,
+  });
 }
 
 function emit(ctx: AdapterContext, input: EmitInput): void {

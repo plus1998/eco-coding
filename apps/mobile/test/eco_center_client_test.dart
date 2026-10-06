@@ -56,6 +56,27 @@ void main() {
     });
   });
 
+  group('JSON-RPC errors', () {
+    test('preserves the desktop V2 domain code and data', () {
+      final error = ecoCenterExceptionFromRpcError({
+        'code': -32602,
+        'message': 'Conversation protocol is unsupported.',
+        'data': {
+          'conversationCode': 'unsupported_version',
+          'expectedProtocolVersion': 2,
+        },
+      });
+
+      expect(error, isA<EcoCenterException>());
+      expect(error.code, -32602);
+      expect(error.domainCode, 'unsupported_version');
+      expect(error.domainData, {
+        'conversationCode': 'unsupported_version',
+        'expectedProtocolVersion': 2,
+      });
+    });
+  });
+
   group('channel subscription lifecycle', () {
     test('reruns onSubscribed after channel rejoin', () async {
       var subscribedCalls = 0;

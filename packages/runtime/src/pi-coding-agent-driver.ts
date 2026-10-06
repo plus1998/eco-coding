@@ -1,9 +1,11 @@
+import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { ResolvedModelRoute } from "../../model-router/src";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import type { SdkToolPermissionHandler } from "./ask-user-question.js";
 import { createPlanReadyEvent } from "./claude-agent-sdk.js";
 import type { CoreSessionMode } from "./core-runtime.js";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index.js";
+import { createPiCodemodeExtensionFactory, PI_CODEMODE_EXTENSION_NAME } from "./pi-codemode-extension.js";
 import { createEcoPiAgentExtensionFactory } from "./pi-eco-extensions.js";
 import {
   applyPiAssistantErrorTracker,
@@ -15,13 +17,8 @@ import {
   createEcoPiFinalizePlanExtensionFactory,
   PI_FINALIZE_PLAN_EXTENSION_NAME,
 } from "./pi-finalize-plan.js";
-import { createPiMcpExtensionFactory } from "./pi-mcp-adapter-factory.js";
-import {
-  canonicalizePiMcpFingerprint,
-  fingerprintPiMcpServers,
-  piMcpToolAllowlist,
-  toPiMcpAdapterConfig,
-} from "./pi-mcp.js";
+import { canonicalizePiMcpFingerprint, fingerprintPiMcpServers, PI_MCP_HUB_TOOL_NAMES } from "./pi-mcp.js";
+import { createPiMcpExtensionFactory } from "./pi-mcp-extension-factory.js";
 import {
   type BuildEcoPiModelInput,
   buildEcoPiModel,
@@ -33,6 +30,7 @@ import {
   type PiThinkingLevel,
   resolvePiPlannerRoute,
 } from "./pi-model-bridge.js";
+import { disposePiSdkSession } from "./pi-session-dispose.js";
 import {
   createPiModeAwareToolPermissionHandler,
   piSystemPromptForSessionMode,
@@ -92,10 +90,17 @@ export function isPiMidTurnUnavailable(error: unknown): error is PiMidTurnUnavai
   return error instanceof PiMidTurnUnavailable;
 }
 
+/**
+ * Outcome of queueing text into a session. PI 1.0 reports whether the text was
+ * queued or consumed by an extension input handler; an older runtime resolved to
+ * undefined, which `steerLiveSession` treats as queued.
+ */
+export type PiQueuedInputDisposition = "handled" | "queued";
+
 /** Minimal AgentSession surface needed to steer a live PI run. */
 export interface PiSteerableSessionLike {
   readonly isStreaming: boolean;
-  steer(text: string): Promise<void>;
+  steer(text: string): Promise<PiQueuedInputDisposition | undefined>;
   getSteeringMessages(): readonly string[];
   clearQueue(): { steering: string[]; followUp: string[] };
 }
@@ -136,17 +141,24 @@ function createMidTurnSteerQueue(): (task: () => Promise<void>) => Promise<void>
 /**
  * Queue one steering message into a live PI run.
  *
- * Throws {@link PiMidTurnUnavailable} when the session is not streaming, or when the run
- * took its final steering poll between our enqueue and delivery. In the latter case the
- * orphaned entry is reclaimed instead of leaking into the next, unrelated prompt; the
- * caller requeues the original text and the drain resends it as a turn.
+ * Throws {@link PiMidTurnUnavailable} when the session is not streaming, when an
+ * extension input handler consumed the text instead of queueing it, or when the
+ * run took its final steering poll between our enqueue and delivery. In the
+ * latter case the orphaned entry is reclaimed instead of leaking into the next,
+ * unrelated prompt; the caller requeues the original text and the drain resends
+ * it as a turn.
  */
 async function steerLiveSession(session: PiSteerableSessionLike, text: string): Promise<void> {
   if (!session.isStreaming) {
     throw new PiMidTurnUnavailable("PI session has no active run to steer.");
   }
   const pendingBefore = session.getSteeringMessages().length;
-  await session.steer(text);
+  const disposition = await session.steer(text);
+  if (disposition === "handled") {
+    // An input handler took the text: it never became a steering message, so
+    // reporting delivery would drop the user's message silently.
+    throw new PiMidTurnUnavailable("PI consumed the steering message without queueing it.");
+  }
   if (session.isStreaming) {
     return;
   }
@@ -171,7 +183,7 @@ export interface PiSessionHandle {
   mcpFingerprint: string;
   prompt: (text: string, signal?: AbortSignal) => AsyncIterable<AgentEvent>;
   abort: () => Promise<void>;
-  dispose: () => void;
+  dispose: () => void | Promise<void>;
   /** Whether the underlying AgentSession is inside an active run (mid-turn steer window). */
   isStreaming: () => boolean;
   /**
@@ -203,6 +215,8 @@ export interface PiSessionHandle {
   sessionMode?: CoreSessionMode;
   /** Web search backend armed when the session was created. */
   webSearchBackend?: PiWebSearchBackend;
+  /** A failed startup requires a fresh native MCP connection on the next attempt. */
+  readonly mcpStartupFailed?: boolean;
   /** Parent-only side bus created with the session (stable across rebinds). */
   sideEventBus?: PiSideEventBus;
 }
@@ -232,6 +246,8 @@ export interface PiSessionFactoryInput {
   skillPaths?: readonly string[];
   /** Isolated MCP servers for this thread (Claude-SDK shaped). */
   mcpServers?: Record<string, unknown>;
+  /** Deadline for the native MCP startup wait; defaults to PI's 10 seconds. */
+  mcpStartupWaitMs?: number;
   /** Extra system prompt append segments for integrations. */
   appendSystemPrompt?: readonly string[];
   sessionId?: string;
@@ -278,6 +294,28 @@ export const ECO_PI_SESSION_RETRY = {
   provider: { maxRetries: 0 },
 } as const;
 
+/**
+ * In-memory PI settings for every Eco session.
+ *
+ * PI owns native compaction and keeps its own reserve/overflow-recovery
+ * defaults. Agent-level retry covers in-stream overloaded/5xx while
+ * `provider.maxRetries: 0` leaves the initial HTTP fetch to Gateway, so the two
+ * layers do not stack.
+ *
+ * `cacheWarming` is explicit because PI 1.0.3 turns it on by default:
+ * `SettingsManager.getCacheWarmingMode()` returns `"streaming"` when the setting
+ * is absent, which spends real tokens re-sending the conversation to keep the
+ * prompt cache hot between runs. Eco bills per turn, so warming stays off until
+ * it can be surfaced to the user and opted into.
+ */
+export function ecoPiSessionSettings() {
+  return {
+    compaction: { enabled: true },
+    retry: { ...ECO_PI_SESSION_RETRY },
+    cacheWarming: "off" as const,
+  };
+}
+
 export interface PiBridgeModelResolution {
   bridgeBaseUrl: string;
   bridgeModelId: string;
@@ -313,6 +351,7 @@ export interface PiCodingAgentDriverOptions {
  */
 export class PiSessionRegistry {
   private readonly sessions = new Map<string, PiSessionHandle>();
+  private readonly closing = new Map<string, Promise<void>>();
 
   get(key: string): PiSessionHandle | undefined {
     return this.sessions.get(key);
@@ -323,23 +362,46 @@ export class PiSessionRegistry {
   }
 
   /** Delete one session key (parent or child). */
-  delete(key: string): void {
+  delete(key: string): Promise<void> {
     const existing = this.sessions.get(key);
-    if (existing) {
-      try {
-        existing.dispose();
-      } catch {
-        // ignore dispose errors during teardown
-      }
-    }
     this.sessions.delete(key);
+    if (!existing) return this.closing.get(key) ?? Promise.resolve();
+    let disposed: void | Promise<void>;
+    try {
+      disposed = existing.dispose();
+    } catch (error) {
+      disposed = Promise.reject(error);
+    }
+    const task = Promise.all([this.closing.get(key), disposed])
+      .then(() => undefined)
+      .finally(() => {
+        if (this.closing.get(key) === task) this.closing.delete(key);
+      });
+    this.closing.set(key, task);
+    return task;
   }
 
   /** Delete parent + every child session for an Eco thread. */
-  deleteThread(threadId: string): void {
-    for (const key of this.keysForThread(threadId)) {
-      this.delete(key);
-    }
+  async deleteThread(threadId: string): Promise<void> {
+    const results = await Promise.allSettled(this.keysForThread(threadId).map((key) => this.delete(key)));
+    const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (errors.length > 0)
+      throw new AggregateError(
+        errors.map((result) => result.reason),
+        "PI session shutdown failed",
+      );
+  }
+
+  /** Close idle sessions as well as active ones before application exit. */
+  async deleteAll(): Promise<void> {
+    const keys = [...new Set([...this.sessions.keys(), ...this.closing.keys()])];
+    const results = await Promise.allSettled(keys.map((key) => this.delete(key)));
+    const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (errors.length > 0)
+      throw new AggregateError(
+        errors.map((result) => result.reason),
+        "PI session shutdown failed",
+      );
   }
 
   async abort(threadId: string): Promise<void> {
@@ -356,7 +418,9 @@ export class PiSessionRegistry {
 
   private keysForThread(threadId: string): string[] {
     const parent = piParentSessionKey(threadId);
-    return [...this.sessions.keys()].filter((key) => key === parent || key.startsWith(`${parent}::sub::`));
+    return [...new Set([...this.sessions.keys(), ...this.closing.keys()])].filter(
+      (key) => key === parent || key.startsWith(`${parent}::sub::`),
+    );
   }
 }
 
@@ -498,7 +562,14 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     };
     const wantsToolApproval = Boolean(permissionBridge.handler);
     const approvalDrift = Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
-    const forceFresh = identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift || webSearchDrift;
+    const forceFresh =
+      identityDrift ||
+      mcpDrift ||
+      agentToolDrift ||
+      approvalDrift ||
+      modeDrift ||
+      webSearchDrift ||
+      Boolean(session?.mcpStartupFailed);
     const appendSystemPrompt = [
       piSystemPromptForSessionMode(sessionMode),
       ...(input.piSession?.appendSystemPrompt ?? []),
@@ -598,7 +669,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         extensionFactories,
         toolsAllowlist: sessionToolsAllowlist,
       });
-      this.registry.deleteThread(input.threadId);
+      await this.registry.deleteThread(input.threadId);
       session = await this.createSession({
         threadId: input.threadId,
         cwd,
@@ -611,10 +682,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         routeFingerprint: fullFingerprint,
         skillPaths: selectedSkillPaths,
         toolsAllowlist: [
-          ...new Set([
-            ...sessionToolsAllowlist,
-            ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : []),
-          ]),
+          ...new Set([...sessionToolsAllowlist, ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : [])]),
         ],
         ...(mcpServers && Object.keys(mcpServers).length > 0 && sessionMode === "agent"
           ? { mcpServers }
@@ -781,10 +849,16 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   });
 
   const mcpFingerprint = fingerprintPiMcpServers(input.mcpServers);
-  const mappedMcp = toPiMcpAdapterConfig(input.mcpServers);
-  const hasMcpServers = Object.keys(mappedMcp.mcpServers).length > 0;
+  const hasMcpServers = Boolean(input.mcpServers && Object.keys(input.mcpServers).length > 0);
+  let mcpStartupError: string | undefined;
   const mcpFactory = await createPiMcpExtensionFactory(hasMcpServers ? input.mcpServers : undefined, {
     agentDir: input.agentDir,
+    ...(input.mcpStartupWaitMs !== undefined ? { startupWaitMs: input.mcpStartupWaitMs } : {}),
+    onNotification: (message, type) => {
+      if (type === "warning" || type === "error" || message.includes("still connecting")) {
+        mcpStartupError = message;
+      }
+    },
   });
 
   const appendSystemPrompt = [...(input.appendSystemPrompt ?? [])]
@@ -799,10 +873,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   // (mode + MCP + Agent + web_search + finalize_plan). PI 0.84.2+ defaultTools
   // would only fight that ownership. Windows `powershell` is intentionally
   // omitted until Eco has a PS read-only policy (Ask/Plan).
-  const settingsManager = SettingsManager.inMemory({
-    compaction: { enabled: true },
-    retry: { ...ECO_PI_SESSION_RETRY },
-  });
+  const settingsManager = SettingsManager.inMemory(ecoPiSessionSettings());
 
   const systemPromptText = input.systemPromptOverride?.trim();
 
@@ -813,6 +884,12 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       factory: mcpFactory as never,
     });
   }
+  // Registered for every mode; the tool only activates when the session's
+  // allowlist names it (Agent), so Ask/Plan never see a script sandbox.
+  extensionFactories.push({
+    name: PI_CODEMODE_EXTENSION_NAME,
+    factory: createPiCodemodeExtensionFactory() as never,
+  });
   for (const entry of input.extensionFactories ?? []) {
     extensionFactories.push(entry);
   }
@@ -831,7 +908,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   const toolsAllowlistBase =
     input.toolsAllowlist && input.toolsAllowlist.length > 0
       ? [...input.toolsAllowlist]
-      : piMcpToolAllowlist(hasMcpServers);
+      : // No explicit list (headless harnesses): use the Agent policy rather than
+        // a second, drifting copy of it.
+        piToolsForSessionMode("agent", { hasMcpServers });
   const webSearchBackend = input.webSearchBackend ?? "none";
   await appendPiWebSearchSessionParts({
     backend: webSearchBackend,
@@ -840,6 +919,34 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     extensionFactories,
     toolsAllowlist: toolsAllowlistBase,
   });
+
+  const allowedTools = new Set(toolsAllowlistBase);
+  const hasAgentExtension = (input.extensionFactories ?? []).some((entry) => entry.name === "eco-pi-agent");
+  if (hasAgentExtension) allowedTools.add(PI_AGENT_TOOL_NAME);
+  const allowSelectedMcpTools = PI_MCP_HUB_TOOL_NAMES.some((name) => allowedTools.has(name));
+  const nonHubServers = Object.keys(input.mcpServers ?? {})
+    .map((name) => name.trim())
+    .filter((name) => name !== "eco_mcp");
+  // MCP names are only known after native registration (including sanitized/hash
+  // suffixes). Filter registrations instead of freezing those names in SDK tools.
+  const scopedFactory =
+    (name: string, factory: ExtensionFactory): ExtensionFactory =>
+    (api) =>
+      factory({
+        ...api,
+        registerTool: (tool) => {
+          const nativeMcpTool =
+            name === "eco-pi-mcp" &&
+            allowSelectedMcpTools &&
+            ((tool.name.startsWith("mcp__") &&
+              nonHubServers.some((server) => tool.label.startsWith(`${server}/`))) ||
+              (nonHubServers.length > 0 &&
+                ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"].includes(
+                  tool.name,
+                )));
+          if (allowedTools.has(tool.name) || nativeMcpTool) api.registerTool(tool);
+        },
+      } satisfies ExtensionAPI);
 
   const resourceLoader = new DefaultResourceLoader({
     cwd: input.cwd,
@@ -851,7 +958,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       ? {
           extensionFactories: extensionFactories.map((entry) => ({
             name: entry.name,
-            factory: entry.factory as never,
+            factory: hasMcpServers
+              ? scopedFactory(entry.name, entry.factory as ExtensionFactory)
+              : (entry.factory as never),
           })),
         }
       : {}),
@@ -887,11 +996,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   // PI's `tools` option is an allowlist: extension tools not listed here are dropped
   // from the registry (see AgentSession._refreshToolRegistry). Agent must be included
   // whenever eco-pi-agent is loaded, or the model only sees mcp/browser and never Agent.
-  const hasAgentExtension = (input.extensionFactories ?? []).some((entry) => entry.name === "eco-pi-agent");
-  const toolsAllowlist =
-    hasAgentExtension && !toolsAllowlistBase.includes(PI_AGENT_TOOL_NAME)
-      ? [...toolsAllowlistBase, PI_AGENT_TOOL_NAME]
-      : toolsAllowlistBase;
+  const toolsAllowlist = [...allowedTools];
 
   const { session } = await createAgentSession({
     cwd: input.cwd,
@@ -900,20 +1005,45 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     thinkingLevel: input.thinkingLevel ?? "off",
     modelRuntime,
     resourceLoader: resourceLoader as never,
-    tools: toolsAllowlist,
+    ...(hasMcpServers
+      ? {
+          noTools: "builtin" as const,
+          excludeTools: ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"].filter(
+            (name) => !allowedTools.has(name),
+          ),
+        }
+      : { tools: toolsAllowlist }),
     sessionManager,
     settingsManager,
   });
 
   // PI CLI modes call bindExtensions (emits session_start → MCP init). Eco creates
   // sessions headlessly and must do the same; otherwise mcp() stays "MCP not initialized".
-  if (typeof session.bindExtensions === "function") {
+  // The native startup hook waits for direct tools. Its UI warnings are otherwise
+  // swallowed in RPC mode; block the provider request if that startup failed or timed out.
+  let disposed = false;
+  const disposeSession = () => {
+    disposed = true;
+    return disposePiSdkSession(session);
+  };
+  const nativeStream = session.agent.streamFunction;
+  session.agent.streamFunction = (model, context, options) => {
+    if (disposed) throw new Error("PI session has been disposed");
+    if (mcpStartupError) throw new Error(`PI MCP startup failed: ${mcpStartupError}`);
+    return nativeStream(model, context, options);
+  };
+  session.setActiveToolsByName([...session.getActiveToolNames(), ...toolsAllowlist]);
+  try {
     await session.bindExtensions({
       mode: "rpc",
       onError: (err: { extensionPath?: string; error?: string }) => {
+        if (err.extensionPath?.includes("eco-pi-mcp")) mcpStartupError = err.error ?? "MCP extension failed";
         console.error(`PI extension error (${err.extensionPath ?? "?"}): ${err.error ?? "unknown"}`);
       },
     });
+  } catch (error) {
+    await disposeSession();
+    throw error;
   }
 
   const sessionId = sessionManager.getSessionId();
@@ -944,13 +1074,14 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       return mcpFingerprint;
     },
     webSearchBackend,
+    get mcpStartupFailed() {
+      return mcpStartupError !== undefined;
+    },
     ...(sideEventBus ? { sideEventBus } : {}),
     abort: async () => {
       await session.abort();
     },
-    dispose: () => {
-      session.dispose();
-    },
+    dispose: disposeSession,
     ...createPiMidTurnHandle(session),
     rebind: async (rebindInput) => {
       const nextAuthProvider = mapApiCompatToPiAuthProvider(rebindInput.apiCompat);
@@ -1087,6 +1218,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       } finally {
         unsubscribe();
         unsubscribeSide?.();
+        if (mcpStartupError) await disposeSession();
       }
     },
   };

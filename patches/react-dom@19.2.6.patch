@@ -1,0 +1,268 @@
+diff --git a/cjs/react-dom-client.development.js b/cjs/react-dom-client.development.js
+index 4c7515ae8c32d3930c94fc4a17c033d5d67c29b4..c54d69df548aa1f73a3c67d8dc180eb4914224ca 100644
+--- a/cjs/react-dom-client.development.js
++++ b/cjs/react-dom-client.development.js
+@@ -4073,6 +4073,13 @@
+                   ? "Idle"
+                   : "Other";
+     }
++    // Backport React #34803: DevTools receives the measure before we release
++    // its cloned props from the User Timing buffer in long-lived renderers.
++    function measureAndClear(name, options) {
++      var measure = performance.measure(name, options);
++      performance.clearMeasures(name);
++      return measure;
++    }
+     function logComponentTrigger(fiber, startTime, endTime, trigger) {
+       supportsUserTiming &&
+         ((reusableComponentOptions.start = startTime),
+@@ -4082,13 +4089,13 @@
+         (reusableComponentDevToolDetails.properties = null),
+         (fiber = fiber._debugTask)
+           ? fiber.run(
+-              performance.measure.bind(
++              measureAndClear.bind(
+                 performance,
+                 trigger,
+                 reusableComponentOptions
+               )
+             )
+-          : performance.measure(trigger, reusableComponentOptions));
++          : measureAndClear(trigger, reusableComponentOptions));
+     }
+     function logComponentReappeared(fiber, startTime, endTime) {
+       logComponentTrigger(fiber, startTime, endTime, "Reconnect");
+@@ -4150,13 +4157,13 @@
+               (reusableComponentOptions.end = endTime),
+               null != selfTime
+                 ? selfTime.run(
+-                    performance.measure.bind(
++                    measureAndClear.bind(
+                       performance,
+                       "\u200b" + name,
+                       reusableComponentOptions
+                     )
+                   )
+-                : performance.measure(
++                : measureAndClear(
+                     "\u200b" + name,
+                     reusableComponentOptions
+                   )))
+@@ -4227,9 +4234,9 @@
+           };
+           debugTask
+             ? debugTask.run(
+-                performance.measure.bind(performance, "\u200b" + name, fiber)
++                measureAndClear.bind(performance, "\u200b" + name, fiber)
+               )
+-            : performance.measure("\u200b" + name, fiber);
++            : measureAndClear("\u200b" + name, fiber);
+         }
+       }
+     }
+@@ -4268,13 +4275,13 @@
+             };
+             (fiber = fiber._debugTask)
+               ? fiber.run(
+-                  performance.measure.bind(
++                  measureAndClear.bind(
+                     performance,
+                     "\u200b" + name,
+                     startTime
+                   )
+                 )
+-              : performance.measure("\u200b" + name, startTime);
++              : measureAndClear("\u200b" + name, startTime);
+           }
+         }
+       } else
+@@ -4432,9 +4439,9 @@
+         };
+         debugTask
+           ? debugTask.run(
+-              performance.measure.bind(performance, "Recovered", startTime)
++              measureAndClear.bind(performance, "Recovered", startTime)
+             )
+-          : performance.measure("Recovered", startTime);
++          : measureAndClear("Recovered", startTime);
+       }
+     }
+     function logErroredRenderPhase(startTime, endTime, lanes, debugTask) {
+@@ -4515,9 +4522,9 @@
+         };
+         debugTask
+           ? debugTask.run(
+-              performance.measure.bind(performance, "Errored", startTime)
++              measureAndClear.bind(performance, "Errored", startTime)
+             )
+-          : performance.measure("Errored", startTime);
++          : measureAndClear("Errored", startTime);
+       }
+     }
+     function logAnimatingPhase(startTime, endTime, debugTask) {
+@@ -17105,13 +17112,13 @@
+             }),
+             endTime
+               ? endTime.run(
+-                  performance.measure.bind(
++                  measureAndClear.bind(
+                     performance,
+                     isSpawnedUpdate,
+                     previousRenderStartTime
+                   )
+                 )
+-              : performance.measure(isSpawnedUpdate, previousRenderStartTime));
++              : measureAndClear(isSpawnedUpdate, previousRenderStartTime));
+         }
+         blockingUpdateTime = -1.1;
+         blockingUpdateType = 0;
+@@ -17242,13 +17249,13 @@
+             }),
+             endTime
+               ? endTime.run(
+-                  performance.measure.bind(
++                  measureAndClear.bind(
+                     performance,
+                     debugTask,
+                     previousRenderStartTime
+                   )
+                 )
+-              : performance.measure(debugTask, previousRenderStartTime))),
++              : measureAndClear(debugTask, previousRenderStartTime))),
+         (transitionUpdateTime = transitionStartTime = -1.1),
+         (transitionUpdateType = 0),
+         (transitionSuspendedTime = -1.1),
+diff --git a/cjs/react-dom-profiling.development.js b/cjs/react-dom-profiling.development.js
+index 276b50f597837ee6138e34522055578f32447a5a..e82bff6779feeb931ecad4b6b48dcf084e582e92 100644
+--- a/cjs/react-dom-profiling.development.js
++++ b/cjs/react-dom-profiling.development.js
+@@ -4081,6 +4081,13 @@
+                   ? "Idle"
+                   : "Other";
+     }
++    // Backport React #34803: DevTools receives the measure before we release
++    // its cloned props from the User Timing buffer in long-lived renderers.
++    function measureAndClear(name, options) {
++      var measure = performance.measure(name, options);
++      performance.clearMeasures(name);
++      return measure;
++    }
+     function logComponentTrigger(fiber, startTime, endTime, trigger) {
+       supportsUserTiming &&
+         ((reusableComponentOptions.start = startTime),
+@@ -4090,13 +4097,13 @@
+         (reusableComponentDevToolDetails.properties = null),
+         (fiber = fiber._debugTask)
+           ? fiber.run(
+-              performance.measure.bind(
++              measureAndClear.bind(
+                 performance,
+                 trigger,
+                 reusableComponentOptions
+               )
+             )
+-          : performance.measure(trigger, reusableComponentOptions));
++          : measureAndClear(trigger, reusableComponentOptions));
+     }
+     function logComponentReappeared(fiber, startTime, endTime) {
+       logComponentTrigger(fiber, startTime, endTime, "Reconnect");
+@@ -4158,13 +4165,13 @@
+               (reusableComponentOptions.end = endTime),
+               null != selfTime
+                 ? selfTime.run(
+-                    performance.measure.bind(
++                    measureAndClear.bind(
+                       performance,
+                       "\u200b" + name,
+                       reusableComponentOptions
+                     )
+                   )
+-                : performance.measure(
++                : measureAndClear(
+                     "\u200b" + name,
+                     reusableComponentOptions
+                   )))
+@@ -4235,9 +4242,9 @@
+           };
+           debugTask
+             ? debugTask.run(
+-                performance.measure.bind(performance, "\u200b" + name, fiber)
++                measureAndClear.bind(performance, "\u200b" + name, fiber)
+               )
+-            : performance.measure("\u200b" + name, fiber);
++            : measureAndClear("\u200b" + name, fiber);
+         }
+       }
+     }
+@@ -4276,13 +4283,13 @@
+             };
+             (fiber = fiber._debugTask)
+               ? fiber.run(
+-                  performance.measure.bind(
++                  measureAndClear.bind(
+                     performance,
+                     "\u200b" + name,
+                     startTime
+                   )
+                 )
+-              : performance.measure("\u200b" + name, startTime);
++              : measureAndClear("\u200b" + name, startTime);
+           }
+         }
+       } else
+@@ -4440,9 +4447,9 @@
+         };
+         debugTask
+           ? debugTask.run(
+-              performance.measure.bind(performance, "Recovered", startTime)
++              measureAndClear.bind(performance, "Recovered", startTime)
+             )
+-          : performance.measure("Recovered", startTime);
++          : measureAndClear("Recovered", startTime);
+       }
+     }
+     function logErroredRenderPhase(startTime, endTime, lanes, debugTask) {
+@@ -4523,9 +4530,9 @@
+         };
+         debugTask
+           ? debugTask.run(
+-              performance.measure.bind(performance, "Errored", startTime)
++              measureAndClear.bind(performance, "Errored", startTime)
+             )
+-          : performance.measure("Errored", startTime);
++          : measureAndClear("Errored", startTime);
+       }
+     }
+     function logAnimatingPhase(startTime, endTime, debugTask) {
+@@ -17113,13 +17120,13 @@
+             }),
+             endTime
+               ? endTime.run(
+-                  performance.measure.bind(
++                  measureAndClear.bind(
+                     performance,
+                     isSpawnedUpdate,
+                     previousRenderStartTime
+                   )
+                 )
+-              : performance.measure(isSpawnedUpdate, previousRenderStartTime));
++              : measureAndClear(isSpawnedUpdate, previousRenderStartTime));
+         }
+         blockingUpdateTime = -1.1;
+         blockingUpdateType = 0;
+@@ -17250,13 +17257,13 @@
+             }),
+             endTime
+               ? endTime.run(
+-                  performance.measure.bind(
++                  measureAndClear.bind(
+                     performance,
+                     debugTask,
+                     previousRenderStartTime
+                   )
+                 )
+-              : performance.measure(debugTask, previousRenderStartTime))),
++              : measureAndClear(debugTask, previousRenderStartTime))),
+         (transitionUpdateTime = transitionStartTime = -1.1),
+         (transitionUpdateType = 0),
+         (transitionSuspendedTime = -1.1),

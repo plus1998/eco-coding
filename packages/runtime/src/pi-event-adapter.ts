@@ -23,7 +23,10 @@ export interface PiEventAdapterState {
   /** Last stamped thinking display for this open thinking stream. */
   openThinkingDisplay: "summary" | "raw" | undefined;
   /** tool.started inputs keyed by toolCallId — replayed on tool.completed/failed for metadata. */
-  pendingToolUses: Map<string, { toolName: string; input: Record<string, unknown> }>;
+  pendingToolUses: Map<
+    string,
+    { toolName: string; input: Record<string, unknown>; parentToolCallId?: string }
+  >;
 }
 
 export function createPiEventAdapterState(): PiEventAdapterState {
@@ -511,7 +514,12 @@ export function mapPiSessionEventToAgentEvents(
       const rawToolName = typeof event.toolName === "string" ? event.toolName : "tool";
       const toolName = mapPiFeedToolName(rawToolName);
       const args = normalizePiToolUseInput(rawToolName, isRecord(event.args) ? event.args : {});
-      ctx.state.pendingToolUses.set(toolCallId, { toolName, input: args });
+      const parentToolCallId = readPiParentToolCallId(event);
+      ctx.state.pendingToolUses.set(toolCallId, {
+        toolName,
+        input: args,
+        ...(parentToolCallId ? { parentToolCallId } : {}),
+      });
       return [
         ...barrier,
         createAgentEvent({
@@ -524,6 +532,7 @@ export function mapPiSessionEventToAgentEvents(
             tool_use_id: toolCallId,
             input: args,
             input_complete: true,
+            ...piNestedToolCallPayload(parentToolCallId),
           },
         }),
       ];
@@ -533,12 +542,13 @@ export function mapPiSessionEventToAgentEvents(
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `tool_${seq}`;
       const pending = ctx.state.pendingToolUses.get(toolCallId);
       ctx.state.pendingToolUses.delete(toolCallId);
-      const rawToolName =
-        typeof event.toolName === "string" ? event.toolName : (pending?.toolName ?? "tool");
+      const rawToolName = typeof event.toolName === "string" ? event.toolName : (pending?.toolName ?? "tool");
       const toolName = mapPiFeedToolName(rawToolName);
       const input = pending?.input ?? {};
       const isError = event.isError === true;
       const resultText = formatToolResult(event.result);
+      const parentToolCallId = readPiParentToolCallId(event) ?? pending?.parentToolCallId;
+      const structuredContent = readPiStructuredContent(event.result);
       return [
         createAgentEvent({
           id: `${ctx.threadId}:pi:${seq}:tool_end:${toolCallId}`,
@@ -551,6 +561,7 @@ export function mapPiSessionEventToAgentEvents(
                 tool_use_id: toolCallId,
                 input,
                 message: resultText || "Tool execution failed.",
+                ...piNestedToolCallPayload(parentToolCallId),
               }
             : {
                 type: "tool_result",
@@ -558,6 +569,8 @@ export function mapPiSessionEventToAgentEvents(
                 tool_use_id: toolCallId,
                 input,
                 content: resultText,
+                ...(structuredContent !== undefined && { structuredContent }),
+                ...piNestedToolCallPayload(parentToolCallId),
               },
         }),
       ];
@@ -773,6 +786,38 @@ function extractAssistantThinking(message: { content?: unknown }): string {
   return parts.join("");
 }
 
+/**
+ * PI sets `parentToolCallId` when another tool issued this call — today only the
+ * codemode sandbox does (`tools["…"](…)`), which also gets the id `<parent id>/<n>`.
+ *
+ * The link is preserved under `parent_tool_call_id`, deliberately NOT under
+ * `parent_tool_use_id`: that key is Eco's subagent-ownership link everywhere it is
+ * read (thread-run-event scope, owner-agent resolution, usage attribution), so a
+ * nested codemode call carrying it would be treated as a subagent row — the
+ * runtime projection resolves no agent for it and drops the row from the timeline.
+ */
+function readPiParentToolCallId(event: PiSessionEventLike): string | undefined {
+  const raw = event.parentToolCallId;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+}
+
+function piNestedToolCallPayload(parentToolCallId: string | undefined): Record<string, unknown> {
+  return parentToolCallId ? { parent_tool_call_id: parentToolCallId } : {};
+}
+
+/**
+ * PI tools may return `structuredContent` beside their text `content` (e.g. bash's
+ * exit_code / truncation / full_output_path). It is not rendered in the Feed, but
+ * dropping it loses the machine-readable half of the result, so it rides along the
+ * same way the Claude adapter carries it.
+ */
+function readPiStructuredContent(result: unknown): unknown {
+  if (!isRecord(result)) {
+    return undefined;
+  }
+  return result.structuredContent;
+}
+
 function formatToolResult(result: unknown): string {
   if (result === undefined || result === null) {
     return "";
@@ -785,9 +830,7 @@ function formatToolResult(result: unknown): string {
   if (isRecord(result) && isRecord(result.details) && Array.isArray(result.details.results)) {
     try {
       return JSON.stringify({
-        ...(typeof result.details.provider === "string"
-          ? { provider: result.details.provider }
-          : {}),
+        ...(typeof result.details.provider === "string" ? { provider: result.details.provider } : {}),
         ...(typeof result.details.query === "string" ? { query: result.details.query } : {}),
         resultCount: result.details.results.length,
         results: result.details.results,

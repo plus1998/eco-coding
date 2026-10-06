@@ -11,6 +11,61 @@ export interface VisionAnalysisRequestBody {
   }>;
 }
 
+export interface ImageViewRequestBody {
+  model: string;
+  max_tokens: number;
+  stream: false;
+  messages: Array<{
+    role: "user";
+    content: Array<{ type: "text"; text: string }>;
+  }>;
+}
+
+export function buildImageViewRequestBody(input: {
+  model: string;
+  prompt: string;
+  maxTokens?: number;
+}): ImageViewRequestBody {
+  return {
+    model: input.model,
+    max_tokens: input.maxTokens ?? 4096,
+    stream: false,
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: input.prompt }],
+      },
+    ],
+  };
+}
+
+export function readImageViewResponse(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("The image_view model returned an invalid response.");
+  }
+  const content = (value as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    throw new Error("The image_view model response is missing content.");
+  }
+  const text = content
+    .filter((part): part is { type: "text"; text: string } =>
+      Boolean(
+        part &&
+          typeof part === "object" &&
+          !Array.isArray(part) &&
+          (part as { type?: unknown }).type === "text" &&
+          typeof (part as { text?: unknown }).text === "string",
+      ),
+    )
+    .map((part) => part.text)
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+  if (!text) {
+    throw new Error("The image_view model did not return text.");
+  }
+  return text;
+}
+
 /** Private image sensor: describe only; never advise or address the end user. */
 const VISION_SYSTEM_PROMPT = `You are Eco's private image-interpretation sensor for the main agent.
 Your context is fully isolated. You have no tools and no channel to the end user.

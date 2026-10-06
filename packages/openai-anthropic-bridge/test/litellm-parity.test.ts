@@ -335,7 +335,7 @@ describe("LiteLLM parity: Chat Completions <-> Responses", () => {
     expect(chat.messages[0]?.tool_calls?.[0]?.function.arguments).toBe('{"file":"a.txt"}');
   });
 
-  test("Responses function_call_output with image normalizes back to chat multimodal tool content", () => {
+  test("Responses function_call_output with image flattens to string tool content", () => {
     const imageUrl = "data:image/png;base64,iVBORw0KGgo=";
     const chat = responsesToChatCompletionsRequest({
       model: "gpt-5.2",
@@ -352,13 +352,14 @@ describe("LiteLLM parity: Chat Completions <-> Responses", () => {
       ],
     });
 
+    // Chat Completions tool messages must carry string content; upstreams
+    // reject part arrays with 400 "tool messages must contain string content".
+    // Images are replaced by a compact placeholder because a chat tool message
+    // cannot carry image parts.
     expect(chat.messages[1]).toEqual({
       role: "tool",
       tool_call_id: "call_1",
-      content: [
-        { type: "text", text: "image:" },
-        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
-      ],
+      content: "image:\n[image: image/png]",
     });
   });
 
@@ -376,6 +377,7 @@ describe("LiteLLM parity: Chat Completions <-> Responses", () => {
     const chat = responsesToChatCompletionsRequest({
       model: "gpt-5.2",
       input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "echo" }] }],
+      tools: [{ type: "function", name: "Echo", parameters: { type: "object" } }],
       tool_choice: { type: "function", name: "Echo" },
     });
 

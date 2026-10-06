@@ -17,7 +17,7 @@ import {
   readAgentSubagentType,
 } from "@eco/runtime";
 import type { ThreadRunEvent, ThreadSummary } from "../shared/ipc";
-import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionSnapshot } from "../shared/conversation-v2-projection";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { createContextLifecycleService } from "./context-lifecycle-service";
 import type { ContextMonitorSnapshot } from "./context-window-monitor";
@@ -30,8 +30,8 @@ import {
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { createSubagentSessionHooks } from "./subagent-session-hooks";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry";
-import { buildThreadRunProjection } from "./thread-run-projection";
-import { trimProjectionForFeed } from "./thread-run-projection-feed";
+import { buildThreadRunProjection } from "./conversation-v2-runtime-projection";
+import { trimProjectionForFeed } from "./legacy-feed-replay-projection";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 
@@ -81,6 +81,46 @@ function isPiChildSessionCapture(event: AgentEvent, parentAgentId: string): stri
 interface SubagentTaskLink {
   taskId: string;
   agentType: string;
+}
+
+function findSubagentTaskLink(
+  links: ReadonlyMap<string, SubagentTaskLink>,
+  input: { taskId?: string; parentToolUseId?: string },
+): SubagentTaskLink | undefined {
+  const parentToolUseId = input.parentToolUseId?.trim();
+  if (parentToolUseId) {
+    const byParent = links.get(parentToolUseId);
+    if (byParent) {
+      return byParent;
+    }
+  }
+  const taskId = input.taskId?.trim();
+  if (!taskId) {
+    return undefined;
+  }
+  for (const link of links.values()) {
+    if (link.taskId === taskId) {
+      return link;
+    }
+  }
+  return undefined;
+}
+
+function resolveReplaySubagentType(
+  event: Pick<AgentEvent, "payload" | "role">,
+  links: ReadonlyMap<string, SubagentTaskLink>,
+  input: { taskId?: string; parentToolUseId?: string },
+): string {
+  if (isRecord(event.payload)) {
+    const fromPayload =
+      (typeof event.payload.subagent_type === "string" && event.payload.subagent_type.trim()) ||
+      (typeof event.payload.agentType === "string" && event.payload.agentType.trim()) ||
+      "";
+    if (fromPayload) {
+      return fromPayload;
+    }
+  }
+  return findSubagentTaskLink(links, input)?.agentType || event.role;
 }
 
 interface ReplaySubagentTiming {
@@ -272,7 +312,13 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
 }): Promise<SdkAgentEventsReplayResult> {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "eco-sdk-live-replay-"));
   const dbPath = path.join(tempDir, "eco-coding.sqlite");
-  const store = await createConversationStore(dbPath);
+  // Replay exercises the same V2 runtime writer as the desktop process. Keep
+  // the temporary database V2-only so this maintenance fixture cannot
+  // accidentally recreate the legacy conversation tables.
+  const store = await createConversationStore(dbPath, {
+    freshStorageMode: "v2_only",
+    requiredStorageMode: "v2_only",
+  });
   const lifecycle = new AgentLifecycleService(store);
   const metricsRegistry = new SubagentMetricsRegistry(store);
   const liveRequestRegistry = new ThreadLiveRequestRegistry();
@@ -450,8 +496,14 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       event.payload.sdkKind === "task_started"
     ) {
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
-      const agentType =
-        (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
+      const parentToolUseId =
+        (typeof event.payload.parent_tool_use_id === "string" && event.payload.parent_tool_use_id.trim()) ||
+        (typeof event.payload.tool_use_id === "string" && event.payload.tool_use_id.trim()) ||
+        "";
+      const agentType = resolveReplaySubagentType(event, subagentTaskLinks, {
+        ...(taskId && { taskId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
       if (taskId) {
         const existingTiming = subagentReplayTimings.get(taskId);
         subagentReplayTimings.set(taskId, {
@@ -477,14 +529,39 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
     ) {
       const status = event.payload.status;
       const taskId = typeof event.payload.task_id === "string" ? event.payload.task_id.trim() : "";
-      const agentType =
-        (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
-      if (status === "completed" && taskId) {
+      const parentToolUseId =
+        (typeof event.payload.parent_tool_use_id === "string" && event.payload.parent_tool_use_id.trim()) ||
+        (typeof event.payload.tool_use_id === "string" && event.payload.tool_use_id.trim()) ||
+        "";
+      const agentType = resolveReplaySubagentType(event, subagentTaskLinks, {
+        ...(taskId && { taskId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
+      const terminal =
+        status === "completed" || status === "failed" || status === "stopped" || status === "killed";
+      if (terminal && taskId && !syntheticSubagentStops.has(taskId)) {
+        syntheticSubagentStops.add(taskId);
+        const existingTiming = subagentReplayTimings.get(taskId);
+        subagentReplayTimings.set(taskId, {
+          startedAt: existingTiming?.startedAt ?? observedAt,
+          endedAt: observedAt,
+          ...(existingTiming?.parentToolUseId
+            ? { parentToolUseId: existingTiming.parentToolUseId }
+            : parentToolUseId
+              ? { parentToolUseId }
+              : {}),
+        });
+        const summary =
+          (typeof event.payload.summary === "string" && event.payload.summary.trim()) ||
+          (typeof event.payload.error === "string" && event.payload.error.trim()) ||
+          "";
         await subagentStopHook(
           {
             hook_event_name: "SubagentStop",
             agent_id: taskId,
             agent_type: agentType,
+            ...(status !== "completed" && { status }),
+            ...(summary && { last_assistant_message: summary }),
           } as SubagentStopHookInput,
           undefined,
           hookOptions,
@@ -501,14 +578,32 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
         (typeof event.payload.agentId === "string" && event.payload.agentId.trim()) ||
         event.agentId?.trim() ||
         "";
-      const agentType =
-        (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
-      if (agentId) {
+      const parentToolUseId =
+        typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id.trim() : "";
+      const agentType = resolveReplaySubagentType(event, subagentTaskLinks, {
+        ...(agentId && { taskId: agentId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
+      if (agentId && !syntheticSubagentStops.has(agentId)) {
+        syntheticSubagentStops.add(agentId);
+        const existingTiming = subagentReplayTimings.get(agentId);
+        subagentReplayTimings.set(agentId, {
+          startedAt: existingTiming?.startedAt ?? observedAt,
+          endedAt: observedAt,
+          ...(existingTiming?.parentToolUseId ? { parentToolUseId: existingTiming.parentToolUseId } : {}),
+        });
+        const failed = event.payload.failed === true || event.payload.status === "failed";
+        const error =
+          (typeof event.payload.error === "string" && event.payload.error.trim()) ||
+          (typeof event.payload.message === "string" && event.payload.message.trim()) ||
+          "";
         await subagentStopHook(
           {
             hook_event_name: "SubagentStop",
             agent_id: agentId,
             agent_type: agentType,
+            ...(failed && { failed: true, status: "failed" }),
+            ...(error && { last_assistant_message: error }),
           } as SubagentStopHookInput,
           undefined,
           hookOptions,
@@ -530,11 +625,23 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
             endedAt: observedAt,
             ...(existingTiming?.parentToolUseId ? { parentToolUseId: existingTiming.parentToolUseId } : {}),
           });
+          const settledFailed =
+            isRecord(event.payload) && (event.payload.failed === true || event.payload.status === "failed");
+          const settledError =
+            (isRecord(event.payload) &&
+              typeof event.payload.error === "string" &&
+              event.payload.error.trim()) ||
+            (isRecord(event.payload) &&
+              typeof event.payload.message === "string" &&
+              event.payload.message.trim()) ||
+            "";
           await subagentStopHook(
             {
               hook_event_name: "SubagentStop",
               agent_id: childSessionId,
               agent_type: link.agentType,
+              ...(settledFailed && { failed: true, status: "failed" }),
+              ...(settledError && { last_assistant_message: settledError }),
             } as SubagentStopHookInput,
             undefined,
             hookOptions,

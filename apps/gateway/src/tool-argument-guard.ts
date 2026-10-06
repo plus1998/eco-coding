@@ -7,6 +7,10 @@ import {
   type ResponsesStreamEvent,
 } from "@eco/openai-anthropic-bridge";
 import { parseResponsesStreamEventBlock, splitSseBlocks } from "./sse.js";
+import {
+  fixupEcoMcpHubResponsesPayload,
+  fixupEcoMcpHubStreamEvent,
+} from "./eco-mcp-hub-fixup.js";
 
 const TOOL_ARGUMENT_FAILURE_LIMIT = 3;
 const TOOL_ARGUMENT_FAILURE_TTL_MS = 60 * 60 * 1000;
@@ -104,13 +108,17 @@ export function toolArgumentCircuitBreakResponse(stream: boolean, count: number)
 }
 
 /** Normalize every successful Responses API output path, including native passthrough. */
-export async function normalizeResponsesToolArgumentResponse(response: Response): Promise<Response> {
+export async function normalizeResponsesToolArgumentResponse(
+  response: Response,
+  hubNamespace?: string,
+): Promise<Response> {
   if (!response.ok) {
     return response;
   }
+  const namespace = hubNamespace?.trim() || undefined;
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("text/event-stream") && response.body) {
-    return recreateResponse(response, normalizeResponsesSse(response.body));
+    return recreateResponse(response, normalizeResponsesSse(response.body, namespace));
   }
   if (!contentType.includes("json")) {
     return response;
@@ -123,11 +131,14 @@ export async function normalizeResponsesToolArgumentResponse(response: Response)
   } catch {
     return recreateResponse(response, text);
   }
-  const normalized = normalizeResponsesPayload(parsed);
+  const normalized = normalizeResponsesPayload(parsed, namespace);
   return recreateResponse(response, normalized === parsed ? text : JSON.stringify(normalized));
 }
 
-function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+function normalizeResponsesSse(
+  body: ReadableStream<Uint8Array>,
+  hubNamespace?: string,
+): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   const state = newResponsesToolArgumentStreamState();
@@ -137,6 +148,10 @@ function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream
     { blocks: string[]; firstEvent: ResponsesStreamEvent; argumentsText: string }
   >();
   let buffer = "";
+
+  const hubNamespaceValue = hubNamespace?.trim() || undefined;
+  const withHubNamespace = (event: ResponsesStreamEvent): ResponsesStreamEvent =>
+    hubNamespaceValue ? (fixupEcoMcpHubStreamEvent(event, hubNamespaceValue) as ResponsesStreamEvent) : event;
 
   const normalizeBlock = (block: string): string[] => {
     const event = parseResponsesStreamEventBlock(block) as ResponsesStreamEvent | null;
@@ -155,7 +170,7 @@ function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream
       const pending = pendingArgumentDeltas.get(key);
       const normalized = normalizeResponsesStreamToolArguments(event, state);
       if (!pending) {
-        return [normalizedResponsesSseBlock(block, event, normalized)];
+        return [normalizedResponsesSseBlock(block, event, withHubNamespace(normalized))];
       }
       pendingArgumentDeltas.delete(key);
       const itemArguments = event.item?.arguments;
@@ -168,7 +183,7 @@ function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream
         ...(changed
           ? [normalizedArgumentDeltaBlock(pending, normalizedArguments)]
           : pending.blocks.map((pendingBlock) => `${pendingBlock}\n\n`)),
-        normalizedResponsesSseBlock(block, event, normalized),
+        normalizedResponsesSseBlock(block, event, withHubNamespace(normalized)),
       ];
     }
 
@@ -196,7 +211,7 @@ function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream
         state,
       );
       if (!pending) {
-        return [normalizedResponsesSseBlock(block, event, normalized)];
+        return [normalizedResponsesSseBlock(block, event, withHubNamespace(normalized))];
       }
       pendingArgumentDeltas.delete(key);
       const normalizedArguments = normalized.arguments ?? fullArguments;
@@ -205,7 +220,7 @@ function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream
         ...(changed
           ? [normalizedArgumentDeltaBlock(pending, normalizedArguments)]
           : pending.blocks.map((pendingBlock) => `${pendingBlock}\n\n`)),
-        normalizedResponsesSseBlock(block, event, normalized),
+        normalizedResponsesSseBlock(block, event, withHubNamespace(normalized)),
       ];
     }
 
@@ -215,9 +230,9 @@ function normalizeResponsesSse(body: ReadableStream<Uint8Array>): ReadableStream
         pending.blocks.map((pendingBlock) => `${pendingBlock}\n\n`),
       );
       pendingArgumentDeltas.clear();
-      return [...held, normalizedResponsesSseBlock(block, event, normalized)];
+      return [...held, normalizedResponsesSseBlock(block, event, withHubNamespace(normalized))];
     }
-    return [normalizedResponsesSseBlock(block, event, normalized)];
+    return [normalizedResponsesSseBlock(block, event, withHubNamespace(normalized))];
   };
 
   return body.pipeThrough(
@@ -307,18 +322,21 @@ function replaceSseData(block: string, data: string): string {
   return `${preserved.join("\n")}\n\n`;
 }
 
-function normalizeResponsesPayload(value: unknown): unknown {
+function normalizeResponsesPayload(value: unknown, hubNamespace?: string): unknown {
   if (!isRecord(value)) {
     return value;
   }
+  let normalized: unknown;
   if (isRecord(value.response)) {
     const response = normalizeResponsesToolArguments(value.response as unknown as ResponsesResponse);
-    return (response as unknown) === value.response ? value : { ...value, response };
-  }
-  if (!Array.isArray(value.output)) {
+    normalized = (response as unknown) === value.response ? value : { ...value, response };
+  } else if (Array.isArray(value.output)) {
+    normalized = normalizeResponsesToolArguments(value as unknown as ResponsesResponse);
+  } else {
     return value;
   }
-  return normalizeResponsesToolArguments(value as unknown as ResponsesResponse);
+  const namespace = hubNamespace?.trim();
+  return namespace ? fixupEcoMcpHubResponsesPayload(normalized, namespace) : normalized;
 }
 
 function latestFunctionCallOutput(value: unknown): string | undefined {

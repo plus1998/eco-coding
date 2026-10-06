@@ -18,6 +18,12 @@ export interface GatewayProvider {
    */
   version?: string;
   apiKey: string;
+  /** Provider authentication mode. ChatGPT plan credentials are resolved locally at request time. */
+  authMethod?: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
+  /** Local credential pool selected by the desktop client. */
+  credentialPoolId?: string;
+  /** Optional per-provider outbound proxy; requests to this provider's origin bypass the global proxy. */
+  upstreamProxyUrl?: string;
   /** Wire model id sent to the real upstream. */
   upstreamModelId: string;
   /** Request `model` values routed to this provider. */
@@ -36,12 +42,26 @@ export interface ResolvedProviderRoute {
   threadId?: string;
   runAttemptId?: string;
   logicalRequestId?: string;
+  /** Local account selected for a chatgpt_subscription provider. */
+  credentialAccountId?: string;
 }
 
 export interface GatewayConfig {
   host: string;
   port: number;
   providers: GatewayProvider[];
+  /** Resolves a short-lived upstream bearer token without exposing it to callers. */
+  resolveCredential?: (input: {
+    provider: GatewayProvider;
+    request?: Request;
+  }) => Promise<{ accessToken: string; accountId?: string; upstreamProxyUrl?: string }>;
+  /** Reports the upstream admission result back to the local account pool. */
+  reportCredentialResult?: (input: {
+    provider: GatewayProvider;
+    accountId?: string;
+    statusCode: number;
+    errorCode?: string;
+  }) => void | Promise<void>;
   /**
    * Global upstream User-Agent override (from Proxy Bridge settings).
    * When unset, passthrough client UA or fall back to Eco default.

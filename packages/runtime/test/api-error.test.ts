@@ -43,6 +43,25 @@ test("parseSdkApiErrorAttribute maps model_not_found", () => {
   expect(formatApiErrorUserMessage(parsed!)).toBe("模型不存在或无权访问，请检查 Provider 配置与模型 ID。");
 });
 
+test("formatApiErrorUserMessage exposes Codex encrypted agent handoff incompatibility", () => {
+  expect(
+    formatApiErrorUserMessage({
+      code: "upstream_error",
+      statusCode: 400,
+      message: "unsupported input item type: agent_message",
+    }),
+  ).toBe(
+    "当前 Provider 不支持 Codex 子代理的加密 agent_message；请改用 PI/Claude 或支持 Codex Multi-Agent 的 Responses Provider。",
+  );
+  expect(
+    formatApiErrorUserMessage({
+      code: "invalid_request",
+      statusCode: 400,
+      message: "unsupported content part type: encrypted_content",
+    }),
+  ).toContain("Codex 子代理");
+});
+
 test("formatApiErrorUserMessage maps HTTP 529 overload structurally", () => {
   expect(
     formatApiErrorUserMessage({
@@ -69,6 +88,17 @@ test("parseSdkApiErrorAttribute maps leading 529 status", () => {
   );
   expect(parsed?.statusCode).toBe(529);
   expect(parsed?.message).toBe("上游模型过载，请稍后重试或切换 Provider。");
+});
+
+test("parseSdkApiErrorAttribute keeps text that surrounds a JSON blob without error fields", () => {
+  // Internal integrity errors embed JSON in the middle of the sentence. Only the
+  // text after the first blob used to survive, so the Feed showed a fragment.
+  const conflict =
+    'Message message_user_c8be0859 history target changed (existing={"activityLineId":"user:c3a73dc6","userMessageId":"c3a73dc6"}, attempted={"activityLineId":"sdk:efa57c6c","userMessageId":"efa57c6c"}, eventId=provider_history_target_635c1aa2, seq=4941).';
+  const parsed = parseSdkApiErrorAttribute(conflict);
+  expect(parsed?.message).toBe(conflict);
+  expect(parsed?.statusCode).toBeUndefined();
+  expect(parsed?.code).toBeUndefined();
 });
 
 test("apiErrorDedupeKey collapses identical failures", () => {

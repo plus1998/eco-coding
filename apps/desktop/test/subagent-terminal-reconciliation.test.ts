@@ -28,6 +28,13 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
+async function createLegacyStore(dbPath: string) {
+  return createConversationStore(dbPath, {
+    freshStorageMode: "legacy_compat",
+    requiredStorageMode: "legacy_compat",
+  });
+}
+
 test("parseSubagentAssistantMessageIds deduplicates exact assistant ids and reports malformed lines", () => {
   const parsed = parseSubagentAssistantMessageIds(
     [
@@ -223,7 +230,7 @@ test.skipIf(!sqliteAvailable)(
   "conversation store attributes historical Feed rows only by exact sdk message id",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-terminal-feed-"));
-    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    const store = await createLegacyStore(path.join(dir, "eco.sqlite"));
     store.saveThread({
       id: "thr_terminal_feed",
       title: "Terminal feed",

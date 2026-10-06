@@ -16,7 +16,12 @@ export type RunAttemptStatus = "running" | "completed" | "failed" | "cancelled";
 export type AgentInstanceKind = "planner" | "subagent";
 export type AgentInstanceStatus = "launching" | "active" | "stopped" | "abandoned";
 export type UsageLedgerSource = "sdk" | "proxy" | "codex" | "pi";
-export type UsageLedgerKind = "request_final" | "request_partial" | "assistant_fallback" | "context";
+export type UsageLedgerKind =
+  | "request_final"
+  | "request_partial"
+  | "assistant_fallback"
+  | "context"
+  | "session_total";
 export type UsageAttributionStatus = "attributed" | "pending" | "unattributed";
 
 export interface RunAttemptRecord {
@@ -28,6 +33,12 @@ export interface RunAttemptRecord {
   startedAt: string;
   endedAt?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface RunAttemptCommandDispatch {
+  principalId: string;
+  clientCommandId: string;
+  dispatchId: string;
 }
 
 export interface AgentInstanceRecord {
@@ -156,6 +167,7 @@ export function projectUsageLedger(events: readonly UsageLedgerEvent[]): UsageLe
   };
 
   for (const event of events) {
+    if (event.usageKind === "session_total") continue;
     addEventToTotals(projection.total, event);
     addEventToTotals((projection.byRole[event.role] ??= createEmptyUsageLedgerTotals()), event);
     if (event.agentId) {

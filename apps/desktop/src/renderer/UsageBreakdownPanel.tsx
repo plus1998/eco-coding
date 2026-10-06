@@ -38,7 +38,7 @@ type BreakdownView = "agent" | "model" | "events";
 
 interface UsageBreakdownPanelProps {
   billing?: ThreadBillingSnapshot;
-  threadId?: string;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   variant: "full" | "compact";
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }
@@ -765,7 +765,7 @@ function ViewToggle({
 
 export function UsageBreakdownPanel({
   billing,
-  threadId,
+  ledgerEvents = [],
   variant,
   agentDisplayNames,
 }: UsageBreakdownPanelProps) {
@@ -773,29 +773,12 @@ export function UsageBreakdownPanel({
   const breakdown = useMemo(() => buildBillingTokenBreakdown(billing), [billing]);
   const [view, setView] = useState<BreakdownView>("model");
   const [expanded, setExpanded] = useState(false);
-  const [ledgerEvents, setLedgerEvents] = useState<ThreadUsageLedgerEventView[]>([]);
   const compact = variant === "compact";
-  const showEvents = Boolean(threadId && window.eco?.listUsageLedgerEvents);
+  const showEvents = true;
   const eventsSummary = useMemo(
     () => buildLedgerEventSummary(ledgerEvents, billing),
     [billing, ledgerEvents],
   );
-
-  useEffect(() => {
-    if (!threadId || !window.eco?.listUsageLedgerEvents) {
-      setLedgerEvents([]);
-      return;
-    }
-    let cancelled = false;
-    void window.eco.listUsageLedgerEvents(threadId).then((events) => {
-      if (!cancelled) {
-        setLedgerEvents(events);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [threadId, billing]);
 
   if (!breakdown) {
     return null;

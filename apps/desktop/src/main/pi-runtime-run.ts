@@ -24,7 +24,7 @@ import type {
   RuntimeRoleRouteConfig,
   ThreadSummary,
   WorkspaceInfo,
-  type IntegratedWebSearchSettingsSnapshot,
+  IntegratedWebSearchSettingsSnapshot,
 } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
@@ -36,6 +36,7 @@ import type { RequestAttemptResult } from "./request-retry";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import type { RunAttemptContext } from "./thread-run-attempt";
 import { buildDriverRoutes } from "./thread-runtime-routes";
+import type { PreparedConversationCommandDispatch } from "./conversation-command-dispatch";
 
 export interface PiThreadStartRunInput {
   thread: ThreadSummary;
@@ -53,6 +54,7 @@ export interface PiThreadStartRunInput {
   appendSystemPrompt?: string[];
   /** Thread orchestration snapshot — enables session-scoped Agent tool. */
   agentRegistry?: EcoAgentRuntimeConfig;
+  runtimeDispatch?: PreparedConversationCommandDispatch;
 }
 
 export interface PiRuntimeOrchestrationDeps {
@@ -70,6 +72,8 @@ export interface PiRuntimeOrchestrationDeps {
     phase: "execution" | "ask" | "planning" | "continuation",
     signal: AbortSignal,
     run: (context: RunAttemptContext) => Promise<RequestAttemptResult>,
+    retryIndex?: number,
+    runtimeDispatch?: PreparedConversationCommandDispatch,
   ) => Promise<RequestAttemptResult>;
   resolveRuntimeConfigForThreadId: (
     threadId: string,
@@ -85,7 +89,7 @@ export interface PiRuntimeOrchestrationDeps {
     attachments: PromptImageAttachment[] | undefined,
     context: RunAttemptContext,
   ) => Promise<StartedGatewayRouteBinding>;
-  /** User paste images → vision subagent; main PI prompt gets text report only. */
+  /** Composer supplies image paths/refs; PI decides when to call image_view. */
   resolvePromptImagesForMainContext: (input: {
     threadId: string;
     prompt: string;
@@ -190,7 +194,7 @@ export function buildPiWebSearchSessionFields(input: {
     networkWebSearch: input.networkWebSearch,
     supportsNativeWebSearch: resolveSupportsNativeWebSearch(input.plannerManualSpec),
     integratedEnabled: input.integratedSettings.enabled,
-    integratedApiKey: input.integratedApiKey,
+    ...(input.integratedApiKey === undefined ? {} : { integratedApiKey: input.integratedApiKey }),
   });
   return {
     webSearchBackend: webSearch.backend,
@@ -506,6 +510,8 @@ export async function startPiThreadRun(
           await binding.close();
         }
       },
+      0,
+      input.runtimeDispatch,
     );
 
     const hasPendingPlan =
@@ -527,8 +533,12 @@ export async function abortPiThread(threadId: string): Promise<void> {
   await globalPiSessionRegistry.abort(threadId);
 }
 
-export function disposePiThreadSession(threadId: string): void {
-  globalPiSessionRegistry.deleteThread(threadId);
+export async function disposePiThreadSession(threadId: string): Promise<void> {
+  await globalPiSessionRegistry.deleteThread(threadId);
+}
+
+export async function disposeAllPiSessions(): Promise<void> {
+  await globalPiSessionRegistry.deleteAll();
 }
 
 /** Remove Eco-owned `pi-agent/<threadId>` tree after disposing the in-process session. */

@@ -1,4 +1,4 @@
-import '../models/thread_run_projection.dart';
+import '../models/conversation_v2_projection_models.dart';
 import '../../l10n/generated/app_localizations.dart';
 
 int computeSubagentSessionDurationMs(

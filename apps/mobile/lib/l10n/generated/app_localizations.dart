@@ -554,6 +554,12 @@ abstract class AppLocalizations {
   /// **'Cancel'**
   String get commonCancel;
 
+  /// No description provided for @commonSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get commonSave;
+
   /// No description provided for @commonClose.
   ///
   /// In en, this message translates to:
@@ -3302,6 +3308,24 @@ abstract class AppLocalizations {
   /// **'Extra arguments: {args}'**
   String threadExtraArgsValue(Object args);
 
+  /// No description provided for @threadCustomizeScript.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize command'**
+  String get threadCustomizeScript;
+
+  /// No description provided for @threadPrefixCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Leading command'**
+  String get threadPrefixCommand;
+
+  /// No description provided for @threadPrefixCommandHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. nvm use 20 && export NODE_ENV=production'**
+  String get threadPrefixCommandHint;
+
   /// No description provided for @threadRun.
   ///
   /// In en, this message translates to:
@@ -3415,6 +3439,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No tool details'**
   String get threadNoToolDetails;
+
+  /// No description provided for @threadLoadMoreToolDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more details'**
+  String get threadLoadMoreToolDetails;
 
   /// No description provided for @threadRequestingDetails.
   ///
@@ -3923,7 +3953,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerVisionModelHint.
   ///
   /// In en, this message translates to:
-  /// **'Used by the vision subagent; falls back to the main model when unset'**
+  /// **'Used by the image_view tool; falls back to the main model when unset'**
   String get composerVisionModelHint;
 
   /// No description provided for @composerVisionModelFollowMain.
@@ -3947,7 +3977,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerVisionModelHintAcp.
   ///
   /// In en, this message translates to:
-  /// **'Used by the vision subagent; falls back to the Cursor model when unset'**
+  /// **'Used by the image_view tool; falls back to the Cursor model when unset'**
   String get composerVisionModelHintAcp;
 
   /// No description provided for @composerCoreKind.

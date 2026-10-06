@@ -6,6 +6,9 @@ import '../../core/theme/eco_icons.dart';
 /// Shared hit target for composer footer icon buttons.
 const double kComposerToolbarHitSize = 36;
 
+/// Compact horizontal slot; retain the toolbar height for tapping.
+const double kComposerToolbarHitWidth = 32;
+
 /// Shared logical icon size; individual glyphs are optically tuned around this.
 const double kComposerToolbarIconSize = 20;
 
@@ -66,10 +69,13 @@ class ComposerToolbarIconButton extends StatelessWidget {
     return IconButton(
       onPressed: onPressed,
       tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
+      visualDensity: VisualDensity.standard,
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(
-        minWidth: kComposerToolbarHitSize,
+        minWidth: kComposerToolbarHitWidth,
         minHeight: kComposerToolbarHitSize,
       ),
       color: color,

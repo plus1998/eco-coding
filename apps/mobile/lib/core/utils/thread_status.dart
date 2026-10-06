@@ -19,6 +19,8 @@ bool shouldUpdateThreadSummaryFromLiveEvent(String eventType) {
     'thread.title_generating',
     'thread.runtime_config_updated',
     'thread.session_captured',
+    // Retired V1 projection notifications must never mutate the V2 session
+    // summary, even when an older desktop or queued event is replayed.
     'thread.run_projection_updated',
     'thread.subagent_timing_updated',
     'thread.follow_up_queue_paused',

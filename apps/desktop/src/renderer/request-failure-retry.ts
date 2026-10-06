@@ -1,4 +1,5 @@
 import { isCodexRetryBlockingProgressItem } from "../shared/codex-request-retry-gate";
+import { CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN } from "../shared/conversation-runtime-event-failure";
 import type { ThreadRunProjectionTimelineItem } from "../shared/ipc";
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import {
@@ -13,7 +14,7 @@ import {
   supportsOneClickRequestRetry,
   usesLatestTurnOnlyRequestRetry,
 } from "../shared/thread-request-retry";
-import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./thread-run-projection-view";
+import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./conversation-v2-projection-view";
 
 export type RequestFailureRetryTarget = {
   activityLineId: string;
@@ -32,12 +33,19 @@ function readRewindActivityLineId(item: ThreadRunProjectionTimelineItem): string
 
 export function readUserPromptRetryIdentity(
   item: ThreadRunProjectionTimelineItem,
+  options?: { allowEmptyPrompt?: boolean },
 ): RequestFailureRetryTarget | undefined {
-  if (!isProjectionUserPromptItem(item)) {
+  const imageOnlyRecordedPrompt =
+    options?.allowEmptyPrompt === true &&
+    !item.text.trim() &&
+    item.scope !== "agent" &&
+    item.role === "user" &&
+    item.metadata?.liveType === "thread.user_prompt";
+  if (!isProjectionUserPromptItem(item) && !imageOnlyRecordedPrompt) {
     return undefined;
   }
   const prompt = item.text.trim();
-  if (!prompt) {
+  if (!prompt && !options?.allowEmptyPrompt) {
     return undefined;
   }
   const activityLineId = readRewindActivityLineId(item) || item.streamKey?.trim() || item.id.trim();
@@ -59,7 +67,7 @@ export function isRetryableRequestFailureItem(item: ThreadRunProjectionTimelineI
     return false;
   }
   const origin = resolveThreadActivityOrigin(item);
-  if (origin === "sdk.api_retry") {
+  if (origin === "sdk.api_retry" || origin === CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN) {
     return false;
   }
   if (origin === "proxy.connection_error" || origin === "eco.thread_failed") {

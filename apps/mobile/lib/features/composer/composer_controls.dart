@@ -2509,7 +2509,7 @@ class _ComposerAcpModelControlState
       key: _anchorKey,
       height: kComposerToolbarHitSize,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -2663,7 +2663,7 @@ class _ComposerModelEffortControlState
       key: _anchorKey,
       height: kComposerToolbarHitSize,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,

@@ -5,7 +5,11 @@ import {
   type CodexAppServerNotificationHandler,
   resolveCodexTurnStartTimeoutMs,
 } from "./codex-app-server-client.js";
-import { buildCodexGatewayModelAlias, buildCodexModelProviderSlug } from "./codex-config-sync.js";
+import {
+  buildCodexGatewayModelAlias,
+  buildCodexModelProviderSlug,
+  CODEX_BUILT_IN_OPENAI_PROVIDER_ID,
+} from "./codex-config-sync.js";
 import {
   buildPlanHandoff,
   buildPlanHandoffContinuePlan,
@@ -328,8 +332,15 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         "ResolvedModelRoute.upstreamModelId is required for Codex turn/start model (ThreadRuntimeConfig modelId; do not use primary.modelId eco alias).",
       );
     }
-    const modelProvider = buildCodexModelProviderSlug(ecoProviderId);
-    const codexGatewayModel = buildCodexGatewayModelAlias(ecoProviderId, turnModel, route.apiCompat);
+    // Built-in OpenAI (auth.json) must be pinned explicitly: config.toml sets a
+    // global `model_provider = "eco_*"` default, so omitting modelProvider would
+    // send the official-subscription route into eco-gateway, which has no
+    // "openai" provider (route miss → 404).
+    const isBuiltInOpenAi = ecoProviderId === CODEX_BUILT_IN_OPENAI_PROVIDER_ID;
+    const modelProvider = isBuiltInOpenAi
+      ? CODEX_BUILT_IN_OPENAI_PROVIDER_ID
+      : buildCodexModelProviderSlug(ecoProviderId);
+    const codexGatewayModel = isBuiltInOpenAi ? turnModel : buildCodexGatewayModelAlias(ecoProviderId, turnModel, route.apiCompat);
     const cwd = input.worktreePath || input.workspacePath;
     const turnOptions = overrides.turnOptions ?? this.materializeTurnOptions(this.sessionMode);
     const prompt = overrides.prompt?.trim() || input.prompt;
@@ -353,7 +364,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         threadId: codexThreadId,
         cwd,
         model: codexGatewayModel,
-        modelProvider,
+        ...(modelProvider ? { modelProvider } : {}),
         ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
         ...(this.threadConfig ? { config: this.threadConfig } : {}),
         ...(this.threadConfig && isCodexThreadConfigApplied(this.client, codexThreadId, this.threadConfig)
@@ -383,7 +394,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
           {
             cwd,
             model: codexGatewayModel,
-            modelProvider,
+            ...(modelProvider ? { modelProvider } : {}),
             ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
             ...(this.threadConfig ? { config: this.threadConfig } : {}),
           } satisfies CodexThreadStartParams,
@@ -546,7 +557,7 @@ export function buildCodexTurnInput(
   skillInputs: readonly CodexSkillInput[] | undefined,
   localImagePaths: readonly string[] | undefined = undefined,
 ): CodexTurnStartParams["input"] {
-  const input: CodexTurnStartParams["input"] = [{ type: "text", text: prompt }];
+  const input: CodexTurnStartParams["input"] = prompt ? [{ type: "text", text: prompt }] : [];
   const seenPaths = new Set<string>();
   for (const [index, skill] of (skillInputs ?? []).entries()) {
     const name = skill.name.trim();

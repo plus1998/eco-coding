@@ -39,10 +39,11 @@ import type {
   EcoSdkResumeOptions,
   EcoSdkSessionOptions,
 } from "./index";
-import { forkClaudeSessionAt } from "./runtime-session-compat.js";
+import { SDK_TASK_READ_TOOL_NAMES } from "./sdk-tool-names.js";
 import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
 
 export {
+  findClaudeSessionByRecoveryTitle,
   forkClaudeSessionAt,
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "./runtime-session-compat.js";
@@ -134,7 +135,6 @@ export type SdkQueryHandle = AsyncIterable<unknown> & {
     mode: "dontAsk" | "default" | "acceptEdits" | "plan" | "bypassPermissions",
   ) => Promise<void> | void;
   getContextUsage?: (opts?: { detail?: "summary" | "full" }) => Promise<Record<string, unknown>>;
-  rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
 
 type SdkQuery = (input: {
@@ -176,6 +176,15 @@ export class ClaudeStreamInputFailed extends Error {
 
 export function isClaudeStreamInputDeliveryUnknown(error: unknown): boolean {
   return error instanceof ClaudeStreamInputFailed && error.deliveryUnknown;
+}
+
+/** Eco follow-up ids wrap a UUID; SDK 0.3.275+ fork points require the bare UUID. */
+export function normalizeClaudeSdkUserMessageUuid(value: string): string {
+  const uuid = value.startsWith("tfu_") ? value.slice(4) : value;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+    throw new Error("Claude SDK user messages require a valid UUID; Eco follow-up ids must contain one.");
+  }
+  return uuid;
 }
 
 export interface ClaudeQueryLifecycleHooks {
@@ -224,8 +233,9 @@ export const CLAUDE_HELD_PROMPT_CLOSE_GRACE_MS = 75;
  * SDK `streamInput()` calls `transport.endInput()` after the iterable ends and the
  * first `result`, which permanently breaks later `can_use_tool` (often surfaced as
  * `toolDenialKind: "cancelled"` / J3H "user doesn't want to take this action").
- * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.266 changelog has
- * no equivalent. Still required as of 0.3.266.
+ * TypeScript 0.3.284 fixed an SDK background-follow-up stdin teardown bug.
+ * Eco still needs the mailbox for mid-turn user input and closes it only once
+ * user UUIDs, session state, subagents and permission callbacks have settled.
  *
  * Eco uses one held mailbox (`createHeldPromptStream`) and never calls
  * `query.streamInput`. Because `prompt` is an AsyncIterable, the SDK treats the
@@ -504,6 +514,7 @@ const defaultAllowedTools = [
 const readOnlyDisallowedSdkTools = [...SDK_FILESYSTEM_WRITE_TOOL_NAMES, "Bash"] as const;
 const planningContinuationAllowedTools = [
   "Agent",
+  ...SDK_TASK_READ_TOOL_NAMES,
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
@@ -514,6 +525,7 @@ const planningContinuationAllowedTools = [
 const protectedPlanModeToolNames = ["EnterPlanMode", "ExitPlanMode", "mcp__eco_plan__finalize_plan"] as const;
 const askAllowedTools = [
   "Agent",
+  ...SDK_TASK_READ_TOOL_NAMES,
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
@@ -638,9 +650,7 @@ export function resolveIntegratedWebSearchAgentDefOptions(
   if (!fullToolName) {
     return undefined;
   }
-  const serverFromMcp = Object.keys(session.mcpServers ?? {}).find((name) =>
-    name.includes("eco_web_search"),
-  );
+  const serverFromMcp = Object.keys(session.mcpServers ?? {}).find((name) => name.includes("eco_web_search"));
   const serverFromRuntime = session.runtimeMcpServers?.find((name) => name.includes("eco_web_search"));
   const serverName = (serverFromMcp ?? serverFromRuntime)?.trim();
   if (!serverName) {
@@ -793,6 +803,9 @@ export interface SdkToolPermissionRequest {
   title?: string;
   displayName?: string;
   description?: string;
+  defaultToNo?: boolean;
+  suppressAlwaysAllowRule?: boolean;
+  mcpServer?: { name: string; source: string };
   signal: AbortSignal;
 }
 
@@ -907,95 +920,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
   }
 
-  async rewindSessionFiles(input: AgentRuntimeRunInput, userMessageId: string): Promise<void> {
-    if (!input.resume?.resumeSessionId) {
-      throw new Error("rewindFiles requires an existing SDK session (resume).");
-    }
-    const sdk = await this.loadSdk();
-    const plannerRoute = input.routes.find((route) => route.role === "planner") ?? input.routes[0];
-    if (!plannerRoute) {
-      throw new Error("At least one model route is required to rewind files");
-    }
-    const sessionCwd = resolveClaudeSessionCwd(input);
-    const queryOptions: Record<string, unknown> = {
-      cwd: sessionCwd,
-      model: plannerRoute.primary.modelId,
-      ...(this.options.pathToClaudeCodeExecutable
-        ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }
-        : {}),
-      fallbackModel: plannerRoute.fallbacks?.[0]?.modelId,
-      permissionMode: "dontAsk",
-      allowedTools: [],
-      systemPrompt: { type: "preset", preset: "claude_code" },
-      tools: { type: "preset", preset: "claude_code" },
-      env: buildSdkProcessEnv({
-        apiKey: this.options.apiKey,
-        baseUrl: this.options.baseUrl,
-        ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
-        ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
-      }),
-      settings: {},
-    };
-    applyClaudeJsonlSessionPersistence(queryOptions);
-    applyResumeToQueryOptions(queryOptions, input.resume);
-    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
-      ...(plannerRoute.primary.contextWindow !== undefined
-        ? { autoCompactWindow: plannerRoute.primary.contextWindow }
-        : {}),
-      ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
-    });
-    // rewind fixture: empty streaming prompt (checkpoint API only; not Thread ask/agent path).
-    const query = sdk.query({
-      prompt: toStreamingUserPrompt(""),
-      options: queryOptions,
-    });
-    try {
-      for await (const _message of query) {
-        if (input.signal.aborted) {
-          break;
-        }
-      }
-      if (typeof query.rewindFiles !== "function") {
-        throw new Error("SDK rewindFiles is not available (enable file checkpointing and update the SDK).");
-      }
-      const result = await query.rewindFiles(userMessageId);
-      if (isRecord(result)) {
-        if (result.canRewind === false) {
-          const reason =
-            typeof result.reason === "string" && result.reason.trim()
-              ? result.reason.trim()
-              : "SDK reported that the checkpoint cannot be rewound.";
-          throw new Error(reason);
-        }
-        if (result.ok === false || result.success === false) {
-          const reason =
-            typeof result.reason === "string" && result.reason.trim()
-              ? result.reason.trim()
-              : typeof result.error === "string" && result.error.trim()
-                ? result.error.trim()
-                : "SDK rewindFiles reported failure.";
-          throw new Error(reason);
-        }
-        if (typeof result.error === "string" && result.error.trim()) {
-          throw new Error(result.error.trim());
-        }
-        const skippedLinks =
-          typeof result.skippedLinks === "number"
-            ? result.skippedLinks
-            : typeof result.skipped_links === "number"
-              ? result.skipped_links
-              : 0;
-        if (skippedLinks > 0) {
-          throw new Error(
-            `SDK rewindFiles skipped ${skippedLinks} path(s); some files were not restored.`,
-          );
-        }
-      }
-    } finally {
-      query.close?.();
-    }
-  }
-
   async *runContinuation(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "ask",
@@ -1107,9 +1031,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           {
             ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
             resolveModelId: resolveSdkModel,
-            ...(integratedWebSearchForAgents
-              ? { integratedWebSearch: integratedWebSearchForAgents }
-              : {}),
+            ...(integratedWebSearchForAgents ? { integratedWebSearch: integratedWebSearchForAgents } : {}),
           },
         )
       : undefined;
@@ -1250,6 +1172,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // Late-bound: schedule/cancel are assigned after the held prompt + handle exist.
     const heldPromptCloseGate = {
       resultSeen: false,
+      sessionState: undefined as "idle" | "running" | "requires_action" | undefined,
       activeSubagentCount: 0,
       inflightCanUseTool: 0,
       unmatchedUserTurns: (): boolean => false,
@@ -1439,7 +1362,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // WORKAROUND: one held prompt mailbox for the whole Eco query (see createHeldPromptStream).
     // Keep open across interim results while subagents / canUseTool still need the channel;
     // schedule close after a settled result so the multi-turn Query can endInput and idle.
-    const promptStream = createHeldPromptStream(phase.prompt);
+    const initialUserMessageUuid = crypto.randomUUID();
+    const promptStream = createHeldPromptStream(phase.prompt, { uuid: initialUserMessageUuid });
     const query = sdk.query({
       prompt: promptStream,
       options: queryOptions,
@@ -1479,6 +1403,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (
         promptCloseStarted ||
         !heldPromptCloseGate.resultSeen ||
+        (heldPromptCloseGate.sessionState !== undefined && heldPromptCloseGate.sessionState !== "idle") ||
         heldPromptCloseGate.activeSubagentCount > 0 ||
         heldPromptCloseGate.inflightCanUseTool > 0 ||
         heldPromptCloseGate.unmatchedUserTurns() ||
@@ -1491,6 +1416,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         if (
           promptCloseStarted ||
           !heldPromptCloseGate.resultSeen ||
+          (heldPromptCloseGate.sessionState !== undefined && heldPromptCloseGate.sessionState !== "idle") ||
           heldPromptCloseGate.activeSubagentCount > 0 ||
           heldPromptCloseGate.inflightCanUseTool > 0 ||
           heldPromptCloseGate.unmatchedUserTurns() ||
@@ -1519,10 +1445,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       };
       const priorOnStop = subagentSessions.onStop;
       subagentSessions.onStop = (subagentInput) => {
-        heldPromptCloseGate.activeSubagentCount = Math.max(
-          0,
-          heldPromptCloseGate.activeSubagentCount - 1,
-        );
+        heldPromptCloseGate.activeSubagentCount = Math.max(0, heldPromptCloseGate.activeSubagentCount - 1);
         priorOnStop?.(subagentInput);
         heldPromptCloseGate.schedule();
       };
@@ -1548,6 +1471,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const phaseTranscriptBox = { text: "" };
     let sessionCaptured = false;
     let activeSessionId = "unknown-session";
+    let resetPending = Boolean(input.resume?.newSessionId);
+    let usageSessionResumed = Boolean(input.resume?.resumeSessionId);
+    let usageResetId: string | undefined;
     // Slash detection uses the logical phase text, not typeof prompt (streaming path).
     const slashPrompt = phase.prompt.trim().startsWith("/");
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
@@ -1555,15 +1481,26 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     let permissionModeApplied = false;
     // Pair streaming-input turns: initial prompt + each successful mid-turn push.
     // A prior turn's result must not satisfy a later accepted input that never got a result.
-    let acceptedUserTurns = 1;
+    const pendingUserMessageUuids = new Set<string>([initialUserMessageUuid]);
     let completedResultTurns = 0;
     let pendingQueuedTurns = 0;
-    heldPromptCloseGate.unmatchedUserTurns = () => acceptedUserTurns > completedResultTurns;
+    heldPromptCloseGate.unmatchedUserTurns = () => pendingUserMessageUuids.size > 0;
     heldPromptCloseGate.pendingQueuedTurns = () => pendingQueuedTurns > 0;
     const pushUserMessage = handle.pushUserMessage.bind(handle);
     handle.pushUserMessage = async (text, pushOptions) => {
-      await pushUserMessage(text, pushOptions);
-      acceptedUserTurns += 1;
+      const uuid = pushOptions?.uuid
+        ? normalizeClaudeSdkUserMessageUuid(pushOptions.uuid)
+        : crypto.randomUUID();
+      pendingUserMessageUuids.add(uuid);
+      try {
+        await pushUserMessage(text, { ...pushOptions, uuid });
+      } catch (error) {
+        if (!isClaudeStreamInputDeliveryUnknown(error)) {
+          pendingUserMessageUuids.delete(uuid);
+          heldPromptCloseGate.schedule();
+        }
+        throw error;
+      }
       // A new user turn is in flight — keep the mailbox open until its result.
       heldPromptCloseGate.cancel();
     };
@@ -1585,6 +1522,32 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           break;
         }
         const message = next.value;
+        if (
+          isRecord(message) &&
+          message.type === "system" &&
+          message.subtype === "session_state_changed" &&
+          (message.state === "idle" || message.state === "running" || message.state === "requires_action")
+        ) {
+          heldPromptCloseGate.sessionState = message.state;
+          if (message.state === "idle") heldPromptCloseGate.schedule();
+          else heldPromptCloseGate.cancel();
+        }
+        if (
+          isRecord(message) &&
+          message.type === "conversation_reset" &&
+          typeof message.new_conversation_id === "string"
+        ) {
+          activeSessionId = message.new_conversation_id;
+          // Local commands can reset before init; that init may still name the
+          // resumed conversation. The reset's new id is authoritative.
+          sessionCaptured = true;
+          handle.sessionId = activeSessionId;
+          usageSessionResumed = false;
+          usageResetId = typeof message.uuid === "string" ? message.uuid : crypto.randomUUID();
+          contextUsageCollected = false;
+          resetPending = true;
+          yield createSessionCapturedEvent(input.threadId, activeSessionId, sessionCwd, { resetPending });
+        }
         for (const event of drainToolPermissionDecisionEvents(
           input.threadId,
           pendingToolPermissionDecisions,
@@ -1597,7 +1560,29 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             sessionCaptured = true;
             activeSessionId = sessionId;
             handle.sessionId = sessionId;
-            yield createSessionCapturedEvent(input.threadId, sessionId, sessionCwd);
+            yield createSessionCapturedEvent(input.threadId, sessionId, sessionCwd, { resetPending });
+          }
+        }
+
+        // /clear allocates an ID without writing a resumable transcript. Keep
+        // that intent durable until a real message establishes history.
+        if (
+          resetPending &&
+          isRecord(message) &&
+          message.type === "assistant" &&
+          readSdkSessionId(message) === activeSessionId
+        ) {
+          resetPending = false;
+          yield createSessionCapturedEvent(input.threadId, activeSessionId, sessionCwd);
+        }
+        // An API failure can persist the user turn without an assistant reply.
+        // Check the actual transcript before settling a pending reset so a retry
+        // resumes that turn rather than initializing an already-written ID.
+        if (resetPending && isRecord(message) && message.type === "result" && sdk.getSessionMessages) {
+          const persisted = await sdk.getSessionMessages(activeSessionId, { dir: sessionCwd });
+          if (persisted.some((line) => line.type === "user")) {
+            resetPending = false;
+            yield createSessionCapturedEvent(input.threadId, activeSessionId, sessionCwd);
           }
         }
 
@@ -1635,7 +1620,20 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         }
 
         if (isRecord(message) && message.type === "result") {
-          completedResultTurns += 1;
+          const uuids = readUserMessageUuidFields(message);
+          const matched = [
+            uuids.user_message_uuid,
+            ...(Array.isArray(uuids.user_message_uuids) ? uuids.user_message_uuids : []),
+          ].filter((uuid): uuid is string => typeof uuid === "string");
+          if (matched.length > 0 && !isSdkBackgroundOnlyResult(message)) {
+            for (const uuid of matched) pendingUserMessageUuids.delete(uuid);
+          } else if (!isSdkBackgroundOnlyResult(message)) {
+            // Older SDKs and startup failures can omit prompt UUIDs. Consume one
+            // input only; an interim background result must never settle a user turn.
+            const first = pendingUserMessageUuids.values().next().value;
+            if (first) pendingUserMessageUuids.delete(first);
+          }
+          if (!isSdkBackgroundOnlyResult(message)) completedResultTurns += 1;
           const queuedTurnCount =
             typeof message.queued_turn_count === "number" && Number.isFinite(message.queued_turn_count)
               ? Math.max(0, Math.floor(message.queued_turn_count))
@@ -1647,7 +1645,20 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
         this.options.onSdkMessage?.(message);
 
-        for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
+        const mappedMessage =
+          isRecord(message) && message.type === "result"
+            ? {
+                ...message,
+                ...(sessionCaptured && {
+                  sdk_session_usage: {
+                    sessionId: activeSessionId,
+                    resumed: usageSessionResumed,
+                    ...(usageResetId && { resetId: usageResetId }),
+                  },
+                }),
+              }
+            : message;
+        for (const event of mapSdkMessageToEvents(mappedMessage, input.threadId, streamCtx)) {
           yield event;
           transcript = appendToPhaseTranscript(transcript, event);
           phaseTranscriptBox.text = transcript;
@@ -1686,7 +1697,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         }
       }
 
-      const unmatchedUserTurns = acceptedUserTurns > completedResultTurns || pendingQueuedTurns > 0;
+      const unmatchedUserTurns = pendingUserMessageUuids.size > 0 || pendingQueuedTurns > 0;
       if (unmatchedUserTurns || completedResultTurns === 0) {
         if (input.signal.aborted) {
           yield createAgentEvent({
@@ -1709,11 +1720,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             type: "run.terminal",
             payload: {
               status: "incomplete",
-              reason: pendingQueuedTurns > 0
-                ? "Claude run ended while queued turns were still pending."
-                : unmatchedUserTurns
-                  ? "Claude run ended while a user turn was still awaiting a result."
-                  : "Claude run ended without a terminal result.",
+              reason:
+                pendingQueuedTurns > 0
+                  ? "Claude run ended while queued turns were still pending."
+                  : unmatchedUserTurns
+                    ? "Claude run ended while a user turn was still awaiting a result."
+                    : "Claude run ended without a terminal result.",
             } satisfies ClaudeRunTerminal,
           });
         }
@@ -2089,6 +2101,7 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
 
   applyThinkingToProcessEnv(env, options.thinkingEffort);
   env.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
+  env.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS = "1";
   // Stop injecting per-request cch= into the system prompt (breaks prompt cache).
   env.CLAUDE_CODE_ATTRIBUTION_HEADER = "0";
 
@@ -2201,6 +2214,12 @@ export function applyResumeToQueryOptions(
   queryOptions: Record<string, unknown>,
   resume?: EcoSdkResumeOptions,
 ): void {
+  if (resume?.newSessionId) {
+    if (resume.resumeSessionId || resume.resumeSessionAt || resume.resumeDropsTurn || resume.forkSession) {
+      throw new Error("An empty reset conversation cannot also resume or fork a transcript.");
+    }
+    queryOptions.sessionId = resume.newSessionId;
+  }
   if (resume?.resumeSessionId) {
     queryOptions.resume = resume.resumeSessionId;
   }
@@ -2236,8 +2255,9 @@ export function formatResumeDropsTurnRejection(message: string): string {
 }
 
 export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, unknown>): void {
+  // Persist the SDK session to local JSONL only — never enable SDK file checkpointing
+  // (rewind is conversation-only; Eco must not restore files or snapshot file state).
   delete queryOptions.sessionStore;
-  queryOptions.enableFileCheckpointing = true;
   queryOptions.extraArgs = {
     ...(isRecord(queryOptions.extraArgs) ? (queryOptions.extraArgs as Record<string, unknown>) : {}),
     "replay-user-messages": null,
@@ -2483,6 +2503,12 @@ export function readSdkUserMessageCheckpointId(message: unknown): string | undef
   if (!isRecord(message) || message.type !== "user") {
     return undefined;
   }
+  // Tool results are SDK user-role frames too, but their UUID is not a user
+  // prompt's history target. A mid-turn steer can still be awaiting delivery.
+  const content = isRecord(message.message) ? message.message.content : undefined;
+  if (Array.isArray(content) && content.some((block) => isRecord(block) && block.type === "tool_result")) {
+    return undefined;
+  }
   return typeof message.uuid === "string" && message.uuid.trim() ? message.uuid.trim() : undefined;
 }
 
@@ -2508,14 +2534,19 @@ export function isSdkInitMessage(message: unknown): boolean {
   return isRecord(message) && message.type === "system" && message.subtype === "init";
 }
 
-export function createSessionCapturedEvent(threadId: string, sessionId: string, cwd: string): AgentEvent {
+export function createSessionCapturedEvent(
+  threadId: string,
+  sessionId: string,
+  cwd: string,
+  state?: { resetPending?: boolean },
+): AgentEvent {
   return createAgentEvent({
     id: `${threadId}:session:${sessionId}`,
     threadId,
     agentId: sessionId,
     role: "planner",
     type: "session.captured",
-    payload: { sessionId, cwd },
+    payload: { sessionId, cwd, ...(state?.resetPending && { resetPending: true }) },
   });
 }
 
@@ -2632,6 +2663,10 @@ export function extractSdkRunFailure(payload: unknown): string | null {
     return `Agent run failed (terminal_reason: ${terminalFailureReason}).`;
   }
 
+  if (typeof payload.startup_failure_reason === "string") {
+    return `Claude Code startup failed: ${payload.startup_failure_reason}.`;
+  }
+
   if (isError) {
     return "Agent run failed (is_error: true).";
   }
@@ -2708,14 +2743,24 @@ function readTerminalFailureReason(payload: Record<string, unknown>): string | u
 }
 
 export function readSdkSlashCommands(message: unknown): string[] {
-  if (!isRecord(message) || message.type !== "system" || message.subtype !== "init") {
+  if (
+    !isRecord(message) ||
+    message.type !== "system" ||
+    (message.subtype !== "init" && message.subtype !== "commands_changed")
+  ) {
     return [];
   }
-  const commands = message.slash_commands;
+  const commands = message.subtype === "commands_changed" ? message.commands : message.slash_commands;
   if (!Array.isArray(commands)) {
     return [];
   }
-  return commands.filter((entry): entry is string => typeof entry === "string");
+  return commands.flatMap((entry) =>
+    typeof entry === "string"
+      ? [entry]
+      : isRecord(entry) && typeof entry.name === "string"
+        ? [entry.name]
+        : [],
+  );
 }
 
 export function sdkSupportsSlashCommand(commands: readonly string[], name: string): boolean {
@@ -2786,6 +2831,7 @@ export interface SdkTodoUpdatedPayload {
   prompt?: string;
   last_tool_name?: string;
   summary?: string;
+  reason?: string;
   status?: "completed" | "failed" | "stopped";
   output_file?: string;
   ambient?: boolean;
@@ -2862,6 +2908,7 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   ) {
     payload.status = message.status;
   }
+  if (typeof message.reason === "string" && message.reason.trim()) payload.reason = message.reason;
   if (typeof message.output_file === "string" && message.output_file.trim()) {
     payload.output_file = message.output_file.trim();
   }
@@ -2880,9 +2927,7 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   if (typeof spawnDepth === "number" && Number.isFinite(spawnDepth)) {
     payload.spawn_depth = spawnDepth;
   }
-  const resourceLinks = parseSdkResourceLinks(
-    message.resource_links ?? message.resourceLinks,
-  );
+  const resourceLinks = parseSdkResourceLinks(message.resource_links ?? message.resourceLinks);
   if (resourceLinks) {
     payload.resource_links = resourceLinks;
   }
@@ -2924,9 +2969,7 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   return payload;
 }
 
-function parseSdkResourceLinks(
-  value: unknown,
-): SdkTodoUpdatedPayload["resource_links"] | undefined {
+function parseSdkResourceLinks(value: unknown): SdkTodoUpdatedPayload["resource_links"] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
@@ -3072,6 +3115,17 @@ function resolveSdkMessageStreamRole(
   return fromMessage !== "planner" ? fromMessage : fallback;
 }
 
+export function isSdkBackgroundOnlyResult(message: Record<string, unknown>): boolean {
+  return (
+    message.type === "result" &&
+    message.num_turns === 0 &&
+    !message.local_command &&
+    !message.is_error &&
+    message.stop_reason !== "interrupted" &&
+    !(typeof message.result === "string" && message.result.trim())
+  );
+}
+
 export function mapSdkMessageToEvents(
   message: unknown,
   threadId: string,
@@ -3134,6 +3188,7 @@ export function mapSdkMessageToEvents(
   if (message.type === "tool_progress") {
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     const toolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id : uuid;
+    const toolUseDescriptor = streamCtx?.toolUseById.get(toolUseId);
     const messageParentToolUseId =
       typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
     return [
@@ -3146,6 +3201,7 @@ export function mapSdkMessageToEvents(
           type: "tool.started",
           payload: {
             ...message,
+            ...(toolUseDescriptor?.input && !isRecord(message.input) && { input: toolUseDescriptor.input }),
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
           },
@@ -3166,6 +3222,13 @@ export function mapSdkMessageToEvents(
           : undefined;
     const resultPayload: Record<string, unknown> = {
       type: "result",
+      session_id: sessionId,
+      ...(isRecord(message.sdk_session_usage) && { sdk_session_usage: message.sdk_session_usage }),
+      ...Object.fromEntries(
+        ["result_index", "num_turns", "local_command", "resume_reason", "startup_failure_reason"]
+          .filter((key) => message[key] !== undefined)
+          .map((key) => [key, message[key]]),
+      ),
       totalCostUsd: message.total_cost_usd,
       usage: message.usage,
       modelUsage: message.modelUsage,
@@ -3198,14 +3261,18 @@ export function mapSdkMessageToEvents(
         type: "usage.recorded",
         payload: attributed.payload,
       }),
-      createAgentEvent({
-        id: `${uuid}:run-terminal`,
-        threadId,
-        agentId: attributed.agentId,
-        role,
-        type: "run.terminal",
-        payload: terminal,
-      }),
+      ...(!isSdkBackgroundOnlyResult(message)
+        ? [
+            createAgentEvent({
+              id: `${uuid}:run-terminal`,
+              threadId,
+              agentId: attributed.agentId,
+              role,
+              type: "run.terminal",
+              payload: terminal,
+            }),
+          ]
+        : []),
     ];
   }
 
@@ -3224,7 +3291,10 @@ export function mapSdkMessageToEvents(
     if (
       message.subtype === "status" ||
       message.subtype === "api_retry" ||
-      message.subtype === "permission_denied"
+      message.subtype === "permission_denied" ||
+      message.subtype === "informational" ||
+      message.subtype === "commands_changed" ||
+      message.subtype === "session_state_changed"
     ) {
       return [
         createAgentEvent({
@@ -3239,7 +3309,11 @@ export function mapSdkMessageToEvents(
     }
   }
 
-  if (message.type === "auth_status" && Array.isArray(message.output)) {
+  if (
+    (message.type === "auth_status" && Array.isArray(message.output)) ||
+    message.type === "rate_limit_event" ||
+    message.type === "conversation_reset"
+  ) {
     return [
       createAgentEvent({
         id: `${uuid}:auth`,
@@ -3256,6 +3330,10 @@ export function mapSdkMessageToEvents(
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     const messageParentToolUseId =
       typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
+    const summaryToolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id.trim() : "";
+    const summaryDescriptor = summaryToolUseId ? streamCtx?.toolUseById.get(summaryToolUseId) : undefined;
+    const summaryInput =
+      isRecord(message.input) && Object.keys(message.input).length > 0 ? message.input : undefined;
     return [
       createAttributedAgentEvent(
         {
@@ -3268,6 +3346,7 @@ export function mapSdkMessageToEvents(
             ...message,
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+            ...(summaryDescriptor?.input && !summaryInput && { input: summaryDescriptor.input }),
           },
           ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
         },
@@ -3301,7 +3380,10 @@ function mapUserToolResultEvents(
   const hasCompletedAgentOutput =
     agentOutput?.status === "completed" &&
     typeof agentOutput.agentId === "string" &&
-    agentOutput.agentId.trim();
+    Boolean(agentOutput.agentId.trim());
+  const hasFailedAgentOutput = isFailedAgentOutput(agentOutput);
+  const detached = agentOutput?.detachedToolCall === true;
+  const structuredContentOmitted = agentOutput?.structuredContentOmitted === true;
   const resourceLinks = parseSdkResourceLinks(
     (agentOutput && (agentOutput.resourceLinks ?? agentOutput.resource_links)) ??
       message.resourceLinks ??
@@ -3315,7 +3397,10 @@ function mapUserToolResultEvents(
     const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id.trim() : "";
     const descriptor = toolUseId ? streamCtx?.toolUseById.get(toolUseId) : undefined;
     const output = extractToolResultText(block.content);
-    const failed = block.is_error === true;
+    const failed =
+      block.is_error === true ||
+      hasFailedAgentOutput ||
+      /terminated early due to an API error|API Error:\s*\d{3}/i.test(output);
     if (!failed && hasCompletedAgentOutput) {
       continue;
     }
@@ -3327,7 +3412,7 @@ function mapUserToolResultEvents(
           threadId,
           sessionId,
           role,
-          type: failed ? "tool.failed" : "tool.completed",
+          type: failed ? "tool.failed" : detached ? "tool.started" : "tool.completed",
           payload: failed
             ? {
                 type: "tool_result_error",
@@ -3339,7 +3424,16 @@ function mapUserToolResultEvents(
                 ...(resourceLinks && { resource_links: resourceLinks }),
               }
             : {
-                type: "tool_result",
+                type: detached ? "tool_progress" : "tool_result",
+                ...(detached && { detachedToolCall: true }),
+                ...(structuredContentOmitted && {
+                  structuredContentOmitted: true,
+                  message:
+                    "MCP structuredContent was omitted by Claude Code because it exceeds 1,048,576 JSON characters.",
+                }),
+                ...(agentOutput?.structuredContent !== undefined && {
+                  structuredContent: agentOutput.structuredContent,
+                }),
                 tool_name: descriptor?.name ?? "Tool",
                 ...(toolUseId && { tool_use_id: toolUseId }),
                 ...(descriptor?.input && { input: descriptor.input }),
@@ -3413,6 +3507,40 @@ function extractToolResultText(content: unknown): string {
     .join("\n");
 }
 
+function isFailedAgentOutput(output: Record<string, unknown> | undefined): boolean {
+  if (!output) {
+    return false;
+  }
+  if (output.status === "failed" || output.status === "error" || output.is_error === true) {
+    return true;
+  }
+  const contentText = extractAgentOutputText(output);
+  return /terminated early due to an API error|API Error:\s*\d{3}/i.test(contentText);
+}
+
+function extractAgentOutputText(output: Record<string, unknown>): string {
+  if (typeof output.result === "string" && output.result.trim()) {
+    return output.result.trim();
+  }
+  if (typeof output.error === "string" && output.error.trim()) {
+    return output.error.trim();
+  }
+  if (!Array.isArray(output.content)) {
+    return "";
+  }
+  return output.content
+    .flatMap((entry): string[] => {
+      if (typeof entry === "string") {
+        return entry.trim() ? [entry.trim()] : [];
+      }
+      if (isRecord(entry) && typeof entry.text === "string" && entry.text.trim()) {
+        return [entry.text.trim()];
+      }
+      return [];
+    })
+    .join("\n");
+}
+
 function mapUserAgentOutputToEvents(
   message: Record<string, unknown>,
   threadId: string,
@@ -3427,7 +3555,8 @@ function mapUserAgentOutputToEvents(
   if (!output) {
     return [];
   }
-  if (output.status !== "completed") {
+  const failed = isFailedAgentOutput(output);
+  if (output.status !== "completed" && !failed) {
     return [];
   }
   const agentId = typeof output.agentId === "string" ? output.agentId.trim() : "";
@@ -3437,6 +3566,7 @@ function mapUserAgentOutputToEvents(
   const agentType = typeof output.agentType === "string" ? output.agentType.trim() : "";
   const outputRole = agentType ? normalizeSdkRuntimeAgentRole(agentType) : undefined;
   const toolUseId = readUserToolResultUseId(message);
+  const failureText = failed ? extractAgentOutputText(output) : "";
   return [
     createAgentEvent({
       id: `${uuid}:agent-output:${agentId}`,
@@ -3446,8 +3576,10 @@ function mapUserAgentOutputToEvents(
       type: "agent.completed",
       payload: {
         type: "agent_output",
-        status: "completed",
+        status: failed ? "failed" : "completed",
         agentId,
+        ...(failed && { failed: true }),
+        ...(failureText && { error: failureText }),
         ...(agentType && { agentType }),
         ...(toolUseId && { tool_use_id: toolUseId }),
         ...(typeof output.resolvedModel === "string" && { resolvedModel: output.resolvedModel }),
@@ -3788,6 +3920,16 @@ export function createCanUseTool(
     if (typeof options.title === "string") request.title = options.title;
     if (typeof options.displayName === "string") request.displayName = options.displayName;
     if (typeof options.description === "string") request.description = options.description;
+    if (typeof options.defaultToNo === "boolean") request.defaultToNo = options.defaultToNo;
+    if (typeof options.suppressAlwaysAllowRule === "boolean")
+      request.suppressAlwaysAllowRule = options.suppressAlwaysAllowRule;
+    if (
+      isRecord(options.mcpServer) &&
+      typeof options.mcpServer.name === "string" &&
+      typeof options.mcpServer.source === "string"
+    ) {
+      request.mcpServer = { name: options.mcpServer.name, source: options.mcpServer.source };
+    }
 
     const decision = await handler(request);
 
@@ -3934,6 +4076,7 @@ export function formatAgentEventLine(event: Pick<AgentEvent, "type" | "payload" 
         subagent_type: sdkPayload.subagent_type,
         last_tool_name: sdkPayload.last_tool_name,
         summary: sdkPayload.summary,
+        reason: sdkPayload.reason,
         status: sdkPayload.status,
         output_file: sdkPayload.output_file,
         usage: sdkPayload.usage,
@@ -4104,6 +4247,15 @@ export function isStreamPayload(payload: unknown): boolean {
 }
 
 export function formatSdkPayloadMessage(payload: unknown): string | null {
+  if (
+    isRecord(payload) &&
+    payload.type === "system" &&
+    payload.subtype === "informational" &&
+    typeof payload.content === "string"
+  )
+    return payload.content;
+  if (isRecord(payload) && payload.structuredContentOmitted === true && typeof payload.message === "string")
+    return payload.message;
   if (typeof payload === "string") {
     const trimmed = payload.trim();
     return trimmed.length > 0 ? trimmed : null;
@@ -4239,7 +4391,8 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     if (payload.subtype === "task_notification") {
       const summary = typeof payload.summary === "string" ? payload.summary.trim() : "";
       const status = typeof payload.status === "string" ? payload.status : "completed";
-      return summary || `Task ${status}`;
+      const reason = typeof payload.reason === "string" ? ` · ${payload.reason}` : "";
+      return `${summary || `Task ${status}`}${reason}`;
     }
     if (payload.subtype === "task_updated" && isRecord(payload.patch)) {
       const status = payload.patch.status;

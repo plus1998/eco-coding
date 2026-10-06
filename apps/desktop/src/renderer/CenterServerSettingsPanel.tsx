@@ -1,8 +1,10 @@
 import {
   Check,
   ChevronLeft,
+  CloudUpload,
   KeyRound,
   Loader2,
+  Link2,
   LogIn,
   Plus,
   QrCode,
@@ -50,6 +52,8 @@ import {
   resolveSupabaseProjectUrl,
 } from "../shared/center-server";
 import { i18n } from "./i18n";
+import { SupabaseDeploymentPanel } from "./SupabaseDeploymentPanel";
+import type { SupabaseDeploymentConnection } from "../shared/supabase-deployment";
 
 interface CenterServerSettingsPanelProps {
   snapshot: CenterServerSettingsSnapshot;
@@ -90,6 +94,7 @@ interface CenterServerSettingsPanelProps {
 type PanelView = "list" | "edit-server" | "edit-account";
 type AccountAuthMode = "signup" | "signin";
 type CenterPanelTab = "sync" | "devices" | "artifacts";
+type CenterSectionTab = "connection" | "deployment";
 
 export function CenterServerSettingsPanel({
   snapshot,
@@ -152,6 +157,7 @@ export function CenterServerSettingsPanel({
   const [syncStatus, setSyncStatus] = useState<CenterServerSyncStatusSnapshot>();
   const [syncStatusLoading, setSyncStatusLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<CenterPanelTab>("sync");
+  const [sectionTab, setSectionTab] = useState<CenterSectionTab>("connection");
   const onListBindingsRef = useRef(onListBindings);
   const onListPresenceRef = useRef(onListPresence);
   onListBindingsRef.current = onListBindings;
@@ -369,7 +375,8 @@ export function CenterServerSettingsPanel({
     supabaseUrl: snapshot.settings.supabaseUrl,
     serverUrl: snapshot.settings.serverUrl,
   });
-  const sameProjectAsBound = Boolean(ecoConnectLink?.supabaseUrl) && boundProjectUrl === ecoConnectLink!.supabaseUrl;
+  const sameProjectAsBound =
+    Boolean(ecoConnectLink?.supabaseUrl) && boundProjectUrl === ecoConnectLink!.supabaseUrl;
 
   async function handleEcoConnectConfirm() {
     if (!ecoConnectLink) {
@@ -689,6 +696,25 @@ export function CenterServerSettingsPanel({
     setView("edit-server");
   }
 
+  async function handleUseDeployedProject(connection: SupabaseDeploymentConnection) {
+    if (registered && boundProjectUrl !== connection.supabaseUrl) {
+      throw new Error(t("settings.center.cloud.removeExisting"));
+    }
+    await onSave({
+      ...form,
+      ...connection,
+      serverUrl: connection.supabaseUrl,
+      enabled: registered ? form.enabled : false,
+      deviceName: form.deviceName?.trim() || snapshot.settings.deviceName,
+    });
+    setServerReachable(true);
+    setSectionTab("connection");
+    if (!registered) {
+      setAuthMode("signup");
+      setView("edit-account");
+    }
+  }
+
   function openServerEditor() {
     setError(undefined);
     setServerReachable(true);
@@ -701,71 +727,71 @@ export function CenterServerSettingsPanel({
     setView("edit-account");
   }
 
-  const ecoConnectDialog = ecoConnectLink ? (
-    createPortal(
-      <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
-        <button
-          type="button"
-          className="cs-sheet-scrim"
-          aria-label={t("common.close")}
-          disabled={actionBusy}
-          onClick={() => onEcoConnectLinkDismiss()}
-        />
-        <div
-          className="cs-sheet cs-sheet--connect"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cs-connect-title"
-        >
-          <div className="cs-sheet-stack">
-            <span className="cs-sheet-glyph" aria-hidden>
-              <Smartphone size={22} strokeWidth={1.75} />
-            </span>
-            <header className="cs-sheet-head">
-              <h2 id="cs-connect-title" className="cs-sheet-title">
-                {t("settings.center.ecoConnect.title")}
-              </h2>
-              <p className="cs-sheet-subtitle">
-                {t("settings.center.ecoConnect.description", {
-                  url: ecoConnectLink.supabaseUrl,
-                })}
-              </p>
-            </header>
-            {sameProjectAsBound && registered ? (
-              <p className="cs-pairing-note">{t("settings.center.ecoConnect.sameProject")}</p>
-            ) : registered && boundProjectUrl ? (
-              <p className="cs-error">
-                {t("settings.center.ecoConnect.alreadyConnected", { name: deviceLabel })}
-              </p>
-            ) : null}
-            <div className="cs-sheet-actions">
-              <button
-                type="button"
-                className="cs-btn"
-                disabled={actionBusy}
-                onClick={() => onEcoConnectLinkDismiss()}
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                type="button"
-                className="cs-btn cs-btn--accent"
-                disabled={Boolean(
-                  actionBusy ||
-                  !ecoConnectLink.supabaseUrl ||
-                  (registered && boundProjectUrl && !sameProjectAsBound),
-                )}
-                onClick={() => void handleEcoConnectConfirm()}
-              >
-                {t("settings.center.ecoConnect.confirm")}
-              </button>
+  const ecoConnectDialog = ecoConnectLink
+    ? createPortal(
+        <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
+          <button
+            type="button"
+            className="cs-sheet-scrim"
+            aria-label={t("common.close")}
+            disabled={actionBusy}
+            onClick={() => onEcoConnectLinkDismiss()}
+          />
+          <div
+            className="cs-sheet cs-sheet--connect"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cs-connect-title"
+          >
+            <div className="cs-sheet-stack">
+              <span className="cs-sheet-glyph" aria-hidden>
+                <Smartphone size={22} strokeWidth={1.75} />
+              </span>
+              <header className="cs-sheet-head">
+                <h2 id="cs-connect-title" className="cs-sheet-title">
+                  {t("settings.center.ecoConnect.title")}
+                </h2>
+                <p className="cs-sheet-subtitle">
+                  {t("settings.center.ecoConnect.description", {
+                    url: ecoConnectLink.supabaseUrl,
+                  })}
+                </p>
+              </header>
+              {sameProjectAsBound && registered ? (
+                <p className="cs-pairing-note">{t("settings.center.ecoConnect.sameProject")}</p>
+              ) : registered && boundProjectUrl ? (
+                <p className="cs-error">
+                  {t("settings.center.ecoConnect.alreadyConnected", { name: deviceLabel })}
+                </p>
+              ) : null}
+              <div className="cs-sheet-actions">
+                <button
+                  type="button"
+                  className="cs-btn"
+                  disabled={actionBusy}
+                  onClick={() => onEcoConnectLinkDismiss()}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--accent"
+                  disabled={Boolean(
+                    actionBusy ||
+                      !ecoConnectLink.supabaseUrl ||
+                      (registered && boundProjectUrl && !sameProjectAsBound),
+                  )}
+                  onClick={() => void handleEcoConnectConfirm()}
+                >
+                  {t("settings.center.ecoConnect.confirm")}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </div>,
-      document.body,
-    )
-  ) : null;
+        </div>,
+        document.body,
+      )
+    : null;
 
   if (view === "edit-server") {
     return (
@@ -821,335 +847,404 @@ export function CenterServerSettingsPanel({
         <p className="cs-desc">{t("settings.center.description")}</p>
       </header>
 
-      {error ? <p className="cs-error">{error}</p> : null}
+      <div
+        className="cs-tabs cs-section-tabs"
+        role="tablist"
+        aria-label={t("settings.center.sections.label")}
+        onKeyDown={(event) => {
+          let next: CenterSectionTab;
+          if (event.key === "Home") next = "connection";
+          else if (event.key === "End") next = "deployment";
+          else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            next = sectionTab === "connection" ? "deployment" : "connection";
+          } else return;
+          event.preventDefault();
+          setSectionTab(next);
+          event.currentTarget.querySelector<HTMLButtonElement>(`#cs-section-tab-${next}`)?.focus();
+        }}
+      >
+        <button
+          type="button"
+          id="cs-section-tab-connection"
+          role="tab"
+          aria-selected={sectionTab === "connection"}
+          aria-controls="cs-section-panel-connection"
+          tabIndex={sectionTab === "connection" ? 0 : -1}
+          className={sectionTab === "connection" ? "cs-tab is-active" : "cs-tab"}
+          onClick={() => setSectionTab("connection")}
+        >
+          <Link2 size={14} aria-hidden />
+          {t("settings.center.section.connection")}
+        </button>
+        <button
+          type="button"
+          id="cs-section-tab-deployment"
+          role="tab"
+          aria-selected={sectionTab === "deployment"}
+          aria-controls="cs-section-panel-deployment"
+          tabIndex={sectionTab === "deployment" ? 0 : -1}
+          className={sectionTab === "deployment" ? "cs-tab is-active" : "cs-tab"}
+          onClick={() => setSectionTab("deployment")}
+        >
+          <CloudUpload size={14} aria-hidden />
+          {t("settings.center.section.deployment")}
+        </button>
+      </div>
 
-      {!registered ? (
-        <div className="cs-empty">
-          <p className="cs-empty-text">{t("settings.center.empty")}</p>
-          <button type="button" className="cs-btn" disabled={actionBusy} onClick={openSetup}>
-            <Plus size={15} strokeWidth={1.75} />
-            {t("settings.center.add")}
-          </button>
-        </div>
-      ) : (
-        <div className="cs-card">
-          <div className="cs-card-row">
-            <div className="cs-service">
-              <span className={`cs-dot cs-dot--${statusDotKind(snapshot.status)}`} aria-hidden />
-              <div className="cs-service-copy">
-                <span className="cs-service-name">{deviceLabel}</span>
-                <span className="cs-service-url">{serverUrl}</span>
-                <StatusMeta status={snapshot.status} needsReauth={needsReauth} />
+      <div
+        className="cs-section-panel"
+        role="tabpanel"
+        id="cs-section-panel-connection"
+        aria-labelledby="cs-section-tab-connection"
+        hidden={sectionTab !== "connection"}
+      >
+        {error ? <p className="cs-error">{error}</p> : null}
+
+        {!registered ? (
+          <div className="cs-empty">
+            <p className="cs-empty-text">{t("settings.center.empty")}</p>
+            <button type="button" className="cs-btn" disabled={actionBusy} onClick={openSetup}>
+              <Plus size={15} strokeWidth={1.75} />
+              {t("settings.center.add")}
+            </button>
+          </div>
+        ) : (
+          <div className="cs-card">
+            <div className="cs-card-row">
+              <div className="cs-service">
+                <span className={`cs-dot cs-dot--${statusDotKind(snapshot.status)}`} aria-hidden />
+                <div className="cs-service-copy">
+                  <span className="cs-service-name">{deviceLabel}</span>
+                  <span className="cs-service-url">{serverUrl}</span>
+                  <StatusMeta status={snapshot.status} needsReauth={needsReauth} />
+                </div>
               </div>
-            </div>
-            <div className="cs-card-tools">
-              {needsReauth ? (
+              <div className="cs-card-tools">
+                {needsReauth ? (
+                  <button
+                    type="button"
+                    className="cs-icon-btn is-warn"
+                    onClick={openReauth}
+                    aria-label={t("settings.center.relogin")}
+                    title={t("settings.center.relogin")}
+                    disabled={actionBusy}
+                  >
+                    <LogIn size={16} strokeWidth={1.75} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  className="cs-icon-btn is-warn"
-                  onClick={openReauth}
-                  aria-label={t("settings.center.relogin")}
-                  title={t("settings.center.relogin")}
+                  className="cs-icon-btn"
+                  onClick={openServerEditor}
+                  aria-label={t("settings.center.configure")}
                   disabled={actionBusy}
                 >
-                  <LogIn size={16} strokeWidth={1.75} />
+                  <Settings2 size={16} strokeWidth={1.75} />
                 </button>
-              ) : null}
-              <button
-                type="button"
-                className="cs-icon-btn"
-                onClick={openServerEditor}
-                aria-label={t("settings.center.configure")}
-                disabled={actionBusy}
-              >
-                <Settings2 size={16} strokeWidth={1.75} />
-              </button>
-              <label className="cs-switch" title={form.enabled ? t("common.enabled") : t("common.disabled")}>
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  disabled={actionBusy || isConnecting}
-                  onChange={(event) => void handleToggle(event.target.checked)}
-                />
-                <span className="cs-switch-track" aria-hidden />
-              </label>
+                <label
+                  className="cs-switch"
+                  title={form.enabled ? t("common.enabled") : t("common.disabled")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.enabled}
+                    disabled={actionBusy || isConnecting}
+                    onChange={(event) => void handleToggle(event.target.checked)}
+                  />
+                  <span className="cs-switch-track" aria-hidden />
+                </label>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {registered ? (
-        <section className="cs-block cs-block--after-card">
-          <button
-            type="button"
-            className="cs-text-action is-muted"
-            disabled={actionBusy}
-            onClick={() => void handleRemoveConnection()}
-          >
-            <Trash2 size={14} strokeWidth={1.75} />
-            {t("settings.center.delete")}
-          </button>
-        </section>
-      ) : null}
-
-      {registered && isLive ? (
-        <div
-          className="models-settings-tabs cs-panel-tabs"
-          role="tablist"
-          aria-label={t("settings.center.tabs.label")}
-        >
-          {centerPanelTabs.map((tab) => (
+        {registered ? (
+          <section className="cs-block cs-block--after-card">
             <button
-              key={tab.id}
               type="button"
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
-              onClick={() => setActiveTab(tab.id)}
+              className="cs-text-action is-muted"
+              disabled={actionBusy}
+              onClick={() => void handleRemoveConnection()}
             >
-              {tab.label}
+              <Trash2 size={14} strokeWidth={1.75} />
+              {t("settings.center.delete")}
             </button>
-          ))}
-        </div>
-      ) : null}
+          </section>
+        ) : null}
 
-      {registered && isLive && activeTab === "sync" ? (
-        <div className="cs-tab-panel" role="tabpanel">
-          <section className="cs-block cs-block--tab-first">
-            <h2 className="cs-block-label">{t("settings.center.vault.unlockTitle")}</h2>
-            <div className="cs-card cs-vault-card">
-              <div className="cs-vault-status-row">
-                <div className="cs-vault-status-copy">
-                  <span className="cs-vault-status-title">
-                    <span
-                      className={`cs-vault-status-dot cs-vault-status-dot--${
-                        hasVaultKey
-                          ? "ready"
-                          : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
-                            ? "need-auth"
-                            : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
-                              ? "pending"
-                              : "need-auth"
-                      }`}
-                      aria-hidden
-                    />
-                    {hasVaultKey
-                      ? t("settings.center.vault.statusReady")
-                      : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
-                        ? t("settings.center.vault.statusNeedPassword")
-                        : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
-                          ? t("settings.center.vault.statusWaiting")
-                          : t("settings.center.vault.statusNeedPassword")}
-                  </span>
-                  {vaultStatus?.needsPasswordWrap ? (
-                    <span className="cs-vault-status-meta">{t("settings.center.vault.needsWrapHint")}</span>
+        {registered && isLive ? (
+          <div
+            className="models-settings-tabs cs-panel-tabs"
+            role="tablist"
+            aria-label={t("settings.center.tabs.label")}
+          >
+            {centerPanelTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {registered && isLive && activeTab === "sync" ? (
+          <div className="cs-tab-panel" role="tabpanel">
+            <section className="cs-block cs-block--tab-first">
+              <h2 className="cs-block-label">{t("settings.center.vault.unlockTitle")}</h2>
+              <div className="cs-card cs-vault-card">
+                <div className="cs-vault-status-row">
+                  <div className="cs-vault-status-copy">
+                    <span className="cs-vault-status-title">
+                      <span
+                        className={`cs-vault-status-dot cs-vault-status-dot--${
+                          hasVaultKey
+                            ? "ready"
+                            : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
+                              ? "need-auth"
+                              : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                                ? "pending"
+                                : "need-auth"
+                        }`}
+                        aria-hidden
+                      />
+                      {hasVaultKey
+                        ? t("settings.center.vault.statusReady")
+                        : vaultStatus?.state === "needs_password" || vaultStatus?.hasPasswordWrap
+                          ? t("settings.center.vault.statusNeedPassword")
+                          : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                            ? t("settings.center.vault.statusWaiting")
+                            : t("settings.center.vault.statusNeedPassword")}
+                    </span>
+                    {vaultStatus?.needsPasswordWrap ? (
+                      <span className="cs-vault-status-meta">{t("settings.center.vault.needsWrapHint")}</span>
+                    ) : null}
+                  </div>
+                  {!hasVaultKey || vaultStatus?.needsPasswordWrap ? (
+                    <div className="cs-vault-password-row">
+                      <input
+                        type="password"
+                        className="cs-input"
+                        autoComplete="current-password"
+                        placeholder={t("settings.center.vault.passwordPlaceholder")}
+                        value={vaultPassword}
+                        disabled={actionBusy || vaultBusy}
+                        onChange={(event) => setVaultPassword(event.target.value)}
+                      />
+                      {!hasVaultKey ? (
+                        <button
+                          type="button"
+                          className="cs-btn cs-btn--accent"
+                          disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
+                          onClick={() => void handleUnlockVaultWithPassword()}
+                        >
+                          {t("settings.center.vault.unlockWithPassword")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cs-btn cs-btn--accent"
+                          disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
+                          onClick={() => void handleWrapVaultWithPassword()}
+                        >
+                          {t("settings.center.vault.wrapWithPassword")}
+                        </button>
+                      )}
+                    </div>
                   ) : null}
                 </div>
-                {!hasVaultKey || vaultStatus?.needsPasswordWrap ? (
-                  <div className="cs-vault-password-row">
-                    <input
-                      type="password"
-                      className="cs-input"
-                      autoComplete="current-password"
-                      placeholder={t("settings.center.vault.passwordPlaceholder")}
-                      value={vaultPassword}
-                      disabled={actionBusy || vaultBusy}
-                      onChange={(event) => setVaultPassword(event.target.value)}
-                    />
-                    {!hasVaultKey ? (
-                      <button
-                        type="button"
-                        className="cs-btn cs-btn--accent"
-                        disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
-                        onClick={() => void handleUnlockVaultWithPassword()}
-                      >
-                        {t("settings.center.vault.unlockWithPassword")}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="cs-btn cs-btn--accent"
-                        disabled={actionBusy || vaultBusy || !vaultPassword.trim()}
-                        onClick={() => void handleWrapVaultWithPassword()}
-                      >
-                        {t("settings.center.vault.wrapWithPassword")}
-                      </button>
-                    )}
-                  </div>
+
+                {vaultStatus?.error ? (
+                  <p className="cs-error cs-vault-inline-error">
+                    {vaultStatus.error === "vault_no_synced_device" ||
+                    /vault_no_synced_device/i.test(vaultStatus.error)
+                      ? t("settings.center.vault.noSyncedDevice")
+                      : vaultStatus.error === "settings_sync_vault_required" ||
+                          /settings_sync_vault_required/i.test(vaultStatus.error)
+                        ? t("settings.center.vault.vaultRequired")
+                        : vaultStatus.error === "settings_sync_vault_decrypt" ||
+                            /settings_sync_vault_decrypt/i.test(vaultStatus.error)
+                          ? t("settings.center.vault.vaultDecryptFailed")
+                          : vaultStatus.error === "vault_password_wrap_missing" ||
+                              /vault_password_wrap_missing/i.test(vaultStatus.error)
+                            ? t("settings.center.vault.wrapMissing")
+                            : vaultStatus.error}
+                  </p>
                 ) : null}
               </div>
+            </section>
 
-              {vaultStatus?.error ? (
-                <p className="cs-error cs-vault-inline-error">
-                  {vaultStatus.error === "vault_no_synced_device" ||
-                  /vault_no_synced_device/i.test(vaultStatus.error)
-                    ? t("settings.center.vault.noSyncedDevice")
-                    : vaultStatus.error === "settings_sync_vault_required" ||
-                        /settings_sync_vault_required/i.test(vaultStatus.error)
-                      ? t("settings.center.vault.vaultRequired")
-                      : vaultStatus.error === "settings_sync_vault_decrypt" ||
-                          /settings_sync_vault_decrypt/i.test(vaultStatus.error)
-                        ? t("settings.center.vault.vaultDecryptFailed")
-                        : vaultStatus.error === "vault_password_wrap_missing" ||
-                            /vault_password_wrap_missing/i.test(vaultStatus.error)
-                          ? t("settings.center.vault.wrapMissing")
-                          : vaultStatus.error}
-                </p>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="cs-block">
-            <div className="cs-block-head">
-              <h2 className="cs-block-label">{t("settings.center.syncStatus.title")}</h2>
-              <button
-                type="button"
-                className="cs-text-action is-muted"
-                disabled={actionBusy || syncStatusLoading}
-                onClick={() => void refreshSyncStatus()}
-              >
-                <RefreshCw
-                  size={14}
-                  strokeWidth={1.75}
-                  className={syncStatusLoading ? "cs-spin" : undefined}
-                />
-                {t("common.refresh")}
-              </button>
-            </div>
-            {syncStatusLoading && !syncStatus ? (
-              <p className="cs-placeholder">{t("common.loading")}</p>
-            ) : (
-              <div className="cs-sync-status-card">
-                <ul className="cs-list cs-sync-status-list">
-                  {(syncStatus?.domains ?? []).map((entry) => (
-                    <li key={entry.domain} className="cs-list-item cs-sync-status-item">
-                      <div className="cs-sync-status-copy">
-                        <span className="cs-sync-status-label">{domainSyncLabel(entry.domain)}</span>
-                        {entry.summary ? (
-                          <span className="cs-sync-status-summary">
-                            {formatDomainSyncSummary(entry.domain, entry.summary)}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="cs-sync-status-state">
-                        <span className={`cs-sync-status-badge is-${entry.state}`}>
-                          {domainSyncStateLabel(entry.state)}
-                        </span>
-                        {entry.lastSyncedAt ? (
-                          <span className="cs-sync-status-time">
-                            {t("settings.center.syncStatus.lastSynced", {
-                              time: formatLocalTime(entry.lastSyncedAt),
-                            })}
-                          </span>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                <p className="cs-vault-inline-note">{t("settings.center.syncStatus.hint")}</p>
-              </div>
-            )}
-          </section>
-        </div>
-      ) : null}
-
-      {registered && isLive && activeTab === "artifacts" ? (
-        <div className="cs-tab-panel" role="tabpanel">
-          <ArtifactsSettingsPanel
-            {...(snapshot.htmlHosting ? { capability: snapshot.htmlHosting } : {})}
-            busy={actionBusy}
-            onRefresh={async () => {
-              if (!window.eco?.refreshHtmlHostingCapability) return;
-              setError(undefined);
-              try {
-                await window.eco.refreshHtmlHostingCapability();
-              } catch (err) {
-                setError(err instanceof Error ? err.message : String(err));
-              }
-            }}
-          />
-        </div>
-      ) : null}
-
-      {registered && isLive && activeTab === "devices" ? (
-        <div className="cs-tab-panel" role="tabpanel">
-          <section className="cs-block cs-block--tab-first">
-            <div className="cs-block-head">
-              <h2 className="cs-block-label">{t("settings.center.boundPhones")}</h2>
-              <div className="cs-block-head-actions">
+            <section className="cs-block">
+              <div className="cs-block-head">
+                <h2 className="cs-block-label">{t("settings.center.syncStatus.title")}</h2>
                 <button
                   type="button"
                   className="cs-text-action is-muted"
-                  disabled={actionBusy || bindingsLoading}
-                  onClick={() => void refreshBindings()}
+                  disabled={actionBusy || syncStatusLoading}
+                  onClick={() => void refreshSyncStatus()}
                 >
                   <RefreshCw
                     size={14}
                     strokeWidth={1.75}
-                    className={bindingsLoading ? "cs-spin" : undefined}
+                    className={syncStatusLoading ? "cs-spin" : undefined}
                   />
                   {t("common.refresh")}
                 </button>
-                <button
-                  type="button"
-                  className="cs-btn cs-btn--ghost cs-btn--compact"
-                  disabled={actionBusy || pairingBusy}
-                  onClick={() => void openPairingSheet()}
-                >
-                  <QrCode size={15} strokeWidth={1.75} />
-                  {t("settings.center.connectPhone")}
-                </button>
               </div>
-            </div>
-
-            {bindingsError ? <p className="cs-error">{bindingsError}</p> : null}
-
-            {bindingsLoading && activeBindings.length === 0 ? (
-              <p className="cs-placeholder">{t("common.loading")}</p>
-            ) : activeBindings.length === 0 ? (
-              <p className="cs-placeholder">{t("settings.center.noPhones")}</p>
-            ) : (
-              <ul className="cs-list">
-                {activeBindings.map((binding) => {
-                  const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
-                  const online = mobile?.online === true;
-                  const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
-                  const mobileDetail = formatMobileDetail(mobile, binding.mobileDeviceId);
-                  const revoking = revokingBindingId === binding.id;
-                  return (
-                    <li key={binding.id} className="cs-list-item">
-                      <div className="cs-device">
-                        <span className={`cs-dot cs-dot--${online ? "online" : "offline"}`} aria-hidden />
-                        <div className="cs-device-copy">
-                          <span className="cs-device-name">
-                            <Smartphone size={14} strokeWidth={1.75} aria-hidden />
-                            {mobileLabel}
-                          </span>
-                          {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
-                          <span className="cs-device-meta">
-                            {t("settings.center.boundAt", {
-                              status: online ? t("settings.center.online") : t("settings.center.offline"),
-                              time: formatLocalTime(binding.createdAt),
-                            })}
-                          </span>
+              {syncStatusLoading && !syncStatus ? (
+                <p className="cs-placeholder">{t("common.loading")}</p>
+              ) : (
+                <div className="cs-sync-status-card">
+                  <ul className="cs-list cs-sync-status-list">
+                    {(syncStatus?.domains ?? []).map((entry) => (
+                      <li key={entry.domain} className="cs-list-item cs-sync-status-item">
+                        <div className="cs-sync-status-copy">
+                          <span className="cs-sync-status-label">{domainSyncLabel(entry.domain)}</span>
+                          {entry.summary ? (
+                            <span className="cs-sync-status-summary">
+                              {formatDomainSyncSummary(entry.domain, entry.summary)}
+                            </span>
+                          ) : null}
                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="cs-text-action is-muted"
-                        disabled={actionBusy || revoking}
-                        onClick={() => void handleRevokeBinding(binding)}
-                      >
-                        {revoking ? t("settings.center.revoking") : t("settings.center.revoke")}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
-      ) : null}
+                        <div className="cs-sync-status-state">
+                          <span className={`cs-sync-status-badge is-${entry.state}`}>
+                            {domainSyncStateLabel(entry.state)}
+                          </span>
+                          {entry.lastSyncedAt ? (
+                            <span className="cs-sync-status-time">
+                              {t("settings.center.syncStatus.lastSynced", {
+                                time: formatLocalTime(entry.lastSyncedAt),
+                              })}
+                            </span>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="cs-vault-inline-note">{t("settings.center.syncStatus.hint")}</p>
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {registered && isLive && activeTab === "artifacts" ? (
+          <div className="cs-tab-panel" role="tabpanel">
+            <ArtifactsSettingsPanel
+              {...(snapshot.htmlHosting ? { capability: snapshot.htmlHosting } : {})}
+              busy={actionBusy}
+              onRefresh={async () => {
+                if (!window.eco?.refreshHtmlHostingCapability) return;
+                setError(undefined);
+                try {
+                  await window.eco.refreshHtmlHostingCapability();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : String(err));
+                }
+              }}
+            />
+          </div>
+        ) : null}
+
+        {registered && isLive && activeTab === "devices" ? (
+          <div className="cs-tab-panel" role="tabpanel">
+            <section className="cs-block cs-block--tab-first">
+              <div className="cs-block-head">
+                <h2 className="cs-block-label">{t("settings.center.boundPhones")}</h2>
+                <div className="cs-block-head-actions">
+                  <button
+                    type="button"
+                    className="cs-text-action is-muted"
+                    disabled={actionBusy || bindingsLoading}
+                    onClick={() => void refreshBindings()}
+                  >
+                    <RefreshCw
+                      size={14}
+                      strokeWidth={1.75}
+                      className={bindingsLoading ? "cs-spin" : undefined}
+                    />
+                    {t("common.refresh")}
+                  </button>
+                  <button
+                    type="button"
+                    className="cs-btn cs-btn--ghost cs-btn--compact"
+                    disabled={actionBusy || pairingBusy}
+                    onClick={() => void openPairingSheet()}
+                  >
+                    <QrCode size={15} strokeWidth={1.75} />
+                    {t("settings.center.connectPhone")}
+                  </button>
+                </div>
+              </div>
+
+              {bindingsError ? <p className="cs-error">{bindingsError}</p> : null}
+
+              {bindingsLoading && activeBindings.length === 0 ? (
+                <p className="cs-placeholder">{t("common.loading")}</p>
+              ) : activeBindings.length === 0 ? (
+                <p className="cs-placeholder">{t("settings.center.noPhones")}</p>
+              ) : (
+                <ul className="cs-list">
+                  {activeBindings.map((binding) => {
+                    const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
+                    const online = mobile?.online === true;
+                    const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
+                    const mobileDetail = formatMobileDetail(mobile, binding.mobileDeviceId);
+                    const revoking = revokingBindingId === binding.id;
+                    return (
+                      <li key={binding.id} className="cs-list-item">
+                        <div className="cs-device">
+                          <span className={`cs-dot cs-dot--${online ? "online" : "offline"}`} aria-hidden />
+                          <div className="cs-device-copy">
+                            <span className="cs-device-name">
+                              <Smartphone size={14} strokeWidth={1.75} aria-hidden />
+                              {mobileLabel}
+                            </span>
+                            {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
+                            <span className="cs-device-meta">
+                              {t("settings.center.boundAt", {
+                                status: online ? t("settings.center.online") : t("settings.center.offline"),
+                                time: formatLocalTime(binding.createdAt),
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="cs-text-action is-muted"
+                          disabled={actionBusy || revoking}
+                          onClick={() => void handleRevokeBinding(binding)}
+                        >
+                          {revoking ? t("settings.center.revoking") : t("settings.center.revoke")}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        className="cs-section-panel"
+        role="tabpanel"
+        id="cs-section-panel-deployment"
+        aria-labelledby="cs-section-tab-deployment"
+        hidden={sectionTab !== "deployment"}
+      >
+        <SupabaseDeploymentPanel
+          projectUrl={serverUrl}
+          disabled={actionBusy}
+          onUseProject={handleUseDeployedProject}
+        />
+      </div>
 
       {pairingSheetOpen
         ? createPortal(

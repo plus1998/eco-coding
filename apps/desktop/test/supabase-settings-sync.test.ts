@@ -225,6 +225,28 @@ test("pushAccountConfigSnapshot sends settings and complete secret snapshot to o
   expect(row.revision).toBe(5);
 });
 
+test("pushAccountConfigSnapshot maps PostgREST PT409 to a settings conflict", async () => {
+  const client = {
+    async rpc() {
+      return {
+        data: null,
+        error: { code: "PT409", message: SETTINGS_SYNC_CONFLICT_CODE },
+      };
+    },
+  };
+
+  await expect(
+    pushAccountConfigSnapshot(client as never, {
+      payload: emptyEcoSyncedSettingsPayload(),
+      expectedRevision: 4,
+      secrets: [],
+    }),
+  ).rejects.toMatchObject({
+    name: "SettingsSyncConflictError",
+    code: SETTINGS_SYNC_CONFLICT_CODE,
+  });
+});
+
 test("recordFailedVaultClaimAttempt locks after max attempts", async () => {
   const updates: Array<Record<string, unknown>> = [];
   const claim: VaultClaimRow = {
@@ -784,25 +806,25 @@ test("syncAccountConfig reconcile preserves local secrets when settings already 
   expect(result.needsUserChoice).toBeUndefined();
 });
 
-test("MobileRemoteEventPublisher throttles context notifications", async () => {
+test("MobileRemoteEventPublisher throttles V2 projection extras notifications", async () => {
   const delivered: EventCenterJsonRpcNotification[] = [];
   const publisher = new MobileRemoteEventPublisher({
     deliver: (notification) => {
       delivered.push(notification);
     },
-    contextUsageThrottleMs: 30,
+    projectionExtrasThrottleMs: 30,
   });
 
   const envelope = {
-    kind: "thread.context",
+    kind: "conversation.projection_extras",
     threadId: "thr_1",
-    payload: { type: "context", threadId: "thr_1" },
+    payload: { conversationId: "thr_1", revision: 1 },
   } as EventCenterEnvelope;
   const n1 = { jsonrpc: "2.0", method: "eco.event", params: envelope } as EventCenterJsonRpcNotification;
   const n2 = {
     jsonrpc: "2.0",
     method: "eco.event",
-    params: { ...envelope, payload: { type: "context", threadId: "thr_1", seq: 2 } },
+    params: { ...envelope, payload: { conversationId: "thr_1", revision: 2 } },
   } as EventCenterJsonRpcNotification;
 
   publisher.publish(envelope, n1);
@@ -811,9 +833,8 @@ test("MobileRemoteEventPublisher throttles context notifications", async () => {
   await Bun.sleep(50);
   expect(delivered).toHaveLength(1);
   expect((delivered[0]!.params as EventCenterEnvelope).payload).toEqual({
-    type: "context",
-    threadId: "thr_1",
-    seq: 2,
+    conversationId: "thr_1",
+    revision: 2,
   });
   publisher.reset();
 });
@@ -1183,6 +1204,47 @@ test("mergeDomainIntoPayload replaces only packageScriptArgs", async () => {
   expect(merged.git?.commitMessageInstructions).toBe("Keep local git");
 });
 
+test("packageScriptArgs domain carries prefixes as well as args", async () => {
+  const {
+    buildDomainSyncSummary,
+    domainPayloadEqual,
+    mergeDomainIntoPayload,
+    emptyEcoSyncedSettingsPayload,
+  } = await import("../src/main/supabase-settings-sync");
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    packageScriptArgs: { "/other/project": { build: "--verbose" } },
+    packageScriptPrefixes: { "/other/project": { build: "nvm use 20" } },
+  };
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    packageScriptArgs: { "/tmp/project": { dev: "--port 3000" } },
+    packageScriptPrefixes: { "/tmp/project": { dev: "nvm use 18" } },
+    git: {
+      commitMessageRoleByMainAgentConfigId: {},
+      commitMessageCandidateModelIdByMainAgentConfigId: {},
+      commitMessageInstructions: "Keep local git",
+    },
+  };
+
+  const merged = mergeDomainIntoPayload(local, remote, "packageScriptArgs");
+  expect(merged.packageScriptArgs).toEqual(remote.packageScriptArgs);
+  expect(merged.packageScriptPrefixes).toEqual(remote.packageScriptPrefixes);
+  expect(merged.git?.commitMessageInstructions).toBe("Keep local git");
+
+  // A prefix-only edit is a real domain change.
+  const localPrefixEdit = {
+    ...local,
+    packageScriptPrefixes: { "/tmp/project": { dev: "nvm use 22" } },
+  };
+  expect(domainPayloadEqual(local, localPrefixEdit, "packageScriptArgs")).toBe(false);
+  expect(domainPayloadEqual(local, local, "packageScriptArgs")).toBe(true);
+
+  expect(buildDomainSyncSummary(local, "packageScriptArgs")).toBe("1 · 2");
+  expect(buildDomainSyncSummary(emptyEcoSyncedSettingsPayload(), "packageScriptArgs")).toBe("");
+});
+
 test("mergeDomainIntoPayload replaces only user agent templates for agentLibrary", async () => {
   const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload, syncableAgentTemplates } = await import(
     "../src/main/supabase-settings-sync"
@@ -1371,9 +1433,7 @@ test("computeDomainSyncStatuses tracks personalization domain", async () => {
     hasVaultKey: true,
     domainSyncTimes: { personalization: "2026-01-02T00:00:00.000Z" },
   });
-  expect(neverSynced.find((entry) => entry.domain === "personalization")?.state).toBe(
-    "never_synced",
-  );
+  expect(neverSynced.find((entry) => entry.domain === "personalization")?.state).toBe("never_synced");
 
   const synced = computeDomainSyncStatuses({
     localPayload: local,
@@ -1395,11 +1455,22 @@ test("normalizeEcoSyncedProxyBridgeSettings preserves integrated web search", as
   expect(
     normalizeEcoSyncedProxyBridgeSettings({
       upstreamUserAgent: "EcoAgent/1",
+      integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_ask" },
+    }),
+  ).toEqual({
+    upstreamUserAgent: "EcoAgent/1",
+    integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_ask" },
+  });
+
+  // Missing approvalMode falls back to always_allow (legacy payload).
+  expect(
+    normalizeEcoSyncedProxyBridgeSettings({
+      upstreamUserAgent: "EcoAgent/1",
       integratedWebSearch: { enabled: true, provider: "doubao" },
     }),
   ).toEqual({
     upstreamUserAgent: "EcoAgent/1",
-    integratedWebSearch: { enabled: true, provider: "doubao" },
+    integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_allow" },
   });
 });
 
@@ -1411,15 +1482,27 @@ test("domainPayloadEqual compares integrated web search under proxyBridge", asyn
   const left = {
     ...base,
     proxyBridge: {
-      integratedWebSearch: { enabled: true, provider: "doubao" as const },
+      integratedWebSearch: {
+        enabled: true,
+        provider: "doubao" as const,
+        approvalMode: "always_allow" as const,
+      },
     },
   };
   const right = {
     ...base,
     proxyBridge: {
-      integratedWebSearch: { enabled: true, provider: "doubao" },
+      integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_allow" },
     },
   };
 
   expect(domainPayloadEqual(left, right, "proxyBridge")).toBe(true);
+  // Different approvalMode must count as a change.
+  const askRight = {
+    ...base,
+    proxyBridge: {
+      integratedWebSearch: { enabled: true, provider: "doubao", approvalMode: "always_ask" },
+    },
+  };
+  expect(domainPayloadEqual(left, askRight, "proxyBridge")).toBe(false);
 });

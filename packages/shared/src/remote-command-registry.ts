@@ -46,81 +46,131 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("prompt-image:upload-finish", "Finish chunked prompt image upload", "write_safe", RPC_INVOKE, [
     objectArg(["contextKey", "imageId", "mediaType", "totalBytes"]),
   ]),
+  command("prompt-image:read-chunk", "Read a durable prompt image chunk", "read", RPC_INVOKE, [
+    objectArg(["contextKey", "contentRef", "mediaType", "offset"]),
+  ]),
   command("prompt-image:release", "Release staged prompt images", "write_safe", RPC_INVOKE, [
     objectArg(["paths"]),
   ]),
   command("thread:session-bootstrap", "Bootstrap thread session", "read", RPC_INVOKE, [stringArg()]),
+  command("conversation:capabilities", "Get conversation V2 capabilities", "read", RPC_INVOKE, []),
+  command("conversation:bootstrap", "Bootstrap conversation V2", "read", RPC_INVOKE, [
+    objectArg(["conversationId"]),
+  ]),
+  command("conversation:projection", "Read Conversation V2 projection extras", "read", RPC_INVOKE, [
+    objectArg(["conversationId"]),
+  ]),
+  command("conversation:messages-page", "Page conversation V2 messages", "read", RPC_INVOKE, [
+    objectArg(["conversationId"]),
+  ]),
+  command("conversation:details-page", "Page conversation V2 details", "read", RPC_INVOKE, [
+    objectArg(["conversationId", "runId"]),
+  ]),
+  command("conversation:tools-page", "Page conversation V2 tool summaries", "read", RPC_INVOKE, [
+    objectArg(["conversationId", "runId"]),
+  ]),
+  command("conversation:sync", "Synchronize conversation V2 effects", "read", RPC_INVOKE, [
+    objectArg(["conversationId", "storeEpoch", "afterSeq"]),
+  ]),
+  command("conversation:head", "Read conversation V2 head", "read", RPC_INVOKE, [stringArg()]),
+  command("conversation:message-get", "Read a conversation V2 message", "read", RPC_INVOKE, [
+    objectArg(["conversationId", "messageId"]),
+  ]),
+  command("conversation:run-get", "Read a conversation V2 run", "read", RPC_INVOKE, [
+    objectArg(["conversationId", "runId"]),
+  ]),
+  command("conversation:detail-get", "Read a conversation V2 detail", "read", RPC_INVOKE, [
+    objectArg(["conversationId", "itemId"]),
+  ]),
+  command("conversation:send-message", "Send a conversation V2 message", "execute", RPC_INVOKE, [
+    objectArg(["principalId", "conversationId", "clientCommandId", "text"]),
+  ]),
   command("thread:start", "Start thread", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "prompt", "runtimeConfig"]),
   ]),
-  command("thread:continue", "Continue thread", "execute", RPC_INVOKE, [objectArg(["threadId", "prompt"])]),
   command("thread:retry-from-message", "Retry failed request from user message", "execute", RPC_INVOKE, [
-    objectArg(["threadId", "prompt", "expectedHistoryRevision"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "prompt", "expectedHistoryRevision"]),
   ]),
   command("thread:user-message-edit-get", "Get user message edit state", "read", RPC_INVOKE, [
     objectArg(["threadId", "activityLineId"]),
   ]),
   command("thread:rewrite-from-message", "Rewrite thread from user message", "execute", RPC_INVOKE, [
-    objectArg(["threadId", "activityLineId", "prompt", "attachments", "expectedHistoryRevision"]),
+    objectArg([
+      "principalId",
+      "clientCommandId",
+      "threadId",
+      "activityLineId",
+      "prompt",
+      "attachments",
+      "expectedHistoryRevision",
+    ]),
   ]),
-  command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
-  command("thread:delete", "Delete thread", "write_safe", RPC_INVOKE, [stringArg()]),
+  command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [
+    objectArg(["principalId", "clientCommandId", "threadId", "expectedHistoryRevision"]),
+  ]),
+  command("thread:delete", "Delete thread", "write_safe", RPC_INVOKE, [
+    objectArg(["principalId", "clientCommandId", "threadId", "expectedHistoryRevision"]),
+  ]),
   command("thread:regenerate-title", "Regenerate thread title", "write_safe", RPC_INVOKE, [stringArg()]),
-  command("thread:activity-list", "List thread activity", "read", RPC_INVOKE, [stringArg()]),
-  command("thread:get-usage-snapshot", "Get thread usage snapshot", "read", RPC_INVOKE, [stringArg()]),
-  command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [
-    stringArg(),
-    optionalStringArg(),
-  ]),
-  command("thread:run-projection-detail-get", "Get thread run projection detail", "read", RPC_INVOKE, [
-    objectArg(["threadId", "kind", "key"]),
-  ]),
-  command("thread:subagent-sessions-list", "List thread subagent sessions", "read", RPC_INVOKE, [
-    stringArg(),
-  ]),
   command("thread:get-pending-plan", "Get pending plan", "read", RPC_INVOKE, [stringArg()]),
   command("thread:get-approved-plan", "Get approved plan", "read", RPC_INVOKE, [stringArg()]),
   command("thread:approve-plan", "Approve pending plan", "privileged", APPROVAL_DECIDE, [
-    objectArg(["threadId"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "expectedHistoryRevision"]),
   ]),
-  command("thread:dismiss-plan", "Dismiss pending plan", "privileged", APPROVAL_DECIDE, [stringArg()]),
+  command("thread:dismiss-plan", "Dismiss pending plan", "privileged", APPROVAL_DECIDE, [
+    objectArg(["principalId", "clientCommandId", "threadId", "expectedHistoryRevision"]),
+  ]),
   command("thread:follow-up-list", "List follow-ups", "read", RPC_INVOKE, [stringArg()]),
   command("thread:follow-up-enqueue", "Enqueue follow-up", "execute", RPC_INVOKE, [
-    objectArg(["threadId", "prompt"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "prompt", "expectedHistoryRevision"]),
   ]),
   command("thread:follow-up-cancel", "Cancel follow-up", "write_safe", RPC_INVOKE, [
-    objectArg(["threadId", "followUpId"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "followUpId", "expectedHistoryRevision"]),
   ]),
   command("thread:follow-up-escalate", "Escalate follow-up", "execute", RPC_INVOKE, [
-    objectArg(["threadId"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "expectedHistoryRevision"]),
   ]),
   command("thread:follow-up-editing", "Set follow-up editing lock", "write_safe", RPC_INVOKE, [
-    objectArg(["threadId"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "expectedHistoryRevision"]),
   ]),
   command("thread:follow-up-queue-paused", "Pause or resume follow-up queue", "write_safe", RPC_INVOKE, [
-    objectArg(["threadId", "paused"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "paused", "expectedHistoryRevision"]),
   ]),
   command("thread:follow-up-update", "Update follow-up", "write_safe", RPC_INVOKE, [
-    objectArg(["threadId", "followUpId", "prompt"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "followUpId", "prompt", "expectedHistoryRevision"]),
   ]),
   command("thread:follow-up-reorder", "Reorder follow-ups", "write_safe", RPC_INVOKE, [
-    objectArg(["threadId", "followUpIds"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "followUpIds", "expectedHistoryRevision"]),
   ]),
   command("thread:update-runtime-config", "Update thread runtime config", "write_safe", RPC_INVOKE, [
-    objectArg(["threadId", "runtimeConfig"]),
+    objectArg(["principalId", "clientCommandId", "threadId", "runtimeConfig", "expectedHistoryRevision"]),
   ]),
-  command("thread:todo-list", "List thread todo progress", "read", RPC_INVOKE, [stringArg()]),
-
   command("bash-approval:get-pending", "Get pending bash approval", "read", RPC_INVOKE, [stringArg()]),
   command("bash-approval:resolve", "Resolve bash approval", "privileged", APPROVAL_DECIDE, [
-    objectArg(["toolUseId", "decision"]),
+    objectArg([
+      "principalId",
+      "clientCommandId",
+      "threadId",
+      "toolUseId",
+      "decision",
+      "expectedHistoryRevision",
+    ]),
   ]),
 
   command("clarification:get-pending", "Get pending clarification", "read", RPC_INVOKE, [stringArg()]),
   command("clarification:submit", "Submit clarification", "write_safe", RPC_INVOKE, [
-    objectArg(["toolUseId", "selections"]),
+    objectArg([
+      "principalId",
+      "clientCommandId",
+      "threadId",
+      "toolUseId",
+      "selections",
+      "expectedHistoryRevision",
+    ]),
   ]),
-  command("clarification:dismiss", "Dismiss clarification", "write_safe", RPC_INVOKE, [stringArg()]),
+  command("clarification:dismiss", "Dismiss clarification", "write_safe", RPC_INVOKE, [
+    objectArg(["principalId", "clientCommandId", "threadId", "toolUseId", "expectedHistoryRevision"]),
+  ]),
 
   command("workspace:get-current", "Get current workspace", "read", RPC_INVOKE, []),
   command("workspace:get-home-path", "Get home project path", "read", RPC_INVOKE, []),

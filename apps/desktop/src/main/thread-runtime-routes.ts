@@ -25,6 +25,21 @@ export function resolveThreadRuntimeConfig(
   options: { requireCompleteCodingRoutes?: boolean } = {},
 ): RuntimeConfigResolution {
   const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
+  // Built-in OpenAI (auth.json) — no ProviderStore entry needed
+  if (!providersById.has("openai")) {
+    providersById.set("openai", {
+      id: "openai",
+      name: "OpenAI",
+      baseUrl: "",
+      requestPath: "/v1",
+      version: "v1",
+      apiCompat: "openai_responses" as const,
+      defaultModel: "gpt-5.6-luna",
+      enabled: true,
+      hasApiKey: false,
+      apiKey: "",
+    } as ProviderConfigSecret);
+  }
   const activeRoutes = routesOverride ?? [];
   const routes = activeRoutes.map((route): RuntimeRoute | undefined => {
     const provider = providersById.get(route.providerId);

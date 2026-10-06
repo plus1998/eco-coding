@@ -6,6 +6,18 @@ import { scrollToLineCol } from "./scroll-to-line-col";
 
 export const EMPTY_PM_PLUGINS: readonly PMPlugin[] = Object.freeze([]);
 
+/**
+ * Alternative document source.
+ *
+ * Streaming Markdown cannot go through `createDoc(content)`: that re-parses the
+ * whole response on every reveal tick. A provider lets the caller build the doc
+ * incrementally (see `streaming-markdown-doc.ts`) while `content` still drives
+ * *when* the doc is rebuilt.
+ */
+export interface ProseMirrorDocProvider {
+  buildDoc: () => PMNode;
+}
+
 export interface ProseMirrorHostProps {
   className?: string;
   schema: Schema;
@@ -14,6 +26,8 @@ export interface ProseMirrorHostProps {
   /** Source text or opaque key; when it changes and !dirty, doc is replaced. */
   content: string;
   createDoc: (content: string) => PMNode;
+  /** When set, the doc comes from this provider instead of `createDoc(content)`. */
+  docProvider?: ProseMirrorDocProvider;
   serializeDoc?: (doc: PMNode) => string;
   editable?: boolean;
   /** When true, external content updates do not replace the local doc. */
@@ -36,6 +50,7 @@ export function ProseMirrorHost({
   plugins = EMPTY_PM_PLUGINS,
   content,
   createDoc,
+  docProvider,
   serializeDoc = defaultSerialize,
   editable = true,
   dirty = false,
@@ -49,6 +64,7 @@ export function ProseMirrorHost({
   const gutterRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const createDocRef = useRef(createDoc);
+  const docProviderRef = useRef(docProvider);
   const serializeDocRef = useRef(serializeDoc);
   const onDocChangeRef = useRef(onDocChange);
   const editableRef = useRef(editable && !readOnly);
@@ -56,6 +72,7 @@ export function ProseMirrorHost({
   const contentRef = useRef(content);
 
   createDocRef.current = createDoc;
+  docProviderRef.current = docProvider;
   serializeDocRef.current = serializeDoc;
   onDocChangeRef.current = onDocChange;
   editableRef.current = editable && !readOnly;
@@ -63,6 +80,13 @@ export function ProseMirrorHost({
   contentRef.current = content;
 
   const pluginsKey = plugins;
+
+  // The mount effect must see the doc source for this commit, and the provider
+  // is rebuilt every render (it closes over the latest stream text).
+  const buildInitialDocRef = useRef<() => PMNode>(() => createDoc(content));
+  buildInitialDocRef.current = docProvider
+    ? docProvider.buildDoc
+    : () => createDocRef.current(contentRef.current);
 
   useLayoutEffect(() => {
     const parent = mountRef.current;
@@ -80,7 +104,7 @@ export function ProseMirrorHost({
 
     const state = EditorState.create({
       schema,
-      doc: createDocRef.current(contentRef.current),
+      doc: buildInitialDocRef.current(),
       plugins: [...pluginsKey, editablePlugin],
     });
 
@@ -121,9 +145,18 @@ export function ProseMirrorHost({
   useLayoutEffect(() => {
     const view = viewRef.current;
     if (!view || dirtyRef.current) return;
-    const current = serializeDocRef.current(view.state.doc);
-    if (current === content) return;
-    const doc = createDocRef.current(content);
+    let doc: PMNode;
+    const provider = docProviderRef.current;
+    if (provider) {
+      doc = provider.buildDoc();
+      // Cached fragments are the same node instances, so identity short-circuits
+      // most of this comparison.
+      if (view.state.doc.eq(doc)) return;
+    } else {
+      const current = serializeDocRef.current(view.state.doc);
+      if (current === content) return;
+      doc = createDocRef.current(content);
+    }
     const next = EditorState.create({
       schema: view.state.schema,
       doc,

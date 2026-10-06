@@ -1,113 +1,159 @@
 /**
- * Map Eco / Claude-SDK shaped MCP server entries into pi-mcp-adapter in-memory config.
- * Isolated snapshots only — never merge ambient .mcp.json / ~/.pi files.
+ * Map Eco / Claude-SDK shaped MCP server entries into the official PI MCP
+ * extension config (`LoadedMcpConfig`).
  *
- * Vendored adapter loading lives in pi-mcp-adapter-factory.ts (Node/main only).
+ * Isolated snapshots only — never merge ambient `mcp.json` / `~/.pi` files.
+ * `loadConfig` in pi-mcp-extension-factory.ts returns exactly this snapshot.
+ *
+ * Only stdio and streamable HTTP are supported, like the official extension.
+ * SSE servers stay in the Eco MCP Hub and are never handed to PI.
  */
 
-export const PI_MCP_PROXY_TOOL_NAMES = ["mcp", "mcpScript"] as const;
+import type { LoadedMcpConfig, McpServerConfig, McpServerEntry } from "@earendil-works/pi-coding-agent";
+import { ECO_MCP_HUB_CALL_FULL_TOOL, ECO_MCP_HUB_SEARCH_FULL_TOOL } from "./eco-mcp-hub-tool.js";
 
-export type PiMcpAdapterServerEntry = {
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-  httpTransport?: "streamable-http" | "sse";
-  lifecycle?: "lazy" | "eager" | "keep-alive" | "lazy-keep-alive";
-  /** Live MCP call timeout (ms). Overrides adapter/SDK default (60s). */
-  requestTimeoutMs?: number;
-  includeTools?: string[];
-  disabled?: boolean;
-};
+type PiMcpStdioServerConfig = Extract<McpServerConfig, { command: string }>;
+type PiMcpHttpServerConfig = Extract<McpServerConfig, { url: string }>;
 
-export type PiMcpAdapterConfig = {
-  mcpServers: Record<string, PiMcpAdapterServerEntry>;
-};
+/**
+ * Server name the Hub injection uses. PI namespaces its tools as
+ * `mcp__<server>__<tool>`, so both names below are the exact wire names.
+ */
+export const PI_MCP_HUB_SERVER_NAME = "eco_mcp";
 
-/** Claude/Eco SDK entry → pi-mcp-adapter ServerEntry. Returns undefined when incomplete/unsupported. */
-export function toPiMcpServerEntry(entry: unknown): PiMcpAdapterServerEntry | undefined {
+/** The only Hub tools declared to the model, identical to the Claude/Codex runtime. */
+export const PI_MCP_HUB_TOOL_NAMES = [ECO_MCP_HUB_SEARCH_FULL_TOOL, ECO_MCP_HUB_CALL_FULL_TOOL] as const;
+
+/**
+ * The official extension declares these tools to the model right away. Without
+ * it every server defaults to `codemode` exposure, which would hide the Hub
+ * behind a script sandbox instead of keeping direct tool calls.
+ */
+const PI_MCP_HUB_EXPOSURE = "direct" as const;
+
+/** Where the entry came from, for `/mcp` diagnostics. Never a file we could write back to. */
+const PI_MCP_SESSION_SOURCE = "<eco:session>";
+
+export type PiMcpServerMapResult = { ok: true; config: McpServerConfig } | { ok: false; error: string };
+
+/**
+ * Convert one Claude/Eco SDK MCP entry into an official `McpServerConfig`.
+ *
+ * Returns an explicit error instead of dropping the server: a silently missing
+ * server would leave the model without tools it was told about.
+ */
+export function toPiMcpServerConfig(entry: unknown): PiMcpServerMapResult {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    return undefined;
+    return { ok: false, error: "entry is not an object" };
   }
   const record = entry as Record<string, unknown>;
-
-  const requestTimeoutMs = resolveRequestTimeoutMs(record);
+  const timeoutSeconds = resolveTimeoutSeconds(record);
+  const description = readNonEmptyString(record.description);
 
   if (typeof record.command === "string" && record.command.trim()) {
-    const args = Array.isArray(record.args)
-      ? record.args.filter((value): value is string => typeof value === "string")
-      : undefined;
+    const args = stringArray(record.args);
     const env = stringRecord(record.env);
-    const cwd = typeof record.cwd === "string" && record.cwd.trim() ? record.cwd.trim() : undefined;
-    return {
+    const cwd = readNonEmptyString(record.cwd);
+    const config: PiMcpStdioServerConfig = {
+      type: "stdio",
       command: record.command.trim(),
+      exposure: PI_MCP_HUB_EXPOSURE,
       ...(args && args.length > 0 ? { args } : {}),
       ...(env && Object.keys(env).length > 0 ? { env } : {}),
       ...(cwd ? { cwd } : {}),
-      ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
-      lifecycle: "lazy",
+      ...(description ? { description } : {}),
+      ...(timeoutSeconds !== undefined ? { timeout: timeoutSeconds } : {}),
     };
+    return { ok: true, config };
   }
 
   if (typeof record.url === "string" && record.url.trim()) {
+    const transport = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+    if (transport === "sse" || record.httpTransport === "sse") {
+      return {
+        ok: false,
+        error: "SSE transport is not supported by the PI MCP extension; keep this server in the Eco MCP Hub",
+      };
+    }
     const headers = stringRecord(record.headers);
-    const transportType = record.type === "sse" || record.httpTransport === "sse" ? "sse" : "http";
-    return {
+    const config: PiMcpHttpServerConfig = {
+      type: "http",
       url: record.url.trim(),
+      exposure: PI_MCP_HUB_EXPOSURE,
       ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
-      ...(transportType === "sse"
-        ? { httpTransport: "sse" as const }
-        : { httpTransport: "streamable-http" as const }),
-      ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
-      lifecycle: "lazy",
+      ...(description ? { description } : {}),
+      ...(timeoutSeconds !== undefined ? { timeout: timeoutSeconds } : {}),
     };
+    return { ok: true, config };
   }
 
-  // socket-only / unknown — not mapped from Eco McpStore today
-  return undefined;
+  return { ok: false, error: "neither command nor url is set" };
 }
 
-/** Convert Eco session mcpServers map into an isolated pi-mcp-adapter config snapshot. */
-export function toPiMcpAdapterConfig(mcpServers: Record<string, unknown> | undefined): PiMcpAdapterConfig {
-  const next: Record<string, PiMcpAdapterServerEntry> = {};
-  if (!mcpServers) {
-    return { mcpServers: next };
-  }
-  for (const [name, entry] of Object.entries(mcpServers)) {
-    const key = name.trim();
-    if (!key) continue;
-    const mapped = toPiMcpServerEntry(entry);
-    if (mapped) {
-      next[key] = mapped;
+/**
+ * Build the in-memory config the official MCP extension loads.
+ *
+ * `autoEnableCodemode` is off on purpose: Eco activates `codemode` per session
+ * mode instead, so Ask/Plan can never pick it up from a server's exposure.
+ */
+export function toPiMcpLoadedConfig(mcpServers: Record<string, unknown> | undefined): LoadedMcpConfig {
+  const servers: McpServerEntry[] = [];
+  const errors: string[] = [];
+  if (mcpServers) {
+    for (const [name, entry] of Object.entries(mcpServers)) {
+      const key = name.trim();
+      if (!key) {
+        continue;
+      }
+      const mapped = toPiMcpServerConfig(entry);
+      if (!mapped.ok) {
+        errors.push(`MCP server "${key}": ${mapped.error}`);
+        continue;
+      }
+      servers.push({
+        name: key,
+        config: mapped.config,
+        source: PI_MCP_SESSION_SOURCE,
+        // Eco owns this config for the session; it has no file to save changes to.
+        scope: "extension",
+      });
     }
   }
-  return { mcpServers: next };
+  return { servers, autoEnableCodemode: false, errors };
 }
 
 /**
  * Session identity for MCP: which servers exist (name, command/args/url).
- * Spawn `env` is excluded — `toSpawnEnv()` copies process.env (PATH,
- * PI_CODING_AGENT_DIR, control-port URLs), which is not conversation identity.
+ * Spawn `env` and HTTP `headers` are excluded — both carry per-thread
+ * credentials (`toSpawnEnv()` copies process.env, the Hub injects a fresh
+ * bearer token), which are not conversation identity.
  */
-function identityPiMcpServerEntry(entry: PiMcpAdapterServerEntry): PiMcpAdapterServerEntry {
-  const { env: _spawnEnv, ...rest } = entry;
+function identityPiMcpServerEntry(config: McpServerConfig): Record<string, unknown> {
+  const {
+    env: _env,
+    headers: _headers,
+    ...rest
+  } = config as McpServerConfig & {
+    env?: unknown;
+    headers?: unknown;
+  };
   return rest;
 }
 
 /** Stable fingerprint for which MCP servers are loaded (order-independent; env ignored). */
 export function fingerprintPiMcpServers(mcpServers: Record<string, unknown> | undefined): string {
-  const config = toPiMcpAdapterConfig(mcpServers);
-  const keys = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b));
-  if (keys.length === 0) {
+  const config = toPiMcpLoadedConfig(mcpServers);
+  return serializeFingerprint(
+    config.servers.map((server) => [server.name, identityPiMcpServerEntry(server.config)]),
+  );
+}
+
+function serializeFingerprint(entries: Array<[string, Record<string, unknown>]>): string {
+  entries.sort((a, b) => a[0].localeCompare(b[0]));
+  if (entries.length === 0) {
     return "";
   }
-  const payload = keys.map((key) => {
-    const entry = config.mcpServers[key]!;
-    return [key, identityPiMcpServerEntry(entry)] as const;
-  });
-  return JSON.stringify(payload);
+  return JSON.stringify(entries);
 }
 
 /**
@@ -124,7 +170,7 @@ export function canonicalizePiMcpFingerprint(stored: string): string {
     if (!Array.isArray(parsed)) {
       return raw;
     }
-    const asRecord: Record<string, unknown> = {};
+    const entries: Array<[string, Record<string, unknown>]> = [];
     for (const item of parsed) {
       if (!Array.isArray(item) || item.length < 2) {
         return raw;
@@ -133,20 +179,30 @@ export function canonicalizePiMcpFingerprint(stored: string): string {
       if (typeof name !== "string" || !name.trim()) {
         return raw;
       }
-      asRecord[name] = item[1];
+      const entry = item[1];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return raw;
+      }
+      const record = entry as Record<string, unknown>;
+      // Current fingerprints already contain the official seconds-based config.
+      // Only adapter / Claude-shaped payloads need the milliseconds conversion.
+      const official = record.exposure !== undefined && record.requestTimeoutMs === undefined;
+      const mapped = toPiMcpServerConfig(official ? { ...record, timeout: undefined } : record);
+      if (!mapped.ok) return raw;
+      if (
+        official &&
+        typeof record.timeout === "number" &&
+        Number.isFinite(record.timeout) &&
+        record.timeout > 0
+      ) {
+        mapped.config.timeout = record.timeout;
+      }
+      entries.push([name.trim(), identityPiMcpServerEntry(mapped.config)]);
     }
-    return fingerprintPiMcpServers(asRecord);
+    return serializeFingerprint(entries);
   } catch {
     return raw;
   }
-}
-
-export function piMcpToolAllowlist(hasMcpServers: boolean): string[] {
-  const base = ["read", "bash", "edit", "write"];
-  if (!hasMcpServers) {
-    return base;
-  }
-  return [...base, ...PI_MCP_PROXY_TOOL_NAMES];
 }
 
 function stringRecord(value: unknown): Record<string, string> | undefined {
@@ -162,15 +218,27 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
   return out;
 }
 
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 /**
- * Prefer pi-mcp-adapter `requestTimeoutMs`; fall back to Claude Agent SDK `timeout`
- * so Eco sdkEntry can set one field that works on both runtimes.
+ * Prefer the adapter-era `requestTimeoutMs`; fall back to the Claude Agent SDK
+ * `timeout`, so an Eco sdkEntry can keep setting one field for every runtime.
+ * Both are milliseconds; the official extension wants seconds.
  */
-function resolveRequestTimeoutMs(record: Record<string, unknown>): number | undefined {
+function resolveTimeoutSeconds(record: Record<string, unknown>): number | undefined {
   for (const key of ["requestTimeoutMs", "timeout"] as const) {
     const value = record[key];
     if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-      return value;
+      return Math.max(1, Math.ceil(value / 1000));
     }
   }
   return undefined;

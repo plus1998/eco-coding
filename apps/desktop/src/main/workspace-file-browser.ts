@@ -51,9 +51,14 @@ function openReadFlags(): number {
   return fsConstants.O_RDONLY | (typeof noFollow === "number" ? noFollow : 0);
 }
 
+/**
+ * 只用 `O_WRONLY`（POSIX 上再叠加 `O_NOFOLLOW`）打开：截断交给校验通过后的
+ * `handle.truncate(0)` —— Windows 的 open 会拒绝 `O_WRONLY|O_TRUNC`（EINVAL），先校验再截断也避免
+ * 竞态下截断到别的文件。
+ */
 function openWriteFlags(): number {
   const noFollow = (fsConstants as typeof fsConstants & { O_NOFOLLOW?: number }).O_NOFOLLOW;
-  return fsConstants.O_WRONLY | fsConstants.O_TRUNC | (typeof noFollow === "number" ? noFollow : 0);
+  return fsConstants.O_WRONLY | (typeof noFollow === "number" ? noFollow : 0);
 }
 
 async function readHandleBytes(handle: fs.FileHandle, length: number): Promise<Buffer> {

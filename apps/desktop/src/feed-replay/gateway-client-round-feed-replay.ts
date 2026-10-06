@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { RunAttemptPhase, RunAttemptStatus } from "../main/usage-ledger";
 import type { ThreadRunEvent } from "../shared/ipc";
-import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionSnapshot } from "../shared/conversation-v2-projection";
 import type { ConversationRoundFixture } from "./conversation-round-fixture";
 import { replayConversationRound } from "./conversation-round-replay";
 import {
@@ -137,8 +137,8 @@ async function buildCodexProjectionFromReplay(
   codexResult: Awaited<ReturnType<typeof replayConversationRound>>,
   threadId: string,
 ): Promise<{ feedProjection: ThreadRunProjectionSnapshot; fullProjection: ThreadRunProjectionSnapshot }> {
-  const { buildThreadRunProjection } = await import("../main/thread-run-projection");
-  const { trimProjectionForFeed } = await import("../main/thread-run-projection-feed");
+  const { buildThreadRunProjection } = await import("../main/conversation-v2-runtime-projection");
+  const { trimProjectionForFeed } = await import("../main/legacy-feed-replay-projection");
   const fullProjection = buildThreadRunProjection({
     threadId,
     status: "idle",

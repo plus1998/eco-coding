@@ -22,6 +22,12 @@ export const DEFAULT_ECO_GITIGNORE_LINES = [
 ];
 
 const INITIAL_COMMIT_MESSAGE = "initial commit";
+const FALLBACK_COMMIT_IDENTITY_ARGS = [
+  "-c",
+  "user.name=Eco Coding",
+  "-c",
+  "user.email=eco-coding@localhost",
+] as const;
 
 export async function ensureEcoGitignore(workspacePath: string): Promise<boolean> {
   const gitignorePath = path.join(workspacePath, ".gitignore");
@@ -51,20 +57,55 @@ async function createInitialCommit(workspacePath: string, run: GitCommandRunner)
     throw new Error(`git add 失败：${add.stderr || add.stdout}`.trim());
   }
 
-  const commit = await run(["git", "commit", "-m", INITIAL_COMMIT_MESSAGE], workspacePath);
+  const hasConfiguredIdentity = await hasGitCommitIdentity(workspacePath, run);
+  const commitCommand = hasConfiguredIdentity
+    ? ["git", "commit", "-m", INITIAL_COMMIT_MESSAGE]
+    : ["git", ...FALLBACK_COMMIT_IDENTITY_ARGS, "commit", "-m", INITIAL_COMMIT_MESSAGE];
+  const commit = await run(commitCommand, workspacePath);
   if (commit.exitCode === 0) {
     return;
   }
 
+  // A workspace may intentionally have `user.useConfigOnly=true` without a
+  // configured identity. The first commit is Eco's bootstrap commit, so it can
+  // use a local fallback identity while leaving the user's Git configuration
+  // untouched for later commits.
+  const fallbackCommit = hasConfiguredIdentity
+    ? await run(
+        ["git", ...FALLBACK_COMMIT_IDENTITY_ARGS, "commit", "-m", INITIAL_COMMIT_MESSAGE],
+        workspacePath,
+      )
+    : commit;
+  if (fallbackCommit.exitCode === 0) {
+    return;
+  }
+
   const emptyCommit = await run(
-    ["git", "commit", "--allow-empty", "-m", INITIAL_COMMIT_MESSAGE],
+    ["git", ...FALLBACK_COMMIT_IDENTITY_ARGS, "commit", "--allow-empty", "-m", INITIAL_COMMIT_MESSAGE],
     workspacePath,
   );
   if (emptyCommit.exitCode !== 0) {
     throw new Error(
-      `无法创建初始提交：${emptyCommit.stderr || emptyCommit.stdout || commit.stderr || commit.stdout}`.trim(),
+      `无法创建初始提交：${
+        emptyCommit.stderr ||
+        emptyCommit.stdout ||
+        fallbackCommit.stderr ||
+        fallbackCommit.stdout ||
+        commit.stderr ||
+        commit.stdout
+      }`.trim(),
     );
   }
+}
+
+async function hasGitCommitIdentity(workspacePath: string, run: GitCommandRunner): Promise<boolean> {
+  const [name, email] = await Promise.all([
+    run(["git", "config", "--get", "user.name"], workspacePath),
+    run(["git", "config", "--get", "user.email"], workspacePath),
+  ]);
+  return (
+    name.exitCode === 0 && Boolean(name.stdout.trim()) && email.exitCode === 0 && Boolean(email.stdout.trim())
+  );
 }
 
 export async function prepareWorkspaceGit(

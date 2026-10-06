@@ -84,7 +84,7 @@ test("device-session infrastructure deploys before deferred breaking enforcement
   expect(enforcement).toContain("on conflict on constraint user_secrets_user_id_secret_kind_secret_key_key");
 });
 
-test("device Edge Functions require session registration and device-secret proof", () => {
+test("device Edge Functions require session registration and owner proof", () => {
   const register = readFileSync(
     fileURLToPath(new URL("../../../supabase/functions/device-register/index.ts", import.meta.url)),
     "utf8",
@@ -102,8 +102,12 @@ test("device Edge Functions require session registration and device-secret proof
   expect(devices).toContain('admin.rpc("eco_register_device_session"');
   expect(devices).not.toContain('.from("devices")\n    .insert(');
   expect(disable).toContain("requireAuthSession(req)");
-  expect(disable).toContain('requireString(body, "deviceSecret")');
+  // The secret is optional because an account owner may also disable a desktop that is
+  // unreachable (lost PC); that path proves ownership through the active desktop instead.
+  expect(disable).toContain('optionalString(body, "deviceSecret")');
   expect(disable).toContain("requireOwnedDevice(admin");
+  expect(disable).toContain("requireOwnedActiveDesktop(admin");
+  expect(disable).toContain("deviceSecret is required to disable a mobile device.");
   expect(devices).toContain('admin.rpc("eco_disable_device_sessions"');
   expect(disable).not.toContain('.from("device_sessions")');
 });

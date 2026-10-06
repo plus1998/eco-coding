@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
 import { PI_CORE_CAPABILITIES } from "../src/core-runtime";
+import { PI_MCP_HUB_TOOL_NAMES } from "../src/pi-mcp";
 import { resolvePiRouteByRole } from "../src/pi-model-bridge";
 import {
   collectPiSubagentFinalText,
@@ -110,29 +111,33 @@ test("listEnabledPiSubagents returns only enabled non-planner agents", () => {
 });
 
 test("resolvePiSubagentToolAllowlist never includes Agent and respects policy", () => {
-  expect(
-    resolvePiSubagentToolAllowlist(
-      {
-        allowed: [],
-        disallowed: [],
-        bash: { enabled: false },
-        filesystem: { read: "workspace", write: "none" },
-      },
-      false,
-    ),
-  ).toEqual(["read"]);
+  const readOnly = resolvePiSubagentToolAllowlist(
+    {
+      allowed: [],
+      disallowed: [],
+      bash: { enabled: false },
+      filesystem: { read: "workspace", write: "none" },
+    },
+    false,
+  );
+  // codemode mirrors Agent mode: a script may batch the tools this subagent was
+  // already granted, but never delegate.
+  expect(readOnly).toEqual(["read", "codemode"]);
+  expect(readOnly).not.toContain(PI_AGENT_TOOL_NAME);
 
-  expect(
-    resolvePiSubagentToolAllowlist(
-      {
-        allowed: [],
-        disallowed: [],
-        bash: { enabled: true },
-        filesystem: { read: "workspace", write: "workspace" },
-      },
-      true,
-    ),
-  ).toEqual(["read", "edit", "write", "bash", "mcp", "mcpScript"]);
+  const fullTools = resolvePiSubagentToolAllowlist(
+    {
+      allowed: [],
+      disallowed: [],
+      bash: { enabled: true },
+      filesystem: { read: "workspace", write: "workspace" },
+    },
+    true,
+  );
+  // The Hub tool wire names come from the official PI MCP extension
+  // (`mcp__<server>__<tool>`); PI 1.0.3 has no `mcp` / `mcpScript` proxy tools.
+  expect(fullTools).toEqual(["read", "edit", "write", "bash", ...PI_MCP_HUB_TOOL_NAMES, "codemode"]);
+  expect(fullTools).not.toContain(PI_AGENT_TOOL_NAME);
 });
 
 test("resolvePiSubagentToolAllowlist includes web_search when backend is armed", () => {

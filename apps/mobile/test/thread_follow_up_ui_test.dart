@@ -13,6 +13,7 @@ ThreadPendingFollowUp followUp(
   String priority = 'normal',
   String createdAt = '2024-01-01T00:00:00.000Z',
   String prompt = 'message',
+  String updatedAt = '2024-01-01T00:00:00.000Z',
 }) {
   return ThreadPendingFollowUp(
     id: id,
@@ -20,11 +21,63 @@ ThreadPendingFollowUp followUp(
     prompt: prompt,
     status: status,
     createdAt: createdAt,
+    updatedAt: updatedAt,
     priority: priority,
   );
 }
 
 void main() {
+  test('old edit replies and events cannot resurrect settled queue rows', () {
+    for (final status in ['applied', 'cancelled', 'superseded', 'failed']) {
+      final terminal = followUp(
+        'sent',
+        status: status,
+        updatedAt: '2026-10-05T09:46:20.407Z',
+      );
+      final stale = followUp('sent', updatedAt: '2026-10-05T09:42:58.648Z');
+      final editing = followUp('editing');
+      final result = mergeThreadFollowUps([terminal, editing], [stale]);
+      expect(queuedThreadFollowUps(result).map((row) => row.id), ['editing']);
+      expect(result.firstWhere((row) => row.id == 'sent'), same(terminal));
+    }
+  });
+
+  test(
+    'newer queued edits win, and rejected pushes may legitimately requeue',
+    () {
+      final before = followUp(
+        'edit',
+        prompt: 'before',
+        updatedAt: '2026-10-05T10:00:01.000Z',
+      );
+      final after = followUp(
+        'edit',
+        prompt: 'after',
+        updatedAt: '2026-10-05T10:00:02.000Z',
+      );
+      expect(mergeThreadFollowUps([after], [before]).single, same(after));
+      final delivered = followUp(
+        'push',
+        status: 'delivered',
+        updatedAt: '2026-10-05T10:00:01.000Z',
+      );
+      final requeued = followUp('push', updatedAt: '2026-10-05T10:00:02.000Z');
+      expect(
+        mergeThreadFollowUps([delivered], [requeued]).single,
+        same(requeued),
+      );
+      final applied = followUp(
+        'push',
+        status: 'applied',
+        updatedAt: '2026-10-05T10:00:03.000Z',
+      );
+      expect(
+        mergeThreadFollowUps([applied], [delivered, requeued]).single,
+        same(applied),
+      );
+    },
+  );
+
   test('isFollowUpThreadLiveEvent matches follow-up topics and payloads', () {
     expect(
       isFollowUpThreadLiveEvent(
@@ -83,10 +136,7 @@ void main() {
     expect(shouldComposerUseFollowUpQueue(status: 'running'), isTrue);
     expect(shouldComposerUseFollowUpQueue(status: 'idle'), isFalse);
     expect(
-      shouldComposerUseFollowUpQueue(
-        status: 'idle',
-        followUpQueuePaused: true,
-      ),
+      shouldComposerUseFollowUpQueue(status: 'idle', followUpQueuePaused: true),
       isTrue,
     );
     expect(
@@ -117,12 +167,27 @@ void main() {
     );
   });
 
-  test('canEscalateFollowUp lets a stuck escalated row be sent while paused', () {
-    expect(canEscalateFollowUp(priority: 'normal', queuePaused: false), isTrue);
-    expect(canEscalateFollowUp(priority: 'normal', queuePaused: true), isTrue);
-    expect(canEscalateFollowUp(priority: 'escalated', queuePaused: true), isTrue);
-    expect(canEscalateFollowUp(priority: 'escalated', queuePaused: false), isFalse);
-  });
+  test(
+    'canEscalateFollowUp lets a stuck escalated row be sent while paused',
+    () {
+      expect(
+        canEscalateFollowUp(priority: 'normal', queuePaused: false),
+        isTrue,
+      );
+      expect(
+        canEscalateFollowUp(priority: 'normal', queuePaused: true),
+        isTrue,
+      );
+      expect(
+        canEscalateFollowUp(priority: 'escalated', queuePaused: true),
+        isTrue,
+      );
+      expect(
+        canEscalateFollowUp(priority: 'escalated', queuePaused: false),
+        isFalse,
+      );
+    },
+  );
 
   test('mergeThreadFollowUp replaces existing records by id', () {
     final original = followUp('same', prompt: '旧消息');

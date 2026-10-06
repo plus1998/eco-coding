@@ -15,7 +15,7 @@ import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { ImageDisplayError, ImageDisplayStore, normalizeImageDisplayToolInput } from "./image-display-store";
 import { ImageViewReadError } from "./image-view-reader";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Image-Display-Control-Secret";
 
@@ -153,8 +153,8 @@ export class ImageDisplayMcpGateway {
           instructions:
             "Eco image display for the user. Stores images as feed artifacts; returns artifactId text.",
           listTools: async () => ({ tools: [imageDisplayToolDefinition()] }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-image-display-control-secret",
@@ -207,14 +207,16 @@ export class ImageDisplayMcpGateway {
     name: string,
     rawArgs: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     if (name !== ECO_IMAGE_DISPLAY_TOOL) {
       throw new Error(`未知图片展示工具：${name}`);
     }
     const claim = this.resolveThread(authToken);
+    signal?.throwIfAborted();
     let toolInput: ImageDisplayToolInput;
     try {
-      toolInput = normalizeImageDisplayToolInput(rawArgs as ImageDisplayToolInput);
+      toolInput = normalizeImageDisplayToolInput(rawArgs as unknown as ImageDisplayToolInput);
     } catch (error) {
       const code = error instanceof ImageDisplayError ? error.code : "invalid_source";
       return mcpErrorResult(DISPLAY_ERRORS[code] ?? String(error), code);
@@ -224,6 +226,7 @@ export class ImageDisplayMcpGateway {
         threadId: claim.threadId,
         ...(claim.toolUseId ? { toolUseId: claim.toolUseId } : {}),
         toolInput,
+        ...(signal ? { signal } : {}),
       });
       this.deps.onArtifactChanged(artifact);
       return {
@@ -253,7 +256,7 @@ function mcpErrorResult(message: string, code: string): Record<string, unknown> 
   };
 }
 
-function imageDisplayToolDefinition(): Record<string, unknown> {
+function imageDisplayToolDefinition(): McpToolDefinition {
   return {
     name: ECO_IMAGE_DISPLAY_TOOL,
     description:

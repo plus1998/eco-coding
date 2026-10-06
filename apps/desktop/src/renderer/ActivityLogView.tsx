@@ -1,4 +1,10 @@
 import { isSubagentMissionEnvelope, resolveMissionDisplayText } from "@eco/runtime/agent-mission";
+import { isSkillActivityLabel } from "@eco/runtime/skill-display";
+import {
+  isReadToolName,
+  resolveGrepTargetFromToolInput,
+  resolveReadTargetFromToolInput,
+} from "@eco/runtime/tool-target";
 import {
   formatCostUsd,
   formatRoleModelLabel,
@@ -6,6 +12,7 @@ import {
   formatUsageBadge,
   shortenModelId,
 } from "@eco/runtime/usage";
+import type { ConversationMessage, ConversationRun, ConversationToolCall } from "@eco/shared";
 import {
   AppWindow,
   ArrowDownToLine,
@@ -60,6 +67,15 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import {
+  CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
+  CONVERSATION_RUNTIME_EVENT_FAILURE_ROLE,
+  CONVERSATION_RUNTIME_EVENT_FAILURE_TITLE,
+} from "../shared/conversation-runtime-event-failure";
+import {
+  formatCodexAsyncQuestionReplySummary,
+  parseCodexAsyncQuestionReplyText,
+} from "../shared/codex-async-questions";
+import {
   type ActionGroupBucket,
   type ActionKindPayload,
   formatActionLine,
@@ -67,9 +83,10 @@ import {
   resolveActionKind,
   summarizeActionGroup,
 } from "../shared/feed-action-kind";
-import { isSkillActivityLabel } from "@eco/runtime/skill-display";
+import { resolveFileChangeFromToolInput } from "../shared/file-change";
 import { isEcoImageDisplayToolName } from "../shared/image-display-tool";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
+import { isEcoWebSearchToolName } from "../shared/integrated-web-search";
 import type {
   PromptImageAttachment,
   ThreadActivityRewindTarget,
@@ -89,6 +106,7 @@ import type {
   ThreadUserMessageEditGetResult,
 } from "../shared/ipc";
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
+import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
 import { supportsHistoryRewrite } from "../shared/thread-request-retry";
@@ -109,40 +127,13 @@ import {
 import { dispatchBrowserLinkOpen, isHttpishHref, openPublishedHtmlInBrowser } from "./browser-link";
 import { copyTextToClipboard } from "./clipboard";
 import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
-import { createImageObjectUrlFromBase64, revokeImageObjectUrl } from "./image-object-url";
-import { releaseMermaidModule } from "./prosemirror/mermaid-block";
-import { resolveFeedPaceTargetKey } from "./feed-pace-target";
 import {
-  FEED_VIRTUALIZE_MIN_SECTIONS,
-  FeedVirtualSectionWindow,
-  FeedVirtualUserMessageSentinels,
-  listUserMessageAnchorsFromSections,
-  useFeedSectionVirtualizer,
-} from "./feed-virtual-sections";
-import { i18n } from "./i18n";
-import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
-import { ImageLightbox } from "./image-lightbox";
-import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
-import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
-import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
-import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
-import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
-import { RequestSpansContext, TokenSpeedBadge } from "./TokenSpeedBadge";
-import { UserPromptBodyContent } from "./UserPromptBodyContent";
-import {
-  findThinkingFeedScrollRoot,
-  isThinkingPreferenceDrivenExpand,
-  resolveThinkingCollapseHoldMs,
-  resolveThinkingExpanded,
-  resolveThinkingLayoutNotifyOptions,
-  shouldEagerMountThinkingBody,
-  THINKING_COLLAPSE_ANIM_MS,
-} from "./thinking-block-expand";
-import {
-  readStoredThinkingDisplayPreferences,
-  thinkingModeDefaultExpanded,
-  type ThinkingDisplayMode,
-} from "./thinking-display-preferences";
+  advanceComposerAgentSilenceClock,
+  COMPOSER_FLOATING_LOADING_DELAY_MS,
+  type ComposerAgentSilenceClock,
+  isComposerAgentSilent,
+  resolveComposerAgentSilenceDelayMs,
+} from "./composer-floating-loading";
 import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
@@ -158,9 +149,49 @@ import {
   type ThreadRunProjectionMainFeedEntry,
   type ThreadRunProjectionTimelineFeedEntry,
   type ThreadRunProjectionToolGroupFeedEntry,
-  type ThreadRunProjectionViewModel,
-} from "./thread-run-projection-view";
-import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
+} from "./conversation-v2-projection-view";
+import {
+  type ConversationV2RendererState,
+  orderedConversationV2Messages,
+} from "./conversation-v2-renderer-state";
+import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./conversation-v2-turn-feed";
+import { FeedErrorCard } from "./FeedErrorCard";
+import { FeedStatusDivider } from "./FeedStatusDivider";
+import { resolveFeedPaceTargetKey } from "./feed-pace-target";
+import {
+  FEED_VIRTUALIZE_MIN_SECTIONS,
+  FeedVirtualSectionWindow,
+  FeedVirtualUserMessageSentinels,
+  listUserMessageAnchorsFromSections,
+  useFeedSectionVirtualizer,
+} from "./feed-virtual-sections";
+import { i18n } from "./i18n";
+import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import { ImageLightbox } from "./image-lightbox";
+import { createImageObjectUrlFromBase64, revokeImageObjectUrl } from "./image-object-url";
+import { imageViewAnalysisPanel } from "./image-view-analysis-panel";
+import { releaseMermaidModule } from "./prosemirror/mermaid-block";
+import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
+import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
+import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
+import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
+import { RequestSpansContext, TokenSpeedBadge } from "./TokenSpeedBadge";
+import {
+  findThinkingFeedScrollRoot,
+  isThinkingPreferenceDrivenExpand,
+  resolveThinkingCollapseHoldMs,
+  resolveThinkingExpanded,
+  resolveThinkingLayoutNotifyOptions,
+  shouldEagerMountThinkingBody,
+  THINKING_COLLAPSE_ANIM_MS,
+} from "./thinking-block-expand";
+import { resolveThinkingCarouselIndex, THINKING_CAROUSEL_STAGE_MS } from "./thinking-carousel";
+import {
+  readStoredThinkingDisplayPreferences,
+  type ThinkingDisplayMode,
+  thinkingModeDefaultExpanded,
+} from "./thinking-display-preferences";
+import { UserPromptBodyContent } from "./UserPromptBodyContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
@@ -185,6 +216,11 @@ const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
 const LIVE_DURATION_TICK_MS = 1_000;
 const TOOL_RUNNING_MIN_VISIBLE_MS = 1_000;
+/**
+ * 工具行的耗时只在调用已运行超过该阈值后才显示：更短的工具在数字变得有意义之前
+ * 就已经结束了（快工具走 TOOL_RUNNING_MIN_VISIBLE_MS 的最小可见窗口，不会出现闪烁）。
+ */
+const TOOL_ELAPSED_MIN_VISIBLE_MS = 3_000;
 
 function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
@@ -318,8 +354,12 @@ function RunLogMessageMeta({
           type="button"
           className="run-log-message-meta-button"
           onClick={editUserMessage.onEdit}
-          aria-label={i18n.t("activity.editMessage", { defaultValue: "编辑消息" })}
-          title={i18n.t("activity.editMessageTitle", { defaultValue: "编辑消息并从此处继续" })}
+          aria-label={i18n.t("activity.editMessage", {
+            defaultValue: "编辑消息",
+          })}
+          title={i18n.t("activity.editMessageTitle", {
+            defaultValue: "编辑消息并从此处继续",
+          })}
           disabled={editUserMessage.disabled}
         >
           <Pencil size={13} />
@@ -374,6 +414,63 @@ function usePlannerLayoutChangeEffect(
   }, [layoutSignature]);
 }
 
+/**
+ * Report whether the Feed has gone quiet mid-run so the Composer can float its own
+ * "still working" dots. The clock lives here rather than in the Composer because the
+ * signature it measures is the Feed's: `layoutSignature` changes exactly when a rendered
+ * row's visible text or tool lifecycle changes, and holds still while the agent writes a
+ * tool call nothing renders yet. See `composer-floating-loading.ts`.
+ */
+function useComposerAgentSilenceEffect(
+  input: { active: boolean; feedIndicatorVisible: boolean; signature: string },
+  onComposerAgentSilenceChange?: (silent: boolean) => void,
+) {
+  const onComposerAgentSilenceChangeRef = useRef(onComposerAgentSilenceChange);
+  onComposerAgentSilenceChangeRef.current = onComposerAgentSilenceChange;
+  const clockRef = useRef<ComposerAgentSilenceClock | undefined>(undefined);
+  // Every streamed token re-runs the effect below. Reporting only on a change keeps a
+  // live turn from pushing a state update into the app on each one.
+  const reportedRef = useRef(false);
+  const report = useCallback((silent: boolean) => {
+    if (reportedRef.current === silent) {
+      return;
+    }
+    reportedRef.current = silent;
+    onComposerAgentSilenceChangeRef.current?.(silent);
+  }, []);
+  const { active, feedIndicatorVisible, signature } = input;
+
+  useEffect(() => {
+    const nowMs = Date.now();
+    const clock = advanceComposerAgentSilenceClock(clockRef.current, signature, nowMs);
+    clockRef.current = clock;
+    const emit = () => {
+      report(isComposerAgentSilent({ active, feedIndicatorVisible, clock, nowMs: Date.now() }));
+    };
+    emit();
+    if (!active || feedIndicatorVisible) {
+      return;
+    }
+    // Re-armed by every change of the signature, so one timer for the delay's remainder
+    // is enough: the only way this clock advances is a new signature.
+    const timer = window.setTimeout(emit, resolveComposerAgentSilenceDelayMs(clock, nowMs));
+    return () => window.clearTimeout(timer);
+  }, [active, feedIndicatorVisible, report, signature]);
+
+  // A Feed that unmounts mid-gap must take the indicator with it. Its cleanups run before
+  // the replacing Feed's effects, so this cannot clear a report the new one has made.
+  useEffect(
+    () => () => {
+      if (!reportedRef.current) {
+        return;
+      }
+      reportedRef.current = false;
+      onComposerAgentSilenceChangeRef.current?.(false);
+    },
+    [],
+  );
+}
+
 function isThreadStoppedForFinalSummary(status: string): boolean {
   return (
     status === "completed" ||
@@ -382,6 +479,38 @@ function isThreadStoppedForFinalSummary(status: string): boolean {
     status === "cancelled" ||
     status === "idle"
   );
+}
+
+/**
+ * The thread summary and the feed projection arrive through separate live
+ * updates.  A terminal summary is authoritative for the activity tail: keep
+ * an older active projection from resurrecting a waiting indicator after the
+ * thread has already completed.
+ */
+export function reconcileActivityProjectionThreadStatus(
+  projection: ThreadRunProjectionSnapshot,
+  thread?: Pick<ThreadSummary, "status">,
+): ThreadRunProjectionSnapshot {
+  // `idle` is also the V2 projection's provisional status while its message rows have
+  // arrived but the corresponding run row has not. In that window the thread summary is
+  // the live source and must be allowed to restore `running`; terminal projection states
+  // remain authoritative so an old active thread summary cannot resurrect a finished run.
+  if (
+    !thread ||
+    (isThreadStoppedForFinalSummary(projection.thread.status) && projection.thread.status !== "idle")
+  ) {
+    return projection;
+  }
+  if (thread.status === projection.thread.status) {
+    return projection;
+  }
+  return {
+    ...projection,
+    thread: {
+      ...projection.thread,
+      status: thread.status,
+    },
+  };
 }
 
 function resolveTurnFinalSummaryItemIds(
@@ -421,7 +550,7 @@ function resolveTurnFinalSummaryItemIds(
   return ids;
 }
 
-interface ActivityLogViewProps {
+export interface ActivityLogViewProps {
   thread?: ThreadSummary;
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
@@ -431,8 +560,7 @@ interface ActivityLogViewProps {
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
   billing?: ThreadBillingSnapshot;
-  projection?: ThreadRunProjectionSnapshot;
-  viewModel?: ThreadRunProjectionViewModel;
+  conversationV2?: ConversationV2RendererState;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   subagentTimings?: ThreadSubagentSessionTiming[];
@@ -444,8 +572,1042 @@ interface ActivityLogViewProps {
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
+  /**
+   * Called when the Feed has gone quiet mid-run: the agent is alive but has produced
+   * nothing visible for {@link COMPOSER_FLOATING_LOADING_DELAY_MS}, which is the gap while
+   * it writes its next tool call. The Composer floats its loading dots on `true`.
+   */
+  onComposerAgentSilenceChange?: (silent: boolean) => void;
   onLoadProjectionDetail?: ProjectionDetailLoader;
   thinkingDisplayMode?: ThinkingDisplayMode;
+}
+
+function conversationV2MessageToTimelineItem(
+  message: ConversationMessage,
+  at: string,
+): ThreadRunProjectionTimelineItem {
+  const isThinking = message.channel === "thinking";
+  // A subagent's narration belongs to that agent's transcript, not to the main
+  // Feed. The message carries the same agent identity its tool rows do, so the merge
+  // routes it to the agent card when one exists. The default `scope` stays `main`:
+  // without a card to hold the content (the V2-only projection has no agents, or an
+  // orphan agent id) the legacy projection reclaims the row for the main Feed rather
+  // than hiding it.
+  const agentId = message.agentId?.trim() || undefined;
+  // A system-channel row is a notice the provider reported (a failed request), not the
+  // agent's speech: the Feed renders that distinction — the legacy chain's `api.error` row
+  // is what carries the failure text and the retry affordance — so the row keeps the event
+  // type the reader and the retry logic look for instead of being flattened into a message.
+  const isNotice = message.channel === "system" && !isThinking;
+  const isDiagnostic = message.role === "system" && message.channel === "commentary";
+  return {
+    id: `conversation-v2:${message.messageId}`,
+    sequence: message.createdSeq,
+    eventType: isNotice
+      ? "api.error"
+      : isDiagnostic
+        ? "diagnostic"
+        : isThinking
+          ? message.status === "streaming"
+            ? "thinking.delta"
+            : "thinking.final"
+          : message.status === "streaming"
+            ? "message.delta"
+            : "message.final",
+    scope: "main",
+    // The Feed asks the row's role who wrote it (`role === "planner"` marks a turn's
+    // final output) and normalizing it to the channel role left V2 unable to answer.
+    // The provider's own label is carried on the row; the channel role is the fallback
+    // for rows written before it was recorded.
+    role: message.providerRole?.trim() || (isThinking ? "thinking" : message.role),
+    ...(agentId ? { agentId } : {}),
+    ...(message.runId ? { runAttemptId: message.runId } : {}),
+    streamKey: message.messageId,
+    text: message.body,
+    summary: message.body,
+    contentLoaded: true,
+    contentAvailable: true,
+    at,
+    metadata: {
+      conversationV2MessageId: message.messageId,
+      conversationV2TurnId: message.turnId,
+      conversationV2VersionSeq: message.versionSeq,
+      conversationV2ContentVersion: message.contentVersion,
+      conversationV2Channel: message.channel,
+      conversationV2Status: message.status,
+      ...(isNotice && message.providerRole === CONVERSATION_RUNTIME_EVENT_FAILURE_ROLE
+        ? {
+            activityOrigin: CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
+            apiError: { title: CONVERSATION_RUNTIME_EVENT_FAILURE_TITLE, message: message.body },
+          }
+        : {}),
+      ...(message.agentInstanceId ? { conversationV2AgentInstanceId: message.agentInstanceId } : {}),
+      // The row's own stream key is the message id, which names the logical entity the row
+      // is: the read model upserts a stream's deltas into one message, so one message is one
+      // visible row. Without this the display layer cannot tell two messages of the same
+      // request apart and collapses them into one (keeping only the newest), which is how a
+      // request's earlier reasoning blocks disappeared from the Feed once request spans were
+      // present.
+      logicalEntityId: message.messageId,
+      ...(message.role === "user" && { liveType: "thread.user_prompt" }),
+      ...(message.role === "user" && message.attachments?.length
+        ? { promptImagePreviews: message.attachments }
+        : {}),
+    },
+  } satisfies ThreadRunProjectionTimelineItem;
+}
+
+/**
+ * `message.accepted` is the durable receipt written when a follow-up is queued.
+ * It must stay out of the conversation feed until the runtime finalizes it;
+ * the queue panel is the only UI that represents this pending user message.
+ */
+function isQueuedConversationV2UserMessage(message: ConversationMessage): boolean {
+  return message.role === "user" && message.status === "queued";
+}
+
+function isDeferredAcceptedConversationV2Message(message: ConversationMessage): boolean {
+  return message.role === "user" && message.versionSeq > message.createdSeq;
+}
+
+function readConversationV2MessageId(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const value = item.metadata?.conversationV2MessageId;
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const messageId = value.trim();
+  return messageId || undefined;
+}
+
+function isConversationV2MessageTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (
+    item.eventType === "message.delta" ||
+    item.eventType === "message.final" ||
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final"
+  ) {
+    return true;
+  }
+  return (
+    item.eventType === "thread.status" &&
+    item.role === "user" &&
+    item.metadata?.liveType === "thread.user_prompt"
+  );
+}
+
+/**
+ * The Feed skeleton keeps a single narrative row per finished segment, so a run's
+ * other messages have no legacy row left to anchor to. Their V2 order is still
+ * authoritative, so give each one a position of its own next to the nearest
+ * anchored sibling of the same run: before the following sibling (counted back
+ * from it, preserving order) or after the preceding one. Collapsing them onto the
+ * run's first row instead made every message of a turn share one position and one
+ * timestamp, which left the feed sort with nothing but the message hash to order
+ * them by.
+ */
+function buildConversationV2RunMessagePositions(
+  messages: readonly ConversationMessage[],
+  anchoredByMessageId: ReadonlyMap<string, ThreadRunProjectionTimelineItem>,
+  runAnchorByRunId: ReadonlyMap<string, ThreadRunProjectionTimelineItem>,
+): Map<string, { anchor: ThreadRunProjectionTimelineItem; sequence: number }> | undefined {
+  const messagesByRun = new Map<string, ConversationMessage[]>();
+  for (const message of messages) {
+    const runId = message.runId?.trim();
+    if (!runId) continue;
+    const siblings = messagesByRun.get(runId);
+    if (siblings) {
+      siblings.push(message);
+    } else {
+      messagesByRun.set(runId, [message]);
+    }
+  }
+  if (messagesByRun.size === 0) {
+    return undefined;
+  }
+  const positions = new Map<string, { anchor: ThreadRunProjectionTimelineItem; sequence: number }>();
+  for (const [runId, siblings] of messagesByRun) {
+    const siblingAnchors = siblings.map((message) => anchoredByMessageId.get(message.messageId));
+    const runAnchor = runAnchorByRunId.get(runId);
+    for (let index = 0; index < siblings.length; index += 1) {
+      const message = siblings[index];
+      if (!message || siblingAnchors[index]) continue;
+      let previousIndex = -1;
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        if (siblingAnchors[cursor]) {
+          previousIndex = cursor;
+          break;
+        }
+      }
+      let nextIndex = -1;
+      for (let cursor = index + 1; cursor < siblings.length; cursor += 1) {
+        if (siblingAnchors[cursor]) {
+          nextIndex = cursor;
+          break;
+        }
+      }
+      const previousAnchor = previousIndex >= 0 ? siblingAnchors[previousIndex] : undefined;
+      const nextAnchor = nextIndex >= 0 ? siblingAnchors[nextIndex] : undefined;
+      if (nextAnchor) {
+        // Count back from the following sibling. The clamp only matters when the
+        // two anchored siblings sit less than one sequence step apart.
+        const before = nextAnchor.sequence - (nextIndex - index);
+        positions.set(message.messageId, {
+          anchor: nextAnchor,
+          sequence: previousAnchor ? Math.max(previousAnchor.sequence + 1, before) : before,
+        });
+        continue;
+      }
+      if (previousAnchor) {
+        positions.set(message.messageId, {
+          anchor: previousAnchor,
+          sequence: previousAnchor.sequence + (index - previousIndex),
+        });
+        continue;
+      }
+      if (runAnchor) {
+        // No message of this run survived the skeleton: keep V2 order and sit the
+        // group just above the run row the feed still shows.
+        positions.set(message.messageId, {
+          anchor: runAnchor,
+          sequence: runAnchor.sequence - (siblings.length - index),
+        });
+      }
+    }
+  }
+  return positions;
+}
+
+/**
+ * Builds the Feed projection from V2 alone.
+ *
+ * This is the read path the V2 migration ends on: messages, runs, tools and agents
+ * all come from the V2 read models, so no legacy row has to exist for a turn to
+ * render. It is also the counterpart the differential tests compare the legacy
+ * projection against — anything the Feed shows that this function cannot produce is
+ * a V2 gap, not a legacy feature.
+ */
+export function buildConversationV2OnlyProjection(
+  conversationV2: ConversationV2RendererState,
+  thread?: Pick<ThreadSummary, "createdAt" | "status">,
+): ThreadRunProjectionSnapshot {
+  const at = thread?.createdAt ?? "1970-01-01T00:00:00.000Z";
+  const runs = [...conversationV2.runs.values()].sort((left, right) => left.versionSeq - right.versionSeq);
+  const attempts: ThreadRunProjectionAttempt[] = runs.map((run) => ({
+    attemptId: run.runId,
+    phase: "execution",
+    retryIndex: run.retryOfRunId ? 1 : 0,
+    status: conversationV2RunStatusToAttemptStatus(run.status),
+    startedAt: run.startedAt ?? at,
+    ...(run.endedAt ? { endedAt: run.endedAt } : {}),
+  }));
+  const attemptById = new Map(attempts.map((attempt) => [attempt.attemptId, attempt]));
+
+  const sortedTools = [...conversationV2.tools.values()].sort(
+    (left, right) => left.createdSeq - right.createdSeq || left.toolCallId.localeCompare(right.toolCallId),
+  );
+  const toolsByOwner = new Map<string, ConversationToolCall[]>();
+  const unownedTools: ConversationToolCall[] = [];
+  for (const tool of sortedTools) {
+    const agentId = tool.agentId?.trim();
+    if (!agentId) {
+      unownedTools.push(tool);
+      continue;
+    }
+    const owned = toolsByOwner.get(agentId) ?? [];
+    owned.push(tool);
+    toolsByOwner.set(agentId, owned);
+  }
+  const registry = new Map([...conversationV2.agents.values()].map((agent) => [agent.agentId, agent]));
+  // An agent the registry knows about, or one the rows themselves reveal. The
+  // legacy projection discovered agents from their spawn events; the registry is the
+  // same fact recorded durably, and the tool/message owner ids keep an agent visible
+  // while its lifecycle event is still missing.
+  const agentIds = new Set<string>([
+    ...registry.keys(),
+    ...toolsByOwner.keys(),
+    ...[...conversationV2.messages.values()]
+      .map((message) => message.agentId?.trim())
+      .filter((agentId): agentId is string => Boolean(agentId)),
+  ]);
+  // Who gets a card, and therefore who owns rows. The Feed draws a card for a subagent,
+  // and a row belongs to the main feed unless its owner is one — a planner instance is the
+  // attempt's own main agent, whose messages and tools are the conversation itself. An
+  // owner the registry does not know is not promoted into a card here either: the legacy
+  // chain learns its agents from their lifecycle rows, and a row whose owner never
+  // announced itself is a main-feed row, not a card invented from an id (invariant 14:
+  // content is shown, never hidden behind a card no agent record backs).
+  const cardAgentIds = new Set<string>(
+    [...agentIds].filter((agentId) => registry.get(agentId)?.kind === "subagent"),
+  );
+  // Rows whose owner is not a card owner stay in the main feed, so the split happens here
+  // once rather than at each use.
+  const toolsByAgent = new Map<string, ConversationToolCall[]>();
+  const mainTools: ConversationToolCall[] = [...unownedTools];
+  for (const [agentId, owned] of toolsByOwner) {
+    if (cardAgentIds.has(agentId)) {
+      toolsByAgent.set(agentId, owned);
+      continue;
+    }
+    mainTools.push(...owned);
+  }
+
+  const messagesByAgent = new Map<string, ThreadRunProjectionTimelineItem[]>();
+  const mainTimeline: ThreadRunProjectionTimelineItem[] = [];
+  for (const message of orderedConversationV2Messages(conversationV2)) {
+    // `message.accepted` is the durable acknowledgement of a user send. The
+    // queue panel owns this row until the runtime finalizes it; otherwise the
+    // same prompt would be rendered twice.
+    if (isQueuedConversationV2UserMessage(message)) {
+      continue;
+    }
+    const ownerAgentId = message.agentId?.trim();
+    const agentId = ownerAgentId && cardAgentIds.has(ownerAgentId) ? ownerAgentId : undefined;
+    const item = conversationV2MessageToTimelineItem(message, message.occurredAt ?? at);
+    if (!agentId) {
+      mainTimeline.push(item);
+      continue;
+    }
+    item.scope = "agent";
+    const owned = messagesByAgent.get(agentId) ?? [];
+    owned.push(item);
+    messagesByAgent.set(agentId, owned);
+  }
+  for (const tool of mainTools) {
+    const attempt = attemptById.get(tool.runId);
+    mainTimeline.push(
+      conversationV2ToolToTimelineItem(
+        tool,
+        // The row carries when the call happened; the run window is only a fallback
+        // for rows written before the read model recorded it. Using the run window for
+        // everything collapses a turn's rows onto one instant, which is what puts every
+        // tool after every message and splits one turn into several.
+        tool.occurredAt ?? attempt?.endedAt ?? attempt?.startedAt ?? at,
+        tool.createdSeq,
+      ),
+    );
+  }
+
+  const agents: ThreadRunProjectionAgent[] = [];
+  for (const agentId of agentIds) {
+    const record = registry.get(agentId);
+    const ownedTools = toolsByAgent.get(agentId) ?? [];
+    const ownedMessages = messagesByAgent.get(agentId) ?? [];
+    const timeline = [
+      ...ownedTools.map((tool) => {
+        const attempt = attemptById.get(tool.runId);
+        return conversationV2ToolToTimelineItem(
+          tool,
+          tool.occurredAt ?? attempt?.endedAt ?? attempt?.startedAt ?? at,
+          tool.createdSeq,
+          true,
+        );
+      }),
+      ...ownedMessages,
+    ].sort(compareConversationV2TimelinePosition);
+    const startedAt = record?.startedAt ?? at;
+    const endedAt = record?.endedAt;
+    const activity = latestAgentActivity(timeline);
+    const durationMs = endedAt
+      ? Math.max(0, Date.parse(endedAt) - Date.parse(startedAt))
+      : Math.max(0, Date.now() - Date.parse(startedAt));
+    agents.push({
+      agentId,
+      role: record?.role ?? "subagent",
+      kind: record?.kind === "planner" ? "planner" : "subagent",
+      status: agentProjectionStatus(record?.status),
+      startedAt,
+      durationMs,
+      ...(record?.runId ? { runAttemptId: record.runId } : {}),
+      ...(record?.parentAgentInstanceId ? { parentAgentId: record.parentAgentInstanceId } : {}),
+      ...(record?.parentToolCallId ? { parentToolUseId: record.parentToolCallId } : {}),
+      ...(record?.mission !== undefined ? { mission: record.mission } : {}),
+      // The card's own text: the provider's task name labels it and the delegation is
+      // the line under it. Both used to reach the card straight from the legacy instance
+      // row; without them a V2 card shows a bare role.
+      ...(record?.taskName ? { taskName: record.taskName } : {}),
+      ...(record?.delegationSummary ? { delegationSummary: record.delegationSummary } : {}),
+      ...(record?.delegationPrompt ? { delegationPrompt: record.delegationPrompt } : {}),
+      ...(record?.todoId ? { todoId: record.todoId } : {}),
+      ...(endedAt ? { endedAt } : {}),
+      ...(activity ? { latestActivity: activity } : {}),
+      timeline,
+    });
+  }
+  agents.sort((left, right) => left.agentId.localeCompare(right.agentId));
+
+  mainTimeline.sort(compareConversationV2TimelinePosition);
+  const runningAttemptId = attempts.find((attempt) => attempt.status === "running")?.attemptId;
+  const running = runningAttemptId !== undefined;
+  return {
+    thread: {
+      threadId: conversationV2.conversationId,
+      status: running ? "running" : thread?.status && attempts.length === 0 ? thread.status : "idle",
+      generatedAt: at,
+      ...(running && runningAttemptId ? { currentAttemptId: runningAttemptId } : {}),
+    },
+    attempts,
+    agents,
+    requestSpans: attachOutputTokensToRequestSpans(
+      conversationV2.projectionExtras?.requestSpans ?? [],
+      conversationV2.projectionExtras?.ledgerEvents ?? [],
+    ),
+    timeline: mainTimeline,
+    diagnostics: [],
+    sourceEventCount: conversationV2.messages.size + conversationV2.runs.size + conversationV2.tools.size,
+    historyRevision: conversationV2.historyRevision,
+    ...(conversationV2.projectionExtras?.billing ? { billing: conversationV2.projectionExtras.billing } : {}),
+    ...(conversationV2.projectionExtras?.context ? { context: conversationV2.projectionExtras.context } : {}),
+    ...(conversationV2.projectionExtras?.subagentTimings
+      ? { subagentTimings: conversationV2.projectionExtras.subagentTimings }
+      : {}),
+    ...(conversationV2.projectionExtras?.subagentMetrics
+      ? { subagentMetrics: conversationV2.projectionExtras.subagentMetrics }
+      : {}),
+  };
+}
+
+function agentProjectionStatus(status: string | undefined): ThreadRunProjectionAgent["status"] {
+  switch (status) {
+    case "completed":
+    case "stopped":
+      return "stopped";
+    case "failed":
+    case "cancelled":
+    case "interrupted":
+    case "abandoned":
+      return "abandoned";
+    case undefined:
+      return "active";
+    default:
+      return "active";
+  }
+}
+
+function latestAgentActivity(timeline: readonly ThreadRunProjectionTimelineItem[]): string | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const text = timeline[index]?.text.trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function isTerminalAttemptStatus(status: ThreadRunProjectionAttempt["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function conversationV2RunStatusToAttemptStatus(
+  status: ConversationRun["status"],
+): ThreadRunProjectionAttempt["status"] {
+  switch (status) {
+    case "queued":
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "cancelled":
+    case "interrupted":
+    case "unknown":
+      return "cancelled";
+  }
+}
+
+function conversationV2ToolEventType(
+  status: ConversationToolCall["status"],
+): "tool.started" | "tool.completed" | "tool.failed" {
+  switch (status) {
+    case "started":
+    case "running":
+      return "tool.started";
+    case "completed":
+      return "tool.completed";
+    case "failed":
+    case "cancelled":
+      return "tool.failed";
+  }
+}
+
+function conversationV2ToolProjectionStatus(
+  status: ConversationToolCall["status"],
+): "started" | "running" | "completed" | "failed" {
+  return status === "cancelled" ? "failed" : status;
+}
+
+function conversationV2ToolInputRecord(tool: ConversationToolCall): Record<string, unknown> {
+  const input = isRecord(tool.input) ? tool.input : {};
+  const argumentsValue = isRecord(input.arguments) ? input.arguments : {};
+  const webSearchValue = isRecord(input.webSearch) ? input.webSearch : {};
+  return { ...input, ...argumentsValue, ...webSearchValue };
+}
+
+function conversationV2ToolText(
+  values: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = values[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function conversationV2ToolValue(
+  values: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = values[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function conversationV2ToolPreview(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (!text?.trim()) return undefined;
+  return text.length <= 4000 ? text : `${text.slice(0, 4000)}…`;
+}
+
+function conversationV2ToolPresentation(tool: ConversationToolCall): {
+  detail?: string;
+  outputPreview?: string;
+  metadata: Record<string, unknown>;
+} {
+  const values = conversationV2ToolInputRecord(tool);
+  const detail = conversationV2ToolText(values, [
+    "command",
+    "cmd",
+    "script",
+    "file_path",
+    "filePath",
+    "path",
+    "query",
+    "url",
+    "pattern",
+    "detail",
+    "description",
+  ]);
+  const outputPreview = conversationV2ToolPreview(tool.output);
+  const presentation: Record<string, unknown> = {
+    name: tool.name,
+    toolUseId: tool.toolCallId,
+  };
+  if (detail) presentation.detail = detail;
+  if (outputPreview) presentation.outputPreview = outputPreview;
+
+  const description = conversationV2ToolText(values, ["description"]);
+  if (description) presentation.description = description;
+  for (const key of [
+    "imageDisplay",
+    "htmlHost",
+    "mcpDiscovery",
+    "sendMessage",
+    "nonExecutionKind",
+    "bashApproval",
+    "clarification",
+    "planApproval",
+  ]) {
+    const value = values[key];
+    if (value !== undefined) presentation[key] = value;
+  }
+
+  const readTarget =
+    conversationV2ToolValue(values, "readTarget") ??
+    (isReadToolName(tool.name) ? resolveReadTargetFromToolInput(tool.name, values) : undefined);
+  if (readTarget) presentation.readTarget = readTarget;
+  const grepTarget =
+    conversationV2ToolValue(values, "grepTarget") ?? resolveGrepTargetFromToolInput(tool.name, values);
+  if (grepTarget) presentation.grepTarget = grepTarget;
+  const fileChange =
+    conversationV2ToolValue(values, "fileChange") ?? resolveFileChangeFromToolInput(tool.name, values);
+  if (fileChange) presentation.fileChange = fileChange;
+
+  const rawWebSearch = conversationV2ToolValue(values, "webSearch");
+  if (
+    rawWebSearch ||
+    tool.name === "WebSearch" ||
+    tool.name === "WebFetch" ||
+    isEcoWebSearchToolName(tool.name)
+  ) {
+    const webSearch = rawWebSearch ?? {};
+    presentation.webSearch = {
+      ...webSearch,
+      ...(typeof values.query === "string" && { query: values.query }),
+      ...(typeof values.url === "string" && { url: values.url }),
+      ...(typeof values.pattern === "string" && { pattern: values.pattern }),
+      ...(typeof values.actionType === "string" && {
+        actionType: values.actionType,
+      }),
+      ...(typeof values.mode === "string" && { mode: values.mode }),
+      ...(Array.isArray(values.queries) && { queries: values.queries }),
+      ...(typeof values.provider === "string" && { provider: values.provider }),
+      ...(Array.isArray(values.results) && { results: values.results }),
+    };
+  }
+
+  const rawImageView = conversationV2ToolValue(values, "imageView");
+  const imagePath = conversationV2ToolText(values, ["path", "file_path", "filePath"]);
+  if (rawImageView || (imagePath && (tool.name === "view_image" || tool.name === "ViewImage"))) {
+    presentation.imageView = rawImageView ?? { path: imagePath };
+  }
+
+  return {
+    ...(detail ? { detail } : {}),
+    ...(outputPreview ? { outputPreview } : {}),
+    metadata: presentation,
+  };
+}
+
+/**
+ * The rows a subagent card shows, through the same filters the card applies: this is the
+ * definition of "what the card says", in the order it says it.
+ */
+export function subagentCardVisibleRows(
+  agent: ThreadRunProjectionAgent,
+  options: {
+    missionText?: string;
+    requestSpansById?: ReadonlyMap<string, unknown>;
+    thinkingDisplayMode?: ThinkingDisplayMode;
+  } = {},
+): ThreadRunProjectionTimelineItem[] {
+  const delegation = readProjectionAgentDelegation(agent);
+  const missionDisplay = resolveMissionDisplayText(
+    options.missionText || delegation?.prompt || delegation?.summary || "",
+  );
+  const prepared = filterSubagentDetailTimelineNoise(agent.timeline);
+  const collapsed = filterProjectionTimelineForDetailFeed(
+    prepared,
+    options.requestSpansById as never,
+    true,
+    options.thinkingDisplayMode,
+  ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay));
+  return collapseConsecutiveThinkingTimelineItems(collapsed);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function conversationV2ToolToTimelineItem(
+  tool: ConversationToolCall,
+  at: string,
+  sequence = tool.createdSeq,
+  agentScope = false,
+): ThreadRunProjectionTimelineItem {
+  const eventType = conversationV2ToolEventType(tool.status);
+  const presentation = conversationV2ToolPresentation(tool);
+  const agentId = tool.agentId?.trim() || undefined;
+  return {
+    id: `conversation-v2:tool:${tool.toolCallId}`,
+    sequence,
+    eventType,
+    scope: agentScope ? "agent" : "main",
+    // Same as a message row: the legacy chain reports the provider's own label for a
+    // tool row (`tool` for the main agent, `coder`/`explore` inside a subagent).
+    role: tool.providerRole?.trim() || "tool",
+    ...(agentId ? { agentId } : {}),
+    runAttemptId: tool.runId,
+    text: presentation.detail ? `Tool: ${tool.name} · ${presentation.detail}` : `Tool: ${tool.name}`,
+    summary: tool.name,
+    contentLoaded: true,
+    contentAvailable: true,
+    at,
+    metadata: {
+      liveType: eventType,
+      conversationV2ToolCallId: tool.toolCallId,
+      conversationV2VersionSeq: tool.versionSeq,
+      ...(tool.agentInstanceId ? { conversationV2AgentInstanceId: tool.agentInstanceId } : {}),
+      ...(tool.parentAgentInstanceId
+        ? { conversationV2ParentAgentInstanceId: tool.parentAgentInstanceId }
+        : {}),
+      ...(tool.parentToolCallId ? { conversationV2ParentToolCallId: tool.parentToolCallId } : {}),
+      tool: {
+        ...presentation.metadata,
+        status: conversationV2ToolProjectionStatus(tool.status),
+      },
+      ...(presentation.metadata.bashApproval ? { bashApproval: presentation.metadata.bashApproval } : {}),
+    },
+  };
+}
+
+function mergeConversationV2ToolIntoTimelineItem(
+  item: ThreadRunProjectionTimelineItem,
+  tool: ConversationToolCall,
+): ThreadRunProjectionTimelineItem {
+  const existingTool = readProjectionToolMetadata(item);
+  const presentation = conversationV2ToolPresentation(tool);
+  const eventType = conversationV2ToolEventType(tool.status);
+  return {
+    ...item,
+    eventType,
+    ...(tool.agentId?.trim() ? { agentId: tool.agentId.trim() } : {}),
+    runAttemptId: tool.runId,
+    text:
+      item.text.trim() ||
+      (presentation.detail ? `Tool: ${tool.name} · ${presentation.detail}` : `Tool: ${tool.name}`),
+    metadata: {
+      ...(item.metadata ?? {}),
+      liveType: eventType,
+      conversationV2ToolCallId: tool.toolCallId,
+      conversationV2VersionSeq: tool.versionSeq,
+      ...(tool.agentInstanceId ? { conversationV2AgentInstanceId: tool.agentInstanceId } : {}),
+      ...(tool.parentAgentInstanceId
+        ? { conversationV2ParentAgentInstanceId: tool.parentAgentInstanceId }
+        : {}),
+      ...(tool.parentToolCallId ? { conversationV2ParentToolCallId: tool.parentToolCallId } : {}),
+      tool: {
+        ...(existingTool ?? {}),
+        ...presentation.metadata,
+        status: conversationV2ToolProjectionStatus(tool.status),
+      },
+      ...(presentation.metadata.bashApproval ? { bashApproval: presentation.metadata.bashApproval } : {}),
+    },
+  };
+}
+
+function compareConversationV2TimelinePosition(
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): number {
+  const atDiff = left.at.localeCompare(right.at);
+  if (atDiff !== 0) return atDiff;
+  const sequenceDiff = left.sequence - right.sequence;
+  if (sequenceDiff !== 0) return sequenceDiff;
+  return left.id.localeCompare(right.id);
+}
+
+function insertConversationV2TimelineItem(
+  timeline: ThreadRunProjectionTimelineItem[],
+  item: ThreadRunProjectionTimelineItem,
+): void {
+  const index = timeline.findIndex((current) => compareConversationV2TimelinePosition(item, current) < 0);
+  if (index < 0) {
+    timeline.push(item);
+  } else {
+    timeline.splice(index, 0, item);
+  }
+}
+
+function mergeConversationV2ExecutionIntoProjection(
+  projection: ThreadRunProjectionSnapshot,
+  conversationV2: ConversationV2RendererState,
+): ThreadRunProjectionSnapshot {
+  const runs = [...conversationV2.runs.values()];
+  const tools = [...conversationV2.tools.values()];
+  if (runs.length === 0 && tools.length === 0) {
+    return projection;
+  }
+
+  const runById = new Map(runs.map((run) => [run.runId, run]));
+  const attemptsById = new Map(projection.attempts.map((attempt) => [attempt.attemptId, attempt]));
+  const attempts = projection.attempts.map((attempt) => {
+    const run = runById.get(attempt.attemptId);
+    if (!run) return attempt;
+    const runStatus = conversationV2RunStatusToAttemptStatus(run.status);
+    // An attempt settles once, so two *different* terminal statuses for the same
+    // run cannot both be true: the V2 run is then a stale mirror (a build that
+    // closed a run when one of its tools completed left "completed in 11s"
+    // behind for a turn that kept running and later failed), and the attempt
+    // lifecycle record — the write model behind this projection — wins.
+    if (
+      isTerminalAttemptStatus(attempt.status) &&
+      isTerminalAttemptStatus(runStatus) &&
+      attempt.status !== runStatus
+    ) {
+      return attempt;
+    }
+    return {
+      ...attempt,
+      status: runStatus,
+      startedAt: run.startedAt ?? attempt.startedAt,
+      ...((run.endedAt ?? attempt.endedAt) ? { endedAt: run.endedAt ?? attempt.endedAt } : {}),
+    };
+  });
+  for (const run of runs) {
+    if (attemptsById.has(run.runId)) continue;
+    const startedAt = run.startedAt ?? projection.thread.generatedAt;
+    attempts.push({
+      attemptId: run.runId,
+      phase: "initial",
+      retryIndex: 0,
+      status: conversationV2RunStatusToAttemptStatus(run.status),
+      startedAt,
+      ...(run.endedAt ? { endedAt: run.endedAt } : {}),
+    });
+  }
+
+  const legacyToolItemsById = new Map<string, ThreadRunProjectionTimelineItem[]>();
+  for (const item of projection.timeline) {
+    const toolUseId = readProjectionToolUseId(item);
+    if (!toolUseId) continue;
+    const items = legacyToolItemsById.get(toolUseId) ?? [];
+    items.push(item);
+    legacyToolItemsById.set(toolUseId, items);
+  }
+  // A V2 tool whose legacy row the feed skeleton dropped still has to land inside
+  // its own turn. Without the run row there is no V2 clock to place it by (V2
+  // stores no timestamps), so use what the projection knows about the attempt and
+  // keep the group just after the run's surviving row instead of stamping it with
+  // `generatedAt` — that piled every tool of every older turn onto the bottom of
+  // the feed as extra turns in the order they happened to be read.
+  const mergedAttemptById = new Map(attempts.map((attempt) => [attempt.attemptId, attempt]));
+  const runRowByRunId = new Map<string, ThreadRunProjectionTimelineItem>();
+  for (const item of projection.timeline) {
+    const runId = item.runAttemptId?.trim();
+    if (runId && !runRowByRunId.has(runId)) {
+      runRowByRunId.set(runId, item);
+    }
+  }
+  const placedToolCountByRun = new Map<string, number>();
+  const timeline = projection.timeline.map((item) => item);
+  const orderedTools = [...tools].sort((left, right) => left.createdSeq - right.createdSeq);
+  for (const tool of orderedTools) {
+    const legacyItems = legacyToolItemsById.get(tool.toolCallId);
+    if (legacyItems && legacyItems.length > 0) {
+      for (const legacyItem of legacyItems) {
+        const index = timeline.findIndex((candidate) => candidate.id === legacyItem.id);
+        const current = index >= 0 ? timeline[index] : undefined;
+        if (current) {
+          timeline[index] = mergeConversationV2ToolIntoTimelineItem(current, tool);
+        }
+      }
+      continue;
+    }
+    if (timeline.some((item) => item.id === `conversation-v2:tool:${tool.toolCallId}`)) {
+      continue;
+    }
+    const run = runById.get(tool.runId);
+    const attempt = mergedAttemptById.get(tool.runId);
+    const runRow = runRowByRunId.get(tool.runId);
+    const placedCount = placedToolCountByRun.get(tool.runId) ?? 0;
+    placedToolCountByRun.set(tool.runId, placedCount + 1);
+    insertConversationV2TimelineItem(
+      timeline,
+      conversationV2ToolToTimelineItem(
+        tool,
+        attempt?.endedAt ??
+          attempt?.startedAt ??
+          run?.endedAt ??
+          run?.startedAt ??
+          projection.thread.generatedAt,
+        (runRow?.sequence ?? tool.createdSeq) + (runRow ? placedCount + 1 : 0),
+      ),
+    );
+  }
+
+  const activeRun = runs.some((run) => run.status === "queued" || run.status === "running");
+  const latestRun = [...runs].sort((left, right) => left.versionSeq - right.versionSeq).at(-1);
+  const projectedStatus =
+    activeRun || (projection.thread.status === "idle" && latestRun)
+      ? activeRun
+        ? "running"
+        : conversationV2RunStatusToAttemptStatus(latestRun!.status)
+      : projection.thread.status;
+  const sourceEventCount =
+    runs.length > 0 || tools.length > 0
+      ? Math.max(projection.sourceEventCount, timeline.length, 1)
+      : projection.sourceEventCount;
+
+  const activeRunId = activeRun
+    ? runs.find((run) => run.status === "running" || run.status === "queued")?.runId
+    : undefined;
+  return {
+    ...projection,
+    thread: {
+      ...projection.thread,
+      status: projectedStatus,
+      ...(activeRunId && !projection.thread.currentAttemptId ? { currentAttemptId: activeRunId } : {}),
+    },
+    attempts,
+    timeline,
+    sourceEventCount,
+    historyRevision: Math.max(projection.historyRevision ?? 0, conversationV2.historyRevision),
+  };
+}
+
+export function mergeConversationV2IntoProjection(
+  projection: ThreadRunProjectionSnapshot,
+  conversationV2?: ConversationV2RendererState,
+): ThreadRunProjectionSnapshot {
+  if (!conversationV2 || conversationV2.conversationId !== projection.thread.threadId) {
+    return projection;
+  }
+  const withMessages = mergeConversationV2MessagesIntoProjection(projection, conversationV2);
+  return mergeConversationV2ExecutionIntoProjection(withMessages, conversationV2);
+}
+
+export function mergeConversationV2MessagesIntoProjection(
+  projection: ThreadRunProjectionSnapshot,
+  conversationV2?: ConversationV2RendererState,
+): ThreadRunProjectionSnapshot {
+  if (!conversationV2 || conversationV2.conversationId !== projection.thread.threadId) {
+    return projection;
+  }
+  const messages = orderedConversationV2Messages(conversationV2).filter(
+    (message) => !isQueuedConversationV2UserMessage(message),
+  );
+  const v2MessageIds = new Set(conversationV2.messages.keys());
+  if (messages.length === 0 && v2MessageIds.size === 0) {
+    return projection;
+  }
+  const legacyV2Anchors = new Map<string, ThreadRunProjectionTimelineItem>();
+  for (const item of projection.timeline) {
+    if (!isConversationV2MessageTimelineItem(item)) {
+      continue;
+    }
+    const messageId = readConversationV2MessageId(item);
+    if (messageId && !legacyV2Anchors.has(messageId)) {
+      legacyV2Anchors.set(messageId, item);
+    }
+  }
+  const canonicalItems = new Map<string, ThreadRunProjectionTimelineItem>();
+  const canonicalPositionAnchors = new Map<string, ThreadRunProjectionTimelineItem>();
+  // V2 messages of a subagent belong to that agent's transcript. The legacy
+  // projection kept them off the main timeline by scope; merged V2 rows have to be
+  // routed the same way, otherwise a subagent's narration shows up in the main Feed.
+  const knownAgentIds = new Set(
+    projection.agents.map((agent) => agent.agentId.trim()).filter((agentId) => agentId.length > 0),
+  );
+  const agentTimelineAdditions = new Map<string, ThreadRunProjectionTimelineItem[]>();
+  const runAnchorByRunId = new Map<string, ThreadRunProjectionTimelineItem>();
+  for (const item of projection.timeline) {
+    const runId = item.runAttemptId?.trim();
+    if (runId && !runAnchorByRunId.has(runId)) {
+      runAnchorByRunId.set(runId, item);
+    }
+  }
+  const runMessagePositions = buildConversationV2RunMessagePositions(
+    messages,
+    legacyV2Anchors,
+    runAnchorByRunId,
+  );
+  for (const message of messages) {
+    // A queued acceptance was recorded before the preceding turn completed.
+    // Do not reuse that early legacy anchor after finalization.
+    const explicitAnchor = isDeferredAcceptedConversationV2Message(message)
+      ? undefined
+      : legacyV2Anchors.get(message.messageId);
+    const runPosition = explicitAnchor ? undefined : runMessagePositions?.get(message.messageId);
+    const fallbackAnchor =
+      explicitAnchor ??
+      (isDeferredAcceptedConversationV2Message(message)
+        ? undefined
+        : message.role === "user"
+        ? projection.timeline.find(
+            (item) =>
+              isConversationV2MessageTimelineItem(item) &&
+              item.role !== "user" &&
+              item.sequence >= message.createdSeq,
+          )
+        : undefined);
+    const anchor = explicitAnchor ?? runPosition?.anchor ?? fallbackAnchor;
+    const item = conversationV2MessageToTimelineItem(message, anchor?.at ?? projection.thread.generatedAt);
+    if (anchor) {
+      // V2 owns the body/version, while the explicit legacy identity (or the
+      // sibling-relative offset) preserves the original position in the
+      // transitional mixed projection.
+      item.sequence = runPosition?.sequence ?? anchor.sequence;
+    }
+    const ownerAgentId = item.agentId?.trim();
+    if (ownerAgentId && knownAgentIds.has(ownerAgentId)) {
+      item.scope = "agent";
+      const items = agentTimelineAdditions.get(ownerAgentId) ?? [];
+      items.push(item);
+      agentTimelineAdditions.set(ownerAgentId, items);
+      continue;
+    }
+    canonicalItems.set(message.messageId, item);
+    if (anchor) {
+      canonicalPositionAnchors.set(message.messageId, anchor);
+    }
+  }
+  const legacyTimeline = projection.timeline.filter((item) => {
+    if (!isConversationV2MessageTimelineItem(item)) {
+      return true;
+    }
+    const legacyV2MessageId = item.metadata?.conversationV2MessageId;
+    if (typeof legacyV2MessageId === "string" && v2MessageIds.has(legacyV2MessageId.trim())) {
+      return false;
+    }
+    return true;
+  });
+  const existingV2MessageIds = new Set(
+    projection.timeline
+      .filter((item) => item.id.startsWith("conversation-v2:"))
+      .map(readConversationV2MessageId)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const additions = messages.filter((message) => !existingV2MessageIds.has(message.messageId));
+  if (additions.length === 0 && legacyTimeline.length === projection.timeline.length) {
+    return projection;
+  }
+  const mergedTimeline: ThreadRunProjectionTimelineItem[] = [];
+  const emittedMessageIds = new Set<string>();
+  for (const item of projection.timeline) {
+    const messageId = readConversationV2MessageId(item);
+    const canonical = messageId ? canonicalItems.get(messageId) : undefined;
+    if (isConversationV2MessageTimelineItem(item) && messageId && v2MessageIds.has(messageId)) {
+      if (canonical && !emittedMessageIds.has(messageId)) {
+        mergedTimeline.push(canonical);
+        emittedMessageIds.add(messageId);
+      }
+      continue;
+    }
+    mergedTimeline.push(item);
+  }
+  for (const message of additions) {
+    if (emittedMessageIds.has(message.messageId)) {
+      continue;
+    }
+    const canonical = canonicalItems.get(message.messageId);
+    if (!canonical) {
+      continue;
+    }
+    const anchor = canonicalPositionAnchors.get(message.messageId);
+    const anchorIndex = anchor
+      ? mergedTimeline.findIndex((item) => item.id === anchor.id)
+      : mergedTimeline.findIndex((item) => item.sequence > canonical.sequence);
+    if (anchorIndex >= 0) {
+      mergedTimeline.splice(anchorIndex, 0, canonical);
+    } else {
+      mergedTimeline.push(canonical);
+    }
+    emittedMessageIds.add(message.messageId);
+  }
+  return {
+    ...projection,
+    timeline: mergedTimeline,
+    agents: mergeConversationV2AgentTimelines(projection.agents, agentTimelineAdditions),
+    sourceEventCount: projection.sourceEventCount + additions.length,
+    historyRevision: Math.max(projection.historyRevision ?? 0, conversationV2.historyRevision),
+  };
+}
+
+/** Appends merged V2 messages to the transcript of the agent that owns them. */
+function mergeConversationV2AgentTimelines(
+  agents: ThreadRunProjectionSnapshot["agents"],
+  additions: ReadonlyMap<string, ThreadRunProjectionTimelineItem[]>,
+): ThreadRunProjectionSnapshot["agents"] {
+  if (additions.size === 0) {
+    return agents;
+  }
+  return agents.map((agent) => {
+    const extra = additions.get(agent.agentId);
+    if (!extra?.length) {
+      return agent;
+    }
+    const byId = new Map(agent.timeline.map((item) => [item.id, item]));
+    for (const item of extra) {
+      byId.set(item.id, item);
+    }
+    return {
+      ...agent,
+      timeline: [...byId.values()].sort(
+        (left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id),
+      ),
+    };
+  });
 }
 
 function ProjectionFeedLoading() {
@@ -467,7 +1629,18 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       releaseMermaidModule();
     };
   }, []);
-  const projection = props.projection;
+  // V2 is the only production Feed source. A missing V2 state is a bootstrap or
+  // recovery condition; it must render loading/prompt UI instead of reopening the
+  // retired projection path.
+  const projection = useMemo(
+    () => props.conversationV2
+      ? reconcileActivityProjectionThreadStatus(
+          buildConversationV2OnlyProjection(props.conversationV2, props.thread),
+          props.thread,
+        )
+      : undefined,
+    [props.conversationV2, props.thread?.createdAt, props.thread?.status],
+  );
   if (!projection?.sourceEventCount) {
     if (props.thread?.prompt && !isThreadStoppedForFinalSummary(props.thread.status)) {
       return (
@@ -479,24 +1652,36 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
               {...(props.thread.createdAt ? { createdAt: props.thread.createdAt } : {})}
             />,
           )}
-          <RunLogActiveTail waiting />
+          {/* No V2 event has landed yet, so the prompt bubble is the entire feed. The
+              run is already under way — keep the waiting line up rather than leaving a
+              blank pane under the prompt, which is what a first send used to look like. */}
+          <RunLogActiveTail waiting stopping={Boolean(props.thread.cancelling)} />
         </div>
       );
     }
     return <ProjectionFeedLoading />;
   }
   return (
-    <ProjectionActivityLogView
+    <ConversationV2ProjectionActivityLogView
       projection={projection}
-      {...(props.viewModel && { precomputedViewModel: props.viewModel })}
       {...(props.thread && { thread: props.thread })}
-      {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
+      {...(props.agentDisplayNames && {
+        agentDisplayNames: props.agentDisplayNames,
+      })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}
       {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
-      {...(props.onLoadUserMessageEdit && { onLoadUserMessageEdit: props.onLoadUserMessageEdit })}
-      {...(props.onRewriteUserMessage && { onRewriteUserMessage: props.onRewriteUserMessage })}
-      {...(props.onRetryFailedRequest && { onRetryFailedRequest: props.onRetryFailedRequest })}
-      {...(props.selectedSubagentAgentId && { selectedSubagentAgentId: props.selectedSubagentAgentId })}
+      {...(props.onLoadUserMessageEdit && {
+        onLoadUserMessageEdit: props.onLoadUserMessageEdit,
+      })}
+      {...(props.onRewriteUserMessage && {
+        onRewriteUserMessage: props.onRewriteUserMessage,
+      })}
+      {...(props.onRetryFailedRequest && {
+        onRetryFailedRequest: props.onRetryFailedRequest,
+      })}
+      {...(props.selectedSubagentAgentId && {
+        selectedSubagentAgentId: props.selectedSubagentAgentId,
+      })}
       {...(props.onOpenSubagent && { onOpenSubagent: props.onOpenSubagent })}
       {...(props.onOpenImageGenerationTool && {
         onOpenImageGenerationTool: props.onOpenImageGenerationTool,
@@ -507,22 +1692,38 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.onOpenImageDisplayArtifact && {
         onOpenImageDisplayArtifact: props.onOpenImageDisplayArtifact,
       })}
-      {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
-      {...(props.onLoadProjectionDetail && { onLoadProjectionDetail: props.onLoadProjectionDetail })}
-      {...(props.thinkingDisplayMode && { thinkingDisplayMode: props.thinkingDisplayMode })}
+      {...(props.onPlannerLayoutChange && {
+        onPlannerLayoutChange: props.onPlannerLayoutChange,
+      })}
+      {...(props.onComposerAgentSilenceChange && {
+        onComposerAgentSilenceChange: props.onComposerAgentSilenceChange,
+      })}
+      {...(props.onLoadProjectionDetail && {
+        onLoadProjectionDetail: props.onLoadProjectionDetail,
+      })}
+      {...(props.thinkingDisplayMode && {
+        thinkingDisplayMode: props.thinkingDisplayMode,
+      })}
     />
   );
 });
 
-function ProjectionActivityLogView({
+/**
+ * Render a projection snapshot produced by the V2 read model.
+ *
+ * This surface is kept separate from `ActivityLogView` so pure presentation
+ * tests and replay fixtures can exercise the feed without reintroducing a
+ * production V1 fallback into the app's entry component.
+ */
+export function ConversationV2ProjectionActivityLogView({
   projection,
-  precomputedViewModel,
   thread,
   onRestorePrompt,
   onLoadUserMessageEdit,
   onRewriteUserMessage,
   onRetryFailedRequest,
   onPlannerLayoutChange,
+  onComposerAgentSilenceChange,
   agentDisplayNames,
   agentThemes,
   onLoadProjectionDetail,
@@ -534,7 +1735,6 @@ function ProjectionActivityLogView({
   thinkingDisplayMode,
 }: {
   projection: ThreadRunProjectionSnapshot;
-  precomputedViewModel?: ThreadRunProjectionViewModel;
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -549,17 +1749,16 @@ function ProjectionActivityLogView({
   onRewriteUserMessage?: RewriteUserMessageHandler;
   onRetryFailedRequest?: RetryFailedRequestHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
+  onComposerAgentSilenceChange?: (silent: boolean) => void;
   thinkingDisplayMode?: ThinkingDisplayMode;
 }) {
   const requestSpansById = useMemo(
     () => new Map(projection.requestSpans.map((span) => [span.requestId, span])),
     [projection.requestSpans],
   );
-  const resolvedThinkingDisplayMode =
-    thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
+  const resolvedThinkingDisplayMode = thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
   const viewModel = useMemo(
     () =>
-      precomputedViewModel ??
       buildThreadRunProjectionViewModel(
         projection,
         thread ? { id: thread.id, prompt: thread.prompt } : undefined,
@@ -568,14 +1767,7 @@ function ProjectionActivityLogView({
           thinkingDisplayMode: resolvedThinkingDisplayMode,
         },
       ),
-    [
-      agentDisplayNames,
-      precomputedViewModel,
-      projection,
-      resolvedThinkingDisplayMode,
-      thread?.id,
-      thread?.prompt,
-    ],
+    [agentDisplayNames, projection, resolvedThinkingDisplayMode, thread?.id, thread?.prompt],
   );
   const showThreadPrompt = viewModel.showThreadPrompt;
   const feedSections = useMemo(
@@ -594,11 +1786,6 @@ function ProjectionActivityLogView({
   );
   const allowUserMessageRewrite = supportsHistoryRewrite(thread?.coreKind);
   const conversationActive = !isThreadStoppedForFinalSummary(projection.thread.status);
-  const showInitialWaiting =
-    conversationActive &&
-    viewModel.mainFeedEntries.every(
-      (entry) => entry.kind === "timeline" && isProjectionUserPromptItem(entry.item),
-    );
   // Settled tool groups keep their "running" display for TOOL_RUNNING_MIN_VISIBLE_MS
   // (resolveToolGroupDisplayState). The tail must honor the same window, otherwise the
   // settling tool row and the「正在思考」tail state render at the same time.
@@ -633,9 +1820,9 @@ function ProjectionActivityLogView({
   const runningToolVisible =
     viewModel.mainFeedEntries.some((entry) => isRunningToolFeedEntry(entry)) || settlingToolExtensionMs > 0;
   // The live tail states are exclusive: while the latest content is a tool call or
-  // aggregation, that tool row is the tail itself — never render「正在思考」or a
-  // Summary tip beneath it. Trailing empty waiting slots (the next request span,
-  // not yet streamed) do not count as content, so the group still ends the feed.
+  // aggregation, that tool row owns the active content state — never render「正在思考」
+  // or a Summary tip beneath it. The active tail is only needed when the current
+  // slot is not already owned by a tool/aggregate.
   const latestContentIsToolGroup = useMemo(() => {
     const entries = viewModel.mainFeedEntries;
     for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -663,12 +1850,18 @@ function ProjectionActivityLogView({
     : undefined;
   const deferReasoningStageTip =
     conversationActive && !runningToolVisible && !runningContextCompactionVisible;
+  // Sending has to look acknowledged even before the request span exists. Every prompt
+  // opens a window where the agent side has produced nothing for it yet, and the active
+  // tail would render an empty shell — a blank feed under your own message reads as "the
+  // send did nothing". Widest on a thread's first message (cold runtime start), but
+  // present after every follow-up too.
+  const awaitingAgentAnswer = isAwaitingAgentAnswer(viewModel.mainFeedEntries);
   const waitingThinkingVisible =
     !runningToolVisible &&
     !runningContextCompactionVisible &&
     !latestContentIsToolGroup &&
-    (Boolean(liveReasoningStageLabel) ||
-      showInitialWaiting ||
+    (awaitingAgentAnswer ||
+      Boolean(liveReasoningStageLabel) ||
       viewModel.mainFeedEntries.some((entry) => {
         if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
           return false;
@@ -705,11 +1898,11 @@ function ProjectionActivityLogView({
         showThreadPrompt ? `prompt:${thread?.id ?? ""}` : "",
         ...viewModel.mainFeedEntries.map((entry) => {
           if (entry.kind === "timeline" || entry.kind === "agent-echo") {
-            return `${entry.key}:${entry.item.text.length}`;
+            return `${entry.key}:${projectionTimelineItemRenderSignature(entry.item)}`;
           }
           if (entry.kind === "tool-group") {
             return `${entry.key}:${entry.entries
-              .map((child) => `${child.key}:${child.item.text.length}`)
+              .map((child) => `${child.key}:${projectionTimelineItemRenderSignature(child.item)}`)
               .join(",")}`;
           }
           const lastItem = entry.card.agent.timeline.at(-1);
@@ -717,7 +1910,7 @@ function ProjectionActivityLogView({
             entry.key,
             entry.card.agent.timeline.length,
             lastItem?.id ?? "",
-            lastItem?.text.length ?? 0,
+            lastItem ? projectionTimelineItemRenderSignature(lastItem) : "",
           ].join(":");
         }),
       ]
@@ -727,6 +1920,17 @@ function ProjectionActivityLogView({
   );
 
   usePlannerLayoutChangeEffect(layoutSignature, onPlannerLayoutChange);
+  // The Feed owns the tail while it has something of its own animating there — its waiting
+  // line, or a thinking row still streaming its shimmer. The Composer's dots are for the
+  // gaps the Feed cannot narrate, so they wait for the Feed to go quiet first.
+  useComposerAgentSilenceEffect(
+    {
+      active: conversationActive,
+      feedIndicatorVisible: waitingThinkingVisible || isTailThinkingStreamingLive(viewModel.mainFeedEntries),
+      signature: layoutSignature,
+    },
+    onComposerAgentSilenceChange,
+  );
 
   const runLogRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
@@ -744,10 +1948,7 @@ function ProjectionActivityLogView({
     runLogRef,
     headerRef: feedHeaderRef,
   });
-  const userMessageAnchors = useMemo(
-    () => listUserMessageAnchorsFromSections(feedSections),
-    [feedSections],
-  );
+  const userMessageAnchors = useMemo(() => listUserMessageAnchorsFromSections(feedSections), [feedSections]);
   const mountedSectionIndexes = useMemo(
     () => new Set(virtualItems.map((item) => item.index)),
     [virtualItems],
@@ -839,7 +2040,10 @@ function ProjectionActivityLogView({
               </div>
             ))
           )}
-          {conversationActive ? (
+          {conversationActive &&
+          !runningToolVisible &&
+          !runningContextCompactionVisible &&
+          !latestContentIsToolGroup ? (
             <RunLogActiveTail
               waiting={waitingThinkingVisible}
               stopping={Boolean(thread?.cancelling)}
@@ -894,11 +2098,7 @@ function ProjectionTurnFeedSection({
   // does not open a hollow padding gap sitting above the tail waiting line.
   const processEmpty = !section.processEntries.some((entry) => {
     if (entry.kind === "timeline" || entry.kind === "agent-echo") {
-      return !isDeferredThinkingStatusItem(
-        entry.item,
-        requestSpansById,
-        deferReasoningStageTip,
-      );
+      return !isDeferredThinkingStatusItem(entry.item, requestSpansById, deferReasoningStageTip);
     }
     return true;
   });
@@ -1378,6 +2578,23 @@ export function ProjectionToolGroupEntry({
     [displayClock, entry.entries],
   );
   const { summary, lifecycle, remainingMs } = display;
+  // The live elapsed display derives from the running tool's own start time — the row's
+  // event/insertion timestamp (occurredAt on V2 rows, the tool.started insert otherwise).
+  // The group's `at` (its first child) is the same instant for a single running tool.
+  const runningStartedAt = useMemo(() => {
+    for (let index = entry.entries.length - 1; index >= 0; index -= 1) {
+      const child = entry.entries[index];
+      if (!child) {
+        continue;
+      }
+      const block = projectionItemToDetailBlock(child.item);
+      if (block?.kind === "action" && block.lifecycle === "running" && block.startedAt) {
+        return block.startedAt;
+      }
+    }
+    return entry.at;
+  }, [entry]);
+  const runningElapsedMs = useTurnDurationMs(runningStartedAt, undefined, lifecycle === "running");
   useEffect(() => {
     if (remainingMs <= 0) {
       return;
@@ -1406,7 +2623,18 @@ export function ProjectionToolGroupEntry({
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
       <RunLogCollapsibleActionTrigger
         icon={summary.icon}
-        label={lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
+        label={
+          lifecycle === "running" ? (
+            <>
+              <ShimmerText>{summary.label}</ShimmerText>
+              {runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS ? (
+                <span className="run-log-tool-group-elapsed">{formatDuration(runningElapsedMs)}</span>
+              ) : null}
+            </>
+          ) : (
+            summary.label
+          )
+        }
         {...(lifecycle && { lifecycle })}
         expanded={expanded}
         onClick={() => {
@@ -1706,7 +2934,9 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       const commandHeader =
         resolveActionKind({
           toolName: block.tool,
-          ...(block.command && { payload: { bashRun: { command: block.command } } }),
+          ...(block.command && {
+            payload: { bashRun: { command: block.command } },
+          }),
         }).kind === "command"
           ? {
               label: translateActionKind("activity.done.command.fallback"),
@@ -1786,7 +3016,9 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
 }
 
 /** Bucket a failed tool by what it tried to do, so aggregates count it like its siblings. */
-function resolveFailedBlockAction(block: Extract<ActivityDetailBlock, { kind: "tool-failed" }>): ResolvedAction {
+function resolveFailedBlockAction(
+  block: Extract<ActivityDetailBlock, { kind: "tool-failed" }>,
+): ResolvedAction {
   const fileChange = block.fileChange as ActionKindPayload["fileChange"] | undefined;
   const payload: ActionKindPayload = {};
   if (block.command) {
@@ -2230,11 +3462,7 @@ const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetail
   // Same feed-entry wrapper / spacing path as the main agent; only hide role chrome
   // because this surface is already scoped to one subagent.
   return (
-    <ProjectionTimelineEntry
-      item={entry.item}
-      requestSpansById={requestSpansById}
-      hideSubagentIdentity
-    />
+    <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} hideSubagentIdentity />
   );
 }, areProjectionSubagentDetailFeedEntryPropsEqual);
 
@@ -2280,7 +3508,9 @@ function ProjectionSubagentTurn({
             ),
           )}
           {turn.running && turn.entries.length === 0
-            ? wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
+            ? wrapRunLogFeedEntry(<WaitingThinkingBlock active />, {
+                tight: true,
+              })
             : null}
         </>
       }
@@ -2334,7 +3564,9 @@ function ProjectionAgentEchoEntry({
           pacing={pacing}
           {...(block.startedAt && { startedAt: block.startedAt })}
           {...(block.endedAt && { endedAt: block.endedAt })}
-          {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
+          {...(block.durationMs !== undefined && {
+            durationMs: block.durationMs,
+          })}
         />
       </ProjectionAgentEchoShell>
     );
@@ -2379,7 +3611,10 @@ function ProjectionAgentEchoShell({
 }
 
 function useLatchedAgentText(agentId: string, text: string): string {
-  const latchRef = useRef<{ agentId: string; text: string }>({ agentId: "", text: "" });
+  const latchRef = useRef<{ agentId: string; text: string }>({
+    agentId: "",
+    text: "",
+  });
   if (latchRef.current.agentId !== agentId) {
     latchRef.current = { agentId, text: "" };
   }
@@ -2515,8 +3750,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
-  const resolvedThinkingDisplayMode =
-    thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
+  const resolvedThinkingDisplayMode = thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
   const visibleTimeline = useMemo(() => {
     // Same display collapse core as the main feed; only subagent-specific noise /
     // mission suppression / consecutive-thinking join stay as surface adapters.
@@ -2640,7 +3874,9 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
               <ProjectionSubagentTurn key={turn.key} turn={turn} requestSpansById={requestSpansById} />
             ))
           ) : running ? (
-            wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
+            wrapRunLogFeedEntry(<WaitingThinkingBlock active />, {
+              tight: true,
+            })
           ) : (
             <p className="subagent-task-detail-empty">{i18n.t("activity.noDetails")}</p>
           )}
@@ -2820,10 +4056,7 @@ function ProjectionTimelineEntry({
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
 }) {
   const omitIdentity = compact || hideSubagentIdentity;
-  if (
-    deferWaitingIndicator &&
-    isDeferredThinkingStatusItem(item, requestSpansById, deferReasoningStageTip)
-  ) {
+  if (deferWaitingIndicator && isDeferredThinkingStatusItem(item, requestSpansById, deferReasoningStageTip)) {
     return null;
   }
   if (isProjectionUserPromptItem(item)) {
@@ -2896,7 +4129,9 @@ function ProjectionTimelineEntry({
         pacing={pacing}
         {...(block.startedAt && { startedAt: block.startedAt })}
         {...(block.endedAt && { endedAt: block.endedAt })}
-        {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
+        {...(block.durationMs !== undefined && {
+          durationMs: block.durationMs,
+        })}
       />,
       { compact, tight: true },
     );
@@ -2923,8 +4158,12 @@ function ProjectionTimelineEntry({
       <PhaseBlock
         label={block.label}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
-        {...(block.reconnectFailed && { reconnectFailed: block.reconnectFailed })}
-        {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
+        {...(block.reconnectFailed && {
+          reconnectFailed: block.reconnectFailed,
+        })}
+        {...(block.reconnectDetail && {
+          reconnectDetail: block.reconnectDetail,
+        })}
         {...(onRetry && { onRetry })}
       />,
       { compact },
@@ -2956,7 +4195,12 @@ function ProjectionTimelineEntry({
   );
 }
 
-function shouldSuppressSubagentCardTimelineItem(
+/**
+ * Rows the card itself explains: the lifecycle rows say the card exists and a mission
+ * envelope repeats the card's own headline. The card's reader never sees them, so a
+ * comparison of two chains has to drop them too — exported for that comparison.
+ */
+export function shouldSuppressSubagentCardTimelineItem(
   item: ThreadRunProjectionTimelineItem,
   missionText: string,
 ): boolean {
@@ -2977,13 +4221,25 @@ function shouldSuppressSubagentCardTimelineItem(
   if (block?.kind === "subagent-mission") {
     return true;
   }
-  return (
-    block?.kind === "subagent-prompt" &&
-    resolveMissionDisplayText(block.text) === resolveMissionDisplayText(missionText)
-  );
+  if (block?.kind !== "subagent-prompt" && block?.kind !== "narrative") {
+    return false;
+  }
+  // Some Codex child-thread histories echo the delegated task as a regular
+  // assistant message instead of preserving its user-message marker. The
+  // drawer already renders the mission header, so either representation would
+  // otherwise show the same task twice.
+  const normalizeMissionComparisonText = (text: string): string =>
+    resolveMissionDisplayText(text).replace(/\s+/gu, " ").trim();
+  return normalizeMissionComparisonText(block.text) === normalizeMissionComparisonText(missionText);
 }
 
-function filterSubagentDetailTimelineNoise(
+/**
+ * The lifecycle rows of an agent (`agent.started` …) explain the card's existence, not its
+ * content, so the detail feed drops them. Exported because it is the difference between a
+ * card's raw timeline and the rows a reader sees: a comparison that skips it reports
+ * differences no reader can see.
+ */
+export function filterSubagentDetailTimelineNoise(
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem[] {
   // Empty thinking.delta used to linger as inline「正在思考」after tools moved on.
@@ -3140,8 +4396,12 @@ function DetailBlock({
       <PhaseBlock
         label={block.label}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
-        {...(block.reconnectFailed && { reconnectFailed: block.reconnectFailed })}
-        {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
+        {...(block.reconnectFailed && {
+          reconnectFailed: block.reconnectFailed,
+        })}
+        {...(block.reconnectDetail && {
+          reconnectDetail: block.reconnectDetail,
+        })}
         {...(onRetry && { onRetry })}
       />
     );
@@ -3165,10 +4425,20 @@ function DetailBlock({
     return <UserPromptBlock text={block.text} className="subagent-conversation-prompt" />;
   }
   if (block.kind === "model-request") {
-    return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;
+    return (
+      <WaitingThinkingBlock
+        active={isProjectionRequestWaitingForFirstToken(requestSpan)}
+        {...(requestSpan && { requestSpan })}
+      />
+    );
   }
   if (block.kind === "agent-request") {
-    return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;
+    return (
+      <WaitingThinkingBlock
+        active={isProjectionRequestWaitingForFirstToken(requestSpan)}
+        {...(requestSpan && { requestSpan })}
+      />
+    );
   }
   if (block.kind === "action") {
     if (block.imageDisplay) {
@@ -3198,6 +4468,7 @@ function DetailBlock({
       return (
         <ImageViewBlock
           imageView={block.imageView}
+          {...(block.toolOutput && { output: block.toolOutput })}
           {...(block.lifecycle && { lifecycle: block.lifecycle })}
           {...(block.subagent && { subagent: block.subagent })}
           omitRoleLabel={omitSubagent}
@@ -3209,7 +4480,10 @@ function DetailBlock({
       <RunLogAction
         icon={block.icon}
         label={block.label}
-        {...(actionLabelOverride && { displayLabelOverride: actionLabelOverride })}
+        {...(actionLabelOverride && {
+          displayLabelOverride: actionLabelOverride,
+        })}
+        {...(block.startedAt && { startedAt: block.startedAt })}
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.webSearch && { webSearch: block.webSearch })}
@@ -3230,7 +4504,9 @@ function DetailBlock({
         {...(block.command && { command: block.command })}
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.error && { error: block.error })}
-        {...(block.recoveredResult && { recoveredResult: block.recoveredResult })}
+        {...(block.recoveredResult && {
+          recoveredResult: block.recoveredResult,
+        })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
@@ -3242,7 +4518,9 @@ function DetailBlock({
       <ApiErrorBlock
         message={block.message}
         {...(block.title && { title: block.title })}
-        {...(block.statusCode !== undefined && { statusCode: block.statusCode })}
+        {...(block.statusCode !== undefined && {
+          statusCode: block.statusCode,
+        })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
@@ -3257,7 +4535,9 @@ function DetailBlock({
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(block.startedAt && { startedAt: block.startedAt })}
         {...(block.endedAt && { endedAt: block.endedAt })}
-        {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
+        {...(block.durationMs !== undefined && {
+          durationMs: block.durationMs,
+        })}
       />
     );
   }
@@ -3295,24 +4575,6 @@ function DetailBlock({
   );
 }
 
-function RequestFailureRetryButton({ onRetry }: { onRetry: () => void }) {
-  return (
-    <button
-      type="button"
-      className="run-log-failure-retry"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onRetry();
-      }}
-      aria-label={i18n.t("activity.retryRequest")}
-      title={i18n.t("activity.retryRequestTitle")}
-    >
-      <RefreshCw size={14} aria-hidden />
-    </button>
-  );
-}
-
 function PhaseBlock({
   label,
   reconnecting,
@@ -3336,9 +4598,17 @@ function PhaseBlock({
   if (isPromptCacheNoticePhaseLabel(label)) {
     return <PromptCacheNoticeDivider label={label} />;
   }
-  const retryButton = onRetry ? <RequestFailureRetryButton onRetry={onRetry} /> : null;
   if (reconnecting) {
     const isFailure = Boolean(reconnectFailed);
+    if (isFailure) {
+      return (
+        <FeedErrorCard
+          message={label}
+          {...(reconnectDetail && { detail: reconnectDetail })}
+          {...(onRetry && { retryLabel: i18n.t("common.retry"), onRetry })}
+        />
+      );
+    }
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
     const ReconnectIcon = isFailure ? CircleAlert : RefreshCw;
     const summaryRow = (
@@ -3355,27 +4625,18 @@ function PhaseBlock({
       return (
         <div className={`${className} run-log-reconnect-inline`} role="status" aria-live="polite">
           {summaryRow}
-          {retryButton}
         </div>
       );
     }
     return (
       <details className={className} role="status" aria-live="polite">
-        <summary className="run-log-reconnect-summary">
-          {summaryRow}
-          {retryButton}
-        </summary>
+        <summary className="run-log-reconnect-summary">{summaryRow}</summary>
         <pre className="run-log-reconnect-detail">{reconnectDetail}</pre>
       </details>
     );
   }
-  if (retryButton) {
-    return (
-      <div className="run-log-phase run-log-phase--with-retry">
-        <span>{label}</span>
-        {retryButton}
-      </div>
-    );
+  if (onRetry) {
+    return <FeedErrorCard message={label} retryLabel={i18n.t("common.retry")} onRetry={onRetry} />;
   }
   return <div className="run-log-phase">{label}</div>;
 }
@@ -3412,16 +4673,7 @@ function isPromptCacheNoticePhaseLabel(label: string): boolean {
 }
 
 function PromptCacheNoticeDivider({ label }: { label: string }) {
-  return (
-    <div className="run-log-prompt-cache-notice" role="status">
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-      <div className="run-log-prompt-cache-notice-label">
-        <Sparkles size={14} aria-hidden />
-        <span>{label}</span>
-      </div>
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-    </div>
-  );
+  return <FeedStatusDivider message={label} />;
 }
 
 function PromptCacheTimelineBlock({
@@ -3436,41 +4688,8 @@ function PromptCacheTimelineBlock({
     episodeId?: string;
   }>;
 }) {
-  return (
-    <div className="run-log-prompt-cache-timeline" role="status">
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-      <div className="run-log-prompt-cache-timeline-body">
-        <div className="run-log-prompt-cache-timeline-title">
-          <Sparkles size={14} aria-hidden />
-          <span>{i18n.t("activity.promptCacheTimeline")}</span>
-        </div>
-        <p className="run-log-prompt-cache-timeline-narrative">{narrative}</p>
-        {steps.length > 1 ? (
-          <ol className="run-log-prompt-cache-timeline-steps">
-            {steps.map((step, index) => (
-              <li key={`${step.kind}-${step.at}-${index}`}>
-                <time dateTime={step.at}>{formatPromptCacheTimelineTime(step.at)}</time>
-                <span>{step.label}</span>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </div>
-      <div className="run-log-prompt-cache-notice-line" aria-hidden />
-    </div>
-  );
-}
-
-function formatPromptCacheTimelineTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleTimeString(i18n.resolvedLanguage, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  const info = steps.map((step) => step.label).join("\n");
+  return <FeedStatusDivider message={narrative} {...(info && { info })} />;
 }
 
 function ShimmerText({ children }: { children: string }) {
@@ -3509,23 +4728,34 @@ function ScrollingThinkingText({ text }: { text: string }) {
   const lines = splitThinkingCarouselLines(text);
   const linesKey = lines.join("\n");
   const [activeLine, setActiveLine] = useState(0);
+  /** The stage list playback came from, so a grown tip can carry its position over. */
+  const playedLinesRef = useRef<readonly string[] | null>(null);
 
   useEffect(() => {
-    setActiveLine(0);
-    if (lines.length <= 1) {
+    const previousLines = playedLinesRef.current;
+    playedLinesRef.current = lines;
+    // The tip streams in, so most updates are this same tip getting longer — the stage on
+    // screen keeps its turn through those. Only a different tip starts a fresh pass.
+    const nextLine = resolveThinkingCarouselIndex(previousLines, lines, activeLine);
+    if (nextLine !== activeLine) {
+      setActiveLine(nextLine);
+    }
+  }, [linesKey, activeLine]);
+
+  const lastIndex = lines.length - 1;
+  useEffect(() => {
+    // Played through the stages there are: hold on the last one until the tip grows again.
+    if (activeLine >= lastIndex) {
       return;
     }
-    let index = 0;
-    const lastIndex = lines.length - 1;
-    const timer = setInterval(() => {
-      index += 1;
-      setActiveLine(index);
-      if (index >= lastIndex) {
-        clearInterval(timer);
-      }
-    }, 2600);
-    return () => clearInterval(timer);
-  }, [linesKey]);
+    // Deliberately not keyed on the text: a stage keeping its turn while the agent writes
+    // more of the same stage is the point. Restarting this clock per token is what left the
+    // tip parked on its first stage until the run ended.
+    const timer = window.setTimeout(() => {
+      setActiveLine((value) => Math.min(value + 1, lastIndex));
+    }, THINKING_CAROUSEL_STAGE_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeLine, lastIndex]);
 
   const activeIndex = lines.length > 0 ? Math.min(activeLine, lines.length - 1) : 0;
   const activeText = lines[activeIndex] ?? i18n.t("activity.thinking");
@@ -3568,6 +4798,44 @@ function WaitingThinkingBlock({
   );
 }
 
+/**
+ * Whether the Feed's newest row is a thinking block that is still streaming, and therefore
+ * already carrying its own「正在思考」shimmer.
+ *
+ * A thinking row stays `thinking.delta` while the agent moves on to writing its tool call,
+ * so this covers the thinking → tool gap as well: the block the reader is looking at is
+ * still animating, which is why that gap never reads as stalled even though nothing new
+ * arrives. The Composer's dots defer to it rather than doubling up on the same row.
+ */
+export function isTailThinkingStreamingLive(entries: readonly ThreadRunProjectionMainFeedEntry[]): boolean {
+  const last = entries.at(-1);
+  if (!last || (last.kind !== "timeline" && last.kind !== "agent-echo")) {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(last.item);
+  return block?.kind === "thinking" && Boolean(block.streaming);
+}
+
+/**
+ * Whether the feed is still waiting on the agent for its newest row — true when the last
+ * row is the user's own prompt, or when the feed holds nothing at all yet.
+ *
+ * Every send opens this window, not just a thread's first message. Mid-turn steers sort
+ * after the output they interrupt, so a prompt landing last means the agent has not
+ * answered it; once it does, the newest row is a request/thinking/tool/narrative row and
+ * the normal waiting rules take over.
+ */
+function isAwaitingAgentAnswer(entries: readonly ThreadRunProjectionMainFeedEntry[]): boolean {
+  const last = entries.at(-1);
+  if (!last) {
+    return true;
+  }
+  if (last.kind !== "timeline" && last.kind !== "agent-echo") {
+    return false;
+  }
+  return isProjectionUserPromptItem(last.item);
+}
+
 function isWaitingThinkingItem(
   item: ThreadRunProjectionTimelineItem,
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionRequestSpan>,
@@ -3578,13 +4846,19 @@ function isWaitingThinkingItem(
   }
   if (block.kind === "model-request" || block.kind === "agent-request") {
     const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
-    return isProjectionRequestActive(requestSpan);
+    return isProjectionRequestWaitingForFirstToken(requestSpan);
   }
+  if (block.kind !== "thinking" && block.kind !== "narrative") {
+    return false;
+  }
+  const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
   return (
-    (block.kind === "thinking" || block.kind === "narrative") &&
-    Boolean(block.streaming) &&
-    !block.text.trim()
+    Boolean(block.streaming) && !block.text.trim() && isProjectionRequestWaitingForFirstToken(requestSpan)
   );
+}
+
+function isProjectionRequestWaitingForFirstToken(span: ThreadRunProjectionRequestSpan | undefined): boolean {
+  return span?.status === "waiting_first_token" && !span.firstTokenAt;
 }
 
 function isReasoningStageItem(item: ThreadRunProjectionTimelineItem): boolean {
@@ -3652,9 +4926,7 @@ function RunLogConversationTail() {
       className="run-log-conversation-tail"
       role="status"
       aria-label={i18n.t("activity.conversationActive")}
-    >
-      <StreamingTypingIndicator />
-    </div>
+    />
   );
 }
 
@@ -3669,11 +4941,7 @@ function RunLogActiveTail({
   label?: string;
 }) {
   // Single WaitingThinkingBlock instance: stopping > tip label > default「正在思考」.
-  const statusLabel = stopping
-    ? i18n.t("activity.stopping")
-    : label?.trim()
-      ? label.trim()
-      : undefined;
+  const statusLabel = stopping ? i18n.t("activity.stopping") : label?.trim() ? label.trim() : undefined;
   return (
     <div className="run-log-feed-entry run-log-feed-entry--tight run-log-active-tail">
       {waiting ? (
@@ -3708,9 +4976,7 @@ function ThinkingBlock({
   const activelyStreaming = Boolean(streaming) || revealing;
   // Card path only (collapsed/expanded). Ephemeral never reaches here — projection
   // maps those rows to reasoning-stage tips first.
-  const [displayMode] = useState<ThinkingDisplayMode>(
-    () => readStoredThinkingDisplayPreferences().mode,
-  );
+  const [displayMode] = useState<ThinkingDisplayMode>(() => readStoredThinkingDisplayPreferences().mode);
   const defaultExpanded = thinkingModeDefaultExpanded(displayMode);
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const [settling, setSettling] = useState(false);
@@ -4081,6 +5347,8 @@ function UserPromptBlock({
   onRewriteUserMessage?: RewriteUserMessageHandler;
   allowUserMessageRewrite?: boolean;
 }) {
+  const asyncQuestionReplies = useMemo(() => parseCodexAsyncQuestionReplyText(text), [text]);
+  const copyText = asyncQuestionReplies ? formatCodexAsyncQuestionReplySummary(asyncQuestionReplies) : text;
   const bodyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editRequestRef = useRef(0);
@@ -4144,7 +5412,9 @@ function UserPromptBlock({
         if (result.capability.status !== "ready") {
           setEditError(
             result.capability.reason ??
-              i18n.t("activity.editUnavailable", { defaultValue: "此消息当前无法编辑" }),
+              i18n.t("activity.editUnavailable", {
+                defaultValue: "此消息当前无法编辑",
+              }),
           );
           return;
         }
@@ -4229,7 +5499,18 @@ function UserPromptBlock({
       await onRewriteUserMessage({
         activityLineId: rewindTarget.activityLineId,
         prompt,
-        attachments: editImages.flatMap(({ mediaType, data }) => (data ? [{ mediaType, data }] : [])),
+        attachments: editImages.flatMap(({ mediaType, data, contentRef, byteLength }) =>
+          data || contentRef
+            ? [
+                {
+                  mediaType,
+                  ...(data ? { data } : {}),
+                  ...(contentRef ? { contentRef } : {}),
+                  ...(byteLength !== undefined ? { byteLength } : {}),
+                },
+              ]
+            : [],
+        ),
         expectedHistoryRevision: editRevision,
       });
       setEditing(false);
@@ -4334,19 +5615,27 @@ function UserPromptBlock({
         <div
           className="run-log-user-prompt-edit"
           role="group"
-          aria-label={i18n.t("activity.editMessage", { defaultValue: "编辑消息" })}
+          aria-label={i18n.t("activity.editMessage", {
+            defaultValue: "编辑消息",
+          })}
           data-loading={editLoading ? "true" : undefined}
           data-saving={editSaving ? "true" : undefined}
         >
           {editImages.length > 0 ? (
             <div
               className="run-log-user-prompt-edit-attachments"
-              aria-label={i18n.t("activity.userImages", { defaultValue: "消息图片" })}
+              aria-label={i18n.t("activity.userImages", {
+                defaultValue: "消息图片",
+              })}
             >
               {editImages.map((image, index) => {
-                const alt = i18n.t("activity.userImageAlt", { count: index + 1 });
+                const alt = i18n.t("activity.userImageAlt", {
+                  count: index + 1,
+                });
                 const src = `data:${image.mediaType};base64,${image.data}`;
-                const openLabel = i18n.t("activity.userImageOpen", { count: index + 1 });
+                const openLabel = i18n.t("activity.userImageOpen", {
+                  count: index + 1,
+                });
                 return (
                   <div key={image.id} className="run-log-user-prompt-edit-attachment">
                     <button
@@ -4365,8 +5654,12 @@ function UserPromptBlock({
                         setEditImages((current) => current.filter((entry) => entry.id !== image.id))
                       }
                       disabled={editLoading || editSaving}
-                      aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
-                      title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                      aria-label={i18n.t("activity.removeImage", {
+                        defaultValue: "删除图片",
+                      })}
+                      title={i18n.t("activity.removeImage", {
+                        defaultValue: "删除图片",
+                      })}
                     >
                       <X size={12} strokeWidth={ICON_STROKE} aria-hidden />
                     </button>
@@ -4385,14 +5678,20 @@ function UserPromptBlock({
             disabled={editLoading || editSaving}
             rows={2}
             spellCheck
-            placeholder={i18n.t("activity.editPlaceholder", { defaultValue: "编辑消息…" })}
-            aria-label={i18n.t("activity.messageContent", { defaultValue: "消息内容" })}
+            placeholder={i18n.t("activity.editPlaceholder", {
+              defaultValue: "编辑消息…",
+            })}
+            aria-label={i18n.t("activity.messageContent", {
+              defaultValue: "消息内容",
+            })}
           />
           <div className="run-log-user-prompt-edit-bar">
             <div className="run-log-user-prompt-edit-meta">
               {editLoading ? (
                 <span className="run-log-user-prompt-edit-status" role="status">
-                  {i18n.t("activity.loadingMessage", { defaultValue: "正在加载…" })}
+                  {i18n.t("activity.loadingMessage", {
+                    defaultValue: "正在加载…",
+                  })}
                 </span>
               ) : editError ? (
                 <span className="run-log-user-prompt-edit-error" role="alert">
@@ -4400,7 +5699,9 @@ function UserPromptBlock({
                 </span>
               ) : editImages.length < COMPOSER_MAX_IMAGES ? (
                 <span className="run-log-user-prompt-edit-hint">
-                  {i18n.t("activity.editPasteHint", { defaultValue: "粘贴添加图片" })}
+                  {i18n.t("activity.editPasteHint", {
+                    defaultValue: "粘贴添加图片",
+                  })}
                 </span>
               ) : null}
             </div>
@@ -4432,7 +5733,9 @@ function UserPromptBlock({
             {images.length > 0 ? (
               <div className="run-log-user-prompt-images">
                 {images.map((image, index) => {
-                  const alt = i18n.t("activity.userImageAlt", { count: index + 1 });
+                  const alt = i18n.t("activity.userImageAlt", {
+                    count: index + 1,
+                  });
                   const src = `data:${image.mediaType};base64,${image.data}`;
                   return (
                     <button
@@ -4443,10 +5746,14 @@ function UserPromptBlock({
                         setLightboxImage({
                           src,
                           alt,
-                          label: i18n.t("activity.userImageOpen", { count: index + 1 }),
+                          label: i18n.t("activity.userImageOpen", {
+                            count: index + 1,
+                          }),
                         })
                       }
-                      aria-label={i18n.t("activity.userImageOpen", { count: index + 1 })}
+                      aria-label={i18n.t("activity.userImageOpen", {
+                        count: index + 1,
+                      })}
                     >
                       <img src={src} alt={alt} loading="lazy" />
                     </button>
@@ -4459,7 +5766,11 @@ function UserPromptBlock({
                 ref={bodyRef}
                 className={["run-log-user-prompt-body", expanded ? "expanded" : "collapsed"].join(" ")}
               >
-                <UserPromptBodyContent text={text} />
+                {asyncQuestionReplies ? (
+                  <ClarificationAnswersCard rows={asyncQuestionReplies} variant="user" />
+                ) : (
+                  <UserPromptBodyContent text={text} />
+                )}
               </div>
               {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
             </div>
@@ -4480,7 +5791,7 @@ function UserPromptBlock({
           延迟挂载 meta 的策略只针对 agent 侧流式输出（turn final summary）。 */}
       <RunLogMessageMeta
         align="end"
-        copyText={text}
+        copyText={copyText}
         {...(createdAt ? { createdAt } : {})}
         {...(allowUserMessageRewrite &&
           onRestorePrompt &&
@@ -4536,10 +5847,16 @@ function parseClarificationAnswersSummary(text: string): Array<{ question: strin
   return rows;
 }
 
-function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; answer: string }> }) {
+function ClarificationAnswersCard({
+  rows,
+  variant,
+}: {
+  rows: Array<{ question: string; answer: string }>;
+  variant?: "user";
+}) {
   return (
     <div
-      className="clarification-answer-card"
+      className={`clarification-answer-card${variant === "user" ? " clarification-answer-card--user" : ""}`}
       role="group"
       aria-label={i18n.t("activity.clarificationAnswer")}
     >
@@ -4730,20 +6047,14 @@ function ApiErrorBlock({
       : i18n.t("activity.connectionFailed"));
 
   return (
-    <div className="run-log-api-error" role="alert">
-      <div className="run-log-api-error-header">
-        <div className="run-log-api-error-heading">
-          {subagent && !omitRoleLabel ? (
-            <span className="run-log-api-error-role">
-              {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-            </span>
-          ) : null}
-          <span className="run-log-api-error-label">{title}</span>
-        </div>
-        {onRetry ? <RequestFailureRetryButton onRetry={onRetry} /> : null}
-      </div>
-      <p className="run-log-api-error-message">{message}</p>
-    </div>
+    <FeedErrorCard
+      message={message}
+      title={title}
+      {...(subagent && !omitRoleLabel
+        ? { context: formatRoleModelLabel(subagent, modelByRole?.[subagent]) }
+        : {})}
+      {...(onRetry ? { retryLabel: i18n.t("common.retry"), onRetry } : {})}
+    />
   );
 }
 
@@ -4763,18 +6074,23 @@ type ImageViewLoadState =
 
 export function ImageViewBlock({
   imageView,
+  output,
   lifecycle,
   subagent,
   modelByRole,
   omitRoleLabel,
 }: {
-  imageView: { path: string; eventId: string };
+  imageView: { path: string; eventId: string; prompt?: string };
+  /** 视觉模型实际返回的文本，作为预览弹窗右侧的补充内容。 */
+  output?: string;
   lifecycle?: ToolActionLifecycle;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
-  const [loadState, setLoadState] = useState<ImageViewLoadState>({ status: "loading" });
+  const [loadState, setLoadState] = useState<ImageViewLoadState>({
+    status: "loading",
+  });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
@@ -4844,7 +6160,10 @@ export function ImageViewBlock({
   }, [loadState]);
   const statusLabel =
     lifecycle === "running" ? i18n.t("activity.imageView.viewing") : i18n.t("activity.imageView.viewed");
-  const previewAlt = i18n.t("activity.imageView.previewAlt", { name: fileName });
+  const previewAlt = i18n.t("activity.imageView.previewAlt", {
+    name: fileName,
+  });
+  const analysisPanel = imageViewAnalysisPanel(imageView.prompt, output);
 
   return (
     <div className="run-log-image-view-wrap">
@@ -4890,7 +6209,9 @@ export function ImageViewBlock({
                 type="button"
                 className="run-log-image-view-preview"
                 onClick={() => setLightboxOpen(true)}
-                aria-label={i18n.t("activity.imageView.open", { name: fileName })}
+                aria-label={i18n.t("activity.imageView.open", {
+                  name: fileName,
+                })}
                 title={fileName}
               >
                 <img src={loadState.src} alt={previewAlt} />
@@ -4908,6 +6229,7 @@ export function ImageViewBlock({
           dialogLabel={i18n.t("activity.imageView.open", { name: fileName })}
           onOpenFolder={revealInFolder}
           onClose={closeLightbox}
+          {...(analysisPanel && { sidePanel: analysisPanel })}
         />
       ) : null}
     </div>
@@ -5057,7 +6379,9 @@ export function ImageDisplayBlock({
   omitRoleLabel?: boolean;
   onOpenImageDisplayArtifact?: OpenImageDisplayArtifactHandler;
 }) {
-  const [loadState, setLoadState] = useState<ImageDisplayLoadState>({ status: "loading" });
+  const [loadState, setLoadState] = useState<ImageDisplayLoadState>({
+    status: "loading",
+  });
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
@@ -5120,7 +6444,9 @@ export function ImageDisplayBlock({
     lifecycle === "running"
       ? i18n.t("activity.imageDisplay.viewing")
       : i18n.t("activity.imageDisplay.viewed");
-  const previewAlt = i18n.t("activity.imageDisplay.previewAlt", { name: fileName });
+  const previewAlt = i18n.t("activity.imageDisplay.previewAlt", {
+    name: fileName,
+  });
   const revealInFolder = useCallback(() => {
     if (loadState.status !== "ready") return;
     const bridge = window.eco;
@@ -5177,7 +6503,9 @@ export function ImageDisplayBlock({
                 type="button"
                 className="run-log-image-view-preview"
                 onClick={() => setLightboxOpen(true)}
-                aria-label={i18n.t("activity.imageDisplay.open", { name: fileName })}
+                aria-label={i18n.t("activity.imageDisplay.open", {
+                  name: fileName,
+                })}
                 title={fileName}
               >
                 <img src={loadState.src} alt={previewAlt} />
@@ -5248,6 +6576,7 @@ function RunLogAction({
   label,
   displayLabelOverride,
   lifecycle,
+  startedAt,
   bashRun,
   fileChange,
   webSearch,
@@ -5263,6 +6592,8 @@ function RunLogAction({
   label: string;
   displayLabelOverride?: string;
   lifecycle?: ToolActionLifecycle;
+  /** 工具调用开始时间（行事件/插入时间）；running 行据此显示实时耗时。 */
+  startedAt?: string;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
@@ -5278,11 +6609,20 @@ function RunLogAction({
   const [expanded, setExpanded] = useState(false);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [canExpand, setCanExpand] = useState(false);
+  // Live elapsed time for a running tool row; 0 (never ticking) when the row is settled
+  // or carries no start time. Displayed only past TOOL_ELAPSED_MIN_VISIBLE_MS.
+  const runningElapsedMs = useTurnDurationMs(
+    startedAt ?? "",
+    undefined,
+    startedAt !== undefined && lifecycle === "running",
+  );
   const subagentRole = subagent?.trim() ? subagent : undefined;
   const showRoleLabel =
     subagentRole !== undefined &&
     !omitRoleLabel &&
-    !activityLabelIncludesAgentRole(subagentRole, label, { modelId: modelByRole?.[subagentRole] });
+    !activityLabelIncludesAgentRole(subagentRole, label, {
+      modelId: modelByRole?.[subagentRole],
+    });
   const roleLabel =
     showRoleLabel && subagentRole
       ? formatRoleModelLabel(subagentRole, modelByRole?.[subagentRole])
@@ -5335,6 +6675,11 @@ function RunLogAction({
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
+      {lifecycle === "running" && runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS ? (
+        <span className="run-log-action-meta run-log-action-elapsed">
+          {formatDuration(runningElapsedMs)}
+        </span>
+      ) : null}
       {lifecycle === "failed" ? (
         <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
       ) : null}
@@ -5927,7 +7272,9 @@ function RunLogNarrative({
         <div className="run-log-narrative-body">
           <StreamingMarkdownContent
             text={text}
-            {...(streaming !== undefined && { streaming: Boolean(streaming) && pacing })}
+            {...(streaming !== undefined && {
+              streaming: Boolean(streaming) && pacing,
+            })}
           />
         </div>
       ) : null}

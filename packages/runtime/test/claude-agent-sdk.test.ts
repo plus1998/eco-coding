@@ -441,7 +441,7 @@ test("includes network tools in default allowed tools", () => {
   const allowedTools = getDefaultAllowedTools();
   expect(allowedTools).toContain("Agent");
   expect(allowedTools).toContain("TaskList");
-  expect(allowedTools).toContain("TaskOutput");
+  expect(allowedTools).toContain("TaskGet");
   expect(allowedTools).toContain("Skill");
   expect(allowedTools).toContain("TaskCreate");
   expect(allowedTools).toContain("TaskUpdate");
@@ -1925,6 +1925,21 @@ test("applyResumeToQueryOptions sets resume, resumeDropsTurn, and forkSession", 
   expect(options.forkSession).toBe(true);
 });
 
+test("a pending clear initializes its allocated ID without loading the old transcript", () => {
+  const options: Record<string, unknown> = {};
+  applyResumeToQueryOptions(options, { newSessionId: "reset-uuid" });
+  expect(options).toEqual({ sessionId: "reset-uuid" });
+  expect(() =>
+    applyResumeToQueryOptions(
+      {},
+      {
+        newSessionId: "reset-uuid",
+        resumeSessionId: "old-uuid",
+      },
+    ),
+  ).toThrow("cannot also resume or fork");
+});
+
 test("resolveResumeSessionAtBeforeUserMessage returns last chain entry before target user", async () => {
   const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
     sessionId: "sess-123",
@@ -1999,77 +2014,6 @@ test("extractSdkRunFailure formats resumeDropsTurn refusals without inviting ret
   expect(failure).toContain("不会重试同一 fork");
 });
 
-test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () => {
-  let capturedOptions: Record<string, unknown> | undefined;
-  let rewoundMessageId: string | undefined;
-  const driver = new ClaudeAgentSdkDriver({
-    apiKey: "test-key",
-    baseUrl: "http://127.0.0.1:36037",
-    pathToClaudeCodeExecutable: "/opt/eco/claude",
-    loadSdk: async () => ({
-      query: ({ options }) => {
-        capturedOptions = options;
-        return {
-          async *[Symbol.asyncIterator]() {},
-          rewindFiles: async (userMessageId: string) => {
-            rewoundMessageId = userMessageId;
-          },
-        };
-      },
-    }),
-  });
-
-  await driver.rewindSessionFiles(
-    {
-      threadId: "thr_rewind",
-      prompt: "",
-      workspacePath: "/tmp/project",
-      worktreePath: "/tmp/session-worktree",
-      routes,
-      signal: new AbortController().signal,
-      resume: { resumeSessionId: "sess-rewind" },
-    },
-    "user-target",
-  );
-
-  expect(capturedOptions?.cwd).toBe("/tmp/session-worktree");
-  expect(capturedOptions?.pathToClaudeCodeExecutable).toBe("/opt/eco/claude");
-  expect(rewoundMessageId).toBe("user-target");
-});
-
-test("ClaudeAgentSdkDriver rewindFiles fails on canRewind false, ok false, and skippedLinks", async () => {
-  const makeDriver = (rewindResult: unknown) =>
-    new ClaudeAgentSdkDriver({
-      apiKey: "test-key",
-      baseUrl: "http://127.0.0.1:36037",
-      loadSdk: async () => ({
-        query: () => ({
-          async *[Symbol.asyncIterator]() {},
-          rewindFiles: async () => rewindResult,
-        }),
-      }),
-    });
-
-  const input = {
-    threadId: "thr_rewind_fail",
-    prompt: "",
-    workspacePath: "/tmp/project",
-    worktreePath: "/tmp/session-worktree",
-    routes,
-    signal: new AbortController().signal,
-    resume: { resumeSessionId: "sess-rewind" },
-  };
-
-  await expect(makeDriver({ canRewind: false, reason: "checkpoint gone" }).rewindSessionFiles(input, "u1")).rejects.toThrow(
-    /checkpoint gone/,
-  );
-  await expect(makeDriver({ ok: false, reason: "rewind failed" }).rewindSessionFiles(input, "u1")).rejects.toThrow(
-    /rewind failed/,
-  );
-  await expect(makeDriver({ success: false, error: "nope" }).rewindSessionFiles(input, "u1")).rejects.toThrow(/nope/);
-  await expect(makeDriver({ skippedLinks: 3 }).rewindSessionFiles(input, "u1")).rejects.toThrow(/skipped 3 path/);
-});
-
 test("interruptOrCloseSdkQuery passes cancelQueued true by default", async () => {
   let interruptArgs: unknown;
   const probes: Array<{ phase: string; detail: Record<string, unknown> }> = [];
@@ -2121,20 +2065,27 @@ test("teardownClaudeQueryHandle returns cancelled uuids from interrupt receipt",
   });
 });
 
-test("applyClaudeJsonlSessionPersistence enables local JSONL checkpoints", () => {
+test("applyClaudeJsonlSessionPersistence applies local JSONL persistence without file checkpointing", () => {
   const options: Record<string, unknown> = {
     sessionStore: { append: async () => {}, load: async () => null },
     extraArgs: { existing: "value" },
   };
   applyClaudeJsonlSessionPersistence(options);
   expect(options.sessionStore).toBeUndefined();
-  expect(options.enableFileCheckpointing).toBe(true);
+  expect(options.enableFileCheckpointing).toBeUndefined();
   expect(options.extraArgs).toEqual({ existing: "value", "replay-user-messages": null });
 });
 
 test("readSdkUserMessageCheckpointId reads user message uuid", () => {
   expect(readSdkUserMessageCheckpointId({ type: "assistant" })).toBeUndefined();
   expect(readSdkUserMessageCheckpointId({ type: "user", uuid: "msg-checkpoint-1" })).toBe("msg-checkpoint-1");
+  expect(
+    readSdkUserMessageCheckpointId({
+      type: "user",
+      uuid: "tool-result-uuid",
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "bash", content: "ok" }] },
+    }),
+  ).toBeUndefined();
 });
 
 test("createSessionCapturedEvent and init message helpers", () => {
@@ -2222,14 +2173,22 @@ test("ClaudeAgentSdkDriver does not inject fallback Eco agents without a UI regi
     expect.arrayContaining(["Write", "Bash", "ExitPlanMode", "EnterPlanMode"]),
   );
   expect(capturedOptions[1]?.allowedTools).not.toContain("AskUserQuestion");
-  expect(capturedOptions[1]?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(capturedOptions[1]?.systemPrompt).toEqual({
+    type: "preset",
+    preset: "claude_code",
+    snapshot: false,
+  });
 
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[2]?.allowedTools).toContain("WebSearch");
 
   expect(capturedOptions[2]?.agents).toBeUndefined();
-  expect(capturedOptions[2]?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(capturedOptions[2]?.systemPrompt).toEqual({
+    type: "preset",
+    preset: "claude_code",
+    snapshot: false,
+  });
 });
 
 test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts", async () => {
@@ -2290,7 +2249,7 @@ test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts
   expect(options.allowedTools).toEqual([
     "Agent",
     "TaskList",
-    "TaskOutput",
+    "TaskGet",
     "Read",
     "Glob",
     "Grep",
@@ -2317,8 +2276,6 @@ test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts
       "Bash",
       "Agent",
       "Task",
-      "TaskList",
-      "TaskOutput",
       "Write",
       "Edit",
       "MultiEdit",
@@ -2991,7 +2948,7 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.agents).toBeUndefined();
   const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
-  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code", snapshot: false });
   const settings = capturedOptions[0]?.settings as { permissions?: { deny?: string[] } } | undefined;
   expect(settings?.permissions?.deny).not.toContain("Agent(Plan)");
   expect(settings?.permissions?.deny).toContain("Agent(Explore)");
@@ -3428,7 +3385,7 @@ test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", 
   );
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
   const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
-  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+  expect(systemPrompt).toEqual({ type: "preset", preset: "claude_code", snapshot: false });
   const hooks = capturedOptions[0]?.hooks as Partial<Record<string, Array<{ matcher?: string }>>> | undefined;
   expect(hooks?.PermissionRequest ?? []).toHaveLength(0);
   expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher?.includes("ExitPlanMode")) ?? false).toBe(true);
@@ -3569,6 +3526,98 @@ test("maps completed AgentOutput as an exact terminal event without billing dupl
     },
   });
   expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
+});
+
+test("maps AgentOutput API-error text as a failed agent.completed event", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "sdk_agent_output_failed",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_explore_failed",
+            is_error: true,
+            content:
+              'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+      tool_use_result: {
+        status: "completed",
+        agentId: "agent_explore_failed",
+        agentType: "explore",
+        content: [
+          {
+            type: "text",
+            text: 'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+    },
+    "thr_agent_output_failed",
+  );
+
+  expect(events.some((event) => event.type === "agent.completed")).toBe(true);
+  expect(events.find((event) => event.type === "agent.completed")).toMatchObject({
+    agentId: "agent_explore_failed",
+    type: "agent.completed",
+    payload: {
+      type: "agent_output",
+      status: "failed",
+      failed: true,
+      agentId: "agent_explore_failed",
+      tool_use_id: "call_explore_failed",
+    },
+  });
+  expect(events.some((event) => event.type === "tool.failed")).toBe(true);
+});
+
+test("maps Agent tool_result API-error text as failed even without is_error", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "sdk_agent_output_failed_no_flag",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_explore_failed",
+            content:
+              'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+      tool_use_result: {
+        status: "completed",
+        agentId: "agent_explore_failed",
+        agentType: "explore",
+        content: [
+          {
+            type: "text",
+            text: 'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+          },
+        ],
+      },
+    },
+    "thr_agent_output_failed_no_flag",
+  );
+
+  expect(events.find((event) => event.type === "agent.completed")).toMatchObject({
+    payload: {
+      type: "agent_output",
+      status: "failed",
+      failed: true,
+      agentId: "agent_explore_failed",
+      tool_use_id: "call_explore_failed",
+    },
+  });
+  expect(events.some((event) => event.type === "tool.failed")).toBe(true);
 });
 
 test("maps successful SDK tool results onto the original tool use", () => {
@@ -4224,7 +4273,9 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
       signal: new AbortController().signal,
     })) {
       if (event.type === "session.captured" && openHandle) {
-        await openHandle.pushUserMessage("Inject mid-turn", { uuid: "tfu_mid_1" });
+        await openHandle.pushUserMessage("Inject mid-turn", {
+          uuid: "tfu_00000000-0000-4000-8000-000000000001",
+        });
         releaseResult?.();
       }
     }
@@ -4232,7 +4283,10 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
 
   await run;
   expect(streamInputCalls).toBe(0);
-  expect(promptMessages).toEqual([{ text: "Start" }, { text: "Inject mid-turn", uuid: "tfu_mid_1" }]);
+  expect(promptMessages).toEqual([
+    { text: "Start", uuid: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    { text: "Inject mid-turn", uuid: "00000000-0000-4000-8000-000000000001" },
+  ]);
   expect(openHandle?.phase).toBe("closed");
 });
 

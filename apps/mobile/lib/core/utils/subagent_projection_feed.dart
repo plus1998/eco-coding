@@ -1,4 +1,4 @@
-import '../models/thread_run_projection.dart';
+import '../models/conversation_v2_projection_models.dart';
 import '../../l10n/generated/app_localizations.dart';
 import 'subagent_session_timing.dart';
 import 'file_change.dart';
@@ -88,7 +88,11 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
       final label = tool != null
           ? (tool.name == 'Bash' && tool.description?.trim().isNotEmpty == true
                 ? tool.description!.trim()
-                : formatToolDisplayLabel(tool.name, tool.detail, l10n))
+                : formatToolDisplayLabel(
+                    tool.name,
+                    structuredToolTargetDetail(tool) ?? tool.detail,
+                    l10n,
+                  ))
           : parseToolActionDisplayLabel(item.text, l10n);
       if (label.trim().isEmpty) continue;
       output.add(
@@ -128,8 +132,9 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
       if (text.isEmpty || item.eventType == 'message.delta') continue;
       if (isLegacyBashApprovalActivityText(text)) continue;
       if (parseSubagentMissionMessage(text) != null ||
-          isSubagentMissionEnvelope(text))
+          isSubagentMissionEnvelope(text)) {
         continue;
+      }
       final preview = _firstReadableLine(text);
       if (preview.length >= 8 && !isActivityNoiseMessage(preview)) {
         output.add(SubagentTimelineEntry(id: item.id, label: preview));
@@ -319,6 +324,9 @@ String resolveSubagentCardMissionText(
     );
     if (text.isNotEmpty) return text;
   }
+
+  final registryMission = resolveMissionDisplayText(agent.mission ?? '');
+  if (registryMission.isNotEmpty) return registryMission;
 
   for (final item in agent.timeline) {
     if (item.eventType == 'agent.started') {

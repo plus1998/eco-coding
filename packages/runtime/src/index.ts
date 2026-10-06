@@ -37,6 +37,8 @@ export interface EcoSdkSessionOptions {
 }
 
 export interface EcoSdkResumeOptions {
+  /** Initialize the empty conversation allocated by /clear; no transcript exists to resume yet. */
+  newSessionId?: string;
   /** Resume an existing SDK session by ID. */
   resumeSessionId?: string;
   /** Resume transcript up to and including this SDK message UUID. */
@@ -74,7 +76,8 @@ export interface PiSessionOptions {
   skillPaths?: string[];
   /**
    * Isolated MCP server map for this thread (Claude-SDK shaped entries).
-   * Loaded via pi-mcp-adapter in-memory config — not merged with ambient .mcp.json.
+   * Loaded via the official PI MCP extension with an in-memory config — never
+   * merged with ambient mcp.json / ~/.pi.
    */
   mcpServers?: Record<string, unknown>;
   /** Extra system prompt segments (e.g. browser / image integration guidance). */
@@ -153,8 +156,6 @@ export interface AgentRuntimeDriver {
   ): AsyncIterable<AgentEvent>;
   /** Sends `/compact` on an existing session (requires resume). */
   compactSession?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
-  /** Restores workspace files to a checkpoint user message (requires resume + file checkpointing). */
-  rewindSessionFiles?(input: AgentRuntimeRunInput, userMessageId: string): Promise<void>;
 }
 
 export interface RunningThread {
@@ -396,6 +397,8 @@ export {
   syncCodexSpawnAgentHook,
 } from "./codex-spawn-agent-hook.js";
 export * from "./codex-spawn-role-queue.js";
+export * from "./codex-version.js";
+export * from "./forced-plan-delegation.js";
 export * from "./codex-thread-attribution.js";
 export * from "./codex-thread-resume.js";
 export {
@@ -448,6 +451,7 @@ export {
 export * from "./eco-image-view-tool.js";
 export * from "./eco-image-display-tool.js";
 export * from "./eco-html-host-tool.js";
+export * from "./eco-mcp-hub-tool.js";
 export * from "./eco-web-search-tool.js";
 export * from "./eco-sdk-hooks";
 export * from "./filesystem-scope-policy.js";
@@ -517,6 +521,7 @@ export {
   stripPlanningTranscriptNoise,
 } from "./phase-deliverable";
 export * from "./pi-availability.js";
+export * from "./pi-codemode.js";
 export * from "./pi-coding-agent-driver.js";
 export * from "./pi-eco-extensions.js";
 export * from "./pi-event-adapter.js";
@@ -531,6 +536,7 @@ export * from "./pi-tool-approval.js";
 export * from "./pi-usage.js";
 export * from "./pi-integrated-web-search.js";
 export * from "./pi-integrated-web-search-factory.js";
+export * from "./pi-web-search-config.js";
 export * from "./pi-web-search-factory.js";
 export * from "./pi-web-search-plan.js";
 export * from "./pi-web-search-session.js";

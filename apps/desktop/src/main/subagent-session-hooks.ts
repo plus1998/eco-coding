@@ -186,17 +186,26 @@ export function createSubagentSessionHooks(
           agentId: input.agentId,
           role,
         });
-        options?.lifecycle?.stopSubagent({
-          threadId,
-          agentId: input.agentId,
-          role,
-        });
+        const abandoned = input.failed === true || input.cancelled === true;
+        if (abandoned) {
+          options?.lifecycle?.abandonSubagent({
+            threadId,
+            agentId: input.agentId,
+            role,
+          });
+        } else {
+          options?.lifecycle?.stopSubagent({
+            threadId,
+            agentId: input.agentId,
+            role,
+          });
+        }
         const runAttemptId = options?.lifecycle?.currentRunAttemptId(threadId);
         appendSubagentLifecycleEvent(store, {
           threadId,
           agentId: input.agentId,
           role,
-          lifecycle: "stopped",
+          lifecycle: abandoned ? "abandoned" : "stopped",
           ...(runAttemptId && { runAttemptId }),
         });
         await options?.onTerminalReconciliation?.({
@@ -229,11 +238,11 @@ function appendSubagentMissionAttributedEvent(
     parentToolUseId?: string;
   },
 ): void {
-  if (typeof store.appendThreadRunEvent !== "function") {
+  if (typeof store.appendConversationRuntimeEvent !== "function") {
     return;
   }
   try {
-    store.appendThreadRunEvent(
+    store.appendConversationRuntimeEvent(
       buildSubagentMissionAttributedRunEvent({
         ...input,
         observedAt: new Date().toISOString(),
@@ -261,11 +270,11 @@ function appendSubagentLifecycleEvent(
     delegationSummary?: string;
   },
 ): void {
-  if (typeof store.appendThreadRunEvent !== "function") {
+  if (typeof store.appendConversationRuntimeEvent !== "function") {
     return;
   }
   try {
-    store.appendThreadRunEvent(
+    store.appendConversationRuntimeEvent(
       buildSubagentLifecycleRunEvent({
         ...input,
         observedAt: new Date().toISOString(),

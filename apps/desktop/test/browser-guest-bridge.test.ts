@@ -17,6 +17,10 @@ const browserPanelSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/BrowserPanel.tsx", import.meta.url)),
   "utf8",
 );
+const subagentTaskDrawerSource = readFileSync(
+  fileURLToPath(new URL("../src/renderer/SubagentTaskDrawer.tsx", import.meta.url)),
+  "utf8",
+);
 const browserWebviewPoolSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/browser-webview-pool.ts", import.meta.url)),
   "utf8",
@@ -38,6 +42,10 @@ const browserStateStoreSource = readFileSync(
   "utf8",
 );
 const appSource = readFileSync(fileURLToPath(new URL("../src/renderer/App.tsx", import.meta.url)), "utf8");
+const lazyAppPanelsSource = readFileSync(
+  fileURLToPath(new URL("../src/renderer/lazy-app-panels.tsx", import.meta.url)),
+  "utf8",
+);
 const stylesSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/styles.css", import.meta.url)),
   "utf8",
@@ -66,6 +74,27 @@ test("browser webview z-index stays above fullscreen task panel shell", () => {
   );
 });
 
+test("browser guest load failures are shown above the guest with a retry action", () => {
+  expect(browserHostSource).toContain('wc.on("did-fail-load"');
+  expect(browserHostSource).toContain("loadError");
+  expect(browserWebviewPersistentHostSource).toContain("browser-page-status");
+  expect(browserWebviewPersistentHostSource).toContain("data-browser-empty");
+  expect(browserWebviewPersistentHostSource).toContain("browserReload");
+  expect(browserPanelSource).toContain("browser.toolsTitle");
+  expect(subagentTaskDrawerSource).toContain("browser.newTab");
+  expect(subagentTaskDrawerSource).toContain("onClick={onNewBrowserTab}");
+  expect(subagentTaskDrawerSource).not.toContain("task-panel-home-title");
+  expect(appSource).toContain("onNewBrowserTab={openBrowserTaskPanel}");
+  expect(appSource).toContain("openBrowserTaskPanel();");
+  expect(stylesSource).toContain(".browser-page-status");
+});
+
+test("browser navigation keeps the current guest painted until the next page commits", () => {
+  expect(browserWebviewPersistentHostSource).not.toContain('data-browser-loading="true"');
+  expect(stylesSource).not.toContain('.browser-webview-host-slot[data-browser-loading="true"]');
+  expect(stylesSource).toContain('.browser-webview-host-slot[data-browser-status="true"]');
+});
+
 test("browser layer uses imperative pool driven by allGuestInstances", () => {
   expect(browserPanelSource).toContain("BrowserWebviewViewportMarker");
   expect(browserPanelSource).not.toContain("registerBrowserWebviewHost");
@@ -76,7 +105,11 @@ test("browser layer uses imperative pool driven by allGuestInstances", () => {
   expect(browserWebviewLayerSource).toContain("BrowserWebviewPersistentHost");
   expect(browserWebviewLayerSource).not.toContain("BrowserWebviewGuest");
   expect(browserWebviewLayerSource).not.toContain("browser-webview-park");
-  expect(appSource).toContain("<BrowserWebviewLayer");
+  // The layer is mounted by App through the lazy wrapper that resolves to it: the renderer
+  // defers the panel chunk, and the mount point is what this assertion is about.
+  expect(appSource).toContain("<LazyBrowserWebviewLayer");
+  expect(lazyAppPanelsSource).toContain('import("./BrowserWebviewLayer")');
+  expect(lazyAppPanelsSource).toContain("m.BrowserWebviewLayer");
 });
 
 test("webview pool is the sole DOM owner — no React lifecycle destroy", () => {

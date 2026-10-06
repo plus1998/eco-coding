@@ -80,11 +80,11 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         ? AdaptiveButtonStyle.glass
         : AdaptiveButtonStyle.gray;
     final allowNative = allowNativePlatformView(context);
-    final useNativeGlass =
-        PlatformInfo.isIOS26OrHigher() && allowNative;
+    final useNativeGlass = PlatformInfo.isIOS26OrHigher() && allowNative;
     final sfSymbol = ecoIconSfSymbol(icon);
     final usesSfSymbol = useNativeGlass && sfSymbol != null && !visualOnly;
-    final resolvedIconSize = iconSize ??
+    final resolvedIconSize =
+        iconSize ??
         nativeExtent *
             (usesSfSymbol
                 ? adaptiveToolbarIconScale
@@ -104,13 +104,13 @@ class AdaptiveToolbarIcon extends StatelessWidget {
               child: Icon(icon, size: resolvedIconSize, color: color),
             )
           : PlatformInfo.isIOS26OrHigher() && !allowNative
-              ? _coveredShellPlaceholder(nativeExtent)
-              : _flutterGlassIconChip(
-                  nativeExtent: nativeExtent,
-                  icon: icon,
-                  iconSize: resolvedIconSize,
-                  color: color,
-                );
+          ? _coveredShellPlaceholder(nativeExtent)
+          : _flutterGlassIconChip(
+              nativeExtent: nativeExtent,
+              icon: icon,
+              iconSize: resolvedIconSize,
+              color: color,
+            );
       final wrapped = SizedBox(
         width: size,
         height: size,
@@ -122,7 +122,7 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         ),
       );
       if (tooltip == null) return wrapped;
-      return Tooltip(message: tooltip!, child: wrapped);
+      return Tooltip(message: tooltip, child: wrapped);
     }
 
     final Widget button;
@@ -130,7 +130,7 @@ class AdaptiveToolbarIcon extends StatelessWidget {
       button = AdaptiveButton.sfSymbol(
         key: ValueKey('toolbar-sf-$brightness-$sfSymbol'),
         onPressed: onPressed,
-        sfSymbol: SFSymbol(sfSymbol!, size: resolvedIconSize, color: color),
+        sfSymbol: SFSymbol(sfSymbol, size: resolvedIconSize, color: color),
         style: style,
         size: buttonSize,
         enabled: enabled,

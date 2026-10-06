@@ -5,7 +5,8 @@
 import type { SdkToolPermissionHandler } from "./ask-user-question.js";
 import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "./claude-agent-sdk.js";
 import type { CoreSessionMode } from "./core-runtime.js";
-import { PI_MCP_PROXY_TOOL_NAMES } from "./pi-mcp.js";
+import { PI_CODEMODE_TOOL_NAME } from "./pi-codemode.js";
+import { PI_MCP_HUB_TOOL_NAMES } from "./pi-mcp.js";
 import { PI_AGENT_TOOL_NAME } from "./pi-subagent.js";
 import { PI_WEB_SEARCH_TOOL_NAME } from "./pi-web-search-plan.js";
 
@@ -173,7 +174,12 @@ export function piToolsForSessionMode(
   const webSearchTools = options?.includeWebSearch ? [PI_WEB_SEARCH_TOOL_NAME] : [];
   if (mode === "agent") {
     const base = ["read", "bash", "edit", "write", ...webSearchTools];
-    return options?.hasMcpServers ? [...base, ...PI_MCP_PROXY_TOOL_NAMES] : base;
+    return [
+      ...base,
+      ...(options?.hasMcpServers ? PI_MCP_HUB_TOOL_NAMES : []),
+      // Ask/Plan are built below from the read-only set and never see codemode.
+      PI_CODEMODE_TOOL_NAME,
+    ];
   }
   const tools: string[] = [...PI_READ_ONLY_BUILTIN_TOOLS, ...webSearchTools];
   if (mode === "plan" && options?.includeFinalizePlan !== false) {

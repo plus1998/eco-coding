@@ -9,6 +9,7 @@ import {
   appendBrowserPrompt,
   type BrowserInstanceSource,
   type BrowserInstanceView,
+  type BrowserLoadError,
   type BrowserViewState,
   browserAgentSessionKey,
   buildEcoAgentBrowserPromptAppend,
@@ -113,6 +114,8 @@ export interface SharedBrowserOpenOptions {
    * Default: true for human source, false for agent source.
    */
   updateUiFocus?: boolean;
+  /** When true, force the renderer to switch the task panel to this browser tab. */
+  activate?: boolean;
 }
 
 export interface BrowserHostDeps {
@@ -137,6 +140,7 @@ interface SessionBrowser {
   source: BrowserInstanceSource;
   surfacePlaceholder: boolean;
   faviconUrl?: string | undefined;
+  loadError?: BrowserLoadError | undefined;
   /** Last URL loaded onto the guest — avoids reload loops on reparent/register. */
   lastLoadedUrl?: string | undefined;
   /** Debounced navigation while guest webContents churns. */
@@ -166,6 +170,8 @@ export class BrowserHost {
   private panelVisible = false;
   private disposed = false;
   private revealBrowserId: string | undefined;
+  /** Browser id that should force task-panel tab switch (user-initiated opens). */
+  private activateBrowserId: string | undefined;
   private browserMcpGateway: BrowserMcpGateway | undefined;
   private readonly partitionHandlers = new Set<string>();
   /** will-attach-webview browser id → guest webContents id after did-attach. */
@@ -188,8 +194,8 @@ export class BrowserHost {
         ensureScopeGuestsReady: (threadId) => this.ensureScopeGuestsReady(threadId),
         afterAgentBrowserClose: (threadId) => this.disposeAllBrowsersInThread(threadId),
         onToolCall: (threadId) => this.noteAgentPresenceForThread(threadId),
-        invokeNativeTool: (threadId, toolName, args) =>
-          this.invokeNativeAgentBrowserTool(threadId, toolName, args),
+        invokeNativeTool: (threadId, toolName, args, signal) =>
+          this.invokeNativeAgentBrowserTool(threadId, toolName, args, signal),
       });
     }
     return this.browserMcpGateway;
@@ -461,6 +467,11 @@ export class BrowserHost {
     const revealSurfaced = Boolean(
       this.revealBrowserId && instances.some((instance) => instance.id === this.revealBrowserId),
     );
+    // One-shot user "switch to this page" intent: only advertise it while that page exists,
+    // otherwise the renderer keeps re-opening a tab (and focusing) a closed browser on every emit.
+    const activateSurfaced = Boolean(
+      this.activateBrowserId && guestInstances.some((instance) => instance.id === this.activateBrowserId),
+    );
     return {
       uiScopeId: this.uiScopeId,
       instances,
@@ -488,6 +499,9 @@ export class BrowserHost {
       agentBrowserAvailable: resolved.available,
       ...(resolved.reason ? { agentBrowserUnavailableReason: resolved.reason } : {}),
       ...(revealSurfaced && this.revealBrowserId ? { revealBrowserId: this.revealBrowserId } : {}),
+      ...(activateSurfaced && this.activateBrowserId
+        ? { activateBrowserId: this.activateBrowserId }
+        : {}),
     };
   }
 
@@ -547,6 +561,7 @@ export class BrowserHost {
           title: alive ? wc.getTitle() || "" : "",
           ...(faviconUrl ? { faviconUrl } : {}),
           isLoading: Boolean(alive && wc.isLoading()),
+          ...(browser.loadError ? { loadError: browser.loadError } : {}),
           canGoBack: Boolean(
             alive &&
               (wc.navigationHistory?.canGoBack?.() ??
@@ -690,6 +705,7 @@ export class BrowserHost {
     });
 
     const onNav = (_event: unknown, url?: string) => {
+      browser.loadError = undefined;
       const target = typeof url === "string" && url.trim() ? url : !wc.isDestroyed() ? wc.getURL() : "";
       if (!isBrowserPlaceholderUrl(target)) {
         browser.detachedUrl = target;
@@ -702,7 +718,10 @@ export class BrowserHost {
       this.emit();
     };
 
-    wc.on("did-start-loading", () => this.emit());
+    wc.on("did-start-loading", () => {
+      browser.loadError = undefined;
+      this.emit();
+    });
     wc.on("did-stop-loading", () => {
       scope.cdp?.notifyTargetInfoChanged(browser.id);
       this.emit();
@@ -729,7 +748,19 @@ export class BrowserHost {
       browser.faviconUrl = next ?? undefined;
       this.emit();
     });
-    wc.on("did-fail-load", () => this.emit());
+    wc.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      // ERR_ABORTED is emitted for normal superseded navigations and should not leave
+      // an error card over the next page.
+      if (!isMainFrame || errorCode === -3) {
+        return;
+      }
+      browser.loadError = {
+        code: errorCode,
+        description: errorDescription?.trim() || "未知错误",
+        ...(validatedURL?.trim() ? { url: validatedURL.trim() } : {}),
+      };
+      this.emit();
+    });
     wc.on("destroyed", () => {
       if (browser.webContents?.id === wc.id) {
         try {
@@ -836,6 +867,9 @@ export class BrowserHost {
     if (revealUi && updateUiFocus) {
       this.requestReveal(browser.id);
     }
+    if (options.activate) {
+      this.activateBrowserId = browser.id;
+    }
 
     const raw = options.url?.trim();
     const htmlContent = options.htmlContent?.trim();
@@ -917,6 +951,9 @@ export class BrowserHost {
     browser.detachedUrl = undefined;
     this.pendingGuestByBrowserId.delete(browser.id);
     scope.browsers.delete(browser.id);
+    if (this.activateBrowserId === browser.id) {
+      this.activateBrowserId = undefined;
+    }
   }
 
   setVisible(visible: boolean, browserId?: string): BrowserViewState {
@@ -1163,7 +1200,7 @@ export class BrowserHost {
             }
             if (mouse.type === "mouseMoved") {
               const dragging =
-                this.agentPointerDragging.has(targetId) || (mouse.buttons & 1) === 1;
+                this.agentPointerDragging.has(targetId) || ((mouse.buttons ?? 0) & 1) === 1;
               if (dragging) {
                 this.agentPointerDragging.add(targetId);
               }
@@ -1242,7 +1279,9 @@ export class BrowserHost {
     threadId: string,
     toolName: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<AgentBrowserMcpToolResult | null> {
+    signal?.throwIfAborted();
     this.noteAgentPresenceForThread(threadId);
     switch (toolName) {
       case "agent_browser_tab_list":

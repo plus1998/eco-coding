@@ -1,5 +1,5 @@
 import '../../core/models/html_host_models.dart';
-import '../../core/models/thread_run_projection.dart';
+import '../../core/models/conversation_v2_projection_models.dart';
 import '../../core/utils/activity_display.dart';
 
 /// Collect publish_html artifacts from the live run projection.

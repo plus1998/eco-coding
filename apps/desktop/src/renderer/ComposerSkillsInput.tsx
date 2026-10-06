@@ -11,6 +11,7 @@ import type { SkillInfo } from "../shared/skills";
 import {
   getCursorOffset,
   getSelectionOffsets,
+  handleFileChipDeletion,
   insertNewlineAtSelection,
   insertPlainTextAtSelection,
   renderEditablePrompt,
@@ -216,6 +217,20 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
         event.keyCode === 229
       ) {
         return;
+      }
+      const editor = editorRef.current;
+      if (editor && (event.key === "Backspace" || event.key === "Delete")) {
+        const deletion = handleFileChipDeletion(
+          editor,
+          event.key === "Backspace" ? "backward" : "forward",
+        );
+        if (deletion) {
+          event.preventDefault();
+          if (deletion === "deleted") {
+            commitEditorValue();
+          }
+          return;
+        }
       }
       onKeyDown?.(event);
     };

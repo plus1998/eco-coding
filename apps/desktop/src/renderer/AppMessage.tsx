@@ -31,13 +31,11 @@ export function useAppMessage() {
     setState({ kind, message });
   }, []);
 
-  return {
-    state,
-    dismiss,
-    showSuccess: (message: string) => show("success", message),
-    showError: (message: string) => show("error", message),
-    showInfo: (message: string) => show("info", message),
-  };
+  const showSuccess = useCallback((message: string) => show("success", message), [show]);
+  const showError = useCallback((message: string) => show("error", message), [show]);
+  const showInfo = useCallback((message: string) => show("info", message), [show]);
+
+  return { state, dismiss, showSuccess, showError, showInfo };
 }
 
 export function AppMessage({

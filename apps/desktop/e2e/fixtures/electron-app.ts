@@ -56,7 +56,23 @@ export const test = base.extend<{
     await electronApp.close();
   },
   ecoPage: async ({ electronApp }, use) => {
-    const page = await electronApp.firstWindow({ timeout: 60_000 });
+    const { rendererUrl } = readE2eEnv();
+    // Not `firstWindow()`: the app opens a frameless boot-splash window first and
+    // destroys it once the main window is ready, so the first window is already
+    // gone by the time the renderer finishes booting — every spec then failed with
+    // "Target page, context or browser has been closed" while the app itself was
+    // fine. Pick the window that actually serves the renderer.
+    const deadline = Date.now() + 60_000;
+    let page: Page | undefined;
+    while (Date.now() < deadline) {
+      page = electronApp.windows().find((candidate) => candidate.url().startsWith(rendererUrl));
+      if (page) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (!page) {
+      const seen = electronApp.windows().map((candidate) => candidate.url().slice(0, 80));
+      throw new Error(`No window served ${rendererUrl} within 60s. Windows seen: ${seen.join(", ")}`);
+    }
     await page.waitForLoadState("domcontentloaded");
     await waitForEcoReady(page);
     await use(page);

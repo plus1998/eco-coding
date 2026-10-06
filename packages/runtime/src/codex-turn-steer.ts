@@ -107,9 +107,10 @@ export function buildCodexTurnSteerParams(input: CodexTurnSteerInput): CodexTurn
 
 /**
  * Inject user input into an active Codex turn (`turn/steer`).
- * Success means app-server enqueued the input into the active turn's pending_input —
- * not that the model has finished reading it.
- * Failures are explicit (no active turn, expected id mismatch, non-steerable turn, RPC error).
+ * Success means app-server enqueued the input into the active turn's pending_input and the
+ * response confirmed that same turn — not that the model has finished reading it.
+ * Failures are explicit (no active turn, expected id mismatch, non-steerable turn, RPC error,
+ * unreadable response). A failed steer is never retried automatically by this layer.
  */
 export async function steerCodexTurn(
   client: Pick<CodexAppServerClient, "request">,
@@ -138,12 +139,24 @@ export async function steerCodexTurn(
 }
 
 function parseCodexTurnSteerResult(value: unknown, expectedTurnId: string): CodexTurnSteerResult {
-  if (!value || typeof value !== "object") {
-    // Older wires may return {} — still ok if RPC succeeded; use expected id.
-    return { turnId: expectedTurnId };
+  // app-server answers `TurnSteerResponse = { turnId: string }` with turnId required, and only
+  // after `SteerSubmission::Steered` — the mismatch paths (no active turn, expected id mismatch,
+  // non-steerable turn) come back as JSON-RPC errors instead. So a missing, empty or mismatched id
+  // is a wire we cannot interpret, never a success. There is no expected-id fallback: trusting the
+  // id we sent is exactly how a steer into the wrong turn would look like a confirmed delivery.
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+  const turnId = typeof record?.turnId === "string" ? record.turnId.trim() : "";
+  if (!turnId) {
+    throw new CodexTurnSteerFailed(
+      `turn/steer returned no turnId; expected ${expectedTurnId}. Refusing to report the steer as confirmed.`,
+      true,
+    );
   }
-  const record = value as Record<string, unknown>;
-  const turnId =
-    typeof record.turnId === "string" && record.turnId.trim() ? record.turnId.trim() : expectedTurnId;
+  if (turnId !== expectedTurnId) {
+    throw new CodexTurnSteerFailed(
+      `turn/steer confirmed turn ${turnId} but expected ${expectedTurnId}. Refusing to report the steer as confirmed.`,
+      true,
+    );
+  }
   return { turnId };
 }

@@ -1,7 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Archive,
-  Camera,
   Database,
   FileText,
   Folder,
@@ -35,7 +34,6 @@ const DEFAULT_OLD_CONVERSATIONS_UNIT: StorageCleanupOlderThanUnit = "days";
 type BusyKey =
   | StorageCleanupAction
   | "refresh"
-  | `clearCodexCheckpoints:${"orphans" | "all"}`
   | `clearClaudeSessions:${"orphans" | "all"}`
   | `clearPiAgent:${"orphans" | "all"}`
   | null;
@@ -59,7 +57,6 @@ const CATEGORY_META: Record<StorageCategoryId, { icon: LucideIcon; tone: string 
   database: { icon: Database, tone: "storage-tone-database" },
   logs: { icon: FileText, tone: "storage-tone-logs" },
   claudeSessions: { icon: MessageSquare, tone: "storage-tone-claude" },
-  codexCheckpoints: { icon: Camera, tone: "storage-tone-checkpoints" },
   codexHome: { icon: Archive, tone: "storage-tone-codex" },
   piAgent: { icon: Sparkles, tone: "storage-tone-pi" },
   otherUserData: { icon: Folder, tone: "storage-tone-other" },
@@ -81,13 +78,6 @@ const MANAGE_ACTIONS: CleanupActionDef[] = [
     request: { action: "clearLogs" },
     titleKey: "settings.storage.clearLogs",
     hintKey: "settings.storage.clearLogsHint",
-    buttonKey: "settings.storage.clear",
-  },
-  {
-    busyKey: "clearCodexCheckpoints:orphans",
-    request: { action: "clearCodexCheckpoints", options: { orphansOnly: true } },
-    titleKey: "settings.storage.clearOrphanCheckpoints",
-    hintKey: "settings.storage.clearOrphanCheckpointsHint",
     buttonKey: "settings.storage.clear",
   },
   {
@@ -121,15 +111,6 @@ const MANAGE_ACTIONS: CleanupActionDef[] = [
 ];
 
 const DANGER_ACTIONS: CleanupActionDef[] = [
-  {
-    busyKey: "clearCodexCheckpoints:all",
-    request: { action: "clearCodexCheckpoints" },
-    titleKey: "settings.storage.clearAllCheckpoints",
-    hintKey: "settings.storage.clearAllCheckpointsHint",
-    buttonKey: "settings.storage.clear",
-    confirmKey: "settings.storage.confirmClearAllCheckpoints",
-    destructive: true,
-  },
   {
     busyKey: "clearClaudeSessions:all",
     request: { action: "clearClaudeSessions" },

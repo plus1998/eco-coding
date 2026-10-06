@@ -2,13 +2,10 @@ import 'dart:async';
 
 import 'package:eco_mobile/core/models/eco_types.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
-import 'package:eco_mobile/core/models/thread_run_projection.dart';
-import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/network/desktop_rpc.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/providers/app_providers.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
-import 'package:eco_mobile/features/threads/activity_feed.dart';
 import 'package:eco_mobile/features/threads/thread_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,36 +38,14 @@ void main() {
       });
 
       await _waitUntil(
-        () =>
-            container.read(threadSessionProvider('thr_1')).runProjection != null,
+        () => container.read(threadSessionProvider('thr_1')).thread != null,
       );
-      // The handoff must still load the full Feed projection (user prompts live
-      // in its early sequence range), not just the seeded summary.
-      expect(rpc.projectionRequests, hasLength(1));
-      expect(rpc.projectionRequests.single.afterSequence, isNull);
-      expect(rpc.projectionRequests.single.historyRevision, isNull);
-      final projection = container
-          .read(threadSessionProvider('thr_1'))
-          .runProjection;
-      final feed = buildActivityFeed(
-        threadPrompt: _thread.prompt,
-        threadId: _thread.id,
-        runProjection: projection,
-      );
-      expect(
-        feed.where((entry) => entry.kind == ActivityFeedKind.user).map((e) => e.text),
-        ['hi'],
-      );
+      // The handoff only loads session chrome here. Ordered content is owned by
+      // the V2 session provider; no retired projection RPC is issued.
+      expect(container.read(threadSessionProvider('thr_1')).runProjection, isNull);
       expect(container.read(threadSessionSeedProvider), isNull);
     },
   );
-}
-
-class _ProjectionRequest {
-  const _ProjectionRequest({this.afterSequence, this.historyRevision});
-
-  final int? afterSequence;
-  final int? historyRevision;
 }
 
 class _ConnectedCenterClient extends EcoCenterClient {
@@ -88,8 +63,6 @@ class _SeedTrackingDesktopRpc extends DesktopRpc {
   _SeedTrackingDesktopRpc()
     : super(EcoCenterClient(store: CredentialStore()), 'desktop_1');
 
-  final projectionRequests = <_ProjectionRequest>[];
-
   @override
   Future<List<ThreadSummary>> listThreads() async => [_thread];
 
@@ -98,44 +71,6 @@ class _SeedTrackingDesktopRpc extends DesktopRpc {
     return const ThreadSessionBootstrapResult(thread: _thread);
   }
 
-  @override
-  Future<ThreadRunProjectionSnapshot?> getRunProjection(
-    String threadId, {
-    String mode = 'full',
-    int? afterSequence,
-    int? historyRevision,
-  }) async {
-    projectionRequests.add(
-      _ProjectionRequest(
-        afterSequence: afterSequence,
-        historyRevision: historyRevision,
-      ),
-    );
-    return const ThreadRunProjectionSnapshot(
-      threadId: 'thr_1',
-      status: 'completed',
-      generatedAt: '2026-01-01T00:00:00.000Z',
-      agents: [],
-      sourceEventCount: 2,
-      timeline: [
-        ThreadRunProjectionTimelineItem(
-          id: 'user_prompt_1',
-          sequence: 1,
-          eventType: 'thread.status',
-          scope: 'main',
-          role: 'user',
-          text: 'hi',
-          at: '2026-01-01T00:00:00.000Z',
-          metadata: {'liveType': 'thread.user_prompt'},
-        ),
-      ],
-    );
-  }
-
-  @override
-  Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(
-    String threadId,
-  ) async => const ThreadUsageSnapshotResult();
 }
 
 const _thread = ThreadSummary(

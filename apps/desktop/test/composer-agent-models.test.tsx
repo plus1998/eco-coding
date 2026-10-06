@@ -2,6 +2,9 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ComposerAgentModelsCardBody } from "../src/renderer/ComposerAgentModels";
 import type { SubagentEnabledSettings } from "../src/shared/ipc";
+import { withTestLanguage } from "./support/test-language";
+
+withTestLanguage("zh-CN");
 
 const subagentSettings: SubagentEnabledSettings = {
   explore: false,

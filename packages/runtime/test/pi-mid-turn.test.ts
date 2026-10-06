@@ -5,6 +5,7 @@ import {
   isPiThreadMidTurnAccepting,
   PiCodingAgentDriver,
   type PiMidTurnUnavailable,
+  type PiQueuedInputDisposition,
   type PiSessionHandle,
   PiSessionRegistry,
   steerPiThreadMidTurn,
@@ -13,7 +14,7 @@ import { piChildSessionKey, piParentSessionKey } from "../src/pi-subagent";
 
 type FakeSteerableSession = {
   isStreaming: boolean;
-  steer: (text: string) => Promise<void>;
+  steer: (text: string) => Promise<PiQueuedInputDisposition | undefined>;
   getSteeringMessages: () => readonly string[];
   clearQueue: () => { steering: string[]; followUp: string[] };
 };
@@ -27,8 +28,10 @@ function makeFakeSession(options: { streaming?: boolean } = {}): {
   const cleared: Array<{ steering: string[]; followUp: string[] }> = [];
   const session: FakeSteerableSession = {
     isStreaming: options.streaming ?? true,
+    // The normal PI 1.0 path queues the text and reports it as queued.
     steer: async (text) => {
       steering.push(text);
+      return "queued";
     },
     getSteeringMessages: () => [...steering],
     clearQueue: () => {
@@ -93,6 +96,7 @@ test("createPiMidTurnHandle reclaims a steer the run ended before delivering", a
   session.steer = async (text) => {
     steering.push(text);
     session.isStreaming = false;
+    return "queued";
   };
   const handle = createPiMidTurnHandle(session);
 
@@ -115,11 +119,52 @@ test("createPiMidTurnHandle treats an already-consumed steer as delivered", asyn
     steering.push(text);
     session.isStreaming = false;
     steering.length = 0;
+    return "queued";
   };
   const handle = createPiMidTurnHandle(session);
 
   await handle.steer("consumed steer");
 
+  expect(cleared).toEqual([]);
+});
+
+test("createPiMidTurnHandle surfaces a handled disposition as PiMidTurnUnavailable", async () => {
+  const { session, steering, cleared } = makeFakeSession();
+  const steered: string[] = [];
+  // PI 1.0 reports "handled" when an extension input handler consumed the text:
+  // nothing was queued, so reporting delivery would silently drop the message.
+  session.steer = async (text) => {
+    steered.push(text);
+    return "handled";
+  };
+  const handle = createPiMidTurnHandle(session);
+
+  let caught: unknown;
+  try {
+    await handle.steer("do not drop me");
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(steered).toEqual(["do not drop me"]);
+  expect(isPiMidTurnUnavailable(caught)).toBe(true);
+  expect((caught as PiMidTurnUnavailable).message).toContain("consumed the steering message");
+  // Nothing was queued, so there is nothing to reclaim either.
+  expect(steering).toEqual([]);
+  expect(cleared).toEqual([]);
+});
+
+test("createPiMidTurnHandle treats an undefined disposition as queued (older runtime)", async () => {
+  const { session, steering, cleared } = makeFakeSession();
+  session.steer = async (text) => {
+    steering.push(text);
+    return undefined;
+  };
+  const handle = createPiMidTurnHandle(session);
+
+  await handle.steer("legacy runtime");
+
+  expect(steering).toEqual(["legacy runtime"]);
   expect(cleared).toEqual([]);
 });
 
@@ -142,8 +187,9 @@ test("createPiMidTurnHandle never reports a concurrently reclaimed steer as deli
   // queue as proof that its own entry had been delivered.
   session.steer = async (text) => {
     steerCalls += 1;
-    await baseSteer(text);
+    const disposition = await baseSteer(text);
     session.isStreaming = false;
+    return disposition;
   };
   const handle = createPiMidTurnHandle(session);
 
@@ -215,6 +261,7 @@ test("PiCodingAgentDriver exposes the registered parent session for mid-turn ste
     },
     steer: async (text: string) => {
       steering.push(text);
+      return "queued" as const;
     },
     getSteeringMessages: () => [] as string[],
     clearQueue: () => ({ steering: [] as string[], followUp: [] as string[] }),

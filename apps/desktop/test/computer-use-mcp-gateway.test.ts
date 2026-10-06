@@ -12,6 +12,9 @@ import {
   resolveEcoScreenRecordingAppLabel,
 } from "../src/main/computer-use-mcp-gateway";
 
+/** 跨平台的路径 fixture：POSIX 上保持原样，Windows 上是 `<当前盘>` 下的同一路径。 */
+const APP_PATH = path.resolve(path.parse(process.cwd()).root, "tmp", "Open Computer Use.app");
+
 test("eco-computer-use-mcp-stdio packaging script still exists for debug", () => {
   const packagingStdio = ComputerUseMcpGateway.packagingStdioScriptPath();
   expect(fs.existsSync(packagingStdio)).toBe(true);
@@ -28,9 +31,9 @@ test("openComputerUseUsesMacOsPrivacyGate is darwin-only", () => {
 
 test("buildOpenComputerUseDoctorOpenArgs uses path form not -a", () => {
   const args = buildOpenComputerUseDoctorOpenArgs(
-    "/tmp/Open Computer Use.app",
+    APP_PATH,
   );
-  expect(args).toEqual(["-n", "/tmp/Open Computer Use.app", "--args", "doctor"]);
+  expect(args).toEqual(["-n", APP_PATH, "--args", "doctor"]);
   expect(args).not.toContain("-a");
 });
 

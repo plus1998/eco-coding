@@ -103,7 +103,7 @@ test("createAgentDefinitionsFromOrchestration builds enabled SDK agent definitio
   expect(definition).toMatchObject({
     model: "research-model",
     tools: ["Read", "WebSearch", "LS", "NotebookRead"],
-    disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
+    disallowedTools: ["Bash", "Agent", "Task"],
     prompt: researchTemplate.prompt,
     mcpServers: ["sources", "browser"],
   });
@@ -120,13 +120,9 @@ test("createAgentDefinitionsFromOrchestration swaps native WebSearch for Integra
   });
 
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
-  expect(definition.tools).toEqual(
-    expect.arrayContaining(["Read", "mcp__eco_web_search__search"]),
-  );
+  expect(definition.tools).toEqual(expect.arrayContaining(["Read", "mcp__eco_web_search__search"]));
   expect(definition.tools).not.toContain("WebSearch");
-  expect(definition.disallowedTools).toEqual(
-    expect.arrayContaining(["Bash", "Agent", "Task", "TaskList", "TaskOutput", "WebSearch"]),
-  );
+  expect(definition.disallowedTools).toEqual(expect.arrayContaining(["Bash", "Agent", "Task", "WebSearch"]));
   expect(definition.mcpServers).toEqual(expect.arrayContaining(["sources", "browser", "eco_web_search"]));
 });
 
@@ -328,7 +324,9 @@ test("resolveMainAgentAllowedTools merges phase tools for universal orchestratio
     "Write",
     "Skill",
     "TaskCreate",
+    "TaskGet",
     "TaskUpdate",
+    "TaskList",
     "TodoWrite",
     "MultiEdit",
     "NotebookEdit",
@@ -337,8 +335,6 @@ test("resolveMainAgentAllowedTools merges phase tools for universal orchestratio
     "WebSearch",
     "LS",
     "NotebookRead",
-    "TaskList",
-    "TaskOutput",
     "mcp__browser__*",
     "mcp__sources__*",
   ]);
@@ -373,14 +369,14 @@ test("resolveMainAgentAllowedTools merges phase tools for universal orchestratio
     "WebFetch",
     "Skill",
     "TaskCreate",
+    "TaskGet",
     "TaskUpdate",
+    "TaskList",
     "TodoWrite",
     "LS",
     "NotebookRead",
     "MultiEdit",
     "NotebookEdit",
-    "TaskList",
-    "TaskOutput",
     "mcp__browser__*",
     "mcp__sources__*",
   ]);
@@ -425,7 +421,7 @@ test("resolveToolPermissionEntryForActor prevents SDK general-purpose recursive 
   const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate]);
   const entry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
   expect(entry).not.toBe(policy.main);
-  expect(entry?.disallowed).toEqual(expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput"]));
+  expect(entry?.disallowed).toEqual(expect.arrayContaining(["Agent", "Task"]));
   expect(entry?.allowed).not.toContain("Agent");
 });
 
@@ -570,7 +566,7 @@ test("buildToolPermissionPolicyFromOrchestration resolves main and dynamic agent
     phaseAllowedTools: [
       "Agent",
       "TaskList",
-      "TaskOutput",
+      "TaskGet",
       "Skill",
       "Read",
       "Glob",
@@ -598,8 +594,6 @@ test("buildToolPermissionPolicyFromOrchestration resolves main and dynamic agent
       "Bash",
       "Agent",
       "Task",
-      "TaskList",
-      "TaskOutput",
       "Write",
       "Edit",
       "MultiEdit",
@@ -695,7 +689,7 @@ test("subagent delegation tools require allowDelegation", () => {
   const blockedDefinition = blockedDefinitions.definitions.eco_researcher as Record<string, unknown>;
   expect(blockedDefinition.tools).toEqual(["Read", "LS", "NotebookRead"]);
   expect(blockedDefinition.mcpServers).toEqual(["sources", "browser"]);
-  expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task", "TaskList", "TaskOutput"]);
+  expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task"]);
 
   const blockedPolicy = buildToolPermissionPolicyFromOrchestration(
     delegatingOrchestration,
@@ -706,7 +700,7 @@ test("subagent delegation tools require allowDelegation", () => {
   );
   expect(blockedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Skill", "LS", "NotebookRead"],
-    disallowed: ["Agent", "Task", "TaskList", "TaskOutput"],
+    disallowed: ["Agent", "Task"],
     mcpServers: ["sources", "browser"],
   });
 
@@ -715,15 +709,7 @@ test("subagent delegation tools require allowDelegation", () => {
     allowedTemplate,
   ]);
   const allowedDefinition = allowedDefinitions.definitions.eco_researcher as Record<string, unknown>;
-  expect(allowedDefinition.tools).toEqual([
-    "Read",
-    "Agent",
-    "Task",
-    "LS",
-    "NotebookRead",
-    "TaskList",
-    "TaskOutput",
-  ]);
+  expect(allowedDefinition.tools).toEqual(["Read", "Agent", "Task", "LS", "NotebookRead"]);
   expect(allowedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(allowedDefinition).not.toHaveProperty("disallowedTools");
 
@@ -735,7 +721,7 @@ test("subagent delegation tools require allowDelegation", () => {
     },
   );
   expect(allowedPolicy.agents.eco_researcher).toMatchObject({
-    allowed: ["Read", "Agent", "Task", "Skill", "LS", "NotebookRead", "TaskList", "TaskOutput"],
+    allowed: ["Read", "Agent", "Task", "Skill", "LS", "NotebookRead"],
     disallowed: [],
     mcpServers: ["sources", "browser"],
   });

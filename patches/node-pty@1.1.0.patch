@@ -1,0 +1,140 @@
+diff --git a/lib/windowsConoutConnection.js b/lib/windowsConoutConnection.js
+index 1be15ca061370127d2e24e943067538ab395a566..973dfacaed738b51b66fb85c581ae1e3a731b28a 100644
+--- a/lib/windowsConoutConnection.js
++++ b/lib/windowsConoutConnection.js
+@@ -50,6 +50,12 @@ var eventEmitter2_1 = require("./eventEmitter2");
+  * the timer has started.
+  */
+ var FLUSH_DATA_INTERVAL = 1000;
++
++/**
++ * Socket errors that can only be produced while the ConPTY pipe is being torn down. They are
++ * expected during shutdown and must not be reported as unexpected worker failures.
++ */
++var EXPECTED_SHUTDOWN_ERROR_CODES = ['EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'];
+ /**
+  * Connects to and manages the lifecycle of the conout socket. This socket must be drained on
+  * another thread in order to avoid deadlocks where Conpty waits for the out socket to drain
+@@ -74,6 +80,16 @@ var ConoutConnection = /** @class */ (function () {
+         };
+         var scriptPath = __dirname.replace('node_modules.asar', 'node_modules.asar.unpacked');
+         this._worker = new worker_threads_1.Worker(path_1.join(scriptPath, 'worker/conoutSocketWorker.js'), { workerData: workerData });
++        // The host destroys its side of the conout pipe while the worker may still be draining
++        // the final chunk, which surfaces here as a socket error on the worker. An unhandled
++        // worker 'error' event is rethrown in the host process, so that shutdown race would
++        // crash the app right after a terminal closed.
++        this._worker.on('error', function (error) {
++            if (_this._isDisposed || (error.code && EXPECTED_SHUTDOWN_ERROR_CODES.indexOf(error.code) !== -1)) {
++                return;
++            }
++            console.warn('ConoutWorker error', error);
++        });
+         this._worker.on('message', function (message) {
+             switch (message) {
+                 case 1 /* READY */:
+diff --git a/lib/windowsPtyAgent.js b/lib/windowsPtyAgent.js
+index a358ffb177357e177661033c1b092f9c9d0e5f5a..8fe5d761ae22ff2870d61a5936cc4ee2c6c51d8c 100644
+--- a/lib/windowsPtyAgent.js
++++ b/lib/windowsPtyAgent.js
+@@ -242,6 +242,11 @@ var WindowsPtyAgent = /** @class */ (function () {
+         }
+         this._inSocket.readable = false;
+         this._outSocket.readable = false;
++        // Natural exits must release the input pipe and ConPTY worker too.
++        // https://github.com/microsoft/node-pty/issues/887
++        // https://github.com/microsoft/node-pty/issues/947
++        this._inSocket.destroy();
++        this._conoutSocketWorker.dispose();
+         this._outSocket.destroy();
+     };
+     return WindowsPtyAgent;
+diff --git a/lib/worker/conoutSocketWorker.js b/lib/worker/conoutSocketWorker.js
+index 0451e2c6b36df6c94a474efdce7d42c2ef2c9388..2717cb425ea71fe536d7f81a52c138615a022210 100644
+--- a/lib/worker/conoutSocketWorker.js
++++ b/lib/worker/conoutSocketWorker.js
+@@ -8,9 +8,15 @@ var net_1 = require("net");
+ var conout_1 = require("../shared/conout");
+ var conoutPipeName = worker_threads_1.workerData.conoutPipeName;
+ var conoutSocket = new net_1.Socket();
++// A read error here means the ConPTY pipe is gone; the worker must not throw out of the pipe.
++conoutSocket.on('error', function () { });
+ conoutSocket.setEncoding('utf8');
+ conoutSocket.connect(conoutPipeName, function () {
+     var server = net_1.createServer(function (workerSocket) {
++        // The host may destroy its side of the pipe at any time during terminal shutdown, which
++        // makes the pending writes fail with EPIPE. Stop forwarding instead of dying with an
++        // uncaught exception that the host would rethrow.
++        workerSocket.on('error', function () { conoutSocket.unpipe(workerSocket); });
+         conoutSocket.pipe(workerSocket);
+     });
+     server.listen(conout_1.getWorkerPipeName(conoutPipeName));
+diff --git a/src/windowsConoutConnection.ts b/src/windowsConoutConnection.ts
+index fa2d62de1b6e252b07892afb87e358fb446e7b7f..c6f9c42e301cb3402c9fd11dc67f742d9bf100e4 100644
+--- a/src/windowsConoutConnection.ts
++++ b/src/windowsConoutConnection.ts
+@@ -16,6 +16,12 @@ import { IEvent, EventEmitter2 } from './eventEmitter2';
+  */
+ const FLUSH_DATA_INTERVAL = 1000;
+ 
++/**
++ * Socket errors that can only be produced while the ConPTY pipe is being torn down. They are
++ * expected during shutdown and must not be reported as unexpected worker failures.
++ */
++const EXPECTED_SHUTDOWN_ERROR_CODES = ['EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'];
++
+ /**
+  * Connects to and manages the lifecycle of the conout socket. This socket must be drained on
+  * another thread in order to avoid deadlocks where Conpty waits for the out socket to drain
+@@ -45,6 +51,16 @@ export class ConoutConnection implements IDisposable {
+     };
+     const scriptPath = __dirname.replace('node_modules.asar', 'node_modules.asar.unpacked');
+     this._worker = new Worker(join(scriptPath, 'worker/conoutSocketWorker.js'), { workerData });
++    // The host destroys its side of the conout pipe while the worker may still be draining the
++    // final chunk, which surfaces here as a socket error on the worker. An unhandled worker
++    // 'error' event is rethrown in the host process, so that shutdown race would crash the app
++    // right after a terminal closed. https://github.com/microsoft/node-pty/issues/947
++    this._worker.on('error', (error: NodeJS.ErrnoException) => {
++      if (this._isDisposed || (error.code && EXPECTED_SHUTDOWN_ERROR_CODES.indexOf(error.code) !== -1)) {
++        return;
++      }
++      console.warn('ConoutWorker error', error);
++    });
+     this._worker.on('message', (message: ConoutWorkerMessage) => {
+       switch (message) {
+         case ConoutWorkerMessage.READY:
+diff --git a/src/windowsPtyAgent.ts b/src/windowsPtyAgent.ts
+index d7054449516f0c9a62af351c2caa17331206d530..d468736521e7ce458c2eef19d26f4e5420ee22b9 100644
+--- a/src/windowsPtyAgent.ts
++++ b/src/windowsPtyAgent.ts
+@@ -245,6 +245,11 @@ export class WindowsPtyAgent {
+     }
+     this._inSocket.readable = false;
+     this._outSocket.readable = false;
++    // Natural exits must release the input pipe and ConPTY worker too.
++    // https://github.com/microsoft/node-pty/issues/887
++    // https://github.com/microsoft/node-pty/issues/947
++    this._inSocket.destroy();
++    this._conoutSocketWorker.dispose();
+     this._outSocket.destroy();
+   }
+ }
+diff --git a/src/worker/conoutSocketWorker.ts b/src/worker/conoutSocketWorker.ts
+index 79a4148dd6a18727c725b4980655643a04981177..03c2f09f97bb2022962dbda8f136a0f4bc442ccc 100644
+--- a/src/worker/conoutSocketWorker.ts
++++ b/src/worker/conoutSocketWorker.ts
+@@ -9,9 +9,15 @@ import { ConoutWorkerMessage, IWorkerData, getWorkerPipeName } from '../shared/c
+ const { conoutPipeName } = (workerData as IWorkerData);
+ 
+ const conoutSocket = new Socket();
++// A read error here means the ConPTY pipe is gone; the worker must not throw out of the pipe.
++conoutSocket.on('error', () => { /* ignore, the terminal is already gone */ });
+ conoutSocket.setEncoding('utf8');
+ conoutSocket.connect(conoutPipeName, () => {
+   const server = createServer(workerSocket => {
++    // The host may destroy its side of the pipe at any time during terminal shutdown, which
++    // makes the pending writes fail with EPIPE. Stop forwarding instead of dying with an
++    // uncaught exception that the host would rethrow.
++    workerSocket.on('error', () => { conoutSocket.unpipe(workerSocket); });
+     conoutSocket.pipe(workerSocket);
+   });
+   server.listen(getWorkerPipeName(conoutPipeName));

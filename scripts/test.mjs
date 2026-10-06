@@ -37,7 +37,7 @@ const testSuites = {
     "apps/desktop/test/billing-diagnostics.test.ts",
     "apps/desktop/test/billing-projector.test.ts",
     "apps/desktop/test/usage-ledger-coordinator.test.ts",
-    "apps/desktop/test/thread-run-projection-view.test.ts",
+    "apps/desktop/test/conversation-v2-projection-view.test.ts",
     "apps/desktop/test/usage-breakdown-panel.test.ts",
     "packages/runtime/test/agent-orchestration.test.ts",
     "packages/runtime/test/agent-permission-redteam.test.ts",
@@ -46,6 +46,8 @@ const testSuites = {
   "claude-regression": [
     "packages/runtime/test/core-runtime.test.ts",
     "packages/runtime/test/claude-agent-sdk.test.ts",
+    "packages/runtime/test/claude-sdk-0289-regression.test.ts",
+    "packages/runtime/test/claude-sdk-native-smoke.test.ts",
     "packages/runtime/test/eco-sdk-hooks.test.ts",
     "packages/runtime/test/sdk-stream-events.test.ts",
     "packages/runtime/test/agent-orchestration.test.ts",
@@ -60,17 +62,27 @@ const testSuites = {
     "packages/runtime/test/codex-turn-steer.test.ts",
     "packages/runtime/test/codex-turn-interrupt.test.ts",
     "apps/desktop/test/anthropic-proxy.test.ts",
+    "apps/desktop/test/bash-approval-bridge.test.ts",
+    "apps/desktop/test/bash-approval-ui.test.ts",
+    "apps/desktop/test/sdk-stream-activity.test.ts",
+    "apps/desktop/test/sdk-stream-activity-ingestion.test.ts",
+    "apps/desktop/test/conversation-v2-legacy-adapter.test.ts",
+    "apps/desktop/test/conversation-v2-activity-merge.test.ts",
+    "apps/desktop/test/feed-action-kind.test.ts",
+    "apps/desktop/test/claude-user-message-rebind.test.ts",
+    "apps/desktop/test/claude-resume-decision.test.ts",
     "apps/desktop/test/plan-approval-bridge.test.ts",
     "apps/desktop/test/thread-plan-approval-runtime.test.ts",
     "apps/desktop/test/thread-continue-routing.test.ts",
     "apps/desktop/test/sdk-run-input.test.ts",
     "apps/desktop/test/conversation-store-runtime.test.ts",
-    "apps/desktop/test/thread-run-projection.test.ts",
-    "apps/desktop/test/thread-run-projection-feed.test.ts",
+    "apps/desktop/test/conversation-v2-runtime-projection.test.ts",
+    "apps/desktop/test/legacy-feed-replay-projection.test.ts",
     "apps/desktop/test/conversation-round-replay.test.ts",
     "apps/desktop/test/sdk-round-replay.test.ts",
     "apps/desktop/test/proxy-usage-billing.test.ts",
     "apps/desktop/test/usage-ledger-coordinator.test.ts",
+    "apps/desktop/test/sdk-session-usage-ledger.test.ts",
     "apps/desktop/test/context-snapshot-scheduler.test.ts",
   ],
 };
@@ -146,7 +158,9 @@ function resolveCommand({ options, passthrough }) {
 
   const suite = [...options].find((option) => Object.hasOwn(testSuites, option));
   if (suite) {
-    const commands = [["bun", "test", ...testSuites[suite], ...passthrough]];
+    const commands = [
+      ["bun", "test", ...bunTestConcurrencyArgs(passthrough), ...testSuites[suite], ...passthrough],
+    ];
     if (suite === "claude-regression") {
       commands.push([process.execPath, "scripts/test-node-sqlite.mjs", ...passthrough]);
     }
@@ -164,12 +178,21 @@ function resolveCommand({ options, passthrough }) {
     return { kind: "commands", commands: [mobileTestCommand(passthrough)] };
   }
   if (options.has("no-mobile")) {
-    if (options.size > 0) {
-      throwUsageError(`未知参数：${[...options].map((option) => `--${option}`).join(" ")}`);
+    const unknownOptions = [...options].filter((option) => option !== "no-mobile");
+    if (unknownOptions.length > 0) {
+      throwUsageError(`未知参数：${unknownOptions.map((option) => `--${option}`).join(" ")}`);
     }
     return {
       kind: "commands",
-      commands: [["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough]],
+      commands: [
+        [
+          "bun",
+          "test",
+          ...bunTestConcurrencyArgs(passthrough),
+          "--path-ignore-patterns=apps/desktop/e2e/**",
+          ...passthrough,
+        ],
+      ],
     };
   }
 
@@ -179,10 +202,24 @@ function resolveCommand({ options, passthrough }) {
   return {
     kind: "commands",
     commands: [
-      ["bun", "test", "--path-ignore-patterns=apps/desktop/e2e/**", ...passthrough],
+      [
+        "bun",
+        "test",
+        ...bunTestConcurrencyArgs(passthrough),
+        "--path-ignore-patterns=apps/desktop/e2e/**",
+        ...passthrough,
+      ],
       mobileTestCommand([]),
     ],
   };
+}
+
+function bunTestConcurrencyArgs(passthroughArgs) {
+  const hasOption = (name) => passthroughArgs.some((arg) => arg === name || arg.startsWith(`${name}=`));
+  return [
+    ...(hasOption("--parallel") ? [] : ["--parallel=2"]),
+    ...(hasOption("--max-concurrency") ? [] : ["--max-concurrency=1"]),
+  ];
 }
 
 /** `flutter test` for apps/mobile, portable across POSIX and Windows shells. */

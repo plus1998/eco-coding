@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isMetricsOnlyThreadRunEvent } from "../../src/main/thread-run-event-normalizer";
-import { buildThreadRunProjection } from "../../src/main/thread-run-projection";
-import { trimProjectionForFeed } from "../../src/main/thread-run-projection-feed";
+import { buildThreadRunProjection } from "../../src/main/conversation-v2-runtime-projection";
+import { trimProjectionForFeed } from "../../src/main/legacy-feed-replay-projection";
 import type { AgentInstanceRecord, RunAttemptRecord } from "../../src/main/usage-ledger";
 import type {
   ThreadRunEvent,
@@ -12,7 +12,7 @@ import type {
 import type {
   ThreadRunProjectionAgent,
   ThreadRunProjectionTimelineItem,
-} from "../../src/shared/thread-run-projection";
+} from "../../src/shared/conversation-v2-projection";
 
 /**
  * Test corpus built from the *shape* of real persisted run events.

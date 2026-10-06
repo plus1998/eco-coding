@@ -31,21 +31,10 @@ test("buildThreadSessionBootstrap assembles session metadata", () => {
     getPendingPlan: () => undefined,
     getPendingBashApproval: () => undefined,
     getPendingClarification: () => undefined,
-    listSubagentSessionTimings: () => [],
-    usageSnapshotServices: {
-      getLegacyBilling: () => undefined,
-      resolveBillingSnapshot: () => ({ snapshot: { ecoCostUsd: 0 } as never }),
-      enrichBillingSnapshot: () => ({ ecoCostUsd: 0 }) as never,
-      projectBillingSnapshot: () => undefined,
-      getThreadStatus: () => "idle",
-      getDisplayContextSnapshot: () => undefined,
-    },
   });
 
   expect(result.thread).toEqual(thread);
   expect(result.followUps).toHaveLength(1);
-  expect(result.subagentSessions).toEqual([]);
-  expect(result.usage).toEqual({});
 });
 
 test("buildThreadSessionBootstrap returns empty payload for blank thread id", () => {
@@ -56,19 +45,8 @@ test("buildThreadSessionBootstrap returns empty payload for blank thread id", ()
       getPendingPlan: () => undefined,
       getPendingBashApproval: () => undefined,
       getPendingClarification: () => undefined,
-      listSubagentSessionTimings: () => [],
-      usageSnapshotServices: {
-        getLegacyBilling: () => undefined,
-        resolveBillingSnapshot: () => ({ snapshot: { ecoCostUsd: 0 } as never }),
-        enrichBillingSnapshot: () => ({ ecoCostUsd: 0 }) as never,
-        projectBillingSnapshot: () => undefined,
-        getThreadStatus: () => undefined,
-        getDisplayContextSnapshot: () => undefined,
-      },
     }),
   ).toEqual({
     followUps: [],
-    subagentSessions: [],
-    usage: {},
   });
 });

@@ -8,4 +8,5 @@ test("prompt append names the Eco view_image tool and does not mention integrati
   expect(text).toContain("absolute");
   expect(text.toLowerCase()).not.toContain("integration");
   expect(text).toContain("view_image");
+  expect(text).toContain("built-in OpenAI account");
 });

@@ -51,9 +51,10 @@ class ActionKindFileChange {
 }
 
 class ActionKindReadTarget {
-  const ActionKindReadTarget({this.filePath, this.fileName});
+  const ActionKindReadTarget({this.filePath, this.fileName, this.lineRange});
   final String? filePath;
   final String? fileName;
+  final String? lineRange;
 }
 
 class ActionKindGrepTarget {
@@ -365,7 +366,10 @@ String? resolveActionTarget(
           payload?.readTarget?.fileName ??
           payload?.readTarget?.filePath ??
           normalizedRaw;
-      return path == null ? null : pathBasename(path);
+      if (path == null) return null;
+      final name = pathBasename(path);
+      final range = payload?.readTarget?.lineRange?.trim();
+      return range == null || range.isEmpty ? name : '$name $range';
     case ActionKind.write:
     case ActionKind.edit:
       final path =

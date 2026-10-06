@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const desktopRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const rendererEntry = path.join(desktopRoot, "src/renderer/App.tsx");
+const PI_SDK_PACKAGE = "@earendil-works/pi-coding-agent";
 
 const FROM_SPECIFIER = /(?:^|\n)\s*(?:export|import)(\s+type)?[\s\S]*?\bfrom\s+["']([^"']+)["']/g;
 const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s+["']([^"']+)["']/g;
@@ -54,6 +55,13 @@ function collectRendererModuleGraph(entry: string): string[] {
   return [...seen];
 }
 
+function importedSpecifiers(source: string): string[] {
+  const specifiers = new Set<string>();
+  for (const match of source.matchAll(FROM_SPECIFIER)) specifiers.add(match[2] ?? "");
+  for (const match of source.matchAll(SIDE_EFFECT_IMPORT)) specifiers.add(match[1] ?? "");
+  return [...specifiers];
+}
+
 function valueBarrelImports(source: string): string[] {
   const hits: string[] = [];
   for (const match of source.matchAll(FROM_SPECIFIER)) {
@@ -76,8 +84,14 @@ test("renderer graph does not import the Node-only @eco/runtime barrel", () => {
     for (const statement of valueBarrelImports(source)) {
       violations.push(`${path.relative(desktopRoot, file)}: ${statement}`);
     }
-    if (source.includes("pi-mcp-adapter") || source.includes("vendor/pi-mcp-adapter")) {
-      violations.push(`${path.relative(desktopRoot, file)}: pulls pi-mcp-adapter`);
+    // The PI SDK is Node-only (it spawns worker threads and compiles wasm), so
+    // the renderer graph must not import it — not even type-only, which would
+    // drag the Node package into the renderer type graph. Before PI 1.0.3 this
+    // guard named pi-mcp-adapter instead. Match real import statements rather
+    // than raw text: i18n catalogs legitimately name the package in a message.
+    const piSdkImports = importedSpecifiers(source).filter((specifier) => specifier === PI_SDK_PACKAGE);
+    for (const specifier of piSdkImports) {
+      violations.push(`${path.relative(desktopRoot, file)}: imports the Node-only ${specifier}`);
     }
   }
 

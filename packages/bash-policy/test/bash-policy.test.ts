@@ -1,8 +1,50 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateBashHardDeny, evaluateBashPolicy, parseShellCommand, scoreShellAst } from "../src";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  evaluateBashHardDeny,
+  evaluateBashPolicy,
+  isInsidePath,
+  parseShellCommand,
+  scoreShellAst,
+} from "../src";
 
 const workspace = "/repo";
 const cwd = "/repo";
+
+describe("isInsidePath", () => {
+  test("compares canonical paths when macOS exposes /var through /private/var", () => {
+    if (process.platform !== "darwin") {
+      return;
+    }
+
+    const workspaceAlias = "/var/folders";
+    const canonicalWorkspace = realpathSync.native(workspaceAlias);
+    expect(canonicalWorkspace).not.toBe(path.resolve(workspaceAlias));
+    expect(isInsidePath(canonicalWorkspace, workspaceAlias)).toBe(true);
+  });
+
+  test("resolves symlink aliases but rejects a symlink that escapes the workspace", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "eco-bash-policy-paths-"));
+    const workspacePath = path.join(root, "workspace");
+    const outsidePath = path.join(root, "outside");
+    const workspaceAlias = path.join(root, "workspace-alias");
+    const escapeLink = path.join(workspacePath, "outside-link");
+
+    try {
+      mkdirSync(workspacePath);
+      mkdirSync(outsidePath);
+      symlinkSync(workspacePath, workspaceAlias);
+      symlinkSync(outsidePath, escapeLink);
+
+      expect(isInsidePath(path.join(workspaceAlias, "not-created", "file.txt"), workspacePath)).toBe(true);
+      expect(isInsidePath(path.join(escapeLink, "file.txt"), workspacePath)).toBe(false);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+});
 
 describe("evaluateBashPolicy", () => {
   test("denies rm -rf /", () => {

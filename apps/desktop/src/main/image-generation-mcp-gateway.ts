@@ -18,7 +18,7 @@ import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { generateImagesToWorkspace, normalizeImageGenerationToolInput } from "./image-generation-client";
 import type { ImageGenerationStore } from "./image-generation-store";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Image-Control-Secret";
 
@@ -103,7 +103,7 @@ export class ImageGenerationMcpGateway {
           ...http.sdkEntry,
           // Claude Agent SDK: per-server tool-call wall clock (default ~60s via MCP_TOOL_TIMEOUT).
           timeout: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
-          // pi-mcp-adapter: forwarded as requestTimeoutMs by toPiMcpServerEntry.
+          // PI MCP extension: toPiMcpServerConfig prefers requestTimeoutMs and converts it to seconds.
           requestTimeoutMs: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
         },
         codexServer: http.codexServer,
@@ -183,8 +183,8 @@ export class ImageGenerationMcpGateway {
           instructions:
             "Eco Creative Drawing. Create or edit images into the conversation work directory; every call requires user approval.",
           listTools: async () => ({ tools: [imageGenerationToolDefinition()] }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-image-control-secret",
@@ -235,11 +235,13 @@ export class ImageGenerationMcpGateway {
     name: string,
     rawArgs: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     if (name !== ECO_IMAGE_GENERATION_TOOL) {
       throw new Error(`未知创意绘画工具：${name}`);
     }
     const claim = this.resolveThread(authToken);
+    signal?.throwIfAborted();
     const threadId = claim.threadId;
     const workspacePath = this.deps.resolveWorkspacePath(threadId)?.trim();
     const generationRoot = this.deps.resolveGenerationRoot(threadId)?.trim();
@@ -269,6 +271,7 @@ export class ImageGenerationMcpGateway {
         generationRoot,
         threadDirectory: threadDirectoryName(threadId),
         workspacePath,
+        ...(signal ? { signal } : {}),
       });
       const completed = this.deps.store.completeArtifact(artifact.id, images);
       this.deps.onArtifactChanged(completed);
@@ -334,7 +337,7 @@ export class ImageGenerationMcpGateway {
   }
 }
 
-function imageGenerationToolDefinition(): Record<string, unknown> {
+function imageGenerationToolDefinition(): McpToolDefinition {
   return {
     name: ECO_IMAGE_GENERATION_TOOL,
     description:

@@ -165,13 +165,14 @@ export function classifyResponsesReasoningItem(
       summaryParts.push({
         channel: "summary",
         text: summary.text,
-        id: item.id,
+        ...(item.id !== undefined ? { id: item.id } : {}),
         source: "responses.summary",
       });
     }
   }
 
-  for (const part of item.content ?? []) {
+  const content = Array.isArray(item.content) ? item.content : [];
+  for (const part of content as ResponsesContentPart[]) {
     if (
       (part.type === "reasoning_text" || part.type === "text") &&
       part.text !== undefined &&
@@ -180,7 +181,7 @@ export function classifyResponsesReasoningItem(
       rawParts.push({
         channel: "raw",
         text: part.text,
-        id: item.id,
+        ...(item.id !== undefined ? { id: item.id } : {}),
         source: "responses.content",
       });
     }
@@ -190,7 +191,7 @@ export function classifyResponsesReasoningItem(
     opaqueParts.push({
       channel: "opaque",
       data: item.encrypted_content,
-      id: item.id,
+      ...(item.id !== undefined ? { id: item.id } : {}),
       source: "responses.encrypted_content",
     });
   }
@@ -320,7 +321,7 @@ function pushChatReasoningItem(
       summaryParts.push({
         channel: "summary",
         text: summary.text,
-        id: item.id,
+        ...(item.id !== undefined ? { id: item.id } : {}),
         source: "chat.reasoning_items.summary",
       });
     }
@@ -334,7 +335,7 @@ function pushChatReasoningItem(
       rawParts.push({
         channel: "raw",
         text: part.text,
-        id: item.id,
+        ...(item.id !== undefined ? { id: item.id } : {}),
         source: "chat.reasoning_items.content",
       });
     }
@@ -343,7 +344,7 @@ function pushChatReasoningItem(
     opaqueParts.push({
       channel: "opaque",
       data: item.encrypted_content,
-      id: item.id,
+      ...(item.id !== undefined ? { id: item.id } : {}),
       source: "chat.reasoning_items.encrypted_content",
     });
   }
@@ -364,9 +365,9 @@ function pushChatReasoningDetail(
       opaqueParts.push({
         channel: "opaque",
         data,
-        signature: detail.signature,
-        id: detail.id,
-        index: detail.index,
+        ...(detail.signature !== undefined ? { signature: detail.signature } : {}),
+        ...(detail.id !== undefined ? { id: detail.id } : {}),
+        ...(detail.index !== undefined ? { index: detail.index } : {}),
         source: "chat.reasoning_details",
       });
     }
@@ -380,9 +381,9 @@ function pushChatReasoningDetail(
   const part: ClassifiedReasoningPart = {
     channel,
     text,
-    signature: detail.signature,
-    id: detail.id,
-    index: detail.index,
+    ...(detail.signature !== undefined ? { signature: detail.signature } : {}),
+    ...(detail.id !== undefined ? { id: detail.id } : {}),
+    ...(detail.index !== undefined ? { index: detail.index } : {}),
     source: "chat.reasoning_details",
   };
   if (channel === "summary") {

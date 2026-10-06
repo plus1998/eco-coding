@@ -14,7 +14,7 @@ import { BrowserMcpAuthRegistry, createBrowserMcpControlSecret } from "./browser
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 import { ImageViewReadError, type ImageViewReadFailureCode, readImageViewFile } from "./image-view-reader";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Image-View-Control-Secret";
 
@@ -37,16 +37,18 @@ export interface ImageViewMcpInjection {
 
 export interface ImageViewAnalyzeInput {
   threadId: string;
-  path: string;
+  path?: string;
+  ref?: string;
+  prompt?: string;
   question?: string;
   toolUseId?: string;
+  signal?: AbortSignal;
 }
 
 export class ImageViewMcpGateway {
   private readonly auth = new BrowserMcpAuthRegistry();
   private readonly claims = new BrowserMcpToolClaimRouter();
   private readonly controlSecret = createBrowserMcpControlSecret();
-  private readonly threadPrompts = new Map<string, string>();
   private server: http.Server | undefined;
   private port: number | undefined;
 
@@ -59,9 +61,8 @@ export class ImageViewMcpGateway {
   }
 
   noteThreadPrompt(threadId: string, prompt: string): void {
-    const tid = threadId.trim();
-    if (!tid) return;
-    this.threadPrompts.set(tid, prompt);
+    void threadId;
+    void prompt;
   }
 
   async resolveGlobalCodexServer(): Promise<CodexMcpServerForConfigSync> {
@@ -104,7 +105,6 @@ export class ImageViewMcpGateway {
 
   disposeThread(threadId: string): void {
     this.auth.revokeThread(threadId);
-    this.threadPrompts.delete(threadId.trim());
   }
 
   async close(): Promise<void> {
@@ -157,10 +157,10 @@ export class ImageViewMcpGateway {
         {
           serverName: ECO_IMAGE_VIEW_MCP_SERVER,
           instructions:
-            "Eco local image viewing. Pass an absolute path; returns a factual text report for the main agent (describe only, no advice).",
+            "Eco local image viewing. Pass an absolute path or durable ref plus a caller-chosen prompt. The tool returns the vision model's text response.",
           listTools: async () => ({ tools: [imageViewToolDefinition()] }),
-          callTool: async ({ name, arguments: args, authToken }) =>
-            this.executeToolCall(name, args, authToken),
+          callTool: async ({ name, arguments: args, authToken, signal }) =>
+            this.executeToolCall(name, args, authToken, signal),
         },
         {
           controlSecretHeader: "x-eco-image-view-control-secret",
@@ -213,34 +213,55 @@ export class ImageViewMcpGateway {
     name: string,
     rawArgs: Record<string, unknown>,
     authToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     if (name !== ECO_IMAGE_VIEW_TOOL) {
       throw new Error(`未知看图工具：${name}`);
     }
     const claim = this.resolveThread(authToken);
+    signal?.throwIfAborted();
     const imagePath = typeof rawArgs.path === "string" ? rawArgs.path.trim() : "";
+    const rawReference = rawArgs.ref ?? rawArgs.reference ?? rawArgs.contentRef;
+    const reference = typeof rawReference === "string" ? rawReference.trim() : "";
+    const prompt = typeof rawArgs.prompt === "string" ? rawArgs.prompt.trim() : "";
     const question = typeof rawArgs.question === "string" ? rawArgs.question.trim() : "";
-    if (!imagePath || !path.isAbsolute(imagePath)) {
+    if (imagePath && reference) {
+      return mcpErrorResult("请只提供图片 path 或 ref 其中一个。", "invalid_image_reference");
+    }
+    if (!imagePath && !reference) {
+      return mcpErrorResult("必须提供图片的绝对 path 或 durable ref。", "invalid_image_reference");
+    }
+    if (imagePath && !path.isAbsolute(imagePath)) {
       return mcpErrorResult(IMAGE_VIEW_READ_ERRORS.invalid_path, "invalid_path");
     }
-    try {
-      await readImageViewFile(imagePath);
-    } catch (error) {
-      if (error instanceof ImageViewReadError) {
-        return mcpErrorResult(IMAGE_VIEW_READ_ERRORS[error.code], error.code);
-      }
-      throw error;
+    if (reference && !/^sha256:[0-9a-f]{64}$/.test(reference)) {
+      return mcpErrorResult("图片 ref 不是有效的 sha256 内容引用。", "invalid_reference");
     }
-    const fallbackPrompt = this.threadPrompts.get(claim.threadId)?.trim() ?? "";
-    const report = await this.deps.analyze({
+    if (imagePath) {
+      try {
+        await readImageViewFile(imagePath);
+      } catch (error) {
+        if (error instanceof ImageViewReadError) {
+          return mcpErrorResult(IMAGE_VIEW_READ_ERRORS[error.code], error.code);
+        }
+        throw error;
+      }
+    }
+
+    const analyzeInput: ImageViewAnalyzeInput = {
       threadId: claim.threadId,
-      path: imagePath,
-      ...(question ? { question } : fallbackPrompt ? { question: fallbackPrompt } : {}),
+      ...(imagePath ? { path: imagePath } : {}),
+      ...(reference ? { ref: reference } : {}),
+      ...(prompt ? { prompt } : question ? { question } : {}),
       ...(claim.toolUseId && { toolUseId: claim.toolUseId }),
+      ...(signal ? { signal } : {}),
+    };
+    const resultText = await this.deps.analyze({
+      ...analyzeInput,
     });
     const { maybeSpillMcpTextContent } = await import("./mcp-tool-result-spill.js");
     const spilled = await maybeSpillMcpTextContent({
-      text: report,
+      text: resultText,
       serverName: ECO_IMAGE_VIEW_MCP_SERVER,
       toolName: ECO_IMAGE_VIEW_TOOL,
       threadId: claim.threadId,
@@ -256,21 +277,31 @@ function mcpErrorResult(message: string, code: string): Record<string, unknown> 
   };
 }
 
-function imageViewToolDefinition(): Record<string, unknown> {
+function imageViewToolDefinition(): McpToolDefinition {
   return {
     name: ECO_IMAGE_VIEW_TOOL,
     description:
-      "Describe a local image with Eco's vision sensor and return a factual text report for the main agent. Does not advise or message the user. path must be an absolute filesystem path.",
+      "Inspect an image with Eco's vision model using a caller-provided prompt. Provide either an absolute local path or a durable ref. The returned text is passed through without a prescribed response format.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["path"],
+      required: ["prompt"],
+      anyOf: [{ required: ["path"] }, { required: ["ref"] }],
       properties: {
         path: { type: "string", minLength: 1, description: "Absolute local image path." },
+        ref: {
+          type: "string",
+          pattern: "^sha256:[0-9a-f]{64}$",
+          description: "Durable Composer image reference.",
+        },
+        prompt: {
+          type: "string",
+          minLength: 1,
+          description: "The caller's complete instruction for inspecting this image.",
+        },
         question: {
           type: "string",
-          description:
-            "Optional observation focus (what to look for). Not a chat question; the sensor only describes visible facts.",
+          description: "Deprecated alias for prompt, retained for older clients.",
         },
       },
     },

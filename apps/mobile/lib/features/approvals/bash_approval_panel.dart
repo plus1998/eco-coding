@@ -35,10 +35,20 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
   final _denyFocusNode = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    _highlightIndex = widget.request.defaultToNo
+        ? _choices.indexOf(BashApprovalChoice.deny)
+        : 0;
+  }
+
+  @override
   void didUpdateWidget(covariant BashApprovalPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.request.toolUseId != widget.request.toolUseId) {
-      _highlightIndex = 0;
+      _highlightIndex = widget.request.defaultToNo
+          ? _choices.indexOf(BashApprovalChoice.deny)
+          : 0;
       _codeExpanded = false;
       _denyController.clear();
     }
@@ -53,7 +63,8 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
 
   List<BashApprovalChoice> get _choices {
     final choices = <BashApprovalChoice>[BashApprovalChoice.approve];
-    if (widget.request.filesystemTool == null) {
+    if (widget.request.filesystemTool == null &&
+        !widget.request.suppressAlwaysAllowRule) {
       choices.add(BashApprovalChoice.approveRememberPrefix);
     }
     choices.add(BashApprovalChoice.deny);
@@ -81,7 +92,9 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
   }
 
   Future<void> _submitHighlighted() async {
-    await _submitChoice(_choices[_highlightIndex]);
+    final choice = _choices[_highlightIndex];
+    if (widget.request.defaultToNo && choice != BashApprovalChoice.deny) return;
+    await _submitChoice(choice);
   }
 
   @override
@@ -138,7 +151,9 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                     height: 1.5,
                   ),
                 ),
-                if ((widget.request.reviewRationale ?? '').trim().isNotEmpty) ...[
+                if ((widget.request.reviewRationale ?? '')
+                    .trim()
+                    .isNotEmpty) ...[
                   const SizedBox(height: 10),
                   _ReviewRationale(
                     rationale: widget.request.reviewRationale!.trim(),
@@ -472,11 +487,7 @@ class _CodePreview extends StatelessWidget {
 // unavailable). A genuine risk-control rejection rationale is written in the
 // user's locale and never contains them, so they reliably distinguish
 // "couldn't review" from "reviewed and declined" — regardless of locale.
-const _reviewRequestErrorMarkers = [
-  '辅助模型审批失败',
-  '辅助模型不可用',
-  '审批失败或返回了无效 JSON',
-];
+const _reviewRequestErrorMarkers = ['辅助模型审批失败', '辅助模型不可用', '审批失败或返回了无效 JSON'];
 
 bool _isReviewRequestError(String rationale) {
   return _reviewRequestErrorMarkers.any((m) => rationale.contains(m));

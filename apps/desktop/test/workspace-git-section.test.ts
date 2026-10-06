@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
 import { formatIpcInvokeError } from "../src/renderer/AppMessage";
-import { i18n } from "../src/renderer/i18n";
+
 import { resolveGitRemoteSyncAction } from "../src/renderer/WorkspaceGitSection";
 import { getWorkspaceGitCommitEntryLabel } from "../src/renderer/workspace-git-action-store";
+import { withTestLanguage } from "./support/test-language";
+
+withTestLanguage("en-US");
 
 test("remote sync fetches until the local branch is behind", () => {
   expect(resolveGitRemoteSyncAction(0)).toBe("fetch");
@@ -20,8 +23,7 @@ test("formatIpcInvokeError strips Electron invoke wrapper", () => {
   expect(formatIpcInvokeError(new Error(""), "同步远程失败")).toBe("同步远程失败");
 });
 
-test("work panel commit entry labels stay project-progress oriented", async () => {
-  await i18n.changeLanguage("en-US");
+test("work panel commit entry labels stay project-progress oriented", () => {
   expect(getWorkspaceGitCommitEntryLabel(undefined)).toBe("Commit or push");
   expect(getWorkspaceGitCommitEntryLabel("generating")).toBe("Generating commit");
   expect(getWorkspaceGitCommitEntryLabel("committing")).toBe("Committing");

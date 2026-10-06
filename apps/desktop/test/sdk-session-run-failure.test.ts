@@ -39,7 +39,10 @@ describe("shouldClearSdkSessionOnRunFailure", () => {
   });
 
   test("planning and continuation onFailed keep the SDK session pointer", async () => {
-    const source = await Bun.file(new URL("../src/main/index.ts", import.meta.url)).text();
+    // Windows 检出时源文件是 CRLF，而下面的正则按 LF 书写：先统一换行（断言的是代码结构，不是换行风格）。
+    const source = (
+      await Bun.file(new URL("../src/main/index.ts", import.meta.url)).text()
+    ).replace(/\r\n/g, "\n");
     expect(source).not.toContain("clearSdkSessionAfterResumeFailure");
     expect(source).not.toContain("原 session 无法接续");
     expect(source).toContain("hadResume: Boolean(resumeOptsForRun)");

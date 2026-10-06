@@ -11,8 +11,9 @@ export const BASH_APPROVAL_DENY_OPTION_LABEL = BASH_APPROVAL_DENY_CUSTOM_OPTION_
 
 export function buildBashApprovalChoices(options?: {
   includeRememberPrefix?: boolean;
+  suppressAlwaysAllowRule?: boolean;
 }): BashApprovalChoice[] {
-  const includeRemember = options?.includeRememberPrefix !== false;
+  const includeRemember = options?.includeRememberPrefix !== false && !options?.suppressAlwaysAllowRule;
   const rows: BashApprovalChoice[] = ["approve"];
   if (includeRemember) {
     rows.push("approve_remember_prefix");
@@ -65,4 +66,14 @@ export function formatFilesystemApprovalDenyMessage(toolName: string, feedback?:
     return `User denied this ${toolName} call.`;
   }
   return `User denied this ${toolName} call. User feedback: ${trimmed}`;
+}
+
+export function bashApprovalInitialChoiceIndex(
+  choices: readonly BashApprovalChoice[],
+  defaultToNo?: boolean,
+): number {
+  return defaultToNo ? Math.max(0, choices.indexOf("deny")) : 0;
+}
+export function canSubmitBashApprovalWithEnter(choice: BashApprovalChoice, defaultToNo?: boolean): boolean {
+  return !defaultToNo || (choice !== "approve" && choice !== "approve_remember_prefix");
 }

@@ -39,6 +39,29 @@ List<String> buildRunCommand(
   }
 }
 
-String formatRunCommand(String packageManager, String script, String? args) {
-  return buildRunCommand(packageManager, script, args).join(' ');
+String formatRunCommand(
+  String packageManager,
+  String script,
+  String? args, [
+  String? prefix,
+]) {
+  return joinPrefixedCommand(
+    prefix,
+    buildRunCommand(packageManager, script, args),
+  );
+}
+
+/// Join a leading shell command (nvm switch, env exports) with the argv.
+String joinPrefixedCommand(String? prefix, List<String> command) {
+  final normalizedPrefix = normalizeCommandPrefix(prefix);
+  final body = command.join(' ');
+  return normalizedPrefix.isEmpty ? body : '$normalizedPrefix && $body';
+}
+
+/// Leading command as authored by the user; a trailing connector is dropped
+/// because we always insert `&&`.
+String normalizeCommandPrefix(String? prefix) {
+  return (prefix?.trim() ?? '')
+      .replaceAll(RegExp(r'(?:&&|\|\||[;&])\s*$'), '')
+      .trim();
 }

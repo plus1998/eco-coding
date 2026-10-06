@@ -14,13 +14,26 @@ test("ACP runtime deps map Eco session MCP onto Cursor session/new and session/l
   expect(slice).toContain("toAcpMcpServers(prepared.mcpServers)");
 });
 
-test("ACP continuation persists Composer runtime config before the next Cursor session/load", () => {
-  const start = indexSource.indexOf("async function startAcpThreadContinuation");
+/**
+ * The body of a top-level declaration.
+ *
+ * These assertions are about which statements a function contains, not about how many
+ * characters they occupy: a fixed character window fails the moment the file is
+ * reformatted (it did, at 1800 vs 1817) and says nothing about the behaviour that changed.
+ */
+function declarationBody(source: string, declaration: string): string {
+  const start = source.indexOf(declaration);
   expect(start).toBeGreaterThanOrEqual(0);
-  const slice = indexSource.slice(start, start + 1800);
-  expect(slice).toContain("runtimeConfigInput");
-  expect(slice).toContain("saveThreadRuntimeConfig");
-  expect(slice).toContain("normalizeThreadRuntimeConfig");
+  const rest = source.slice(start + declaration.length);
+  const next = rest.search(/\n(?:export )?(?:async )?function |\n\/\*\*/);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+test("ACP continuation persists Composer runtime config before the next Cursor session/load", () => {
+  const body = declarationBody(indexSource, "async function startAcpThreadContinuation");
+  expect(body).toContain("runtimeConfigInput");
+  expect(body).toContain("saveThreadRuntimeConfig");
+  expect(body).toContain("normalizeThreadRuntimeConfig");
 });
 
 test("ACP run always forwards resolved mcpServers to the driver", () => {

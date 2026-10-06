@@ -1,3 +1,5 @@
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
+
 /** Built-in Eco browser MCP server name (must stay sanitizable for MCP tool prefixes). */
 export const ECO_AGENT_BROWSER_MCP_SERVER = "eco_agent_browser";
 
@@ -41,16 +43,17 @@ export function browserAgentSessionKey(threadId: string): string {
 export function buildEcoAgentBrowserPromptAppend(_threadId?: string): string {
   return [
     "Built-in browser (Eco): tools run against the *current conversation thread* only.",
-    "That thread may have multiple independent browser tabs; list them via tab_list. Use tab_switch only to show the user a tab; other tools must not steal UI focus.",
-    "MCP server `eco_agent_browser` is Eco-hosted: each connection is bound to this conversation (auth token / tool claims) — never another thread's open pages.",
-    "Site data (cookies / localStorage / IndexedDB) is shared across conversations in the same workspace (login once, reuse).",
-    "When `mcp__eco_agent_browser__*` tools are available, ALWAYS use them.",
-    "Do NOT use `list_mcp_resources` / `list_mcp_resource_templates` to probe `eco_agent_browser` — Codex MCP is tools-only; those resource RPCs fail even when browser tools work.",
-    "If `mcp__eco_agent_browser__*` tools are missing from your tool list, say so and stop; do not fall back to shell `agent-browser` or external skills.",
+    "The thread may have multiple tabs; use tab_list to list them and tab_switch only to show the user's chosen tab.",
+    "The Eco-hosted `eco_agent_browser` connection is auth-bound to this thread and cannot access another thread's pages.",
+    "Cookies, localStorage, and IndexedDB are shared across conversations in this workspace.",
+    buildEcoMcpHubToolUsage({ server: ECO_AGENT_BROWSER_MCP_SERVER }),
+    "When direct `mcp__eco_agent_browser__*` tools are explicitly listed, use them for browser actions.",
+    "Do NOT probe `eco_agent_browser` with `list_mcp_resources` / `list_mcp_resource_templates`; this server exposes tools only.",
+    "If the Eco MCP Hub tools and direct `mcp__eco_agent_browser__*` tools are both missing, say so and stop; do not use shell `agent-browser` or external skills.",
     "Do NOT pass a custom `session` argument (or session=__active__/web/chat) — Eco binds one short session per conversation thread.",
     "Do NOT shell `agent-browser` CLI (`Bash`/`agent-browser open|--headed|tab`).",
     "Do NOT read or follow `~/.agents/skills/agent-browser` or external agent-browser skills; use Skill `eco-agent-browser` only.",
-    "Do not use macOS `open` / a separate Chrome when this integration is available for the thread.",
+    "Do not use macOS `open` or a separate Chrome when this integration is available.",
     `Prefer Skill \`${ECO_AGENT_BROWSER_SKILL_NAME}\` for the snapshot-and-ref workflow.`,
   ].join("\n");
 }
@@ -171,6 +174,12 @@ export const BROWSER_WEBVIEW_TAB_ID_ATTR = "ecobrowsertabid";
 
 export type BrowserInstanceSource = "human" | "agent";
 
+export interface BrowserLoadError {
+  code: number;
+  description: string;
+  url?: string;
+}
+
 export interface BrowserInstanceView {
   id: string;
   threadId: string;
@@ -181,6 +190,7 @@ export interface BrowserInstanceView {
   /** Page favicon URL from WebContents (`page-favicon-updated`), when available. */
   faviconUrl?: string;
   isLoading: boolean;
+  loadError?: BrowserLoadError;
   canGoBack: boolean;
   canGoForward: boolean;
   focused: boolean;
@@ -236,6 +246,13 @@ export interface BrowserViewState {
    * Cleared once the focused browser panel is shown via setVisible(true).
    */
   revealBrowserId?: string;
+  /**
+   * When set, renderer should force-switch the task panel to this browser tab
+   * (even from non-browser tabs). Set by explicit user-initiated browser opens.
+   * One-shot: the renderer switches once per new id, and main stops advertising it
+   * as soon as that page closes — a stale id re-opens a tab for a dead browser.
+   */
+  activateBrowserId?: string;
 }
 
 export interface BrowserRegisterGuestRequest {
@@ -267,6 +284,8 @@ export interface BrowserOpenRequest {
    * same cookie partition as the thread that will be created on first send.
    */
   workspacePath?: string;
+  /** When true, always switch the task panel to this browser tab (even from non-browser tabs). */
+  activate?: boolean;
 }
 
 export interface BrowserFocusRequest {
@@ -431,6 +450,37 @@ export function buildHtmlDataNavigateUrl(html: string): string | undefined {
   return url;
 }
 
+/** Convert Windows absolute path to file:// URL, or return null if not a Windows path. */
+function windowsPathToFileUrl(input: string): string | null {
+  // Match Windows absolute paths like C:\path\to\file.html or C:/path/to/file.html
+  const match = /^([a-zA-Z]):[\\\/]/.exec(input);
+  if (!match) {
+    return null;
+  }
+  // Normalize backslashes to forward slashes
+  const normalized = input.replace(/\\/g, "/");
+  // Escape special characters for URL
+  const escaped = normalized.replace(/[\s]/g, encodeURIComponent);
+  // Windows file URLs use three slashes: file:///C:/path
+  return `file:///${escaped}`;
+}
+
+/**
+ * Convert a POSIX absolute path to a file:// URL, or return null if not one.
+ * `//host/share` is protocol-relative rather than a local path, so it is rejected.
+ */
+function posixPathToFileUrl(input: string): string | null {
+  if (!input.startsWith("/") || input.startsWith("//")) {
+    return null;
+  }
+  if (/[\x00-\x1f\x7f]/u.test(input)) {
+    return null;
+  }
+  // Encode per segment so spaces / `#` / `?` inside a name stay path characters.
+  const escaped = input.split("/").map(encodeURIComponent).join("/");
+  return `file://${escaped}`;
+}
+
 export function resolveBrowserNavigateTarget(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -440,6 +490,8 @@ export function resolveBrowserNavigateTarget(raw: string): string | undefined {
     normalizeBrowserNavigateUrl(trimmed) ??
     (isBrowserHtmlDataUrl(trimmed) ? trimmed : undefined) ??
     (isBrowserPreviewFileUrl(trimmed) ? trimmed : undefined) ??
+    (windowsPathToFileUrl(trimmed) ?? undefined) ??
+    (posixPathToFileUrl(trimmed) ?? undefined) ??
     (trimmed === "about:blank" ? "about:blank" : undefined)
   );
 }
@@ -467,6 +519,10 @@ export function normalizeBrowserNavigateUrl(raw: string): string | undefined {
     return undefined;
   }
   if (isBrowserHttpUrl(trimmed)) {
+    return trimmed;
+  }
+  // Support file:// URLs for opening local HTML files
+  if (trimmed.startsWith("file://")) {
     return trimmed;
   }
   // Do not promote Eco event labels / tool status strings into https://hosts
@@ -556,6 +612,30 @@ export function isEcoAgentBrowserToolName(toolName: string | undefined): boolean
     name.includes("mcp__eco_ab_") ||
     name.includes("agent_browser_")
   );
+}
+
+/**
+ * Browser tool suffixes that have their own label in the i18n catalogs.
+ * Everything else (a newly added browser tool, for example) must fall back to the
+ * generic browser label: building `activity.named.${suffix}` for a name the catalogs
+ * do not know renders the raw key in the Feed. Keep in sync with
+ * `activity.named.agent_browser_*`.
+ */
+export const NAMED_AGENT_BROWSER_TOOL_SUFFIXES = new Set([
+  "agent_browser_open",
+  "agent_browser_snapshot",
+  "agent_browser_click",
+  "agent_browser_fill",
+  "agent_browser_screenshot",
+  "agent_browser_get_url",
+  "agent_browser_tab_list",
+  "agent_browser_tab_new",
+  "agent_browser_tab_switch",
+]);
+
+/** Whether the catalogs name this browser tool suffix. */
+export function hasNamedAgentBrowserLabel(suffix: string): boolean {
+  return NAMED_AGENT_BROWSER_TOOL_SUFFIXES.has(suffix.trim().toLowerCase());
 }
 
 /** Bare tool segment after `mcp__server__`, or the original when not MCP-shaped. */

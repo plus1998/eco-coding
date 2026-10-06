@@ -1,7 +1,9 @@
 import { shortenModelId } from "@eco/runtime/usage";
 import {
   Bot,
+  Check,
   Circle,
+  Copy,
   ExternalLink,
   FileText,
   FolderOpen,
@@ -17,7 +19,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
+import {
+  browserTaskTabId,
+  isBrowserPlaceholderUrl,
+  isBrowserTaskTabId,
+  parseBrowserTaskTabId,
+} from "../shared/browser";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
 import { imageDisplayTaskTabId, parseImageDisplayTaskTabId } from "../shared/image-display";
@@ -27,7 +34,6 @@ import type {
   ImageGenerationArtifact,
   ThreadPendingPlan,
   ThreadRunProjectionSnapshot,
-  ThreadRunProjectionTimelineItem,
   ThreadStatus,
   WorkspaceDiffResult,
 } from "../shared/ipc";
@@ -35,15 +41,22 @@ import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { BrowserPanel } from "./BrowserPanel";
+import { TaskPanelTabOrder } from "./TaskPanelTabOrder";
+import { TaskPanelNewTab } from "./TaskPanelNewTab";
 import { useBrowserTaskInstances } from "./browser-state-store";
+import { copyTextToClipboard } from "./clipboard";
 import { i18n } from "./i18n";
 import { ImageLightbox } from "./image-lightbox";
-import { createImageObjectUrlFromBase64, revokeImageObjectUrl, revokeImageObjectUrls } from "./image-object-url";
+import {
+  createImageObjectUrlFromBase64,
+  revokeImageObjectUrl,
+  revokeImageObjectUrls,
+} from "./image-object-url";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { SshBookmarksPanel } from "./SshBookmarksPanel";
-import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
+import type { ThreadRunProjectionSubagentCard } from "./conversation-v2-projection-view";
 import { useEcoWorkspaceFileDiffLoader, WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
 import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
@@ -59,6 +72,8 @@ import {
   TASK_PANEL_REVIEW_TAB_ID,
   TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
   type TaskPanelActiveTab,
+  type TaskPanelHomeTool,
+  isNewTaskPanelTabId,
 } from "./task-panel-tabs";
 import "./subagent-task-drawer-home.css";
 
@@ -101,15 +116,6 @@ function TaskBrowserTabIcon({ faviconUrl, label }: { faviconUrl?: string; label:
 }
 
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
-
-type SubagentDetailState = {
-  threadId: string;
-  agentId: string;
-  agent: ThreadRunProjectionSubagentCard["agent"];
-  timeline: ThreadRunProjectionTimelineItem[];
-  hasEarlier: boolean;
-  beforeSequence?: number;
-};
 
 const emptyRequestSpansById = new Map<string, ProjectionRequestSpan>();
 
@@ -278,36 +284,8 @@ function useStableSubagentRequestSpansById(
   return snapshot.spansById;
 }
 
-function mergeDetailTimeline(
-  current: readonly ThreadRunProjectionTimelineItem[],
-  incoming: readonly ThreadRunProjectionTimelineItem[],
-): ThreadRunProjectionTimelineItem[] {
-  const byId = new Map(current.map((item) => [item.id, item]));
-  for (const item of incoming) {
-    byId.set(item.id, item);
-  }
-  return [...byId.values()].sort(
-    (left, right) => left.sequence - right.sequence || left.at.localeCompare(right.at),
-  );
-}
-
-function detailTimelineNeedsMerge(
-  current: readonly ThreadRunProjectionTimelineItem[],
-  incoming: readonly ThreadRunProjectionTimelineItem[],
-): boolean {
-  if (incoming.length === 0) {
-    return false;
-  }
-  const currentById = new Map(current.map((item) => [item.id, item]));
-  return incoming.some((item) => {
-    const existing = currentById.get(item.id);
-    return !existing || existing.sequence !== item.sequence || existing.text !== item.text;
-  });
-}
-
 function SubagentProjectionDetail({
   card,
-  projection,
   requestSpansById,
   threadActive,
 }: {
@@ -315,208 +293,16 @@ function SubagentProjectionDetail({
   projection?: ThreadRunProjectionSnapshot;
   requestSpansById: Map<string, ProjectionRequestSpan>;
   threadActive: boolean;
+  v2Only?: boolean;
 }) {
-  const { t } = useTranslation();
-  const threadId = projection?.thread.threadId;
-  const [detail, setDetail] = useState<SubagentDetailState>();
-  const [loading, setLoading] = useState(false);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [error, setError] = useState<string>();
-  const detailRef = useRef<SubagentDetailState | undefined>(undefined);
-  const refreshInFlightRef = useRef(false);
-  const feedSequence = useMemo(() => {
-    if (!projection) return undefined;
-    let maximum: number | undefined;
-    for (const item of [...projection.timeline, ...projection.agents.flatMap((agent) => agent.timeline)]) {
-      maximum = maximum === undefined ? item.sequence : Math.max(maximum, item.sequence);
-    }
-    return maximum;
-  }, [projection]);
-  const detailSequence = detail?.timeline.at(-1)?.sequence;
-
-  useEffect(() => {
-    detailRef.current = detail;
-  }, [detail]);
-
-  useEffect(() => {
-    if (!threadId || !window.eco?.getThreadRunProjectionDetail) {
-      setDetail(undefined);
-      setError(threadId ? t("task.detailUnavailable") : undefined);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(undefined);
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId,
-        kind: "agent",
-        key: card.agent.agentId,
-        tail: true,
-        limit: 500,
-      })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result?.agent) {
-          setDetail(undefined);
-          setError(t("task.detailNotFound"));
-          return;
-        }
-        setDetail({
-          threadId,
-          agentId: card.agent.agentId,
-          agent: result.agent,
-          timeline: mergeDetailTimeline(card.agent.timeline, result.timeline),
-          hasEarlier: result.hasEarlier === true,
-          ...(result.previousBeforeSequence !== undefined
-            ? { beforeSequence: result.previousBeforeSequence }
-            : {}),
-        });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setDetail(undefined);
-          setError(cause instanceof Error ? cause.message : String(cause));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [card.agent.agentId, threadId]);
-
-  useEffect(() => {
-    void detailSequence;
-    void feedSequence;
-    const current = detailRef.current;
-    if (
-      !threadId ||
-      !current ||
-      current.threadId !== threadId ||
-      current.agentId !== card.agent.agentId ||
-      refreshInFlightRef.current ||
-      !window.eco?.getThreadRunProjectionDetail
-    ) {
-      return;
-    }
-    if (detailTimelineNeedsMerge(current.timeline, card.agent.timeline)) {
-      const timeline = mergeDetailTimeline(current.timeline, card.agent.timeline);
-      setDetail((previous) =>
-        previous && previous.threadId === threadId && previous.agentId === card.agent.agentId
-          ? {
-              ...previous,
-              agent: { ...previous.agent, ...card.agent, timeline },
-              timeline,
-            }
-          : previous,
-      );
-    }
-    const afterSequence = current.timeline.at(-1)?.sequence;
-    if (afterSequence === undefined) {
-      return;
-    }
-    refreshInFlightRef.current = true;
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId,
-        kind: "agent",
-        key: card.agent.agentId,
-        afterSequence,
-        limit: 500,
-      })
-      .then((result) => {
-        if (!result?.agent || result.timeline.length === 0) return;
-        const resultAgent = result.agent;
-        setDetail((previous) =>
-          previous && previous.threadId === threadId && previous.agentId === card.agent.agentId
-            ? {
-                ...previous,
-                agent: resultAgent,
-                timeline: mergeDetailTimeline(previous.timeline, result.timeline),
-              }
-            : previous,
-        );
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => {
-        refreshInFlightRef.current = false;
-      });
-  }, [card.agent.agentId, card.agent.timeline, detailSequence, feedSequence, threadId]);
-
-  const loadEarlier = useCallback(() => {
-    const current = detailRef.current;
-    if (
-      !current?.hasEarlier ||
-      current.beforeSequence === undefined ||
-      !window.eco?.getThreadRunProjectionDetail
-    ) {
-      return;
-    }
-    setLoadingEarlier(true);
-    setError(undefined);
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId: current.threadId,
-        kind: "agent",
-        key: current.agentId,
-        beforeSequence: current.beforeSequence,
-        tail: true,
-        limit: 500,
-      })
-      .then((result) => {
-        if (!result?.agent) {
-          setError(t("task.earlierFailed"));
-          return;
-        }
-        const resultAgent = result.agent;
-        setDetail((previous) =>
-          previous
-            ? {
-                ...previous,
-                agent: resultAgent,
-                timeline: mergeDetailTimeline(result.timeline, previous.timeline),
-                hasEarlier: result.hasEarlier === true,
-                ...(result.previousBeforeSequence !== undefined
-                  ? { beforeSequence: result.previousBeforeSequence }
-                  : {}),
-              }
-            : previous,
-        );
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setLoadingEarlier(false));
-  }, []);
-
-  const resolvedAgent = detail ? { ...card.agent, ...detail.agent, timeline: detail.timeline } : card.agent;
-
   return (
-    <>
-      {detail?.hasEarlier ? (
-        <button
-          type="button"
-          className="task-panel-load-earlier"
-          disabled={loadingEarlier}
-          onClick={loadEarlier}
-        >
-          {loadingEarlier ? t("task.loadingEarlier") : t("task.loadEarlier")}
-        </button>
-      ) : null}
-      {loading ? <div className="subagent-task-detail-status">{t("task.loadingFull")}</div> : null}
-      {error ? <div className="subagent-task-detail-status is-error">{error}</div> : null}
-      <ProjectionSubagentDetailFeed
-        agent={resolvedAgent}
-        missionText={card.missionText}
-        requestSpansById={requestSpansById}
-        threadActive={threadActive}
-        {...(card.promptImages && { images: card.promptImages })}
-      />
-    </>
+    <ProjectionSubagentDetailFeed
+      agent={card.agent}
+      missionText={card.missionText}
+      requestSpansById={requestSpansById}
+      threadActive={threadActive}
+      {...(card.promptImages && { images: card.promptImages })}
+    />
   );
 }
 
@@ -614,9 +400,43 @@ export function BackgroundTerminalTasksPanel({
 function PlanDetailPanel({ plan }: { plan: ThreadPendingPlan }) {
   const { t } = useTranslation();
   const analysis = plan.analysis.trim();
+  const [copied, setCopied] = useState(false);
+  const planText = plan.plan.trim();
+
+  function copyPlan() {
+    if (!planText) {
+      return;
+    }
+    void copyTextToClipboard(plan.plan).then((ok) => {
+      if (!ok) {
+        return;
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  const copyLabel = copied ? t("task.planCopied") : t("task.copyPlan");
 
   return (
     <section className="task-plan-detail" aria-label={t("task.fullPlan")}>
+      <header className="task-plan-detail-header">
+        <span className="task-plan-detail-title">{t("task.fullPlan")}</span>
+        <button
+          type="button"
+          className={`task-plan-detail-copy${copied ? " is-copied" : ""}`}
+          onClick={copyPlan}
+          disabled={!planText}
+          title={copyLabel}
+          aria-label={copyLabel}
+        >
+          {copied ? (
+            <Check size={15} strokeWidth={2} aria-hidden />
+          ) : (
+            <Copy size={15} strokeWidth={1.75} aria-hidden />
+          )}
+        </button>
+      </header>
       <div className="task-plan-detail-body">
         <section className="task-plan-detail-section">
           <div className="task-plan-detail-markdown">
@@ -801,8 +621,7 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
     };
   }, [artifact.id, t]);
 
-  const title =
-    artifact.title?.trim() || fileName || artifact.sourceRef || t("task.imageDisplay.emptyTitle");
+  const title = artifact.title?.trim() || fileName || artifact.sourceRef || t("task.imageDisplay.emptyTitle");
   const metaParts = [
     t(`task.imageDisplay.source.${artifact.sourceKind}`),
     artifact.width && artifact.height
@@ -831,7 +650,9 @@ function ImageDisplayArtifactDetail({ artifact }: { artifact: ImageDisplayArtifa
             {title}
           </p>
         </div>
-        {metaParts.length > 0 ? <span className="image-artifact-detail-meta">{metaParts.join(" · ")}</span> : null}
+        {metaParts.length > 0 ? (
+          <span className="image-artifact-detail-meta">{metaParts.join(" · ")}</span>
+        ) : null}
       </header>
       {loadError ? <p className="image-artifact-error">{loadError}</p> : null}
       {src ? (
@@ -869,6 +690,7 @@ export function SubagentTaskDrawer({
   fullscreen,
   cards,
   projection,
+  v2Only = false,
   plan,
   activeTab,
   openTabIds,
@@ -894,8 +716,10 @@ export function SubagentTaskDrawer({
   onSelectBrowser,
   browserInstances,
   onViewedFileChange,
-  onOpenTerminal,
-  onShowHome,
+  onOpenHomeTool,
+  onNavigateNewTab,
+  onSelectNewTab,
+  onNewBrowserTab,
   onSelectReviewPath,
   onOpenTerminalTask,
   onStopTerminalTask,
@@ -917,6 +741,8 @@ export function SubagentTaskDrawer({
   fullscreen: boolean;
   cards: readonly ThreadRunProjectionSubagentCard[];
   projection?: ThreadRunProjectionSnapshot;
+  /** When true, agent detail is already complete in the V2 renderer state. */
+  v2Only?: boolean;
   plan?: ThreadPendingPlan;
   activeTab: TaskPanelActiveTab;
   openTabIds: readonly TaskPanelActiveTab[];
@@ -942,8 +768,10 @@ export function SubagentTaskDrawer({
   onSelectBrowser: (browserId?: string) => void;
   browserInstances?: readonly TaskPanelBrowserInstance[];
   onViewedFileChange: (target: WorkspaceFileReference & { requestId: number }) => void;
-  onOpenTerminal: () => void;
-  onShowHome: () => void;
+  onOpenHomeTool: (sourceTabId: string, tool: TaskPanelHomeTool) => void;
+  onNavigateNewTab: (tabId: string, url: string) => Promise<void>;
+  onSelectNewTab: (tabId: string) => void;
+  onNewBrowserTab: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
@@ -963,7 +791,6 @@ export function SubagentTaskDrawer({
   const storedBrowserInstances = useBrowserTaskInstances();
   const resolvedBrowserInstances = browserInstances ?? storedBrowserInstances;
   const loadFileDiff = useEcoWorkspaceFileDiffLoader();
-  const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
   const filesSelected = activeTab === TASK_PANEL_FILES_TAB_ID;
   const fileViewerSelected = activeTab === TASK_PANEL_FILE_VIEWER_TAB_ID;
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
@@ -972,6 +799,8 @@ export function SubagentTaskDrawer({
   const sshBookmarksSelected = activeTab === TASK_PANEL_SSH_BOOKMARKS_TAB_ID;
   const activeBrowserId = parseBrowserTaskTabId(String(activeTab));
   const browserSelected = Boolean(activeBrowserId);
+  const newTabIds = openTabIds.filter(isNewTaskPanelTabId);
+  const newTabSelected = isNewTaskPanelTabId(activeTab);
   const activeImageArtifactId = parseImageGenerationTaskTabId(String(activeTab));
   const imageSelected = Boolean(activeImageArtifactId);
   const activeImageArtifact = imageArtifacts.find((artifact) => artifact.id === activeImageArtifactId);
@@ -1000,7 +829,7 @@ export function SubagentTaskDrawer({
       const id = parseBrowserTaskTabId(String(tabId));
       if (!id) return undefined;
       const known = resolvedBrowserInstances.find((item) => item.id === id);
-      return known ?? { id, title: t("browser.title"), url: "about:blank" };
+      return known ?? { id, title: t("browser.newTab"), url: "about:blank" };
     })
     .filter((item): item is TaskPanelBrowserInstance => Boolean(item));
   const browserTabs = openBrowserInstances.length > 0 ? openBrowserInstances : browserTabsFromOpenIds;
@@ -1019,7 +848,6 @@ export function SubagentTaskDrawer({
     [cards, openTabIds],
   );
   const liveActiveSubagentCard =
-    !homeSelected &&
     !filesSelected &&
     !fileViewerSelected &&
     !reviewSelected &&
@@ -1027,6 +855,7 @@ export function SubagentTaskDrawer({
     !terminalTasksSelected &&
     !sshBookmarksSelected &&
     !browserSelected &&
+    !newTabSelected &&
     !imageSelected &&
     !imageDisplaySelected
       ? cards.find((card) => card.key === activeTab)
@@ -1050,9 +879,40 @@ export function SubagentTaskDrawer({
       aria-label={fullscreen ? t("app.taskPanelFullscreen") : t("app.taskPanel")}
     >
       <header className="subagent-task-panel-topbar">
-        <div className="subagent-task-panel-tabs" role="tablist" aria-label={t("task.tabs")}>
+        <TaskPanelTabOrder openTabIds={openTabIds} label={t("task.tabs")}>
+          {newTabIds.map((tabId) => (
+            <span
+              key={tabId}
+              data-task-panel-tab-id={tabId}
+              className={`subagent-task-panel-tab-shell${activeTab === tabId ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tabId}
+                aria-controls={`subagent-task-tab-${tabId}`}
+                className={`subagent-task-panel-tab subagent-task-panel-tab--new${activeTab === tabId ? " is-active" : ""}`}
+                onClick={() => onSelectNewTab(tabId)}
+              >
+                <Globe size={15} aria-hidden />
+                <span>{t("browser.newTab")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("browser.newTab") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(tabId)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
+          ))}
           {filesOpen ? (
-            <span className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_FILES_TAB_ID}
+              className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--files${
@@ -1078,7 +938,10 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {fileViewerOpen ? (
-            <span className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_FILE_VIEWER_TAB_ID}
+              className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--file-viewer${
@@ -1110,7 +973,10 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {reviewOpen ? (
-            <span className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_REVIEW_TAB_ID}
+              className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--review${
@@ -1139,12 +1005,13 @@ export function SubagentTaskDrawer({
             const tabId = browserTaskTabId(instance.id);
             const isActive = activeTab === tabId;
             const isLoading = instance.isLoading === true;
-            const label =
-              instance.title?.trim() ||
-              (instance.url && instance.url !== "about:blank" ? instance.url : t("browser.title"));
+            const label = isBrowserPlaceholderUrl(instance.url)
+              ? t("browser.newTab")
+              : instance.title?.trim() || instance.url || t("browser.newTab");
             return (
               <span
                 key={tabId}
+                data-task-panel-tab-id={tabId}
                 className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}${
                   isLoading ? " is-loading" : ""
                 }`}
@@ -1157,7 +1024,7 @@ export function SubagentTaskDrawer({
                   role="tab"
                   aria-selected={isActive}
                   aria-controls={`subagent-task-tab-browser-${instance.id}`}
-                  title={instance.url || label}
+                  title={isBrowserPlaceholderUrl(instance.url) ? label : instance.url || label}
                   onClick={() => onSelectBrowser(instance.id)}
                 >
                   {isLoading ? (
@@ -1183,7 +1050,10 @@ export function SubagentTaskDrawer({
             );
           })}
           {plan && planOpen ? (
-            <span className={`subagent-task-panel-tab-shell${planSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_PLAN_TAB_ID}
+              className={`subagent-task-panel-tab-shell${planSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--plan${
@@ -1212,7 +1082,11 @@ export function SubagentTaskDrawer({
             const tabId = imageGenerationTaskTabId(artifact.id);
             const isActive = activeTab === tabId;
             return (
-              <span key={tabId} className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}>
+              <span
+                key={tabId}
+                data-task-panel-tab-id={tabId}
+                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
+              >
                 <button
                   type="button"
                   className={`subagent-task-panel-tab${isActive ? " is-active" : ""}`}
@@ -1242,7 +1116,11 @@ export function SubagentTaskDrawer({
               artifact.sourceRef?.split(/[\\/]/u).at(-1) ||
               t("task.imageDisplay.title");
             return (
-              <span key={tabId} className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}>
+              <span
+                key={tabId}
+                data-task-panel-tab-id={tabId}
+                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
+              >
                 <button
                   type="button"
                   className={`subagent-task-panel-tab${isActive ? " is-active" : ""}`}
@@ -1277,6 +1155,7 @@ export function SubagentTaskDrawer({
             return (
               <span
                 key={card.key}
+                data-task-panel-tab-id={card.key}
                 className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
                 style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
               >
@@ -1318,7 +1197,10 @@ export function SubagentTaskDrawer({
             );
           })}
           {terminalTasksOpen ? (
-            <span className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID}
+              className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--terminal${
@@ -1344,7 +1226,10 @@ export function SubagentTaskDrawer({
             </span>
           ) : null}
           {sshBookmarksOpen ? (
-            <span className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}>
+            <span
+              data-task-panel-tab-id={TASK_PANEL_SSH_BOOKMARKS_TAB_ID}
+              className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}
+            >
               <button
                 type="button"
                 className={`subagent-task-panel-tab subagent-task-panel-tab--ssh${
@@ -1372,41 +1257,27 @@ export function SubagentTaskDrawer({
           <button
             type="button"
             className="subagent-task-panel-tab-add"
-            aria-label={t("task.home")}
-            title={t("task.home")}
-            onClick={onShowHome}
+            aria-label={t("browser.newTab")}
+            title={t("browser.newTab")}
+            onClick={onNewBrowserTab}
           >
             <Plus size={17} aria-hidden />
           </button>
-        </div>
+        </TaskPanelTabOrder>
       </header>
 
       <div className="subagent-task-panel-body">
-        {homeSelected ? (
-          <section className="task-panel-home-actions" aria-labelledby="task-panel-home-title">
-            <h2 id="task-panel-home-title">{t("task.home")}</h2>
-            <button type="button" onClick={onOpenTerminal}>
-              <Terminal size={17} aria-hidden />
-              <span>{t("task.terminal")}</span>
-            </button>
-            <button type="button" onClick={onSelectFiles}>
-              <FolderOpen size={17} aria-hidden />
-              <span>{t("task.files")}</span>
-            </button>
-            <button type="button" onClick={onSelectReview}>
-              <ListChecks size={17} aria-hidden />
-              <span>{t("task.review")}</span>
-            </button>
-            <button type="button" onClick={() => onSelectBrowser()}>
-              <Globe size={17} aria-hidden />
-              <span>{t("browser.title")}</span>
-            </button>
-            <button type="button" onClick={onSelectSshBookmarks}>
-              <KeyRound size={17} aria-hidden />
-              <span>{t("app.sshBookmarks.title")}</span>
-            </button>
-          </section>
-        ) : null}
+        {newTabIds.map((tabId) => (
+          <div
+            key={tabId}
+            id={`subagent-task-tab-${tabId}`}
+            className={`subagent-task-panel-tab-pane subagent-task-panel-tab-pane--new ${activeTab === tabId ? "is-active" : "is-inactive"}`}
+            role="tabpanel"
+            hidden={activeTab !== tabId}
+          >
+            <TaskPanelNewTab tabId={tabId} onOpenTool={onOpenHomeTool} onNavigate={onNavigateNewTab} />
+          </div>
+        ))}
         {filesSelected ? (
           <div id="subagent-task-tab-files" className="subagent-task-panel-tab-pane" role="tabpanel">
             <WorkspaceFileBrowser workspacePath={workspacePath} />
@@ -1456,7 +1327,11 @@ export function SubagentTaskDrawer({
               role="tabpanel"
               hidden={!isActive}
             >
-              <BrowserPanel active={isActive && surfaceActive} browserId={instance.id} />
+              <BrowserPanel
+                active={isActive && surfaceActive}
+                browserId={instance.id}
+                onOpenTool={(browserId, tool) => onOpenHomeTool(browserTaskTabId(browserId), tool)}
+              />
             </div>
           );
         })}
@@ -1493,6 +1368,7 @@ export function SubagentTaskDrawer({
                 {...(projection && { projection })}
                 requestSpansById={requestSpansById}
                 threadActive={isThreadActive(threadStatus ?? projection?.thread.status)}
+                v2Only={v2Only}
               />
             </div>
           </div>

@@ -12,7 +12,7 @@
   },
   {
     "id": "tre:codex:message.final:01a05b5d-82fc-7662-974a-bb85de4075f5:01a05b5d-8366-7971-8c06-30050b72151f:1",
-    "sequence": 2,
+    "sequence": 4,
     "eventType": "message.final",
     "role": "user",
     "message": "You are running an Eco conversation-round scenario smoke. Marker=LCMTI7H7XI.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTI7H7XI\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTI7H7XI\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTI7H7XI\n\nDo not skip steps. Prefer tools over guessing.",
@@ -28,12 +28,13 @@
         "userMessageId": "01a05b5d-8366-7971-8c06-30050b72151f"
       },
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_4898041b"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 3,
+    "sequence": 6,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\n",
@@ -46,12 +47,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 4,
+    "sequence": 8,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet",
@@ -64,12 +66,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 5,
+    "sequence": 10,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps",
@@ -82,12 +85,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 6,
+    "sequence": 12,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I",
@@ -100,12 +104,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 7,
+    "sequence": 14,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading",
@@ -118,12 +123,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 8,
+    "sequence": 16,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill",
@@ -136,12 +142,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 9,
+    "sequence": 18,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill,",
@@ -154,12 +161,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 10,
+    "sequence": 20,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through",
@@ -172,12 +180,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 11,
+    "sequence": 22,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet",
@@ -190,12 +199,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 12,
+    "sequence": 24,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the",
@@ -208,12 +218,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 13,
+    "sequence": 26,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke",
@@ -226,12 +237,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 14,
+    "sequence": 28,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke-skill SKILL",
@@ -244,12 +256,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 15,
+    "sequence": 30,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke-skill SKILL.md to",
@@ -262,12 +275,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 16,
+    "sequence": 32,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke-skill SKILL.md to understand what",
@@ -280,12 +294,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 17,
+    "sequence": 34,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke-skill SKILL.md to understand what's",
@@ -298,12 +313,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f",
-    "sequence": 18,
+    "sequence": 36,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nLet me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke-skill SKILL.md to understand what's needed.",
@@ -316,12 +332,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:thinking.final:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_9e0a6013971b4479b4ed545880d5bf6f:18",
-    "sequence": 19,
+    "sequence": 39,
     "eventType": "thinking.final",
     "role": "thinking",
     "message": "Let me follow the steps in order. I'll start by loading the smoke-skill, then proceed through each step.\n\nLet me first read the smoke-skill SKILL.md to understand what's needed.",
@@ -335,12 +352,13 @@
       "thinkingStartedAt": "2026-09-01T05:07:34.077Z",
       "thinkingDurationMs": 1241,
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_fd1145d1"
     }
   },
   {
     "id": "tre:codex:tool:call_a7aae81884b8467ab413da9a:started",
-    "sequence": 20,
+    "sequence": 41,
     "eventType": "tool.started",
     "role": "tool",
     "message": "Tool: Bash · /bin/zsh -lc 'cat /private/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ/.agents/skills/smoke-skill/SKILL.md 2>/dev/null || cat /private/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-home-O3XWCN/skills/smoke-skill/SKILL.md 2>/dev/null'",
@@ -363,7 +381,7 @@
   },
   {
     "id": "tre:codex:tool:call_a7aae81884b8467ab413da9a:done",
-    "sequence": 21,
+    "sequence": 43,
     "eventType": "tool.completed",
     "role": "tool",
     "message": "Tool: Bash · /bin/zsh -lc 'cat /private/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ/.agents/skills/smoke-skill/SKILL.md 2>/dev/null || cat /private/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-home-O3XWCN/skills/smoke-skill/SKILL.md 2>/dev/null'",
@@ -389,7 +407,7 @@
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 22,
+    "sequence": 44,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\n",
@@ -402,12 +420,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 23,
+    "sequence": 46,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep",
@@ -420,12 +439,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 24,
+    "sequence": 48,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done.",
@@ -438,12 +458,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 25,
+    "sequence": 50,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SM",
@@ -456,12 +477,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 26,
+    "sequence": 52,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK",
@@ -474,12 +496,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 27,
+    "sequence": 54,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK L",
@@ -492,12 +515,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 28,
+    "sequence": 56,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK LCMTI7H",
@@ -510,12 +534,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 29,
+    "sequence": 58,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK LCMTI7H7XI\n\nNow",
@@ -528,12 +553,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 30,
+    "sequence": 60,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK LCMTI7H7XI\n\nNow step 2:",
@@ -546,12 +572,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 31,
+    "sequence": 62,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK LCMTI7H7XI\n\nNow step 2: Create smoke",
@@ -564,12 +591,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1",
-    "sequence": 32,
+    "sequence": 64,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nStep 1 done. SMOKE_SKILL_OK LCMTI7H7XI\n\nNow step 2: Create smoke-note.txt\n",
@@ -582,12 +610,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:thinking.final:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_5545104e33b140c2a029cd4f6f7506e1:32",
-    "sequence": 33,
+    "sequence": 67,
     "eventType": "thinking.final",
     "role": "thinking",
     "message": "Step 1 done. SMOKE_SKILL_OK LCMTI7H7XI\n\nNow step 2: Create smoke-note.txt",
@@ -601,12 +630,13 @@
       "thinkingStartedAt": "2026-09-01T05:07:40.396Z",
       "thinkingDurationMs": 861,
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1ab06cd1"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 34,
+    "sequence": 69,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE",
@@ -617,12 +647,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 35,
+    "sequence": 71,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK L",
@@ -633,12 +664,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 36,
+    "sequence": 73,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H",
@@ -649,12 +681,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 37,
+    "sequence": 75,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow",
@@ -665,12 +698,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 38,
+    "sequence": 77,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow creating the file,",
@@ -681,12 +715,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 39,
+    "sequence": 79,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow creating the file, reading it back,",
@@ -697,12 +732,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 40,
+    "sequence": 81,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow creating the file, reading it back, calling MCP",
@@ -713,12 +749,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 41,
+    "sequence": 83,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow creating the file, reading it back, calling MCP, and spawning",
@@ -729,12 +766,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97",
-    "sequence": 42,
+    "sequence": 85,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow creating the file, reading it back, calling MCP, and spawning the subagent.",
@@ -745,12 +783,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:message.final:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_cdd40fd889924c088d33cb883ba4fb97:42",
-    "sequence": 43,
+    "sequence": 87,
     "eventType": "message.final",
     "role": "assistant",
     "message": "SMOKE_SKILL_OK LCMTI7H7XI\n\nNow creating the file, reading it back, calling MCP, and spawning the subagent.",
@@ -761,12 +800,13 @@
       "itemId": "msg_cdd40fd889924c088d33cb883ba4fb97",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_ddde8bed"
     }
   },
   {
     "id": "tre:codex:tool:call_987c3d106d34472b88bc8d56:started",
-    "sequence": 44,
+    "sequence": 89,
     "eventType": "tool.started",
     "role": "tool",
     "message": "Tool: Bash · /bin/zsh -lc \"echo -n 'SMOKE_FILE:LCMTI7H7XI' > /var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ/smoke-note.txt\"",
@@ -789,7 +829,7 @@
   },
   {
     "id": "tre:codex:tool:call_987c3d106d34472b88bc8d56:done",
-    "sequence": 45,
+    "sequence": 91,
     "eventType": "tool.completed",
     "role": "tool",
     "message": "Tool: Bash · /bin/zsh -lc \"echo -n 'SMOKE_FILE:LCMTI7H7XI' > /var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ/smoke-note.txt\"",
@@ -814,7 +854,7 @@
   },
   {
     "id": "tre:codex:tool:call_828bbe6d26ce440d96a970da:started",
-    "sequence": 46,
+    "sequence": 93,
     "eventType": "tool.started",
     "role": "tool",
     "message": "Tool: mcp__eco_smoke__smoke_ping",
@@ -840,7 +880,7 @@
   },
   {
     "id": "tre:codex:tool:call_828bbe6d26ce440d96a970da:done",
-    "sequence": 47,
+    "sequence": 95,
     "eventType": "tool.completed",
     "role": "tool",
     "message": "Tool: mcp__eco_smoke__smoke_ping",
@@ -867,7 +907,7 @@
   },
   {
     "id": "tre:codex:agent.started:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-    "sequence": 48,
+    "sequence": 97,
     "eventType": "agent.started",
     "role": "smoke_worker",
     "message": "Subagent smoke_worker started",
@@ -891,7 +931,7 @@
   },
   {
     "id": "tre:codex:run.attempt.started:01a05b5d-bbe4-7062-a069-3b29e940475f:48:48",
-    "sequence": 49,
+    "sequence": 99,
     "eventType": "request.started",
     "role": "smoke_worker",
     "message": "Requesting model…",
@@ -903,7 +943,7 @@
   },
   {
     "id": "tre:codex:message.final:01a05b5d-bbe4-7062-a069-3b29e940475f:01a05b5d-bc17-7a50-b1ea-6dcc021af1ba:49",
-    "sequence": 50,
+    "sequence": 103,
     "eventType": "message.final",
     "role": "smoke_worker",
     "message": "Reply with exactly: SMOKE_CHILD:LCMTI7H7XI",
@@ -919,12 +959,13 @@
         "userMessageId": "01a05b5d-bc17-7a50-b1ea-6dcc021af1ba"
       },
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_7628338d"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 51,
+    "sequence": 104,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\n",
@@ -937,12 +978,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 52,
+    "sequence": 105,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\n",
@@ -955,12 +997,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 53,
+    "sequence": 107,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\nThe",
@@ -973,12 +1016,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 54,
+    "sequence": 109,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile",
@@ -991,12 +1035,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 55,
+    "sequence": 111,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\nThe user wants me to",
@@ -1009,12 +1054,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 56,
+    "sequence": 113,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written",
@@ -1027,12 +1073,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 57,
+    "sequence": 115,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written, MCP p",
@@ -1045,12 +1092,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 58,
+    "sequence": 117,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\nThe user wants me to reply with exactly \"",
@@ -1063,12 +1111,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 59,
+    "sequence": 119,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written, MCP pong received",
@@ -1081,12 +1130,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 60,
+    "sequence": 121,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\nThe user wants me to reply with exactly \"SMOKE_CHILD:L",
@@ -1099,12 +1149,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 61,
+    "sequence": 123,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written, MCP pong received. Now I need",
@@ -1117,12 +1168,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 62,
+    "sequence": 125,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\nThe user wants me to reply with exactly \"SMOKE_CHILD:LCMTI7H",
@@ -1135,12 +1187,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 63,
+    "sequence": 127,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written, MCP pong received. Now I need to read the file",
@@ -1153,12 +1206,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e",
-    "sequence": 64,
+    "sequence": 129,
     "eventType": "thinking.delta",
     "role": "smoke_worker",
     "message": "\nThe user wants me to reply with exactly \"SMOKE_CHILD:LCMTI7H7XI\".",
@@ -1171,12 +1225,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 65,
+    "sequence": 131,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written, MCP pong received. Now I need to read the file back and wait for",
@@ -1189,12 +1244,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.final:01a05b5d-bbe4-7062-a069-3b29e940475f:rs_resp_afb89ebbac2a4b8589477ca868e0203e:65",
-    "sequence": 66,
+    "sequence": 134,
     "eventType": "thinking.final",
     "role": "smoke_worker",
     "message": "The user wants me to reply with exactly \"SMOKE_CHILD:LCMTI7H7XI\".",
@@ -1208,12 +1264,13 @@
       "thinkingStartedAt": "2026-09-01T05:07:49.112Z",
       "thinkingDurationMs": 538,
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_43a51474"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:msg_dcd6ee4c3f92449a9a57005d8286fd08",
-    "sequence": 67,
+    "sequence": 136,
     "eventType": "message.delta",
     "role": "smoke_worker",
     "message": "SMOKE_CHILD",
@@ -1224,12 +1281,13 @@
       "itemId": "msg_dcd6ee4c3f92449a9a57005d8286fd08",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_2639439f"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:msg_dcd6ee4c3f92449a9a57005d8286fd08",
-    "sequence": 68,
+    "sequence": 138,
     "eventType": "message.delta",
     "role": "smoke_worker",
     "message": "SMOKE_CHILD:LCMTI7",
@@ -1240,12 +1298,13 @@
       "itemId": "msg_dcd6ee4c3f92449a9a57005d8286fd08",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_2639439f"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3:01a05b5d-bbe4-7062-a069-3b29e940475f:msg_dcd6ee4c3f92449a9a57005d8286fd08",
-    "sequence": 69,
+    "sequence": 140,
     "eventType": "message.delta",
     "role": "smoke_worker",
     "message": "SMOKE_CHILD:LCMTI7H7XI",
@@ -1256,12 +1315,13 @@
       "itemId": "msg_dcd6ee4c3f92449a9a57005d8286fd08",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_2639439f"
     }
   },
   {
     "id": "tre:codex:message.final:01a05b5d-bbe4-7062-a069-3b29e940475f:msg_dcd6ee4c3f92449a9a57005d8286fd08:69",
-    "sequence": 70,
+    "sequence": 142,
     "eventType": "message.final",
     "role": "smoke_worker",
     "message": "SMOKE_CHILD:LCMTI7H7XI",
@@ -1272,12 +1332,13 @@
       "itemId": "msg_dcd6ee4c3f92449a9a57005d8286fd08",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f"
+      "turnId": "01a05b5d-bbe4-7062-a069-3b29e940475f",
+      "conversationV2MessageId": "legacy_message_2639439f"
     }
   },
   {
     "id": "tre:codex:agent.stopped:01a05b5d-bbbc-7c70-bb1a-ad41a6247bc3",
-    "sequence": 71,
+    "sequence": 144,
     "eventType": "agent.stopped",
     "role": "smoke_worker",
     "message": "Subagent smoke_worker completed",
@@ -1292,7 +1353,7 @@
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45",
-    "sequence": 72,
+    "sequence": 147,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nFile written, MCP pong received. Now I need to read the file back and wait for the subagent.\n",
@@ -1305,12 +1366,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:thinking.final:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_81457381750b4b6bb7c22151e5909a45:72",
-    "sequence": 73,
+    "sequence": 150,
     "eventType": "thinking.final",
     "role": "thinking",
     "message": "File written, MCP pong received. Now I need to read the file back and wait for the subagent.",
@@ -1324,12 +1386,13 @@
       "thinkingStartedAt": "2026-09-01T05:07:49.132Z",
       "thinkingDurationMs": 808,
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_1fab7557"
     }
   },
   {
     "id": "tre:codex:tool:call_e9a0ced6b9754e36886adf7f:started",
-    "sequence": 74,
+    "sequence": 152,
     "eventType": "tool.started",
     "role": "tool",
     "message": "Tool: Bash · /bin/zsh -lc 'cat /var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ/smoke-note.txt'",
@@ -1356,7 +1419,7 @@
   },
   {
     "id": "tre:codex:tool:call_e9a0ced6b9754e36886adf7f:done",
-    "sequence": 75,
+    "sequence": 154,
     "eventType": "tool.completed",
     "role": "tool",
     "message": "Tool: Bash · /bin/zsh -lc 'cat /var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ/smoke-note.txt'",
@@ -1385,7 +1448,7 @@
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 76,
+    "sequence": 155,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\n",
@@ -1398,12 +1461,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 77,
+    "sequence": 157,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll",
@@ -1416,12 +1480,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 78,
+    "sequence": 159,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete",
@@ -1434,12 +1499,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 79,
+    "sequence": 161,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize",
@@ -1452,12 +1518,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 80,
+    "sequence": 163,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ",
@@ -1470,12 +1537,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 81,
+    "sequence": 165,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL:",
@@ -1488,12 +1556,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 82,
+    "sequence": 167,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL",
@@ -1506,12 +1575,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 83,
+    "sequence": 169,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI",
@@ -1524,12 +1594,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 84,
+    "sequence": 171,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI",
@@ -1542,12 +1613,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 85,
+    "sequence": 173,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ",
@@ -1560,12 +1632,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 86,
+    "sequence": 175,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE:",
@@ -1578,12 +1651,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 87,
+    "sequence": 177,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created",
@@ -1596,12 +1670,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 88,
+    "sequence": 179,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE",
@@ -1614,12 +1689,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 89,
+    "sequence": 181,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7",
@@ -1632,12 +1708,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 90,
+    "sequence": 183,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n",
@@ -1650,12 +1727,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 91,
+    "sequence": 185,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅",
@@ -1668,12 +1746,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 92,
+    "sequence": 187,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Conf",
@@ -1686,12 +1765,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 93,
+    "sequence": 189,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SM",
@@ -1704,12 +1784,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 94,
+    "sequence": 191,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCM",
@@ -1722,12 +1803,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 95,
+    "sequence": 193,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7",
@@ -1740,12 +1822,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 96,
+    "sequence": 195,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4.",
@@ -1758,12 +1841,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 97,
+    "sequence": 197,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP:",
@@ -1776,12 +1860,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 98,
+    "sequence": 199,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke",
@@ -1794,12 +1879,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 99,
+    "sequence": 201,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned",
@@ -1812,12 +1898,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 100,
+    "sequence": 203,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP",
@@ -1830,12 +1917,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 101,
+    "sequence": 205,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCM",
@@ -1848,12 +1936,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 102,
+    "sequence": 207,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7",
@@ -1866,12 +1955,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 103,
+    "sequence": 209,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5.",
@@ -1884,12 +1974,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 104,
+    "sequence": 211,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT",
@@ -1902,12 +1993,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 105,
+    "sequence": 213,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied",
@@ -1920,12 +2012,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 106,
+    "sequence": 215,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:L",
@@ -1938,12 +2031,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 107,
+    "sequence": 217,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H",
@@ -1956,12 +2050,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 108,
+    "sequence": 219,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H7XI\n6",
@@ -1974,12 +2069,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 109,
+    "sequence": 221,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H7XI\n6. ✅ F",
@@ -1992,12 +2088,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 110,
+    "sequence": 223,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H7XI\n6. ✅ FINAL: SMOKE",
@@ -2010,12 +2107,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 111,
+    "sequence": 225,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H7XI\n6. ✅ FINAL: SMOKE_DONE:LCMTI",
@@ -2028,12 +2126,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b",
-    "sequence": 112,
+    "sequence": 227,
     "eventType": "thinking.delta",
     "role": "thinking",
     "message": "\nAll steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H7XI\n6. ✅ FINAL: SMOKE_DONE:LCMTI7H7XI",
@@ -2046,12 +2145,13 @@
       "reasoningDisplay": "raw",
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:thinking.final:01a05b5d-82fc-7662-974a-bb85de4075f5:rs_resp_8c5d2054007041dca1ad18367225d67b:112",
-    "sequence": 113,
+    "sequence": 230,
     "eventType": "thinking.final",
     "role": "thinking",
     "message": "All steps complete. Let me summarize:\n\n1. ✅ SKILL: SMOKE_SKILL_OK LCMTI7H7XI\n2. ✅ FILE WRITE: smoke-note.txt created with SMOKE_FILE:LCMTI7H7XI\n3. ✅ FILE READ: Confirmed contents SMOKE_FILE:LCMTI7H7XI\n4. ✅ MCP: smoke_ping returned SMOKE_MCP_PONG:LCMTI7H7XI\n5. ✅ SUBAGENT: smoke_worker replied SMOKE_CHILD:LCMTI7H7XI\n6. ✅ FINAL: SMOKE_DONE:LCMTI7H7XI",
@@ -2065,12 +2165,13 @@
       "thinkingStartedAt": "2026-09-01T05:07:54.465Z",
       "thinkingDurationMs": 2726,
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_6fd5d9bb"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 114,
+    "sequence": 232,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All",
@@ -2081,12 +2182,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 115,
+    "sequence": 234,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully",
@@ -2097,12 +2199,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 116,
+    "sequence": 236,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n",
@@ -2113,12 +2216,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 117,
+    "sequence": 238,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅",
@@ -2129,12 +2233,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 118,
+    "sequence": 240,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL ",
@@ -2145,12 +2250,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 119,
+    "sequence": 242,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL —",
@@ -2161,12 +2267,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 120,
+    "sequence": 244,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SK",
@@ -2177,12 +2284,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 121,
+    "sequence": 246,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCM",
@@ -2193,12 +2301,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 122,
+    "sequence": 248,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7",
@@ -2209,12 +2318,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 123,
+    "sequence": 250,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2.",
@@ -2225,12 +2335,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 124,
+    "sequence": 252,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE",
@@ -2241,12 +2352,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 125,
+    "sequence": 254,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `sm",
@@ -2257,12 +2369,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 126,
+    "sequence": 256,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt`",
@@ -2273,12 +2386,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 127,
+    "sequence": 258,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3.",
@@ -2289,12 +2403,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 128,
+    "sequence": 260,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ",
@@ -2305,12 +2420,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 129,
+    "sequence": 262,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `",
@@ -2321,12 +2437,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 130,
+    "sequence": 264,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:L",
@@ -2337,12 +2454,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 131,
+    "sequence": 266,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H",
@@ -2353,12 +2471,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 132,
+    "sequence": 268,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4",
@@ -2369,12 +2488,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 133,
+    "sequence": 270,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP",
@@ -2385,12 +2505,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 134,
+    "sequence": 272,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `sm",
@@ -2401,12 +2522,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 135,
+    "sequence": 274,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping`",
@@ -2417,12 +2539,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 136,
+    "sequence": 276,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE",
@@ -2433,12 +2556,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 137,
+    "sequence": 278,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG",
@@ -2449,12 +2573,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 138,
+    "sequence": 280,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7",
@@ -2465,12 +2590,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 139,
+    "sequence": 282,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n",
@@ -2481,12 +2607,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 140,
+    "sequence": 284,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅",
@@ -2497,12 +2624,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 141,
+    "sequence": 286,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT —",
@@ -2513,12 +2641,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 142,
+    "sequence": 288,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke",
@@ -2529,12 +2658,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 143,
+    "sequence": 290,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SM",
@@ -2545,12 +2675,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 144,
+    "sequence": 292,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SMOKE_CHILD:LCM",
@@ -2561,12 +2692,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 145,
+    "sequence": 294,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SMOKE_CHILD:LCMTI7H7",
@@ -2577,12 +2709,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 146,
+    "sequence": 296,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SMOKE_CHILD:LCMTI7H7XI`\n\nSMOKE",
@@ -2593,12 +2726,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 147,
+    "sequence": 298,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SMOKE_CHILD:LCMTI7H7XI`\n\nSMOKE_DONE:LCMTI",
@@ -2609,12 +2743,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.delta:01a05b5d-82b3-7a60-b98e-6e58f36b82ae:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7",
-    "sequence": 148,
+    "sequence": 300,
     "eventType": "message.delta",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SMOKE_CHILD:LCMTI7H7XI`\n\nSMOKE_DONE:LCMTI7H7XI",
@@ -2625,12 +2760,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:message.final:01a05b5d-82fc-7662-974a-bb85de4075f5:msg_36d98abd59ab494c979326dd0ea55be7:148",
-    "sequence": 149,
+    "sequence": 302,
     "eventType": "message.final",
     "role": "assistant",
     "message": "All steps completed successfully:\n\n1. ✅ SKILL — `SMOKE_SKILL_OK LCMTI7H7XI`\n2. ✅ FILE WRITE — `smoke-note.txt` created\n3. ✅ FILE READ — confirmed `SMOKE_FILE:LCMTI7H7XI`\n4. ✅ MCP — `smoke_ping` returned `SMOKE_MCP_PONG:LCMTI7H7XI`\n5. ✅ SUBAGENT — smoke_worker replied `SMOKE_CHILD:LCMTI7H7XI`\n\nSMOKE_DONE:LCMTI7H7XI",
@@ -2641,12 +2777,13 @@
       "itemId": "msg_36d98abd59ab494c979326dd0ea55be7",
       "itemType": "agentMessage",
       "codexThreadId": "01a05b5d-82b3-7a60-b98e-6e58f36b82ae",
-      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5"
+      "turnId": "01a05b5d-82fc-7662-974a-bb85de4075f5",
+      "conversationV2MessageId": "legacy_message_7f2d2eb2"
     }
   },
   {
     "id": "tre:codex:run.attempt.completed:01a05b5d-82fc-7662-974a-bb85de4075f5:149:149",
-    "sequence": 150,
+    "sequence": 303,
     "eventType": "request.completed",
     "message": "Request completed",
     "metadata": {

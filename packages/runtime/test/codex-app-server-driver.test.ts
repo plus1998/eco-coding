@@ -73,6 +73,10 @@ test("buildCodexTurnInput validates and deduplicates structured skills by exact 
   );
 });
 
+test("buildCodexTurnInput sends no items for a continuation without a new prompt", () => {
+  expect(buildCodexTurnInput("", undefined)).toEqual([]);
+});
+
 test("buildCodexTurnInput includes deduplicated local image paths", () => {
   expect(buildCodexTurnInput("inspect", undefined, ["/tmp/a.png", "/tmp/a.png", "/tmp/b.jpg"])).toEqual([
     { type: "text", text: "inspect" },
@@ -211,6 +215,71 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
   ).toBeNull();
   // Must use provider-scoped gateway alias, not the eco SDK alias on primary.modelId.
   expect(turnStart?.params?.model).not.toBe("eco-planner-alias");
+
+  driver.dispose();
+});
+
+test("CodexAppServerDriver pins the built-in OpenAI subscription route to Codex's own provider", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const registry = new CodexTurnRouteRegistry();
+  const client = new CodexAppServerClient(stdin, stdout);
+  const driver = new CodexAppServerDriver({ client, turnRouteRegistry: registry });
+  const controller = new AbortController();
+
+  const handshake = client.initialize();
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 1, result: { codexHome: "/tmp/codex" } });
+  await handshake;
+
+  const runPromise = (async () => {
+    const events = [];
+    for await (const event of driver.run({
+      threadId: "thr_eco_openai",
+      prompt: "reply with pong",
+      workspacePath: "/repo",
+      worktreePath: "/repo",
+      routes: [plannerRoute({ providerId: "openai", upstreamModelId: "gpt-5.6-luna" })],
+      signal: controller.signal,
+    })) {
+      events.push(event);
+    }
+    return events;
+  })();
+
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 2, result: { thread: { id: "thr_codex_openai" } } });
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 3, result: { turn: { id: "turn_openai", items: [], status: "inProgress" } } });
+  await Bun.sleep(0);
+
+  // Read the bound route before the turn terminal clears it.
+  const boundRoute = registry.peek("thr_codex_openai", "turn_openai");
+
+  stdout.write(
+    `${JSON.stringify({
+      method: "turn/completed",
+      params: {
+        threadId: "thr_codex_openai",
+        turn: { id: "turn_openai", items: [], status: "completed" },
+      },
+    })}\n`,
+  );
+  await runPromise;
+
+  const messages = readRpcMessages(stdin);
+  const threadStart = messages.find((message) => message.method === "thread/start");
+  const turnStart = messages.find((message) => message.method === "turn/start");
+  // Must be explicit: config.toml sets a global `model_provider = "eco_*"` default, so an
+  // omitted value silently routes the official-subscription model into eco-gateway, whose
+  // provider table has no "openai" entry (route miss → 404).
+  expect(threadStart?.params?.modelProvider).toBe("openai");
+  // Built-in OpenAI keeps the bare upstream model id — never the eco_ gateway alias.
+  expect(threadStart?.params?.model).toBe("gpt-5.6-luna");
+  expect(turnStart?.params?.model).toBe("gpt-5.6-luna");
+  // The bridge resolves the gateway provider id from this registry record.
+  expect(boundRoute?.providerId).toBe("openai");
+  expect(boundRoute?.upstreamModelId).toBe("gpt-5.6-luna");
 
   driver.dispose();
 });
@@ -772,6 +841,9 @@ test("CodexAppServerDriver runAsk / runPlan send turn/start with model", async (
     expect((turnStart?.params?.collaborationMode as { mode?: string })?.mode).toBe(
       mode === "plan" ? "plan" : "default",
     );
+    if (mode === "plan") {
+      expect(turnStart?.params?.sandboxPolicy).toEqual({ type: "readOnly" });
+    }
     driver.dispose();
   }
 });
@@ -1242,7 +1314,7 @@ test("CodexAppServerDriver rejects empty routes", async () => {
   driver.dispose();
 });
 
-test("CodexAppServerDriver resumes existing map via thread/resume and never thread/start", async () => {
+test("CodexAppServerDriver resumes existing map and starts an empty-input continuation", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const client = new CodexAppServerClient(stdin, stdout);
@@ -1265,14 +1337,14 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
   await handshake;
 
   const runPromise = (async () => {
-    for await (const _event of driver.run({
+    for await (const _event of driver.runContinuation({
       threadId: "thr_eco_resume",
-      prompt: "continue",
+      prompt: "",
       workspacePath: "/repo",
       worktreePath: "/repo",
       routes: [plannerRoute()],
       signal: controller.signal,
-    })) {
+    }, "execution")) {
       // drain
     }
   })();
@@ -1321,6 +1393,7 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
     mcp_servers: { browser: { enabled: false } },
   });
   expect(turnStart?.params?.threadId).toBe("thr_codex_existing");
+  expect(turnStart?.params?.input).toEqual([]);
   expect(
     isCodexThreadConfigApplied(client, "thr_codex_existing", {
       mcp_servers: { browser: { enabled: false } },

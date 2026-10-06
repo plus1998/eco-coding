@@ -260,6 +260,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCancel => '取消';
 
   @override
+  String get commonSave => '保存';
+
+  @override
   String get commonClose => '关闭';
 
   @override
@@ -1809,6 +1812,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get threadCustomizeScript => '自定义命令';
+
+  @override
+  String get threadPrefixCommand => '前置命令';
+
+  @override
+  String get threadPrefixCommandHint =>
+      '例如 nvm use 20 && export NODE_ENV=production';
+
+  @override
   String get threadRun => '运行';
 
   @override
@@ -1866,6 +1879,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get threadNoToolDetails => '暂无工具详情';
+
+  @override
+  String get threadLoadMoreToolDetails => '加载更多详情';
 
   @override
   String get threadRequestingDetails => '正在请求详情…';
@@ -2144,7 +2160,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerVisionModel => '视觉模型';
 
   @override
-  String get composerVisionModelHint => '用于看图子代理；未配置时使用主模型';
+  String get composerVisionModelHint => '用于 image_view 工具；未配置时使用主模型';
 
   @override
   String get composerVisionModelFollowMain => '未配置时使用当前主模型看图';

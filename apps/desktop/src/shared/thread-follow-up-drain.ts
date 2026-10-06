@@ -2,13 +2,7 @@ import type { PromptImageAttachment, ThreadPendingFollowUp, ThreadStatus } from 
 
 // `idle` is drainable so queue Resume after a user stop can send. Stop itself must
 // auto-pause first; otherwise cancel cleanup would silently drain remaining follow-ups.
-const DRAINABLE_FOLLOW_UP_STATUSES = [
-  "completed",
-  "failed",
-  "blocked",
-  "awaiting_plan",
-  "idle",
-] as const;
+const DRAINABLE_FOLLOW_UP_STATUSES = ["completed", "failed", "blocked", "awaiting_plan", "idle"] as const;
 
 export function shouldDrainThreadFollowUps(status: ThreadStatus): boolean {
   return (DRAINABLE_FOLLOW_UP_STATUSES as readonly string[]).includes(status);
@@ -48,6 +42,7 @@ export function threadAcceptsQueuedFollowUp(input: {
   hasPendingClarification?: boolean;
   hasPendingBashApproval?: boolean;
   hasPendingPlanApproval?: boolean;
+  hasEditingFollowUp?: boolean;
 }): boolean {
   if (input.status === "running" || input.status === "queued" || input.status === "awaiting_plan") {
     return true;
@@ -59,7 +54,8 @@ export function threadAcceptsQueuedFollowUp(input: {
     input.hasPendingBridgeApproval ||
       input.hasPendingClarification ||
       input.hasPendingBashApproval ||
-      input.hasPendingPlanApproval,
+      input.hasPendingPlanApproval ||
+      input.hasEditingFollowUp,
   );
 }
 
@@ -76,10 +72,7 @@ export function shouldAutoPauseFollowUpQueue(queuedCount: number): boolean {
  * A pause with no queued rows left has no subject (the rows it held are gone), so it must
  * lift itself instead of holding back newly composed messages.
  */
-export function shouldReleaseFollowUpQueuePause(input: {
-  paused: boolean;
-  queuedCount: number;
-}): boolean {
+export function shouldReleaseFollowUpQueuePause(input: { paused: boolean; queuedCount: number }): boolean {
   return input.paused && input.queuedCount === 0;
 }
 
@@ -92,6 +85,30 @@ export function isFollowUpMidTurnResultDelivered(
   result: ThreadPendingFollowUp | undefined,
 ): result is ThreadPendingFollowUp {
   return Boolean(result && result.status !== "queued");
+}
+
+/**
+ * A row that will never deliver the prompt it holds: the user cancelled it, or an
+ * escalated sibling superseded it. Its accepted V2 prompt has to be discarded with
+ * it — a leftover `queued` V2 message is re-sent as a brand-new run by startup
+ * queued-message recovery, i.e. the prompt the user removed comes back.
+ */
+export function isAbandonedThreadFollowUp(followUp: ThreadPendingFollowUp): boolean {
+  return followUp.status === "cancelled" || followUp.status === "superseded";
+}
+
+/** Abandoned queue rows holding the given V2 accepted prompt. */
+export function abandonedFollowUpsForConversationMessage(
+  followUps: readonly ThreadPendingFollowUp[],
+  conversationMessageId: string,
+): ThreadPendingFollowUp[] {
+  const messageId = conversationMessageId.trim();
+  if (!messageId) {
+    return [];
+  }
+  return followUps.filter(
+    (followUp) => followUp.conversationMessageId === messageId && isAbandonedThreadFollowUp(followUp),
+  );
 }
 
 /**

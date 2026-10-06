@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import { createUpstreamFetchController } from "@eco/gateway";
 import {
   assertApiCompatCompatibleWithProviderPath,
   IncompatibleApiCompatError,
@@ -6,6 +8,22 @@ import {
   resolveUpstreamApiCompat,
   type UpstreamApiCompat,
 } from "../shared/api-compat";
+
+/** Built-in OpenAI models for ChatGPT OAuth (auth.json) — same as sub2api openai.DefaultModels. */
+export const OPENAI_BUILTIN_MODELS: { id: string }[] = [
+  { id: "gpt-5.6-sol" },
+  { id: "gpt-6" },
+  { id: "gpt-5.6" },
+  { id: "gpt-5.6-terra" },
+  { id: "gpt-5.6-luna" },
+  { id: "gpt-6-astra" },
+  { id: "gpt-5.5" },
+  { id: "gpt-5.4" },
+  { id: "gpt-5.4-mini" },
+  { id: "gpt-5.3-codex-spark" },
+  { id: "codex-auto-review" },
+  { id: "gpt-5.2" },
+];
 import type { ThinkingEffort } from "../shared/ipc";
 import type {
   ListUpstreamModelsRequest,
@@ -58,6 +76,7 @@ export async function listProviderUpstreamModels(
   store: ProviderStore,
   request: ListUpstreamModelsRequest,
   upstreamUserAgent?: string,
+  globalProxyUrl?: string,
 ): Promise<ListUpstreamModelsResult> {
   logUpstream("models-list-request", {
     providerId: request.providerId,
@@ -78,6 +97,16 @@ export async function listProviderUpstreamModels(
     return resolved;
   }
 
+  // The built-in OpenAI catalogue belongs to Codex Auth (auth.json) only: that
+  // login has no upstream API key and no usable /v1/models endpoint. ChatGPT
+  // subscription providers are handled in the desktop IPC layer with their OAuth
+  // account pool before reaching this path. Any other provider still attempts the
+  // upstream GET /v1/models (local servers often allow an unauthenticated list)
+  // and reports whatever the upstream answers.
+  if (!resolved.apiKey.trim() && resolved.authMethod === "auth_json") {
+    return { ok: true, models: OPENAI_BUILTIN_MODELS };
+  }
+
   const routing = describeProviderCompatRouting(
     resolved.baseUrl,
     resolved.requestPath,
@@ -90,14 +119,19 @@ export async function listProviderUpstreamModels(
     hasApiKey: Boolean(resolved.apiKey.trim()),
   });
 
-  return fetchUpstreamModelsFromCredentials(
-    resolved.baseUrl,
-    resolved.apiKey,
-    resolved.requestPath,
-    { ...(request.providerId && { providerId: request.providerId }), routing },
-    resolved.apiCompat,
-    upstreamUserAgent,
-    resolved.version,
+  // Per-provider proxy wins; falls back to the global outbound proxy.
+  const proxyUrl = resolved.upstreamProxyUrl || globalProxyUrl;
+  return withUpstreamProxyFetch(proxyUrl, fetch, (fetcher) =>
+    fetchUpstreamModelsFromCredentials(
+      resolved.baseUrl,
+      resolved.apiKey,
+      resolved.requestPath,
+      { ...(request.providerId && { providerId: request.providerId }), routing },
+      resolved.apiCompat,
+      upstreamUserAgent,
+      resolved.version,
+      fetcher,
+    ),
   );
 }
 
@@ -106,6 +140,7 @@ export async function testProviderConnection(
   request: TestProviderConnectionRequest,
   fetcher: typeof fetch = fetch,
   upstreamUserAgent?: string,
+  globalProxyUrl?: string,
 ): Promise<TestProviderConnectionResult> {
   const resolved = resolveProviderCredentials(store, request);
   if (!resolved.ok) {
@@ -128,19 +163,24 @@ export async function testProviderConnection(
     return { ok: false, error: "请先选择要测试的模型。" };
   }
 
-  const testResult = await postUpstreamCompatTest(
-    {
-      baseUrl: resolved.baseUrl,
-      requestPath: resolved.requestPath,
-      version: resolved.version,
-      apiCompat: resolved.apiCompat,
-      apiKey: resolved.apiKey,
-      modelId,
-      ...(request.providerId && { providerId: request.providerId }),
-    },
-    resolveRouteTestThinkingEffort(request.thinkingEffort),
+  const testResult = await withUpstreamProxyFetch(
+    resolved.upstreamProxyUrl || globalProxyUrl,
     fetcher,
-    upstreamUserAgent,
+    (activeFetcher) =>
+      postUpstreamCompatTest(
+        {
+          baseUrl: resolved.baseUrl,
+          requestPath: resolved.requestPath,
+          version: resolved.version,
+          apiCompat: resolved.apiCompat,
+          apiKey: resolved.apiKey,
+          modelId,
+          ...(request.providerId && { providerId: request.providerId }),
+        },
+        resolveRouteTestThinkingEffort(request.thinkingEffort),
+        activeFetcher,
+        upstreamUserAgent,
+      ),
   );
   if (testResult.ok) {
     return { ok: true, reply: testResult.reply };
@@ -170,6 +210,7 @@ export async function testRoleRoutes(
   request: TestRoleRoutesRequest,
   fetcher: typeof fetch = fetch,
   upstreamUserAgent?: string,
+  globalProxyUrl?: string,
 ): Promise<TestRoleRoutesResult> {
   const resultsByRole = new Map<string, RoleRouteTestResult>();
   const groups = new Map<string, RouteTestGroup>();
@@ -239,11 +280,10 @@ export async function testRoleRoutes(
       modelId: group.modelId,
       ...(labelRole && { role: labelRole }),
     };
-    const testResult = await postUpstreamCompatTest(
-      testInput,
-      group.thinkingEffort,
+    const testResult = await withUpstreamProxyFetch(
+      group.provider.upstreamProxyUrl || globalProxyUrl,
       fetcher,
-      upstreamUserAgent,
+      (activeFetcher) => postUpstreamCompatTest(testInput, group.thinkingEffort, activeFetcher, upstreamUserAgent),
     );
 
     const shared: RoleRouteTestResult = testResult.ok
@@ -789,6 +829,7 @@ export async function fetchUpstreamModelsFromCredentials(
   apiCompat: UpstreamApiCompat = "anthropic",
   upstreamUserAgent?: string,
   version?: string,
+  fetcher: typeof fetch = fetch,
 ): Promise<ListUpstreamModelsResult> {
   const listResolved = resolveModelsListUrl(baseUrl, requestPath, version);
   if (!listResolved.ok) {
@@ -823,7 +864,7 @@ export async function fetchUpstreamModelsFromCredentials(
   });
 
   try {
-    const response = await fetch(modelsUrl, {
+    const response = await fetcher(modelsUrl, {
       method: "GET",
       headers: buildProviderDirectUpstreamHeaders({
         apiKey,
@@ -1008,6 +1049,8 @@ function resolveProviderCredentials(
       version: string;
       apiCompat: UpstreamApiCompat;
       apiKey: string;
+      upstreamProxyUrl: string;
+      authMethod: "api_key" | "oauth" | "auth_json" | "chatgpt_subscription";
     }
   | ProviderRequestError {
   const baseUrl = request.baseUrl?.trim();
@@ -1042,6 +1085,10 @@ function resolveProviderCredentials(
         : normalizeRequestPath(provider.requestPath);
     const resolvedVersion = inlineVersion ?? normalizeApiVersion(provider.version);
     const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
+    const resolvedUpstreamProxyUrl =
+      ("upstreamProxyUrl" in request && request.upstreamProxyUrl !== undefined
+        ? request.upstreamProxyUrl
+        : provider.upstreamProxyUrl) ?? "";
     const resolvedApiCompat = resolveUpstreamApiCompat(
       "apiCompat" in request && request.apiCompat !== undefined
         ? normalizeUpstreamApiCompat(request.apiCompat)
@@ -1055,6 +1102,8 @@ function resolveProviderCredentials(
       version: resolvedVersion,
       apiCompat: resolvedApiCompat,
       apiKey: resolvedApiKey,
+      upstreamProxyUrl: resolvedUpstreamProxyUrl,
+      authMethod: provider.authMethod ?? "api_key",
     };
   }
 
@@ -1066,6 +1115,7 @@ function resolveProviderCredentials(
     "apiCompat" in request && request.apiCompat !== undefined
       ? normalizeUpstreamApiCompat(request.apiCompat)
       : "anthropic";
+  const inlineUpstreamProxyUrl = request.upstreamProxyUrl?.trim() ?? "";
   return {
     ok: true,
     baseUrl,
@@ -1073,7 +1123,31 @@ function resolveProviderCredentials(
     version: inlineVersion ?? DEFAULT_API_VERSION,
     apiCompat: inlineApiCompat,
     apiKey: inlineApiKey ?? "",
+    upstreamProxyUrl: inlineUpstreamProxyUrl,
+    authMethod:
+      "authMethod" in request && request.authMethod !== undefined ? request.authMethod : "api_key",
   };
+}
+
+/**
+ * Run `run` with a fetcher that routes through `proxyUrl` (per-provider proxy
+ * or the global outbound proxy). Without a proxy, `fallbackFetcher` is used as-is.
+ */
+async function withUpstreamProxyFetch<T>(
+  proxyUrl: string | undefined,
+  fallbackFetcher: typeof fetch,
+  run: (fetcher: typeof fetch) => Promise<T>,
+): Promise<T> {
+  const trimmed = proxyUrl?.trim();
+  if (!trimmed) {
+    return run(fallbackFetcher);
+  }
+  const controller = createUpstreamFetchController(trimmed);
+  try {
+    return await run(controller.fetch);
+  } finally {
+    controller.close();
+  }
 }
 
 function formatUpstreamError(status: number, raw: string): string {

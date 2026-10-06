@@ -1,6 +1,10 @@
+import path from "node:path";
 import { expect, test } from "bun:test";
 import { BackgroundTerminalTaskRegistry } from "../src/main/background-terminal-tasks";
 import type { InteractiveTerminalManager } from "../src/main/interactive-terminal-manager";
+
+/** 跨平台的路径 fixture：POSIX 上保持原样，Windows 上是 `<当前盘>` 下的同一路径。 */
+const PROJECT = path.resolve(path.parse(process.cwd()).root, "tmp", "project");
 
 test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () => {
   const commands: Array<{ workspacePath: string; command: readonly string[] }> = [];
@@ -19,7 +23,7 @@ test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () 
   const registry = new BackgroundTerminalTaskRegistry(manager);
 
   const task = registry.start({
-    workspacePath: "/tmp/project",
+    workspacePath: PROJECT,
     command: ["echo", "ready"],
     label: "dev server",
     threadId: "thr_1",
@@ -30,7 +34,7 @@ test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () 
   expect(task.status).toBe("running");
   expect(task.threadId).toBe("thr_1");
   expect(commands).toHaveLength(1);
-  expect(commands[0]?.workspacePath).toBe("/tmp/project");
+  expect(commands[0]?.workspacePath).toBe(PROJECT);
   expect(commands[0]?.command.at(-1)).toBe("ready");
   expect(registry.list({ threadId: "thr_1" })).toHaveLength(1);
 
@@ -48,7 +52,7 @@ test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () 
   expect(killed).toEqual([]);
 
   const runningTask = registry.start({
-    workspacePath: "/tmp/project",
+    workspacePath: PROJECT,
     command: ["sleep", "10"],
   });
   const stopped = registry.stop(runningTask.taskId);

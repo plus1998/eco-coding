@@ -102,7 +102,7 @@ describe("Codex tool argument guard", () => {
     expect(observe(failure)).toMatchObject({ count: 1, tripped: false });
   });
 
-  test("gateway rectifies schemas and stops the third retry before fetching upstream", async () => {
+  test("gateway preserves native schemas and stops the third retry before fetching upstream", async () => {
     let fetchCount = 0;
     let forwardedSessionType: unknown;
     const handler = createTestGatewayFetchHandler(
@@ -158,7 +158,7 @@ describe("Codex tool argument guard", () => {
     const stoppedBody = await stopped.text();
 
     expect(fetchCount).toBe(2);
-    expect(forwardedSessionType).toBe("integer");
+    expect(forwardedSessionType).toBe("number");
     expect(stoppedBody).toContain('"code":"tool_argument_parse_loop"');
   });
 });

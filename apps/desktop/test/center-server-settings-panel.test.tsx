@@ -92,6 +92,7 @@ test("connected connection panel keeps switch and delete enabled", () => {
   const markup = renderPanel();
 
   expect(markup).toContain("互联");
+  expect(markup).toContain("Supabase Cloud 部署");
   expect(markup).toContain("删除连接");
   expect(markup).toContain('<input type="checkbox" checked=""/>');
   expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);

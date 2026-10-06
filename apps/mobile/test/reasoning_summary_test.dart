@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:eco_mobile/core/models/thread_run_projection.dart';
+import 'package:eco_mobile/core/models/conversation_v2_projection_models.dart';
 import 'package:eco_mobile/core/utils/reasoning_summary.dart';
 
 ThreadRunProjectionTimelineItem _item({

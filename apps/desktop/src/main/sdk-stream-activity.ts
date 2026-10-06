@@ -14,6 +14,8 @@ import {
   resolveEcoHtmlHostToolCall,
   resolveEcoImageDisplayToolCall,
   resolveEcoImageViewToolCall,
+  resolveEcoMcpHubSearchCall,
+  resolveEcoMcpHubToolCall,
   resolvePiMcpProxyDiscoveryCall,
   resolveSkillDisplayName,
 } from "@eco/runtime";
@@ -23,8 +25,9 @@ import {
   isFileChangeToolName,
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
-import type { ThreadLocalStreamUpdate, ThreadRunToolMetadata } from "../shared/ipc";
+import type { ThreadRunImageViewMetadata, ThreadRunToolMetadata } from "../shared/ipc";
 import { resolvePiMcpProxyCall, resolvePiMcpProxyToolName } from "../shared/pi-mcp-proxy.js";
+import { parseThreadRunImageViewMetadata } from "../shared/thread-run-events.js";
 import {
   formatThreadRunGrepTargetLabel,
   formatThreadRunReadTargetLabel,
@@ -42,40 +45,6 @@ interface PendingRemoteStreamDelta {
   agentId?: string;
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
   timer: ReturnType<typeof setTimeout> | null;
-}
-
-export interface SdkLocalStreamUpdate {
-  threadId: string;
-  streamKey: string;
-  type: string;
-  message: string;
-  role: string;
-  stream: boolean;
-  agentId?: string;
-  extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
-}
-
-export function readReasoningDisplayStamp(value: unknown): ThreadLocalStreamUpdate["reasoningDisplay"] {
-  return value === "summary" || value === "raw" ? value : undefined;
-}
-
-/** IPC overlay payload. Must copy reasoningDisplay from extras so the first paint matches persisted kind. */
-export function toThreadLocalStreamUpdate(
-  update: SdkLocalStreamUpdate,
-  observedAt: string,
-): ThreadLocalStreamUpdate {
-  const reasoningDisplay = readReasoningDisplayStamp(update.extras?.metadata?.reasoningDisplay);
-  return {
-    threadId: update.threadId,
-    streamKey: update.streamKey,
-    text: update.message,
-    role: update.role,
-    channel: update.role === "thinking" ? "thinking" : "message",
-    streaming: update.stream,
-    observedAt,
-    ...(update.agentId && { agentId: update.agentId }),
-    ...(reasoningDisplay && { reasoningDisplay }),
-  };
 }
 
 export type SdkActivityEmit = (
@@ -116,7 +85,7 @@ export class SdkStreamActivityBridge {
 
   /**
    * Flush throttled deltas and finalize any open narrative streams before clearing
-   * bridge state. Dropping pending text here blanks the Feed after overlay clear.
+   * bridge state. Dropping pending text here would lose the durable V2 tail.
    */
   flushPendingAndReset(threadId: string, emit: SdkActivityEmit): void {
     this.flushPending(threadId, emit);
@@ -165,7 +134,6 @@ export class SdkStreamActivityBridge {
       activityAgentId?: string;
       parentToolUseId?: string;
       runAttemptId?: string;
-      onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
     },
   ): void {
     const activityAgentId = options?.activityAgentId;
@@ -186,7 +154,6 @@ export class SdkStreamActivityBridge {
         ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
         ...(runAttemptId !== undefined ? { runAttemptId } : {}),
         emit,
-        ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
       });
     }
 
@@ -196,17 +163,15 @@ export class SdkStreamActivityBridge {
         return;
       }
       const display = formatAgentEventDisplay(event);
-      if (!display) {
-        return;
-      }
+      const systemNotice = status.type.startsWith("sdk.") || status.type === "request.rate_limit";
       this.flushPending(threadId, emit);
       emit(
         threadId,
         status.type,
         status.message,
-        String(display.role),
+        systemNotice ? "system" : String(display?.role ?? event.role),
         false,
-        activityAgentId,
+        systemNotice ? undefined : activityAgentId,
         status.metadata ? { metadata: status.metadata } : undefined,
       );
       return;
@@ -241,7 +206,6 @@ export class SdkStreamActivityBridge {
         ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
         ...(runAttemptId !== undefined ? { runAttemptId } : {}),
         emit,
-        ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
         ...(messageId ? { messageId } : {}),
       });
     }
@@ -278,16 +242,6 @@ export class SdkStreamActivityBridge {
         finalizedAgentId,
         finalizedExtras,
       );
-      options?.onLocalStreamUpdate?.({
-        threadId,
-        streamKey,
-        type: event.type,
-        message: finalizedMessage,
-        role: last?.role ?? role,
-        stream: false,
-        ...(finalizedAgentId && { agentId: finalizedAgentId }),
-        ...(finalizedExtras && { extras: finalizedExtras }),
-      });
       this.lastStreamLine.delete(streamKey);
       if (stableSdkMessageBlock) {
         this.finalizedSdkMessageBlocks.add(stableSdkMessageBlock);
@@ -310,16 +264,6 @@ export class SdkStreamActivityBridge {
         ...(placeholderExtras && { extras: placeholderExtras }),
       });
       emit(threadId, event.type, message, role, true, activityAgentId, placeholderExtras);
-      options?.onLocalStreamUpdate?.({
-        threadId,
-        streamKey,
-        type: event.type,
-        message,
-        role,
-        stream: true,
-        ...(activityAgentId && { agentId: activityAgentId }),
-        ...(placeholderExtras && { extras: placeholderExtras }),
-      });
       return;
     }
 
@@ -335,16 +279,6 @@ export class SdkStreamActivityBridge {
       this.lastStreamLine.set(streamKey, {
         role,
         message: accumulated,
-        ...(activityAgentId && { agentId: activityAgentId }),
-        ...(emitExtras && { extras: emitExtras }),
-      });
-      options?.onLocalStreamUpdate?.({
-        threadId,
-        streamKey,
-        type: event.type,
-        message: accumulated,
-        role,
-        stream,
         ...(activityAgentId && { agentId: activityAgentId }),
         ...(emitExtras && { extras: emitExtras }),
       });
@@ -463,7 +397,6 @@ export class SdkStreamActivityBridge {
     parentToolUseId?: string;
     runAttemptId?: string;
     emit: SdkActivityEmit;
-    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
     messageId?: string;
   }): string {
     const ownerKey = activityStreamKey(
@@ -501,7 +434,7 @@ export class SdkStreamActivityBridge {
       `${current.channel}:${current.generation}`,
       input.runAttemptId,
     );
-    this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
+    this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit);
     const generation = current.generation + 1;
     this.unkeyedNarrativeBlocks.set(ownerKey, {
       channel,
@@ -523,7 +456,6 @@ export class SdkStreamActivityBridge {
     parentToolUseId?: string;
     runAttemptId?: string;
     emit: SdkActivityEmit;
-    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
   }): void {
     for (const ownerKey of this.unkeyedNarrativeOwnerKeys(input)) {
       const current = this.unkeyedNarrativeBlocks.get(ownerKey);
@@ -538,7 +470,7 @@ export class SdkStreamActivityBridge {
         `${current.channel}:${current.generation}`,
         input.runAttemptId,
       );
-      this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
+      this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit);
       this.unkeyedNarrativeBlocks.set(ownerKey, {
         channel: current.channel,
         generation: current.generation + 1,
@@ -568,12 +500,7 @@ export class SdkStreamActivityBridge {
     ];
   }
 
-  private closeNarrativeStream(
-    threadId: string,
-    streamKey: string,
-    emit: SdkActivityEmit,
-    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void,
-  ): void {
+  private closeNarrativeStream(threadId: string, streamKey: string, emit: SdkActivityEmit): void {
     const pending = this.pendingDeltas.get(streamKey);
     if (pending?.timer) {
       clearTimeout(pending.timer);
@@ -591,16 +518,6 @@ export class SdkStreamActivityBridge {
       return;
     }
     emit(threadId, "message.delta", last.message, last.role, false, last.agentId, last.extras);
-    onLocalStreamUpdate?.({
-      threadId,
-      streamKey,
-      type: "message.delta",
-      message: last.message,
-      role: last.role,
-      stream: false,
-      ...(last.agentId && { agentId: last.agentId }),
-      ...(last.extras && { extras: last.extras }),
-    });
     this.lastStreamLine.delete(streamKey);
   }
 }
@@ -655,6 +572,7 @@ function readSdkTaskReconciliationMetadata(payload: unknown): Record<string, unk
     sdkTaskKind: record.sdkKind,
     ...(toolUseId && { sdkTaskToolUseId: toolUseId }),
     ...(status && { sdkTaskStatus: status }),
+    ...(typeof record.reason === "string" && { sdkTaskReason: record.reason }),
     ...(usage ? { sdkTaskUsage: usage } : {}),
   };
 }
@@ -675,6 +593,31 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
   return undefined;
 }
 
+function resolveSdkMcpToolIdentity(
+  name: string,
+  input: unknown,
+): {
+  displayName: string;
+  toolInput: unknown;
+  mcpDiscovery?: { kind: "search" };
+} {
+  const hubCall = resolveEcoMcpHubToolCall(name, input);
+  const hubSearch = resolveEcoMcpHubSearchCall(name, input);
+  const proxyCall = hubCall ? undefined : resolvePiMcpProxyCall(name, input);
+  const proxyName = proxyCall ? resolvePiMcpProxyToolName(name, input) : undefined;
+  const displayName = hubCall?.name ?? proxyName ?? name;
+  const toolInput = hubCall?.args ?? proxyCall?.args ?? input;
+  const mcpDiscovery =
+    hubSearch || (!hubCall && !proxyCall && resolvePiMcpProxyDiscoveryCall(name, input))
+      ? { kind: "search" as const }
+      : undefined;
+  return {
+    displayName,
+    toolInput,
+    ...(mcpDiscovery ? { mcpDiscovery } : {}),
+  };
+}
+
 function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
@@ -684,22 +627,20 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
-  const proxyCall = resolvePiMcpProxyCall(name, record.input);
-  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
-  const toolInput = proxyCall?.args ?? record.input;
-  const { imageViewCall, imageDisplayCall, htmlHostCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
-    displayName,
-    toolInput,
-  );
-  const skillName = resolveSdkSkillDisplayName(
-    displayName,
-    isRecord(toolInput) ? toolInput : {},
-  );
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const toolInput = identity.toolInput;
+  const {
+    imageViewCall,
+    imageDisplayCall,
+    htmlHostCall,
+    mcpDiscovery: imageMcpDiscovery,
+  } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
+  const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
   // Skill reads label by skill name; skip file targets so the card stays "读取 <name> 技能".
-  const targets = skillDetail
-    ? {}
-    : resolveThreadRunToolTargets(displayName, record.input);
+  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, toolInput);
   const command =
     skillDetail ??
     readString(record.command) ??
@@ -714,28 +655,29 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readToolResultText(record.result) ??
     readToolResultText(record.content);
   const outputPreview = output ? createToolOutputPreview(output) : undefined;
+  const imageViewMeta = toImageViewMetadata(imageViewCall);
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
-      ? (readString(record.description) ?? readBashDescriptionFromToolInput(record.input))
+      ? (readString(record.description) ?? readBashDescriptionFromToolInput(toolInput))
       : undefined;
-  const fileChangeFromInput = isFileChangeToolName(name)
-    ? resolveFileChangeFromToolInput(name, record.input)
+  const fileChangeFromInput = isFileChangeToolName(displayName)
+    ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
   const fileChange = enrichFileChangeFromToolOutput(
     fileChangeFromInput,
     output ?? record.result ?? record.content,
   );
-  const sendMessageInput = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const sendMessageInput = displayName === "SendMessage" ? readSendMessageToolInput(toolInput) : undefined;
   const sendMessageResult =
-    name === "SendMessage"
+    displayName === "SendMessage"
       ? parseSendMessageToolResult(output ?? record.result ?? record.content)
       : undefined;
   const sendMessageDetail = sendMessageResult
     ? formatSendMessageToolResultSummary(sendMessageResult)
     : undefined;
   const sendMessageOutputPreview =
-    name === "SendMessage" && sendMessageResult?.resultMessage
+    displayName === "SendMessage" && sendMessageResult?.resultMessage
       ? createToolOutputPreview(sendMessageResult.resultMessage)
       : undefined;
   const sendMessage =
@@ -757,6 +699,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(webSearch?.query && !command && { detail: webSearch.query }),
+    ...(imageViewCall?.ref && !command && !sendMessageDetail && { detail: imageViewCall.ref }),
     ...(imageDisplayMeta?.artifactId &&
       !command &&
       !sendMessageDetail && { detail: imageDisplayMeta.artifactId }),
@@ -771,7 +714,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
-    ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(imageViewMeta && { imageView: imageViewMeta }),
     ...(imageDisplayMeta?.artifactId && {
       imageDisplay: {
         artifactId: imageDisplayMeta.artifactId,
@@ -808,11 +751,15 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     return undefined;
   }
   const name = record.tool_name;
-  const proxyCall = resolvePiMcpProxyCall(name, record.input);
-  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
-  const toolInput = proxyCall?.args ?? record.input;
-  const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
-  const targets = resolveThreadRunToolTargets(displayName, record.input);
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const toolInput = identity.toolInput;
+  const { imageViewCall, mcpDiscovery: imageMcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
+    displayName,
+    toolInput,
+  );
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
+  const targets = resolveThreadRunToolTargets(displayName, toolInput);
   const message =
     typeof record.message === "string"
       ? record.message
@@ -831,10 +778,10 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
       ? `System cancelled ${name} — not a user denial${message ? `: ${message}` : ""}`
       : message;
   const outputPreview = message ? createToolOutputPreview(message) : undefined;
-  const fileChange = isFileChangeToolName(name)
-    ? resolveFileChangeFromToolInput(name, record.input)
+  const fileChange = isFileChangeToolName(displayName)
+    ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
-  const imageViewPath = imageViewCall?.path;
+  const failedImageViewMeta = toImageViewMetadata(imageViewCall);
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -844,7 +791,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     ...(fileChange && { fileChange }),
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
-    ...(imageViewPath && { imageView: { path: imageViewPath } }),
+    ...(failedImageViewMeta && { imageView: failedImageViewMeta }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(nonExecutionKind && { nonExecutionKind }),
     status: "failed",
@@ -881,9 +828,44 @@ function resolveSdkAgentStatusActivity(
     return undefined;
   }
   const record = payload as Record<string, unknown>;
+  if (
+    record.type === "rate_limit_event" &&
+    record.rate_limit_info &&
+    typeof record.rate_limit_info === "object"
+  ) {
+    const info = record.rate_limit_info as Record<string, unknown>;
+    return {
+      type: "request.rate_limit",
+      message:
+        info.status === "rejected"
+          ? "Rate limit reached; waiting for quota reset."
+          : `Rate limit: ${String(info.status)}`,
+      metadata: { activityOrigin: "sdk.rate_limit_event", rateLimitInfo: info },
+    };
+  }
+  if (record.type === "conversation_reset")
+    return { type: "sdk.conversation_reset", message: "Conversation context reset.", metadata: record };
   if (record.type !== "system") {
     return undefined;
   }
+  if (record.subtype === "informational" && typeof record.content === "string")
+    return {
+      type: "sdk.notice",
+      message: record.content,
+      metadata: { activityOrigin: "sdk.informational", level: record.level, tag: record.tag },
+    };
+  if (record.subtype === "session_state_changed")
+    return {
+      type: "sdk.session_state",
+      message: `Session state: ${String(record.state)}`,
+      metadata: { activityOrigin: "sdk.session_state_changed", state: record.state },
+    };
+  if (record.subtype === "commands_changed")
+    return {
+      type: "sdk.commands_changed",
+      message: "Available commands updated.",
+      metadata: { activityOrigin: "sdk.commands_changed", commands: record.commands },
+    };
   if (record.subtype === "status") {
     if (record.status === "requesting") {
       return { type: "request.started", message: "Requesting model…" };
@@ -923,6 +905,16 @@ function readBashDescriptionFromToolInput(input: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/**
+ * The Feed preview needs the path to load the image and the caller's prompt to explain
+ * the answer the vision model returned; the call carries both.
+ */
+function toImageViewMetadata(
+  call: ReturnType<typeof resolveEcoImageViewToolCall>,
+): ThreadRunImageViewMetadata | undefined {
+  return parseThreadRunImageViewMetadata(call);
+}
+
 function resolveSdkImageViewAndMcpDiscovery(
   name: string,
   input: unknown,
@@ -959,33 +951,34 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     return undefined;
   }
   const name = record.tool_name.trim();
-  const proxyCall = resolvePiMcpProxyCall(name, record.input);
-  const displayName = proxyCall ? (resolvePiMcpProxyToolName(name, record.input) ?? name) : name;
-  const toolInput = proxyCall?.args ?? record.input;
-  const { imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(displayName, toolInput);
-  const skillName = resolveSdkSkillDisplayName(
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const toolInput = identity.toolInput;
+  const { imageViewCall, mcpDiscovery: imageMcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
     displayName,
-    isRecord(toolInput) ? toolInput : {},
+    toolInput,
   );
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
+  const skillName = resolveSdkSkillDisplayName(displayName, isRecord(toolInput) ? toolInput : {});
   const skillDetail = skillName ? `读取 ${skillName} 技能` : undefined;
   // Skill reads (e.g. pi `read` on SKILL.md) label by skill name; skip file targets so
   // the card does not fall back to "读取 SKILL.md".
-  const targets = skillDetail
-    ? {}
-    : resolveThreadRunToolTargets(displayName, record.input);
+  const targets = skillDetail ? {} : resolveThreadRunToolTargets(displayName, toolInput);
   const detail =
     skillDetail ||
     imageViewCall?.path ||
+    imageViewCall?.ref ||
     (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ||
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
     resolveSdkToolDisplayDetail(displayName, toolInput);
   const toolUseId = readString(record.tool_use_id);
-  const description = name === "Bash" ? readBashDescriptionFromToolInput(record.input) : undefined;
-  const fileChange = isFileChangeToolName(name)
-    ? resolveFileChangeFromToolInput(name, record.input)
+  const description = displayName === "Bash" ? readBashDescriptionFromToolInput(toolInput) : undefined;
+  const fileChange = isFileChangeToolName(displayName)
+    ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
-  const sendMessage = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const sendMessage = displayName === "SendMessage" ? readSendMessageToolInput(toolInput) : undefined;
   const webSearch = resolveEcoWebSearchToolMetadata(displayName, toolInput);
+  const imageViewMeta = toImageViewMetadata(imageViewCall);
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -995,7 +988,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && { sendMessage }),
-    ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(imageViewMeta && { imageView: imageViewMeta }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(webSearch && { webSearch }),
     status: "started",
@@ -1014,14 +1007,26 @@ function resolveSdkToolProgressMetadata(payload: unknown): ThreadRunToolMetadata
   if (!name) {
     return undefined;
   }
+  const identity = resolveSdkMcpToolIdentity(name, record.input);
+  const displayName = identity.displayName;
+  const { imageViewCall, mcpDiscovery: imageMcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(
+    displayName,
+    identity.toolInput,
+  );
+  const imageViewMeta = toImageViewMetadata(imageViewCall);
+  const mcpDiscovery = identity.mcpDiscovery ?? imageMcpDiscovery;
   const elapsedSeconds =
     typeof record.elapsed_time_seconds === "number" ? record.elapsed_time_seconds : undefined;
   const toolUseId = readString(record.tool_use_id);
   return {
-    name,
+    name: displayName,
+    ...(imageViewCall?.path && { detail: imageViewCall.path }),
+    ...(imageViewCall?.ref && !imageViewCall.path && { detail: imageViewCall.ref }),
     ...(toolUseId && { toolUseId }),
     ...(elapsedSeconds !== undefined &&
       Number.isFinite(elapsedSeconds) && { durationMs: elapsedSeconds * 1000 }),
+    ...(imageViewMeta && { imageView: imageViewMeta }),
+    ...(mcpDiscovery && { mcpDiscovery }),
   };
 }
 

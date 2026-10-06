@@ -1,4 +1,8 @@
 import type { ThreadFollowUpPriority, ThreadPendingFollowUp, ThreadStatus } from "../shared/ipc";
+import {
+  formatCodexAsyncQuestionReplySummary,
+  parseCodexAsyncQuestionReplyText,
+} from "../shared/codex-async-questions";
 import { i18n } from "./i18n";
 
 export function isLiveFollowUpThreadStatus(status?: ThreadStatus): boolean {
@@ -12,9 +16,7 @@ export function shouldComposerUseFollowUpQueue(input: {
   followUpQueuePaused?: boolean;
 }): boolean {
   return Boolean(
-    isLiveFollowUpThreadStatus(input.status) ||
-      input.editingFollowUpId ||
-      input.followUpQueuePaused,
+    isLiveFollowUpThreadStatus(input.status) || input.editingFollowUpId || input.followUpQueuePaused,
   );
 }
 
@@ -47,13 +49,40 @@ export function mergeThreadFollowUp(
   current: readonly ThreadPendingFollowUp[],
   followUp: ThreadPendingFollowUp,
 ): ThreadPendingFollowUp[] {
-  const next = current.filter((item) => item.id !== followUp.id);
-  next.push(followUp);
-  return sortThreadFollowUps(next);
+  return mergeThreadFollowUps(current, [followUp]);
+}
+
+/** Merge RPC snapshots and live events without undoing a later queue transition. */
+export function mergeThreadFollowUps(
+  current: readonly ThreadPendingFollowUp[],
+  incoming: readonly ThreadPendingFollowUp[],
+): ThreadPendingFollowUp[] {
+  const next = new Map(current.map((item) => [item.id, item]));
+  for (const item of incoming) {
+    const existing = next.get(item.id);
+    if (existing) {
+      if (existing.updatedAt > item.updatedAt) continue;
+      if (existing.updatedAt === item.updatedAt && isTerminalFollowUp(existing) && !isTerminalFollowUp(item))
+        continue;
+      if (
+        existing.updatedAt === item.updatedAt &&
+        ["cancelled", "superseded", "failed"].includes(existing.status) &&
+        item.status === "applied"
+      )
+        continue;
+    }
+    next.set(item.id, item);
+  }
+  return sortThreadFollowUps([...next.values()]);
+}
+
+function isTerminalFollowUp(item: ThreadPendingFollowUp): boolean {
+  return item.status !== "queued" && item.status !== "delivered";
 }
 
 export function formatThreadFollowUpPreview(followUp: ThreadPendingFollowUp): string {
-  const prompt = followUp.prompt.trim();
+  const replies = parseCodexAsyncQuestionReplyText(followUp.prompt);
+  const prompt = replies ? formatCodexAsyncQuestionReplySummary(replies) : followUp.prompt.trim();
   const imageCount = followUp.attachments?.length ?? 0;
   const clipped = prompt.length > 120 ? `${prompt.slice(0, 117)}...` : prompt;
   const imageLabel = i18n.t("thread.followUpImages", { count: imageCount });

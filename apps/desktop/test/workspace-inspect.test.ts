@@ -4,6 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { findGitRootOnDisk, inspectWorkspace } from "../src/main/workspace-inspect";
 
+const TEST_GIT_IDENTITY_ARGS = [
+  "-c",
+  "user.name=Eco Coding Test",
+  "-c",
+  "user.email=eco-coding-test@localhost",
+];
+
 describe("findGitRootOnDisk", () => {
   test("finds .git in parent when cwd is a subfolder", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-git-root-"));
@@ -34,7 +41,7 @@ describe("inspectWorkspace", () => {
     execFileSync("git", ["init", "-b", "main"], { cwd: root });
     await fs.writeFile(path.join(root, "README.md"), "# test\n");
     execFileSync("git", ["add", "README.md"], { cwd: root });
-    execFileSync("git", ["commit", "-m", "initial"], { cwd: root });
+    execFileSync("git", [...TEST_GIT_IDENTITY_ARGS, "commit", "-m", "initial"], { cwd: root });
 
     const info = await inspectWorkspace(root);
     expect(info.isGitRepository).toBe(true);

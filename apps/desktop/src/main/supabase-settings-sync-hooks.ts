@@ -22,6 +22,7 @@ import type { IntegratedWebSearchSettingsStore } from "./integrated-web-search-s
 import type { PackageScriptArgsStore } from "./package-script-args-store";
 import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
 import type { ProviderStore } from "./provider-store";
+import { resolveOutboundProxyUrl } from "./proxy-bridge-settings-store";
 import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
 import type { SshBookmarkStore } from "./ssh-bookmark-store";
 import { sshBookmarkSecretKeyKey, sshBookmarkSecretPasswordKey } from "./ssh-bookmark-store";
@@ -89,6 +90,8 @@ function collectPayload(input: {
     version: provider.version,
     apiCompat: provider.apiCompat,
     ...(provider.tokenCountMode ? { tokenCountMode: provider.tokenCountMode } : {}),
+    ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
+    ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
     defaultModel: provider.defaultModel,
     enabled: provider.enabled,
   }));
@@ -96,6 +99,7 @@ function collectPayload(input: {
   const asr = input.asrSettingsStore.listProfiles();
   const image = input.imageGenerationStore.getSettings();
   const orchestration = input.agentOrchestrationStore;
+  const packageScriptOverrides = input.packageScriptArgsStore.getAllSnapshotSync();
 
   return {
     version: 1,
@@ -156,11 +160,13 @@ function collectPayload(input: {
       integratedWebSearch: {
         enabled: input.integratedWebSearchSettingsStore.get().enabled,
         provider: input.integratedWebSearchSettingsStore.get().provider,
+        approvalMode: input.integratedWebSearchSettingsStore.get().approvalMode,
       },
     },
     git: input.gitSettingsStore.get(),
     personalization: input.personalizationSettingsStore.get(),
-    packageScriptArgs: input.packageScriptArgsStore.getAllSync(),
+    packageScriptArgs: packageScriptOverrides.args,
+    packageScriptPrefixes: packageScriptOverrides.prefixes,
     sshBookmarks: input.sshBookmarkStore.getSnapshot().bookmarks,
   };
 }
@@ -210,6 +216,10 @@ async function applyPayload(
             tokenCountMode: provider.tokenCountMode as NonNullable<ProviderConfigInput["tokenCountMode"]>,
           }
         : {}),
+      ...(provider.authMethod
+        ? { authMethod: provider.authMethod as NonNullable<ProviderConfigInput["authMethod"]> }
+        : {}),
+      ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
       defaultModel: provider.defaultModel,
       enabled: provider.enabled,
       // Omit apiKey so existing local key is preserved until secrets pull.
@@ -370,8 +380,13 @@ async function applyPayload(
   if (payload.personalization !== undefined) {
     input.personalizationSettingsStore.save(normalizePersonalizationSettingsSnapshot(payload.personalization));
   }
-  if (payload.packageScriptArgs !== undefined) {
-    await input.packageScriptArgsStore.replaceAll(payload.packageScriptArgs);
+  if (payload.packageScriptArgs !== undefined || payload.packageScriptPrefixes !== undefined) {
+    // Older cloud snapshots have no prefixes key: keep the local ones.
+    const current = input.packageScriptArgsStore.getAllSnapshotSync();
+    await input.packageScriptArgsStore.replaceAll({
+      args: payload.packageScriptArgs ?? current.args,
+      prefixes: payload.packageScriptPrefixes ?? current.prefixes,
+    });
   }
   if (payload.sshBookmarks !== undefined) {
     input.sshBookmarkStore.replaceMetadata({ bookmarks: payload.sshBookmarks });
@@ -387,6 +402,7 @@ function applyProxyBridgeSettingsPayload(
 ): void {
   const current = input.proxyBridgeSettingsStore.get();
   input.proxyBridgeSettingsStore.save({
+    ...(current.enabled === undefined ? {} : { enabled: current.enabled }),
     ...(proxyBridge.upstreamUserAgent ? { upstreamUserAgent: proxyBridge.upstreamUserAgent } : {}),
     ...(current.upstreamProxyUrl ? { upstreamProxyUrl: current.upstreamProxyUrl } : {}),
   });
@@ -394,6 +410,7 @@ function applyProxyBridgeSettingsPayload(
     input.integratedWebSearchSettingsStore.save({
       enabled: proxyBridge.integratedWebSearch.enabled,
       provider: proxyBridge.integratedWebSearch.provider,
+      approvalMode: proxyBridge.integratedWebSearch.approvalMode,
     });
   }
 }
@@ -412,6 +429,10 @@ function collectSecrets(input: {
   for (const provider of input.providerStore.listProvidersWithSecrets()) {
     if (provider.apiKey.trim()) {
       secrets.push({ kind: "provider", key: provider.id, value: provider.apiKey });
+    }
+    const providerProxyUrl = provider.upstreamProxyUrl?.trim();
+    if (providerProxyUrl) {
+      secrets.push({ kind: "provider-proxy", key: provider.id, value: providerProxyUrl });
     }
   }
 
@@ -438,7 +459,7 @@ function collectSecrets(input: {
     });
   }
 
-  const proxyUrl = input.proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim();
+  const proxyUrl = resolveOutboundProxyUrl(input.proxyBridgeSettingsStore.get());
   if (proxyUrl) {
     secrets.push({ kind: "proxy", key: ECO_PROXY_URL_SECRET, value: proxyUrl });
   }
@@ -515,27 +536,55 @@ function applyDomainSecrets(
       if (provider.apiKey && !secretIds.has(`provider:${provider.id}`)) {
         input.providerStore.clearProviderApiKey(provider.id);
       }
+      const hasProviderProxy = (provider.upstreamProxyUrl ?? "").trim().length > 0;
+      if (hasProviderProxy && !secretIds.has(`provider-proxy:${provider.id}`)) {
+        input.providerStore.clearProviderUpstreamProxy(provider.id);
+      }
     }
     for (const secret of domainSecrets) {
-      if (!secret.value.trim() || secret.kind !== "provider") {
+      if (!secret.value.trim()) {
         continue;
       }
-      const existing = input.providerStore.getProviderWithSecret(secret.key);
-      if (!existing) {
-        throw new Error(`Cloud provider secret references missing provider: ${secret.key}`);
+      if (secret.kind === "provider") {
+        const existing = input.providerStore.getProviderWithSecret(secret.key);
+        if (!existing) {
+          throw new Error(`Cloud provider secret references missing provider: ${secret.key}`);
+        }
+        input.providerStore.saveProvider({
+          id: existing.id,
+          name: existing.name,
+          baseUrl: existing.baseUrl,
+          requestPath: existing.requestPath,
+          version: existing.version,
+          apiCompat: existing.apiCompat,
+          ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
+          ...(existing.authMethod ? { authMethod: existing.authMethod } : {}),
+          ...(existing.credentialPoolId ? { credentialPoolId: existing.credentialPoolId } : {}),
+          defaultModel: existing.defaultModel,
+          enabled: existing.enabled,
+          apiKey: secret.value,
+        });
       }
-      input.providerStore.saveProvider({
-        id: existing.id,
-        name: existing.name,
-        baseUrl: existing.baseUrl,
-        requestPath: existing.requestPath,
-        version: existing.version,
-        apiCompat: existing.apiCompat,
-        ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
-        defaultModel: existing.defaultModel,
-        enabled: existing.enabled,
-        apiKey: secret.value,
-      });
+      if (secret.kind === "provider-proxy") {
+        const existing = input.providerStore.getProviderWithSecret(secret.key);
+        if (!existing) {
+          throw new Error(`Cloud provider proxy secret references missing provider: ${secret.key}`);
+        }
+        input.providerStore.saveProvider({
+          id: existing.id,
+          name: existing.name,
+          baseUrl: existing.baseUrl,
+          requestPath: existing.requestPath,
+          version: existing.version,
+          apiCompat: existing.apiCompat,
+          ...(existing.tokenCountMode ? { tokenCountMode: existing.tokenCountMode } : {}),
+          ...(existing.authMethod ? { authMethod: existing.authMethod } : {}),
+          ...(existing.credentialPoolId ? { credentialPoolId: existing.credentialPoolId } : {}),
+          defaultModel: existing.defaultModel,
+          enabled: existing.enabled,
+          upstreamProxyUrl: secret.value,
+        });
+      }
     }
     return;
   }

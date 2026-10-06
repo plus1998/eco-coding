@@ -29,6 +29,7 @@ export interface ApprovalPlannedAction {
 }
 
 export interface EcoApprovalEnvelopeV2 {
+  /** Latest retained user message; earlier requests remain in the transcript. */
   userRequest: string;
   transcript: ApprovalTranscriptEntry[];
   plannedAction: ApprovalPlannedAction;
@@ -68,13 +69,16 @@ export function shouldIncludeActivityLine(line: ApprovalActivityLine): boolean {
   if (line.type && BASH_APPROVAL_TYPE.test(line.type)) {
     return false;
   }
+  if (role === "user") {
+    return true;
+  }
   if (BASH_APPROVAL_TYPE.test(message) || /辅助模型已允许|等待确认|已拒绝|已允许本次/.test(message)) {
     return false;
   }
   if (role === "thinking") {
     return false;
   }
-  if (role === "user" || role === "tool") {
+  if (role === "tool") {
     return true;
   }
   // Short assistant notes only; drop long assistant monologues.
@@ -114,16 +118,19 @@ export function buildApprovalTranscript(
     candidates.push({ role, text: truncateText(line.message.trim(), max) });
   }
 
-  // Prefer latest entries within the cap; keep first user anchor when possible.
-  const recent = candidates.slice(-MAX_TRANSCRIPT_ENTRIES);
-  const selected: Array<{ role: ApprovalTranscriptEntry["role"]; text: string }> = [];
+  const indexed = candidates.map((entry, index) => ({ ...entry, index }));
+  const selected: typeof indexed = [];
   let used = 0;
 
-  // Users first (newest first into budget), then recent tools/assistant.
-  const users = recent.filter((entry) => entry.role === "user");
-  const others = recent.filter((entry) => entry.role !== "user");
+  // Reserve room for the latest user intent before considering tool/assistant
+  // traffic. Apply the entry cap after selection so long tool runs cannot evict it.
+  const users = indexed.filter((entry) => entry.role === "user").reverse();
+  const others = indexed.filter((entry) => entry.role !== "user").reverse();
 
   for (const entry of [...users, ...others]) {
+    if (selected.length >= MAX_TRANSCRIPT_ENTRIES) {
+      break;
+    }
     const cost = entry.text.length + 24;
     if (used + cost > MAX_TRANSCRIPT_CHARS && selected.length > 0) {
       continue;
@@ -141,22 +148,23 @@ export function buildApprovalTranscript(
     used += cost;
   }
 
-  return selected.map((entry, index) => ({
-    index: index + 1,
-    role: entry.role,
-    text: entry.text,
-  }));
+  return selected
+    .sort((left, right) => left.index - right.index)
+    .map((entry, index) => ({
+      index: index + 1,
+      role: entry.role,
+      text: entry.text,
+    }));
 }
 
 export function buildUserRequestSummary(transcript: readonly ApprovalTranscriptEntry[]): string {
-  const users = transcript.filter((entry) => entry.role === "user").map((entry) => entry.text);
-  if (users.length === 0) {
-    return "";
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const entry = transcript[index];
+    if (entry?.role === "user") {
+      return truncateText(entry.text, MAX_USER_REQUEST_CHARS);
+    }
   }
-  const first = users[0] ?? "";
-  const last = users[users.length - 1] ?? "";
-  const summary = first === last ? first : `${first}\n---\n${last}`;
-  return truncateText(summary, MAX_USER_REQUEST_CHARS);
+  return "";
 }
 
 export function clampPlannedAction(action: ApprovalPlannedAction): ApprovalPlannedAction {

@@ -74,6 +74,39 @@ test("steerCodexTurn sends turn/steer to the app-server client", async () => {
   ]);
 });
 
+test("steerCodexTurn rejects responses without a matching turnId", async () => {
+  const cases: Array<{ name: string; result: unknown; expect: RegExp }> = [
+    { name: "empty response", result: {}, expect: /returned no turnId/ },
+    { name: "null response", result: null, expect: /returned no turnId/ },
+    { name: "blank turnId", result: { turnId: "   " }, expect: /returned no turnId/ },
+    { name: "non-string turnId", result: { turnId: 42 }, expect: /returned no turnId/ },
+    { name: "mismatched turnId", result: { turnId: "turn_other" }, expect: /confirmed turn turn_other/ },
+  ];
+
+  for (const entry of cases) {
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const client = new CodexAppServerClient(stdin, stdout);
+    const steer = steerCodexTurn(client, {
+      threadId: "thr_codex_1",
+      turnId: "turn_1",
+      input: [{ type: "text", text: "x" }],
+    });
+    await Bun.sleep(0);
+    writeResponse(stdout, { id: 1, result: entry.result });
+
+    try {
+      await steer;
+      expect.unreachable(`steer should fail for ${entry.name}`);
+    } catch (error) {
+      expect(isCodexTurnSteerFailed(error)).toBe(true);
+      expect(String(error)).toMatch(entry.expect);
+      // The RPC succeeded, so the input may already sit in an unknown turn: never auto-resend.
+      expect((error as CodexTurnSteerFailed).deliveryUnknown).toBe(true);
+    }
+  }
+});
+
 test("steerCodexTurn surfaces RPC failure as CodexTurnSteerFailed", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();

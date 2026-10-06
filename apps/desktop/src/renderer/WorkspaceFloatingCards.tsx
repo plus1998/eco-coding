@@ -1,7 +1,9 @@
 import {
   Blocks,
   Bot,
+  Check,
   ChevronDown,
+  Copy,
   GitBranch,
   GitGraph,
   Globe,
@@ -35,6 +37,7 @@ import type {
   SubagentEnabledSettings,
   SubagentRole,
   ThreadBillingSnapshot,
+  ThreadUsageLedgerEventView,
   ThreadContextSnapshot,
   ThreadPendingPlan,
   ThreadRuntimeConfig,
@@ -47,6 +50,7 @@ import type { McpServersEnabledSettings } from "../shared/thread-runtime-config"
 import { webChatHostname } from "../shared/web-chat-list";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { useBrowserTaskInstances } from "./browser-state-store";
+import { copyTextToClipboard } from "./clipboard";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerIntegrationsCardBody } from "./ComposerIntegrations";
@@ -56,7 +60,7 @@ import { CursorAgentsRosterCardBody } from "./CursorAgentsRosterCardBody";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
-import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
+import type { ThreadRunProjectionSubagentCard } from "./conversation-v2-projection-view";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
@@ -64,6 +68,7 @@ import { resolveWorkspacePlanTitle } from "./workspace-plan-title";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
+  ledgerEvents?: ThreadUsageLedgerEventView[];
   context?: ThreadContextSnapshot;
   contextTokens?: number;
 }
@@ -318,25 +323,58 @@ function SubagentRunsCardBody({
 
 function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; onOpenPlan?: () => void }) {
   const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
   const title = resolveWorkspacePlanTitle({
     plan: plan.plan,
     userPrompt: plan.userPrompt,
     fallback: t("workspaceCards.approvedPlan"),
   });
+  const planText = plan.plan.trim();
+
+  function copyPlan() {
+    if (!planText) {
+      return;
+    }
+    void copyTextToClipboard(plan.plan).then((ok) => {
+      if (!ok) {
+        return;
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  const copyLabel = copied ? t("workspaceCards.planCopied") : t("workspaceCards.copyPlan");
 
   return (
-    <button
-      type="button"
-      className="workspace-resource-row workspace-plan-card-trigger"
-      onClick={onOpenPlan}
-      disabled={!onOpenPlan}
-      title={t("workspaceCards.openFullPlan")}
-    >
-      <span className="workspace-resource-row-icon" aria-hidden>
-        <Lightbulb size={16} strokeWidth={1.75} />
-      </span>
-      <span className="workspace-resource-row-title">{title}</span>
-    </button>
+    <div className="workspace-resource-row workspace-plan-card-trigger">
+      <button
+        type="button"
+        className="workspace-plan-card-open"
+        onClick={onOpenPlan}
+        disabled={!onOpenPlan}
+        title={t("workspaceCards.openFullPlan")}
+      >
+        <span className="workspace-resource-row-icon" aria-hidden>
+          <Lightbulb size={16} strokeWidth={1.75} />
+        </span>
+        <span className="workspace-resource-row-title">{title}</span>
+      </button>
+      <button
+        type="button"
+        className={`workspace-plan-card-copy${copied ? " is-copied" : ""}`}
+        onClick={copyPlan}
+        disabled={!planText}
+        title={copyLabel}
+        aria-label={copyLabel}
+      >
+        {copied ? (
+          <Check size={14} strokeWidth={2} aria-hidden />
+        ) : (
+          <Copy size={14} strokeWidth={1.75} aria-hidden />
+        )}
+      </button>
+    </div>
   );
 }
 

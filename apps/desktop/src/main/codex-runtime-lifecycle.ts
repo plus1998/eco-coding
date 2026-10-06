@@ -13,9 +13,19 @@ export interface CodexRuntimeLifecycleOptions {
   clientOptions?: Omit<CodexAppServerClientOptions, "onNotification">;
   onNotification?: CodexAppServerNotificationHandler;
   onStderr?: (chunk: string) => void;
+  /** Returns the active OpenAI account's proxy URL (http or socks), or undefined. */
+  getAccountProxyUrl?: () => string | undefined;
 }
 
 let nextDiagnosticGeneration = 1;
+
+// Module-level getter for the active OpenAI account proxy URL (set by index.ts)
+let accountProxyUrlGetter: (() => string | undefined | Promise<string | undefined>) | undefined;
+export function setCodexAccountProxyUrlGetter(
+  getter: (() => string | undefined | Promise<string | undefined>) | undefined,
+): void {
+  accountProxyUrlGetter = getter;
+}
 
 export class CodexRuntimeLifecycle {
   private child: ChildProcessWithoutNullStreams | undefined;
@@ -23,6 +33,7 @@ export class CodexRuntimeLifecycle {
   private startPromise: Promise<CodexAppServerClient> | undefined;
   private stopPromise: Promise<void> | undefined;
   private generation = 0;
+  private socksBridge: { close: () => void } | undefined;
 
   constructor(private readonly options: CodexRuntimeLifecycleOptions) {}
 
@@ -99,6 +110,12 @@ export class CodexRuntimeLifecycle {
       }
     }
 
+    // Clean up SOCKS bridge if active
+    if (this.socksBridge) {
+      this.socksBridge.close();
+      this.socksBridge = undefined;
+    }
+
     if (pendingStart) {
       try {
         await pendingStart;
@@ -117,8 +134,40 @@ export class CodexRuntimeLifecycle {
 
     const executable =
       this.options.codexExecutable?.trim() || process.env.CODEX_EXECUTABLE?.trim() || "codex";
+
+    // Resolve account proxy for Codex process
+    let accountProxyHttp: string | undefined;
+    let rawProxy: string | undefined;
+    try {
+      rawProxy = (await accountProxyUrlGetter?.())?.trim();
+    } catch (error) {
+      throw new Error("Configured OpenAI account proxy could not be loaded.", { cause: error });
+    }
+    if (rawProxy) {
+      try {
+        const parsed = new URL(rawProxy);
+        if (!["http:", "https:", "socks:", "socks4:", "socks5:", "socks5h:"].includes(parsed.protocol)) {
+          throw new Error("Unsupported proxy protocol.");
+        }
+        const proxyEndpoint = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+        if (parsed.protocol.startsWith("socks")) {
+          // Bridge SOCKS → local HTTP for Codex (Rust doesn't support SOCKS natively)
+          const { startSocksToHttpBridge } = await import("./openai-account-service");
+          const bridge = await startSocksToHttpBridge(rawProxy);
+          accountProxyHttp = `http://127.0.0.1:${bridge.port}`;
+          this.socksBridge = { close: bridge.close };
+        } else {
+          accountProxyHttp = rawProxy;
+        }
+        process.stderr.write(`[eco-codex] account proxy configured endpoint=${proxyEndpoint}\n`);
+      } catch (e) {
+        throw new Error("Configured OpenAI account proxy could not be initialized.", { cause: e });
+      }
+    }
+
+    const env = buildCodexAppServerEnv(process.env, codexHomeDir, accountProxyHttp);
     const child = spawn(executable, ["app-server", "--stdio"], {
-      env: buildCodexAppServerEnv(process.env, codexHomeDir),
+      env,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -176,13 +225,16 @@ export function resolveEcoDataCodexHome(ecoDataDir: string): string {
 
 const CODEX_LOOPBACK_PROXY_BYPASS = ["127.0.0.1", "localhost", "::1"] as const;
 
-export function buildCodexAppServerEnv(source: NodeJS.ProcessEnv, codexHomeDir: string): NodeJS.ProcessEnv {
+export function buildCodexAppServerEnv(source: NodeJS.ProcessEnv, codexHomeDir: string, accountProxyHttp?: string): NodeJS.ProcessEnv {
   const noProxy = mergeNoProxyEntries(source.NO_PROXY, source.no_proxy, CODEX_LOOPBACK_PROXY_BYPASS);
   return {
     ...source,
     CODEX_HOME: codexHomeDir,
     NO_PROXY: noProxy,
     no_proxy: noProxy,
+    ...(accountProxyHttp
+      ? { HTTPS_PROXY: accountProxyHttp, HTTP_PROXY: accountProxyHttp, https_proxy: accountProxyHttp, http_proxy: accountProxyHttp }
+      : {}),
   };
 }
 

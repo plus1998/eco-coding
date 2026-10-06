@@ -10,7 +10,7 @@ import 'package:intl/intl.dart' show DateFormat;
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/image_view_models.dart';
-import '../../core/models/thread_run_projection.dart';
+import '../../core/models/conversation_v2_projection_models.dart';
 import '../../core/preferences/thinking_display_preferences.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/models/thread_models.dart';
@@ -49,6 +49,13 @@ const _scrollToBottomButtonAlignedBottomGap = 6.0;
 typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
 typedef ActivityFeedToolDetailLoader =
     Future<List<ActivityFeedEntry>> Function(ActivityFeedEntry entry);
+typedef ActivityFeedToolDetailPageLoader =
+    Future<ActivityFeedToolDetailPage> Function(
+      ActivityFeedEntry entry, {
+      String? cursor,
+    });
+typedef ActivityFeedToolDetailPageRequest =
+    Future<ActivityFeedToolDetailPage> Function({String? cursor});
 typedef ActivityFeedTurnDetailLoader =
     Future<void> Function(ActivityFeedEntry entry);
 typedef ActivityFeedImageViewLoader =
@@ -64,6 +71,25 @@ typedef ActivityFeedUserMessageRewriteHandler =
       required List<PromptImageAttachment> attachments,
       required int expectedHistoryRevision,
     });
+typedef ActivityFeedFailedRequestRetryHandler =
+    Future<void> Function(ActivityFeedEntry entry);
+
+/// One bounded page of tool detail rows.
+///
+/// The page loader is deliberately separate from [ActivityFeedToolDetailLoader]
+/// so the V2 detail cursor stays explicit. The disclosure tile requests the
+/// next bounded page only after the user asks for it.
+class ActivityFeedToolDetailPage {
+  const ActivityFeedToolDetailPage({
+    required this.entries,
+    required this.hasMore,
+    this.nextCursor,
+  });
+
+  final List<ActivityFeedEntry> entries;
+  final bool hasMore;
+  final String? nextCursor;
+}
 
 bool shouldLoadEarlierActivityFeed({
   required double extentAfter,
@@ -135,6 +161,8 @@ class ActivityFeedEntry {
     required this.text,
     this.actionIcon,
     this.toolName,
+    this.readTargetPath,
+    this.readTargetLineRange,
     this.subagentRole,
     this.detail,
     this.streaming = false,
@@ -155,6 +183,8 @@ class ActivityFeedEntry {
     this.mcpDiscovery,
     this.toolUseId,
     this.reconnecting = false,
+    this.role,
+    this.toolEventType,
     this.actionChildren = const [],
     this.attachments = const [],
     this.runAttemptId,
@@ -167,6 +197,7 @@ class ActivityFeedEntry {
     this.rewindTarget,
     this.activityLineId,
     this.historyRevision = 0,
+    this.conversationV2Detail,
     this.sequence = 0,
   });
 
@@ -175,6 +206,12 @@ class ActivityFeedEntry {
   final String text;
   final ActivityActionIcon? actionIcon;
   final String? toolName;
+
+  /// Structured read/search target from the run tool metadata. Kept separate
+  /// from [text] because the aggregate header must not re-render a formatted
+  /// label as if it were a raw target.
+  final String? readTargetPath;
+  final String? readTargetLineRange;
   final String? subagentRole;
   final String? detail;
   final bool streaming;
@@ -195,6 +232,22 @@ class ActivityFeedEntry {
   final ActionKindMcpDiscovery? mcpDiscovery;
   final String? toolUseId;
   final bool reconnecting;
+
+  /// The provider's own label for the row (`planner`, `coder`, ...), from the timeline item
+  /// it came from.
+  ///
+  /// The Feed picks a turn's final output by this label, and the desktop Feed renders it, so
+  /// a row that reaches the list without it is a row the Feed can no longer describe the same
+  /// way as the desktop. A grouped or synthesized row has no single author and stays null.
+  final String? role;
+
+  /// The tool event this row reports (`tool.started` / `tool.completed` / `tool.failed`), when
+  /// it reports one.
+  ///
+  /// [lifecycle] is the row's *display* state and covers more than tool outcomes (an approval
+  /// phase, for instance), so the call's own outcome is kept as the event type — the same fact
+  /// the desktop reads off the item it renders.
+  final String? toolEventType;
   final List<ActivityFeedEntry> actionChildren;
   final List<PromptImageAttachment> attachments;
   final String? runAttemptId;
@@ -207,6 +260,13 @@ class ActivityFeedEntry {
   final ThreadActivityRewindTarget? rewindTarget;
   final String? activityLineId;
   final int historyRevision;
+
+  /// Complete source row for a V2 detail item.
+  ///
+  /// Detail rows are rendered as ordinary thinking entries, but callers that
+  /// consume or diagnose them must retain the source identity, ownership,
+  /// parent links, versions, and exact nullable/empty payload values.
+  final Map<String, dynamic>? conversationV2Detail;
   final int sequence;
 
   ActivityFeedEntry withSequence(int sequence) {
@@ -217,6 +277,8 @@ class ActivityFeedEntry {
       text: text,
       actionIcon: actionIcon,
       toolName: toolName,
+      readTargetPath: readTargetPath,
+      readTargetLineRange: readTargetLineRange,
       subagentRole: subagentRole,
       detail: detail,
       streaming: streaming,
@@ -236,6 +298,8 @@ class ActivityFeedEntry {
       imageView: imageView,
       mcpDiscovery: mcpDiscovery,
       toolUseId: toolUseId,
+      role: role,
+      toolEventType: toolEventType,
       reconnecting: reconnecting,
       actionChildren: actionChildren,
       attachments: attachments,
@@ -249,6 +313,7 @@ class ActivityFeedEntry {
       rewindTarget: rewindTarget,
       activityLineId: activityLineId,
       historyRevision: historyRevision,
+      conversationV2Detail: conversationV2Detail,
       sequence: sequence,
     );
   }
@@ -264,6 +329,8 @@ class ActivityFeedEntry {
       text: text,
       actionIcon: actionIcon,
       toolName: toolName,
+      readTargetPath: readTargetPath,
+      readTargetLineRange: readTargetLineRange,
       subagentRole: subagentRole,
       detail: detail,
       streaming: streaming,
@@ -283,6 +350,8 @@ class ActivityFeedEntry {
       imageView: imageView,
       mcpDiscovery: mcpDiscovery,
       toolUseId: toolUseId,
+      role: role,
+      toolEventType: toolEventType,
       reconnecting: reconnecting,
       actionChildren: actionChildren,
       attachments: attachments,
@@ -296,6 +365,7 @@ class ActivityFeedEntry {
       rewindTarget: rewindTarget,
       activityLineId: activityLineId,
       historyRevision: historyRevision,
+      conversationV2Detail: conversationV2Detail,
       sequence: sequence,
     );
   }
@@ -308,9 +378,9 @@ bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
 /// Whether the session feed should show the desktop-aligned boot overlay.
 ///
 /// Covers two projection sources:
-/// - **Local load**: desktop RPC (`getRunProjection`) until [projectionSettled]
-/// - **Cloud sync**: live `thread.run_projection_updated` may fill
-///   [projectionReady] before local settle; either ends the boot state
+/// - **Local load**: Conversation V2 sync until [projectionSettled]
+/// - **Cloud sync**: Conversation V2 sync settles the ordered feed before
+///   [projectionReady] is observed.
 bool isSessionContentBooting({
   required bool hasError,
   required bool projectionReady,
@@ -363,6 +433,57 @@ List<ActivityFeedEntry> buildActivityFeed({
   return groupTurns
       ? groupProjectionActivityFeedTurns(groupedEphemeralTail, runProjection)
       : groupedEphemeralTail;
+}
+
+/// Chooses the Feed rows for a live thread session.
+///
+/// The thread prompt is only an optimistic bootstrap for an empty V2
+/// projection. Once V2 has rows, replacing them with that prompt hides every
+/// later turn even though the cache and projection are current.
+List<ActivityFeedEntry> resolveThreadSessionDisplayFeedEntries({
+  required List<ActivityFeedEntry> feedEntries,
+  required String threadId,
+  required String? threadPrompt,
+  required bool isRunning,
+}) {
+  if (shouldAppendPendingAgentThinking(
+    isRunning: isRunning,
+    entries: feedEntries,
+  )) {
+    return [
+      ...feedEntries,
+      const ActivityFeedEntry(
+        id: 'pending-agent',
+        kind: ActivityFeedKind.thinking,
+        text: '',
+        streaming: true,
+      ),
+    ];
+  }
+  if (feedEntries.isNotEmpty) return feedEntries;
+
+  final optimisticPrompt = threadPrompt?.trim() ?? '';
+  if (optimisticPrompt.isNotEmpty || isRunning) {
+    return [
+      if (optimisticPrompt.isNotEmpty)
+        ActivityFeedEntry(
+          id: 'optimistic-user-$threadId',
+          kind: ActivityFeedKind.user,
+          text: optimisticPrompt,
+        ),
+      if (shouldAppendPendingAgentThinking(
+        isRunning: isRunning,
+        entries: const [],
+      ))
+        const ActivityFeedEntry(
+          id: 'pending-agent',
+          kind: ActivityFeedKind.thinking,
+          text: '',
+          streaming: true,
+        ),
+    ];
+  }
+  return const [];
 }
 
 /// Summary and the current tool aggregate share one temporary tail slot.
@@ -515,13 +636,17 @@ ActivityFeedEntry _buildThinkingGroupEntry(List<ActivityFeedEntry> entries) {
 
   return ActivityFeedEntry(
     id: first.id,
+    role: first.role,
     kind: ActivityFeedKind.thinking,
     text: text,
     streaming: streaming,
     agentId: first.agentId,
     runAttemptId: first.runAttemptId,
     requestId: first.requestId,
-    at: first.at,
+    // The merged row stands where its last block happened: the row reports completed
+    // reasoning, so its place in the Feed is the end of the reasoning, not its beginning
+    // (the desktop merges thinking rows the same way).
+    at: last.at,
     startedAt: startedAt.isEmpty ? null : startedAt,
     endedAt: streaming ? null : last.endedAt,
     durationMs: entries.fold(0, (total, entry) => total + entry.durationMs),
@@ -559,7 +684,12 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
 
 /// Prefer human-readable bash title over the raw command for collapsed
 /// action-group summaries (especially while a command is still running).
-String _actionSummaryTarget(ActivityFeedEntry entry) {
+///
+/// Never returns the tool's own generic verb label (e.g. `读取了文件`): the
+/// aggregate header prepends the verb again, so feeding the finished label
+/// back as a target renders `读取了 读取了文件`. Kept in sync with the desktop
+/// `actionBlockTargetKey` guard.
+String _actionSummaryTarget(ActivityFeedEntry entry, AppLocalizations l10n) {
   final webSearch = entry.webSearch;
   if (webSearch != null && webSearch.query.trim().isNotEmpty) {
     return webSearch.query.trim();
@@ -571,21 +701,35 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
     final command = bashRun.command?.trim() ?? '';
     if (command.isNotEmpty) return command;
   }
+  final filePath = entry.readTargetPath?.trim();
+  if (filePath != null && filePath.isNotEmpty) {
+    final name = pathBasename(filePath);
+    final range = entry.readTargetLineRange?.trim();
+    return range == null || range.isEmpty ? name : '$name $range';
+  }
   final toolName = entry.toolName?.trim() ?? '';
   final text = entry.text.trim();
   if (isCommandToolName(toolName) &&
       text.isNotEmpty &&
       text.toLowerCase() != toolName.toLowerCase() &&
-      text != 'Shell') {
+      text != 'Shell' &&
+      !_isGenericToolLabel(toolName, text, l10n)) {
     return text;
   }
   final path = entry.fileChange?.path.trim();
   if (path != null && path.isNotEmpty) return path;
-  return entry.text;
+  return _isGenericToolLabel(toolName, text, l10n) ? '' : text;
+}
+
+bool _isGenericToolLabel(String toolName, String text, AppLocalizations l10n) {
+  if (toolName.isEmpty || text.isEmpty) return false;
+  return formatToolDisplayLabel(toolName, null, l10n) == text;
 }
 
 ActionKindPayload _payloadFromEntry(ActivityFeedEntry entry) {
   final fileChange = entry.fileChange;
+  final readTargetPath = entry.readTargetPath?.trim();
+  final readTargetLineRange = entry.readTargetLineRange?.trim();
   final webSearch = entry.webSearch;
   final imageView = entry.imageView;
   final bashRun = entry.bashRun;
@@ -595,6 +739,16 @@ ActionKindPayload _payloadFromEntry(ActivityFeedEntry entry) {
         : ActionKindFileChange(
             path: fileChange.path,
             fileName: fileChange.fileName,
+          ),
+    readTarget: readTargetPath == null || readTargetPath.isEmpty
+        ? null
+        : ActionKindReadTarget(
+            filePath: readTargetPath,
+            fileName: pathBasename(readTargetPath),
+            lineRange:
+                readTargetLineRange == null || readTargetLineRange.isEmpty
+                ? null
+                : readTargetLineRange,
           ),
     webSearch: webSearch == null
         ? null
@@ -654,7 +808,7 @@ String _formatFeedActionLine(
   return formatActionLine(
     resolved: _resolveFeedEntryAction(entry),
     phase: phase,
-    rawTarget: _actionSummaryTarget(entry),
+    rawTarget: _actionSummaryTarget(entry, l10n),
     payload: _payloadFromEntry(entry),
     l10n: l10n,
   );
@@ -687,7 +841,7 @@ String _formatFeedActionLine(
     label: formatActionLine(
       resolved: resolved,
       phase: phase,
-      rawTarget: _actionSummaryTarget(entry),
+      rawTarget: _actionSummaryTarget(entry, l10n),
       payload: _payloadFromEntry(entry),
       l10n: l10n,
     ),
@@ -737,7 +891,7 @@ String _formatFeedActionLine(
         action.bucket == ActionGroupBucket.editedFiles) {
       final key = entry.fileChange?.path.trim().isNotEmpty == true
           ? entry.fileChange!.path.trim()
-          : _actionSummaryTarget(entry);
+          : _actionSummaryTarget(entry, l10n);
       final seen = fileBucketKeys.putIfAbsent(action.bucket, () => <String>{});
       if (!seen.add(key)) continue;
     }
@@ -1023,11 +1177,13 @@ class ActivityFeedList extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadToolDetailPage,
     this.loadTurnDetail,
     this.loadImageView,
     this.onOpenImageDisplayArtifact,
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
+    this.onRetryFailedRequest,
     this.hasEarlier = false,
     this.onLoadEarlier,
     this.onLoadEarlierError,
@@ -1047,11 +1203,13 @@ class ActivityFeedList extends StatefulWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedToolDetailPageLoader? loadToolDetailPage;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final ValueChanged<String>? onOpenImageDisplayArtifact;
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
+  final ActivityFeedFailedRequestRetryHandler? onRetryFailedRequest;
   final bool hasEarlier;
   final ActivityFeedEarlierLoader? onLoadEarlier;
   final ActivityFeedLoadErrorCallback? onLoadEarlierError;
@@ -1061,6 +1219,7 @@ class ActivityFeedList extends StatefulWidget {
   final bool showScrollJumpButton;
   final double scrollJumpBottomInset;
   final bool stopping;
+
   /// Copy/time (and speak) under messages — only after the conversation stopped.
   final bool showMessageCopyAndTime;
   final EdgeInsetsGeometry? padding;
@@ -1218,11 +1377,14 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     themeSource: widget.themeSource,
                     onOpenAgentDetail: widget.onOpenAgentDetail,
                     loadToolDetail: widget.loadToolDetail,
+                    loadToolDetailPage: widget.loadToolDetailPage,
                     loadTurnDetail: widget.loadTurnDetail,
                     loadImageView: widget.loadImageView,
-                    onOpenImageDisplayArtifact: widget.onOpenImageDisplayArtifact,
+                    onOpenImageDisplayArtifact:
+                        widget.onOpenImageDisplayArtifact,
                     onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
                     onRewriteUserMessage: widget.onRewriteUserMessage,
+                    onRetryFailedRequest: widget.onRetryFailedRequest,
                     expandUserPrompts: widget.expandUserPrompts,
                     thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                     finalMetaEntryId: finalMetaId,
@@ -1329,11 +1491,13 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadToolDetailPage,
     this.loadTurnDetail,
     this.loadImageView,
     this.onOpenImageDisplayArtifact,
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
+    this.onRetryFailedRequest,
     this.expandUserPrompts = false,
     this.thinkingDefaultExpanded = false,
     this.finalMetaEntryId,
@@ -1346,11 +1510,13 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedToolDetailPageLoader? loadToolDetailPage;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final ValueChanged<String>? onOpenImageDisplayArtifact;
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
+  final ActivityFeedFailedRequestRetryHandler? onRetryFailedRequest;
   final bool expandUserPrompts;
   final bool thinkingDefaultExpanded;
   final String? finalMetaEntryId;
@@ -1367,14 +1533,17 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           themeSource: themeSource,
           onOpenAgentDetail: onOpenAgentDetail,
           loadToolDetail: loadToolDetail,
+          loadToolDetailPage: loadToolDetailPage,
           loadTurnDetail: loadTurnDetail,
           loadImageView: loadImageView,
           onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
           thinkingDefaultExpanded: thinkingDefaultExpanded,
-          showFinalMeta: showMessageCopyAndTime &&
+          showFinalMeta:
+              showMessageCopyAndTime &&
               entry.finalOutput?.id == finalMetaEntryId,
           showMessageCopyAndTime: showMessageCopyAndTime,
           paceTargetEntryId: paceTargetEntryId,
+          onRetryFailedRequest: onRetryFailedRequest,
         );
       case ActivityFeedKind.user:
         return _UserPromptTile(
@@ -1421,6 +1590,9 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           loadToolDetail: loadToolDetail != null
               ? () => loadToolDetail!(entry)
               : null,
+          loadToolDetailPage: loadToolDetailPage != null
+              ? ({String? cursor}) => loadToolDetailPage!(entry, cursor: cursor)
+              : null,
         );
       case ActivityFeedKind.imageView:
         return _ImageViewTile(
@@ -1429,7 +1601,11 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           onOpenImageDisplayArtifact: onOpenImageDisplayArtifact,
         );
       case ActivityFeedKind.actionGroup:
-        return _ActionGroupTile(entry: entry, loadToolDetail: loadToolDetail);
+        return _ActionGroupTile(
+          entry: entry,
+          loadToolDetail: loadToolDetail,
+          loadToolDetailPage: loadToolDetailPage,
+        );
       case ActivityFeedKind.phase:
         if (entry.reconnecting) {
           return _ReconnectPhaseTile(summary: entry.text, detail: entry.detail);
@@ -1458,7 +1634,12 @@ class _ActivityFeedEntryTile extends StatelessWidget {
               : null,
         );
       case ActivityFeedKind.error:
-        return _ErrorTile(text: entry.text);
+        return _ErrorTile(
+          text: entry.text,
+          onRetry: onRetryFailedRequest == null
+              ? null
+              : () => onRetryFailedRequest!(entry),
+        );
     }
   }
 }
@@ -1469,6 +1650,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadToolDetailPage,
     this.loadTurnDetail,
     this.loadImageView,
     this.onOpenImageDisplayArtifact,
@@ -1476,12 +1658,14 @@ class _TurnFeedTile extends StatefulWidget {
     this.showFinalMeta = false,
     this.showMessageCopyAndTime = true,
     this.paceTargetEntryId,
+    this.onRetryFailedRequest,
   });
 
   final ActivityFeedEntry entry;
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedToolDetailPageLoader? loadToolDetailPage;
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final ValueChanged<String>? onOpenImageDisplayArtifact;
@@ -1489,6 +1673,7 @@ class _TurnFeedTile extends StatefulWidget {
   final bool showFinalMeta;
   final bool showMessageCopyAndTime;
   final String? paceTargetEntryId;
+  final ActivityFeedFailedRequestRetryHandler? onRetryFailedRequest;
 
   @override
   State<_TurnFeedTile> createState() => _TurnFeedTileState();
@@ -1658,12 +1843,14 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               themeSource: widget.themeSource,
                               onOpenAgentDetail: widget.onOpenAgentDetail,
                               loadToolDetail: widget.loadToolDetail,
+                              loadToolDetailPage: widget.loadToolDetailPage,
                               loadImageView: widget.loadImageView,
                               onOpenImageDisplayArtifact:
                                   widget.onOpenImageDisplayArtifact,
                               thinkingDefaultExpanded:
                                   widget.thinkingDefaultExpanded,
                               paceTargetEntryId: widget.paceTargetEntryId,
+                              onRetryFailedRequest: widget.onRetryFailedRequest,
                               showMessageCopyAndTime:
                                   widget.showMessageCopyAndTime,
                             ),
@@ -1709,10 +1896,12 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
+                  loadToolDetailPage: widget.loadToolDetailPage,
                   loadImageView: widget.loadImageView,
                   onOpenImageDisplayArtifact: widget.onOpenImageDisplayArtifact,
                   thinkingDefaultExpanded: widget.thinkingDefaultExpanded,
                   paceTargetEntryId: widget.paceTargetEntryId,
+                  onRetryFailedRequest: widget.onRetryFailedRequest,
                   hideMessageActions: widget.showFinalMeta,
                   showMessageCopyAndTime: widget.showMessageCopyAndTime,
                 ),
@@ -1734,11 +1923,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
 }
 
 class _FinalOutputMeta extends StatefulWidget {
-  const _FinalOutputMeta({
-    required this.entryId,
-    required this.text,
-    this.at,
-  });
+  const _FinalOutputMeta({required this.entryId, required this.text, this.at});
 
   final String entryId;
   final String text;
@@ -1778,10 +1963,7 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
           if (tooltip != null)
             Tooltip(
               message: tooltip,
-              child: Text(
-                label!,
-                style: activityFeedMetaLabelStyle(context),
-              ),
+              child: Text(label!, style: activityFeedMetaLabelStyle(context)),
             ),
           if (tooltip != null) const SizedBox(width: 8),
           ActivityFeedCopyButton(onPressed: _copy),
@@ -2084,11 +2266,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     }
     if (images.isEmpty || !mounted) return;
     final start = indexes.indexOf(index).clamp(0, images.length - 1);
-    await showImageMemoryLightbox(
-      context,
-      images: images,
-      initialIndex: start,
-    );
+    await showImageMemoryLightbox(context, images: images, initialIndex: start);
   }
 
   Future<void> _openEditAttachmentLightbox(int index) async {
@@ -2104,11 +2282,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     }
     if (images.isEmpty || !mounted) return;
     final start = indexes.indexOf(index).clamp(0, images.length - 1);
-    await showImageMemoryLightbox(
-      context,
-      images: images,
-      initialIndex: start,
-    );
+    await showImageMemoryLightbox(context, images: images, initialIndex: start);
   }
 
   Widget _buildEditBubble(BuildContext context, double maxBubbleWidth) {
@@ -2384,8 +2558,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
           ),
           // 用户消息不随会话进行状态隐藏操作：编辑与复制始终可见（仅要求文本非空），
           // 只有 agent 侧输出才用 showMessageCopyAndTime 延迟挂载以避免 streaming 抖动。
-          if (!_editing &&
-              (_canEdit || widget.text.trim().isNotEmpty))
+          if (!_editing && (_canEdit || widget.text.trim().isNotEmpty))
             Padding(
               // Keep space below copy/edit actions so the next agent turn does
               // not sit flush against the icon row (desktop uses ~20px block gap).
@@ -2407,9 +2580,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                   if (_canEdit && widget.text.trim().isNotEmpty)
                     const SizedBox(width: activityFeedMessageActionGap),
                   if (widget.text.trim().isNotEmpty)
-                    ActivityFeedCopyButton(
-                      onPressed: _copyMessage,
-                    ),
+                    ActivityFeedCopyButton(onPressed: _copyMessage),
                 ],
               ),
             ),
@@ -3010,10 +3181,15 @@ class _UsageBadgeLine extends StatelessWidget {
 }
 
 class _ActionGroupTile extends StatefulWidget {
-  const _ActionGroupTile({required this.entry, this.loadToolDetail});
+  const _ActionGroupTile({
+    required this.entry,
+    this.loadToolDetail,
+    this.loadToolDetailPage,
+  });
 
   final ActivityFeedEntry entry;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedToolDetailPageLoader? loadToolDetailPage;
 
   @override
   State<_ActionGroupTile> createState() => _ActionGroupTileState();
@@ -3071,6 +3247,13 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                           loadToolDetail: widget.loadToolDetail != null
                               ? () => widget.loadToolDetail!(child)
                               : null,
+                          loadToolDetailPage: widget.loadToolDetailPage != null
+                              ? ({String? cursor}) =>
+                                    widget.loadToolDetailPage!(
+                                      child,
+                                      cursor: cursor,
+                                    )
+                              : null,
                         ),
                     ],
                   ),
@@ -3094,6 +3277,7 @@ class _ActionTile extends StatefulWidget {
     this.webSearch,
     this.toolUseId,
     this.loadToolDetail,
+    this.loadToolDetailPage,
     this.preferFormattedLabel = false,
   });
 
@@ -3105,6 +3289,7 @@ class _ActionTile extends StatefulWidget {
   final WebSearchCardDisplay? webSearch;
   final String? toolUseId;
   final Future<List<ActivityFeedEntry>> Function()? loadToolDetail;
+  final ActivityFeedToolDetailPageRequest? loadToolDetailPage;
   final bool preferFormattedLabel;
 
   @override
@@ -3114,41 +3299,98 @@ class _ActionTile extends StatefulWidget {
 class _ActionTileState extends State<_ActionTile> {
   var _expanded = false;
   Future<List<ActivityFeedEntry>>? _detailFuture;
+  var _detailPageLoading = false;
+  var _detailLoadingMore = false;
+  var _detailPageLoaded = false;
+  var _detailEntries = <ActivityFeedEntry>[];
+  String? _detailCursor;
+  var _detailHasMore = false;
+  Object? _detailPageError;
   BashRunCardDisplay? _loadedBashRun;
   Object? _bashDetailError;
 
   void _toggleDetails() {
+    if (_expanded) {
+      setState(() => _expanded = false);
+      return;
+    }
+    setState(() => _expanded = true);
+
+    final needsBashDetail =
+        widget.bashRun != null &&
+        widget.bashRun!.output?.trim().isEmpty != false &&
+        widget.toolUseId?.trim().isNotEmpty == true &&
+        widget.loadToolDetail != null;
+    final shouldLoadDetail =
+        widget.webSearch == null && (widget.bashRun == null || needsBashDetail);
+    if (!shouldLoadDetail || widget.fileChange != null) return;
+
+    if (widget.loadToolDetailPage != null && !_detailPageLoaded) {
+      _requestDetailPage();
+      return;
+    }
+    if (_detailFuture != null || widget.loadToolDetail == null) return;
+    final future = widget.loadToolDetail!();
     setState(() {
-      _expanded = !_expanded;
-      final needsBashDetail =
-          widget.bashRun != null &&
-          widget.bashRun!.output?.trim().isEmpty != false &&
-          widget.toolUseId?.trim().isNotEmpty == true &&
-          widget.loadToolDetail != null;
-      final shouldLoadDetail =
-          widget.webSearch == null &&
-          (widget.bashRun == null || needsBashDetail);
-      if (_expanded &&
-          shouldLoadDetail &&
-          widget.fileChange == null &&
-          _detailFuture == null) {
-        _detailFuture = widget.loadToolDetail?.call();
-        if (widget.bashRun != null && _detailFuture != null) {
-          _detailFuture!.then(
-            (entries) {
-              if (!mounted) return;
-              final bashRun = _findBashRunDetail(entries);
-              if (bashRun == null) return;
-              setState(() => _loadedBashRun = bashRun);
-            },
-            onError: (Object error) {
-              if (!mounted) return;
-              setState(() => _bashDetailError = error);
-            },
-          );
-        }
+      _detailFuture = future;
+    });
+    if (widget.bashRun != null) {
+      future.then(
+        (entries) {
+          if (!mounted) return;
+          final bashRun = _findBashRunDetail(entries);
+          if (bashRun == null) return;
+          setState(() => _loadedBashRun = bashRun);
+        },
+        onError: (Object error) {
+          if (!mounted) return;
+          setState(() => _bashDetailError = error);
+        },
+      );
+    }
+  }
+
+  void _requestDetailPage({String? cursor, bool append = false}) {
+    final loader = widget.loadToolDetailPage;
+    if (loader == null || (append && _detailLoadingMore)) return;
+    setState(() {
+      _detailPageError = null;
+      if (append) {
+        _detailLoadingMore = true;
+      } else {
+        _detailPageLoading = true;
       }
     });
+    loader(cursor: cursor).then(
+      (page) {
+        if (!mounted) return;
+        final existingEntries = append
+            ? _detailEntries
+            : const <ActivityFeedEntry>[];
+        final byId = <String, ActivityFeedEntry>{
+          for (final entry in existingEntries) entry.id: entry,
+        };
+        for (final entry in page.entries) {
+          byId[entry.id] = entry;
+        }
+        setState(() {
+          _detailEntries = byId.values.toList(growable: false);
+          _detailCursor = page.nextCursor;
+          _detailHasMore = page.hasMore;
+          _detailPageLoaded = true;
+          _detailPageLoading = false;
+          _detailLoadingMore = false;
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _detailPageError = error;
+          _detailPageLoading = false;
+          _detailLoadingMore = false;
+        });
+      },
+    );
   }
 
   @override
@@ -3166,7 +3408,8 @@ class _ActionTileState extends State<_ActionTile> {
         bashRun != null ||
         webSearch != null ||
         (widget.toolUseId?.trim().isNotEmpty == true &&
-            widget.loadToolDetail != null);
+            (widget.loadToolDetail != null ||
+                widget.loadToolDetailPage != null));
 
     if (webSearch != null) {
       return Padding(
@@ -3229,14 +3472,10 @@ class _ActionTileState extends State<_ActionTile> {
       );
     }
     if (bashRun != null) {
-      final summaryLabel = widget.preferFormattedLabel &&
-              widget.label.trim().isNotEmpty
+      final summaryLabel =
+          widget.preferFormattedLabel && widget.label.trim().isNotEmpty
           ? widget.label.trim()
-          : _bashActionSummaryLabel(
-              bashRun,
-              widget.lifecycle,
-              context.l10n,
-            );
+          : _bashActionSummaryLabel(bashRun, widget.lifecycle, context.l10n);
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         child: Column(
@@ -3305,7 +3544,30 @@ class _ActionTileState extends State<_ActionTile> {
             expanded: canExpand ? _expanded : false,
             onTap: canExpand ? _toggleDetails : null,
           ),
-          if (_expanded && _detailFuture != null)
+          if (_expanded && widget.loadToolDetailPage != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _PagedInlineToolDetail(
+                entries: _detailEntries,
+                loading: _detailPageLoading,
+                loadingMore: _detailLoadingMore,
+                error: _detailPageError,
+                hasMore: _detailHasMore,
+                onRetry: _detailPageLoading
+                    ? null
+                    : () => _requestDetailPage(
+                        cursor: _detailPageLoaded ? _detailCursor : null,
+                        append: _detailPageLoaded,
+                      ),
+                onLoadMore: _detailLoadingMore || _detailCursor == null
+                    ? null
+                    : () => _requestDetailPage(
+                        cursor: _detailCursor,
+                        append: true,
+                      ),
+              ),
+            )
+          else if (_expanded && _detailFuture != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: _InlineToolDetail(future: _detailFuture!),
@@ -3612,6 +3874,110 @@ Widget _inlineToolDetailBody(BuildContext context, ActivityFeedEntry entry) {
     );
   }
   return _ActivityFeedEntryTile(entry: entry);
+}
+
+class _PagedInlineToolDetail extends StatelessWidget {
+  const _PagedInlineToolDetail({
+    required this.entries,
+    required this.loading,
+    required this.loadingMore,
+    required this.error,
+    required this.hasMore,
+    this.onRetry,
+    this.onLoadMore,
+  });
+
+  final List<ActivityFeedEntry> entries;
+  final bool loading;
+  final bool loadingMore;
+  final Object? error;
+  final bool hasMore;
+  final VoidCallback? onRetry;
+  final VoidCallback? onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading && entries.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    final visible = _flattenInlineToolDetailEntries(
+      entries,
+    ).where(_inlineToolDetailEntryHasBody).toList(growable: false);
+    final children = <Widget>[
+      if (visible.isEmpty && error == null && !loading)
+        Text(
+          context.l10n.threadNoToolDetails,
+          style: activityFeedBodyStyle(
+            context,
+            color: ecoColors(context).textMuted,
+            height: 1.4,
+          ),
+        ),
+      for (final entry in visible)
+        KeyedSubtree(
+          key: ValueKey('inline-tool-detail:${entry.id}'),
+          child: _inlineToolDetailBody(context, entry),
+        ),
+      if (error != null)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                localizedAppError(error!, context.l10n),
+                style: activityFeedBodyStyle(
+                  context,
+                  color: ecoColors(context).statusDenyText,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            if (onRetry != null)
+              TextButton(
+                onPressed: onRetry,
+                child: Text(context.l10n.commonRetry),
+              ),
+          ],
+        ),
+      if (loadingMore)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        )
+      else if (hasMore && onLoadMore != null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: onLoadMore,
+            child: Text(context.l10n.threadLoadMoreToolDetails),
+          ),
+        ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
 }
 
 class _InlineToolDetail extends StatelessWidget {
@@ -4697,11 +5063,7 @@ class _SubagentImageStrip extends StatelessWidget {
     }
     if (images.isEmpty) return;
     final start = indexes.indexOf(index).clamp(0, images.length - 1);
-    await showImageMemoryLightbox(
-      context,
-      images: images,
-      initialIndex: start,
-    );
+    await showImageMemoryLightbox(context, images: images, initialIndex: start);
   }
 
   @override
@@ -4805,10 +5167,35 @@ class _SubagentTimelineRow extends StatelessWidget {
       EcoIcons.activityAction(icon);
 }
 
-class _ErrorTile extends StatelessWidget {
-  const _ErrorTile({required this.text});
+class _ErrorTile extends StatefulWidget {
+  const _ErrorTile({required this.text, this.onRetry});
 
   final String text;
+  final Future<void> Function()? onRetry;
+
+  @override
+  State<_ErrorTile> createState() => _ErrorTileState();
+}
+
+class _ErrorTileState extends State<_ErrorTile> {
+  bool _retrying = false;
+  Object? _retryError;
+
+  Future<void> _retry() async {
+    final callback = widget.onRetry;
+    if (callback == null || _retrying) return;
+    setState(() {
+      _retrying = true;
+      _retryError = null;
+    });
+    try {
+      await callback();
+    } catch (error) {
+      if (mounted) setState(() => _retryError = error);
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4820,12 +5207,41 @@ class _ErrorTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: ecoColors(context).statusDenyBorder),
       ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: ecoColors(context).statusDenyText,
-          height: 1.4,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.text,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: ecoColors(context).statusDenyText,
+              height: 1.4,
+            ),
+          ),
+          if (widget.onRetry != null) ...[
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: _retrying ? null : _retry,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: _retrying
+                  ? const SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(context.l10n.commonRetry),
+            ),
+          ],
+          if (_retryError != null)
+            Text(
+              localizedAppError(_retryError!, context.l10n),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: ecoColors(context).statusDenyText,
+                height: 1.3,
+              ),
+            ),
+        ],
       ),
     );
   }

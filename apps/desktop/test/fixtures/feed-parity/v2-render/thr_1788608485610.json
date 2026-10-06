@@ -1,0 +1,172 @@
+{
+  "feed": [
+    {
+      "text": "<text#4238b289d5:len41>",
+      "role": "user",
+      "at": "2026-09-05T11:41:25.612Z",
+      "callId": null
+    },
+    {
+      "text": "<text#d0a01bb2b2:len151>",
+      "role": "thinking",
+      "at": "2026-09-05T11:41:31.082Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T11:41:31.984Z",
+      "callId": "call_342579c932c940f1a8f3d215",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#9f68c1f349:len81>",
+      "role": "thinking",
+      "at": "2026-09-05T11:41:34.512Z",
+      "callId": null
+    },
+    {
+      "text": "<text#f27e599fdb:len63>",
+      "role": "planner",
+      "at": "2026-09-05T11:41:35.371Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#f7fe204b86:len65>",
+      "role": "user",
+      "at": "2026-09-05T12:10:25.372Z",
+      "callId": null
+    },
+    {
+      "text": "<text#3e4a268d9a:len37>",
+      "role": "thinking",
+      "at": "2026-09-05T12:10:31.359Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:10:32.065Z",
+      "callId": "call_0819803b54e844aaa923caa8",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#5d34365e67:len70>",
+      "role": "planner",
+      "at": "2026-09-05T12:10:35.892Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#f6c4cef794:len14>",
+      "role": "user",
+      "at": "2026-09-05T12:13:17.778Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:13:22.429Z",
+      "callId": "call_17deb86b4dfd4d74adeea433",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:13:23.100Z",
+      "callId": "call_5b3393301c484ac1ad47413c",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#becaaf5f80:len118>",
+      "role": "planner",
+      "at": "2026-09-05T12:13:27.516Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#d8bd7eda66:len3>",
+      "role": "user",
+      "at": "2026-09-05T12:21:53.128Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:21:58.093Z",
+      "callId": "call_af4cc5925ea2451487072ab1",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:21:58.816Z",
+      "callId": "call_9a36868c72dd4468a9d51bca",
+      "status": "tool.failed"
+    },
+    {
+      "text": "<text#bf025ccfca:len40>",
+      "role": "planner",
+      "at": "2026-09-05T12:22:04.905Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:22:05.610Z",
+      "callId": "call_e1b1d1843ce04c1291f7d352",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#426200fc82:len136>",
+      "role": "thinking",
+      "at": "2026-09-05T12:22:08.581Z",
+      "callId": null
+    },
+    {
+      "text": "<text#3557d76ae0:len96>",
+      "role": "planner",
+      "at": "2026-09-05T12:22:09.148Z",
+      "callId": null,
+      "final": true
+    },
+    {
+      "text": "<text#d8bd7eda66:len3>",
+      "role": "user",
+      "at": "2026-09-05T12:36:05.377Z",
+      "callId": null
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:36:21.856Z",
+      "callId": "call_1ba92bade9f94eeda66f9de8",
+      "status": "tool.completed"
+    },
+    {
+      "role": "tool",
+      "at": "2026-09-05T12:36:22.546Z",
+      "callId": "call_258cc33e331943c68df6ec44",
+      "status": "tool.completed"
+    },
+    {
+      "text": "<text#635568ec2b:len124>",
+      "role": "planner",
+      "at": "2026-09-05T12:36:27.363Z",
+      "callId": null,
+      "final": true
+    }
+  ],
+  "cards": [],
+  "attempts": [
+    {
+      "attemptId": "attempt_execution_0_1788608485618_2",
+      "status": "cancelled"
+    },
+    {
+      "attemptId": "attempt_execution_0_1788610225375_3",
+      "status": "cancelled"
+    },
+    {
+      "attemptId": "attempt_execution_0_1788610397780_4",
+      "status": "cancelled"
+    },
+    {
+      "attemptId": "attempt_execution_0_1788610913132_5",
+      "status": "cancelled"
+    }
+  ]
+}

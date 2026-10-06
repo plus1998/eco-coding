@@ -293,6 +293,50 @@ export function isMermaidErrorSvg(svg: string): boolean {
 /** Feed preview box: never taller than this (width still capped by column). */
 export const MERMAID_FEED_MAX_HEIGHT_PX = 420;
 
+/**
+ * Last measured paint height (px) per diagram source.
+ *
+ * A feed diagram releases its SVG once it drifts past the release margin, and
+ * the Feed virtualizer destroys the whole row when it leaves the window. Both
+ * paths used to collapse the block to a one-line caption, so every row below it
+ * moved twice — once when it collapsed, once when the diagram came back. The
+ * remembered height lets the placeholder keep the box the diagram already
+ * occupied, which is also the height the virtualizer has already measured.
+ *
+ * Keyed by source because that is the only identity a node view keeps across
+ * unmount. Bounded LRU: diagrams are cheap to remember but a long feed is not.
+ */
+export const MERMAID_FEED_HEIGHT_CACHE_LIMIT = 96;
+const mermaidFeedHeightCache = new Map<string, number>();
+
+/** Re-indenting a diagram must not orphan its remembered box. */
+function mermaidHeightKey(source: string): string {
+  return source.trim().replace(/\s+/g, " ");
+}
+
+export function rememberMermaidFeedHeight(source: string, height: number): void {
+  const key = mermaidHeightKey(source);
+  if (!key || !Number.isFinite(height) || height <= 0) return;
+  mermaidFeedHeightCache.delete(key);
+  mermaidFeedHeightCache.set(key, Math.round(height));
+  while (mermaidFeedHeightCache.size > MERMAID_FEED_HEIGHT_CACHE_LIMIT) {
+    const oldest = mermaidFeedHeightCache.keys().next();
+    if (oldest.done) break;
+    mermaidFeedHeightCache.delete(oldest.value);
+  }
+}
+
+/** Reserved height for a diagram, or 0 when it has never been measured here. */
+export function recallMermaidFeedHeight(source: string): number {
+  const key = mermaidHeightKey(source);
+  if (!key) return 0;
+  const height = mermaidFeedHeightCache.get(key);
+  if (height === undefined) return 0;
+  mermaidFeedHeightCache.delete(key);
+  mermaidFeedHeightCache.set(key, height);
+  return height;
+}
+
 /** @deprecated Kept for tests; feed no longer uses a separate paint scale layer. */
 export function mermaidPaintScaleFactor(devicePixelRatio = 1): number {
   const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
@@ -356,8 +400,11 @@ function fitMermaidSvgToFeedBox(svg: SVGSVGElement, maxWidth: number, maxHeight:
 
 /**
  * Mount Mermaid SVG into the feed host, fitted to column width and a max height.
+ *
+ * `heightKey` (the diagram source) records the fitted height so the block can
+ * hold that height later, when the SVG is released or the row is re-mounted.
  */
-export function mountMermaidSvgForFeed(host: HTMLElement, svgHtml: string): void {
+export function mountMermaidSvgForFeed(host: HTMLElement, svgHtml: string, heightKey?: string): void {
   const prevPaint = host.querySelector(".markdown-mermaid__paint") as
     | (HTMLElement & { __ecoMermaidRo?: ResizeObserver })
     | null;
@@ -375,6 +422,10 @@ export function mountMermaidSvgForFeed(host: HTMLElement, svgHtml: string): void
   const applyFit = () => {
     const maxWidth = Math.max(1, host.clientWidth);
     fitMermaidSvgToFeedBox(svg, maxWidth, MERMAID_FEED_MAX_HEIGHT_PX);
+    if (heightKey === undefined) return;
+    // Read after fitting: the fitted box is what the placeholder has to match,
+    // and a hidden host reports 0, which the cache refuses to store.
+    rememberMermaidFeedHeight(heightKey, paint.getBoundingClientRect().height);
   };
 
   applyFit();

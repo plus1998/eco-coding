@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  isSdkCompactSummaryMessage,
   listSdkSessionActivityLines,
   listSdkSubagentActivityLines,
   sdkActivityLineId,
@@ -58,6 +59,68 @@ test("sdkSessionMessageToActivityLine filters system and tool-only messages", ()
       message: { content: [{ type: "tool_use", name: "Read" }] },
     }),
   ).toBeUndefined();
+});
+
+test("isSdkCompactSummaryMessage marks Claude auto-compaction summary turns", () => {
+  expect(
+    isSdkCompactSummaryMessage({
+      type: "user",
+      uuid: "summary_1",
+      message: {
+        content: "This session is being continued from a previous conversation that ran out of context.",
+      },
+    }),
+  ).toBe(true);
+  // The CLI writes these flags into the transcript JSONL; read them when present.
+  expect(isSdkCompactSummaryMessage({ type: "user", uuid: "summary_1", isCompactSummary: true })).toBe(true);
+  expect(isSdkCompactSummaryMessage({ type: "user", uuid: "msg_1", message: { content: "Hello" } })).toBe(
+    false,
+  );
+});
+
+test("sdkSessionMessageToActivityLine drops the compaction summary turn", () => {
+  expect(
+    sdkSessionMessageToActivityLine({
+      type: "user",
+      uuid: "summary_1",
+      message: {
+        content: [{ type: "text", text: "This session is being continued from a previous conversation" }],
+      },
+    }),
+  ).toBeUndefined();
+  expect(
+    sdkSessionMessageToActivityLine({
+      type: "user",
+      uuid: "user_1",
+      message: { content: "Hello" },
+    })?.id,
+  ).toBe("sdk:user_1");
+});
+
+test("listSdkSessionActivityLines keeps prompt lines in transcript order without the summary", async () => {
+  // Reproduces a compacted session: the summary sits at the root of the
+  // transcript, where the pre-compaction prompts used to be. Listing it as a
+  // user line shifted every prompt↔session pairing by one.
+  const lines = await listSdkSessionActivityLines("thr_1", {
+    getSdkSession: () => ({ sessionId: "session_1", cwd: "/workspace" }),
+    loadSdk: async () => ({
+      getSessionMessages: async () => [
+        {
+          type: "user",
+          uuid: "efa57c6c",
+          isCompactSummary: true,
+          isVisibleInTranscriptOnly: true,
+          message: {
+            content: "This session is being continued from a previous conversation that ran out of context.",
+          },
+        },
+        { type: "user", uuid: "29ab8f7b", message: { content: "second prompt" } },
+        { type: "user", uuid: "b06589fe", message: { content: "?" } },
+      ],
+    }),
+  });
+
+  expect(lines.map((line) => line.id)).toEqual(["sdk:29ab8f7b", "sdk:b06589fe"]);
 });
 
 test("listSdkSessionActivityLines reads SDK session messages", async () => {

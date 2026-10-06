@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { copyTextToClipboard } from "../src/renderer/clipboard";
+import { withGlobalDocument } from "./support/global-document";
 
 test("copyTextToClipboard returns false for empty text", async () => {
   expect(await copyTextToClipboard("")).toBe(false);
@@ -29,7 +30,6 @@ test("copyTextToClipboard writes via clipboard API when available", async () => 
 
 test("copyTextToClipboard falls back when clipboard API rejects", async () => {
   const originalClipboard = navigator.clipboard;
-  const originalDocument = globalThis.document;
   const execCommand = () => true;
   const area = {
     value: "",
@@ -53,22 +53,16 @@ test("copyTextToClipboard falls back when clipboard API rejects", async () => {
       },
     },
   });
-  Object.defineProperty(globalThis, "document", {
-    configurable: true,
-    value: stubDocument,
+  await withGlobalDocument(stubDocument, async () => {
+    try {
+      expect(await copyTextToClipboard("fallback")).toBe(true);
+    } finally {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: originalClipboard,
+      });
+    }
   });
-  try {
-    expect(await copyTextToClipboard("fallback")).toBe(true);
-  } finally {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: originalClipboard,
-    });
-    Object.defineProperty(globalThis, "document", {
-      configurable: true,
-      value: originalDocument,
-    });
-  }
 });
 
 test("copyHtmlToClipboard writes html and plain payloads", async () => {

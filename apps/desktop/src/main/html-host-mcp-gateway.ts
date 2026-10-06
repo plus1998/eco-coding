@@ -19,7 +19,7 @@ import {
   type HtmlHostApi,
 } from "./html-host-store";
 import { buildEcoHttpCodexServer, buildEcoHttpInjection } from "./mcp-http-descriptor";
-import { handleMcpStreamableHttpRequest } from "./mcp-streamable-http";
+import { handleMcpStreamableHttpRequest, type McpToolDefinition } from "./mcp-streamable-http";
 
 const CONTROL_SECRET_HEADER = "X-Eco-Html-Host-Control-Secret";
 
@@ -286,7 +286,7 @@ function mcpErrorResult(message: string, code: string): Record<string, unknown> 
   };
 }
 
-function htmlHostToolDefinition(): Record<string, unknown> {
+function htmlHostToolDefinition(): McpToolDefinition {
   return {
     name: ECO_HTML_HOST_TOOL,
     description:

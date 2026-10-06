@@ -3,6 +3,7 @@ import type {
   MainAgentConfigResource,
   MainAgentPromptResource,
   ModelSettingsSnapshot,
+  ProviderConfigView,
   SubagentOrchestrationResource,
 } from "../shared/ipc";
 
@@ -13,14 +14,70 @@ export interface AgentRegistrySettingsSource {
   listSubagentOrchestrations(): SubagentOrchestrationResource[];
 }
 
+/** Virtual built-in main agent config for Codex Auth (CODEX_HOME/auth.json). */
+const OPENAI_OFFICIAL_MAIN_AGENT_CONFIG: MainAgentConfigResource = {
+  id: "__openai_official__",
+  name: "Codex 登录",
+  agentKey: "openai-official",
+  modelRef: { providerId: "openai", modelId: "gpt-5.6-luna", thinkingEffort: "medium" },
+  tools: { allowed: [], disallowed: [] },
+  skills: [],
+  v4aTeachingEnabled: false,
+  updatedAt: "",
+  source: "built_in",
+};
+
+/** Virtual built-in provider for Codex Auth (auth.json). */
+const OPENAI_OFFICIAL_PROVIDER: ProviderConfigView = {
+  id: "openai",
+  name: "OpenAI",
+  baseUrl: "",
+  requestPath: "/v1",
+  version: "v1",
+  apiCompat: "openai_responses",
+  defaultModel: "gpt-5.6-luna",
+  enabled: true,
+  hasApiKey: false,
+  authMethod: "auth_json",
+  createdAt: "",
+  updatedAt: "",
+};
+
+function createChatGptSubscriptionMainAgentConfig(modelId: string): MainAgentConfigResource {
+  return {
+    id: "__chatgpt_subscription__",
+    name: "ChatGPT 订阅",
+    agentKey: "chatgpt-subscription",
+    modelRef: { providerId: "eco-coding-chatgpt", modelId, thinkingEffort: "medium" },
+    tools: { allowed: [], disallowed: [] },
+    skills: [],
+    v4aTeachingEnabled: false,
+    updatedAt: "",
+    source: "built_in",
+  };
+}
+
 export function mergeAgentRegistrySettings(
   base: ModelSettingsSnapshot,
   registry: AgentRegistrySettingsSource,
+  options?: { openAiAccountActive?: boolean; chatGptSubscriptionModelId?: string },
 ): ModelSettingsSnapshot {
+  const mainAgentConfigs = registry.listMainAgentConfigs();
+  const withBuiltInConfigs = options?.openAiAccountActive
+    ? [OPENAI_OFFICIAL_MAIN_AGENT_CONFIG, ...mainAgentConfigs]
+    : mainAgentConfigs;
+  const chatGptModelId = options?.chatGptSubscriptionModelId?.trim();
+  const withChatGptSubscription = chatGptModelId
+    ? [createChatGptSubscriptionMainAgentConfig(chatGptModelId), ...withBuiltInConfigs]
+    : withBuiltInConfigs;
+  const providersWithOpenAi = options?.openAiAccountActive && !base.providers.some((p) => p.id === "openai")
+    ? [OPENAI_OFFICIAL_PROVIDER, ...base.providers]
+    : base.providers;
   return {
     ...base,
+    providers: providersWithOpenAi,
     agentTemplates: mergeUniqueById(base.agentTemplates, registry.listAgentTemplates()),
-    mainAgentConfigs: registry.listMainAgentConfigs(),
+    mainAgentConfigs: withChatGptSubscription,
     mainAgentPrompts: registry.listMainAgentPrompts(),
     subagentOrchestrations: registry.listSubagentOrchestrations(),
   };

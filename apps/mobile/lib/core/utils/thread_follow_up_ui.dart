@@ -72,10 +72,37 @@ List<ThreadPendingFollowUp> mergeThreadFollowUp(
   List<ThreadPendingFollowUp> current,
   ThreadPendingFollowUp followUp,
 ) {
-  final next = current.where((item) => item.id != followUp.id).toList();
-  next.add(followUp);
-  return sortThreadFollowUps(next);
+  return mergeThreadFollowUps(current, [followUp]);
 }
+
+/// Merge RPC replies and live events by update time; stale rows cannot undo delivery.
+List<ThreadPendingFollowUp> mergeThreadFollowUps(
+  List<ThreadPendingFollowUp> current,
+  List<ThreadPendingFollowUp> incoming,
+) {
+  final next = {for (final item in current) item.id: item};
+  for (final item in incoming) {
+    final existing = next[item.id];
+    if (existing != null) {
+      if (existing.updatedAt.compareTo(item.updatedAt) > 0) continue;
+      if (existing.updatedAt == item.updatedAt &&
+          _isTerminalFollowUp(existing) &&
+          !_isTerminalFollowUp(item)) {
+        continue;
+      }
+      if (existing.updatedAt == item.updatedAt &&
+          ['cancelled', 'superseded', 'failed'].contains(existing.status) &&
+          item.status == 'applied') {
+        continue;
+      }
+    }
+    next[item.id] = item;
+  }
+  return sortThreadFollowUps(next.values.toList());
+}
+
+bool _isTerminalFollowUp(ThreadPendingFollowUp item) =>
+    item.status != 'queued' && item.status != 'delivered';
 
 String formatThreadFollowUpPreview(
   ThreadPendingFollowUp followUp,

@@ -1,11 +1,15 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { LazyOpenAIAccountsPanel } from "./lazy-app-panels";
+import { ChatGPTSubscriptionAccountsPanel } from "./ChatGPTSubscriptionAccountsPanel";
 import {
   ChevronDown,
   ChevronRight,
   Eraser,
   Globe2,
   LinkIcon,
+  Network,
   Plus,
+  Search,
   Settings2,
   Trash2,
   X,
@@ -35,7 +39,6 @@ import type {
   ProviderConfigView,
   ProviderDeleteReference,
   ProviderRequestError,
-  ProxyBridgeSettingsSnapshot,
   SkillsListResult,
   VisionModelSelection,
 } from "../shared/ipc";
@@ -46,7 +49,7 @@ import {
   type PendingMainAgentConfigCreateSeed,
 } from "./AgentCompositionResourcesSection";
 import { EndpointCompatSelect, type EndpointCompatOption } from "./EndpointCompatSelect";
-import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
+import { AppMessage, formatDurationMs, useAppMessage, type AppMessageKind } from "./AppMessage";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
@@ -60,7 +63,6 @@ import {
   toCandidateModelSelection,
   toModelCascadeSelection,
 } from "./model-cascade-options";
-import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import {
   applyProviderPreset,
   DEFAULT_NEW_PROVIDER_PRESET_ID,
@@ -75,16 +77,14 @@ import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
-export type ModelsSettingsTab = "subagents" | "providers" | "proxyBridge" | "compositionParts";
+export type ModelsSettingsTab = "subagents" | "providers" | "compositionParts" | "openaiAccounts" | "chatgptAccounts";
 
 type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
-  proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
   mcpServers?: McpServerConfigView[] | undefined;
   skillsSnapshot?: SkillsListResult | undefined;
-  proxyBridgeSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
@@ -103,7 +103,6 @@ interface ModelsSettingsPanelProps {
   onDefaultVisionModelChange?:
     | ((selection: VisionModelSelection | undefined) => void | Promise<void>)
     | undefined;
-  onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
   /** Ask App to open orchestration settings and create a main agent config. */
   onRequestCreateMainAgentConfig?: ((seed: PendingMainAgentConfigCreateSeed) => void) | undefined;
@@ -119,15 +118,77 @@ interface ModelsSettingsPanelProps {
 
 interface ModelsCacheEntry {
   models: UpstreamModelOption[];
+  /** Endpoint the entry was fetched from; a different endpoint must refetch. */
+  signature: string;
   error?: string | undefined;
+}
+
+/**
+ * Model discovery depends on the endpoint, not only on the provider id: editing
+ * baseURL / requestPath / version / apiCompat has to re-run the upstream fetch
+ * instead of replaying the previous provider's list.
+ */
+function modelsRequestSignature(target: ProviderConfigInput): string {
+  return [
+    target.baseUrl?.trim() ?? "",
+    target.requestPath?.trim() ?? "",
+    target.version?.trim() ?? "",
+    target.apiCompat ?? "",
+    target.authMethod ?? "",
+  ].join("|");
+}
+
+function providerProtocolPresentation(provider: Pick<ProviderConfigView, "apiCompat">) {
+  if (provider.apiCompat === "anthropic") {
+    return { label: "Anthropic API", iconSrc: "./provider-icons/claude.ico" };
+  }
+  if (provider.apiCompat === "openai_responses") {
+    return { label: "OpenAI Responses API", iconSrc: "./provider-icons/openai.svg" };
+  }
+  if (provider.apiCompat === "openai_chat_completions") {
+    return { label: "OpenAI Chat Completions API", iconSrc: "./provider-icons/openai.svg" };
+  }
+  return { label: "自定义 API", iconSrc: undefined };
+}
+
+const OFFICIAL_PROVIDER_HOSTS: Record<string, { label: string; iconSrc: string }> = {
+  "api.openai.com": { label: "OpenAI", iconSrc: "./provider-icons/openai.svg" },
+  "api.anthropic.com": { label: "Anthropic", iconSrc: "./provider-icons/claude.ico" },
+  "api.deepseek.com": { label: "DeepSeek", iconSrc: "./provider-icons/deepseek.ico" },
+  "api.minimax.io": { label: "MiniMax", iconSrc: "./provider-icons/minimax.ico" },
+  "api.moonshot.cn": { label: "Kimi", iconSrc: "./provider-icons/kimi.ico" },
+  "dashscope.aliyuncs.com": { label: "百炼", iconSrc: "./provider-icons/bailian.png" },
+  "tokenhub.tencentmaas.com": { label: "Tencent Hunyuan", iconSrc: "./provider-icons/tencent-hunyuan.png" },
+  "api.xiaomimimo.com": { label: "Xiaomi MiMo", iconSrc: "./provider-icons/xiaomi-mimo.ico" },
+  "opencode.ai": { label: "OpenCode Zen", iconSrc: "./provider-icons/opencode-zen.ico" },
+};
+
+function providerBrandPresentation(provider: Pick<ProviderConfigView, "id" | "baseUrl" | "apiCompat">) {
+  let hostname = "";
+  try {
+    hostname = new URL(provider.baseUrl).hostname.toLowerCase();
+  } catch {
+    // Keep protocol fallback for historical or incomplete URLs.
+  }
+  const official = OFFICIAL_PROVIDER_HOSTS[hostname];
+  if (official) return official;
+  const preset = getProviderPresetById(provider.id);
+  if (preset) {
+    try {
+      if (new URL(preset.baseUrl).hostname.toLowerCase() === hostname) {
+        return { label: preset.name, iconSrc: preset.iconSrc };
+      }
+    } catch {
+      // Keep protocol fallback for an invalid preset URL.
+    }
+  }
+  return providerProtocolPresentation(provider);
 }
 
 export function ModelsSettingsPanel({
   settings,
-  proxyBridgeSettings,
   mcpServers = [],
   skillsSnapshot,
-  proxyBridgeSettingsSaving,
   busy,
   initialTab = "subagents",
   mode = "agentBuilder",
@@ -140,7 +201,6 @@ export function ModelsSettingsPanel({
   onDefaultAuxiliaryModelChange,
   defaultVisionModel,
   onDefaultVisionModelChange,
-  onProxyBridgeSettingsChange,
   onSavingChange,
   onRequestCreateMainAgentConfig,
   pendingCreateMainConfig,
@@ -149,9 +209,10 @@ export function ModelsSettingsPanel({
   onSyncDomain,
 }: ModelsSettingsPanelProps) {
   const { t } = useTranslation();
-  const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
+  const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string; icon?: string }> = [
     { id: "providers", label: t("settings.models.providers") },
-    { id: "proxyBridge", label: t("settings.models.proxyBridge") },
+    { id: "openaiAccounts" as ModelsSettingsTab, label: "Codex 账号", icon: "./provider-icons/openai.svg" },
+    { id: "chatgptAccounts", label: "ChatGPT 账号", icon: "./provider-icons/openai.svg" },
   ];
   const runtimeConfigTabItems: Array<{ id: RuntimeConfigTab; label: string }> = [
     { id: "defaults", label: t("settings.models.runtimeConfigTab.defaults") },
@@ -160,13 +221,7 @@ export function ModelsSettingsPanel({
     { id: "orchestration", label: t("settings.models.runtimeConfigTab.subagent") },
   ];
   const resolvedInitialTab =
-    mode === "providerSettings"
-      ? initialTab === "proxyBridge"
-        ? "proxyBridge"
-        : "providers"
-      : initialTab === "providers" || initialTab === "proxyBridge"
-        ? "subagents"
-        : initialTab;
+    mode === "providerSettings" ? "providers" : initialTab === "providers" ? "subagents" : initialTab;
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
   const [runtimeConfigTab, setRuntimeConfigTab] = useState<RuntimeConfigTab>(() =>
     pendingCreateMainConfig ? "mainConfig" : "defaults",
@@ -184,14 +239,18 @@ export function ModelsSettingsPanel({
     PendingMainAgentConfigCreateSeed | undefined
   >();
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
+  const [providerSearchQuery, setProviderSearchQuery] = useState("");
+  const [oauthLoginStatus, setOauthLoginStatus] = useState<{ isLoggedIn: boolean; message: string }>({
+    isLoggedIn: false,
+    message: "",
+  });
+  const [oauthLoggingIn, setOauthLoggingIn] = useState(false);
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
   const syncDomain: CenterServerSyncDomain | undefined =
     mode === "providerSettings"
-      ? activeTab === "proxyBridge"
-        ? "proxyBridge"
-        : "providers"
+      ? "providers"
       : activeTab === "compositionParts"
         ? "orchestration"
         : activeTab === "subagents"
@@ -306,10 +365,13 @@ export function ModelsSettingsPanel({
   );
   const [modalError, setModalError] = useState<string>();
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
-  const [providerTestMessage, setProviderTestMessage] = useState<{
-    kind: AppMessageKind;
-    message: string;
-  }>();
+  const {
+    state: appMessage,
+    dismiss: dismissAppMessage,
+    showError: showAppMessageError,
+    showSuccess: showAppMessageSuccess,
+    showInfo: showAppMessageInfo,
+  } = useAppMessage();
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
 
@@ -328,6 +390,49 @@ export function ModelsSettingsPanel({
     onSettingsChange(snapshot);
   }, [onSettingsChange]);
 
+  const checkOauthStatus = useCallback(async () => {
+    if (!window.eco?.codexOAuthGetStatus) {
+      return;
+    }
+    try {
+      const status = await window.eco.codexOAuthGetStatus();
+      setOauthLoginStatus(status);
+    } catch {
+      setOauthLoginStatus({ isLoggedIn: false, message: "" });
+    }
+  }, []);
+
+  const handleOauthLogin = useCallback(async (upstreamProxyUrl?: string) => {
+    if (!window.eco?.codexOAuthStartLogin) {
+      return;
+    }
+    setOauthLoggingIn(true);
+    try {
+      await window.eco.codexOAuthStartLogin(upstreamProxyUrl);
+      // Listen for result event
+      window.eco.onCodexOauthLoginResult(async (res) => {
+        setOauthLoggingIn(false);
+        if (res.success) {
+          await checkOauthStatus();
+        }
+      });
+    } catch {
+      setOauthLoggingIn(false);
+    }
+  }, [checkOauthStatus]);
+
+  const handleOauthLogout = useCallback(async () => {
+    if (!window.eco?.codexOAuthLogout) {
+      return;
+    }
+    try {
+      await window.eco.codexOAuthLogout();
+      setOauthLoginStatus({ isLoggedIn: false, message: t("settings.models.provider.oauthLoggedOut") });
+    } catch {
+      // ignore
+    }
+  }, [t]);
+
   useEffect(() => {
     if (!window.eco?.listModelsDevModels) {
       return;
@@ -343,66 +448,68 @@ export function ModelsSettingsPanel({
       .finally(() => setModelsDevLoading(false));
   }, [modelsDevOptions.length, modelsDevLoading]);
 
-  const fetchModels = useCallback(async (target: ProviderConfigInput, options?: { silent?: boolean }) => {
-    if (!window.eco) {
-      return;
-    }
-    const cacheKey = target.id ?? "__draft__";
-    setLoadingProviderId(cacheKey);
-    if (!options?.silent) {
-      setModalError(undefined);
-    }
-
-    try {
-      const request = {
-        baseUrl: target.baseUrl,
-        ...(target.requestPath !== undefined && target.requestPath !== ""
-          ? { requestPath: target.requestPath }
-          : {}),
-        ...(target.version !== undefined && target.version !== "" ? { version: target.version } : {}),
-        ...(target.apiCompat && { apiCompat: target.apiCompat }),
-        ...(target.id && { providerId: target.id }),
-        ...(target.apiKey && { apiKey: target.apiKey }),
-      };
-      const result = await window.eco.listProviderModels(request);
-      if (!result.ok) {
-        const error = localizeProviderRequestError(result, t);
-        setModelsCache((current) => ({
-          ...current,
-          [cacheKey]: { models: current[cacheKey]?.models ?? [], error },
-        }));
-        if (!options?.silent) {
-          setModalError(error);
-        }
+  const fetchModels = useCallback(
+    async (target: ProviderConfigInput) => {
+      if (!window.eco) {
         return;
       }
-      setModelsCache((current) => ({
-        ...current,
-        [cacheKey]: { models: result.models },
-      }));
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setModelsCache((current) => ({
-        ...current,
-        [cacheKey]: { models: current[cacheKey]?.models ?? [], error: message },
-      }));
-      if (!options?.silent) {
-        setModalError(message);
+      const cacheKey = target.id ?? "__draft__";
+      const signature = modelsRequestSignature(target);
+      setLoadingProviderId(cacheKey);
+
+      try {
+        const request = {
+          baseUrl: target.baseUrl,
+          ...(target.requestPath !== undefined && target.requestPath !== ""
+            ? { requestPath: target.requestPath }
+            : {}),
+          ...(target.version !== undefined && target.version !== "" ? { version: target.version } : {}),
+          ...(target.apiCompat && { apiCompat: target.apiCompat }),
+          ...(target.id && { providerId: target.id }),
+          ...(target.authMethod && { authMethod: target.authMethod }),
+          ...(target.apiKey && { apiKey: target.apiKey }),
+        };
+        const result = await window.eco.listProviderModels(request);
+        if (!result.ok) {
+          const detail = localizeProviderRequestError(result, t);
+          setModelsCache((current) => ({
+            ...current,
+            [cacheKey]: { models: current[cacheKey]?.models ?? [], signature, error: detail },
+          }));
+          showAppMessageError(t("settings.models.provider.modelsFailed", { detail }));
+          return;
+        }
+        setModelsCache((current) => ({
+          ...current,
+          [cacheKey]: { models: result.models, signature },
+        }));
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setModelsCache((current) => ({
+          ...current,
+          [cacheKey]: { models: current[cacheKey]?.models ?? [], signature, error: message },
+        }));
+        showAppMessageError(t("settings.models.provider.modelsFailed", { detail: message }));
+      } finally {
+        setLoadingProviderId(null);
       }
-    } finally {
-      setLoadingProviderId(null);
-    }
-  }, []);
+    },
+    [showAppMessageError, t],
+  );
 
   useEffect(() => {
     if (!providerModalOpen || !providerForm.id) {
       return;
     }
     const cached = modelsCache[providerForm.id];
-    if (cached?.models.length || cached?.error) {
+    if (cached && cached.signature === modelsRequestSignature(providerForm)) {
       return;
     }
-    void fetchModels(providerForm, { silent: true });
+    // Debounced: the endpoint fields change keystroke by keystroke while editing.
+    const timer = setTimeout(() => {
+      void fetchModels(providerForm);
+    }, 600);
+    return () => clearTimeout(timer);
   }, [providerModalOpen, providerForm, modelsCache, fetchModels]);
 
   const modelsForProvider = useCallback(
@@ -437,7 +544,13 @@ export function ModelsSettingsPanel({
   }
 
   function showProviderTestMessage(kind: AppMessageKind, message: string) {
-    setProviderTestMessage({ kind, message });
+    if (kind === "success") {
+      showAppMessageSuccess(message);
+    } else if (kind === "info") {
+      showAppMessageInfo(message);
+    } else {
+      showAppMessageError(message);
+    }
   }
 
   function closeProviderModal(options?: { clearCreateMainConfigPrompt?: boolean }) {
@@ -639,15 +752,28 @@ export function ModelsSettingsPanel({
     }
   }
 
-  const providerOptions = useMemo(() => settings.providers, [settings.providers]);
+  // ChatGPT plan connections are managed from the account page, just like
+  // Codex's auth.json. The provider row remains an internal routing object so
+  // agents can select its models, but it must not look like a user-created
+  // provider that can be edited, deleted, or configured with a base URL.
+  const providerOptions = useMemo(
+    () => settings.providers.filter((p) => p.id !== "openai" && p.id !== "eco-coding-chatgpt"),
+    [settings.providers],
+  );
+  const filteredProviderOptions = useMemo(() => {
+    const query = providerSearchQuery.trim().toLowerCase();
+    if (!query) return providerOptions;
+    return providerOptions.filter((provider) =>
+      [provider.name, provider.baseUrl, provider.defaultModel, provider.authMethod ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [providerOptions, providerSearchQuery]);
   return (
     <>
-      {providerTestMessage && (
-        <AppMessage
-          kind={providerTestMessage.kind}
-          message={providerTestMessage.message}
-          onDismiss={() => setProviderTestMessage(undefined)}
-        />
+      {appMessage && (
+        <AppMessage kind={appMessage.kind} message={appMessage.message} onDismiss={dismissAppMessage} />
       )}
       {mode === "providerSettings" ? (
         <header className="mcp-page-header settings-page-header-with-action">
@@ -661,7 +787,7 @@ export function ModelsSettingsPanel({
         </header>
       )}
 
-      {!hideCategoryTabs && (
+      {!hideCategoryTabs && (mode !== "providerSettings" || providerSettingsTabItems.length > 1) && (
         <div
           className="models-settings-tabs"
           role="tablist"
@@ -676,7 +802,14 @@ export function ModelsSettingsPanel({
               className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.label}
+              <div style={{ height: "100%", display: "flex", gap: 5 }}>
+                {tab.icon && (
+                  <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <img src={tab.icon} alt="" width="14" height="14" style={{ display: "block" }} />
+                  </div>
+                )}
+                <div>{tab.label}</div>
+              </div>
             </button>
           ))}
         </div>
@@ -694,60 +827,84 @@ export function ModelsSettingsPanel({
         />
       )}
 
-      {activeTab === "proxyBridge" && (
-        <ProxyBridgeSettingsSection
-          settings={proxyBridgeSettings}
-          disabled={busy || proxyBridgeSettingsSaving}
-          onSave={onProxyBridgeSettingsChange}
-        />
-      )}
-
       {activeTab === "providers" && (
-        <section className="mcp-list-section providers-list-section">
-          <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">{t("settings.models.providers")}</span>
-            <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
-              <Plus size={16} />
+        <section className="provider-list-panel providers-list-section">
+          <div className="provider-list-hero">
+            <div className="provider-list-heading">
+              <h2>{t("settings.models.providers")}</h2>
+              <p>管理 API 服务商、连接方式和默认模型。</p>
+            </div>
+            <button type="button" className="settings-primary-button" disabled={busy} onClick={openCreateProvider}>
+              <Plus size={15} />
               {t("settings.models.addProvider")}
             </button>
           </div>
 
+          <div className="provider-list-toolbar">
+            <span>{providerOptions.length} 个服务商</span>
+            <div className="provider-list-search">
+              <Search size={14} className="provider-list-search-icon" />
+              <input
+                type="search"
+                value={providerSearchQuery}
+                placeholder="搜索服务商、地址或模型"
+                aria-label="搜索服务商"
+                onChange={(event) => setProviderSearchQuery(event.target.value)}
+              />
+              {providerSearchQuery ? <button type="button" aria-label="清除搜索" onClick={() => setProviderSearchQuery("")}><X size={13} /></button> : null}
+            </div>
+          </div>
+
           {providerOptions.length === 0 ? (
-            <p className="mcp-list-empty">{t("settings.models.noProviders")}</p>
+            <div className="provider-list-empty"><strong>{t("settings.models.noProviders")}</strong><span>添加服务商后，可以在 Agent 设置中选择对应模型。</span></div>
+          ) : filteredProviderOptions.length === 0 ? (
+            <div className="provider-list-empty"><Search size={22} /><strong>没有匹配的服务商</strong><span>试试搜索名称、地址或默认模型。</span></div>
           ) : (
-            <ul className="mcp-server-list">
-              {providerOptions.map((provider) => (
-                <li key={provider.id} className="mcp-server-row">
-                  <span className="mcp-server-name">{provider.name}</span>
-                  <div className="mcp-server-actions">
-                    <button
-                      type="button"
-                      className="mcp-icon-button"
-                      onClick={() => openEditProvider(provider)}
-                      aria-label={t("settings.models.configureProvider", { name: provider.name })}
-                      disabled={busy}
-                    >
-                      <Settings2 size={18} />
-                    </button>
-                    <label
-                      className="mcp-toggle mcp-toggle-sm"
-                      title={provider.enabled ? t("common.enabled") : t("common.disabled")}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={provider.enabled}
+            <div className="provider-card-list">
+              {filteredProviderOptions.map((provider) => {
+                const brand = providerBrandPresentation(provider);
+                const protocol = providerProtocolPresentation(provider);
+                const authLabel = provider.authMethod === "oauth" ? "OAuth" : provider.authMethod === "auth_json" ? "Codex Auth" : provider.authMethod === "chatgpt_subscription" ? "ChatGPT 订阅" : "API Key";
+                return (
+                  <article key={provider.id} className={`provider-card ${provider.enabled ? "is-enabled" : "is-disabled"}`}>
+                    <div className="provider-card-main">
+                      <div className="provider-card-avatar">
+                        {brand.iconSrc ? <img src={brand.iconSrc} alt={brand.label} title={brand.label} /> : <Globe2 size={18} aria-label={brand.label} />}
+                      </div>
+                      <div className="provider-card-identity">
+                        <strong title={provider.name}>{provider.name}</strong>
+                        <span title={provider.baseUrl}>{authLabel} · {provider.baseUrl}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={`provider-status-badge ${provider.enabled ? "is-enabled" : "is-disabled"}`}
+                        onClick={() => void toggleProvider(provider)}
                         disabled={busy}
-                        onChange={() => void toggleProvider(provider)}
-                      />
-                      <span className="mcp-toggle-track" aria-hidden />
-                    </label>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                        aria-pressed={provider.enabled}
+                        title={provider.enabled ? "点击停用" : "点击启用"}
+                      ><i />{provider.enabled ? "已启用" : "已停用"}</button>
+                      <div className="provider-card-actions">
+                        <button type="button" className="provider-config-button" onClick={() => openEditProvider(provider)} aria-label={t("settings.models.configureProvider", { name: provider.name })} disabled={busy}><Settings2 size={14} />配置</button>
+                      </div>
+                    </div>
+                    <div className="provider-card-meta">
+                      <span>默认模型：{provider.defaultModel || "未设置"}</span>
+                      <span className="provider-card-protocol">端口类型：{protocol.label}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </section>
       )}
+
+      {activeTab === "openaiAccounts" && (
+        <LazyOpenAIAccountsPanel />
+      )}
+
+      {activeTab === "chatgptAccounts" && <ChatGPTSubscriptionAccountsPanel />}
+
 
       {activeTab === "compositionParts" && (
         <>
@@ -814,6 +971,11 @@ export function ModelsSettingsPanel({
                     placeholder={t("composer.route.notConfigured")}
                     searchable
                     searchPlaceholder={t("composer.fieldSelect.searchMainAgent")}
+                    renderOptionIcon={(option) =>
+                      option.value === "__chatgpt_subscription__" ? (
+                        <img src="./provider-icons/openai.svg" alt="" />
+                      ) : null
+                    }
                     invalid={
                       Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
                       !settings.mainAgentConfigs.some(
@@ -980,7 +1142,6 @@ export function ModelsSettingsPanel({
           }
           models={modalCache?.models ?? []}
           modelsLoading={loadingForProvider(modalProviderId)}
-          modelsError={modalCache?.error}
           modelsDevOptions={modelsDevOptions}
           modelsDevLoading={modelsDevLoading}
           error={modalError}
@@ -991,6 +1152,8 @@ export function ModelsSettingsPanel({
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
           onTestCandidate={(modelId) => void testProvider(providerForm, modelId)}
+          oauthLoginStatus={oauthLoginStatus}
+          oauthLoggingIn={oauthLoggingIn}
         />
       )}
 
@@ -1010,7 +1173,6 @@ function ProviderEditorModal({
   hasExistingApiKey,
   models,
   modelsLoading,
-  modelsError,
   modelsDevOptions,
   modelsDevLoading,
   error,
@@ -1021,13 +1183,14 @@ function ProviderEditorModal({
   onDelete,
   onRefreshModels,
   onTestCandidate,
+  oauthLoginStatus,
+  oauthLoggingIn,
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
   hasExistingApiKey: boolean;
   models: UpstreamModelOption[];
   modelsLoading: boolean;
-  modelsError?: string | undefined;
   modelsDevOptions: readonly ModelsDevModelOption[];
   modelsDevLoading: boolean;
   error?: string | undefined;
@@ -1038,6 +1201,8 @@ function ProviderEditorModal({
   onDelete: () => void;
   onRefreshModels: () => void;
   onTestCandidate: (modelId: string) => void;
+  oauthLoginStatus: { isLoggedIn: boolean; message: string };
+  oauthLoggingIn: boolean;
 }) {
   const { t } = useTranslation();
   const isEditing = Boolean(form.id);
@@ -1058,10 +1223,7 @@ function ProviderEditorModal({
   const prefersReducedMotion = useReducedMotion();
   const activePreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
   const apiCompat = form.apiCompat ?? "anthropic";
-  const modelsErrorMessage = modelsError
-    ? t("settings.models.provider.modelsFailed", { detail: modelsError })
-    : undefined;
-  const formError = modelsErrorMessage ?? error ?? candidateSaveError;
+  const formError = error ?? candidateSaveError;
 
   async function handleSaveProvider() {
     setCandidateSaveError(undefined);
@@ -1086,6 +1248,10 @@ function ProviderEditorModal({
   }, [form.id]);
 
   const selectedPreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
+  // ChatGPT OAuth is a built-in account connection, not a provider preset
+  // users create manually. It is kept in the preset catalogue for migration
+  // and matching existing records, but never offered in the editor.
+  const visiblePresets = MAINSTREAM_PROVIDER_PRESETS.filter((preset) => preset.id !== "chatgpt-subscription");
   const selectedPresetVariants = selectedPreset ? getProviderPresetEndpointVariants(selectedPreset) : [];
   const endpointOptions: EndpointCompatOption[] =
     selectedPreset && selectedPresetVariants.length > 0
@@ -1171,9 +1337,9 @@ function ProviderEditorModal({
               <div className="mcp-field models-provider-preset-field">
                 <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
                 <ProviderPresetTabs
-                  presets={MAINSTREAM_PROVIDER_PRESETS}
-                  activePresetId={selectedPresetId ?? undefined}
-                  disabled={busy}
+                  presets={visiblePresets}
+                  {...(selectedPresetId === null ? {} : { activePresetId: selectedPresetId })}
+                  {...(busy === undefined ? {} : { disabled: busy })}
                   onSelectManual={() => setSelectedPresetId(null)}
                   onSelectPreset={(preset) => {
                     setSelectedPresetId(preset.id);
@@ -1211,53 +1377,14 @@ function ProviderEditorModal({
             </section>
 
             <section className="provider-form-section">
-              <h3 className="provider-form-section-title">{t("settings.models.provider.connection")}</h3>
-              <label className="mcp-field">
-                <span className="mcp-field-label">baseURL</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.baseUrl}
-                  placeholder="https://api.deepseek.com"
-                  onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
-                />
-              </label>
-
-              <div className="mcp-field models-provider-endpoint-row">
-                <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
-                <div className="models-provider-endpoint-stack">
-                  <EndpointCompatSelect
-                    options={endpointOptions}
-                    activeApiCompat={apiCompat}
-                    onChange={handleApiCompatChange}
-                    disabled={endpointDisabled}
-                  />
-                  <input
-                    className="mcp-field-input models-provider-request-path-input"
-                    value={form.requestPath ?? ""}
-                    placeholder={requestPathPlaceholderForApiCompat(apiCompat)}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, requestPath: event.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <label className="mcp-field">
-                <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.version ?? "v1"}
-                  placeholder="v1"
-                  disabled={busy}
-                  onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
-                />
-                <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
-              </label>
-
-              <label className="mcp-field">
+              <h3 className="provider-form-section-title">{t("settings.models.provider.authMethod")}</h3>
+              {form.authMethod === "chatgpt_subscription" ? (
+                <p className="mcp-field-hint">
+                  这是系统自动管理的 ChatGPT 账号连接。请在“ChatGPT 账号”页完成登录；这里不填写 API Key。
+                </p>
+              ) : <label className="mcp-field">
                 <span className="models-provider-label-row">
-                  <span className="mcp-field-label">API key</span>
+                  <span className="mcp-field-label">{t("settings.models.provider.apiKey")}</span>
                   {activePreset ? (
                     <a
                       className="models-provider-inline-link"
@@ -1280,7 +1407,60 @@ function ProviderEditorModal({
                 {hasExistingApiKey && !(form.apiKey ?? "").trim() ? (
                   <span className="mcp-field-hint">{t("settings.models.provider.keepKey")}</span>
                 ) : null}
-              </label>
+              </label>}
+            </section>
+
+            <section className="provider-form-section">
+              <h3 className="provider-form-section-title">{t("settings.models.provider.connection")}</h3>
+              {form.authMethod === "chatgpt_subscription" ? (
+                <div className="provider-fixed-connection">
+                  <div><span>官方 Responses API</span><strong>https://api.openai.com/v1/responses</strong></div>
+                  <p>连接地址由系统固定管理。账号代理在 ChatGPT 账号页单独配置。</p>
+                </div>
+              ) : <>
+                <label className="mcp-field">
+                  <span className="mcp-field-label">baseURL</span>
+                  <input
+                    className="mcp-field-input"
+                    value={form.baseUrl}
+                    placeholder="https://api.deepseek.com"
+                    onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
+                  />
+                </label>
+
+                <div className="mcp-field models-provider-endpoint-row">
+                  <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
+                  <div className="models-provider-endpoint-stack">
+                    <EndpointCompatSelect
+                      options={endpointOptions}
+                      activeApiCompat={apiCompat}
+                      onChange={handleApiCompatChange}
+                      disabled={endpointDisabled}
+                    />
+                    <input
+                      className="mcp-field-input models-provider-request-path-input"
+                      value={form.requestPath ?? ""}
+                      placeholder={requestPathPlaceholderForApiCompat(apiCompat)}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, requestPath: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <label className="mcp-field">
+                  <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
+                  <input
+                    className="mcp-field-input"
+                    value={form.version ?? "v1"}
+                    placeholder="v1"
+                    disabled={busy}
+                    onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
+                  />
+                  <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
+                </label>
+              </>}
             </section>
 
             <section className="provider-form-section provider-advanced-section">
@@ -1307,6 +1487,26 @@ function ProviderEditorModal({
                       prefersReducedMotion ? { duration: 0 } : { type: "spring", bounce: 0, duration: 0.34 }
                     }
                   >
+                    {form.authMethod === "chatgpt_subscription" ? (
+                      <div className="provider-account-proxy-note">
+                        <Network size={15} />
+                        <span>ChatGPT 使用账号级代理。请到 ChatGPT 账号页为每个账号分别设置。</span>
+                      </div>
+                    ) : <label className="mcp-field">
+                        <span className="mcp-field-label">{t("settings.models.provider.upstreamProxy")}</span>
+                        <input
+                          className="mcp-field-input"
+                          value={form.upstreamProxyUrl ?? ""}
+                          placeholder="socks5://127.0.0.1:7890"
+                          disabled={busy}
+                          onChange={(event) =>
+                            setForm((current) => ({ ...current, upstreamProxyUrl: event.target.value }))
+                          }
+                        />
+                        <span className="mcp-field-hint">
+                          {t("settings.models.provider.upstreamProxyHint")}
+                        </span>
+                      </label>}
                     <label className="mcp-field">
                       <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
                       <select
@@ -1441,6 +1641,9 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     apiCompat: provider?.apiCompat ?? "anthropic",
     tokenCountMode: provider?.tokenCountMode ?? "local_heuristic",
     apiKey: "",
+    ...(provider?.authMethod ? { authMethod: provider.authMethod } : {}),
+    ...(provider?.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
+    upstreamProxyUrl: provider?.upstreamProxyUrl ?? "",
     defaultModel: provider?.defaultModel ?? "",
     enabled: provider?.enabled ?? true,
   };

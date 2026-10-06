@@ -1,5 +1,5 @@
 import '../../core/models/image_display_models.dart';
-import '../../core/models/thread_run_projection.dart';
+import '../../core/models/conversation_v2_projection_models.dart';
 import '../../core/utils/activity_display.dart';
 
 /// Collect display_image artifacts from the live run projection.

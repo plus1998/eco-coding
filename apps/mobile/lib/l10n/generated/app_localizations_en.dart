@@ -310,6 +310,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCancel => 'Cancel';
 
   @override
+  String get commonSave => 'Save';
+
+  @override
   String get commonClose => 'Close';
 
   @override
@@ -1900,6 +1903,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get threadCustomizeScript => 'Customize command';
+
+  @override
+  String get threadPrefixCommand => 'Leading command';
+
+  @override
+  String get threadPrefixCommandHint =>
+      'e.g. nvm use 20 && export NODE_ENV=production';
+
+  @override
   String get threadRun => 'Run';
 
   @override
@@ -1959,6 +1972,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get threadNoToolDetails => 'No tool details';
+
+  @override
+  String get threadLoadMoreToolDetails => 'Load more details';
 
   @override
   String get threadRequestingDetails => 'Requesting details...';
@@ -2251,7 +2267,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerVisionModelHint =>
-      'Used by the vision subagent; falls back to the main model when unset';
+      'Used by the image_view tool; falls back to the main model when unset';
 
   @override
   String get composerVisionModelFollowMain =>
@@ -2267,7 +2283,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerVisionModelHintAcp =>
-      'Used by the vision subagent; falls back to the Cursor model when unset';
+      'Used by the image_view tool; falls back to the Cursor model when unset';
 
   @override
   String get composerCoreKind => 'Runtime core';

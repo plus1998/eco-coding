@@ -17,6 +17,7 @@ import {
   mapEcoThinkingEffortToCodexReasoningEffort,
   sanitizeCodexRoleId,
   syncOrchestrationAgentsToCodexRoles,
+  withCodexNativeImageView,
   withCodexSkillConfig,
 } from "../src/codex-role-sync";
 
@@ -41,6 +42,22 @@ test("Codex thread Skill visibility is path-scoped", () => {
       { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
     ],
   });
+});
+
+test("native image viewing follows the selected provider without changing other thread features", () => {
+  const config = {
+    features: { multi_agent: true, hooks: true, multi_agent_v2: false },
+    mcp_servers: { eco_image_view: { enabled: true } },
+  };
+  expect(withCodexNativeImageView(config, "custom")).toEqual({
+    ...config,
+    features: { ...config.features, view_image: false },
+  });
+  expect(withCodexNativeImageView(withCodexNativeImageView(config, "custom"), "openai")).toEqual({
+    ...config,
+    features: { ...config.features, view_image: true },
+  });
+  expect(config.features).not.toHaveProperty("view_image");
 });
 
 afterEach(async () => {
@@ -81,6 +98,7 @@ test("syncOrchestrationAgentsToCodexRoles writes role toml for explore and enabl
   expect(exploreToml).toContain('approval_policy = "on-request"');
   expect(exploreToml).toContain('model = "eco_main__explore-model"');
   expect(exploreToml).toContain('model_provider = "eco_main"');
+  expect(exploreToml).toContain("[features]\nview_image = false");
   const researcherToml = await fs.readFile(path.join(result.agentsDir, "researcher.toml"), "utf8");
   expect(researcherToml).toContain('name = "researcher"');
   expect(researcherToml).toContain("developer_instructions = ");
@@ -89,6 +107,7 @@ test("syncOrchestrationAgentsToCodexRoles writes role toml for explore and enabl
   expect(researcherToml).toContain('web_search = "live"');
   expect(researcherToml).toContain('model = "eco_main__research-model"');
   expect(researcherToml).toContain('model_provider = "eco_main"');
+  expect(result.roleThreadConfigs.researcher?.features?.view_image).toBe(false);
   const coderToml = await fs.readFile(path.join(result.agentsDir, "coder.toml"), "utf8");
   expect(coderToml).toContain('model_reasoning_effort = "high"');
   await expect(fs.stat(path.join(result.agentsDir, "architect.toml"))).rejects.toThrow();
@@ -218,6 +237,11 @@ test("multi-agent config keeps roles thread-scoped and heterogeneous models immu
   expect(configToml).toContain("[agents]");
   expect(configToml).toContain("max_threads = 16");
   expect(configToml).toContain("max_depth = 1");
+  expect(roleSync.threadConfig.features).toMatchObject({
+    multi_agent: true,
+    hooks: true,
+    multi_agent_v2: false,
+  });
   expect(configToml).not.toContain("[agents.explore]");
   expect(configToml).not.toContain("[agents.coder]");
   expect(configToml).not.toContain("config_file");
@@ -238,6 +262,31 @@ test("multi-agent config keeps roles thread-scoped and heterogeneous models immu
   expect(exploreToml).toContain('model_provider = "eco_fast"');
   expect(coderToml).toContain('model = "eco_strong__coder-strong"');
   expect(coderToml).toContain('model_provider = "eco_strong"');
+  expect(coderToml).toContain("[features]\nview_image = false");
+});
+
+test("official OpenAI subagents retain native image viewing beside custom provider roles", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const result = await syncOrchestrationAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    orchestration: buildOrchestration({
+      agents: [exploreAgent({ providerId: "openai", modelId: "gpt-5" }), firstOrchestrationAgent()],
+    }),
+    templates: [researchTemplate],
+  });
+
+  const officialToml = await fs.readFile(path.join(result.agentsDir, "explore.toml"), "utf8");
+  const customToml = await fs.readFile(path.join(result.agentsDir, "researcher.toml"), "utf8");
+  expect(officialToml).toContain('model = "gpt-5"');
+  // Pinned to Codex's built-in provider: config.toml carries a global
+  // `model_provider = "eco_*"` default, so an omitted value would route the
+  // official-subscription role through eco-gateway (which has no "openai" provider).
+  expect(officialToml).toContain('model_provider = "openai"');
+  expect(officialToml).not.toContain("eco_openai");
+  expect(officialToml).toContain("[features]\nview_image = true");
+  expect(customToml).toContain("[features]\nview_image = false");
+  expect(result.roleThreadConfigs.explore?.features?.view_image).toBe(true);
+  expect(result.roleThreadConfigs.researcher?.features?.view_image).toBe(false);
 });
 
 test("role TOML carries an explicit apiCompat override in the V1 gateway alias", async () => {
@@ -344,6 +393,29 @@ test("syncOrchestrationAgentsToCodexRoles keeps old bundles immutable when avail
   expect(await fs.stat(initialCoderPath!)).toBeTruthy();
 });
 
+test("role sync enables Multi-Agent v2 only for GPT-5.6 Terra or above", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const base = buildOrchestration();
+  const result = await syncOrchestrationAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    orchestration: {
+      ...base,
+      mainAgent: {
+        ...base.mainAgent,
+        modelRef: { providerId: "main", modelId: "gpt-5.6-terra" },
+      },
+    },
+    templates: [researchTemplate, codingTemplate],
+  });
+
+  expect(result.threadConfig.features).toMatchObject({
+    multi_agent: true,
+    hooks: true,
+    multi_agent_v2: true,
+  });
+  expect(result.roleThreadConfigs.researcher?.features).toMatchObject({ multi_agent_v2: true });
+});
+
 test("role sync explicitly disables multi-agent features when no role is available", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const result = await syncOrchestrationAgentsToCodexRoles({
@@ -354,7 +426,11 @@ test("role sync explicitly disables multi-agent features when no role is availab
   });
 
   expect(result.roleIds).toEqual([]);
-  expect(result.threadConfig.features).toEqual({ multi_agent: false, hooks: false });
+  expect(result.threadConfig.features).toEqual({
+    multi_agent: false,
+    hooks: false,
+    multi_agent_v2: false,
+  });
   expect(result.threadConfig.agents).toBeUndefined();
 });
 

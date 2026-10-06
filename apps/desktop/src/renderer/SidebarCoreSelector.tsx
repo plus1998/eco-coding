@@ -88,6 +88,11 @@ function CoreMenuButton({
     <>
       <button
         ref={buttonRef}
+        // The reason a core is unavailable is drawn by the tooltip below, which only exists
+        // while the row is hovered or focused. `title` carries the same words for the readers
+        // that never see that tooltip: assistive technology announces it on focus, and it is
+        // the only place the reason is visible without a pointer.
+        {...(tooltip ? { title: tooltip } : {})}
         {...props}
         onMouseEnter={show}
         onMouseLeave={() => setHovered(false)}

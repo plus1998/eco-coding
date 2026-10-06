@@ -133,8 +133,10 @@ test("Plan session exposes finalize_plan as an active tool and lists it in the s
 
   try {
     expect(session.getActiveToolNames()).toContain(PI_FINALIZE_PLAN_TOOL_NAME);
-    expect(session.systemPrompt).toContain("Available tools:");
-    expect(session.systemPrompt).toMatch(/finalize_plan:/);
+    // PI 1.0.3 lists the declarable tools in a `<tools>` block; up to 0.85.1 the
+    // same list was introduced by "Available tools:".
+    expect(session.systemPrompt).toContain("<tools>");
+    expect(session.systemPrompt).toMatch(/- finalize_plan:/);
   } finally {
     session.dispose();
   }

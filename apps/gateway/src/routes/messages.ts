@@ -59,13 +59,19 @@ import type {
 import { fetchUpstreamWithRetry } from "../upstream/fetch-with-retry.js";
 import { fetchWithThinkingRectifiers } from "../upstream/anthropic-messages.js";
 import { forwardOpenAIChat } from "../upstream/openai-chat.js";
+import { collectResponsesStream, ResponsesStreamError } from "../upstream/collect-responses-stream.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "../upstream/request-id-headers.js";
 import {
   isDeepSeekResponsesUpstreamModel,
   sanitizeDeepSeekResponsesCustomTools,
 } from "../upstream/responses-passthrough.js";
-import { extractUpstreamErrorMessage, formatUpstreamHttpError } from "../upstream/upstream-error.js";
+import {
+  extractUpstreamErrorCode,
+  extractUpstreamErrorMessage,
+  formatUpstreamHttpError,
+} from "../upstream/upstream-error.js";
 import { applyUpstreamUserAgent } from "../upstream/user-agent.js";
+import { credentialResolutionErrorResponse, reportRouteCredentialResult, resolveRouteCredential } from "../route-credentials.js";
 import {
   extractUsageFromResponsesStreamEvent,
   normalizeAnthropicUsage,
@@ -131,18 +137,26 @@ export async function handlePostMessages(
     throw error;
   }
 
+  try {
+    route = await resolveRouteCredential(route, config, request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return credentialResolutionErrorResponse(error);
+  }
+
   body.model = route.upstreamModelId;
   const stream = body.stream === true;
   const upstreamUrl = buildUpstreamUrl(route.provider, route.upstreamKind);
   onLog(
-    `POST /v1/messages provider=${route.provider.id} kind=${route.upstreamKind} model=${route.upstreamModelId} stream=${stream}`,
+    `POST /v1/messages provider=${route.provider.id} kind=${route.upstreamKind} model=${route.upstreamModelId} downstreamStream=${stream}`,
   );
 
   const lifecycle = buildRequestLifecycleContext(route, "messages", onLog, onRequestLifecycle);
 
+  let response: Response;
   switch (route.upstreamKind) {
     case "anthropic-messages":
-      return forwardMessagesNative(
+      response = await forwardMessagesNative(
         route,
         body,
         request.headers,
@@ -153,9 +167,10 @@ export async function handlePostMessages(
         config.upstreamUserAgent,
         lifecycle,
       );
+      break;
     case "responses":
     case "gateway-delegated":
-      return forwardMessagesViaResponses(
+      response = await forwardMessagesViaResponses(
         route,
         body,
         request.headers,
@@ -165,9 +180,11 @@ export async function handlePostMessages(
         onUsage,
         config.upstreamUserAgent,
         lifecycle,
+        request.signal,
       );
+      break;
     case "openai-chat":
-      return forwardMessagesViaOpenAIChat(
+      response = await forwardMessagesViaOpenAIChat(
         route,
         body,
         request.headers,
@@ -177,11 +194,14 @@ export async function handlePostMessages(
         config.upstreamUserAgent,
         lifecycle,
       );
+      break;
     default: {
       const _exhaustive: never = route.upstreamKind;
       return _exhaustive;
     }
   }
+  await reportRouteCredentialResult(route, config, response);
+  return response;
 }
 
 export async function handleGetModels(config: GatewayConfig): Promise<Response> {
@@ -446,6 +466,7 @@ async function forwardMessagesViaResponses(
   onUsage: GatewayUsageObserver | undefined,
   upstreamUserAgent: string | undefined,
   lifecycle?: RequestLifecycleContext,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const anthropicBody = {
     ...body,
@@ -457,6 +478,13 @@ async function forwardMessagesViaResponses(
     route.upstreamModelId,
   );
   responsesBody.model = route.upstreamModelId;
+
+  // Subscription upstream requires SSE regardless of the Messages client's
+  // response mode. Non-streaming clients receive the collected terminal JSON.
+  if (route.provider.authMethod === "chatgpt_subscription") {
+    responsesBody.stream = true;
+    delete (responsesBody as unknown as Record<string, unknown>).max_output_tokens;
+  }
 
   // PI/Claude Messages face never passes through desktop applyResponsesRoutingHints.
   // Inject the same eco_thread_* key so Responses prefix cache can stick across tool turns.
@@ -510,6 +538,7 @@ async function forwardMessagesViaResponses(
       onLog,
       route,
       ...(lifecycle ? { lifecycle } : {}),
+      ...(signal ? { signal } : {}),
     });
     upstreamResponse = posted.response;
     responsesBody = posted.body as unknown as ResponsesRequest;
@@ -521,8 +550,12 @@ async function forwardMessagesViaResponses(
   }
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
+  // OAuth's stream:true contract is authoritative. Its successful SSE replies
+  // can omit Content-Type; parsing them as JSON triggers SDK non-stream retries.
+  const isEventStream = contentType.includes("text/event-stream") ||
+    (route.provider.authMethod === "chatgpt_subscription" && responsesBody.stream === true);
   onLog(
-    `messages→responses upstream status=${upstreamResponse.status} ct=${contentType} stream=${wantStream} tools=${requestToolNames.length} dropped=${droppedParams.join(",") || "(none)"} ttfb=${Date.now() - startedAt}ms`,
+    `messages→responses upstream status=${upstreamResponse.status} ct=${contentType} downstreamStream=${wantStream} upstreamStream=${responsesBody.stream === true} tools=${requestToolNames.length} dropped=${droppedParams.join(",") || "(none)"} ttfb=${Date.now() - startedAt}ms`,
   );
 
   if (!upstreamResponse.ok) {
@@ -534,6 +567,7 @@ async function forwardMessagesViaResponses(
       status: upstreamResponse.status,
       bodyText: text,
     });
+    const upstreamErrorCode = extractUpstreamErrorCode(text);
     const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
     reportLogicalUpstreamFailure(lifecycle, {
       stage: "http",
@@ -542,13 +576,16 @@ async function forwardMessagesViaResponses(
       ...(providerRequestId ? { providerRequestId } : {}),
     });
     if (wantStream) {
-      return anthropicErrorSseResponse(upstreamResponse.status, detailed);
+      return anthropicErrorSseResponse(upstreamResponse.status, detailed, {
+        preserveHttpStatus: route.provider.authMethod === "chatgpt_subscription",
+        ...(upstreamErrorCode ? { errorCode: upstreamErrorCode } : {}),
+      });
     }
-    return anthropicErrorResponse(upstreamResponse.status, detailed);
+    return anthropicErrorResponse(upstreamResponse.status, detailed, upstreamErrorCode);
   }
 
   // Stream requested but upstream replied with JSON (or missing body): convert non-SSE.
-  if (wantStream && (!contentType.includes("text/event-stream") || !upstreamResponse.body)) {
+  if (wantStream && (!isEventStream || !upstreamResponse.body)) {
     const text = await upstreamResponse.text();
     onLog(
       `messages→responses non-SSE while stream=true len=${text.length} head=${text.slice(0, 120).replace(/\s+/g, " ")}`,
@@ -589,8 +626,42 @@ async function forwardMessagesViaResponses(
   }
 
   if (!wantStream) {
-    const json = (await upstreamResponse.json()) as ResponsesResponse;
-    const anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
+    let json: ResponsesResponse;
+    let anthropic: ReturnType<typeof responsesToAnthropic>;
+    try {
+      if (isEventStream) {
+        if (!upstreamResponse.body) throw new ResponsesStreamError("Empty upstream Responses stream");
+        json = await collectResponsesStream(upstreamResponse.body, { ...(signal ? { signal } : {}) });
+      } else {
+        json = (await upstreamResponse.json()) as ResponsesResponse;
+      }
+      anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
+      // The bridge retains serialized tool arguments; Messages JSON consumers
+      // require tool_use.input to be an object, as the streaming SDK produces.
+      for (const block of anthropic.content) {
+        if (block.type === "tool_use" && typeof block.input === "string") {
+          const input: unknown = JSON.parse(block.input);
+          if (!input || typeof input !== "object" || Array.isArray(input)) {
+            throw new ResponsesStreamError("Invalid upstream tool arguments: expected a JSON object", "invalid_tool_arguments");
+          }
+          block.input = input;
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+      onLog(`messages→responses non-stream collection failed: ${message}`);
+      if (signal?.aborted) {
+        tryEmitLogicalCancelled(lifecycle, { reason: message });
+      } else {
+        reportLogicalUpstreamFailure(lifecycle, {
+          stage: "stream",
+          error: message,
+          ...(providerRequestId ? { providerRequestId } : {}),
+        });
+      }
+      return anthropicErrorResponse(502, message, error instanceof ResponsesStreamError ? error.code : undefined);
+    }
     if (onUsage) {
       const usage = normalizeResponsesUsage(json.usage, route.upstreamModelId);
       if (usage) {
@@ -1279,6 +1350,7 @@ async function postResponsesWithUnsupportedParamRetry(input: {
   onLog: GatewayLogFn;
   route: ResolvedProviderRoute;
   lifecycle?: RequestLifecycleContext;
+  signal?: AbortSignal;
 }): Promise<{
   response: Response;
   body: Record<string, unknown>;
@@ -1290,7 +1362,7 @@ async function postResponsesWithUnsupportedParamRetry(input: {
     const payload = JSON.stringify(body);
     input.onLog(
       `messages→responses POST ${input.url} provider=${input.route.provider.id} ` +
-        `model=${input.route.upstreamModelId} bytes=${payload.length} attempt=${attempt}`,
+        `model=${input.route.upstreamModelId} upstreamStream=${body.stream === true} bytes=${payload.length} attempt=${attempt}`,
     );
     const response = await fetchUpstreamWithRetry({
       fetchImpl: input.fetchImpl,
@@ -1302,6 +1374,8 @@ async function postResponsesWithUnsupportedParamRetry(input: {
       },
       lifecycle: input.lifecycle,
       onLog: input.onLog,
+      signal: input.signal,
+      upstreamProxyUrl: input.route.provider.upstreamProxyUrl,
     });
     if (response.ok || response.status < 400 || response.status >= 500) {
       return { response, body, droppedParams };
@@ -1336,6 +1410,8 @@ async function postResponsesWithUnsupportedParamRetry(input: {
     },
     lifecycle: input.lifecycle,
     onLog: input.onLog,
+    signal: input.signal,
+    upstreamProxyUrl: input.route.provider.upstreamProxyUrl,
   });
   return { response, body, droppedParams };
 }
@@ -1354,30 +1430,39 @@ function extractUnsupportedResponsesParameter(raw: string): string | undefined {
   return undefined;
 }
 
-function anthropicErrorResponse(status: number, message: string): Response {
+function anthropicErrorResponse(status: number, message: string, errorCode?: string): Response {
   return Response.json(
     {
       type: "error",
       error: {
         type: "api_error",
         message,
+        ...(errorCode ? { code: errorCode } : {}),
       },
     },
-    { status: status >= 400 && status < 600 ? status : 502 },
+    {
+      status: status >= 400 && status < 600 ? status : 502,
+      ...(errorCode ? { headers: { "x-eco-upstream-error-code": errorCode } } : {}),
+    },
   );
 }
 
-function anthropicErrorSseResponse(status: number, message: string): Response {
+function anthropicErrorSseResponse(
+  status: number,
+  message: string,
+  options: { preserveHttpStatus?: boolean; errorCode?: string } = {},
+): Response {
   // Claude Agent SDK stream path: emit a single error event then close.
   const payload = responsesAnthropicEventToSse({
     type: "error",
     error: { type: "api_error", message: `[${status}] ${message}` },
   } as never);
   return new Response(payload, {
-    status: 200,
+    status: options.preserveHttpStatus ? status : 200,
     headers: {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache",
+      ...(options.errorCode ? { "x-eco-upstream-error-code": options.errorCode } : {}),
     },
   });
 }

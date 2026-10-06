@@ -5,8 +5,10 @@ import {
   buildIgnoredClarificationAnswers,
   cancelClarificationsForThread,
   formatClarificationAnswersSummary,
+  getPendingBlockingClarificationForThread,
   getPendingClarificationByToolUseId,
   getPendingClarificationForThread,
+  hasPendingBlockingClarificationForThread,
   registerPendingClarification,
   submitClarification,
 } from "../src/main/clarification-bridge";
@@ -113,4 +115,50 @@ test("pending clarification stays isolated until submitted or cancelled", async 
   cancelClarificationsForThread("thr_cancel", "cancelled by phase 0 baseline");
   await expect(cancelled).rejects.toThrow("cancelled by phase 0 baseline");
   expect(submitClarification("tool_cancel", { toolUseId: "tool_cancel", selections: [] })).toBe(false);
+});
+
+test("async and non-blocking questions stay pending without holding the run or queue", async () => {
+  const asyncQuestion = registerPendingClarification("thr_async", "tool_async", {
+    questions: request.questions,
+    delivery: "async",
+    blocking: false,
+  });
+  const nonBlockingSync = registerPendingClarification("thr_sync_nonblocking", "tool_sync_nonblocking", {
+    questions: request.questions,
+    delivery: "sync",
+    blocking: false,
+  });
+
+  // Both stay visible to the panel and to the acceptance gate...
+  expect(getPendingClarificationForThread("thr_async")?.delivery).toBe("async");
+  expect(getPendingClarificationForThread("thr_sync_nonblocking")?.delivery).toBe("sync");
+  // ...but neither may gate run cleanup or the follow-up queue.
+  expect(hasPendingBlockingClarificationForThread("thr_async")).toBe(false);
+  expect(hasPendingBlockingClarificationForThread("thr_sync_nonblocking")).toBe(false);
+  expect(getPendingBlockingClarificationForThread("thr_async")).toBeUndefined();
+
+  cancelClarificationsForThread("thr_async", "cleanup");
+  cancelClarificationsForThread("thr_sync_nonblocking", "cleanup");
+  await expect(asyncQuestion).rejects.toThrow("cleanup");
+  await expect(nonBlockingSync).rejects.toThrow("cleanup");
+});
+
+test("a blocking question still holds the run, and isBlocking defaults to blocking", async () => {
+  const blocked = registerPendingClarification("thr_blocking", "tool_blocking", {
+    questions: request.questions,
+    delivery: "sync",
+    blocking: true,
+  });
+  const defaulted = registerPendingClarification("thr_default", "tool_default", {
+    questions: request.questions,
+  });
+
+  expect(hasPendingBlockingClarificationForThread("thr_blocking")).toBe(true);
+  expect(getPendingBlockingClarificationForThread("thr_blocking")?.toolUseId).toBe("tool_blocking");
+  expect(hasPendingBlockingClarificationForThread("thr_default")).toBe(true);
+
+  cancelClarificationsForThread("thr_blocking", "cleanup");
+  cancelClarificationsForThread("thr_default", "cleanup");
+  await expect(blocked).rejects.toThrow("cleanup");
+  await expect(defaulted).rejects.toThrow("cleanup");
 });

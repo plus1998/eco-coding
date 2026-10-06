@@ -3,13 +3,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { removeTempDirectory } from "../test/helpers/temp-directory";
 import { createWebChatListStore } from "../src/main/web-chat-list-store";
 import { builtinWebChatItems } from "../src/shared/web-chat-list";
 
 async function createTestDirectory(t: test.TestContext, prefix: string): Promise<string> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   t.after(async () => {
-    await fs.rm(directory, { recursive: true, force: true });
+    await removeTempDirectory(directory);
   });
   return directory;
 }

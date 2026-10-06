@@ -10,12 +10,19 @@ export type AgentBrowserCliBridgeInput = {
   toolName: string;
   args: Record<string, unknown>;
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 export type AgentBrowserMcpToolResult = {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 };
+
+const NAVIGATION_TOOL_NAMES = new Set([
+  "agent_browser_back",
+  "agent_browser_forward",
+  "agent_browser_reload",
+]);
 
 /**
  * Eco routes agent_browser_* MCP tools to agent-browser CLI + thread CDP.
@@ -252,11 +259,15 @@ export function mapAgentBrowserToolToCliArgs(toolName: string, args: Record<stri
       if (!text) {
         throw new Error("agent_browser_wait_for_text requires text");
       }
-      cliArgs.push("wait", text);
+      // agent-browser 0.33.x treats a bare argument as a selector. Use the
+      // explicit text mode so ordinary page text is not parsed as CSS.
+      cliArgs.push("wait", "--text", text);
       break;
     }
     case "wait_for_load":
-      cliArgs.push("wait", "load");
+      // `wait load` is interpreted as a selector named "load" and times out
+      // after navigation. The CLI's load-state mode is an explicit option.
+      cliArgs.push("wait", "--load", "load");
       break;
     case "screenshot": {
       const outputPath =
@@ -267,7 +278,8 @@ export function mapAgentBrowserToolToCliArgs(toolName: string, args: Record<stri
     }
     case "get_text": {
       const selector = selectorArg(args);
-      cliArgs.push("text");
+      // Since agent-browser 0.33.x, page/element text is under `get text`.
+      cliArgs.push("get", "text");
       if (selector) {
         cliArgs.push(selector);
       }
@@ -320,6 +332,7 @@ export function mapAgentBrowserToolToCliArgs(toolName: string, args: Record<stri
 export async function callAgentBrowserToolViaCli(
   input: AgentBrowserCliBridgeInput,
 ): Promise<AgentBrowserMcpToolResult> {
+  input.signal?.throwIfAborted();
   const cliArgs = mapAgentBrowserToolToCliArgs(input.toolName, input.args);
   const spawnArgs = [
     "--cdp",
@@ -347,13 +360,26 @@ export async function callAgentBrowserToolViaCli(
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+      finish({
+        content: [{ type: "text", text: "agent-browser CLI call aborted" }],
+        isError: true,
+      });
+    };
 
     const finish = (result: AgentBrowserMcpToolResult) => {
       if (settled) {
         return;
       }
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      input.signal?.removeEventListener("abort", onAbort);
       void (async () => {
         const textEntry = Array.isArray(result.content)
           ? result.content.find(
@@ -391,7 +417,7 @@ export async function callAgentBrowserToolViaCli(
       })();
     };
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       try {
         child.kill();
       } catch {
@@ -436,6 +462,44 @@ export async function callAgentBrowserToolViaCli(
       const err = stderr.trim();
       const text = out || err;
       if (code !== 0) {
+        // CDP can close the inspected target between the navigation command
+        // and the CLI's final Runtime.evaluate used to print its result. Verify
+        // the session URL before surfacing this as a failed navigation.
+        if (
+          NAVIGATION_TOOL_NAMES.has(input.toolName) &&
+          /Inspected target navigated or closed/i.test(text)
+        ) {
+          void callAgentBrowserToolViaCli({
+            ...input,
+            toolName: "agent_browser_get_url",
+            args: {},
+            timeoutMs: Math.min(timeoutMs, 5_000),
+          }).then((verification) => {
+            if (!verification.isError) {
+              const verifiedText = verification.content[0]?.text?.trim();
+              finish({
+                content: [
+                  {
+                    type: "text",
+                    text: verifiedText ? `Navigation completed: ${verifiedText}` : "Navigation completed",
+                  },
+                ],
+                isError: false,
+              });
+              return;
+            }
+            finish({
+              content: [
+                {
+                  type: "text",
+                  text: text || `agent-browser CLI exited (${code}) for ${input.toolName}`,
+                },
+              ],
+              isError: true,
+            });
+          });
+          return;
+        }
         finish({
           content: [
             {
@@ -452,5 +516,9 @@ export async function callAgentBrowserToolViaCli(
         isError: false,
       });
     });
+    input.signal?.addEventListener("abort", onAbort, { once: true });
+    if (input.signal?.aborted) {
+      onAbort();
+    }
   });
 }

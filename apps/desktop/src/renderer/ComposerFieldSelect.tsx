@@ -32,6 +32,8 @@ interface ComposerFieldSelectProps {
   searchable?: boolean | undefined;
   /** Placeholder for the search box. */
   searchPlaceholder?: string | undefined;
+  /** Optional leading visual for a specific option (for built-in providers). */
+  renderOptionIcon?: ((option: ComposerFieldOption) => ReactNode) | undefined;
   children: ReactNode;
 }
 
@@ -96,6 +98,7 @@ export function ComposerFieldSelect({
   invalidLabel,
   searchable = false,
   searchPlaceholder,
+  renderOptionIcon,
   children,
 }: ComposerFieldSelectProps) {
   const { t } = useTranslation();
@@ -363,6 +366,9 @@ export function ComposerFieldSelect({
                   onKeyDown={(event) => handleItemKeyDown(event, index)}
                   onClick={() => commit(option)}
                 >
+                  <span className="composer-field-select-menu-icon" aria-hidden="true">
+                    {renderOptionIcon?.(option)}
+                  </span>
                   <span className="composer-field-select-menu-label">{option.label}</span>
                   {selected ? <Check size={14} strokeWidth={2} aria-hidden /> : null}
                 </button>

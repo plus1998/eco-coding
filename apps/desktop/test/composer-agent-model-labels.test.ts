@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { buildComposerAgentModelLabels } from "../src/renderer/composer-agent-model-labels";
-import { i18n } from "../src/renderer/i18n";
 import type { ResolvedOrchestrationSnapshot, ToolPolicy } from "../src/shared/ipc";
+import { withTestLanguage } from "./support/test-language";
+
+withTestLanguage("en-US");
 
 const tools: ToolPolicy = { allowed: [], disallowed: [] };
 
@@ -40,7 +42,6 @@ const snapshot: ResolvedOrchestrationSnapshot = {
 };
 
 test("buildComposerAgentModelLabels localizes legacy coding labels", async () => {
-  await i18n.changeLanguage("en-US");
   const labels = buildComposerAgentModelLabels({
     routes: [
       { role: "planner", providerId: "p1", modelId: "main-model" },
@@ -63,7 +64,6 @@ test("buildComposerAgentModelLabels localizes legacy coding labels", async () =>
 });
 
 test("buildComposerAgentModelLabels renders resolved orchestration labels", async () => {
-  await i18n.changeLanguage("en-US");
   const labels = buildComposerAgentModelLabels({
     snapshot,
     routes: [

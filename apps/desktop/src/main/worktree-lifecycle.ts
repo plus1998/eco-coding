@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createWorktreePlan } from "@eco/workspace";
@@ -7,6 +9,12 @@ export interface ApprovedPlanSnapshot {
   analysis: string;
   plan: string;
   planUserEdited?: boolean;
+}
+
+export interface ApprovedPlanArtifact {
+  absolutePath: string;
+  relativePath: string;
+  contentHash: string;
 }
 
 export function approvedPlanFilePath(workspacePath: string, threadId: string): string {
@@ -38,15 +46,61 @@ export function formatApprovedPlanDocument(snapshot: ApprovedPlanSnapshot): stri
   return `${lines.join("\n")}\n`;
 }
 
+export function approvedPlanDocumentHash(document: string): string {
+  return createHash("sha256").update(document, "utf8").digest("hex");
+}
+
 export async function writeApprovedPlanSnapshot(
   workspacePath: string,
   threadId: string,
   snapshot: ApprovedPlanSnapshot,
-): Promise<string> {
+): Promise<ApprovedPlanArtifact> {
   const filePath = approvedPlanFilePath(workspacePath, threadId);
+  const relativePath = approvedPlanRelativePath(threadId);
+  const document = formatApprovedPlanDocument(snapshot);
+  const contentHash = approvedPlanDocumentHash(document);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, formatApprovedPlanDocument(snapshot), "utf8");
-  return filePath;
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await fs.writeFile(temporaryPath, document, { encoding: "utf8", flag: "wx" });
+    await fs.rename(temporaryPath, filePath);
+  } catch (error) {
+    await fs.unlink(temporaryPath).catch(() => {});
+    throw error;
+  }
+  return { absolutePath: filePath, relativePath, contentHash };
+}
+
+export function verifyApprovedPlanArtifact(input: {
+  workspacePath: string;
+  threadId: string;
+  absolutePath: string;
+  relativePath: string;
+  contentHash: string;
+}): { ok: true } | { ok: false; reason: string } {
+  const expectedAbsolutePath = approvedPlanFilePath(input.workspacePath, input.threadId);
+  const expectedRelativePath = approvedPlanRelativePath(input.threadId);
+  if (
+    path.resolve(input.absolutePath) !== path.resolve(expectedAbsolutePath) ||
+    input.relativePath !== expectedRelativePath
+  ) {
+    return { ok: false, reason: "Approved-plan checkpoint path is not deterministic for this thread." };
+  }
+  try {
+    const document = readFileSync(expectedAbsolutePath, "utf8");
+    if (approvedPlanDocumentHash(document) !== input.contentHash) {
+      return { ok: false, reason: "Approved-plan snapshot content hash does not match its checkpoint." };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `Approved-plan snapshot cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 function headingLineIndex(lines: readonly string[], heading: string, fromIndex = 0): number {

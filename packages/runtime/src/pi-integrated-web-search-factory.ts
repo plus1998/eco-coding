@@ -55,7 +55,12 @@ export function createPiIntegratedWebSearchExtensionFactory(
       executionMode: "sequential",
       execute: async (_toolCallId, rawParams, signal) => {
         const query = typeof rawParams.query === "string" ? rawParams.query.trim() : "";
-        const results = await searchIntegratedWeb(provider, query, apiKey, { signal });
+        const results = await searchIntegratedWeb(
+          provider,
+          query,
+          apiKey,
+          signal === undefined ? {} : { signal },
+        );
         const text = formatIntegratedWebSearchResults(provider, query, results);
         return {
           content: [{ type: "text", text }],

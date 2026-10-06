@@ -3,68 +3,14 @@ import { submitClarification } from "../src/main/clarification-bridge";
 import {
   CODEX_MCP_SERVER_ELICITATION_REQUEST,
   CODEX_TOOL_REQUEST_USER_INPUT,
-  CODEX_TOOL_REQUEST_USER_INPUT_ASYNC,
   type CodexApprovalBridgeDeps,
+  handleCodexApprovalNotification,
   handleCodexServerRequest,
   parseMcpToolRunElicitationMessage,
+  resolvePendingCodexBashApproval,
   shouldAutoAcceptEcoBrowserToolElicitation,
 } from "../src/main/codex-approval-bridge";
 import type { ThreadLiveEvent } from "../src/shared/ipc";
-
-test("Codex async clarification returns accepted without waiting for answers", async () => {
-  const events: ThreadLiveEvent[] = [];
-  const injected: string[] = [];
-  const deps: CodexApprovalBridgeDeps = {
-    resolveEcoThreadId: () => "thread-async",
-    getThread: () => ({ prompt: "实现功能", workspacePath: "/workspace" }),
-    getWorktreePath: () => undefined,
-    getPlannerAgentId: () => "planner-1",
-    getRoutesJson: () => "[]",
-    savePendingPlan: () => undefined,
-    emitThreadLive: (event) => events.push(event),
-    updateThreadStatus: () => undefined,
-    injectAsyncClarificationAnswers: async ({ text }) => {
-      injected.push(text);
-    },
-  };
-
-  const responsePromise = handleCodexServerRequest(deps, CODEX_TOOL_REQUEST_USER_INPUT_ASYNC, {
-    threadId: "codex-thread-async",
-    turnId: "turn-async",
-    itemId: "question-async",
-    questions: [
-      {
-        id: "choice",
-        header: "选择",
-        question: "选哪个？",
-        options: [
-          { label: "A", description: "选项 A" },
-          { label: "B", description: "选项 B" },
-        ],
-      },
-    ],
-  });
-
-  const response = await responsePromise;
-  expect(response).toEqual({ accepted: true });
-  expect(events.some((event) => event.type === "clarification.requested")).toBe(true);
-  expect(events.find((event) => event.type === "clarification.requested")?.clarification?.delivery).toBe(
-    "async",
-  );
-  expect(injected).toEqual([]);
-
-  expect(
-    submitClarification("question-async", {
-      toolUseId: "question-async",
-      selections: [["A"]],
-    }),
-  ).toBe(true);
-
-  await Bun.sleep(20);
-  expect(events.some((event) => event.type === "clarification.answered")).toBe(true);
-  expect(injected.length).toBe(1);
-  expect(injected[0]).toContain("Async clarification answers");
-});
 
 test("Codex clarification publishes the answered summary and exits the waiting status", async () => {
   const events: ThreadLiveEvent[] = [];
@@ -235,5 +181,59 @@ test("Codex eco_agent_browser open elicitation still asks when always_ask", asyn
       selections: [["同意并继续"]],
     }),
   ).toBe(true);
+  await expect(pending).resolves.toEqual({ action: "accept", content: {} });
+});
+
+test("Codex Hub elicitation unwraps the started call before showing MCP approval", async () => {
+  const events: ThreadLiveEvent[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-hub-approval",
+    getThread: () => ({ prompt: "创建 issue", workspacePath: "/workspace" }),
+    getWorktreePath: () => undefined,
+    getPlannerAgentId: () => "planner-hub-approval",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+  };
+
+  handleCodexApprovalNotification(deps, "item/started", {
+    threadId: "codex-hub-approval",
+    turnId: "turn-hub-approval",
+    item: {
+      id: "mcp-call-hub-approval",
+      type: "mcpToolCall",
+      server: "eco_mcp_abc123",
+      tool: "call_tool",
+      arguments: {
+        name: "github:create_issue",
+        arguments: { title: "example" },
+      },
+    },
+  });
+
+  const pending = handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+    threadId: "codex-hub-approval",
+    turnId: "turn-hub-approval",
+    serverName: "eco_mcp_abc123",
+    mode: "form",
+    message: 'Allow the eco_mcp_abc123 MCP server to run tool "call_tool"?',
+    requestedSchema: { type: "object", properties: {} },
+    _meta: { codex_approval_kind: "mcp_tool_call" },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  const approval = events[0]?.bashApproval;
+  expect(events[0]?.type).toBe("bash_approval.requested");
+  expect(approval).toMatchObject({
+    kind: "mcp",
+    filesystemTool: "MCP",
+    filesystemPath: "github/mcp__github__create_issue",
+  });
+  expect(approval?.description).toContain("create_issue");
+  expect(approval?.description).toContain('"title":"example"');
+  const approvalToolUseId = approval?.toolUseId;
+  expect(approvalToolUseId).toBeTruthy();
+  expect(resolvePendingCodexBashApproval(approvalToolUseId ?? "", { decision: "approved" })).toBe(true);
   await expect(pending).resolves.toEqual({ action: "accept", content: {} });
 });

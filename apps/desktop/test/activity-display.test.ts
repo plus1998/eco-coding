@@ -158,7 +158,7 @@ test("resolveBashRunCardDisplay uses description or Shell for bash titles", () =
   expect(
     resolveBashRunCardDisplay({
       toolName: "Bash",
-      command: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
+      command: "cd apps/desktop && bun test test/conversation-v2-projection-view.test.ts",
       description: "Run projection view tests",
       output: "36 pass\n0 fail",
       durationMs: 716,
@@ -166,7 +166,7 @@ test("resolveBashRunCardDisplay uses description or Shell for bash titles", () =
   ).toEqual({
     title: "Run projection view tests",
     meta: "cd, 1+, 0.7s",
-    command: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
+    command: "cd apps/desktop && bun test test/conversation-v2-projection-view.test.ts",
     output: "36 pass\n0 fail",
   });
   expect(
@@ -183,13 +183,13 @@ test("resolveBashRunCardDisplay uses description or Shell for bash titles", () =
     resolveBashRunCardDisplay({
       toolName: "Bash",
       command:
-        "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
+        "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/conversation-v2-projection-view.test.ts",
     }),
   ).toEqual({
     title: "Shell",
     meta: "cd, 1+",
     command:
-      "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
+      "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/conversation-v2-projection-view.test.ts",
   });
 });
 

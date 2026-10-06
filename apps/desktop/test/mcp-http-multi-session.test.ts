@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { toAcpMcpServers, toPiMcpServerEntry } from "@eco/runtime";
+import { toAcpMcpServers, toPiMcpServerConfig } from "@eco/runtime";
 import { BrowserMcpGateway } from "../src/main/browser-mcp-gateway";
 import { ImageViewMcpGateway } from "../src/main/image-view-mcp-gateway";
 
@@ -68,9 +68,14 @@ test("multi-session image-view shares one HTTP endpoint and routes by token", as
   expect(headersA.Authorization).not.toBe(headersB.Authorization);
 
   // Claude / PI / ACP / Codex descriptors share the same origin.
-  const pi = toPiMcpServerEntry(injA.sdkEntry);
-  expect(pi?.url).toBe(String(injA.sdkEntry.url));
-  expect(pi?.httpTransport).toBe("streamable-http");
+  const pi = toPiMcpServerConfig(injA.sdkEntry);
+  expect(pi.ok).toBe(true);
+  expect(pi.ok && pi.config).toMatchObject({
+    type: "http",
+    url: String(injA.sdkEntry.url),
+    // Direct exposure keeps the Hub tools callable without a script sandbox.
+    exposure: "direct",
+  });
   const acp = toAcpMcpServers({ eco_image_view: injA.sdkEntry });
   expect(acp).toEqual([
     expect.objectContaining({

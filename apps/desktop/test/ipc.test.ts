@@ -6,6 +6,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.appSetLocale).toBe("app:set-locale");
   expect(IPC_CHANNELS.appConsumePendingThreadOpen).toBe("app:consume-pending-thread-open");
   expect(IPC_CHANNELS.appThreadOpenRequested).toBe("app:thread-open-requested");
+  expect(IPC_CHANNELS.clipboardReadText).toBe("clipboard:read-text");
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
   expect(IPC_CHANNELS.workspaceListEntries).toBe("workspace:list-entries");
   expect(IPC_CHANNELS.workspaceReadFile).toBe("workspace:read-file");
@@ -49,11 +50,10 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");
   expect(IPC_CHANNELS.threadRollbackTo).toBe("thread:rollback-to");
   expect(IPC_CHANNELS.threadApprovePlan).toBe("thread:approve-plan");
-  expect(IPC_CHANNELS.threadGetUsageSnapshot).toBe("thread:get-usage-snapshot");
-  expect(IPC_CHANNELS.threadUsageLedgerEventsList).toBe("thread:usage-ledger-events-list");
-  expect(IPC_CHANNELS.threadRunProjectionGet).toBe("thread:run-projection-get");
+  expect(IPC_CHANNELS.conversationCapabilities).toBe("conversation:capabilities");
+  expect(IPC_CHANNELS.conversationBootstrap).toBe("conversation:bootstrap");
+  expect(IPC_CHANNELS.conversationProjection).toBe("conversation:projection");
   expect(IPC_CHANNELS.threadDismissPlan).toBe("thread:dismiss-plan");
-  expect(IPC_CHANNELS.threadContinue).toBe("thread:continue");
   expect(IPC_CHANNELS.threadRetryFromMessage).toBe("thread:retry-from-message");
   expect(IPC_CHANNELS.threadFollowUpEnqueue).toBe("thread:follow-up-enqueue");
   expect(IPC_CHANNELS.threadFollowUpEscalate).toBe("thread:follow-up-escalate");
@@ -63,7 +63,6 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadFollowUpReorder).toBe("thread:follow-up-reorder");
   expect(IPC_CHANNELS.threadFollowUpList).toBe("thread:follow-up-list");
   expect(IPC_CHANNELS.threadFollowUpCancel).toBe("thread:follow-up-cancel");
-  expect(IPC_CHANNELS.threadTodoList).toBe("thread:todo-list");
   expect(IPC_CHANNELS.clarificationGetPending).toBe("clarification:get-pending");
   expect(IPC_CHANNELS.clarificationSubmit).toBe("clarification:submit");
   expect(IPC_CHANNELS.clarificationDismiss).toBe("clarification:dismiss");

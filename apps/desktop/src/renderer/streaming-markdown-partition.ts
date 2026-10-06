@@ -121,6 +121,10 @@ function partitionClosedTopLevel(text: string): StreamingMarkdownPartition {
 /**
  * Index where the mutable (incomplete) top-level region starts.
  * Everything before is stable.
+ *
+ * This is a *cheap approximation* of Markdown block structure, and it is only
+ * used to pick the stable/tail split. Callers that need a parse-safe seal read
+ * the tokenizer's real block map instead (see `feedMarkdownBlockRanges`).
  */
 function findMutableStartIndex(text: string): number {
   const lines = splitLinesWithOffsets(text);

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import '../../core/models/thread_run_projection.dart';
+import '../../core/models/conversation_v2_projection_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/preferences/thinking_display_preferences.dart';
 import '../../core/utils/activity_display.dart';
@@ -100,6 +100,17 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
       if (entry.kind == ActivityFeedKind.user)
         _UserPromptBoundary(sequence: entry.sequence, at: entry.at ?? ''),
   ]..sort((left, right) => left.sequence.compareTo(right.sequence));
+  // Acceptance sequences remain unchanged when reordered queue rows are sent.
+  // Time-based lookups need a separate index in actual delivery order.
+  final userBoundariesByTime = [...userBoundaries]
+    ..sort((left, right) {
+      final time = left.at.compareTo(right.at);
+      return time != 0 ? time : left.sequence.compareTo(right.sequence);
+    });
+  final v2TimelineSequences = {
+    for (final item in projection.timeline)
+      if (item.metadata?['v2'] == true) item.sequence,
+  };
   final turnBySegmentKey = <String, _MutableProjectionTurn>{};
   final sections = <_OrderedFeedSection>[];
   final visibleTimelineAttemptIds = projection.timeline
@@ -134,7 +145,19 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
       );
       continue;
     }
-    final boundary = _lastUserBoundaryForEntry(userBoundaries, entry);
+    // V2 tools, including grouped actions, share the same delivery clock as
+    // V2 messages; sequence-based placement can split them from their answer.
+    final useObservedAt =
+        _isStreamNarrativeFeedEntry(entry) ||
+        v2TimelineSequences.contains(entry.sequence) ||
+        entry.actionChildren.any(
+          (child) => v2TimelineSequences.contains(child.sequence),
+        );
+    final boundary = _lastUserBoundaryForEntry(
+      useObservedAt ? userBoundariesByTime : userBoundaries,
+      entry,
+      useObservedAt: useObservedAt,
+    );
     final afterUserSequence = boundary?.sequence ?? 0;
     final segmentKey = '${attempt.attemptId}#after:$afterUserSequence';
     final turn = turnBySegmentKey.putIfAbsent(segmentKey, () {
@@ -216,10 +239,10 @@ int _compareOrderedFeedSections(
 
 _UserPromptBoundary? _lastUserBoundaryForEntry(
   List<_UserPromptBoundary> boundaries,
-  ActivityFeedEntry entry,
-) {
+  ActivityFeedEntry entry, {
+  required bool useObservedAt,
+}) {
   _UserPromptBoundary? found;
-  final useObservedAt = _isStreamNarrativeFeedEntry(entry);
   final entryAt = entry.at ?? '';
   for (final boundary in boundaries) {
     if (useObservedAt) {
@@ -340,8 +363,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   // timeline already has assistant/tool rows but no user prompt (e.g. a bad
   // incremental replace), injecting the original prompt creates a cliff that
   // pairs turn-1 text with the latest agent output.
-  if (
-      !hasProjectedUserPrompt &&
+  if (!hasProjectedUserPrompt &&
       projection.timeline.isEmpty &&
       prompt != null &&
       prompt.isNotEmpty) {
@@ -367,11 +389,17 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
       _ProjectionFeedSlot(
         entry: ActivityFeedEntry(
           id: item.id,
+          role: item.role,
           kind: ActivityFeedKind.user,
           text: item.text.trim(),
           attachments: _promptImagePreviews(item),
           rewindTarget: rewindTarget,
-          activityLineId: rewindTarget?.activityLineId,
+          // V2 messages no longer carry the retired V1 activity-line column.
+          // The stable message identity is still the deterministic target
+          // required by the non-rewind Codex retry gate; migrated rewind
+          // metadata wins when it is present.
+          activityLineId:
+              rewindTarget?.activityLineId ?? item.streamKey ?? item.id,
           historyRevision: projection.historyRevision,
           at: item.at,
           sequence: item.sequence,
@@ -402,8 +430,11 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           timeline: displayTimeline,
           delegationSummary: agent.delegationSummary,
           delegationPrompt: agent.delegationPrompt,
+          mission: agent.mission,
           taskName: agent.taskName,
+          todoId: agent.todoId,
           nickname: agent.nickname,
+          parentAgentId: agent.parentAgentId,
           parentToolUseId: agent.parentToolUseId,
           latestActivity: agent.latestActivity,
           endedAt: agent.endedAt,
@@ -707,15 +738,14 @@ List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(
     requestSpansById,
     thinkingDisplayMode: thinkingDisplayMode,
   );
-  return _filterCompactionTimelineForFeed(
-    displayTimeline
-        .where(
-          (item) =>
-              item.scope != 'agent' &&
-              !_isMainTimelineNoiseItem(item, displayTimeline),
-        )
-        .toList(),
-  );
+  final filtered = displayTimeline
+      .where(
+        (item) =>
+            item.scope != 'agent' &&
+            !_isMainTimelineNoiseItem(item, displayTimeline),
+      )
+      .toList();
+  return _filterCompactionTimelineForFeed(filtered);
 }
 
 List<ThreadRunProjectionTimelineItem> _filterAbsorbedSubagentDelegations(
@@ -814,7 +844,9 @@ List<ThreadRunProjectionTimelineItem> _filterProjectionTimelineForDetailFeed(
   final forCollapse = thinkingDisplayMode.usesEphemeralTip
       ? presentThinkingAsEphemeralSummaryTips(built)
       : built;
-  final displayTimeline = collapseEphemeralReasoningSummaryTimeline(forCollapse);
+  final displayTimeline = collapseEphemeralReasoningSummaryTimeline(
+    forCollapse,
+  );
   final failedTools = displayTimeline
       .where((item) => item.eventType == 'tool.failed')
       .map((item) => _resolveProjectionToolName(item).toLowerCase())
@@ -1695,6 +1727,23 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   required AppLocalizations l10n,
 }) {
   final text = item.text.trim();
+  // A V2 api.error is a failed request with a durable retry target. Handle it
+  // before the generic reconnect presentation, which is informational and
+  // would otherwise hide the retry action behind a phase row.
+  if (item.eventType == 'api.error') {
+    final apiError = _readProjectionApiError(item);
+    return ActivityFeedEntry(
+      id: feedId,
+      role: item.role,
+      kind: ActivityFeedKind.error,
+      text: apiError?.message ?? text,
+      agentId: agentId,
+      runAttemptId: item.runAttemptId,
+      requestId: item.requestId,
+      at: item.at,
+      sequence: item.sequence,
+    );
+  }
   final reconnect = resolveReconnectPhaseDisplay(
     text: text,
     metadata: item.metadata,
@@ -1704,6 +1753,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   if (reconnect != null) {
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.phase,
       text: reconnect.summary,
       detail: reconnect.detail,
@@ -1733,6 +1783,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
         : ToolActionLifecycle.completed;
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.imageView,
       text: lifecycle == ToolActionLifecycle.running
           ? l10n.activityImageViewViewing
@@ -1741,6 +1792,8 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       toolName: 'ViewImage',
       lifecycle: lifecycle,
       imageView: ImageViewDisplay(path: persistedImagePath, eventId: item.id),
+      toolUseId: readProjectionToolMetadata(item.metadata)?.toolUseId,
+      toolEventType: item.eventType,
       agentId: agentId ?? item.agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
@@ -1753,6 +1806,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     if (parseClarificationAnswersSummary(text) != null) {
       return ActivityFeedEntry(
         id: feedId,
+        role: item.role,
         kind: ActivityFeedKind.clarificationAnswer,
         text: item.text,
         runAttemptId: item.runAttemptId,
@@ -1761,13 +1815,16 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     }
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.assistant,
       text: item.text,
       streaming: item.eventType == 'message.delta',
       subagentRole: agentRole ?? _resolveProjectionSubagentRole(item),
       agentId: agentId,
       runAttemptId: item.runAttemptId,
+      requestId: item.requestId,
       at: item.at,
+      sequence: item.sequence,
     );
   }
 
@@ -1779,6 +1836,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       if (label.isEmpty) return null;
       return ActivityFeedEntry(
         id: feedId,
+        role: item.role,
         kind: ActivityFeedKind.reasoningStage,
         text: label,
         streaming: true,
@@ -1793,6 +1851,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     final thinkingDurationMs = _readThinkingDurationMs(item.metadata);
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.thinking,
       text: item.text,
       streaming: streaming,
@@ -1812,23 +1871,12 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     return _buildProjectionToolActionEntry(item, feedId: feedId, l10n: l10n);
   }
 
-  if (item.eventType == 'api.error') {
-    final apiError = _readProjectionApiError(item);
-    return ActivityFeedEntry(
-      id: feedId,
-      kind: ActivityFeedKind.error,
-      text: apiError?.message ?? text,
-      agentId: agentId,
-      runAttemptId: item.runAttemptId,
-      at: item.at,
-    );
-  }
-
   final phaseLabel = _resolveProjectionPhaseLabel(item, l10n);
   if (phaseLabel != null) {
     final isContextCompaction = _isProjectionContextCompactionItem(item);
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.phase,
       text: phaseLabel,
       actionIcon: isContextCompaction ? ActivityActionIcon.context : null,
@@ -1869,11 +1917,13 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
   final lifecycle = bashApproval != null
       ? bashApprovalPhaseToLifecycle(bashApproval.phase)
       : _toolLifecycleFromProjectionItem(item, tool);
+  final toolEventType = item.eventType;
   final imageView = tool?.imageView;
   if (imageView != null) {
     final imageLifecycle = lifecycle ?? ToolActionLifecycle.completed;
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.imageView,
       text: imageLifecycle == ToolActionLifecycle.running
           ? l10n.activityImageViewViewing
@@ -1882,6 +1932,8 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       toolName: toolName,
       lifecycle: imageLifecycle,
       imageView: ImageViewDisplay(path: imageView.path, eventId: item.id),
+      toolUseId: tool?.toolUseId ?? bashApproval?.toolUseId,
+      toolEventType: toolEventType,
       agentId: item.agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
@@ -1892,6 +1944,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     final imageLifecycle = lifecycle ?? ToolActionLifecycle.completed;
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.imageView,
       text: imageLifecycle == ToolActionLifecycle.running
           ? l10n.activityImageDisplayViewing
@@ -1903,6 +1956,8 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
         path: 'artifact:${imageDisplay.artifactId}',
         eventId: item.id,
       ),
+      toolUseId: tool?.toolUseId ?? bashApproval?.toolUseId,
+      toolEventType: toolEventType,
       agentId: item.agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
@@ -1914,6 +1969,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     final title = htmlHost.title?.trim();
     return ActivityFeedEntry(
       id: feedId,
+      role: item.role,
       kind: ActivityFeedKind.action,
       text: htmlLifecycle == ToolActionLifecycle.running
           ? l10n.activityHtmlHostPublishing
@@ -1922,7 +1978,8 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       actionIcon: ActivityActionIcon.browser,
       toolName: toolName,
       lifecycle: htmlLifecycle,
-      toolUseId: tool?.toolUseId,
+      toolUseId: tool?.toolUseId ?? bashApproval?.toolUseId,
+      toolEventType: toolEventType,
       agentId: item.agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
@@ -1935,12 +1992,16 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       : resolveWebSearchCardDisplayFromTool(tool, l10n);
   return ActivityFeedEntry(
     id: feedId,
+    role: item.role,
     kind: ActivityFeedKind.action,
     text: label,
     actionIcon: _projectionToolActionIcon(toolName, tool),
     toolName: toolName,
+    readTargetPath: tool?.readTargetPath,
+    readTargetLineRange: tool?.readTargetLineRange,
     lifecycle: lifecycle,
     toolUseId: bashApproval?.toolUseId ?? tool?.toolUseId,
+    toolEventType: toolEventType,
     subagentRole: _resolveProjectionSubagentRole(item),
     agentId: item.agentId,
     bashRun: isCommandToolName(toolName)

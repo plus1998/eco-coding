@@ -17,6 +17,7 @@ class EcoTtsService extends ChangeNotifier {
   TtsPlaybackState _state = TtsPlaybackState.idle;
   String? _activeEntryId;
   bool _initialized = false;
+  bool _disposed = false;
   int _playbackGeneration = 0;
   int _activeGeneration = 0;
   List<dynamic>? _cachedLanguages;
@@ -68,7 +69,7 @@ class EcoTtsService extends ChangeNotifier {
   void _finishPlayback() {
     _state = TtsPlaybackState.idle;
     _activeEntryId = null;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<List<String>> _installedLanguages() async {
@@ -249,6 +250,7 @@ class EcoTtsService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _playbackGeneration++;
     unawaited(_engine.stop());
     super.dispose();

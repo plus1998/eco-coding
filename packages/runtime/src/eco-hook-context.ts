@@ -25,7 +25,13 @@ export interface EcoTaskTrackerHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onSubagentStop(input: { agentId: string; agentType: string }): void;
+  onSubagentStop(input: {
+    agentId: string;
+    agentType: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }): void;
   onStop(status: "completed" | "blocked" | "cancelled"): void;
   peekPendingCoderTodoId?: () => string | undefined;
 }
@@ -47,7 +53,15 @@ export interface EcoSubagentSessionHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onStop(input: { agentId: string; agentType: string }): void;
+  onStop(input: {
+    agentId: string;
+    agentType: string;
+    agentTranscriptPath?: string;
+    transcriptPath?: string;
+    failed?: boolean;
+    cancelled?: boolean;
+    reason?: string;
+  }): void | Promise<void>;
   /** SDK stream paired parent_tool_use_id with a SubagentStart agent id. */
   onDelegationLinked?(input: {
     agentId: string;
@@ -119,6 +133,12 @@ export interface EcoHookContext {
    * even under permissionMode bypassPermissions.
    */
   resolveBrowserOpenApprovalMode?: () => "always_allow" | "always_ask";
+  /**
+   * Web search: whether WebSearch / eco_web_search must ask the user first.
+   * When `always_ask`, PreToolUse returns ask so canUseTool shows the approval card
+   * even under permissionMode bypassPermissions.
+   */
+  resolveWebSearchApprovalMode?: () => "always_allow" | "always_ask";
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */

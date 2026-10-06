@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateScenarioChecklist } from "../codex-scenario-smoke/assert.mjs";
 import { evaluateSdkScenarioChecklist } from "./lib/sdk-checklist.mjs";
+import { resolveFixturePointerDir } from "./lib/fixture-pointer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
@@ -43,11 +44,7 @@ function resolveFixtureDir(arg) {
     if (!fs.existsSync(pointerPath)) {
       continue;
     }
-    const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf8"));
-    const dir = pointer.path || path.join(path.dirname(pointerPath), pointer.runId);
-    if (fs.existsSync(dir)) {
-      return dir;
-    }
+    return resolveFixturePointerDir(pointerPath);
   }
   throw new Error(
     "No Codex fixture found. Run: LONGCAT_API_KEY=... bun run round -- conversation record",
@@ -63,12 +60,7 @@ function resolveSdkFixtureDir(core, arg) {
   if (!fs.existsSync(pointerPath)) {
     throw new Error(`No ${core} fixture pointer. Run record-${core}.mts first.`);
   }
-  const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf8"));
-  const dir = pointer.path || path.join(fixturesRoot, pointer.runId);
-  if (!fs.existsSync(dir)) {
-    throw new Error(`${core} fixture dir missing: ${dir}`);
-  }
-  return dir;
+  return resolveFixturePointerDir(pointerPath);
 }
 
 function readJsonl(filePath, field) {

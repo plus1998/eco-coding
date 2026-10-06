@@ -15,10 +15,13 @@ import type {
 import {
   buildEcoSdkHooks,
   captureDeferredExitPlanModeFromResult,
+  createClassifierContextPostToolHook,
   createDisabledSubagentPreToolHook,
   createExitPlanModeAwaitApprovalHook,
   createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
+  createForcedPlanDelegationPreToolHook,
+  createForcedPlanDelegationSubagentStartHook,
   createNestedSubagentDenyPreToolHook,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
@@ -34,10 +37,10 @@ import {
   createTaskCompletedHook,
   createTaskCreatedHook,
   createTaskToolPreToolHook,
-  createClassifierContextPostToolHook,
   createToolOutputTruncationPostToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
+  inferSubagentStopFailure,
   parseDeferredExitPlanModeResult,
   parseExitPlanModeInput,
   parseExitPlanModeOutput,
@@ -1434,7 +1437,7 @@ test("createToolPermissionPreToolHook allows Glob patterns in system temp", asyn
     {
       hook_event_name: "PreToolUse",
       tool_name: "Glob",
-      tool_input: { pattern: "/tmp/external/**/*.ts" },
+      tool_input: { pattern: `${os.tmpdir()}/external/**/*.ts` },
       tool_use_id: "tool_glob_external",
       session_id: "s1",
       cwd: "/repo/apps/desktop",
@@ -1653,7 +1656,7 @@ test("createToolPermissionPreToolHook allows writes in system temp", async () =>
     {
       hook_event_name: "PreToolUse",
       tool_name: "Write",
-      tool_input: { file_path: "/tmp/omni-proxy-verify.mjs", content: "export {};" },
+      tool_input: { file_path: `${os.tmpdir()}/omni-proxy-verify.mjs`, content: "export {};" },
       tool_use_id: "tool_write_outside",
       session_id: "s1",
       cwd: "/repo",
@@ -1915,6 +1918,71 @@ test("subagent lifecycle hooks normalize eco agent keys back to roles", async ()
 
   expect(starts).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
   expect(stops).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
+});
+
+test("inferSubagentStopFailure reads documented Agent API-error text", () => {
+  expect(
+    inferSubagentStopFailure({
+      hook_event_name: "SubagentStop",
+      agent_id: "agent_explore",
+      agent_type: "eco_explore",
+      last_assistant_message:
+        'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+    } as SubagentStopHookInput),
+  ).toEqual({
+    failed: true,
+    reason:
+      'Agent terminated early due to an API error: 400 {"error":"No provider route configured for model claude-sonnet-5"}',
+  });
+});
+
+test("createSubagentStopHook forwards inferred failure to tracker and sessions", async () => {
+  const stops: Array<Record<string, unknown>> = [];
+  const sessionStops: Array<Record<string, unknown>> = [];
+  const hook = createSubagentStopHook({
+    taskTracker: {
+      onPreToolUse() {},
+      onTaskCreated() {},
+      onTaskCompleted() {},
+      onSubagentStart() {},
+      onSubagentStop(input) {
+        stops.push(input);
+      },
+      onStop() {},
+    },
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_fail",
+      onStart() {},
+      onStop(input) {
+        sessionStops.push(input);
+      },
+      resolveResume: () => undefined,
+    },
+  });
+
+  await hook(
+    {
+      hook_event_name: "SubagentStop",
+      agent_id: "agent_explore",
+      agent_type: ecoSubagentKeyForRole("explore"),
+      last_assistant_message: "API Error: 400 No provider route configured for model claude-sonnet-5",
+      session_id: "s1",
+      cwd: "/tmp",
+    } as SubagentStopHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(stops).toEqual([
+    {
+      agentId: "agent_explore",
+      agentType: "explore",
+      failed: true,
+      reason: "API Error: 400 No provider route configured for model claude-sonnet-5",
+    },
+  ]);
+  expect(sessionStops).toEqual(stops);
 });
 
 test("subagent lifecycle hooks normalize dynamic Eco agent keys", async () => {
@@ -2570,7 +2638,8 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(withResume.PreToolUse?.length).toBeGreaterThanOrEqual(2);
   expect(hooks.TaskCreated).toHaveLength(1);
   expect(hooks.TaskCompleted).toHaveLength(1);
-  expect(hooks.PostToolUse).toHaveLength(1);
+  expect(hooks.PostToolUse?.length).toBeGreaterThanOrEqual(1);
+  expect((hooks.PostToolUse ?? []).some((matcher) => matcher.matcher === "ExitPlanMode")).toBe(true);
   expect(hooks.SubagentStart).toHaveLength(1);
   expect(hooks.SubagentStop).toHaveLength(1);
   expect(hooks.Stop).toHaveLength(1);
@@ -2588,7 +2657,8 @@ test("buildEcoSdkHooks does not register AskUserQuestion PreToolUse hooks", () =
   });
   const preToolUse = hooks.PreToolUse ?? [];
   expect(preToolUse.some((matcher) => matcher.matcher === "AskUserQuestion")).toBe(false);
-  expect(hooks.PostToolUse ?? []).toHaveLength(1);
+  expect(hooks.PostToolUse ?? []).toHaveLength(2);
+  expect((hooks.PostToolUse ?? []).filter((matcher) => matcher.matcher === undefined)).toHaveLength(1);
 });
 
 test("PostToolUse truncation hook rewrites oversized tool_response", async () => {
@@ -2830,6 +2900,315 @@ test("createWorkflowDenyPreToolHook denies Workflow tool", async () => {
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
+});
+
+test("createForcedPlanDelegationPreToolHook rewrites the spawn to the canonical task once", async () => {
+  const claims: Array<{ toolUseId?: string; agentKey: string }> = [];
+  const hook = createForcedPlanDelegationPreToolHook(() => ({
+    agentKey: "eco_explore",
+    canonicalTask: "# 已批准计划\n\nverbatim body",
+    claimSpawn: (input) => {
+      claims.push(input);
+      return { ok: true };
+    },
+  }));
+
+  const result = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "explore", prompt: "do the plan yourself" },
+      tool_use_id: "tu_1",
+    } as unknown as PreToolUseHookInput,
+    "tu_1",
+    { signal: new AbortController().signal },
+  );
+
+  expect(claims).toEqual([{ toolUseId: "tu_1", agentKey: "explore" }]);
+  const output = result as {
+    hookSpecificOutput?: { permissionDecision?: string; updatedInput?: Record<string, unknown> };
+  };
+  expect(output.hookSpecificOutput?.permissionDecision).toBe("allow");
+  expect(output.hookSpecificOutput?.updatedInput?.prompt).toBe("# 已批准计划\n\nverbatim body");
+  expect(output.hookSpecificOutput?.updatedInput?.subagent_type).toBe("eco_explore");
+});
+
+test("createForcedPlanDelegationSubagentStartHook confirms the actual started agent", async () => {
+  const confirmations: Array<{ agentKey: string; toolUseIds: readonly string[] }> = [];
+  const hook = createForcedPlanDelegationSubagentStartHook(() => ({
+    agentKey: "coder",
+    canonicalTask: "canonical",
+    claimSpawn: () => ({ ok: true }),
+    confirmSpawn: (input) => confirmations.push(input),
+  }));
+
+  await hook(
+    {
+      hook_event_name: "SubagentStart",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      agent_id: "agent-1",
+      agent_type: "eco_coder",
+      parent_tool_use_id: "tu_parent",
+      tool_use_id: "tu_start",
+    } as SubagentStartHookInput & { parent_tool_use_id: string; tool_use_id: string },
+    "tu_callback",
+    { signal: new AbortController().signal },
+  );
+
+  expect(confirmations).toEqual([
+    {
+      agentKey: "coder",
+      toolUseIds: ["tu_parent", "tu_start"],
+    },
+  ]);
+});
+
+test("createForcedPlanDelegationSubagentStartHook maps SDK general-purpose to the armed Eco target", async () => {
+  const confirmations: Array<{ agentKey: string; toolUseIds: readonly string[] }> = [];
+  const hook = createForcedPlanDelegationSubagentStartHook(() => ({
+    agentKey: "coder",
+    canonicalTask: "canonical",
+    claimSpawn: () => ({ ok: true }),
+    confirmSpawn: (input) => confirmations.push(input),
+  }));
+
+  await hook(
+    {
+      hook_event_name: "SubagentStart",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      agent_id: "agent-general-purpose",
+      agent_type: SDK_GENERAL_PURPOSE_AGENT_KEY,
+    } satisfies SubagentStartHookInput,
+    "tu_callback",
+    { signal: new AbortController().signal },
+  );
+
+  expect(confirmations).toEqual([
+    {
+      agentKey: "coder",
+      toolUseIds: [],
+    },
+  ]);
+});
+
+test("createForcedPlanDelegationPreToolHook denies wrong-target or repeat delegations", async () => {
+  const hook = createForcedPlanDelegationPreToolHook(() => ({
+    agentKey: "eco_explore",
+    canonicalTask: "plan",
+    claimSpawn: () => ({ ok: false, reason: "计划只能委派给 explore" }),
+  }));
+
+  const result = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      tool_name: "Task",
+      tool_input: { subagent_type: "eco_worker", prompt: "hi" },
+      tool_use_id: "tu_2",
+    } as unknown as PreToolUseHookInput,
+    "tu_2",
+    { signal: new AbortController().signal },
+  );
+
+  const output = result as {
+    hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string };
+  };
+  expect(output.hookSpecificOutput?.permissionDecision).toBe("deny");
+  expect(output.hookSpecificOutput?.permissionDecisionReason).toBe("计划只能委派给 explore");
+});
+
+test("createForcedPlanDelegationPreToolHook ignores subagent actors and unarmed turns", async () => {
+  let claims = 0;
+  const hook = createForcedPlanDelegationPreToolHook(() => ({
+    agentKey: "eco_explore",
+    canonicalTask: "plan",
+    claimSpawn: () => {
+      claims += 1;
+      return { ok: true };
+    },
+  }));
+
+  const subagentResult = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "eco_worker", prompt: "nested" },
+      tool_use_id: "tu_3",
+      agent_id: "child-1",
+      agent_type: "explore",
+    } as unknown as PreToolUseHookInput,
+    "tu_3",
+    { signal: new AbortController().signal },
+  );
+  expect(subagentResult).toEqual({});
+  expect(claims).toBe(0);
+
+  const unarmed = createForcedPlanDelegationPreToolHook(() => undefined);
+  const unarmedResult = await unarmed!(
+    {
+      hook_event_name: "PreToolUse",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "eco_explore", prompt: "nested" },
+      tool_use_id: "tu_4",
+    } as unknown as PreToolUseHookInput,
+    "tu_4",
+    { signal: new AbortController().signal },
+  );
+  expect(unarmedResult).toEqual({});
+});
+
+test("buildEcoSdkHooks registers the forced plan delegation hook when armed", async () => {
+  const claims: string[] = [];
+  const hooks = buildEcoSdkHooks({
+    resolveForcedPlanDelegation: () => ({
+      agentKey: "coder",
+      canonicalTask: "canonical",
+      claimSpawn: ({ agentKey }) => {
+        claims.push(agentKey);
+        return { ok: true };
+      },
+    }),
+  });
+  // Registered without a matcher so it can also block the parent's own writes.
+  const agentTaskHooks = (hooks.PreToolUse ?? []).flatMap((matcher) => matcher.hooks);
+  expect(agentTaskHooks.length).toBeGreaterThan(0);
+  const response = await Promise.all(
+    agentTaskHooks.map((hook) =>
+      hook(
+        {
+          hook_event_name: "PreToolUse",
+          session_id: "s1",
+          transcript_path: "/tmp/t.jsonl",
+          cwd: "/tmp",
+          tool_name: "Agent",
+          tool_input: { subagent_type: "eco_explore", prompt: "orig" },
+          tool_use_id: "tu_5",
+        } as unknown as PreToolUseHookInput,
+        "tu_5",
+        { signal: new AbortController().signal },
+      ),
+    ),
+  );
+  expect(claims).toEqual(["explore"]);
+  const rewritten = response.find(
+    (entry) =>
+      (entry as { hookSpecificOutput?: { updatedInput?: Record<string, unknown> } }).hookSpecificOutput
+        ?.updatedInput?.prompt === "canonical",
+  ) as { hookSpecificOutput?: { updatedInput?: Record<string, unknown> } } | undefined;
+  expect(rewritten).toBeDefined();
+  // The SDK resolves subagents by their registered `eco_<key>` name.
+  expect(rewritten?.hookSpecificOutput?.updatedInput?.subagent_type).toBe("eco_coder");
+});
+
+test("forced plan delegation blocks the parent from editing the workspace itself", async () => {
+  const hooks = buildEcoSdkHooks({
+    resolveForcedPlanDelegation: () => ({
+      agentKey: "coder",
+      canonicalTask: "canonical",
+      claimSpawn: () => ({ ok: true }),
+    }),
+  });
+  const preToolUseHooks = (hooks.PreToolUse ?? []).flatMap((matcher) => matcher.hooks);
+  const run = async (toolName: string, toolInput: Record<string, unknown>) =>
+    (
+      await Promise.all(
+        preToolUseHooks.map((hook) =>
+          hook(
+            {
+              hook_event_name: "PreToolUse",
+              session_id: "s1",
+              transcript_path: "/tmp/t.jsonl",
+              cwd: "/tmp",
+              tool_name: toolName,
+              tool_input: toolInput,
+              tool_use_id: `tu_${toolName}`,
+            } as unknown as PreToolUseHookInput,
+            `tu_${toolName}`,
+            { signal: new AbortController().signal },
+          ),
+        ),
+      )
+    ).find(
+      (entry) =>
+        (entry as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput
+          ?.permissionDecision === "deny",
+    ) as { hookSpecificOutput?: { permissionDecisionReason?: string } } | undefined;
+
+  for (const toolName of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]) {
+    const denied = await run(toolName, { file_path: "/tmp/x" });
+    expect(denied).toBeDefined();
+    expect(denied?.hookSpecificOutput?.permissionDecisionReason).toContain("coder");
+  }
+  expect(await run("Read", { file_path: "/tmp/x" })).toBeUndefined();
+});
+
+test("forced plan delegation injects the contract after an approved plan", async () => {
+  const hooks = buildEcoSdkHooks({
+    resolveForcedPlanDelegation: () => ({
+      agentKey: "coder",
+      canonicalTask: "canonical",
+      claimSpawn: () => ({ ok: true }),
+    }),
+  });
+  const exitPlanHooks = (hooks.PostToolUse ?? [])
+    .filter((matcher) => matcher.matcher === "ExitPlanMode")
+    .flatMap((matcher) => matcher.hooks);
+  expect(exitPlanHooks).toHaveLength(1);
+  const result = await exitPlanHooks[0]!(
+    {
+      hook_event_name: "PostToolUse",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      tool_name: "ExitPlanMode",
+      tool_input: {},
+      tool_response: {},
+      tool_use_id: "tu_plan",
+    } as unknown as PostToolUseHookInput,
+    "tu_plan",
+    { signal: new AbortController().signal },
+  );
+  const context = (result as { hookSpecificOutput?: { additionalContext?: string } }).hookSpecificOutput
+    ?.additionalContext;
+  expect(context).toContain("coder");
+  expect(context).toContain("Agent");
+});
+
+test("forced plan delegation PostToolUse stays silent when unarmed", async () => {
+  const hooks = buildEcoSdkHooks({});
+  const exitPlanHooks = (hooks.PostToolUse ?? [])
+    .filter((matcher) => matcher.matcher === "ExitPlanMode")
+    .flatMap((matcher) => matcher.hooks);
+  const result = await exitPlanHooks[0]!(
+    {
+      hook_event_name: "PostToolUse",
+      session_id: "s1",
+      transcript_path: "/tmp/t.jsonl",
+      cwd: "/tmp",
+      tool_name: "ExitPlanMode",
+      tool_input: {},
+      tool_response: {},
+      tool_use_id: "tu_plan",
+    } as unknown as PostToolUseHookInput,
+    "tu_plan",
+    { signal: new AbortController().signal },
+  );
+  expect(result).toEqual({});
 });
 
 test("createSubagentStopHook forwards exact sidechain transcript paths and awaits reconciliation", async () => {

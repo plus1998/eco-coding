@@ -50,13 +50,17 @@ test("isPathInsidePolicyScope treats workspace descendants as inside", () => {
 });
 
 test("isSystemTemporaryPolicyPath allows system temp descendants without path escapes", () => {
-  expect(isSystemTemporaryPolicyPath(resolvePolicyPath("/tmp/claude-501/tasks/result.output", "/repo"))).toBe(
-    true,
-  );
+  expect(
+    isSystemTemporaryPolicyPath(
+      resolvePolicyPath(`${os.tmpdir()}/claude-501/tasks/result.output`, "/repo"),
+    ),
+  ).toBe(true);
   expect(isSystemTemporaryPolicyPath(resolvePolicyPath(`${os.tmpdir()}/eco/result.json`, "/repo"))).toBe(
     true,
   );
-  expect(isSystemTemporaryPolicyPath(resolvePolicyPath("/tmp/../etc/hosts", "/repo"))).toBe(false);
+  expect(isSystemTemporaryPolicyPath(resolvePolicyPath(`${os.tmpdir()}/../etc/hosts`, "/repo"))).toBe(
+    false,
+  );
   if (process.platform === "darwin") {
     expect(isSystemTemporaryPolicyPath("/private/tmp/claude-501/tasks/result.output")).toBe(true);
   }

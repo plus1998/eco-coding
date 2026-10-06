@@ -11,6 +11,22 @@ import { responsesToChatCompletions } from "../src/responses-to-chat-completions
 import type { ChatCompletionsRequest, ResponsesRequest, ResponsesResponse } from "../src/types.js";
 
 describe("roundtrip", () => {
+  test("non-streaming duplicate upstream call IDs keep separate tool results", () => {
+    const response: ResponsesResponse = {
+      id: "resp_duplicate_calls",
+      object: "response",
+      model: "model",
+      status: "completed",
+      output: [
+        { type: "function_call", id: "fc_1", call_id: "call_same", name: "Read", arguments: '{"file_path":"a"}' },
+        { type: "function_call", id: "fc_2", call_id: "call_same", name: "Read", arguments: '{"file_path":"b"}' },
+      ],
+    };
+    const anthropic = responsesToAnthropic(response, "model");
+    expect(anthropic.content.filter((block) => block.type === "tool_use").map((block) => block.id))
+      .toEqual(["call_same", "call_same__eco_2"]);
+  });
+
   test("chat completions text roundtrip via responses hub", () => {
     const chatReq: ChatCompletionsRequest = {
       model: "gpt-5.2",

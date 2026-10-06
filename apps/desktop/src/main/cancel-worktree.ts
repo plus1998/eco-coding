@@ -1,4 +1,5 @@
 import type { WorktreePlan } from "@eco/workspace";
+import type { ThreadCancelRequest } from "../shared/ipc";
 
 export interface FinalizeCancelledRunDeps {
   updateThread: (threadId: string, patch: { status: "idle" | "completed"; message: string }) => void;
@@ -31,21 +32,39 @@ export async function finalizeCancelledRun(
   });
 }
 
-export function parseThreadCancelRequest(payload: unknown): {
-  threadId: string;
-  worktreeDisposition?: WorktreeCancelDisposition;
-} | null {
-  if (typeof payload === "string") {
-    const threadId = payload.trim();
-    return threadId ? { threadId } : null;
-  }
+export function parseThreadCancelRequest(payload: unknown): ThreadCancelRequest | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
   const record = payload as Record<string, unknown>;
+  const principalId = typeof record.principalId === "string" ? record.principalId.trim() : "";
+  const clientCommandId = typeof record.clientCommandId === "string" ? record.clientCommandId.trim() : "";
   const threadId = typeof record.threadId === "string" ? record.threadId.trim() : "";
-  if (!threadId) {
+  const expectedHistoryRevision = record.expectedHistoryRevision;
+  if (
+    !principalId ||
+    !clientCommandId ||
+    !threadId ||
+    typeof expectedHistoryRevision !== "number" ||
+    !Number.isSafeInteger(expectedHistoryRevision) ||
+    expectedHistoryRevision < 0
+  ) {
     return null;
   }
-  return { threadId };
+  const worktreeDisposition = record.worktreeDisposition;
+  if (
+    worktreeDisposition !== undefined &&
+    worktreeDisposition !== "apply" &&
+    worktreeDisposition !== "keep" &&
+    worktreeDisposition !== "discard"
+  ) {
+    return null;
+  }
+  return {
+    principalId,
+    clientCommandId,
+    threadId,
+    expectedHistoryRevision,
+    ...(worktreeDisposition ? { worktreeDisposition } : {}),
+  };
 }

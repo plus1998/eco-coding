@@ -265,6 +265,11 @@ export function WorkspaceFilePreview({
     return ext === "svg";
   }, [file.path]);
 
+  const isHtml = useMemo(() => {
+    const ext = file.path.toLowerCase().split(".").pop();
+    return ext === "html" || ext === "htm";
+  }, [file.path]);
+
   // 对于 Markdown 和 SVG 文件，默认使用预览模式
   useEffect(() => {
     if (isMarkdown || isSvg) {
@@ -405,24 +410,29 @@ export function WorkspaceFilePreview({
     <div className="workspace-file-browser__preview-body">
       {showModeToggle && (
         <div className="workspace-file-browser__mode-toggle">
-          <button
-            type="button"
-            className={`workspace-file-browser__mode-btn ${viewMode === "preview" ? "is-active" : ""}`}
-            onClick={() => setViewMode("preview")}
-            title={t("fileBrowser.previewMode")}
-          >
-            <Eye size={14} />
-            <span>{t("fileBrowser.preview")}</span>
-          </button>
-          <button
-            type="button"
-            className={`workspace-file-browser__mode-btn ${viewMode === "edit" ? "is-active" : ""}`}
-            onClick={() => setViewMode("edit")}
-            title={t("fileBrowser.editMode")}
-          >
-            <Pencil size={14} />
-            <span>{t("fileBrowser.edit")}</span>
-          </button>
+          {showModeToggle && (
+            <>
+              <button
+                type="button"
+                className={`workspace-file-browser__mode-btn ${viewMode === "preview" ? "is-active" : ""}`}
+                onClick={() => setViewMode("preview")}
+                title={t("fileBrowser.previewMode")}
+              >
+                <Eye size={14} />
+                <span>{t("fileBrowser.preview")}</span>
+              </button>
+              <button
+                type="button"
+                className={`workspace-file-browser__mode-btn ${viewMode === "edit" ? "is-active" : ""}`}
+                onClick={() => setViewMode("edit")}
+                title={t("fileBrowser.editMode")}
+              >
+                <Pencil size={14} />
+                <span>{t("fileBrowser.edit")}</span>
+              </button>
+            </>
+          )}
+
         </div>
       )}
       {viewMode === "preview" && (isMarkdown || isSvg) ? (

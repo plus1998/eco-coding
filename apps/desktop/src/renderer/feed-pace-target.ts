@@ -1,6 +1,6 @@
-import type { ThreadRunProjectionMainFeedEntry } from "./thread-run-projection-view";
-import { projectionItemToDetailBlock } from "./thread-run-projection-view";
-import type { ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
+import type { ThreadRunProjectionMainFeedEntry } from "./conversation-v2-projection-view";
+import { projectionItemToDetailBlock } from "./conversation-v2-projection-view";
+import type { ThreadRunTurnFeedSection } from "./conversation-v2-turn-feed";
 
 /**
  * Typing pace follows only the last still-streaming feed entry in display order

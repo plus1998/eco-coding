@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
+import { parseUpstreamProxyUrl } from "@eco/gateway";
 import { createBuiltInAgentTemplates } from "../shared/agent-orchestration";
 import { normalizeUpstreamApiCompat } from "../shared/api-compat";
 import {
@@ -30,6 +31,9 @@ interface ProviderRow {
   api_compat: string;
   token_count_mode: string;
   api_key: string;
+  auth_method: string;
+  credential_pool_id: string;
+  upstream_proxy_url: string;
   default_model: string;
   enabled: number;
   created_at: string;
@@ -96,6 +100,15 @@ export interface ProviderConfigSecret extends ProviderConfigView {
 
 const DEFAULT_ROUTE_PROFILE_ID = "default";
 
+function rollbackProviderTransaction(db: DatabaseSyncType): void {
+  try {
+    db.exec("ROLLBACK");
+  } catch {
+    // SQLite may already have rolled back after a fatal storage error. Preserve
+    // the original provider transaction failure.
+  }
+}
+
 export async function createProviderStore(dbPath: string): Promise<ProviderStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
@@ -130,6 +143,7 @@ export class ProviderStore {
     `);
 
     this.migrateProviderRequestPath();
+    this.migrateProviderAuthMethod();
     this.migrateProviderVersion();
     this.migrateRoleRoutesToProfiles();
     this.migrateRoleRoutesThinkingEffort();
@@ -137,6 +151,7 @@ export class ProviderStore {
     this.migrateRoleRoutesManualSpec();
     this.migrateProviderApiCompat();
     this.migrateProviderTokenCountMode();
+    this.migrateProviderUpstreamProxy();
     this.migrateRoleRoutesApiCompat();
     this.migrateLegacyOpenaiApiCompatValues();
     this.migrateCandidateModelsTable();
@@ -186,6 +201,16 @@ export class ProviderStore {
     }
   }
 
+  /** Clear the per-provider upstream proxy URL (cloud sync: secret no longer present). */
+  clearProviderUpstreamProxy(id: string): void {
+    const result = this.db
+      .prepare("UPDATE provider_configs SET upstream_proxy_url = '', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) {
+      throw new Error(`找不到 Provider：${id}`);
+    }
+  }
+
   saveProvider(input: ProviderConfigInput): ProviderConfigView {
     validateProviderInput(input);
     const now = new Date().toISOString();
@@ -198,8 +223,8 @@ export class ProviderStore {
       .prepare(`
         INSERT INTO provider_configs (
           id, name, base_url, request_path, version, api_compat, token_count_mode,
-          api_key, default_model, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          api_key, auth_method, credential_pool_id, upstream_proxy_url, default_model, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_url = excluded.base_url,
@@ -208,6 +233,9 @@ export class ProviderStore {
           api_compat = excluded.api_compat,
           token_count_mode = excluded.token_count_mode,
           api_key = excluded.api_key,
+          auth_method = excluded.auth_method,
+          credential_pool_id = excluded.credential_pool_id,
+          upstream_proxy_url = excluded.upstream_proxy_url,
           default_model = excluded.default_model,
           enabled = excluded.enabled,
           updated_at = excluded.updated_at
@@ -221,6 +249,9 @@ export class ProviderStore {
         normalizeUpstreamApiCompat(input.apiCompat ?? existing?.api_compat),
         normalizeProviderTokenCountMode(input.tokenCountMode ?? existing?.token_count_mode),
         apiKey,
+        input.authMethod ?? existing?.auth_method ?? "api_key",
+        input.credentialPoolId?.trim() ?? existing?.credential_pool_id ?? "",
+        normalizeProviderUpstreamProxyUrl(input.upstreamProxyUrl ?? existing?.upstream_proxy_url ?? ""),
         input.defaultModel.trim(),
         input.enabled ? 1 : 0,
         createdAt,
@@ -251,7 +282,7 @@ export class ProviderStore {
       this.db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
       this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      rollbackProviderTransaction(this.db);
       throw error;
     }
   }
@@ -307,7 +338,7 @@ export class ProviderStore {
       this.db.prepare("DELETE FROM route_profiles").run();
       this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      rollbackProviderTransaction(this.db);
       throw error;
     }
     for (const profile of profiles) {
@@ -430,6 +461,15 @@ export class ProviderStore {
     }
     // Backfill empty strings (and any null if schema ever allows) to default v1.
     this.db.exec(`UPDATE provider_configs SET version = 'v1' WHERE version IS NULL OR TRIM(version) = ''`);
+  }
+
+  /** Per-provider outbound proxy URL. Empty means the global proxy setting applies. */
+  private migrateProviderUpstreamProxy(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "upstream_proxy_url")) {
+      this.db.exec(`ALTER TABLE provider_configs ADD COLUMN upstream_proxy_url TEXT NOT NULL DEFAULT ''`);
+    }
+    this.db.exec(`UPDATE provider_configs SET upstream_proxy_url = '' WHERE upstream_proxy_url IS NULL`);
   }
 
   private migrateRoleRoutesToProfiles(): void {
@@ -577,18 +617,30 @@ export class ProviderStore {
     return this.db
       .prepare(`
         SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
-               api_key, default_model, enabled, created_at, updated_at
+               api_key, auth_method, credential_pool_id, upstream_proxy_url, default_model, enabled, created_at, updated_at
         FROM provider_configs
         ORDER BY updated_at DESC, name ASC
       `)
       .all() as unknown as ProviderRow[];
   }
 
+  private migrateProviderAuthMethod(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "auth_method")) {
+      this.db.exec(`ALTER TABLE provider_configs ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'api_key'`);
+    }
+    if (!columns.some((column) => column.name === "credential_pool_id")) {
+      this.db.exec(`ALTER TABLE provider_configs ADD COLUMN credential_pool_id TEXT NOT NULL DEFAULT ''`);
+    }
+    this.db.exec(`UPDATE provider_configs SET auth_method = 'api_key' WHERE auth_method IS NULL OR TRIM(auth_method) = ''`);
+    this.db.exec(`UPDATE provider_configs SET credential_pool_id = '' WHERE credential_pool_id IS NULL`);
+  }
+
   private getProviderRow(id: string): ProviderRow | undefined {
     return this.db
       .prepare(`
         SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
-               api_key, default_model, enabled, created_at, updated_at
+               api_key, auth_method, credential_pool_id, upstream_proxy_url, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
       `)
@@ -633,7 +685,9 @@ export class ProviderStore {
       candidateColumns.length > 0 &&
       !candidateColumns.some((column) => column.name === "manual_supports_native_web_search")
     ) {
-      this.db.exec("ALTER TABLE provider_candidate_models ADD COLUMN manual_supports_native_web_search INTEGER");
+      this.db.exec(
+        "ALTER TABLE provider_candidate_models ADD COLUMN manual_supports_native_web_search INTEGER",
+      );
     }
   }
 
@@ -819,6 +873,73 @@ export class ProviderStore {
     return results;
   }
 
+  /**
+   * Synchronize models discovered from an upstream catalog into the provider's
+   * candidate list. Existing rows keep their user-managed metadata; only a
+   * missing row or an empty display name is filled from the upstream catalog.
+   */
+  syncCandidateModels(
+    providerId: string,
+    models: Array<{ id: string; displayName?: string }>,
+  ): { models: CandidateModelView[]; changed: boolean } {
+    if (!this.getProviderRow(providerId)) {
+      throw new Error(`找不到 Provider：${providerId}`);
+    }
+    const now = new Date().toISOString();
+    const existing = new Map(
+      this.db
+        .prepare("SELECT * FROM provider_candidate_models WHERE provider_id = ?")
+        .all(providerId)
+        .map((row) => [
+          (row as unknown as CandidateModelRow).model_id,
+          row as unknown as CandidateModelRow,
+        ] as const),
+    );
+    let nextSortOrder =
+      ((this.db
+        .prepare("SELECT MAX(sort_order) as max_sort FROM provider_candidate_models WHERE provider_id = ?")
+        .get(providerId) as { max_sort: number | null } | undefined)?.max_sort ?? -1) + 1;
+    let changed = false;
+    const seenModelIds = new Set<string>();
+
+    for (const model of models) {
+      const modelId = model.id.trim();
+      if (!modelId) continue;
+      if (seenModelIds.has(modelId)) continue;
+      seenModelIds.add(modelId);
+      const displayName = model.displayName?.trim() || modelId;
+      const current = existing.get(modelId);
+      if (!current) {
+        const id = createCandidateModelId(providerId, modelId);
+        this.db
+          .prepare(`
+            INSERT INTO provider_candidate_models (
+              id, provider_id, model_id, display_name,
+              models_dev_provider_key, models_dev_model_id,
+              manual_context_tokens, manual_max_output_tokens,
+              manual_supports_image_input, manual_supports_reasoning,
+              manual_supports_native_web_search,
+              manual_input_per_m, manual_output_per_m,
+              manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier,
+              sort_order, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)
+          `)
+          .run(id, providerId, modelId, displayName, nextSortOrder++, now, now);
+        changed = true;
+        continue;
+      }
+      if (!current.display_name?.trim()) {
+        this.db
+          .prepare("UPDATE provider_candidate_models SET display_name = ?, updated_at = ? WHERE id = ?")
+          .run(displayName, now, current.id);
+        changed = true;
+      }
+    }
+
+    if (changed) this.syncDefaultModelFromCandidates(providerId);
+    return { models: this.listCandidateModels(providerId), changed };
+  }
+
   /** Keep provider.default_model aligned with the first candidate model when present. */
   private syncDefaultModelFromCandidates(providerId: string): void {
     const firstCandidate = this.listCandidateModels(providerId)[0];
@@ -848,6 +969,8 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
     version: normalizeApiVersion(row.version),
     apiCompat: normalizeUpstreamApiCompat(row.api_compat),
     tokenCountMode: normalizeProviderTokenCountMode(row.token_count_mode),
+    authMethod: normalizeProviderAuthMethod(row.auth_method),
+    ...(row.credential_pool_id ? { credentialPoolId: row.credential_pool_id } : {}),
     defaultModel: row.default_model,
     enabled: row.enabled === 1,
     hasApiKey: row.api_key.length > 0,
@@ -856,6 +979,7 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
   };
   const apiKeyPreview = previewSecret(row.api_key);
   if (apiKeyPreview) provider.apiKeyPreview = apiKeyPreview;
+  if (row.upstream_proxy_url) provider.upstreamProxyUrl = row.upstream_proxy_url;
   return provider;
 }
 
@@ -1027,6 +1151,38 @@ function validateProviderInput(input: ProviderConfigInput): void {
   const requestPath = input.requestPath?.trim();
   if (requestPath && !requestPath.startsWith("/")) {
     throw new Error("请求端点须以 / 开头，例如 /anthropic。");
+  }
+  const authMethod = input.authMethod ?? "api_key";
+  if (!["api_key", "oauth", "auth_json", "chatgpt_subscription"].includes(authMethod)) {
+    throw new Error(`Unsupported provider auth method: ${authMethod}`);
+  }
+  if (authMethod === "chatgpt_subscription" && input.apiKey?.trim()) {
+    throw new Error("chatgpt_subscription provider must not store an API key.");
+  }
+}
+
+function normalizeProviderAuthMethod(value: string | undefined): "api_key" | "oauth" | "auth_json" | "chatgpt_subscription" {
+  switch (value) {
+    case "oauth":
+    case "auth_json":
+    case "chatgpt_subscription":
+    case "api_key":
+      return value;
+    default:
+      return "api_key";
+  }
+}
+
+/** Validate per-provider proxy URL; empty means "follow global proxy". */
+function normalizeProviderUpstreamProxyUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    return parseUpstreamProxyUrl(trimmed) ?? "";
+  } catch (error) {
+    throw new Error(`无效的上游代理 URL：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

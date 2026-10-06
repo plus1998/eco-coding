@@ -20,6 +20,7 @@ import type {
   ResolvedProviderRoute,
 } from "../types.js";
 import { forwardOpenAIChatPassthrough } from "../upstream/openai-chat-passthrough.js";
+import { credentialResolutionErrorResponse, reportRouteCredentialResult, resolveRouteCredential } from "../route-credentials.js";
 
 export async function handlePostChatCompletions(
   request: Request,
@@ -62,13 +63,20 @@ export async function handlePostChatCompletions(
     throw error;
   }
 
+  try {
+    route = await resolveRouteCredential(route, config, request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return credentialResolutionErrorResponse(error);
+  }
+
   const lifecycle = buildRequestLifecycleContext(route, "chat_completions", onLog, onRequestLifecycle);
 
   onLog(
     `POST /v1/chat/completions provider=${route.provider.id} kind=${route.upstreamKind} model=${route.upstreamModelId} stream=${body.stream === true}`,
   );
 
-  return forwardOpenAIChatPassthrough(
+  const response = await forwardOpenAIChatPassthrough(
     route,
     body,
     request.headers,
@@ -78,4 +86,6 @@ export async function handlePostChatCompletions(
     config.upstreamUserAgent,
     lifecycle,
   );
+  await reportRouteCredentialResult(route, config, response);
+  return response;
 }

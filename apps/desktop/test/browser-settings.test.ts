@@ -120,6 +120,18 @@ test("resolveBrowserNavigateTarget keeps existing http normalization", () => {
   expect(resolveBrowserNavigateTarget("not a url")).toBeUndefined();
 });
 
+test("resolveBrowserNavigateTarget converts absolute file paths to file urls", () => {
+  expect(resolveBrowserNavigateTarget("/Users/me/proj/index.html")).toBe(
+    "file:///Users/me/proj/index.html",
+  );
+  expect(resolveBrowserNavigateTarget("/Users/me/my proj/index.html")).toBe(
+    "file:///Users/me/my%20proj/index.html",
+  );
+  expect(resolveBrowserNavigateTarget("C:\\proj\\index.html")).toBe("file:///C:/proj/index.html");
+  // Protocol-relative URLs are not local paths.
+  expect(resolveBrowserNavigateTarget("//example.com/a")).toBeUndefined();
+});
+
 test("appendBrowserPrompt only joins non-empty parts", () => {
   expect(appendBrowserPrompt(undefined, undefined)).toBeUndefined();
   expect(appendBrowserPrompt("rules", undefined)).toBe("rules");

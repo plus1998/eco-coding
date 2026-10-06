@@ -12,6 +12,26 @@ import type {
   ResponsesUsage,
 } from "./types.js";
 
+/**
+ * Some Chat Completions providers reuse a call ID for different tools in one
+ * response. Anthropic tool_result blocks are matched by ID, so keep the first
+ * ID and give each later invocation its own stable, distinct ID.
+ */
+function uniqueToolUseId(id: string, used: Set<string>): string {
+  if (!used.has(id)) {
+    used.add(id);
+    return id;
+  }
+  let ordinal = 2;
+  let candidate = `${id}__eco_${ordinal}`;
+  while (used.has(candidate)) {
+    ordinal++;
+    candidate = `${id}__eco_${ordinal}`;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
 // ---------------------------------------------------------------------------
 // Non-streaming: ResponsesResponse → AnthropicResponse
 // ---------------------------------------------------------------------------
@@ -37,6 +57,7 @@ export function responsesToAnthropic(
   };
 
   const blocks: AnthropicContentBlock[] = [];
+  const toolUseIds = new Set<string>();
 
   for (const item of resp.output ?? []) {
     switch (item.type) {
@@ -66,7 +87,7 @@ export function responsesToAnthropic(
       case "function_call":
         blocks.push({
           type: "tool_use",
-          id: fromResponsesCallID(item.call_id ?? ""),
+          id: uniqueToolUseId(fromResponsesCallID(item.call_id ?? ""), toolUseIds),
           name: normalizeFunctionCallNameForRequest(item.name ?? "", requestToolNames),
           input: sanitizeAnthropicToolUseInput(
             normalizeFunctionCallNameForRequest(item.name ?? "", requestToolNames),
@@ -238,6 +259,10 @@ export interface ResponsesEventToAnthropicState {
   currentToolArgs: string;
   currentToolHadDelta: boolean;
   hasToolCall: boolean;
+  toolUseIds: Set<string>;
+  queuedToolItems: Map<number, ResponsesOutput>;
+  queuedToolArgsDone: Map<number, string>;
+  queuedToolCompleted: Map<number, ResponsesOutput>;
   outputIndexToBlockIdx: Map<number, number>;
   closedToolOutputIndexes: Set<number>;
   emittedTextByOutputIndex: Map<number, string>;
@@ -266,6 +291,10 @@ export function newResponsesEventToAnthropicState(
     currentToolArgs: "",
     currentToolHadDelta: false,
     hasToolCall: false,
+    toolUseIds: new Set(),
+    queuedToolItems: new Map(),
+    queuedToolArgsDone: new Map(),
+    queuedToolCompleted: new Map(),
     outputIndexToBlockIdx: new Map(),
     closedToolOutputIndexes: new Set(),
     emittedTextByOutputIndex: new Map(),
@@ -403,6 +432,13 @@ function resToAnthHandleOutputItemAdded(
 
   switch (evt.item.type) {
     case "function_call": {
+      const outputIndex = evt.output_index ?? 0;
+      if (state.currentBlockType === "tool_use") {
+        // Anthropic content blocks cannot be interleaved. Keep the next call
+        // queued until the current call's full arguments have been emitted.
+        state.queuedToolItems.set(outputIndex, evt.item);
+        return [];
+      }
       const events: AnthropicStreamEvent[] = [];
       events.push(...closeCurrentBlock(state));
 
@@ -423,7 +459,7 @@ function resToAnthHandleOutputItemAdded(
         index: idx,
         content_block: {
           type: "tool_use",
-          id: fromResponsesCallID(evt.item.call_id ?? ""),
+          id: uniqueToolUseId(fromResponsesCallID(evt.item.call_id ?? ""), state.toolUseIds),
           name: state.currentToolName,
           input: {},
         },
@@ -528,6 +564,9 @@ function resToAnthHandleFuncArgsDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
+  if (state.queuedToolItems.has(evt.output_index ?? 0)) {
+    return [];
+  }
   if (evt.delta === "") {
     return [];
   }
@@ -572,6 +611,10 @@ function resToAnthHandleFuncArgsDone(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
+  if (state.queuedToolItems.has(evt.output_index ?? 0)) {
+    state.queuedToolArgsDone.set(evt.output_index ?? 0, evt.arguments ?? "");
+    return [];
+  }
   if (state.currentBlockType !== "tool_use") {
     return [];
   }
@@ -863,6 +906,33 @@ function collectReasoningText(item: ResponsesOutput, source?: "summary" | "conte
   return collectReasoningSummaryText(item) || collectReasoningContentText(item);
 }
 
+function emitNextQueuedTool(state: ResponsesEventToAnthropicState): AnthropicStreamEvent[] {
+  const next = state.queuedToolItems.entries().next().value;
+  if (!next) return [];
+  const [outputIndex, item] = next;
+  state.queuedToolItems.delete(outputIndex);
+  const completed = state.queuedToolCompleted.get(outputIndex);
+  state.queuedToolCompleted.delete(outputIndex);
+  const argsDone = state.queuedToolArgsDone.get(outputIndex);
+  state.queuedToolArgsDone.delete(outputIndex);
+  const events = resToAnthHandleOutputItemAdded(
+    { type: "response.output_item.added", output_index: outputIndex, item },
+    state,
+  );
+  if (completed) {
+    events.push(...resToAnthHandleOutputItemDone(
+      { type: "response.output_item.done", output_index: outputIndex, item: completed },
+      state,
+    ));
+  } else if (argsDone !== undefined) {
+    events.push(...resToAnthHandleFuncArgsDone(
+      { type: "response.function_call_arguments.done", output_index: outputIndex, arguments: argsDone },
+      state,
+    ));
+  }
+  return events;
+}
+
 function resToAnthHandleOutputItemDone(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
@@ -878,15 +948,19 @@ function resToAnthHandleOutputItemDone(
   switch (evt.item.type) {
     case "function_call": {
       const outputIndex = evt.output_index ?? 0;
-      if (state.closedToolOutputIndexes.has(outputIndex)) {
+      if (state.queuedToolItems.has(outputIndex)) {
+        state.queuedToolCompleted.set(outputIndex, evt.item);
         return [];
+      }
+      if (state.closedToolOutputIndexes.has(outputIndex)) {
+        return emitNextQueuedTool(state);
       }
       const toolName = normalizeFunctionCallNameForRequest(
         evt.item.name ?? state.currentToolName,
         state.requestToolNames,
       );
       if (state.currentBlockType === "tool_use") {
-        return emitPendingToolUseArguments(evt, state);
+        return [...emitPendingToolUseArguments(evt, state), ...emitNextQueuedTool(state)];
       }
 
       const events: AnthropicStreamEvent[] = [];
@@ -906,12 +980,13 @@ function resToAnthHandleOutputItemDone(
         index: idx,
         content_block: {
           type: "tool_use",
-          id: fromResponsesCallID(evt.item.call_id ?? ""),
+          id: uniqueToolUseId(fromResponsesCallID(evt.item.call_id ?? ""), state.toolUseIds),
           name: toolName,
           input: {},
         },
       });
       events.push(...emitPendingToolUseArguments(evt, state));
+      events.push(...emitNextQueuedTool(state));
       return events;
     }
     case "reasoning": {
@@ -1037,6 +1112,15 @@ function resToAnthHandleCompleted(
   const events: AnthropicStreamEvent[] = [];
   if (evt.response?.output !== undefined) {
     events.push(...emitFinalResponseOutputFallback(evt.response.output, state));
+    for (let outputIndex = 0; outputIndex < evt.response.output.length; outputIndex++) {
+      const item = evt.response.output[outputIndex];
+      if (item?.type === "function_call") {
+        events.push(...resToAnthHandleOutputItemDone(
+          { type: "response.output_item.done", output_index: outputIndex, item },
+          state,
+        ));
+      }
+    }
   }
   events.push(...closeCurrentBlock(state));
 
@@ -1144,6 +1228,13 @@ function closeCurrentBlock(state: ResponsesEventToAnthropicState): AnthropicStre
     return [];
   }
   const idx = state.contentBlockIndex;
+  if (state.currentBlockType === "tool_use") {
+    for (const [outputIndex, blockIdx] of state.outputIndexToBlockIdx) {
+      if (blockIdx === idx) {
+        state.closedToolOutputIndexes.add(outputIndex);
+      }
+    }
+  }
   state.contentBlockOpen = false;
   state.currentBlockType = "";
   state.contentBlockIndex++;

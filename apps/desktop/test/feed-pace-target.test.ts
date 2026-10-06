@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolveFeedPaceTargetKey } from "../src/renderer/feed-pace-target";
-import type { ThreadRunProjectionMainFeedEntry } from "../src/renderer/thread-run-projection-view";
-import type { ThreadRunTurnFeedSection } from "../src/renderer/thread-run-turn-feed";
+import type { ThreadRunProjectionMainFeedEntry } from "../src/renderer/conversation-v2-projection-view";
+import type { ThreadRunTurnFeedSection } from "../src/renderer/conversation-v2-turn-feed";
 import type { ThreadRunProjectionAttempt, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function item(

@@ -145,6 +145,44 @@ test("createSubagentSessionHooks records dynamic Eco agent sessions", () => {
   expect(stopped).toEqual(["agent_researcher"]);
 });
 
+test("createSubagentSessionHooks abandons lifecycle on failed SubagentStop", async () => {
+  const lifecycle: string[] = [];
+  const store = {
+    upsertSubagentSessionActive() {},
+    markSubagentSessionStopped() {},
+    resolveResumeAgentId() {
+      return undefined;
+    },
+  } as never;
+
+  const hooks = createSubagentSessionHooks(store, "thr_fail_stop", "execution", {
+    lifecycle: {
+      startSubagent: () => ({ runAttemptId: "attempt_1" }),
+      stopSubagent: () => {
+        lifecycle.push("stop");
+      },
+      abandonSubagent: () => {
+        lifecycle.push("abandon");
+      },
+      currentRunAttemptId: () => "attempt_1",
+    } as never,
+  });
+
+  hooks.onStart({
+    agentId: "agent_explore",
+    agentType: "explore",
+    prompt: "Inspect repo",
+  });
+  await hooks.onStop({
+    agentId: "agent_explore",
+    agentType: "explore",
+    failed: true,
+    reason: "Agent terminated early due to an API error: 400",
+  });
+
+  expect(lifecycle).toEqual(["abandon"]);
+});
+
 test.skipIf(!sqliteAvailable)("conversation store persists and resolves reviewer resume", async () => {
   const dbPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-")), "test.sqlite");
   const store = await createConversationStore(dbPath);

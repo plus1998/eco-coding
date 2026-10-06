@@ -21,7 +21,6 @@ import type {
   ThreadSubagentMetricsSummary,
   ThreadSubagentSessionTiming,
   ThreadSummary,
-  ThreadUsageLedgerEventView,
   WorkflowSettingsSnapshot,
   WorkspaceInfo,
 } from "../shared/ipc";
@@ -507,49 +506,9 @@ export const demoSubagentMetrics: ThreadSubagentMetricsSummary[] = [
   },
 ];
 
-export const demoUsageLedgerEvents: ThreadUsageLedgerEventView[] = [
-  {
-    id: "evt_demo_planner",
-    source: "proxy",
-    role: "planner",
-    routeRole: "planner",
-    billingRole: "planner",
-    attributionStatus: "attributed",
-    usageKind: "request_final",
-    inputTokens: 18_000,
-    outputTokens: 2_200,
-    cacheReadTokens: 48_000,
-    cacheCreationTokens: 4_000,
-    ecoCostUsd: 0.31,
-    pricingResolved: true,
-    providerId: demoProvider.id,
-    modelId: "gpt-5.6-sol",
-    observedAt: T_PLAN,
-  },
-  {
-    id: "evt_demo_luna",
-    source: "proxy",
-    role: "coder",
-    routeRole: "coder",
-    billingRole: "coder",
-    attributionStatus: "attributed",
-    agentId: "agent_coder",
-    usageKind: "request_final",
-    inputTokens: 24_000,
-    outputTokens: 6_200,
-    cacheReadTokens: 138_000,
-    cacheCreationTokens: 8_000,
-    ecoCostUsd: 0.1775,
-    pricingResolved: true,
-    providerId: demoProvider.id,
-    modelId: "gpt-5.6-luna",
-    observedAt: T_FINAL,
-  },
-];
-
 export const demoCoreAvailability: CoreAvailabilitySnapshot = {
-  codex: { available: true, version: "0.153.4" },
-  claude: { available: true, version: "0.3.266" },
+  codex: { available: true, version: "0.160.1" },
+  claude: { available: true, version: "0.3.289" },
   pi: { available: true, version: "2.23.0" },
   cursor: { available: false, reason: "演示模式未启用 Cursor ACP" },
 };
@@ -578,6 +537,7 @@ export const demoIntegratedWebSearchSettings: IntegratedWebSearchSettingsSnapsho
   enabled: false,
   provider: "tavily",
   hasApiKey: false,
+  approvalMode: "always_allow",
 };
 
 export const demoGitSettings: GitSettingsSnapshot = {
@@ -612,11 +572,6 @@ export function buildDemoSessionBootstrap(threadId: string): ThreadSessionBootst
   return {
     ...(thread ? { thread } : {}),
     followUps: [],
-    subagentSessions: threadId === DEMO_THREAD_ID ? demoSubagentSessions : [],
-    usage: {
-      ...(threadId === DEMO_THREAD_ID ? { billing: demoBillingSnapshot } : {}),
-      ...(threadId === DEMO_THREAD_ID ? { context: demoContextSnapshot } : {}),
-    },
   };
 }
 
