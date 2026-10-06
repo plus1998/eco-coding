@@ -2066,6 +2066,12 @@ function App() {
   taskPanelActiveTabRef.current = taskPanelActiveTab;
   /** Last `activateBrowserId` already turned into a tab switch — main keeps the field set. */
   const handledActivateBrowserIdRef = useRef<string | undefined>(undefined);
+  /**
+   * Last `revealBrowserId` main advertised. Main keeps it set for the whole life of that
+   * page, so every later emit repeats the same value; only a new or changed id is a fresh
+   * "show this page" request.
+   */
+  const lastRevealBrowserIdRef = useRef<string | undefined>(undefined);
   /** Home tools replace their blank tab immediately while its guest closes asynchronously. */
   const replacingBrowserHomeIdsRef = useRef(new Set<string>());
   const pendingNewTabNavigationsRef = useRef(new Set<string>());
@@ -5699,6 +5705,12 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = browserStateStore.onStateChange((state) => {
+      // `revealBrowserId` is sticky in main (it survives every emit until the page is
+      // closed or the panel hides it), so an unchanged id is not a new request. Treating
+      // every snapshot as one drags the panel back to the previous tab right after the
+      // user opens a new one — the new tab's own switch is undone by the old reveal.
+      const isNewRevealIntent = lastRevealBrowserIdRef.current !== state.revealBrowserId;
+      lastRevealBrowserIdRef.current = state.revealBrowserId;
       // Navigation replaces a local start tab before exposing its newly created guest.
       if (pendingNewTabNavigationsRef.current.size > 0) return;
       // Agent navigated / created a page: track tabs, but never force-open the work panel.
@@ -5712,7 +5724,11 @@ function App() {
       ) {
         const tabId = browserTaskTabId(state.revealBrowserId);
         setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-        if (taskDrawerOpenRef.current && isBrowserTaskTabId(String(taskPanelActiveTabRef.current ?? ""))) {
+        if (
+          taskDrawerOpenRef.current &&
+          isNewRevealIntent &&
+          isBrowserTaskTabId(String(taskPanelActiveTabRef.current ?? ""))
+        ) {
           setTaskPanelActiveTab(tabId);
           setSelectedSubagentAgentId(undefined);
         }
