@@ -11271,7 +11271,11 @@ button.default-agent-option:focus-visible {
 .run-log-message-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* Narrow cards (subagent rows, slim windows) cannot always hold the timing
+     string next to the timestamp. Wrap the row instead of squeezing its parts:
+     a squeezed <time> folds onto two lines and reads as a second column. */
+  flex-wrap: wrap;
+  gap: 2px 6px;
   min-height: 22px;
   margin-top: 4px;
   color: var(--codex-log-faint, #737373);
@@ -11332,6 +11336,7 @@ button.default-agent-option:focus-visible {
 .run-log-message-meta-time {
   color: currentColor;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .work-session {
@@ -12515,11 +12520,29 @@ button.default-agent-option:focus-visible {
 }
 
 .run-log-request-timing.run-log-token-speed {
-  display: inline;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
   margin: 0;
-  margin-left: 2px;
   font-size: 11px;
   color: currentColor;
+}
+
+/* Each stat keeps its number and unit on one line; breaks happen between stats. */
+.run-log-token-speed-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.run-log-token-speed-segment {
+  white-space: nowrap;
+}
+
+.run-log-token-speed-sep {
+  opacity: 0.55;
 }
 
 .token-speed-segments {
@@ -12531,6 +12554,7 @@ button.default-agent-option:focus-visible {
   align-items: center;
   gap: 2px;
   vertical-align: -0.12em;
+  white-space: nowrap;
 }
 
 .token-speed-segment-icon {
