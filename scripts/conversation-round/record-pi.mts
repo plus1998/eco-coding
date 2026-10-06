@@ -32,8 +32,9 @@ import {
   createPiEventAdapterState,
   mapPiSessionEventToAgentEvents,
 } from "../../packages/runtime/src/pi-event-adapter";
-import { piMcpToolAllowlist } from "../../packages/runtime/src/pi-mcp";
-import { createPiMcpExtensionFactory } from "../../packages/runtime/src/pi-mcp-adapter-factory";
+import { createPiMcpExtensionFactory } from "../../packages/runtime/src/pi-mcp-extension-factory";
+import { disposePiSdkSession } from "../../packages/runtime/src/pi-session-dispose";
+import { piToolsForSessionMode } from "../../packages/runtime/src/pi-session-mode";
 import { resolvePiSessionSkillPaths } from "../../packages/runtime/src/pi-skills";
 import { collectPiSubagentFinalText } from "../../packages/runtime/src/pi-subagent";
 import type { AgentEvent } from "../../packages/shared/src";
@@ -272,9 +273,7 @@ async function makeLongcatSession(input: {
   const toolsAllowlist =
     input.toolsAllowlist && input.toolsAllowlist.length > 0
       ? [...input.toolsAllowlist]
-      : hasMcp
-        ? piMcpToolAllowlist(true)
-        : ["read", "bash", "edit", "write", "Agent"];
+      : piToolsForSessionMode("agent", { hasMcpServers: hasMcp });
 
   const { session } = await createAgentSession({
     cwd: input.cwd,
@@ -283,7 +282,7 @@ async function makeLongcatSession(input: {
     thinkingLevel: "off",
     modelRuntime,
     resourceLoader: resourceLoader as never,
-    tools: toolsAllowlist,
+    tools: [...new Set([...toolsAllowlist, ...(hasMcp && toolsAllowlist.includes("mcp__eco_mcp__call_tool") ? ["mcp__eco_smoke__smoke_ping", "mcp__eco_smoke__smoke_echo"] : [])])],
     sessionManager,
     settingsManager,
   });
@@ -323,7 +322,7 @@ const driver = new PiCodingAgentDriver(
         abort: async () => {
           await session.abort();
         },
-        dispose: () => session.dispose(),
+        dispose: () => disposePiSdkSession(session),
         ...createPiMidTurnHandle(session),
         rebind: async () => {},
         updateSkillPaths: async () => {},
@@ -442,7 +441,7 @@ try {
                 abort: async () => {
                   await session.abort();
                 },
-                dispose: () => session.dispose(),
+                dispose: () => disposePiSdkSession(session),
                 ...createPiMidTurnHandle(session),
                 rebind: async () => {},
                 updateSkillPaths: async () => {},
@@ -534,7 +533,7 @@ try {
             }),
           );
         } finally {
-          childRegistry.deleteThread(spawnInput.threadId);
+          await childRegistry.deleteThread(spawnInput.threadId);
         }
         const text = collectPiSubagentFinalText(childEvents);
         return {
@@ -607,7 +606,7 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  registry.deleteThread(threadId);
+  await registry.deleteThread(threadId);
   try {
     fs.rmSync(workspace, { recursive: true, force: true });
   } catch {

@@ -103,7 +103,7 @@ export class ImageGenerationMcpGateway {
           ...http.sdkEntry,
           // Claude Agent SDK: per-server tool-call wall clock (default ~60s via MCP_TOOL_TIMEOUT).
           timeout: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
-          // pi-mcp-adapter: forwarded as requestTimeoutMs by toPiMcpServerEntry.
+          // PI MCP extension: toPiMcpServerConfig prefers requestTimeoutMs and converts it to seconds.
           requestTimeoutMs: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
         },
         codexServer: http.codexServer,

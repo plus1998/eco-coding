@@ -47,8 +47,9 @@ import {
   PiSessionRegistry,
 } from "../src/pi-coding-agent-driver";
 import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../src/pi-event-adapter";
-import { createPiMcpExtensionFactory } from "../src/pi-mcp-adapter-factory";
-import { piMcpToolAllowlist } from "../src/pi-mcp";
+import { createPiMcpExtensionFactory } from "../src/pi-mcp-extension-factory";
+import { disposePiSdkSession } from "../src/pi-session-dispose";
+import { piToolsForSessionMode } from "../src/pi-session-mode";
 import { ensurePiPrivateSkillsDir, resolvePiSessionSkillPaths } from "../src/pi-skills";
 
 const LONGCAT_API_KEY = process.env.LONGCAT_API_KEY ?? "";
@@ -67,7 +68,7 @@ interface MakeLongcatSessionOptions {
   mcpServers?: Record<string, unknown>;
   /** Extra skill directories (or SKILL.md paths) to mount. */
   skillPaths?: string[];
-  /** Explicit tool allowlist; defaults to builtins (+ mcp proxies when MCP present). */
+  /** Explicit tool allowlist; defaults to builtins (+ MCP Hub tools when MCP present). */
   toolsAllowlist?: string[];
   /** When true, do not force noExtensions/noSkills (caller controls loader). */
   enableExtensions?: boolean;
@@ -210,8 +211,7 @@ async function makeLongcatSession(input: {
   const toolsAllowlist =
     input.toolsAllowlist && input.toolsAllowlist.length > 0
       ? [...input.toolsAllowlist]
-      : (input.opts?.toolsAllowlist ??
-        (hasMcp ? piMcpToolAllowlist(true) : ["read", "bash", "edit", "write"]));
+      : (input.opts?.toolsAllowlist ?? piToolsForSessionMode("agent", { hasMcpServers: hasMcp }));
 
   const { session } = await createAgentSession({
     cwd: input.cwd,
@@ -258,7 +258,7 @@ async function makeLongcatSession(input: {
     abort: async () => {
       await session.abort();
     },
-    dispose: () => session.dispose(),
+    dispose: () => disposePiSdkSession(session),
     ...createPiMidTurnHandle(session),
     rebind: async () => {},
     updateSkillPaths: async () => {},
@@ -432,7 +432,7 @@ test.skipIf(!haveKey)(
     // The directory listing should mention a known repo file.
     expect(/package\.json|bun\.lockb|apps|packages/.test(content)).toBe(true);
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -456,7 +456,7 @@ test.skipIf(!haveKey)(
     // LongCat emits reasoning_content, so we expect at least one thinking delta.
     expect(thinkingDeltas.length + textDeltas.length).toBeGreaterThan(0);
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -471,7 +471,7 @@ test.skipIf(!haveKey)(
 
     const settled = events.filter((e) => e.type === "agent.settled");
     expect(settled.length).toBeGreaterThanOrEqual(1);
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -500,7 +500,7 @@ test.skipIf(!haveKey)(
     // package.json must mention the repo name or "workspaces".
     expect(/workspaces|name|bun|private/.test(content)).toBe(true);
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -538,7 +538,7 @@ test.skipIf(!haveKey)(
     // Either the file was written, or the tool.completed carried a result.
     expect(writeDone.length).toBeGreaterThanOrEqual(1);
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -569,7 +569,7 @@ test.skipIf(!haveKey)(
     // The match should mention the target string.
     expect(content).toContain("LONGCAT smoke");
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -609,7 +609,7 @@ test.skipIf(!haveKey)(
     expect(errorText.length).toBeGreaterThan(0);
     expect(/No such file|cannot access|ENOENT|exit code|错误/.test(errorText)).toBe(true);
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -620,21 +620,24 @@ test.skipIf(!haveKey)(
   async () => {
     const registry = new PiSessionRegistry();
     const mcpServerPath = join(process.cwd(), "packages/runtime/test/_lc-mcp-server.mjs");
+    // The official PI MCP extension namespaces tools as `mcp__<server>__<tool>`;
+    // the session allowlist must name that real wire name.
+    const lcEchoTool = "mcp__lc_echo__echo";
     const driver = makeDriver(registry, {
       mcpServers: {
         lc_echo: { command: "node", args: [mcpServerPath] },
       },
+      toolsAllowlist: ["read", "bash", "edit", "write", lcEchoTool, "codemode"],
     });
-    // The pi-mcp-adapter namespaces tools as `<server>_<tool>`.
-    const events = await runPrompt(driver, '使用 lc_echo_echo 工具，text 参数为 "lc-mcp-ok"，不要解释。', {
+    const events = await runPrompt(driver, `使用 ${lcEchoTool} 工具，text 参数为 "lc-mcp-ok"，不要解释。`, {
       piSession: { mcpServers: { lc_echo: { command: "node", args: [mcpServerPath] } } },
     });
 
     const mcpDone = events.filter(
-      (e) => e.type === "tool.completed" && (e.payload as any)?.tool_name === "mcp",
+      (e) => e.type === "tool.completed" && (e.payload as any)?.tool_name === lcEchoTool,
     );
     const mcpStarted = events.filter(
-      (e) => e.type === "tool.started" && (e.payload as any)?.tool_name === "mcp",
+      (e) => e.type === "tool.started" && (e.payload as any)?.tool_name === lcEchoTool,
     );
     console.log("[LONGCAT] mcp.started:", mcpStarted.length, "mcp.completed:", mcpDone.length);
     for (const e of mcpDone) {
@@ -647,7 +650,7 @@ test.skipIf(!haveKey)(
     const content = String((mcpDone[0].payload as any)?.content ?? "");
     expect(content).toContain("MCP-ECHO: lc-mcp-ok");
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   180_000,
 );
@@ -672,7 +675,7 @@ test.skipIf(!haveKey)(
     // The skill instructs the model to emit this exact greeting.
     expect(fullText).toContain("SKILL-GREETING");
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   120_000,
 );
@@ -832,7 +835,7 @@ test.skipIf(!haveKey)(
               .filter((e) => e.type === "message.delta" && (e.payload as any)?.blockKind === "text")
               .map((e) => String((e.payload as any)?.text ?? ""))
               .join("");
-            childRegistry.deleteThread(spawnInput.threadId);
+            await childRegistry.deleteThread(spawnInput.threadId);
             return {
               agentId: `smoke_child_${Date.now()}`,
               agentKey: spawnInput.agentKey,
@@ -859,7 +862,7 @@ test.skipIf(!haveKey)(
     // prompted to "report hello from child", so the result should echo that.
     expect(content.toLowerCase()).toContain("hello from child");
 
-    registry.deleteThread("thr_lc");
+    await registry.deleteThread("thr_lc");
   },
   180_000,
 );

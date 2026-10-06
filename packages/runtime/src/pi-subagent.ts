@@ -5,7 +5,8 @@ import type {
   EcoAgentTemplateConfig,
   EcoToolPolicy,
 } from "./agent-orchestration.js";
-import { PI_MCP_PROXY_TOOL_NAMES } from "./pi-mcp.js";
+import { PI_CODEMODE_TOOL_NAME } from "./pi-codemode.js";
+import { PI_MCP_HUB_TOOL_NAMES } from "./pi-mcp.js";
 import { PI_WEB_SEARCH_TOOL_NAME, type PiWebSearchBackend } from "./pi-web-search-plan.js";
 import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 
@@ -139,8 +140,14 @@ export function resolvePiSubagentToolAllowlist(
   }
 
   if (hasMcpServers) {
-    tools.push(...PI_MCP_PROXY_TOOL_NAMES);
+    tools.push(...PI_MCP_HUB_TOOL_NAMES);
   }
+
+  // Same codemode policy as the Agent session mode: scripts may only reach the
+  // tools this subagent was already granted (the sandbox resolves calls through
+  // this session's registry). Agent stays out of the list above, so a script
+  // cannot delegate a nested subagent.
+  tools.push(PI_CODEMODE_TOOL_NAME);
 
   const webSearchAllowed =
     materialized.network?.webSearch !== false &&

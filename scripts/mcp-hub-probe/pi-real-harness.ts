@@ -1,18 +1,27 @@
 /**
  * End-to-end PI Core probe with a deterministic local Anthropic-compatible API.
  *
- * The PI process/session, pi-mcp-adapter, MCP transport, and Hub are real. The
- * local API only scripts the model's two mcp proxy calls, so this is a protocol
- * probe rather than a model-quality claim.
+ * The PI process/session, the official PI MCP extension, the codemode sandbox,
+ * MCP transport, and Hub are real. The local API only scripts the model's Hub
+ * tool calls (search, direct call, then both batched inside one codemode script),
+ * so this is a protocol probe rather than a model-quality claim.
  */
 
-import http from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { startHub, type RunningHub } from "./run";
-import { PiCodingAgentDriver, PiSessionRegistry, type PiBridgeModelResolution } from "../../packages/runtime/src/pi-coding-agent-driver";
 import type { AgentRuntimeRunInput } from "../../packages/runtime/src/index";
+import { PI_CODEMODE_TOOL_NAME } from "../../packages/runtime/src/pi-codemode";
+import {
+  type PiBridgeModelResolution,
+  PiCodingAgentDriver,
+  PiSessionRegistry,
+} from "../../packages/runtime/src/pi-coding-agent-driver";
+import { PI_MCP_HUB_TOOL_NAMES } from "../../packages/runtime/src/pi-mcp";
+import { type RunningHub, startHub } from "./run";
+
+const [PI_MCP_HUB_SEARCH_TOOL_NAME, PI_MCP_HUB_CALL_TOOL_NAME] = PI_MCP_HUB_TOOL_NAMES;
 
 type Request = { body: Record<string, any>; toolNames: string[]; messageTypes: string[] };
 type Api = { url: string; requests: Request[]; close: () => Promise<void> };
@@ -32,36 +41,65 @@ function lastToolResult(body: Record<string, any>): { id: string; text: string }
   return undefined;
 }
 
-function sse(res: http.ServerResponse, payload: { text?: string; input?: Record<string, unknown>; id?: string }): void {
+function sse(
+  res: http.ServerResponse,
+  payload: { text?: string; tool?: string; input?: Record<string, unknown>; id?: string },
+): void {
   const isText = payload.text !== undefined;
   const block = isText
     ? { type: "text", text: payload.text }
-    : { type: "tool_use", id: payload.id ?? "pi_probe", name: "mcp", input: payload.input ?? {} };
+    : {
+        type: "tool_use",
+        id: payload.id ?? "pi_probe",
+        // Real wire name: the official PI MCP extension namespaces Hub tools as
+        // `mcp__eco_mcp__<tool>`. The pre-1.0.3 `mcp` proxy tool no longer exists.
+        name: payload.tool ?? PI_MCP_HUB_SEARCH_TOOL_NAME,
+        input: payload.input ?? {},
+      };
   const events: Array<[string, Record<string, unknown>]> = [
-    ["message_start", {
-      type: "message_start",
-      message: {
-        id: `msg_pi_${Date.now()}`,
-        type: "message",
-        role: "assistant",
-        content: [],
-        model: "eco-local-probe",
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 0 },
+    [
+      "message_start",
+      {
+        type: "message_start",
+        message: {
+          id: `msg_pi_${Date.now()}`,
+          type: "message",
+          role: "assistant",
+          content: [],
+          model: "eco-local-probe",
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 0 },
+        },
       },
-    }],
+    ],
     ["content_block_start", { type: "content_block_start", index: 0, content_block: block }],
-    ["content_block_delta", {
-      type: "content_block_delta",
-      index: 0,
-      delta: isText ? { type: "text_delta", text: payload.text } : { type: "input_json_delta", partial_json: JSON.stringify(payload.input ?? {}) },
-    }],
+    [
+      "content_block_delta",
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: isText
+          ? { type: "text_delta", text: payload.text }
+          : { type: "input_json_delta", partial_json: JSON.stringify(payload.input ?? {}) },
+      },
+    ],
     ["content_block_stop", { type: "content_block_stop", index: 0 }],
-    ["message_delta", { type: "message_delta", delta: { stop_reason: isText ? "end_turn" : "tool_use", stop_sequence: null }, usage: { output_tokens: 3 } }],
+    [
+      "message_delta",
+      {
+        type: "message_delta",
+        delta: { stop_reason: isText ? "end_turn" : "tool_use", stop_sequence: null },
+        usage: { output_tokens: 3 },
+      },
+    ],
     ["message_stop", { type: "message_stop" }],
   ];
-  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
   for (const [event, data] of events) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   res.end();
 }
@@ -71,7 +109,9 @@ async function startApi(identity: "A" | "B"): Promise<Api> {
   let turnStep = 0;
   const server = http.createServer((request, response) => {
     let raw = "";
-    request.on("data", (chunk) => { raw += String(chunk); });
+    request.on("data", (chunk) => {
+      raw += String(chunk);
+    });
     request.on("end", () => {
       if (request.url?.startsWith("/api/hello")) {
         response.writeHead(200, { "content-type": "application/json" });
@@ -87,18 +127,46 @@ async function startApi(identity: "A" | "B"): Promise<Api> {
       requests.push({
         body,
         toolNames: (body.tools ?? []).map((tool: any) => tool?.name).filter(Boolean),
-        messageTypes: (body.messages ?? []).flatMap((message: any) => Array.isArray(message.content) ? message.content.map((block: any) => block?.type) : []),
+        messageTypes: (body.messages ?? []).flatMap((message: any) =>
+          Array.isArray(message.content) ? message.content.map((block: any) => block?.type) : [],
+        ),
       });
-      // The scripted model starts a fresh search/call/text triplet for every
+      // The scripted model repeats a search/call/codemode/text cycle for every
       // prompt, including a prompt loaded from a persisted PI session file.
-      turnStep = (turnStep % 3) + 1;
+      turnStep = (turnStep % 4) + 1;
       const result = lastToolResult(body);
       if (turnStep === 1) {
-        sse(response, { input: { tool: "eco_mcp_call_tool", args: { name: "search_tools", arguments: { query: "echo" } } }, id: "pi_search" });
+        sse(response, { tool: PI_MCP_HUB_SEARCH_TOOL_NAME, input: { query: "echo" }, id: "pi_search" });
         return;
       }
       if (turnStep === 2) {
-        sse(response, { input: { tool: "eco_mcp_call_tool", args: { name: "echo_context", arguments: { clientSessionId: "pi-model-forged", marker: `pi-${identity}` } } }, id: "pi_call" });
+        sse(response, {
+          tool: PI_MCP_HUB_CALL_TOOL_NAME,
+          input: {
+            name: "echo_context",
+            arguments: { clientSessionId: "pi-model-forged", marker: `pi-${identity}` },
+          },
+          id: "pi_call",
+        });
+        return;
+      }
+      if (turnStep === 3) {
+        // Both Hub tools batched inside one codemode script: proves the sandbox
+        // reaches this session's MCP tools (direct exposure) and that parallel
+        // nested calls both land on the thread's Hub credential.
+        sse(response, {
+          tool: PI_CODEMODE_TOOL_NAME,
+          input: {
+            code: [
+              "const [found, echoed] = await Promise.all([",
+              `  tools["${PI_MCP_HUB_SEARCH_TOOL_NAME}"]({ query: "echo" }),`,
+              `  tools["${PI_MCP_HUB_CALL_TOOL_NAME}"]({ name: "echo_context", arguments: ${JSON.stringify({ clientSessionId: "pi-model-forged", marker: `pi-codemode-${identity}` })} }),`,
+              "]);",
+              "return { found, echoed };",
+            ].join("\n"),
+          },
+          id: "pi_codemode",
+        });
         return;
       }
       sse(response, { text: JSON.stringify({ identity, toolResult: result.text.slice(0, 600) }) });
@@ -124,19 +192,21 @@ async function drain<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 }
 
 function route(): AgentRuntimeRunInput["routes"] {
-  return [{
-    role: "planner" as const,
-    primary: {
-      id: "local-probe",
-      provider: "anthropic",
-      displayName: "local-probe",
-      baseUrl: "http://127.0.0.1",
-      modelId: "eco-local-probe",
-      capabilities: ["messages_api"],
-      enabled: true,
+  return [
+    {
+      role: "planner" as const,
+      primary: {
+        id: "local-probe",
+        provider: "anthropic",
+        displayName: "local-probe",
+        baseUrl: "http://127.0.0.1",
+        modelId: "eco-local-probe",
+        capabilities: ["messages_api"],
+        enabled: true,
+      },
+      fallbacks: [],
     },
-    fallbacks: [],
-  }];
+  ];
 }
 
 export async function runPiRealProbe(): Promise<Record<string, unknown>> {
@@ -150,18 +220,18 @@ export async function runPiRealProbe(): Promise<Record<string, unknown>> {
     B: await mkdtemp(path.join(tmpdir(), "eco-pi-real-b-")),
   };
   const resolveBridgeModel = async ({ threadId }: { threadId: string }): Promise<PiBridgeModelResolution> => {
-      const identity = threadId.endsWith("-B") ? "B" : "A";
-      const api = identity === "A" ? apiA : apiB;
-      return {
-        bridgeBaseUrl: api.url,
-        bridgeModelId: "eco-local-probe",
-        apiKey: "local-probe-key",
-        agentDir: dirs[identity],
-        apiCompat: "anthropic",
-        bindingId: `pi-probe-${identity}`,
-        providerId: "eco-local-probe",
-      };
+    const identity = threadId.endsWith("-B") ? "B" : "A";
+    const api = identity === "A" ? apiA : apiB;
+    return {
+      bridgeBaseUrl: api.url,
+      bridgeModelId: "eco-local-probe",
+      apiKey: "local-probe-key",
+      agentDir: dirs[identity],
+      apiCompat: "anthropic",
+      bindingId: `pi-probe-${identity}`,
+      providerId: "eco-local-probe",
     };
+  };
   const registry = new PiSessionRegistry();
   const driver = new PiCodingAgentDriver({ resolveBridgeModel }, registry);
   let resumedRegistry: PiSessionRegistry | undefined;
@@ -184,42 +254,74 @@ export async function runPiRealProbe(): Promise<Record<string, unknown>> {
     },
   });
   try {
-    const [eventsA, eventsB] = await Promise.all([drain(driver.run(input("A"))), drain(driver.run(input("B")))]);
+    const [eventsA, eventsB] = await Promise.all([
+      drain(driver.run(input("A"))),
+      drain(driver.run(input("B"))),
+    ]);
     // Reuse A's live PI session once, then dispose it and restore the same
     // conversation JSONL in a fresh driver. Both turns must still use A's Hub
     // credential.
     const repeatA = await drain(driver.run(input("A")));
     const capturedA = eventsA.find((event: any) => event.type === "session.captured") as any;
     const sessionFileA = capturedA?.payload?.sessionFile as string | undefined;
-    registry.deleteThread("pi-real-A");
+    await registry.deleteThread("pi-real-A");
     resumedRegistry = new PiSessionRegistry();
     const resumedDriver = new PiCodingAgentDriver({ resolveBridgeModel }, resumedRegistry);
-    const resumedA = await drain(resumedDriver.run({
-      ...input("A"),
-      piSession: { ...input("A").piSession, sessionFile: sessionFileA },
-    }));
-    const upstream = hub.state.logs.filter((entry) => entry.event === "upstream_call" && entry.phase === "started");
+    const resumedA = await drain(
+      resumedDriver.run({
+        ...input("A"),
+        piSession: { ...input("A").piSession, sessionFile: sessionFileA },
+      }),
+    );
+    const upstream = hub.state.logs.filter(
+      (entry) => entry.event === "upstream_call" && entry.phase === "started",
+    );
     const identities = upstream.map((entry) => entry.identity);
-    const success = identities.includes("A") && identities.includes("B") && identities.filter((identity) => identity === "A").length >= 3 && Boolean(sessionFileA) && apiA.requests.some((request) => request.toolNames.includes("mcp")) && apiB.requests.some((request) => request.toolNames.includes("mcp"));
+    const codemodeMarkers = upstream
+      .map((entry) => (entry as { args?: { marker?: string } }).args?.marker)
+      .filter((marker): marker is string => typeof marker === "string" && marker.startsWith("pi-codemode-"));
+    const success =
+      identities.includes("A") &&
+      identities.includes("B") &&
+      identities.filter((identity) => identity === "A").length >= 3 &&
+      Boolean(sessionFileA) &&
+      apiA.requests.some((request) => request.toolNames.includes(PI_MCP_HUB_SEARCH_TOOL_NAME)) &&
+      apiB.requests.some((request) => request.toolNames.includes(PI_MCP_HUB_SEARCH_TOOL_NAME)) &&
+      apiA.requests.some((request) => request.toolNames.includes(PI_CODEMODE_TOOL_NAME)) &&
+      // The sandbox's nested calls must reach the Hub for both threads.
+      codemodeMarkers.includes("pi-codemode-A") &&
+      codemodeMarkers.includes("pi-codemode-B");
     return {
       status: success ? "pass" : "fail",
       piVersion: "来自当前 workspace 的 @earendil-works/pi-coding-agent",
       concurrentThreads: 2,
-      eventCounts: { A: eventsA.length, B: eventsB.length, ARepeat: repeatA.length, AResume: resumedA.length },
+      eventCounts: {
+        A: eventsA.length,
+        B: eventsB.length,
+        ARepeat: repeatA.length,
+        AResume: resumedA.length,
+      },
       apiRequests: { A: apiA.requests.length, B: apiB.requests.length },
-      modelToolNames: { A: [...new Set(apiA.requests.flatMap((request) => request.toolNames))], B: [...new Set(apiB.requests.flatMap((request) => request.toolNames))] },
+      modelToolNames: {
+        A: [...new Set(apiA.requests.flatMap((request) => request.toolNames))],
+        B: [...new Set(apiB.requests.flatMap((request) => request.toolNames))],
+      },
+      codemodeNestedHubCalls: codemodeMarkers,
       hubIdentities: identities,
-      restoredSessionIdentity: identities.filter((identity) => identity === "A").length >= 3 ? "A" : "missing",
+      restoredSessionIdentity:
+        identities.filter((identity) => identity === "A").length >= 3 ? "A" : "missing",
       restoredSessionFile: Boolean(sessionFileA),
-      forgedClientSessionIdsIgnored: upstream.every((entry) => entry.identity === "A" || entry.identity === "B"),
+      forgedClientSessionIdsIgnored: upstream.every(
+        (entry) => entry.identity === "A" || entry.identity === "B",
+      ),
       hubLogs: hub.state.logs,
-      note: "本实验使用真实 PI AgentSession + pi-mcp-adapter，模型响应来自本地确定性 Anthropic API；不代表真实模型的工具选择质量。",
+      note: "本实验使用真实 PI AgentSession + 官方 PI MCP 扩展，模型响应来自本地确定性 Anthropic API；不代表真实模型的工具选择质量。",
     };
   } finally {
-    registry.deleteThread("pi-real-A");
-    registry.deleteThread("pi-real-B");
-    resumedRegistry?.deleteThread("pi-real-A");
-    resumedRegistry?.deleteThread("pi-real-B");
+    await registry.deleteThread("pi-real-A");
+    await registry.deleteThread("pi-real-B");
+    await resumedRegistry?.deleteThread("pi-real-A");
+    await resumedRegistry?.deleteThread("pi-real-B");
     await Promise.all([apiA.close(), apiB.close(), hub.close()]);
     await Promise.all(Object.values(dirs).map((dir) => rm(dir, { recursive: true, force: true })));
   }

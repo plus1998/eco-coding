@@ -533,8 +533,12 @@ export async function abortPiThread(threadId: string): Promise<void> {
   await globalPiSessionRegistry.abort(threadId);
 }
 
-export function disposePiThreadSession(threadId: string): void {
-  globalPiSessionRegistry.deleteThread(threadId);
+export async function disposePiThreadSession(threadId: string): Promise<void> {
+  await globalPiSessionRegistry.deleteThread(threadId);
+}
+
+export async function disposeAllPiSessions(): Promise<void> {
+  await globalPiSessionRegistry.deleteAll();
 }
 
 /** Remove Eco-owned `pi-agent/<threadId>` tree after disposing the in-process session. */

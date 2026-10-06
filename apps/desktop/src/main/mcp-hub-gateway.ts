@@ -300,7 +300,7 @@ export class McpHubGateway {
           ? {
               // Claude Agent SDK per-server call timeout.
               timeout: toolTimeoutMs,
-              // pi-mcp-adapter per-request timeout.
+              // PI MCP extension per-server timeout (converted to seconds by toPiMcpServerConfig).
               requestTimeoutMs: toolTimeoutMs,
             }
           : {}),

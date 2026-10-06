@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SdkToolPermissionRequest } from "../src/claude-agent-sdk";
+import { PI_CODEMODE_TOOL_NAME } from "../src/pi-codemode";
+import { PI_MCP_HUB_TOOL_NAMES } from "../src/pi-mcp";
 import {
   createPiModeAwareToolPermissionHandler,
   isPiReadOnlyBashCommand,
@@ -19,10 +21,32 @@ function request(toolName: string, input: Record<string, unknown> = {}): SdkTool
 
 test("piToolsForSessionMode ask/plan are read-only plus bash", () => {
   expect(piToolsForSessionMode("ask")).toEqual(["read", "bash"]);
-  expect(piToolsForSessionMode("plan")).toContain("finalize_plan");
+  expect(piToolsForSessionMode("plan")).toEqual(["read", "bash", "finalize_plan"]);
   expect(piToolsForSessionMode("plan")).not.toContain("edit");
   expect(piToolsForSessionMode("plan")).not.toContain("grep");
-  expect(piToolsForSessionMode("agent")).toEqual(["read", "bash", "edit", "write"]);
+  // Agent owns the codemode sandbox; Ask/Plan never see it.
+  expect(piToolsForSessionMode("agent")).toEqual(["read", "bash", "edit", "write", PI_CODEMODE_TOOL_NAME]);
+});
+
+// Ported from the deleted `piMcpToolAllowlist` test: the MCP Hub tools are the
+// agent allowlist delta, and only when the thread actually has MCP servers.
+test("piToolsForSessionMode agent adds the Hub tools only when MCP is present", () => {
+  const withoutMcp = piToolsForSessionMode("agent", { hasMcpServers: false });
+  expect(withoutMcp).toEqual(["read", "bash", "edit", "write", PI_CODEMODE_TOOL_NAME]);
+
+  const withMcp = piToolsForSessionMode("agent", { hasMcpServers: true });
+  expect(withMcp).toEqual(["read", "bash", "edit", "write", ...PI_MCP_HUB_TOOL_NAMES, PI_CODEMODE_TOOL_NAME]);
+  expect(withMcp.filter((tool) => !withoutMcp.includes(tool))).toEqual([...PI_MCP_HUB_TOOL_NAMES]);
+});
+
+test("piToolsForSessionMode keeps codemode and Hub tools out of ask/plan even with MCP", () => {
+  for (const mode of ["ask", "plan"] as const) {
+    const tools = piToolsForSessionMode(mode, { hasMcpServers: true });
+    expect(tools).not.toContain(PI_CODEMODE_TOOL_NAME);
+    for (const hubTool of PI_MCP_HUB_TOOL_NAMES) {
+      expect(tools).not.toContain(hubTool);
+    }
+  }
 });
 
 test("isPiReadOnlyBashCommand allows rg/grep/git status", () => {

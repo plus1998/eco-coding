@@ -1,12 +1,17 @@
 /**
- * Pi runtime MCP proxy resolution.
+ * Pi runtime MCP proxy resolution — legacy replay only.
  *
- * Pi's pi-mcp-adapter does not register each MCP server's tools as direct
- * tools. The agent calls one `mcp` gateway tool (`mcpScript` for batch
- * scripts) with `{ tool, args, server? }`, so runtime event streams report
- * `tool_name: "mcp"` / `"mcpScript"`. Without re-resolving the target tool,
- * the activity feed would show every Eco integration (browser operations,
- * computer use, image creation, …) as a generic "calling MCP tool" line.
+ * Up to PI 0.85.1 Eco injected MCP through `pi-mcp-adapter`, which did not
+ * register each MCP server's tools as direct tools: the agent called one `mcp`
+ * gateway tool (`mcpScript` for batch scripts) with `{ tool, args, server? }`,
+ * so the runtime event stream reported `tool_name: "mcp"` / `"mcpScript"`.
+ *
+ * PI 1.0.3 exposes the real tools (`mcp__eco_mcp__search_tools` /
+ * `mcp__eco_mcp__call_tool`, plus each server's own tools), so new turns never
+ * produce those names. The resolver stays to keep historical JSONL replay
+ * readable, where re-resolving the target tool is what stops the activity feed
+ * from showing every Eco integration (browser operations, computer use, image
+ * creation, …) as a generic "calling MCP tool" line.
  */
 
 import { ECO_HTML_HOST_MCP_SERVER } from "@eco/runtime/eco-html-host-names";

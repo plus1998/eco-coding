@@ -34,8 +34,8 @@ import {
 import { prepareCodexMcpServersForRuntime } from "../../apps/desktop/src/main/mcp-runtime";
 import { resolveSdkSessionOptions, ClaudeAgentSdkDriver } from "../../packages/runtime/src/claude-agent-sdk";
 import type { AgentRuntimeRunInput } from "../../packages/runtime/src/index";
-import { createPiMcpExtensionFactory } from "../../packages/runtime/src/pi-mcp-adapter-factory";
-import { piMcpToolAllowlist } from "../../packages/runtime/src/pi-mcp";
+import { createPiMcpExtensionFactory } from "../../packages/runtime/src/pi-mcp-extension-factory";
+import { piToolsForSessionMode } from "../../packages/runtime/src/pi-session-mode";
 import { AcpAgentDriver } from "../../packages/runtime/src/acp-agent-driver";
 import { toAcpMcpServers } from "../../packages/runtime/src/acp-mcp";
 import { readCodexDependencyPins, readCodexCliVersion } from "../../packages/runtime/src/codex-version";
@@ -775,24 +775,36 @@ async function runPiProbe(hub: RunningHub, token: string, identity: string) {
       agentDir,
       modelRuntime,
       resourceLoader: resourceLoader as never,
-      tools: piMcpToolAllowlist(true),
+      tools: piToolsForSessionMode("agent", { hasMcpServers: true }),
       sessionManager,
       settingsManager,
     });
-    const mcpTool = (session as any).agent?.state?.tools?.find((tool: any) => tool.name === "mcp");
-    if (!mcpTool) throw new Error("PI mcp proxy tool was not registered");
+    // The official PI MCP extension connects on session_start; wait for its
+    // real namespaced Hub tools before invoking them.
     await session.bindExtensions({ mode: "rpc" });
-    const search = await mcpTool.execute(
+    const findTool = (name: string) =>
+      (session as any).agent?.state?.tools?.find((tool: any) => tool.name === name);
+    const toolDeadline = Date.now() + 10_000;
+    while (
+      (!findTool("mcp__eco_mcp__search_tools") || !findTool("mcp__eco_mcp__call_tool")) &&
+      Date.now() < toolDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const searchTool = findTool("mcp__eco_mcp__search_tools");
+    const callTool = findTool("mcp__eco_mcp__call_tool");
+    if (!searchTool || !callTool) throw new Error("PI MCP Hub tools were not registered");
+    const search = await searchTool.execute(
       "probe-search",
-      { tool: "eco_mcp_call_tool", args: { name: "search_tools", arguments: { query: "echo" } } },
+      { query: "echo" },
       new AbortController().signal,
       () => {},
     );
     const searchText = search.content?.[0]?.text ?? "";
     assert(searchText.includes("echo_context") && searchText.includes("inputSchema"), `PI search returned no Hub metadata: ${JSON.stringify(search)}`);
-    const call = await mcpTool.execute(
+    const call = await callTool.execute(
       "probe-call",
-      { tool: "eco_mcp_call_tool", args: { name: "echo_context", arguments: { marker: "pi" } } },
+      { name: "echo_context", arguments: { marker: "pi" } },
       new AbortController().signal,
       () => {},
     );
@@ -800,8 +812,8 @@ async function runPiProbe(hub: RunningHub, token: string, identity: string) {
     session.dispose();
     return {
       status: "pass",
-      proxy: "pi-mcp-adapter mcp tool",
-      dynamicSearchAndCall: "pass (direct proxy invocation; model itself not run)",
+      proxy: "official PI MCP extension (mcp__eco_mcp__* tools)",
+      dynamicSearchAndCall: "pass (direct tool invocation; model itself not run)",
       sessionConfigIsolated: true,
     };
   } finally {
@@ -967,8 +979,8 @@ async function main() {
           JSON.parse(readFileSync(path.join(repoRoot, "apps/desktop/package.json"), "utf8")),
         ).version,
         codexCliHarness: readCodexCliVersion(codexHarnessExecutable) ?? "not installed",
-        piCodingAgent: "0.85.1",
-        piMcpAdapter: "2.23.0",
+        piCodingAgent: "1.0.3",
+        piMcpExtension: "official MCP extension (@earendil-works/pi-coding-agent 1.0.3, createMcpExtension)",
         acpAgent: "fake-acp-agent probe v0.1.0 (Cursor ACP 未验证)",
       },
       hub: hubResult,

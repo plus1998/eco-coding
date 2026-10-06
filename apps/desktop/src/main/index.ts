@@ -745,6 +745,7 @@ import {
 import { buildPiMcpSessionConfig, mergePiAppendSystemPrompt } from "./pi-mcp-session";
 import {
   abortPiThread,
+  disposeAllPiSessions,
   disposePiThreadSession,
   removePiThreadAgentDir,
   startPiThreadRun,
@@ -3191,6 +3192,7 @@ installApplicationShutdownHook(
       browserHost?.dispose();
       void computerUseGateway?.close();
     },
+    stopAllPiRuntimes: disposeAllPiSessions,
     closeImageGenerationGateway: async () => {
       await imageGenerationGateway?.close();
     },
@@ -14607,7 +14609,7 @@ async function cleanupThreadExternalState(threadId: string): Promise<void> {
     // running turn never loses its MCP connection mid-call.
     scheduleCodexGlobalRuntimeRefresh();
   }
-  disposePiThreadSession(threadId);
+  await disposePiThreadSession(threadId);
   await removePiThreadAgentDir(app.getPath("userData"), threadId);
   imageGenerationGateway.disposeThread(threadId);
   imageViewGateway.disposeThread(threadId);

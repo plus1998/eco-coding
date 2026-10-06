@@ -25,7 +25,9 @@ test("recognizes Eco image view MCP names", () => {
 test("image view names module stays usable in the Vite renderer", () => {
   const source = readFileSync(new URL("../src/eco-image-view-names.ts", import.meta.url), "utf8");
   expect(source).not.toContain("node:");
-  expect(source).not.toContain("pi-mcp-adapter");
+  // Renderer-safe: must not pull the Node-only PI runtime (the guard named the
+  // removed pi-mcp-adapter before PI 1.0.3).
+  expect(source).not.toContain("@earendil-works/");
   expect(namedIsEcoImageViewToolName(NAMED_FULL_TOOL)).toBe(true);
 });
 

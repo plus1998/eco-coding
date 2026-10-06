@@ -7,7 +7,10 @@ import {
   shouldBypassQuitConfirmation,
 } from "./application-quit-bypass";
 
-export { setApplicationQuitBypassConfirmation, shouldBypassQuitConfirmation } from "./application-quit-bypass";
+export {
+  setApplicationQuitBypassConfirmation,
+  shouldBypassQuitConfirmation,
+} from "./application-quit-bypass";
 
 export interface RunningThreadSnapshot {
   threadId: string;
@@ -67,6 +70,7 @@ export interface ApplicationShutdownDeps {
   stopAllBackgroundTasks: () => void;
   killAllInteractiveTerminals: () => void;
   disposeBrowserHost: () => void;
+  stopAllPiRuntimes: () => Promise<void>;
   closeImageGenerationGateway: () => Promise<void>;
   closeImageViewGateway: () => Promise<void>;
   closeImageDisplayGateway: () => Promise<void>;
@@ -245,6 +249,7 @@ export async function interruptAllRunningWork(deps: ApplicationShutdownDeps): Pr
 }
 
 export async function shutdownApplicationServices(deps: ApplicationShutdownDeps): Promise<void> {
+  await deps.stopAllPiRuntimes();
   deps.disposeSystemSleepBlocker();
   deps.disposeDesktopUpdateService();
   deps.disposeBrowserHost();

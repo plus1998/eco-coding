@@ -26,6 +26,7 @@
     "readme:screenshots:demo": "bun run --cwd apps/desktop readme:screenshots:demo",
     "feed:parity": "bun run --cwd apps/desktop feed:parity",
     "test": "node scripts/test.mjs",
+    "pi:regression": "node scripts/pi-regression.mjs",
     "test:e2e": "bun run --cwd apps/desktop test:e2e",
     "round": "bun scripts/round.mjs",
     "typecheck": "bunx tsc -b",
@@ -40,7 +41,14 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "prismjs": "1.30.0"
+    "prismjs": "1.30.0",
+    "@earendil-works/chord": "1.0.3",
+    "@earendil-works/pi-agent-core": "1.0.3",
+    "@earendil-works/pi-ai": "1.0.3",
+    "@earendil-works/pi-codemode": "1.0.3",
+    "@earendil-works/pi-mcp": "1.0.3",
+    "@earendil-works/pi-telemetry": "1.0.3",
+    "@earendil-works/pi-tui": "1.0.3"
   },
   "patchedDependencies": {
     "react-dom@19.2.6": "patches/react-dom@19.2.6.patch"

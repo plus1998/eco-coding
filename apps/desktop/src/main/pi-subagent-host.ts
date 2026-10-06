@@ -325,12 +325,7 @@ export function createPiSubagentSpawnHandler(
       );
       throw error;
     } finally {
-      try {
-        childSession.dispose();
-      } catch {
-        // ignore dispose errors during teardown
-      }
-      globalPiSessionRegistry.delete(childKey);
+      await globalPiSessionRegistry.delete(childKey);
     }
   };
 }

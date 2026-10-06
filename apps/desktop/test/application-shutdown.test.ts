@@ -33,6 +33,7 @@ function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): Applicati
     closeImageDisplayGateway: async () => {},
     closeIntegratedWebSearchGateway: async () => {},
     closeMcpHubGateway: async () => {},
+    stopAllPiRuntimes: async () => {},
     stopGlobalCodexRuntime: async () => {},
     stopAllAcpRuntimes: () => {},
     stopGlobalEcoGateway: async () => {},
@@ -135,4 +136,24 @@ test("shutdownApplicationServices stops ACP runtimes after Codex", async () => {
     }),
   );
   expect(order).toEqual(["sleep", "codex", "acp", "eco"]);
+});
+
+test("application shutdown awaits idle PI sessions before closing their gateways", async () => {
+  const order: string[] = [];
+  await shutdownApplicationServices(
+    createDeps({
+      stopAllPiRuntimes: async () => {
+        order.push("pi-start");
+        await Promise.resolve();
+        order.push("pi-closed");
+      },
+      closeMcpHubGateway: async () => {
+        order.push("hub");
+      },
+      stopGlobalEcoGateway: async () => {
+        order.push("models");
+      },
+    }),
+  );
+  expect(order).toEqual(["pi-start", "pi-closed", "hub", "models"]);
 });

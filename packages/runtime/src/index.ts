@@ -76,7 +76,8 @@ export interface PiSessionOptions {
   skillPaths?: string[];
   /**
    * Isolated MCP server map for this thread (Claude-SDK shaped entries).
-   * Loaded via pi-mcp-adapter in-memory config — not merged with ambient .mcp.json.
+   * Loaded via the official PI MCP extension with an in-memory config — never
+   * merged with ambient mcp.json / ~/.pi.
    */
   mcpServers?: Record<string, unknown>;
   /** Extra system prompt segments (e.g. browser / image integration guidance). */
@@ -520,6 +521,7 @@ export {
   stripPlanningTranscriptNoise,
 } from "./phase-deliverable";
 export * from "./pi-availability.js";
+export * from "./pi-codemode.js";
 export * from "./pi-coding-agent-driver.js";
 export * from "./pi-eco-extensions.js";
 export * from "./pi-event-adapter.js";
@@ -534,6 +536,7 @@ export * from "./pi-tool-approval.js";
 export * from "./pi-usage.js";
 export * from "./pi-integrated-web-search.js";
 export * from "./pi-integrated-web-search-factory.js";
+export * from "./pi-web-search-config.js";
 export * from "./pi-web-search-factory.js";
 export * from "./pi-web-search-plan.js";
 export * from "./pi-web-search-session.js";

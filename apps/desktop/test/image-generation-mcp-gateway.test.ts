@@ -56,7 +56,7 @@ test("Claude/Pi injection sets 10-minute MCP tool-call timeout", async () => {
     expect(injection.sdkEntry).toMatchObject({
       // Claude Agent SDK McpStdioServerConfig.timeout (also used for HTTP entries)
       timeout: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
-      // pi-mcp-adapter ServerEntry.requestTimeoutMs (via toPiMcpServerEntry)
+      // PI MCP extension: toPiMcpServerConfig reads requestTimeoutMs first
       requestTimeoutMs: IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
     });
   } finally {
