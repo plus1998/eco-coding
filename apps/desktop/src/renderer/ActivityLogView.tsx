@@ -216,6 +216,11 @@ const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
 const LIVE_DURATION_TICK_MS = 1_000;
 const TOOL_RUNNING_MIN_VISIBLE_MS = 1_000;
+/**
+ * 工具行的耗时只在调用已运行超过该阈值后才显示：更短的工具在数字变得有意义之前
+ * 就已经结束了（快工具走 TOOL_RUNNING_MIN_VISIBLE_MS 的最小可见窗口，不会出现闪烁）。
+ */
+const TOOL_ELAPSED_MIN_VISIBLE_MS = 3_000;
 
 function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
@@ -2573,6 +2578,23 @@ export function ProjectionToolGroupEntry({
     [displayClock, entry.entries],
   );
   const { summary, lifecycle, remainingMs } = display;
+  // The live elapsed display derives from the running tool's own start time — the row's
+  // event/insertion timestamp (occurredAt on V2 rows, the tool.started insert otherwise).
+  // The group's `at` (its first child) is the same instant for a single running tool.
+  const runningStartedAt = useMemo(() => {
+    for (let index = entry.entries.length - 1; index >= 0; index -= 1) {
+      const child = entry.entries[index];
+      if (!child) {
+        continue;
+      }
+      const block = projectionItemToDetailBlock(child.item);
+      if (block?.kind === "action" && block.lifecycle === "running" && block.startedAt) {
+        return block.startedAt;
+      }
+    }
+    return entry.at;
+  }, [entry]);
+  const runningElapsedMs = useTurnDurationMs(runningStartedAt, undefined, lifecycle === "running");
   useEffect(() => {
     if (remainingMs <= 0) {
       return;
@@ -2601,7 +2623,18 @@ export function ProjectionToolGroupEntry({
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
       <RunLogCollapsibleActionTrigger
         icon={summary.icon}
-        label={lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
+        label={
+          lifecycle === "running" ? (
+            <>
+              <ShimmerText>{summary.label}</ShimmerText>
+              {runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS ? (
+                <span className="run-log-tool-group-elapsed">{formatDuration(runningElapsedMs)}</span>
+              ) : null}
+            </>
+          ) : (
+            summary.label
+          )
+        }
         {...(lifecycle && { lifecycle })}
         expanded={expanded}
         onClick={() => {
@@ -4450,6 +4483,7 @@ function DetailBlock({
         {...(actionLabelOverride && {
           displayLabelOverride: actionLabelOverride,
         })}
+        {...(block.startedAt && { startedAt: block.startedAt })}
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.webSearch && { webSearch: block.webSearch })}
@@ -6542,6 +6576,7 @@ function RunLogAction({
   label,
   displayLabelOverride,
   lifecycle,
+  startedAt,
   bashRun,
   fileChange,
   webSearch,
@@ -6557,6 +6592,8 @@ function RunLogAction({
   label: string;
   displayLabelOverride?: string;
   lifecycle?: ToolActionLifecycle;
+  /** 工具调用开始时间（行事件/插入时间）；running 行据此显示实时耗时。 */
+  startedAt?: string;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
@@ -6572,6 +6609,13 @@ function RunLogAction({
   const [expanded, setExpanded] = useState(false);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [canExpand, setCanExpand] = useState(false);
+  // Live elapsed time for a running tool row; 0 (never ticking) when the row is settled
+  // or carries no start time. Displayed only past TOOL_ELAPSED_MIN_VISIBLE_MS.
+  const runningElapsedMs = useTurnDurationMs(
+    startedAt ?? "",
+    undefined,
+    startedAt !== undefined && lifecycle === "running",
+  );
   const subagentRole = subagent?.trim() ? subagent : undefined;
   const showRoleLabel =
     subagentRole !== undefined &&
@@ -6631,6 +6675,11 @@ function RunLogAction({
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
+      {lifecycle === "running" && runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS ? (
+        <span className="run-log-action-meta run-log-action-elapsed">
+          {formatDuration(runningElapsedMs)}
+        </span>
+      ) : null}
       {lifecycle === "failed" ? (
         <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
       ) : null}

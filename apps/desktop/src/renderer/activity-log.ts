@@ -96,6 +96,12 @@ export type ActivityDetailBlock =
       label: string;
       lifecycle?: ToolActionLifecycle;
       toolName?: string;
+      /**
+       * When the tool call started — the row's own event/insertion timestamp. The live
+       * elapsed display derives from it; only tool rows carry it, so its absence means
+       * "not a runnable tool row" rather than "time unknown".
+       */
+      startedAt?: string;
       subagent?: string;
       agentId?: string;
       bashRun?: BashRunCardDisplay;

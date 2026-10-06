@@ -5792,6 +5792,7 @@ test("projectionItemToDetailBlock omits tool role badge and resolves icon from t
     label: "index.vue",
     toolName: "Read",
     lifecycle: "completed",
+    startedAt: "2026-01-01T00:00:00.000Z",
     readTarget: {
       fileName: "index.vue",
       filePath: "index.vue",
@@ -5824,6 +5825,7 @@ test("projectionItemToDetailBlock maps bash approval to action with lifecycle", 
     label: "/path/to/file.txt",
     toolName: "Grep",
     lifecycle: "approval-pending",
+    startedAt: "2026-01-01T00:00:00.000Z",
   });
 });
 
@@ -5981,6 +5983,7 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
     label: "获取网页 · https://weather.example/guangzhou (8.3s)",
     toolName: "WebFetch",
     lifecycle: "completed",
+    startedAt: "2026-01-01T00:00:00.000Z",
     subagent: "explore",
     agentId: "agent_weather",
     webSearch: {
@@ -6244,6 +6247,7 @@ test("projectionItemToDetailBlock treats structured todo metadata as tool action
     icon: "network",
     label: "获取网页 · https://weather.example/guangzhou",
     toolName: "WebFetch",
+    startedAt: "2026-01-01T00:00:00.000Z",
     subagent: "explore",
     agentId: "agent_weather",
     webSearch: {

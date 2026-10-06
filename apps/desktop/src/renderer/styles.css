@@ -14295,6 +14295,19 @@ button.markdown-file-ref.run-log-user-prompt-file-ref {
   font-variant-numeric: tabular-nums;
 }
 
+.run-log-action-elapsed,
+.run-log-tool-group-elapsed {
+  flex-shrink: 0;
+  color: var(--codex-log-faint, #737373);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-tool-group-elapsed {
+  margin-left: 8px;
+}
+
 .run-log-action-file-stats {
   flex-shrink: 0;
 }

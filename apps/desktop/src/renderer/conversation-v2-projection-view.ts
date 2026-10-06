@@ -3023,6 +3023,9 @@ function buildProjectionToolActionBlock(
     label: input.label,
     toolName: input.toolName,
     ...(input.lifecycle && { lifecycle: input.lifecycle }),
+    // The row's event timestamp is the call's start time (occurredAt on V2 rows, the
+    // tool.started insert on legacy rows); the live elapsed display derives from it.
+    ...(item.at.trim() && { startedAt: item.at }),
     ...(bashRun && { bashRun }),
     ...(fileChange && { fileChange }),
     ...(webSearch && { webSearch }),
