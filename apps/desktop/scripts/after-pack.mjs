@@ -7,6 +7,7 @@
 import path from "node:path";
 import rcedit from "rcedit";
 import { adhocSignMacApp, shouldAdhocSignMac } from "./after-pack-mac-sign.mjs";
+import { ensureNodePtySpawnHelpersExecutable } from "./prepare-node-pty.mjs";
 
 export default async function afterPack(context) {
   const platform = context.electronPlatformName;
@@ -19,9 +20,14 @@ export default async function afterPack(context) {
     return;
   }
 
-  if (platform === "darwin" && shouldAdhocSignMac(context)) {
+  if (platform === "darwin") {
     const productFilename = context.packager.appInfo.productFilename;
     const appPath = path.join(context.appOutDir, `${productFilename}.app`);
-    adhocSignMacApp(appPath);
+    // CI installs with --ignore-scripts, so fix the shipped helper before signing too.
+    ensureNodePtySpawnHelpersExecutable(
+      path.join(appPath, "Contents", "Resources", "app.asar.unpacked", "node_modules", "node-pty"),
+      platform,
+    );
+    if (shouldAdhocSignMac(context)) adhocSignMacApp(appPath);
   }
 }
