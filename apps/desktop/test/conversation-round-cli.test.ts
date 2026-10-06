@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,8 +13,18 @@ afterEach(() => {
 });
 
 function relocatedCheckout() {
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "eco-round-cli-test-")));
-  temporaryRoots.push(root);
+  const temporaryRoot = mkdtempSync(path.join(tmpdir(), "eco-round-cli-test-"));
+  temporaryRoots.push(temporaryRoot);
+  // Use the CLI's Node filesystem semantics: Bun preserves Windows 8.3 names
+  // such as RUNNER~1 while Node's module loader expands them to runneradmin.
+  const canonical = spawnSync("node", [
+    "--input-type=module", "-e",
+    'import { realpathSync } from "node:fs"; process.stdout.write(realpathSync(process.argv[1]));',
+    temporaryRoot,
+  ], { encoding: "utf8" });
+  if (canonical.error) throw canonical.error;
+  if (canonical.status !== 0) throw new Error(canonical.stderr);
+  const root = canonical.stdout;
   for (const relative of [
     "scripts/conversation-round/replay.mjs",
     "scripts/conversation-round/lib",

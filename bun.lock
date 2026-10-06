@@ -169,6 +169,7 @@
   },
   "patchedDependencies": {
     "react-dom@19.2.6": "patches/react-dom@19.2.6.patch",
+    "node-pty@1.1.0": "patches/node-pty@1.1.0.patch",
   },
   "overrides": {
     "@earendil-works/chord": "1.0.3",

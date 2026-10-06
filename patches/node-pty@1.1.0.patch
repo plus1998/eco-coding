@@ -1,0 +1,32 @@
+diff --git a/lib/windowsPtyAgent.js b/lib/windowsPtyAgent.js
+index a358ffb177357e177661033c1b092f9c9d0e5f5a..dfb88e261582bdf235b0651e01d5282aa2c95d3f 100644
+--- a/lib/windowsPtyAgent.js
++++ b/lib/windowsPtyAgent.js
+@@ -242,6 +242,11 @@ var WindowsPtyAgent = /** @class */ (function () {
+         }
+         this._inSocket.readable = false;
+         this._outSocket.readable = false;
++        // Natural exits must release the input pipe and ConPTY worker too.
++        // https://github.com/microsoft/node-pty/issues/887
++        // https://github.com/microsoft/node-pty/issues/947
++        this._inSocket.destroy();
++        this._conoutSocketWorker.dispose();
+         this._outSocket.destroy();
+     };
+     return WindowsPtyAgent;
+diff --git a/src/windowsPtyAgent.ts b/src/windowsPtyAgent.ts
+index d7054449516f0c9a62af351c2caa17331206d530..d468736521e7ce458c2eef19d26f4e5420ee22b9 100644
+--- a/src/windowsPtyAgent.ts
++++ b/src/windowsPtyAgent.ts
+@@ -245,6 +245,11 @@ export class WindowsPtyAgent {
+     }
+     this._inSocket.readable = false;
+     this._outSocket.readable = false;
++    // Natural exits must release the input pipe and ConPTY worker too.
++    // https://github.com/microsoft/node-pty/issues/887
++    // https://github.com/microsoft/node-pty/issues/947
++    this._inSocket.destroy();
++    this._conoutSocketWorker.dispose();
+     this._outSocket.destroy();
+   }
+ }
