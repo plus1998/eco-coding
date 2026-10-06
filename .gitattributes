@@ -1,0 +1,6 @@
+# 回放 fixture 是"录制产物"：内容里的换行（SSE 的 \r\n 与 \n）会直接改变回放断言的结果，
+# 所以这里固定成 LF 检出。否则 Windows 上 core.autocrlf=true（Git for Windows 的默认值）
+# 会把工作区改成 CRLF，让同一份录制在 Windows 上回放出不同的字节。
+scripts/gateway-http-round/fixtures/** text eol=lf
+scripts/conversation-round/fixtures/** text eol=lf
+scripts/codex-scenario-smoke/fixtures/** text eol=lf
