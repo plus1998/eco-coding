@@ -12,6 +12,9 @@ import {
   writeApprovedPlanSnapshot,
 } from "../src/main/worktree-lifecycle";
 
+/** 跨平台的路径 fixture：POSIX 上保持原样，Windows 上是 `<当前盘>` 下的同一路径。 */
+const REPO = path.resolve(path.parse(process.cwd()).root, "repo");
+
 describe("isWorktreeGitCwdError", () => {
   test("detects missing cwd", () => {
     expect(
@@ -29,7 +32,7 @@ describe("isWorktreeGitCwdError", () => {
 
 describe("approved plan snapshot", () => {
   test("builds stable file path and document", () => {
-    expect(approvedPlanFilePath("/repo", "thr_1")).toBe("/repo/.eco/approved-plans/thr_1.md");
+    expect(approvedPlanFilePath(REPO, "thr_1")).toBe(path.join(REPO, ".eco/approved-plans/thr_1.md"));
     const doc = formatApprovedPlanDocument({
       userPrompt: "fix bug",
       analysis: "root cause",
@@ -91,30 +94,30 @@ describe("resolveWorktreePathHint", () => {
     expect(
       resolveWorktreePathHint({
         threadId: "thr_1",
-        workspacePath: "/repo",
-        activeWorktreePath: "/repo/.eco/worktrees/thr_1",
-        pendingWorktreePath: "/repo/.eco/worktrees/old",
-        sdkSessionCwd: "/repo",
+        workspacePath: REPO,
+        activeWorktreePath: path.join(REPO, ".eco/worktrees/thr_1"),
+        pendingWorktreePath: path.join(REPO, ".eco/worktrees/old"),
+        sdkSessionCwd: REPO,
       }),
-    ).toBe("/repo/.eco/worktrees/thr_1");
+    ).toBe(path.join(REPO, ".eco/worktrees/thr_1"));
   });
 
   test("falls back to default worktree path", () => {
     expect(
       resolveWorktreePathHint({
         threadId: "thr_2",
-        workspacePath: "/repo",
+        workspacePath: REPO,
       }),
-    ).toBe("/repo/.eco/worktrees/thr_2");
+    ).toBe(path.join(REPO, ".eco/worktrees/thr_2"));
   });
 
   test("uses the persisted Core session cwd when no active or SDK path exists", () => {
     expect(
       resolveWorktreePathHint({
         threadId: "thr_codex",
-        workspacePath: "/repo",
-        coreSessionCwd: "/repo/codex-session",
+        workspacePath: REPO,
+        coreSessionCwd: path.join(REPO, "codex-session"),
       }),
-    ).toBe("/repo/codex-session");
+    ).toBe(path.join(REPO, "codex-session"));
   });
 });

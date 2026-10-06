@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
+import path from "node:path";
 import { ApprovalService } from "../../approval/src";
 import { type AgentRuntimeDriver, ThreadSupervisor } from "../../runtime/src";
 import { type AgentRoleRoute, InMemoryEventStore, type ModelProfile } from "../../shared/src";
 import { createApprovalBackedPermissionHandler, resolveRoutes, ThreadOrchestrator } from "../src";
+
+/** 跨平台的工作区 fixture：POSIX 上是 `/repo`，Windows 上是 `<当前盘>:/repo`。 */
+const REPO = path.resolve(path.parse(process.cwd()).root, "repo");
 
 const profiles: ModelProfile[] = [
   {
@@ -40,7 +44,7 @@ test("starts thread worker in workspace without isolated worktree", async () => 
   const result = await orchestrator.start({
     threadId: "thr_1",
     title: "Test",
-    workspacePath: "/repo",
+    workspacePath: REPO,
     prompt: "do work",
     roles: ["planner"],
     roleRoutes,
@@ -49,8 +53,8 @@ test("starts thread worker in workspace without isolated worktree", async () => 
 
   await result.running.done;
 
-  expect(result.worktree.worktreePath).toBe("/repo");
-  expect(result.worktree.workspacePath).toBe("/repo");
+  expect(result.worktree.worktreePath).toBe(REPO);
+  expect(result.worktree.workspacePath).toBe(REPO);
 });
 
 test("turns risky SDK Bash tools into pending approvals", async () => {
@@ -61,8 +65,8 @@ test("turns risky SDK Bash tools into pending approvals", async () => {
   const handler = createApprovalBackedPermissionHandler({
     approvalService,
     threadId: "thr_1",
-    workspacePath: "/repo",
-    cwd: "/repo",
+    workspacePath: REPO,
+    cwd: REPO,
   });
 
   const decision = await handler({

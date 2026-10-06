@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { CONVERSATION_V2_ERROR, ConversationV2Error } from "@eco/shared";
+import { removeTempDirectory } from "../test/helpers/temp-directory";
 import { createAgentOrchestrationStore } from "../src/main/agent-orchestration-store";
 import { createConversationStore } from "../src/main/conversation-store";
 import { FEED_SKELETON_RULES_VERSION } from "../src/main/legacy-feed-skeleton-store";
@@ -15,7 +16,7 @@ import type { ThreadSummary } from "../src/shared/ipc";
 async function createTestDirectory(t: test.TestContext, prefix: string): Promise<string> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   t.after(async () => {
-    await fs.rm(directory, { recursive: true, force: true });
+    await removeTempDirectory(directory);
   });
   return directory;
 }

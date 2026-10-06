@@ -1437,7 +1437,7 @@ test("createToolPermissionPreToolHook allows Glob patterns in system temp", asyn
     {
       hook_event_name: "PreToolUse",
       tool_name: "Glob",
-      tool_input: { pattern: "/tmp/external/**/*.ts" },
+      tool_input: { pattern: `${os.tmpdir()}/external/**/*.ts` },
       tool_use_id: "tool_glob_external",
       session_id: "s1",
       cwd: "/repo/apps/desktop",
@@ -1656,7 +1656,7 @@ test("createToolPermissionPreToolHook allows writes in system temp", async () =>
     {
       hook_event_name: "PreToolUse",
       tool_name: "Write",
-      tool_input: { file_path: "/tmp/omni-proxy-verify.mjs", content: "export {};" },
+      tool_input: { file_path: `${os.tmpdir()}/omni-proxy-verify.mjs`, content: "export {};" },
       tool_use_id: "tool_write_outside",
       session_id: "s1",
       cwd: "/repo",

@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ConversationEventInput } from "@eco/shared";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationV2LegacyMigrator } from "../src/main/conversation-v2-legacy-migration";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import { PromptImageFileStore } from "../src/main/prompt-image-file-store";
@@ -256,7 +257,7 @@ test("requires and materializes a durable object for legacy image migration", as
     expect(message?.attachments?.[0]).not.toHaveProperty("data");
   } finally {
     db.close();
-    await rm(directory, { recursive: true, force: true });
+    await removeTempDirectory(directory);
   }
 });
 
@@ -323,7 +324,7 @@ test("sanitizes legacy non-image attachments without retaining path or inline by
     expect(message?.attachments?.[0]).not.toHaveProperty("data");
   } finally {
     db.close();
-    await rm(directory, { recursive: true, force: true });
+    await removeTempDirectory(directory);
   }
 });
 
@@ -855,6 +856,6 @@ test("migration preserves SQLITE_FULL and leaves the V2 cursor unchanged", async
     });
   } finally {
     db.close();
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });

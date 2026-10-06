@@ -3,13 +3,14 @@ import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ProjectIntegrationsSettingsStore } from "../src/main/project-integrations-settings-store";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })),
+    temporaryDirectories.splice(0).map((directory) => removeTempDirectory(directory)),
   );
 });
 

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationStore, createConversationStore } from "../src/main/conversation-store";
 import type { RunAttemptRecord } from "../src/main/usage-ledger";
 
@@ -290,7 +291,7 @@ test.skipIf(!sqliteAvailable)("keeps the legacy run-attempt ledger out of V2-onl
     ).toBeUndefined();
     db.close();
   } finally {
-    await fs.rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -493,7 +494,7 @@ test("V2 lifecycle survives disk reopen and rebuild without a legacy attempt tab
     expect(store.listRunAttempts(started.threadId)).toEqual([completed]);
   } finally {
     db.close();
-    await fs.rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 

@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { removeTempDirectorySync } from "./helpers/temp-directory";
 import { ConversationStore } from "../src/main/conversation-store";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import { buildConversationV2OnlyProjection } from "../src/renderer/ActivityLogView";
@@ -117,7 +118,7 @@ test("persisted command receipts survive disk reopen and rebuild without accepti
     expect(reopened.bootstrap("receipt-fields").messages).toHaveLength(1);
   } finally {
     db?.close();
-    rmSync(directory, { recursive: true, force: true });
+    removeTempDirectorySync(directory);
   }
 });
 
@@ -170,7 +171,7 @@ test("accepted command receipts survive SIGKILL without a graceful database clos
     worker.kill("SIGKILL");
     await worker.exited;
     db?.close();
-    rmSync(directory, { recursive: true, force: true });
+    removeTempDirectorySync(directory);
   }
 }, 10_000);
 
@@ -396,7 +397,7 @@ test("V2 append fails closed on SQLite SQLITE_FULL and leaves the cursor unchang
     expect(store.head("sqlite-full").lastSeq).toBe(0);
   } finally {
     db.close();
-    rmSync(directory, { recursive: true, force: true });
+    removeTempDirectorySync(directory);
   }
 });
 

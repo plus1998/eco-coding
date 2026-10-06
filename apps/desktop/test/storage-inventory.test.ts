@@ -31,8 +31,12 @@ test("measurePathBytes sums files without following symlinks", async () => {
 });
 
 test("encodeClaudeProjectDirName matches Claude projects folder style", () => {
-  expect(encodeClaudeProjectDirName("/Users/me/repo")).toBe("-Users-me-repo");
-  expect(isEcoClaudeProjectDirName("-Users-me-repo--eco-worktrees-thr-1")).toBe(true);
+  // Claude 用「把绝对路径里每个非字母数字字符换成 -」命名 projects/ 子目录，路径会先被解析成
+  // 绝对路径，所以断言规则本身（尾部保留、只剩字母数字和 -），而不是某台机器上的盘符写法。
+  const encoded = encodeClaudeProjectDirName("/Users/me/repo");
+  expect(encoded.endsWith("-Users-me-repo")).toBe(true);
+  expect(encoded).toMatch(/^[A-Za-z0-9-]+$/);
+  expect(isEcoClaudeProjectDirName(`${encoded}--eco-worktrees-thr-1`)).toBe(true);
   expect(isEcoClaudeProjectDirName("-Users-me-other-project")).toBe(false);
 });
 

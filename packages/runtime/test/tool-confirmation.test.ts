@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import os from "node:os";
 import {
   evaluateBashConfirmation,
   evaluateBashHookGate,
@@ -56,7 +57,7 @@ test("evaluateFilesystemReadConfirmation asks for external paths in auto mode", 
 test("evaluateFilesystemWriteConfirmation allows system temp paths in auto mode", () => {
   const decision = evaluateFilesystemWriteConfirmation({
     toolName: "Write",
-    toolInput: { file_path: "/tmp/omni-proxy-verify.mjs" },
+    toolInput: { file_path: `${os.tmpdir()}/omni-proxy-verify.mjs` },
     cwd: "/repo",
     workspacePath: "/repo",
     confirmationMode: "auto",
@@ -69,7 +70,7 @@ test("evaluateFilesystemWriteConfirmation allows system temp paths in auto mode"
 test("evaluateFilesystemHookGate does not ask before a system temp write", () => {
   const decision = evaluateFilesystemHookGate({
     toolName: "Edit",
-    toolInput: { file_path: "/tmp/outside.ts" },
+    toolInput: { file_path: `${os.tmpdir()}/outside.ts` },
     cwd: "/repo",
     workspacePath: "/repo",
     confirmationMode: "always",

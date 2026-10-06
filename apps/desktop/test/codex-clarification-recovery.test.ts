@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { removeTempDirectorySync } from "./helpers/temp-directory";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import {
   executeClarificationResolutionCommand,
@@ -102,7 +103,7 @@ for (const boundary of ["accepted", "running", "message-accepted"] as const) {
       expect(v2.listQueuedUserMessages()).toHaveLength(1);
     } finally {
       db.close();
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDirectorySync(dir);
     }
   });
 }

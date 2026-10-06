@@ -2,9 +2,14 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { removeTempDirectory } from "./helpers/temp-directory";
+import { encodeClaudeProjectDirName } from "../src/main/claude-session-paths";
 import { createConversationStore } from "../src/main/conversation-store";
 import { clearCodexHomeCaches, clearLogs, runStorageCleanup } from "../src/main/storage-cleanup";
 import type { ThreadSummary } from "../src/shared/ipc";
+
+/** 跨平台的工作区 fixture：POSIX 上是 `/Users/me/repo`，Windows 上是 `<当前盘>:/Users/me/repo`。 */
+const WORKSPACE_ROOT = path.resolve(path.parse(process.cwd()).root, "Users", "me", "repo");
 
 const sqliteAvailable = await (async () => {
   try {
@@ -22,7 +27,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await fs.rm(tempDir, { recursive: true, force: true });
+  await removeTempDirectory(tempDir);
 });
 
 test("clearLogs deletes only upstream-*.log and not other files", async () => {
@@ -74,9 +79,12 @@ test("clearCodexHomeCaches only removes whitelisted dirs", async () => {
 test("clearClaudeSessions orphansOnly removes Eco worktree projects only", async () => {
   const projectsDir = path.join(tempDir, "claude-projects");
   const historyDir = path.join(tempDir, "claude-history");
-  const ecoOrphan = "-Users-me-repo--eco-worktrees-thr-gone";
-  const ecoActive = "-Users-me-repo--eco-worktrees-thr-live";
-  const cliProject = "-Users-me-other";
+  // Claude 的 project 目录名由工作区绝对路径编码而来，所以 fixture 用同一个编码函数生成：
+  // POSIX 与 Windows 上都指向同一个"还活着的 worktree"。
+  const liveWorktree = path.join(WORKSPACE_ROOT, ".eco", "worktrees", "thr-live");
+  const ecoOrphan = encodeClaudeProjectDirName(path.join(WORKSPACE_ROOT, ".eco", "worktrees", "thr-gone"));
+  const ecoActive = encodeClaudeProjectDirName(liveWorktree);
+  const cliProject = encodeClaudeProjectDirName(path.join(WORKSPACE_ROOT, "other"));
   for (const name of [ecoOrphan, ecoActive, cliProject]) {
     await fs.mkdir(path.join(projectsDir, name), { recursive: true });
     await fs.writeFile(path.join(projectsDir, name, "sess.jsonl"), "data");
@@ -88,13 +96,13 @@ test("clearClaudeSessions orphansOnly removes Eco worktree projects only", async
     listThreads: () => [
       {
         id: "t1",
-        workspacePath: "/Users/me/repo/.eco/worktrees/thr-live",
+        workspacePath: liveWorktree,
         status: "idle" as const,
       },
     ],
     getSdkSession: () => ({
       sessionId: "live-session",
-      cwd: "/Users/me/repo/.eco/worktrees/thr-live",
+      cwd: liveWorktree,
     }),
   };
 

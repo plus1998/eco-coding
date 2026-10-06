@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { removeTempDirectory } from "../test/helpers/temp-directory";
 import { OpenAIAccountService, readAuthRefreshStamp } from "../src/main/openai-account-service";
 import { parseOpenAIAccountImport } from "../src/main/openai-account-import";
 import { writeFakeCodexLogin } from "../test-support/fake-codex-login";
@@ -29,7 +30,7 @@ async function makeService(t: test.TestContext, executable?: string, onAccountsC
   await service.initialize();
   t.after(async () => {
     await service.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await removeTempDirectory(root);
   });
   return { root, service };
 }
@@ -78,7 +79,7 @@ function pauseNextPublication(service: OpenAIAccountService) {
 
 test("Node SQLite migrates and archives complete legacy account data idempotently", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-migrate-"));
-  t.after(async () => fs.rm(root, { recursive: true, force: true }));
+  t.after(async () => removeTempDirectory(root));
   const accountsDir = path.join(root, "codex-accounts");
   const id = "oa_legacy_one";
   const rawAuth = ` {\n  "tokens": {"access_token":"at-legacy", "account_id":"chatgpt-legacy"},\n  "mystery": {"leave": [1, 2]}\n}\n`;
@@ -134,7 +135,7 @@ test("Node SQLite migrates and archives complete legacy account data idempotentl
 
 test("damaged legacy data fails initialization and leaves source files untouched", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-damaged-"));
-  t.after(async () => fs.rm(root, { recursive: true, force: true }));
+  t.after(async () => removeTempDirectory(root));
   const accountsDir = path.join(root, "codex-accounts");
   const source = path.join(accountsDir, "accounts.json");
   await fs.mkdir(accountsDir, { recursive: true });
@@ -324,7 +325,7 @@ test("Codex refresh writes back after replacement and survives a half-written au
 
 test("file watcher failure is visible and clears after the watcher is restored", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-watcher-error-"));
-  t.after(async () => fs.rm(root, { recursive: true, force: true }));
+  t.after(async () => removeTempDirectory(root));
   const originalWatch = fsSync.watch;
   const mutableFs = fsSync as unknown as { watch: typeof fsSync.watch };
   mutableFs.watch = (() => { throw new Error("forced watcher failure"); }) as typeof fsSync.watch;
@@ -383,7 +384,7 @@ test("five-second polling catches an auth replacement after file watching is una
 
 test("account identity mismatch preserves both credential copies and reports a conflict", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-conflict-"));
-  t.after(async () => fs.rm(root, { recursive: true, force: true }));
+  t.after(async () => removeTempDirectory(root));
   const id = "oa_conflict";
   const databaseAuth = authJson({ accountId: "chatgpt-db", refreshToken: "db-copy", stamp: "2026-10-03T01:00:00.000Z" });
   const mainAuth = authJson({ accountId: "chatgpt-other", refreshToken: "main-copy", stamp: "2026-10-03T02:00:00.000Z" });
@@ -397,7 +398,7 @@ test("account identity mismatch preserves both credential copies and reports a c
   let service = new OpenAIAccountService(root);
   t.after(async () => {
     await service.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await removeTempDirectory(root);
   });
   await service.initialize();
   assert.equal(service.getSyncStatus().state, "conflict");
@@ -517,9 +518,19 @@ test("shutdown flushes the last auth refresh into SQLite before closing the stor
   db.close();
 });
 
+/**
+ * writeFakeCodexLogin 写的是 `#!/usr/bin/env node` 的 POSIX 脚本（无扩展名），Windows 的进程创建
+ * 语义无法启动它（真实的 Windows codex 是 `node_modules/.bin/codex.exe`），所以依赖这个 fixture 的
+ * OAuth 用例只在 POSIX 上跑 —— 不假装覆盖 Windows 的进程启动语义。
+ */
+function skipPosixOnlyCodexFakeOnWindows(): boolean {
+  return process.platform === "win32";
+}
+
 test("OAuth login uses an isolated CODEX_HOME and reports success only after SQLite save", async (t) => {
+  if (skipPosixOnlyCodexFakeOnWindows()) return;
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-oauth-"));
-  t.after(async () => fs.rm(root, { recursive: true, force: true }));
+  t.after(async () => removeTempDirectory(root));
   const executable = path.join(root, "fake-codex");
   const loginAuth = authJson({ accountId: "chatgpt-oauth", refreshToken: "oauth", stamp: "2026-10-05T01:00:00.000Z" });
   await writeFakeCodexLogin(executable, loginAuth);
@@ -537,8 +548,9 @@ test("OAuth login uses an isolated CODEX_HOME and reports success only after SQL
 });
 
 test("active OAuth relogin stages credentials until the idle switch publishes them", async (t) => {
+  if (skipPosixOnlyCodexFakeOnWindows()) return;
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-active-oauth-"));
-  t.after(async () => fs.rm(root, { recursive: true, force: true }));
+  t.after(async () => removeTempDirectory(root));
   const executable = path.join(root, "fake-codex");
   const newAuth = authJson({ accountId: "chatgpt-active-oauth", refreshToken: "relogged", stamp: "2026-10-05T02:00:00.000Z" });
   await writeFakeCodexLogin(executable, newAuth);
@@ -636,6 +648,7 @@ test("failed switch commit restores auth.json and rolls back off-target staged c
 
 for (const active of [false, true]) {
   test(`OAuth ${active ? "staging" : "saving"} failure retains fresh auth.json and reports the SQLite cause`, async (t) => {
+    if (skipPosixOnlyCodexFakeOnWindows()) return;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-oauth-failure-"));
     const executable = path.join(root, "fake-codex");
     const newAuth = authJson({ accountId: "chatgpt-oauth-failure", refreshToken: "fresh", stamp: "2026-10-05T02:00:00.000Z" });
@@ -644,7 +657,7 @@ for (const active of [false, true]) {
     await loginService.initialize();
     t.after(async () => {
       await loginService.dispose();
-      await fs.rm(root, { recursive: true, force: true });
+      await removeTempDirectory(root);
     });
     const account = await loginService.createAccount("Failed login");
     const oldAuth = authJson({ accountId: "chatgpt-oauth-failure", refreshToken: "old", stamp: "2026-10-05T01:00:00.000Z" });

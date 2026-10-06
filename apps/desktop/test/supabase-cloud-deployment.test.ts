@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { SupabaseCloudDeployment } from "../src/main/supabase-cloud-deployment";
 import {
   readSupabaseDeploymentBundle,
@@ -236,7 +237,7 @@ class Cloud {
 }
 
 test("bundled deployment contains all migrations/functions and respects JWT config", async () => {
-  const directory = new URL("../../../supabase", import.meta.url).pathname;
+  const directory = fileURLToPath(new URL("../../../supabase", import.meta.url));
   const loaded = await readSupabaseDeploymentBundle(directory, "0.1.0-beta.12");
   expect(loaded.version.schema).toBe(backendMigration);
   expect(loaded.version.release).toBe("1.0.0");

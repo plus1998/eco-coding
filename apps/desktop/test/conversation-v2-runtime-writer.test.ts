@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationStore } from "../src/main/conversation-store";
 import { ConversationV2RuntimeWriter } from "../src/main/conversation-v2-runtime-writer";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
@@ -168,7 +169,7 @@ test("runtime append preserves SQLITE_FULL and leaves the V2 cursor unchanged", 
     });
   } finally {
     db.close();
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -375,7 +376,7 @@ test("the store native API reopens and rebuilds source identities without any V1
     expect(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'thread_%'").all()).toEqual([]);
   } finally {
     db.close();
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 

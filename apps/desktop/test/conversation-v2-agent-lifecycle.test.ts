@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationStore } from "../src/main/conversation-store";
 import type { AgentInstanceRecord } from "../src/main/usage-ledger";
 
@@ -64,7 +65,7 @@ test("agent lifecycle, ownership and recovery survive reopen/rebuild without V1"
     });
   } finally {
     db.close();
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 

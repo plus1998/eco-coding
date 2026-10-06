@@ -1,3 +1,4 @@
+import path from "node:path";
 import { expect, test } from "bun:test";
 import { resolveImplicitSkillReadRoots } from "../src/shared/skill-paths";
 import {
@@ -12,6 +13,10 @@ import {
   resolveSdkSessionSkillConfig,
   type SkillInfo,
 } from "../src/shared/skills";
+
+/** 跨平台的路径 fixture：POSIX 上保持原样，Windows 上是 `<当前盘>` 下的同一路径。 */
+const USER_HOME = path.resolve(path.parse(process.cwd()).root, "Users", "alice");
+const PROJECT_ROOT = path.resolve(path.parse(process.cwd()).root, "repo", "app");
 
 test("parseExplicitSkillNames extracts $skill tokens", () => {
   expect(parseExplicitSkillNames("请用 $pdf-processing 处理附件")).toEqual(["pdf-processing"]);
@@ -103,16 +108,13 @@ test("resolveSdkSessionSkillConfig does not enable discovered user skills implic
 });
 
 test("resolveImplicitSkillReadRoots includes project roots and explicit skill directories only", () => {
-  expect(
-    resolveImplicitSkillReadRoots("/Users/alice", "/repo/app", [
-      { directory: "/Users/alice/.claude/skills/vue-best-practices" },
-    ]),
-  ).toEqual([
-    "/repo/app/.claude/skills",
-    "/repo/app/.agents/skills",
-    "/repo/app/.codex/skills",
-    "/repo/app/.pi/skills",
-    "/Users/alice/.claude/skills/vue-best-practices",
+  const explicit = path.join(USER_HOME, ".claude/skills/vue-best-practices");
+  expect(resolveImplicitSkillReadRoots(USER_HOME, PROJECT_ROOT, [{ directory: explicit }])).toEqual([
+    path.join(PROJECT_ROOT, ".claude/skills"),
+    path.join(PROJECT_ROOT, ".agents/skills"),
+    path.join(PROJECT_ROOT, ".codex/skills"),
+    path.join(PROJECT_ROOT, ".pi/skills"),
+    explicit,
   ]);
 });
 

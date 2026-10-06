@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 
 interface CorrectionOutput {
@@ -130,7 +131,7 @@ test("V2-only run correction CLI appends an audited repair and stays idempotent"
     ).toEqual({ count: 1 });
     reopened.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -177,6 +178,6 @@ test("V2-only run correction CLI rejects legacy-compatible stores before writing
     });
     reopened.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });

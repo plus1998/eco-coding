@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { CONVERSATION_V2_ERROR, ConversationV2Error, estimateConversationBytes } from "@eco/shared";
+import { removeTempDirectorySync } from "./helpers/temp-directory";
 import { appendLegacyThreadRunEventToConversationV2 } from "../src/main/conversation-v2-legacy-adapter";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 
@@ -1752,7 +1753,7 @@ describe("conversation storage V2", () => {
       ).toMatchObject({ acquired: false, job: { status: "running" } });
       reopenedDb.close();
     } finally {
-      rmSync(directory, { recursive: true, force: true });
+      removeTempDirectorySync(directory);
     }
   });
 

@@ -13,6 +13,9 @@ import {
   isInsidePath,
 } from "../src";
 
+/** 跨平台的工作区 fixture：POSIX 上是 `/repo`，Windows 上是 `<当前盘>:/repo`。 */
+const REPO = path.resolve(path.parse(process.cwd()).root, "repo");
+
 const TEST_GIT_IDENTITY_ARGS = [
   "-c",
   "user.name=Eco Coding Test",
@@ -51,24 +54,24 @@ test("requires approval for dangerous commands", () => {
   expect(
     evaluateCommand({
       command: ["rm", "-rf", "src"],
-      cwd: "/repo",
-      workspacePath: "/repo",
+      cwd: REPO,
+      workspacePath: REPO,
     }).action,
   ).toBe("ask");
 
   expect(
     evaluateCommand({
       command: ["git", "reset", "--hard"],
-      cwd: "/repo",
-      workspacePath: "/repo",
+      cwd: REPO,
+      workspacePath: REPO,
     }).riskLevel,
   ).toBe("critical");
 
   expect(
     evaluateCommand({
       command: ["pnpm", "add", "react"],
-      cwd: "/repo",
-      workspacePath: "/repo",
+      cwd: REPO,
+      workspacePath: REPO,
     }).action,
   ).toBe("allow");
 });
@@ -78,21 +81,21 @@ test("denies commands and writes outside the workspace", () => {
     evaluateCommand({
       command: ["ls"],
       cwd: "/tmp",
-      workspacePath: "/repo",
+      workspacePath: REPO,
     }).action,
   ).toBe("deny");
 
   expect(
     evaluateFileWrite({
-      filePath: "/repo/src/index.ts",
-      workspacePath: "/repo",
+      filePath: path.join(REPO, "src/index.ts"),
+      workspacePath: REPO,
     }).action,
   ).toBe("allow");
 
   expect(
     evaluateFileWrite({
       filePath: "/etc/passwd",
-      workspacePath: "/repo",
+      workspacePath: REPO,
     }).action,
   ).toBe("deny");
 });
@@ -101,35 +104,35 @@ test("evaluates compound shell commands conservatively", () => {
   expect(
     evaluateShellCommandText({
       command: "echo ok && rm -rf src",
-      cwd: "/repo",
-      workspacePath: "/repo",
+      cwd: REPO,
+      workspacePath: REPO,
     }).action,
   ).toBe("ask");
 
   expect(
     evaluateShellCommandText({
       command: "NODE_ENV=test bun test | tee out.log",
-      cwd: "/repo",
-      workspacePath: "/repo",
+      cwd: REPO,
+      workspacePath: REPO,
     }).action,
   ).toBe("allow");
 });
 
 test("builds stable worktree plans", () => {
-  const plan = createWorktreePlan("/repo", "thread:123");
-  expect(plan.worktreePath).toBe("/repo/.eco/worktrees/thread-123");
+  const plan = createWorktreePlan(REPO, "thread:123");
+  expect(plan.worktreePath).toBe(path.join(REPO, ".eco/worktrees/thread-123"));
   expect(plan.branchName).toBe("eco/thread-123");
 });
 
 test("createSessionPlan uses workspace path for direct editing", () => {
-  const plan = createSessionPlan("/repo", "thread:123");
-  expect(plan.worktreePath).toBe("/repo");
-  expect(plan.workspacePath).toBe("/repo");
+  const plan = createSessionPlan(REPO, "thread:123");
+  expect(plan.worktreePath).toBe(REPO);
+  expect(plan.workspacePath).toBe(REPO);
 });
 
 test("checks path containment safely", () => {
-  expect(isInsidePath("/repo/src/file.ts", "/repo")).toBe(true);
-  expect(isInsidePath("/repo-other/file.ts", "/repo")).toBe(false);
+  expect(isInsidePath(path.join(REPO, "src/file.ts"), REPO)).toBe(true);
+  expect(isInsidePath("/repo-other/file.ts", REPO)).toBe(false);
 });
 
 test("creates a git worktree through an injectable runner", async () => {
@@ -142,12 +145,12 @@ test("creates a git worktree through an injectable runner", async () => {
   };
 
   const service = new GitWorktreeService(runner);
-  await service.createWorktree(createWorktreePlan("/repo", "thr_1"));
+  await service.createWorktree(createWorktreePlan(REPO, "thr_1"));
 
   expect(calls).toEqual([
     ["git", "rev-parse", "--show-toplevel"],
     ["git", "rev-parse", "--verify", "HEAD"],
-    ["git", "worktree", "add", "-B", "eco/thr_1", "/repo/.eco/worktrees/thr_1", "HEAD"],
+    ["git", "worktree", "add", "-B", "eco/thr_1", path.join(REPO, ".eco/worktrees/thr_1"), "HEAD"],
   ]);
 });
 
@@ -162,7 +165,7 @@ test("createWorktree rejects repositories without commits", async () => {
   };
 
   const service = new GitWorktreeService(runner);
-  await expect(service.createWorktree(createWorktreePlan("/repo", "thr_1"))).rejects.toThrow(
+  await expect(service.createWorktree(createWorktreePlan(REPO, "thr_1"))).rejects.toThrow(
     "Git 仓库还没有任何提交",
   );
 });
@@ -176,7 +179,7 @@ test("discards uncommitted worktree changes", async () => {
     },
   };
   const service = new GitWorktreeService(runner);
-  const plan = createWorktreePlan("/repo", "thread:discard");
+  const plan = createWorktreePlan(REPO, "thread:discard");
 
   await service.discardWorktreeChanges(plan);
 
@@ -196,17 +199,17 @@ test("removes a git worktree and its branch", async () => {
   };
 
   const service = new GitWorktreeService(runner);
-  await service.removeWorktree(createWorktreePlan("/repo", "thr_1"));
+  await service.removeWorktree(createWorktreePlan(REPO, "thr_1"));
 
   expect(calls).toEqual([
     ["git", "rev-parse", "--show-toplevel"],
-    ["git", "worktree", "remove", "--force", "/repo/.eco/worktrees/thr_1"],
+    ["git", "worktree", "remove", "--force", path.join(REPO, ".eco/worktrees/thr_1")],
     ["git", "branch", "-D", "eco/thr_1"],
   ]);
 });
 
 test("changedFiles falls back when merge-base diff fails", async () => {
-  const plan = createWorktreePlan("/repo", "thr_diff_fallback");
+  const plan = createWorktreePlan(REPO, "thr_diff_fallback");
   const runner: CommandRunner = {
     async run(command, cwd) {
       if (command[1] === "merge-base") {
@@ -231,7 +234,7 @@ test("changedFiles falls back when merge-base diff fails", async () => {
 });
 
 test("applies approved worktree diffs back to the target workspace", async () => {
-  const plan = createWorktreePlan("/repo", "thr_1");
+  const plan = createWorktreePlan(REPO, "thr_1");
   const calls: Array<{ command: string[]; cwd: string; stdin?: string }> = [];
   const runner: CommandRunner = {
     async run(command, cwd, options) {
@@ -255,22 +258,22 @@ test("applies approved worktree diffs back to the target workspace", async () =>
   expect(calls).toEqual([
     {
       command: ["git", "add", "-A"],
-      cwd: "/repo/.eco/worktrees/thr_1",
+      cwd: path.join(REPO, ".eco/worktrees/thr_1"),
       stdin: undefined,
     },
     {
       command: ["git", "merge-base", "HEAD", plan.branchName],
-      cwd: "/repo",
+      cwd: REPO,
       stdin: undefined,
     },
     {
       command: ["git", "diff", "--name-only", "abc123"],
-      cwd: "/repo/.eco/worktrees/thr_1",
+      cwd: path.join(REPO, ".eco/worktrees/thr_1"),
       stdin: undefined,
     },
     {
       command: ["git", "diff", "--binary", "abc123"],
-      cwd: "/repo/.eco/worktrees/thr_1",
+      cwd: path.join(REPO, ".eco/worktrees/thr_1"),
       stdin: undefined,
     },
   ]);
@@ -303,7 +306,7 @@ test("applyApprovedDiff materializes files when workspace drifted from merge-bas
 });
 
 test("changedFiles includes untracked new files without staging", async () => {
-  const plan = createWorktreePlan("/repo", "thr_status");
+  const plan = createWorktreePlan(REPO, "thr_status");
   const calls: Array<{ command: string[]; cwd: string }> = [];
   const runner: CommandRunner = {
     async run(command, cwd) {
@@ -329,7 +332,7 @@ test("changedFiles includes untracked new files without staging", async () => {
 });
 
 test("collectWorktreeChanges stages untracked files before diffing", async () => {
-  const plan = createWorktreePlan("/repo", "thr_new");
+  const plan = createWorktreePlan(REPO, "thr_new");
   const calls: Array<{ command: string[]; cwd: string }> = [];
   const runner: CommandRunner = {
     async run(command, cwd) {
@@ -363,7 +366,7 @@ test("collectWorktreeChanges stages untracked files before diffing", async () =>
 });
 
 test("collectWorktreeChanges does not stage direct workspace plans", async () => {
-  const plan = createSessionPlan("/repo", "thr_direct");
+  const plan = createSessionPlan(REPO, "thr_direct");
   const calls: Array<{ command: string[]; cwd: string }> = [];
   const runner: CommandRunner = {
     async run(command, cwd) {
@@ -394,7 +397,7 @@ test("collectWorktreeChanges does not stage direct workspace plans", async () =>
 });
 
 test("discardWorktreeChanges no-ops for direct workspace plans", async () => {
-  const plan = createSessionPlan("/repo", "thr_direct");
+  const plan = createSessionPlan(REPO, "thr_direct");
   const calls: Array<{ command: string[]; cwd: string }> = [];
   const runner: CommandRunner = {
     async run(command, cwd) {

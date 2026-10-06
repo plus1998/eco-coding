@@ -12,6 +12,7 @@ import {
   usesPlanMode,
   usesPlanOrchestration,
 } from "../src/main/workflow-settings-store";
+import { removeTempDirectory } from "./helpers/temp-directory";
 
 const sqliteAvailable = await (async () => {
   try {
@@ -234,7 +235,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(store.get()).toEqual(saved);
-  await fs.rm(dbPath, { force: true });
+  await removeTempDirectory(dbPath);
 });
 
 test.skipIf(!sqliteAvailable)("workflow settings store persists follow-up delivery mode", async () => {
@@ -249,5 +250,5 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists follow-up delive
   });
   expect(saved.followUpDeliveryMode).toBe("queue");
   expect(store.get().followUpDeliveryMode).toBe("queue");
-  await fs.rm(dbPath, { force: true });
+  await removeTempDirectory(dbPath);
 });

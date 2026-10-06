@@ -5,6 +5,10 @@ import path from "node:path";
 import { startCodexBrowserLogin } from "../src/main/codex-browser-login";
 
 const cleanup: Array<() => Promise<void>> = [];
+// 下面每个用例都依赖 start() 写出的假 codex（`#!/usr/bin/env node` 的 POSIX 脚本，无扩展名）：
+// Windows 的进程创建语义无法启动这种文件（真实的 Windows codex 是 `.bin/codex.exe`），所以整组
+// 用例只在 POSIX 上跑 —— 不假装覆盖 Windows 的进程启动语义。
+const posixOnly = test.skipIf(process.platform === "win32");
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
 async function start(options: { completed?: boolean; unrelated?: boolean; rpcError?: boolean; exit?: boolean } = {}, onAuthenticated: (signal: AbortSignal) => Promise<void> = async () => {}) {
@@ -38,7 +42,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   return login;
 }
 
-test("batched login response and completion persist credentials before reporting success", async () => {
+posixOnly("batched login response and completion persist credentials before reporting success", async () => {
   let saved = false;
   const login = await start({ completed: true }, async () => { saved = true; });
   expect(login.authUrl).toStartWith("https://auth.openai.com/");
@@ -46,19 +50,19 @@ test("batched login response and completion persist credentials before reporting
   expect(saved).toBe(true);
 });
 
-test("completion for another login cannot settle this account's login", async () => {
+posixOnly("completion for another login cannot settle this account's login", async () => {
   let calls = 0;
   const login = await start({ unrelated: true }, async () => { calls++; });
   expect((await login.result).success).toBe(true);
   expect(calls).toBe(1);
 });
 
-test("credential persistence failure is surfaced as a failed login", async () => {
+posixOnly("credential persistence failure is surfaced as a failed login", async () => {
   const login = await start({ completed: true }, async () => { throw new Error("SQLite write failed"); });
   expect(await login.result).toEqual({ success: false, message: "登录凭据保存失败：SQLite write failed" });
 });
 
-test("cancelling during credential persistence aborts its callback", async () => {
+posixOnly("cancelling during credential persistence aborts its callback", async () => {
   let started!: () => void;
   const entered = new Promise<void>((resolve) => { started = resolve; });
   let aborted = false;
@@ -73,11 +77,11 @@ test("cancelling during credential persistence aborts its callback", async () =>
   expect(aborted).toBe(true);
 });
 
-test("RPC startup failures are explicit and do not start another login mechanism", async () => {
+posixOnly("RPC startup failures are explicit and do not start another login mechanism", async () => {
   await expect(start({ rpcError: true })).rejects.toThrow("Login unavailable");
 });
 
-test("an exit without a completion notification cannot be reported as success", async () => {
+posixOnly("an exit without a completion notification cannot be reported as success", async () => {
   const login = await start({ exit: true });
   const result = await login.result;
   expect(result.success).toBe(false);

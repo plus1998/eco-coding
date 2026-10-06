@@ -35,7 +35,9 @@ test("resolveCodexHomeDir isolates CODEX_HOME under eco data dir", () => {
 });
 
 test("resolveEcoGatewayBaseUrl defaults to local eco-gateway port", () => {
-  expect(resolveEcoGatewayBaseUrl()).toBe(`http://127.0.0.1:${DEFAULT_ECO_GATEWAY_PORT}/v1`);
+  // 显式传空 env：默认端口取决于调用方的环境变量（开发模式的 VITE_DEV_SERVER_URL 会把端口
+  // 换到 dev 桥接端口），断言“默认值”就不能受跑测试的终端影响。
+  expect(resolveEcoGatewayBaseUrl(undefined, {})).toBe(`http://127.0.0.1:${DEFAULT_ECO_GATEWAY_PORT}/v1`);
   expect(resolveEcoGatewayPort({ ECO_GATEWAY_PORT: "19999" })).toBe(19999);
   expect(resolveEcoGatewayPort({ VITE_DEV_SERVER_URL: "http://127.0.0.1:5173/" })).toBe(
     DEFAULT_DEV_ECO_GATEWAY_PORT,

@@ -2,13 +2,14 @@ import { afterEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { OpenAIAccountService } from "../src/main/openai-account-service";
 import { writeFakeCodexLogin } from "../test-support/fake-codex-login";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(tempDirs.splice(0).map((dir) => removeTempDirectory(dir)));
 });
 
 async function createService(): Promise<{ root: string; service: OpenAIAccountService }> {
@@ -86,7 +87,9 @@ test("active account proxy is available without listing accounts first", async (
   service.dispose();
 });
 
-test("cancelling an OAuth login settles the result and terminates the codex child", async () => {
+// writeFakeCodexLogin 是 POSIX shebang 脚本（无扩展名），Windows 无法直接启动它，所以这个用例只在
+// POSIX 上跑：不假装覆盖 Windows 的进程启动语义。
+test.skipIf(process.platform === "win32")("cancelling an OAuth login settles the result and terminates the codex child", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-openai-accounts-"));
   tempDirs.push(root);
   const executable = path.join(root, "fake-codex");

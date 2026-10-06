@@ -1,5 +1,12 @@
 import fs from "node:fs/promises";
 
+/**
+ * 写一个假的 codex 可执行文件（`#!/usr/bin/env node` 的 POSIX 脚本）。
+ *
+ * 文件没有扩展名，只能由 shebang 交给内核执行，Windows 的进程创建语义无法启动它（真实的 Windows
+ * codex 是 `node_modules/.bin/codex.exe`）。所以依赖这个 fixture 的用例只在 POSIX 上运行，
+ * 不假装覆盖 Windows 的进程启动语义；Windows 侧改由产品自身的可执行文件解析逻辑保证。
+ */
 export async function writeFakeCodexLogin(executable: string, authJson?: string): Promise<void> {
   await fs.writeFile(executable, `#!/usr/bin/env node
 const fs = require('node:fs');

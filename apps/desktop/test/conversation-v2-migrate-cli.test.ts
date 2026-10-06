@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import { stableHash } from "@eco/shared";
+import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationStore } from "../src/main/conversation-store";
 import { conversationV2RunEventForAttempt } from "../src/main/conversation-v2-run-events";
 
@@ -66,7 +68,7 @@ test("migration inspect is read-only even on an old database without V2 tables",
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--conversation",
@@ -93,7 +95,7 @@ test("migration inspect is read-only even on an old database without V2 tables",
     expect(after.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
     after.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -121,7 +123,7 @@ test("V2-only maintenance verification reads the native-facts ledger after V1 ta
     const exportCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -141,7 +143,7 @@ test("V2-only maintenance verification reads the native-facts ledger after V1 ta
     const cutoverCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -161,7 +163,7 @@ test("V2-only maintenance verification reads the native-facts ledger after V1 ta
     const verifyCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -183,7 +185,7 @@ test("V2-only maintenance verification reads the native-facts ledger after V1 ta
       nativeManifestVerification: { status: "passed", nativeEventCount: 0 },
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -210,7 +212,7 @@ test("V2-only audit inventories an orphan durable stream instead of hiding it", 
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -229,7 +231,7 @@ test("V2-only audit inventories an orphan durable stream instead of hiding it", 
       existingV2: [expect.objectContaining({ conversationId: "orphan_v2_stream", streams: 1 })],
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -291,7 +293,7 @@ test("V2-only audit fails closed for extra native rows even when the stream has 
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -318,7 +320,7 @@ test("V2-only audit fails closed for extra native rows even when the stream has 
       ],
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -456,7 +458,7 @@ test("V2-only audit accepts a post-cutover runtime stream without a maintenance-
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -493,7 +495,7 @@ test("V2-only audit accepts a post-cutover runtime stream without a maintenance-
     const lateCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -513,7 +515,7 @@ test("V2-only audit accepts a post-cutover runtime stream without a maintenance-
     expect(lateReport.existingV2[0].nativeUnmatchedEvents).toBeGreaterThan(0);
     expect(lateReport.existingV2[0].nativeReconciliationIssues).toContain("native_fact_ledger_missing");
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -580,7 +582,7 @@ test("V2-only audit accepts verified terminal-tool recovery events after a compl
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -607,7 +609,7 @@ test("V2-only audit accepts verified terminal-tool recovery events after a compl
       ],
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -714,7 +716,7 @@ test("V2-only attachment repair rebuilds canonical events atomically and keeps t
     const dryRun = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -738,7 +740,7 @@ test("V2-only attachment repair rebuilds canonical events atomically and keeps t
     const repair = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -808,7 +810,7 @@ test("V2-only attachment repair rebuilds canonical events atomically and keeps t
     ).toEqual({ value: "v2_only" });
     preserved.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -853,7 +855,7 @@ test("maintenance cutover backs up, migrates every thread, and retires V1 tables
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -925,7 +927,7 @@ test("maintenance cutover backs up, migrates every thread, and retires V1 tables
     const rerun = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -944,7 +946,7 @@ test("maintenance cutover backs up, migrates every thread, and retires V1 tables
     expect({ code: rerunCode, stderr: rerunStderr }).toEqual({ code: 0, stderr: "" });
     expect(JSON.parse(rerunStdout)).toMatchObject({ phase: "v2_only", idempotent: true });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -966,7 +968,7 @@ test("maintenance cutover refuses active threads before creating a backup", asyn
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -982,7 +984,7 @@ test("maintenance cutover refuses active threads before creating a backup", asyn
     expect(stderr).toContain("all active threads to be stopped");
     await expect(access(backup)).rejects.toThrow();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1001,7 +1003,7 @@ test("maintenance cutover leaves legacy storage untouched when the backup target
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1036,7 +1038,7 @@ test("maintenance cutover leaves legacy storage untouched when the backup target
     ).toEqual([{ name: "thread_run_events" }]);
     reopened.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1063,7 +1065,7 @@ test("maintenance cutover fails closed on corrupt V1 attempt metadata and keeps 
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1097,7 +1099,7 @@ test("maintenance cutover fails closed on corrupt V1 attempt metadata and keeps 
     ).toEqual([{ name: "thread_run_events" }]);
     reopened.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1146,7 +1148,7 @@ test("maintenance cutover exports, rebuilds, and restores V2 command state", asy
     const manifestCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1233,7 +1235,7 @@ test("maintenance cutover exports, rebuilds, and restores V2 command state", asy
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1303,7 +1305,7 @@ test("maintenance cutover exports, rebuilds, and restores V2 command state", asy
     });
     preserved.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1352,7 +1354,7 @@ test("maintenance cutover refuses mixed V1 and existing V2 data with an inventor
     const dryRun = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1394,7 +1396,7 @@ test("maintenance cutover refuses mixed V1 and existing V2 data with an inventor
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1425,7 +1427,7 @@ test("maintenance cutover refuses mixed V1 and existing V2 data with an inventor
     ).toBe("legacy_compat");
     preserved.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1513,7 +1515,7 @@ test("dry-run classifies native V2 facts against V1 without authorizing cutover"
     const command = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1602,7 +1604,7 @@ test("dry-run classifies native V2 facts against V1 without authorizing cutover"
     const verify = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1643,7 +1645,7 @@ test("dry-run classifies native V2 facts against V1 without authorizing cutover"
     const mismatch = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1661,7 +1663,7 @@ test("dry-run classifies native V2 facts against V1 without authorizing cutover"
     const duplicate = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1677,7 +1679,7 @@ test("dry-run classifies native V2 facts against V1 without authorizing cutover"
     expect(duplicateCode).not.toBe(0);
     expect(duplicateStderr).toContain("already exists");
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1728,7 +1730,7 @@ test("native manifest detects attachment file content changes and requires a has
     const exportCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1759,7 +1761,7 @@ test("native manifest detects attachment file content changes and requires a has
     const verifyCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1780,7 +1782,7 @@ test("native manifest detects attachment file content changes and requires a has
     const noRootVerifyCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1800,7 +1802,7 @@ test("native manifest detects attachment file content changes and requires a has
     const cutoverCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1827,7 +1829,7 @@ test("native manifest detects attachment file content changes and requires a has
     const postCutoverVerifyCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1845,7 +1847,7 @@ test("native manifest detects attachment file content changes and requires a has
     expect(postCutoverVerifyCode).not.toBe(0);
     expect(postCutoverVerifyStderr).toContain("facts mismatch");
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1886,7 +1888,7 @@ test("native manifest does not hash attachment paths outside the configured root
     const exportCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -1926,7 +1928,7 @@ test("native manifest does not hash attachment paths outside the configured root
       pathContentHashes: [],
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -1976,7 +1978,7 @@ test("maintenance cutover preserves native facts and reapplies a modified messag
     const manifestCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -2051,7 +2053,7 @@ test("maintenance cutover preserves native facts and reapplies a modified messag
     const cutoverCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -2139,7 +2141,7 @@ test("maintenance cutover preserves native facts and reapplies a modified messag
     const postCutoverAudit = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -2180,7 +2182,7 @@ test("maintenance cutover preserves native facts and reapplies a modified messag
     });
     preserved.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
@@ -2246,7 +2248,7 @@ test("maintenance cutover preserves and reapplies an audited run.corrected fact"
     const exportCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -2288,7 +2290,7 @@ test("maintenance cutover preserves and reapplies an audited run.corrected fact"
     const cutoverCommand = Bun.spawn(
       [
         process.execPath,
-        new URL("../scripts/conversation-v2-migrate.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("../scripts/conversation-v2-migrate.ts", import.meta.url)),
         "--db",
         filename,
         "--all",
@@ -2346,7 +2348,7 @@ test("maintenance cutover preserves and reapplies an audited run.corrected fact"
     ).toEqual({ event_id: corrected.event.eventId, event_hash: corrected.event.eventHash });
     migrated.close();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTempDirectory(dir);
   }
 });
 
