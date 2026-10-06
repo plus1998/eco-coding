@@ -140,6 +140,7 @@ function checkDeterministicTests() {
         "pi-web-search-config",
         "pi-skills",
       ].map((name) => `test/${name}.test.ts`),
+      "../../apps/desktop/test/conversation-round-cli.test.ts",
     ],
     { cwd: runtimeDir, encoding: "utf8" },
   );
@@ -150,9 +151,7 @@ function checkDeterministicTests() {
     record(
       "deterministic PI tests",
       "fail",
-      summary
-        ? `${summary[1]} pass, ${summary[3]} fail`
-        : output.trim().split("\n").slice(-15).join("\n        "),
+      `${result.error?.message ?? `exit=${result.status}`}${summary ? `, ${summary[1]} pass, ${summary[3]} fail` : ""}\n        ${output.trim()}`,
     );
     return false;
   }
@@ -179,7 +178,7 @@ function checkRealHarness() {
     record("real PI + Hub harness", "fail", output.trim().split("\n").slice(-15).join("\n        "));
     return false;
   }
-  const ok = report.status === "pass";
+  const ok = result.status === 0 && report.status === "pass";
   record(
     "real PI + Hub harness",
     ok ? "pass" : "fail",
@@ -206,7 +205,15 @@ function checkLegacyReplay() {
     const output = `${result.stdout}\n${result.stderr}`;
     const summary = [...output.matchAll(/(\d+) pass\n(?:\s*(\d+) skip\n)?\s*(\d+) fail/g)].pop();
     if (result.status !== 0 || !summary || summary[3] !== "0") {
-      failures.push(`${label}: ${summary ? `${summary[1]} pass, ${summary[3]} fail` : "no summary"}`);
+      let detail = output.trim().split(/\r?\n/).slice(-25).join("\n        ");
+      try {
+        const report = JSON.parse(result.stdout);
+        if (typeof report.error === "string") detail = `${report.error}\n        ${detail}`;
+      } catch {
+        // Preserve raw child output when it is not a JSON error report.
+      }
+      const execution = result.error?.message ?? (result.signal ? `signal=${result.signal}` : `exit=${result.status}`);
+      failures.push(`${label}: ${execution}, ${summary ? `${summary[1]} pass, ${summary[3]} fail` : "no test summary"}\n        ${detail || "child process returned no output"}`);
     }
   }
   if (failures.length > 0) {

@@ -9,6 +9,7 @@ import {
 import { createSdkStreamContext } from "../../../../packages/runtime/src/sdk-stream-events";
 import type { AgentEvent } from "../../../../packages/shared/src";
 import { evaluateSdkScenarioChecklist } from "../../../../scripts/conversation-round/lib/sdk-checklist.mjs";
+import { resolveFixturePointerDir } from "../../../../scripts/conversation-round/lib/fixture-pointer.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -69,16 +70,7 @@ export function resolveSdkRoundFixtureDir(core: SdkRoundCore, configured?: strin
     core === "pi" ? "latest-pi.json" : "latest-claude.json",
   );
   if (existsSync(pointerPath)) {
-    const pointer = JSON.parse(readFileSync(pointerPath, "utf8")) as { path?: string; runId?: string };
-    const dir =
-      pointer.path && existsSync(pointer.path)
-        ? pointer.path
-        : pointer.runId
-          ? path.join(path.dirname(pointerPath), pointer.runId)
-          : undefined;
-    if (dir && existsSync(dir)) {
-      return dir;
-    }
+    return resolveFixturePointerDir(pointerPath);
   }
 
   throw new Error(

@@ -19,3 +19,4 @@ await rebuild({ buildPath: desktopRoot, electronVersion, force: true, onlyModule
 const packageRoot = path.dirname(require.resolve("node-pty/package.json"));
 ensureNodePtySpawnHelpersExecutable(packageRoot);
 console.log("[native] node-pty rebuild and spawn-helper preparation complete");
+await import("./verify-terminal-runtime.mjs");

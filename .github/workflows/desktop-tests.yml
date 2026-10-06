@@ -47,6 +47,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Rebuild and verify desktop native modules
+        # --ignore-scripts skips node-pty's Linux build; never rely on a developer's existing binary.
+        run: bun run --cwd apps/desktop postinstall
+
       - name: Desktop suite through the gate (strict)
         # `--strict` also fails when a listed known failure starts passing, now that the list
         # is empty (see docs/plans/feed-regression-test-plan.md 4.17).
@@ -111,6 +115,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild and verify desktop native modules
+        run: bun run --cwd apps/desktop postinstall
 
       - name: PI regression (Worker + WASM + MCP)
         run: node scripts/pi-regression.mjs
