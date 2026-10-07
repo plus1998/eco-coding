@@ -14372,6 +14372,13 @@ button.markdown-file-ref.run-log-user-prompt-file-ref {
   margin-left: 8px;
 }
 
+/* Context compaction rows keep the duration in the text flow instead of at the row end. */
+.run-log-action-elapsed--inline {
+  flex: none;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
 .run-log-action-file-stats {
   flex-shrink: 0;
 }

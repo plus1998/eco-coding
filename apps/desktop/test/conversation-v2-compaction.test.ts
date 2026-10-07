@@ -184,7 +184,7 @@ test("child compaction stays in its card and cannot displace the main state from
   }
 });
 
-test("compaction uses the tool row elapsed label while running and retains total duration after reopening", () => {
+test("compaction counts elapsed time inline while running and retains total duration after reopening", () => {
   const { db, store, writer } = setup();
   const now = spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-07T03:28:44.020Z"));
   const render = () =>
@@ -195,14 +195,22 @@ test("compaction uses the tool row elapsed label while running and retains total
     );
   try {
     writer.append(compaction("started"));
-    expect(render()).toContain('class="run-log-action-meta run-log-action-elapsed">5s</span>');
+    expect(render()).toContain(
+      'class="run-log-action-elapsed run-log-action-elapsed--inline">5s</span>',
+    );
     now.mockReturnValue(Date.parse("2026-10-07T03:28:45.020Z"));
-    expect(render()).toContain('class="run-log-action-meta run-log-action-elapsed">6s</span>');
+    expect(render()).toContain(
+      'class="run-log-action-elapsed run-log-action-elapsed--inline">6s</span>',
+    );
     writer.append(compaction("completed"));
     now.mockReturnValue(Date.parse("2026-10-07T04:00:00Z"));
-    expect(render()).toContain('class="run-log-action-meta run-log-action-elapsed">13s</span>');
+    expect(render()).toContain(
+      'class="run-log-action-elapsed run-log-action-elapsed--inline">13s</span>',
+    );
     store.rebuildReadModels("thread");
-    expect(render()).toContain('class="run-log-action-meta run-log-action-elapsed">13s</span>');
+    expect(render()).toContain(
+      'class="run-log-action-elapsed run-log-action-elapsed--inline">13s</span>',
+    );
   } finally {
     now.mockRestore();
     db.close();

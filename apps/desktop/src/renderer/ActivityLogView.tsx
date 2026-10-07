@@ -4662,6 +4662,7 @@ function PhaseBlock({
           lifecycle={compaction?.lifecycle ?? contextCompactionLifecycle(label)}
           {...(compaction?.startedAt && { startedAt: compaction.startedAt })}
           {...(compaction?.durationMs !== undefined && { durationMs: compaction.durationMs })}
+          elapsedInline
         />
       </div>
     );
@@ -6649,6 +6650,7 @@ function RunLogAction({
   lifecycle,
   startedAt,
   durationMs,
+  elapsedInline,
   bashRun,
   fileChange,
   webSearch,
@@ -6668,6 +6670,8 @@ function RunLogAction({
   startedAt?: string;
   /** Measured duration of a settled lifecycle row, retained after reopening. */
   durationMs?: number;
+  /** Render the elapsed time inside the label flow (right after the text) instead of at the row end. */
+  elapsedInline?: boolean;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
@@ -6684,7 +6688,8 @@ function RunLogAction({
   const labelRef = useRef<HTMLSpanElement>(null);
   const [canExpand, setCanExpand] = useState(false);
   // Live elapsed time for a running tool row; 0 (never ticking) when the row is settled
-  // or carries no start time. Displayed only past TOOL_ELAPSED_MIN_VISIBLE_MS.
+  // or carries no start time. Displayed only past TOOL_ELAPSED_MIN_VISIBLE_MS, except for
+  // inline rows (context compaction), which count up from the first whole second.
   const runningElapsedMs = useTurnDurationMs(
     startedAt ?? "",
     undefined,
@@ -6692,7 +6697,7 @@ function RunLogAction({
   );
   const elapsedLabel =
     lifecycle === "running"
-      ? runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS
+      ? elapsedInline || runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS
         ? formatDuration(runningElapsedMs)
         : ""
       : durationMs !== undefined
@@ -6756,8 +6761,11 @@ function RunLogAction({
       <RunLogActionIcon icon={icon} {...(lifecycle && { lifecycle })} />
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
+        {elapsedInline && elapsedLabel ? (
+          <span className="run-log-action-elapsed run-log-action-elapsed--inline">{elapsedLabel}</span>
+        ) : null}
       </span>
-      {elapsedLabel ? (
+      {elapsedLabel && !elapsedInline ? (
         <span className="run-log-action-meta run-log-action-elapsed">{elapsedLabel}</span>
       ) : null}
       {lifecycle === "failed" ? (

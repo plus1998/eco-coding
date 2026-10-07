@@ -2144,6 +2144,89 @@ test("ActivityLogView hides waiting thinking while context compaction is running
   expect(html).not.toContain('aria-label="会话进行中"');
 });
 
+test("ActivityLogView counts a running context compaction in the text flow", () => {
+  const startedAt = new Date(Date.now() - 10_500).toISOString();
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "compact-start",
+            eventType: "context.compaction.started",
+            text: "正在自动压缩上下文",
+            at: startedAt,
+            metadata: { liveType: "context.compaction.started" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain(
+    '正在自动压缩上下文<span class="run-log-action-elapsed run-log-action-elapsed--inline">10s</span>',
+  );
+  expect(html).not.toContain('class="run-log-action-meta run-log-action-elapsed"');
+});
+
+test("ActivityLogView appends a settled compaction duration to its label", () => {
+  const startedAt = "2026-01-01T00:00:01.000Z";
+  const endedAt = "2026-01-01T00:00:14.000Z";
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, {
+      projection: projection({
+        status: "idle",
+        timeline: [
+          item({
+            id: "compact-start",
+            sequence: 1,
+            eventType: "context.compaction.started",
+            text: "正在自动压缩上下文",
+            at: startedAt,
+          }),
+          item({
+            id: "compact-done",
+            sequence: 2,
+            eventType: "context.compaction.completed",
+            text: "上下文已自动压缩",
+            at: endedAt,
+            metadata: { compactionTiming: { startedAt, endedAt, durationMs: 13_000 } },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain(
+    '上下文已自动压缩<span class="run-log-action-elapsed run-log-action-elapsed--inline">13s</span>',
+  );
+  expect(html).not.toContain('class="run-log-action-meta run-log-action-elapsed"');
+});
+
+test("ActivityLogView keeps a running tool group's elapsed time after its summary", () => {
+  const at = new Date(Date.now() - 10_500).toISOString();
+  const html = renderToStaticMarkup(
+    createElement(ProjectionActivityLogView, {
+      projection: projection({
+        status: "running",
+        attempts: [{ attemptId: "attempt_loading", status: "running", startedAt: at }],
+        timeline: [
+          item({
+            id: "tool-run",
+            eventType: "tool.started",
+            text: "Tool: Bash",
+            at,
+            metadata: { name: "Bash", status: "started", liveType: "tool.started" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain('class="run-log-tool-group-elapsed">10s<');
+  expect(html).not.toContain("run-log-action-elapsed--inline");
+});
+
 test("ActivityLogView hides waiting thinking while an MCP tool is running", () => {
   const html = renderToStaticMarkup(
     createElement(ProjectionActivityLogView, {
