@@ -1,4 +1,4 @@
-import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
+import { buildEcoMcpHubToolUsage, mergeEcoMcpHubPromptParts } from "./mcp-hub-tool-usage";
 
 /** Built-in Eco browser MCP server name (must stay sanitizable for MCP tool prefixes). */
 export const ECO_AGENT_BROWSER_MCP_SERVER = "eco_agent_browser";
@@ -560,7 +560,7 @@ export function appendBrowserPrompt(
   base: string | undefined,
   browserAppend: string | undefined,
 ): string | undefined {
-  const parts = [base?.trim(), browserAppend?.trim()].filter((part): part is string => Boolean(part));
+  const parts = mergeEcoMcpHubPromptParts([base, browserAppend]);
   if (parts.length === 0) {
     return undefined;
   }

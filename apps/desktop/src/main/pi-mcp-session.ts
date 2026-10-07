@@ -7,6 +7,7 @@ import { ECO_IMAGE_DISPLAY_MCP_SERVER } from "../shared/image-display-tool";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../shared/image-generation";
 import type { McpSdkConfig } from "../shared/mcp";
 import { filterMcpSdkConfigByAssignedServers, sanitizeMcpServerName } from "../shared/mcp";
+import { mergeEcoMcpHubPromptParts } from "../shared/mcp-hub-tool-usage";
 import { prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 
 export type PiMcpSessionResolution = {
@@ -25,10 +26,7 @@ export function mergePiAppendSystemPrompt(parts: {
   integrationAppend?: readonly string[];
 }): string[] {
   const rules = parts.globalUserRules?.trim() ?? "";
-  return [
-    ...(rules ? [rules] : []),
-    ...(parts.integrationAppend ?? []).map((entry) => entry.trim()).filter((entry) => entry.length > 0),
-  ];
+  return mergeEcoMcpHubPromptParts([...(rules ? [rules] : []), ...(parts.integrationAppend ?? [])]);
 }
 
 /**

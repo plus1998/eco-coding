@@ -88,9 +88,15 @@ export function withCodexSkillConfig(
   entries: readonly { path: string; enabled: boolean }[],
 ): CodexThreadConfigOverrides {
   if (entries.length === 0) return { ...config };
+  const byPath = new Map(
+    [...(config.skills?.config ?? []), ...entries].map((entry) => [
+      entry.path,
+      { path: entry.path, enabled: entry.enabled },
+    ]),
+  );
   return {
     ...config,
-    skills: { config: entries.map((entry) => ({ path: entry.path, enabled: entry.enabled })) },
+    skills: { ...config.skills, config: [...byPath.values()] },
   };
 }
 

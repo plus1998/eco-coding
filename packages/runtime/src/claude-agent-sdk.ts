@@ -523,6 +523,17 @@ const planningContinuationAllowedTools = [
 ] as const;
 // Plan submission tools are user-approval boundaries; never let SDK allow-rules auto-approve them.
 const protectedPlanModeToolNames = ["EnterPlanMode", "ExitPlanMode", "mcp__eco_plan__finalize_plan"] as const;
+// A preset also advertises CLI-only scheduling and worktree tools. Keep the native
+// tools Eco supports explicit; allowedTools controls approval, not visibility.
+const nativeSdkTools = uniqueStrings([
+  ...defaultAllowedTools,
+  "AskUserQuestion",
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "ListAgents",
+  "SendMessage",
+  "TaskStop",
+]);
 const askAllowedTools = [
   "Agent",
   ...SDK_TASK_READ_TOOL_NAMES,
@@ -664,10 +675,10 @@ export function resolveSdkSessionOptions(session?: EcoSdkSessionOptions): {
   skills: EcoSdkSessionOptions["skills"];
   mcpServers: Record<string, unknown>;
 } {
-  const plannerSkills = resolveAgentSkills("planner", session?.agentSkills, session?.skills);
+  const plannerSkills = readAgentSkillAssignment(session?.agentSkills, "planner") ?? session?.skills;
   return {
     settingSources: session?.settingSources ?? [...defaultSettingSources],
-    skills: plannerSkills.length > 0 ? plannerSkills : undefined,
+    skills: plannerSkills === undefined ? undefined : [...plannerSkills],
     mcpServers: session?.mcpServers ?? {},
   };
 }
@@ -689,10 +700,10 @@ export function resolveAgentSkills(
   sessionSkills?: string[],
 ): string[] {
   const fromRole = readAgentSkillAssignment(agentSkills, role);
-  if (fromRole && fromRole.length > 0) {
+  if (fromRole !== undefined) {
     return [...fromRole];
   }
-  if (role === "planner" && sessionSkills && sessionSkills.length > 0) {
+  if (role === "planner" && sessionSkills !== undefined) {
     return [...sessionSkills];
   }
   return [];
@@ -719,7 +730,7 @@ function readAgentSkillAssignment(
   }
   for (const key of agentSkillLookupKeys(role)) {
     const skills = agentSkills[key];
-    if (skills && skills.length > 0) {
+    if (skills !== undefined) {
       return skills;
     }
   }
@@ -1203,7 +1214,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       includePartialMessages: true,
       forwardSubagentText: true,
       settingSources: session.settingSources,
-      ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
+      ...(session.skills !== undefined ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
       ...(phase.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       allowedTools,
@@ -1230,7 +1241,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           }
         : {}),
       systemPrompt,
-      tools: { type: "preset", preset: "claude_code" },
+      tools: nativeSdkTools.filter((tool) => !disallowedSet.has(tool)),
       ...(shouldBuildHooks
         ? {
             hooks: buildEcoSdkHooks({

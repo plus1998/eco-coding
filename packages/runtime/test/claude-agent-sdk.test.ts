@@ -480,6 +480,14 @@ test("removes Bash from SDK auto-approved tools when confirmation is enabled", (
   expect(stripBashAutoApprovedTools(["Read", "Bash", "mcp__github__*"])).toEqual(["Read", "mcp__github__*"]);
 });
 
+test("explicit empty skill selections stay empty instead of enabling CLI defaults", () => {
+  expect(resolveSdkSessionOptions({ skills: [] }).skills).toEqual([]);
+  expect(resolveSdkSessionOptions({ skills: ["pdf"], agentSkills: { planner: [] } }).skills).toEqual([]);
+  expect(resolveSdkSessionOptions({ agentSkills: { eco_planner: [] } }).skills).toEqual([]);
+  expect(resolveAgentSkills("planner", { planner: [], eco_planner: ["pdf"] }, ["docx"])).toEqual([]);
+  expect(resolveAgentSkills("planner", undefined, ["pdf"])).toEqual(["pdf"]);
+});
+
 test("removes Plan Mode submission tools from SDK auto-approved tools", () => {
   expect(
     stripProtectedPlanModeAutoApprovedTools([
@@ -2136,6 +2144,7 @@ test("ClaudeAgentSdkDriver does not inject fallback Eco agents without a UI regi
     workspacePath: "/tmp/workspace",
     worktreePath: "/tmp/worktree",
     routes,
+    sdkSession: { skills: [] },
   };
 
   for await (const _event of driver.run({
@@ -2166,6 +2175,35 @@ test("ClaudeAgentSdkDriver does not inject fallback Eco agents without a UI regi
   }
 
   expect(capturedOptions[0]?.forwardSubagentText).toBe(true);
+  for (const options of capturedOptions) {
+    expect(options.skills).toEqual([]);
+    expect(options.tools).toEqual(
+      expect.arrayContaining([
+        "Read",
+        "Skill",
+        "WebSearch",
+        "Agent",
+        "SendMessage",
+        "ListAgents",
+        "TaskStop",
+      ]),
+    );
+    for (const tool of [
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "ScheduleWakeup",
+      "ReportFindings",
+      "EnterWorktree",
+      "ExitWorktree",
+    ]) {
+      expect(options.tools).not.toContain(tool);
+    }
+  }
+  expect(capturedOptions[0]?.tools).toEqual(expect.arrayContaining(["Bash", "Write", "AskUserQuestion"]));
+  expect(capturedOptions[1]?.tools).not.toContain("Bash");
+  expect(capturedOptions[1]?.tools).not.toContain("Write");
+  expect(capturedOptions[0]?.tools).not.toContain("ExitPlanMode");
   expect(capturedOptions[0]?.agents).toBeUndefined();
   expect(capturedOptions[1]?.agents).toBeUndefined();
   expect(capturedOptions[1]?.permissionMode).toBe("dontAsk");
@@ -2938,6 +2976,9 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
   expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
   expect(capturedOptions[0]?.permissionMode).toBe("plan");
+  expect(capturedOptions[0]?.tools).toEqual(
+    expect.arrayContaining(["Write", "Edit", "Bash", "ExitPlanMode", "AskUserQuestion"]),
+  );
   for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]) {
     expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain(tool);
   }

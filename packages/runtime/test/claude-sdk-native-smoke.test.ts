@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
@@ -314,6 +314,143 @@ test.skipIf(process.env.ECO_CLAUDE_NATIVE_SMOKE !== "1")(
       console.log(
         `[native-sdk] permission=${permissionCalls} hooks=${hookCalls} mcp=${mcpCalls} inputTotals=${totals.join(",")}`,
       );
+    } finally {
+      server.stop(true);
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);
+
+test.skipIf(process.env.ECO_CLAUDE_NATIVE_SMOKE !== "1")(
+  "native SDK first request respects skill selection and Eco tool visibility in every mode",
+  async () => {
+    const workspace = mkdtempSync(path.join(os.tmpdir(), "eco-claude-visibility-"));
+    for (const name of ["selected-audit", "disabled-audit"]) {
+      const directory = path.join(workspace, ".claude", "skills", name);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        path.join(directory, "SKILL.md"),
+        `---\nname: ${name}\ndescription: ECO_VISIBILITY_${name} marker.\n---\nTest fixture.\n`,
+      );
+    }
+    const requests: Array<{ model: string; stream?: boolean; tools?: Array<{ name: string }> }> = [];
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(request) {
+        const pathname = new URL(request.url).pathname;
+        if (pathname.endsWith("count_tokens")) return Response.json({ input_tokens: 100 });
+        if (!pathname.endsWith("/messages")) return Response.json({ ok: true });
+        const body = (await request.json()) as (typeof requests)[number];
+        requests.push(body);
+        const message = {
+          id: `msg_visibility_${requests.length}`,
+          type: "message",
+          role: "assistant",
+          model: body.model,
+          content: [{ type: "text", text: "VISIBILITY_OK" }],
+          stop_reason: "end_turn",
+          stop_sequence: null,
+          usage: { input_tokens: 100, output_tokens: 1 },
+        };
+        if (!body.stream) return Response.json(message);
+        const events = [
+          { type: "message_start", message: { ...message, content: [], stop_reason: null } },
+          { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+          { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "VISIBILITY_OK" } },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "message_delta",
+            delta: { stop_reason: "end_turn", stop_sequence: null },
+            usage: { output_tokens: 1 },
+          },
+          { type: "message_stop" },
+        ];
+        return new Response(
+          events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      },
+    });
+    const driver = new ClaudeAgentSdkDriver({
+      apiKey: "local-visibility-test",
+      baseUrl: server.url.origin,
+      toolPermissionHandler: async () => ({ behavior: "allow" }),
+      loadSdk: async () => ({
+        query: ({ prompt, options }) =>
+          query({
+            prompt: prompt as never,
+            options: {
+              ...options,
+              env: {
+                ...(options.env as Record<string, string>),
+                CLAUDE_CONFIG_DIR: path.join(workspace, "config"),
+                ANTHROPIC_AUTH_TOKEN: "",
+                CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+              },
+            } as never,
+          }),
+      }),
+    });
+    try {
+      for (const mode of ["agent", "ask", "plan"] as const) {
+        requests.length = 0;
+        const input = {
+          threadId: `thr_visibility_${mode}`,
+          prompt: "Reply VISIBILITY_OK.",
+          workspacePath: workspace,
+          worktreePath: workspace,
+          routes: [
+            {
+              role: "planner",
+              primary: { provider: "anthropic", modelId: "claude-sonnet-4-20250514", contextWindow: 200_000 },
+            },
+          ],
+          sdkSession: {
+            settingSources: ["project"] as ["project"],
+            skills: mode === "ask" ? ["selected-audit"] : [],
+          },
+          signal: new AbortController().signal,
+        };
+        const run =
+          mode === "plan"
+            ? driver.runContinuation(input, "planning")
+            : mode === "ask"
+              ? driver.runAsk(input)
+              : driver.run(input);
+        for await (const _event of run) {
+          /* drain the real SDK */
+        }
+        const first = requests.find((request) => (request.tools?.length ?? 0) > 0);
+        expect(first).toBeDefined();
+        expect(JSON.stringify(first)).not.toContain("ECO_VISIBILITY_disabled-audit");
+        if (mode === "ask") expect(JSON.stringify(first)).toContain("ECO_VISIBILITY_selected-audit");
+        else expect(JSON.stringify(first)).not.toContain("ECO_VISIBILITY_selected-audit");
+        const names = first?.tools?.map((tool) => tool.name) ?? [];
+        expect(names).toContain("Read");
+        expect(names).toContain("WebSearch");
+        for (const tool of [
+          "CronCreate",
+          "CronDelete",
+          "CronList",
+          "ScheduleWakeup",
+          "ReportFindings",
+          "EnterWorktree",
+          "ExitWorktree",
+        ]) {
+          expect(names).not.toContain(tool);
+        }
+        if (mode === "ask") {
+          expect(names).not.toContain("Bash");
+          expect(names).not.toContain("Write");
+        } else {
+          expect(names).toContain("Bash");
+          expect(names).toContain("Write");
+        }
+        if (mode === "plan") expect(names).toContain("ExitPlanMode");
+        else expect(names).not.toContain("ExitPlanMode");
+      }
     } finally {
       server.stop(true);
       rmSync(workspace, { recursive: true, force: true });

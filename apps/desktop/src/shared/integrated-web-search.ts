@@ -46,5 +46,5 @@ export function buildIntegratedWebSearchPromptAppend(providerLabel: string): str
     buildEcoMcpHubToolUsage({ server: ECO_WEB_SEARCH_MCP_SERVER, tool: ECO_WEB_SEARCH_TOOL }),
     `When the direct tool \`${ECO_WEB_SEARCH_FULL_TOOL}\` is explicitly listed, call it with a \`query\` string (provider: ${providerLabel}).`,
     "Do not use the built-in provider-native WebSearch / web_search tool.",
-  ].join(" ");
+  ].join("\n");
 }

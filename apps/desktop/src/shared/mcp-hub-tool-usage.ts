@@ -1,10 +1,9 @@
 export const ECO_MCP_HUB_MCP_SERVER = "eco_mcp";
 export const ECO_MCP_HUB_SEARCH_TOOL = "search_tools";
 export const ECO_MCP_HUB_CALL_TOOL = "call_tool";
-export const ECO_MCP_HUB_SEARCH_FULL_TOOL =
-  `mcp__${ECO_MCP_HUB_MCP_SERVER}__${ECO_MCP_HUB_SEARCH_TOOL}`;
-export const ECO_MCP_HUB_CALL_FULL_TOOL =
-  `mcp__${ECO_MCP_HUB_MCP_SERVER}__${ECO_MCP_HUB_CALL_TOOL}`;
+export const ECO_MCP_HUB_SEARCH_FULL_TOOL = `mcp__${ECO_MCP_HUB_MCP_SERVER}__${ECO_MCP_HUB_SEARCH_TOOL}`;
+export const ECO_MCP_HUB_CALL_FULL_TOOL = `mcp__${ECO_MCP_HUB_MCP_SERVER}__${ECO_MCP_HUB_CALL_TOOL}`;
+const ECO_MCP_HUB_PROTOCOL_PROMPT = `Eco MCP Hub: call \`${ECO_MCP_HUB_SEARCH_FULL_TOOL}\` with the target as query, then \`${ECO_MCP_HUB_CALL_FULL_TOOL}\` with the returned tool and args under \`arguments\`.`;
 
 /**
  * Explain the one-server Hub protocol to agents while keeping direct MCP
@@ -15,11 +14,30 @@ export function buildEcoMcpHubToolUsage(input: { server: string; tool?: string }
   const tool = input.tool?.trim();
   const target = tool ? `${server}:${tool}` : server;
   const direct = tool ? `mcp__${server}__${tool}` : `mcp__${server}__*`;
-  const query = tool ? target : server;
   return [
-    `Use Eco MCP Hub for \`${target}\`: call \`${ECO_MCP_HUB_SEARCH_FULL_TOOL}\` with query \`${query}\`, then \`${ECO_MCP_HUB_CALL_FULL_TOOL}\` with the returned tool and put args under \`arguments\`.`,
-    `Do not call \`${direct}\` unless explicitly listed; otherwise use the Hub.`,
-  ].join(" ");
+    ECO_MCP_HUB_PROTOCOL_PROMPT,
+    `Hub target: \`${target}\`. Do not call \`${direct}\` unless explicitly listed.`,
+  ].join("\n");
+}
+
+/** Keep one copy of Eco's Hub protocol, without deduplicating user-authored rules. */
+export function mergeEcoMcpHubPromptParts(parts: readonly (string | undefined)[]): string[] {
+  let hasProtocol = false;
+  return parts.flatMap((part) => {
+    const text = part?.trim();
+    if (!text) return [];
+    const merged = text
+      .split("\n")
+      .filter((line) => {
+        if (line !== ECO_MCP_HUB_PROTOCOL_PROMPT) return true;
+        if (hasProtocol) return false;
+        hasProtocol = true;
+        return true;
+      })
+      .join("\n")
+      .trim();
+    return merged ? [merged] : [];
+  });
 }
 
 /**

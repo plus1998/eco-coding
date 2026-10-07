@@ -44,6 +44,27 @@ test("Codex thread Skill visibility is path-scoped", () => {
   });
 });
 
+test("disabling built-in imagegen preserves user skill switches on repeated config updates", () => {
+  const initial = withCodexSkillConfig({ mcp_servers: {} }, [
+    { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
+    { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
+  ]);
+  const updated = withCodexSkillConfig(initial, [
+    { path: "/system/imagegen/SKILL.md", enabled: false },
+    { path: "/repo/.agents/skills/project/SKILL.md", enabled: false },
+  ]);
+  expect(updated.skills?.config).toEqual([
+    { path: "/repo/.agents/skills/project/SKILL.md", enabled: false },
+    { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
+    { path: "/system/imagegen/SKILL.md", enabled: false },
+  ]);
+  expect(initial.skills?.config).toEqual([
+    { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
+    { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
+  ]);
+  expect(withCodexSkillConfig(updated, []).skills).toEqual(updated.skills);
+});
+
 test("native image viewing follows the selected provider without changing other thread features", () => {
   const config = {
     features: { multi_agent: true, hooks: true, multi_agent_v2: false },

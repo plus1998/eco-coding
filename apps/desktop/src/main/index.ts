@@ -16732,7 +16732,7 @@ async function buildSdkSessionOptions(
   });
   return {
     settingSources: skillConfig.settingSources,
-    ...(skillConfig.skills.length > 0 ? { skills: skillConfig.skills } : {}),
+    skills: skillConfig.skills,
     ...(implicitReadAllowRoots.length > 0 ? { implicitReadAllowRoots } : {}),
     agentSkills,
     enabledSubagents,
