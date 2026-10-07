@@ -2,6 +2,19 @@ export type ThreadRunEventScope = "main" | "agent" | "both";
 
 export type ThreadRunEventStreamState = "none" | "placeholder" | "streaming" | "finalized";
 
+export const CONTEXT_COMPACTION_EVENT_TYPES = [
+  "context.compaction.started",
+  "context.compaction.completed",
+  "context.compaction.failed",
+  "context.compaction.suspended",
+] as const;
+
+export function isContextCompactionEventType(
+  value: unknown,
+): value is (typeof CONTEXT_COMPACTION_EVENT_TYPES)[number] {
+  return CONTEXT_COMPACTION_EVENT_TYPES.some((type) => type === value);
+}
+
 export type ThreadRunEventType =
   | "thread.status"
   | "run.attempt.started"

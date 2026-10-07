@@ -6,6 +6,7 @@ import {
 } from "@eco/shared";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import type { ThreadRunEvent, ThreadRunEventInput } from "../shared/thread-run-events";
+import { isContextCompactionEventType } from "../shared/thread-run-events";
 import {
   legacyMessageId,
   legacyNoticeMessageId,
@@ -129,6 +130,25 @@ export function appendProviderEventToConversationV2(
   };
 
   const liveType = typeof event.metadata?.liveType === "string" ? event.metadata.liveType : "";
+  if (isContextCompactionEventType(event.eventType)) {
+    if (!runId) {
+      if (runtime) throw new Error(`Runtime compaction event ${event.id} requires an explicit runAttemptId.`);
+      return emitted;
+    }
+    emit("detail.upserted", "compaction", {
+      detailType: event.eventType,
+      content: JSON.stringify({
+        message: event.message,
+        observedAt: event.observedAt,
+        scope: event.scope,
+        ...(event.role ? { role: event.role } : {}),
+        ...(event.requestId ? { requestId: event.requestId } : {}),
+        ...(event.streamKey ? { streamKey: event.streamKey } : {}),
+        ...(event.metadata ? { metadata: event.metadata } : {}),
+      }),
+    });
+    return emitted;
+  }
   // A user prompt is part of the conversation the Feed draws: the legacy chain renders
   // it as a row of the turn it opened (it is also that turn's boundary), and V2 had no row
   // for it at all. That is invisible while the conversation is still served by the legacy

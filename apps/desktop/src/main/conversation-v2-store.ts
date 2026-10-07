@@ -37,6 +37,11 @@ import {
   stableJson,
 } from "@eco/shared";
 import {
+  type ContextCompactionTimingItem,
+  resolveContextCompactionTiming,
+} from "../shared/context-compaction-timing";
+import { isContextCompactionEventType } from "../shared/thread-run-events";
+import {
   type LegacyEventIdentityRow,
   legacyIdentityEventFromRow,
   legacyMessageId,
@@ -2577,6 +2582,34 @@ export class ConversationV2Store {
       let messages = this.readMessages(conversationId, pageSize, maxBytes);
       const turns = this.listTurns(conversationId, pageSize);
       const runs = this.listRuns(conversationId, pageSize);
+      // Keep a bounded history plus every owner's latest state. A busy child
+      // must not push the main agent's current compaction state out of bootstrap.
+      const detailRows = this.db
+        .prepare(
+          `WITH compaction AS (
+             SELECT *,
+               ROW_NUMBER() OVER (
+                 PARTITION BY COALESCE(agent_instance_id, agent_id, '')
+                 ORDER BY created_seq DESC, item_id DESC
+               ) AS owner_rank,
+               ROW_NUMBER() OVER (ORDER BY created_seq DESC, item_id DESC) AS recent_rank
+             FROM conversation_detail_items_v2
+             WHERE conversation_id = ? AND type IN (
+               'context.compaction.started', 'context.compaction.completed',
+               'context.compaction.failed', 'context.compaction.suspended'
+             )
+           ) SELECT * FROM compaction WHERE owner_rank = 1 OR recent_rank <= ?
+             ORDER BY created_seq ASC, item_id ASC`,
+        )
+        .all(conversationId, CONVERSATION_V2_MAX_PAGE_SIZE) as unknown as (DetailRow & {
+        owner_rank: number;
+      })[];
+      const details = detailRows.map(rowToDetail);
+      const latestCompactionIds = new Set(
+        detailRows.filter((row) => row.owner_rank === 1).map((row) => row.item_id),
+      );
+      const supersededDetailIndex = () =>
+        details.findIndex((detail) => !latestCompactionIds.has(detail.itemId));
       const toolRunIdsForMessages = (visibleMessages: readonly ConversationMessage[]) => [
         ...new Set([
           ...(visibleMessages.length === 0
@@ -2606,15 +2639,21 @@ export class ConversationV2Store {
           toolSummaryCounts,
           this.listAgents(conversationId),
           this.listTodos(conversationId),
+          details,
           (oldest) => this.hasOlderMessages(conversationId, oldest),
         );
       let response = buildResponse();
-      while (estimateConversationBytes(response) > safeBytes && (tools.length > 0 || messages.length > 1)) {
+      while (
+        estimateConversationBytes(response) > safeBytes &&
+        (tools.length > 0 || supersededDetailIndex() >= 0 || messages.length > 1)
+      ) {
         // Tool summaries have their own cursor. Trim them before shrinking the
         // message window so a large run cannot make bootstrap fail or discard
         // useful history merely because its summary list is long.
         if (tools.length > 0) {
           tools = tools.slice(1);
+        } else if (supersededDetailIndex() >= 0) {
+          details.splice(supersededDetailIndex(), 1);
         } else {
           // readMessages returns newest-first. Drop the oldest item from this
           // bounded snapshot so the returned cursor still advances backwards.
@@ -5030,7 +5069,16 @@ export class ConversationV2Store {
       throw integrity(`Detail ${itemId} changed type.`);
     }
     const type = incomingType ?? existing?.type ?? record.type;
-    const content = payloadString(p.content, "content") ?? existing?.content ?? null;
+    let content = payloadString(p.content, "content") ?? existing?.content ?? null;
+    if (isContextCompactionEventType(type)) {
+      content = this.withCompactionDetailTiming(
+        record,
+        type,
+        content,
+        runId,
+        agentInstanceId ?? agentId ?? existing?.agent_instance_id ?? existing?.agent_id ?? undefined,
+      );
+    }
     const ref = payloadString(p.ref, "ref") ?? existing?.ref ?? null;
     this.db
       .prepare(
@@ -5061,6 +5109,52 @@ export class ConversationV2Store {
       type: "detail.upsert",
       detail: this.getDetailOrThrow(record.conversationId, itemId),
     };
+  }
+
+  private withCompactionDetailTiming(
+    record: ConversationEventRecord,
+    type: string,
+    content: string | null,
+    runId: string,
+    agentId: string | undefined,
+  ): string {
+    const parse = (eventType: string, stored: string | null) => {
+      const value = JSON.parse(stored ?? "null");
+      if (!value || typeof value.observedAt !== "string" || typeof value.scope !== "string") {
+        throw integrity(`Compaction detail ${record.eventId} has invalid lifecycle content.`);
+      }
+      const item: ContextCompactionTimingItem = {
+        eventType,
+        at: value.observedAt,
+        scope: value.scope,
+        runAttemptId: runId,
+        ...(agentId ? { agentId } : {}),
+        ...(value.requestId ? { requestId: value.requestId } : {}),
+        ...(value.streamKey ? { streamKey: value.streamKey } : {}),
+        ...(value.metadata ? { metadata: value.metadata } : {}),
+      };
+      return { value, item };
+    };
+    const current = parse(type, content);
+    const previous =
+      type === "context.compaction.started"
+        ? []
+        : (
+            this.db
+              .prepare(
+                `SELECT type, content FROM conversation_detail_items_v2
+         WHERE conversation_id = ? AND run_id = ?
+           AND COALESCE(agent_instance_id, agent_id, '') = ? AND created_seq < ?
+           AND type IN ('context.compaction.started', 'context.compaction.completed', 'context.compaction.failed')
+         ORDER BY created_seq ASC, item_id ASC`,
+              )
+              .all(record.conversationId, runId, agentId ?? "", record.seq) as Array<{
+              type: string;
+              content: string | null;
+            }>
+          ).map((row) => parse(row.type, row.content).item);
+    const timing = resolveContextCompactionTiming(current.item, previous);
+    return JSON.stringify({ ...current.value, timing });
   }
 
   private applyHistoryInvalidation(record: ConversationEventRecord): ConversationEffect {
@@ -7025,6 +7119,7 @@ function buildBootstrapResponse(
   toolSummaryCounts: Readonly<Record<string, number>>,
   agents: readonly ConversationAgent[],
   todos: readonly ConversationTodo[],
+  details: readonly ConversationDetailItem[],
   hasOlderFor: (oldest: ConversationMessage | undefined) => boolean,
 ): ConversationBootstrap {
   const oldest = messagesNewestFirst.at(-1);
@@ -7042,6 +7137,7 @@ function buildBootstrapResponse(
     ...(Object.keys(toolSummaryCounts).length > 0 ? { toolSummaryCounts: { ...toolSummaryCounts } } : {}),
     agents: [...agents],
     todos: [...todos],
+    ...(details.length > 0 ? { details: [...details] } : {}),
     ...(oldest && hasOlder
       ? {
           olderCursor: encodeConversationCursor({

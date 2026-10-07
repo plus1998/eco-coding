@@ -20,6 +20,10 @@ import {
   type ToolActionLifecycle,
   toolStatusToLifecycle,
 } from "../shared/activity-display";
+import {
+  type ContextCompactionTiming,
+  resolveContextCompactionTiming,
+} from "../shared/context-compaction-timing";
 import type { ActionKindTranslate } from "../shared/feed-action-kind";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change";
 import type {
@@ -51,7 +55,7 @@ import {
   isThreadFollowUpActivityMessage,
   isThreadFollowUpLiveEvent,
 } from "../shared/thread-follow-up-events";
-import { parseThreadRunImageViewMetadata } from "../shared/thread-run-events";
+import { isContextCompactionEventType, parseThreadRunImageViewMetadata } from "../shared/thread-run-events";
 import {
   formatThreadRunToolDetailLabel,
   parseThreadRunGrepToolTarget,
@@ -703,7 +707,10 @@ export function filterProjectionTimelineForDetailFeed(
   includePromptCacheTips = true,
   thinkingDisplayMode: ThinkingDisplayMode = "collapsed",
 ): ThreadRunProjectionTimelineItem[] {
-  const built = buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
+  const built = buildProjectionDisplayTimelineItems(
+    withContextCompactionTimings(timeline),
+    requestSpansById,
+  ).filter(
     (item) =>
       !isEmptyTerminalThinkingItem(item) &&
       // Mission envelopes belong on the card/header, not as echoed speech in agent timelines.
@@ -2172,6 +2179,38 @@ function settleTerminalStreamDisplayItem(
   };
 }
 
+function withContextCompactionTimings(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const previous: ThreadRunProjectionTimelineItem[] = [];
+  return timeline.map((item) => {
+    if (!isContextCompactionEventType(item.eventType)) return item;
+    const timing = readContextCompactionTiming(item) ?? resolveContextCompactionTiming(item, previous);
+    previous.push(item);
+    return timing ? { ...item, metadata: { ...item.metadata, compactionTiming: timing } } : item;
+  });
+}
+
+function readContextCompactionTiming(
+  item: ThreadRunProjectionTimelineItem,
+): ContextCompactionTiming | undefined {
+  const timing = item.metadata?.compactionTiming;
+  if (timing === undefined) return undefined;
+  if (!timing || typeof timing !== "object" || Array.isArray(timing)) {
+    throw new Error(`Compaction timing for ${item.id} is invalid.`);
+  }
+  const value = timing as ContextCompactionTiming;
+  if (
+    typeof value.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.startedAt)) ||
+    (value.endedAt !== undefined && !Number.isFinite(Date.parse(value.endedAt))) ||
+    (value.durationMs !== undefined && (!Number.isFinite(value.durationMs) || value.durationMs < 0))
+  ) {
+    throw new Error(`Compaction timing for ${item.id} is invalid.`);
+  }
+  return value;
+}
+
 function filterCompactionTimelineForFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem[] {
@@ -3287,6 +3326,22 @@ export function projectionItemToDetailBlock(
 
   const phaseLabel = resolveProjectionPhaseLabel(item);
   if (phaseLabel) {
+    if (isContextCompactionEventType(item.eventType)) {
+      const timing = readContextCompactionTiming(item) ?? resolveContextCompactionTiming(item, []);
+      return {
+        kind: "phase",
+        label: phaseLabel,
+        compaction: {
+          lifecycle:
+            item.eventType === "context.compaction.started"
+              ? "running"
+              : item.eventType === "context.compaction.completed"
+                ? "completed"
+                : "failed",
+          ...timing,
+        },
+      };
+    }
     const timeline = readPromptCacheTimelineMetadata(item.metadata);
     if (timeline) {
       return {

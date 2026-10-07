@@ -5,6 +5,7 @@ import type {
   WebSearchCardDisplay,
 } from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
+import type { ContextCompactionTiming } from "../shared/context-compaction-timing";
 import { type ActivityActionIcon, resolveActionKind } from "../shared/feed-action-kind";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import {
@@ -50,6 +51,9 @@ export type ActivityDetailBlock =
       reconnecting?: boolean;
       reconnectFailed?: boolean;
       reconnectDetail?: string;
+      compaction?: Partial<ContextCompactionTiming> & {
+        lifecycle: "running" | "completed" | "failed";
+      };
     }
   | {
       kind: "prompt-cache-timeline";

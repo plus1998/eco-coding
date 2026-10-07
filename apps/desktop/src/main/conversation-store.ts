@@ -59,6 +59,7 @@ import {
   type HistoryCommandRecoveryDecision,
 } from "./conversation-command-recovery";
 import { conversationV2AgentEvent } from "./conversation-v2-agent-events";
+import { migrateCodexCompactionDetails } from "./conversation-v2-compaction-migration";
 import {
   appendLegacyThreadRunEventToConversationV2,
   conversationV2MessageIdForLegacyEvent,
@@ -1436,6 +1437,7 @@ export class ConversationStore {
         throw error;
       }
     }
+    migrateCodexCompactionDetails(this.db, this.v2);
   }
 
   /**

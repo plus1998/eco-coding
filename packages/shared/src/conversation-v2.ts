@@ -392,6 +392,8 @@ export interface ConversationBootstrap {
    */
   agents?: ConversationAgent[];
   todos?: ConversationTodo[];
+  /** Recent context lifecycle notices plus each owner's latest state, independent of message paging. */
+  details?: ConversationDetailItem[];
   olderCursor?: string;
   hasOlder: boolean;
 }

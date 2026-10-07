@@ -207,6 +207,7 @@ export function installConversationV2Bootstrap(
     !Array.isArray(bootstrap.turns) ||
     !Array.isArray(bootstrap.runs) ||
     !Array.isArray(bootstrap.tools) ||
+    (bootstrap.details !== undefined && !Array.isArray(bootstrap.details)) ||
     typeof bootstrap.hasOlder !== "boolean" ||
     (bootstrap.hasOlder && typeof bootstrap.olderCursor !== "string") ||
     (!bootstrap.hasOlder && bootstrap.olderCursor !== undefined)
@@ -268,6 +269,15 @@ export function installConversationV2Bootstrap(
     }
   }
   const toolIds = new Set<string>();
+  const details = bootstrap.details ?? [];
+  const detailIds = new Set<string>();
+  for (const detail of details) {
+    validateDetail(detail, bootstrap.conversationId, bootstrap.snapshotSeq, "bootstrap detail");
+    if (detailIds.has(detail.itemId)) {
+      throw new Error(`Conversation V2 renderer bootstrap detail ${detail.itemId} is duplicated.`);
+    }
+    detailIds.add(detail.itemId);
+  }
   for (const tool of bootstrap.tools) {
     validateTool(tool, bootstrap.conversationId, bootstrap.snapshotSeq, "bootstrap tool");
     if (!toolIds.add(tool.toolCallId)) {
@@ -285,7 +295,7 @@ export function installConversationV2Bootstrap(
     todos: new Map(todos.map((todo) => [todo.todoId, todo])),
     tools: new Map(bootstrap.tools.map((tool) => [tool.toolCallId, tool])),
     ...(toolSummaryCounts ? { toolSummaryCounts } : {}),
-    details: new Map(),
+    details: new Map(details.map((detail) => [detail.itemId, detail])),
     effectHashes: new Map(),
     hasOlder: bootstrap.hasOlder,
     ...(bootstrap.olderCursor ? { olderCursor: bootstrap.olderCursor } : {}),

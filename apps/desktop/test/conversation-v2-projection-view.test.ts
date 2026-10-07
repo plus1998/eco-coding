@@ -4468,7 +4468,11 @@ test("buildThreadRunProjectionViewModel collapses superseded context compaction 
       text: "上下文已自动压缩",
     }),
   );
-  expect(detail).toEqual({ kind: "phase", label: "上下文已自动压缩" });
+  expect(detail).toEqual({
+    kind: "phase",
+    label: "上下文已自动压缩",
+    compaction: { lifecycle: "completed" },
+  });
 });
 
 test("isThreadContextCompactionInFlight tracks latest compaction stage", () => {

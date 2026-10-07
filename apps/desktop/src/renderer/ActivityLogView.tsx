@@ -12,7 +12,12 @@ import {
   formatUsageBadge,
   shortenModelId,
 } from "@eco/runtime/usage";
-import type { ConversationMessage, ConversationRun, ConversationToolCall } from "@eco/shared";
+import type {
+  ConversationDetailItem,
+  ConversationMessage,
+  ConversationRun,
+  ConversationToolCall,
+} from "@eco/shared";
 import {
   AppWindow,
   ArrowDownToLine,
@@ -87,6 +92,7 @@ import { resolveFileChangeFromToolInput } from "../shared/file-change";
 import { isEcoImageDisplayToolName } from "../shared/image-display-tool";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import { isEcoWebSearchToolName } from "../shared/integrated-web-search";
+import { isContextCompactionEventType } from "../shared/thread-run-events";
 import type {
   PromptImageAttachment,
   ThreadActivityRewindTarget,
@@ -887,6 +893,21 @@ export function buildConversationV2OnlyProjection(
     );
   }
 
+  for (const detail of conversationV2.details.values()) {
+    if (!isContextCompactionEventType(detail.type)) continue;
+    const item = conversationV2CompactionToTimelineItem(detail);
+    const agentId = detail.agentId && cardAgentIds.has(detail.agentId) ? detail.agentId : undefined;
+    if (agentId) {
+      item.scope = "agent";
+      const owned = messagesByAgent.get(agentId) ?? [];
+      owned.push(item);
+      messagesByAgent.set(agentId, owned);
+    } else {
+      item.scope = "main";
+      mainTimeline.push(item);
+    }
+  }
+
   const agents: ThreadRunProjectionAgent[] = [];
   for (const agentId of agentIds) {
     const record = registry.get(agentId);
@@ -953,7 +974,11 @@ export function buildConversationV2OnlyProjection(
     ),
     timeline: mainTimeline,
     diagnostics: [],
-    sourceEventCount: conversationV2.messages.size + conversationV2.runs.size + conversationV2.tools.size,
+    sourceEventCount:
+      conversationV2.messages.size +
+      conversationV2.runs.size +
+      conversationV2.tools.size +
+      conversationV2.details.size,
     historyRevision: conversationV2.historyRevision,
     ...(conversationV2.projectionExtras?.billing ? { billing: conversationV2.projectionExtras.billing } : {}),
     ...(conversationV2.projectionExtras?.context ? { context: conversationV2.projectionExtras.context } : {}),
@@ -962,6 +987,41 @@ export function buildConversationV2OnlyProjection(
       : {}),
     ...(conversationV2.projectionExtras?.subagentMetrics
       ? { subagentMetrics: conversationV2.projectionExtras.subagentMetrics }
+      : {}),
+  };
+}
+
+function conversationV2CompactionToTimelineItem(
+  detail: ConversationDetailItem,
+): ThreadRunProjectionTimelineItem {
+  const content = JSON.parse(detail.content ?? "null");
+  if (
+    !isContextCompactionEventType(detail.type) ||
+    !content ||
+    typeof content.message !== "string" ||
+    typeof content.observedAt !== "string"
+  ) {
+    throw new Error(`Conversation V2 compaction detail ${detail.itemId} is invalid.`);
+  }
+  return {
+    id: detail.itemId,
+    sequence: detail.createdSeq,
+    eventType: detail.type,
+    scope: "main",
+    text: content.message,
+    at: content.observedAt,
+    runAttemptId: detail.runId,
+    ...(detail.agentId ? { agentId: detail.agentId } : {}),
+    ...(typeof content.role === "string" ? { role: content.role } : {}),
+    ...(typeof content.requestId === "string" ? { requestId: content.requestId } : {}),
+    ...(typeof content.streamKey === "string" ? { streamKey: content.streamKey } : {}),
+    ...(content.metadata || content.timing
+      ? {
+          metadata: {
+            ...content.metadata,
+            ...(content.timing ? { compactionTiming: content.timing } : {}),
+          },
+        }
       : {}),
   };
 }
@@ -4157,6 +4217,7 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <PhaseBlock
         label={block.label}
+        {...(block.compaction && { compaction: block.compaction })}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
         {...(block.reconnectFailed && {
           reconnectFailed: block.reconnectFailed,
@@ -4395,6 +4456,7 @@ function DetailBlock({
     return (
       <PhaseBlock
         label={block.label}
+        {...(block.compaction && { compaction: block.compaction })}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
         {...(block.reconnectFailed && {
           reconnectFailed: block.reconnectFailed,
@@ -4577,21 +4639,29 @@ function DetailBlock({
 
 function PhaseBlock({
   label,
+  compaction,
   reconnecting,
   reconnectFailed,
   reconnectDetail,
   onRetry,
 }: {
   label: string;
+  compaction?: Extract<ActivityDetailBlock, { kind: "phase" }>["compaction"];
   reconnecting?: boolean;
   reconnectFailed?: boolean;
   reconnectDetail?: string;
   onRetry?: () => void;
 }) {
-  if (isContextCompactionPhaseLabel(label)) {
+  if (compaction || isContextCompactionPhaseLabel(label)) {
     return (
       <div className="run-log-context-action" role="status" aria-live="polite">
-        <RunLogAction icon="context" label={label} lifecycle={contextCompactionLifecycle(label)} />
+        <RunLogAction
+          icon="context"
+          label={label}
+          lifecycle={compaction?.lifecycle ?? contextCompactionLifecycle(label)}
+          {...(compaction?.startedAt && { startedAt: compaction.startedAt })}
+          {...(compaction?.durationMs !== undefined && { durationMs: compaction.durationMs })}
+        />
       </div>
     );
   }
@@ -6577,6 +6647,7 @@ function RunLogAction({
   displayLabelOverride,
   lifecycle,
   startedAt,
+  durationMs,
   bashRun,
   fileChange,
   webSearch,
@@ -6594,6 +6665,8 @@ function RunLogAction({
   lifecycle?: ToolActionLifecycle;
   /** 工具调用开始时间（行事件/插入时间）；running 行据此显示实时耗时。 */
   startedAt?: string;
+  /** Measured duration of a settled lifecycle row, retained after reopening. */
+  durationMs?: number;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
@@ -6616,6 +6689,14 @@ function RunLogAction({
     undefined,
     startedAt !== undefined && lifecycle === "running",
   );
+  const elapsedLabel =
+    lifecycle === "running"
+      ? runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS
+        ? formatDuration(runningElapsedMs)
+        : ""
+      : durationMs !== undefined
+        ? formatDuration(durationMs)
+        : "";
   const subagentRole = subagent?.trim() ? subagent : undefined;
   const showRoleLabel =
     subagentRole !== undefined &&
@@ -6675,10 +6756,8 @@ function RunLogAction({
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
-      {lifecycle === "running" && runningElapsedMs > TOOL_ELAPSED_MIN_VISIBLE_MS ? (
-        <span className="run-log-action-meta run-log-action-elapsed">
-          {formatDuration(runningElapsedMs)}
-        </span>
+      {elapsedLabel ? (
+        <span className="run-log-action-meta run-log-action-elapsed">{elapsedLabel}</span>
       ) : null}
       {lifecycle === "failed" ? (
         <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
