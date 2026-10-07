@@ -149,3 +149,15 @@ test("in-panel browser tab clicks switch pages without opening or exiting fullsc
   );
   expect(appSource).not.toMatch(/onSelectBrowser=\{\(browserId\) => \{\s*openBrowserTaskPanel\(browserId\)/);
 });
+
+test("reopening the task sidebar restores its last tab instead of spawning a new one", () => {
+  const toggle = appSource.slice(
+    appSource.indexOf("const toggleTaskPanelForCurrentProject"),
+    appSource.indexOf("const openWebChatItem"),
+  );
+  expect(toggle).toContain("resolveTaskPanelReopenTab(openTaskPanelTabIds, taskPanelActiveTabRef.current)");
+  // A fresh start page is the empty-panel fallback only, never the default reopen path.
+  expect(toggle).toMatch(/if \(!restoreTab\) \{\s*openBrowserTaskPanel\(\);\s*return;\s*\}/);
+  expect(toggle).toContain("setTaskPanelActiveTab(restoreTab);");
+  expect(toggle).toContain("revealTaskPanel();");
+});

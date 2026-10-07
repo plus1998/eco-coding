@@ -408,7 +408,12 @@ import {
   normalizeTaskPanelSessionUiState,
   type TaskPanelSessionUiState,
 } from "./task-panel-session-ui-state";
-import { addOpenTaskPanelTab, removeOpenTaskPanelTab, replaceOpenTaskPanelTab } from "./task-panel-tab-state";
+import {
+  addOpenTaskPanelTab,
+  removeOpenTaskPanelTab,
+  replaceOpenTaskPanelTab,
+  resolveTaskPanelReopenTab,
+} from "./task-panel-tab-state";
 import {
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
   TASK_PANEL_FILE_VIEWER_TAB_ID,
@@ -5928,8 +5933,27 @@ function App() {
       return;
     }
     setTaskPanelFullscreen(false);
-    openBrowserTaskPanel();
-  }, [currentProjectPath, dismissTaskPanel, openBrowserTaskPanel, revealTaskPanel, taskDrawerOpen]);
+    // Reopening the sidebar restores the tab it was collapsed on; only an empty panel
+    // (every tab closed) gets a fresh start page.
+    const restoreTab = resolveTaskPanelReopenTab(openTaskPanelTabIds, taskPanelActiveTabRef.current);
+    if (!restoreTab) {
+      openBrowserTaskPanel();
+      return;
+    }
+    setTaskPanelActiveTab(restoreTab);
+    setSelectedSubagentAgentId(
+      activeSubagentCards.some((card) => card.key === restoreTab) ? restoreTab : undefined,
+    );
+    revealTaskPanel();
+  }, [
+    activeSubagentCards,
+    currentProjectPath,
+    dismissTaskPanel,
+    openBrowserTaskPanel,
+    openTaskPanelTabIds,
+    revealTaskPanel,
+    taskDrawerOpen,
+  ]);
 
   const openWebChatItem = useCallback(
     (item: WebChatItem) => {
