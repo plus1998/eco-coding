@@ -264,6 +264,7 @@ import {
   isTerminalSpawnRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
+  MAX_CLIPBOARD_IMAGE_BASE64_CHARS,
   lockThreadRuntimeConfigSnapshotOnContinue,
   type MainAgentConfigResource,
   type MainAgentPromptResource,
@@ -4033,6 +4034,23 @@ function registerIpcHandlers(): void {
   // Terminal paste reads through the main process: the renderer clipboard-read permission
   // stays denied, and Electron's clipboard is not gated on window focus.
   registerDesktopCommand(IPC_CHANNELS.clipboardReadText, async () => clipboard.readText());
+
+  // Same reason for image writes: the renderer's `navigator.clipboard.write` refuses when the
+  // document is unfocused, so the image viewer retries the copy here. PNG only — Chromium and
+  // nativeImage both stop at that format.
+  registerDesktopCommand(IPC_CHANNELS.clipboardWriteImage, async (payload: unknown) => {
+    const pngBase64 =
+      isRecord(payload) && typeof payload.pngBase64 === "string" ? payload.pngBase64.trim() : "";
+    if (!pngBase64 || pngBase64.length > MAX_CLIPBOARD_IMAGE_BASE64_CHARS) {
+      return false;
+    }
+    const image = nativeImage.createFromBuffer(Buffer.from(pngBase64, "base64"));
+    if (image.isEmpty()) {
+      return false;
+    }
+    clipboard.writeImage(image);
+    return true;
+  });
 
   registerDesktopCommand(IPC_CHANNELS.cursorModelsList, async () => {
     const apiKey = workflowSettingsStore.get().acpCursorApiKey?.trim();

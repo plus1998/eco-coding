@@ -36,6 +36,7 @@ export const IPC_CHANNELS = {
   appThreadOpenRequested: "app:thread-open-requested",
   coreAvailabilityGet: "core:availability-get",
   clipboardReadText: "clipboard:read-text",
+  clipboardWriteImage: "clipboard:write-image",
   cursorModelsList: "cursor:models-list",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
@@ -520,6 +521,19 @@ export interface ImageViewReadRequest {
 export interface ImageRevealInFolderRequest {
   path: string;
 }
+
+/**
+ * PNG bytes for a system-clipboard image write performed in the main process.
+ *
+ * The renderer's `navigator.clipboard.write` needs a focused document, so the image viewer
+ * falls back to this channel when that write is refused (see `image-clipboard.ts`).
+ */
+export interface ClipboardWriteImageRequest {
+  pngBase64: string;
+}
+
+/** Upper bound for the base64 PNG accepted by `clipboard:write-image` (≈30 MB of image bytes). */
+export const MAX_CLIPBOARD_IMAGE_BASE64_CHARS = 40_000_000;
 
 export type ImageViewReadFailureCode =
   | "invalid_path"

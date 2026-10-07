@@ -89,6 +89,7 @@ import {
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type ClarificationSubmitResult,
+  type ClipboardWriteImageRequest,
   type ComposerDraftDeleteRequest,
   type ComposerDraftDeleteResult,
   type ComposerDraftRecord,
@@ -496,6 +497,13 @@ const api = {
   /** Plain-text system clipboard contents, read in the main process (the renderer has no clipboard-read). */
   readClipboardText(): Promise<string> {
     return ipcRenderer.invoke(IPC_CHANNELS.clipboardReadText);
+  },
+  /**
+   * Image system-clipboard write, performed in the main process. The renderer's own write
+   * needs a focused document; this one does not, so it is the image viewer's fallback.
+   */
+  writeImageToClipboard(request: ClipboardWriteImageRequest): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clipboardWriteImage, request);
   },
   onTerminalEvent(callback: (event: TerminalStreamEvent) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
