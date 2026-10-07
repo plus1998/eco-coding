@@ -365,13 +365,14 @@ export function useFeedSectionVirtualizer(input: {
 }
 
 export function FeedVirtualSectionWindow(props: {
+  sections: readonly ThreadRunTurnFeedSection[];
   totalSize: number;
   scrollMargin: number;
   virtualItems: readonly VirtualItem[];
   measureElement: (node: Element | null) => void;
   renderSection: (index: number) => ReactNode;
 }): ReactNode {
-  const { totalSize, scrollMargin, virtualItems, measureElement, renderSection } = props;
+  const { sections, totalSize, scrollMargin, virtualItems, measureElement, renderSection } = props;
   const first = virtualItems[0];
   const last = virtualItems[virtualItems.length - 1];
   // item.start/end include scrollMargin; totalSize does not. Header already occupies that margin in DOM.
@@ -382,7 +383,13 @@ export function FeedVirtualSectionWindow(props: {
     <>
       {topSpacer > 0 ? <div className="run-log-virtual-spacer" style={{ height: topSpacer }} aria-hidden /> : null}
       {virtualItems.map((item) => (
-        <div key={item.key} data-index={item.index} ref={measureElement} className="run-log-virtual-row">
+        <div
+          key={item.key}
+          data-index={item.index}
+          data-previous-section-kind={sections[item.index - 1]?.kind}
+          ref={measureElement}
+          className="run-log-virtual-row"
+        >
           {renderSection(item.index)}
         </div>
       ))}

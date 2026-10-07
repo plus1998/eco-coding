@@ -2086,6 +2086,7 @@ export function ConversationV2ProjectionActivityLogView({
                 resolveSectionTopPx={resolveSectionTopPx}
               />
               <FeedVirtualSectionWindow
+                sections={feedSections}
                 totalSize={totalSize}
                 scrollMargin={scrollMargin}
                 virtualItems={virtualItems}
