@@ -12959,6 +12959,12 @@ button.default-agent-option:focus-visible {
   border: 1px solid var(--markdown-table-border, var(--markdown-border));
   border-radius: 8px;
   box-shadow: var(--shadow-menu);
+  opacity: 1;
+}
+
+.markdown-content .markdown-table-action:hover,
+.markdown-content .markdown-table-action:focus-visible {
+  background: var(--bg-elevated-hover);
 }
 
 .markdown-content .markdown-table-menu-wrap {
@@ -27262,6 +27268,22 @@ html:not([data-platform="darwin"])
   background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
   color: var(--codex-log-muted);
   border-bottom-color: var(--codex-log-line);
+}
+
+.run-log .markdown-content :is(table, .markdown-table-block, .markdown-table-scroll),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  .markdown-content
+  :is(table, .markdown-table-block, .markdown-table-scroll) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.run-log .markdown-content :is(th, td),
+.codex-main:not(.codex-main-landing) .run-log .markdown-content :is(th, td) {
+  background: transparent;
+  border-radius: 0;
 }
 
 .codex-main:not(.codex-main-landing) .markdown-content blockquote {
