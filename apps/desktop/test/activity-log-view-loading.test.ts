@@ -2139,37 +2139,44 @@ test("ActivityLogView hides waiting thinking while context compaction is running
 
   expect(html).toContain("正在自动压缩上下文");
   expect(html).toContain("run-log-context-action");
+  expect(html).toContain('<span class="run-log-shimmer-text" aria-live="polite">正在自动压缩上下文</span>');
   expect(html).not.toContain("正在思考");
   expect(html).not.toContain("run-log-streaming-dots");
   expect(html).not.toContain('aria-label="会话进行中"');
 });
 
-test("ActivityLogView counts a running context compaction in the text flow", () => {
-  const startedAt = new Date(Date.now() - 10_500).toISOString();
-  const html = renderToStaticMarkup(
-    createElement(ProjectionActivityLogView, {
-      projection: projection({
-        status: "running",
-        timeline: [
-          item({
-            id: "compact-start",
-            eventType: "context.compaction.started",
-            text: "正在自动压缩上下文",
-            at: startedAt,
-            metadata: { liveType: "context.compaction.started" },
-          }),
-        ],
+test.each(["正在自动压缩上下文", "正在手动压缩上下文", "正在压缩上下文"])(
+  "ActivityLogView shimmers %s while counting elapsed time in the text flow",
+  (label) => {
+    const startedAt = new Date(Date.now() - 10_500).toISOString();
+    const html = renderToStaticMarkup(
+      createElement(ProjectionActivityLogView, {
+        projection: projection({
+          status: "running",
+          timeline: [
+            item({
+              id: "compact-start",
+              eventType: "context.compaction.started",
+              text: label,
+              at: startedAt,
+              metadata: { liveType: "context.compaction.started" },
+            }),
+          ],
+        }),
       }),
-    }),
-  );
+    );
 
-  expect(html).toContain(
-    '正在自动压缩上下文<span class="run-log-action-elapsed run-log-action-elapsed--inline">10s</span>',
-  );
-  expect(html).not.toContain('class="run-log-action-meta run-log-action-elapsed"');
-});
+    expect(html).toContain(
+      `<span class="run-log-shimmer-text" aria-live="polite">${label}</span><span class="run-log-action-elapsed run-log-action-elapsed--inline">10s</span>`,
+    );
+    expect(html).not.toContain('class="run-log-action-meta run-log-action-elapsed"');
+  },
+);
 
-test("ActivityLogView appends a settled compaction duration to its label", () => {
+test.each([
+  { eventType: "context.compaction.completed", label: "上下文已自动压缩" },
+  { eventType: "context.compaction.failed", label: "上下文压缩失败：请求失败" },
+])("ActivityLogView stops shimmering after $eventType and retains the duration", ({ eventType, label }) => {
   const startedAt = "2026-01-01T00:00:01.000Z";
   const endedAt = "2026-01-01T00:00:14.000Z";
   const html = renderToStaticMarkup(
@@ -2187,8 +2194,8 @@ test("ActivityLogView appends a settled compaction duration to its label", () =>
           item({
             id: "compact-done",
             sequence: 2,
-            eventType: "context.compaction.completed",
-            text: "上下文已自动压缩",
+            eventType,
+            text: label,
             at: endedAt,
             metadata: { compactionTiming: { startedAt, endedAt, durationMs: 13_000 } },
           }),
@@ -2198,8 +2205,9 @@ test("ActivityLogView appends a settled compaction duration to its label", () =>
   );
 
   expect(html).toContain(
-    '上下文已自动压缩<span class="run-log-action-elapsed run-log-action-elapsed--inline">13s</span>',
+    `${label}<span class="run-log-action-elapsed run-log-action-elapsed--inline">13s</span>`,
   );
+  expect(html).not.toContain("run-log-shimmer-text");
   expect(html).not.toContain('class="run-log-action-meta run-log-action-elapsed"');
 });
 

@@ -6760,7 +6760,7 @@ function RunLogAction({
     <>
       <RunLogActionIcon icon={icon} {...(lifecycle && { lifecycle })} />
       <span ref={labelRef} className="run-log-action-label">
-        {displayLabel}
+        {icon === "context" && lifecycle === "running" ? <ShimmerText>{displayLabel}</ShimmerText> : displayLabel}
         {elapsedInline && elapsedLabel ? (
           <span className="run-log-action-elapsed run-log-action-elapsed--inline">{elapsedLabel}</span>
         ) : null}
