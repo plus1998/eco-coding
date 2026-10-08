@@ -386,7 +386,7 @@ async function applyAcpAuxiliaryReview(input: {
   if (review.action === "allow") {
     input.deps.emit(
       "bash_approval.approved",
-      `辅助模型已允许 ${input.toolName}：${input.command}`,
+      `审批模型已允许 ${input.toolName}：${input.command}`,
       approvalRequest,
     );
     return {

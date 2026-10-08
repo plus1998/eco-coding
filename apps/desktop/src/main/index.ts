@@ -485,6 +485,7 @@ import {
 import { transcribeAsr } from "./asr-client";
 import { type AsrSecretCodec, type AsrSettingsStore, createAsrSettingsStore } from "./asr-settings-store";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
+import { resolveApprovalModelRoute } from "./approval-model-route";
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
@@ -2445,7 +2446,7 @@ app.whenReady().then(async () => {
           routeModels.set(route.providerId, models);
         }
       }
-      return providerStore.listProvidersWithSecrets().map((provider) => {
+      return providerStore.listProvidersWithSecrets().filter((provider) => provider.apiCompat !== "system_one").map((provider) => {
         const candidates = providerStore.listCandidateModels(provider.id);
         return {
           id: provider.id,
@@ -2458,7 +2459,7 @@ app.whenReady().then(async () => {
           ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
           ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
           ...(provider.upstreamProxyUrl ? { upstreamProxyUrl: provider.upstreamProxyUrl } : {}),
-          apiCompat: provider.apiCompat,
+          apiCompat: resolveUpstreamApiCompat(undefined, provider.apiCompat),
           defaultModel: provider.defaultModel,
           models: candidates.map((model) => ({
             modelId: model.modelId,
@@ -2654,11 +2655,11 @@ app.whenReady().then(async () => {
       return enriched;
     },
     listProviders: () =>
-      providerStore.listProviders().map((provider) => ({
+      providerStore.listProviders().filter((provider) => provider.apiCompat !== "system_one").map((provider) => ({
         id: provider.id,
         name: provider.name,
         enabled: provider.enabled,
-        apiCompat: provider.apiCompat,
+        apiCompat: resolveUpstreamApiCompat(undefined, provider.apiCompat),
         defaultModel: provider.defaultModel,
         models: providerStore.listCandidateModels(provider.id).map((model) => ({
           modelId: model.modelId,
@@ -2683,7 +2684,7 @@ app.whenReady().then(async () => {
       const routes: {
         providerId: string;
         modelId: string;
-        apiCompat: UpstreamApiCompat;
+        apiCompat: import("../shared/api-compat").ChatApiCompat;
         displayName?: string;
         manualSpec?: { contextTokens?: number; supportsImageInput?: boolean };
       }[] = [];
@@ -2696,7 +2697,7 @@ app.whenReady().then(async () => {
           routes.push({
             providerId: route.providerId,
             modelId: route.modelId,
-            apiCompat: route.apiCompat ?? provider.apiCompat,
+            apiCompat: resolveUpstreamApiCompat(route.apiCompat, provider.apiCompat),
             displayName: `${provider.name} / ${route.modelId}`,
             ...(route.manualSpec
               ? {
@@ -3412,7 +3413,7 @@ function collectCodexCatalogRoutesFromModelRefs(
       {
         providerId,
         modelId,
-        apiCompat: ref.apiCompat ?? provider.apiCompat,
+        apiCompat: resolveUpstreamApiCompat(ref.apiCompat, provider.apiCompat),
         displayName: `${provider.name} / ${modelId}`,
         ...(manualSpec
           ? {
@@ -5831,7 +5832,9 @@ function registerIpcHandlers(): void {
           const pacContent = `function FindProxyForURL(url, host) {
             return "PROXY ${parsed.host}";
           }`;
-          const pacDataUri = 'data:application/x-ns-proxy-autoconfig;base64,' + Buffer.from(pacContent, 'utf8').toString('base64');
+            const pacDataUri =
+              "data:application/x-ns-proxy-autoconfig;base64," +
+              Buffer.from(pacContent, "utf8").toString("base64");
           await authSession.setProxy({
             mode: "pac_script",
             pacScript: pacDataUri,
@@ -6451,6 +6454,9 @@ function registerIpcHandlers(): void {
     if (typeof config.id !== "string" || !config.id.trim()) {
       throw new Error("主 Agent 配置 id 不能为空。");
     }
+    if (config.modelRef) {
+      resolveUpstreamApiCompat(config.modelRef.apiCompat, providerStore.getProviderWithSecret(config.modelRef.providerId)?.apiCompat);
+    }
     const saved = agentOrchestrationStore.saveMainAgentConfig(config);
     emitSettingsUpdated();
     return saved;
@@ -6502,6 +6508,9 @@ function registerIpcHandlers(): void {
     const orchestration = payload as SubagentOrchestrationResource;
     if (typeof orchestration.id !== "string" || !orchestration.id.trim()) {
       throw new Error("子代理编排 id 不能为空。");
+    }
+    for (const agent of orchestration.agents ?? []) {
+      resolveUpstreamApiCompat(agent.modelRef.apiCompat, providerStore.getProviderWithSecret(agent.modelRef.providerId)?.apiCompat);
     }
     const saved = agentOrchestrationStore.saveSubagentOrchestration(orchestration);
     emitSettingsUpdated();
@@ -6737,6 +6746,9 @@ function registerIpcHandlers(): void {
     }
     const previous = workflowSettingsStore.get();
     const normalized = normalizeWorkflowSettingsSnapshot(payload);
+    for (const selection of [normalized.defaultAuxiliaryModel, normalized.defaultVisionModel]) {
+      if (selection) resolveUpstreamApiCompat(undefined, providerStore.getProviderWithSecret(selection.providerId)?.apiCompat);
+    }
     // Legacy acpAgentsEnabled.cursor is no longer a user-facing gate; Cursor ACP
     // is allowed whenever the CLI probe succeeds (checked below for default=acp).
     const gated: typeof normalized = { ...normalized };
@@ -7548,6 +7560,19 @@ function registerIpcHandlers(): void {
       gitSettingsStore,
       pricingCache,
     });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.approvalListModelOptions, async (payload: unknown) => {
+    return handleGitListCommitModelOptions(
+      parseGitListCommitModelOptionsRequest(payload),
+      {
+        providerStore,
+        agentOrchestrationStore,
+        gitSettingsStore,
+        pricingCache,
+      },
+      "approval",
+    );
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitSaveCommitModelPreference, async (payload: unknown) => {
@@ -18884,7 +18909,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
           emitThreadEvent(
             threadId,
             "bash_approval.approved",
-            `辅助模型已允许 ${request.toolName}：${filesystemPath}`,
+            `审批模型已允许 ${request.toolName}：${filesystemPath}`,
             "tool",
             false,
             bashApprovalEventExtras(reviewedRequest, "bash_approval.approved"),
@@ -19082,7 +19107,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         emitThreadEvent(
           threadId,
           "bash_approval.approved",
-          `辅助模型已允许 Bash：${command}`,
+          `审批模型已允许 Bash：${command}`,
           "tool",
           false,
           bashApprovalEventExtras(reviewedRequest, "bash_approval.approved"),
@@ -19164,20 +19189,20 @@ async function reviewThreadToolApproval(
   }
   let route;
   try {
-    route = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore, {
+    route = resolveApprovalModelRoute(thread.runtimeConfig?.approvalModel, providerStore, {
       globalMaxOutputTokens: workflowSettingsStore.get().maxOutputLimitTokens,
     });
   } catch (error) {
     logUpstream("eco-approval-review-skipped", {
       threadId,
       source,
-      reason: "auxiliary_model_unavailable",
+      reason: "approval_model_unavailable",
       detail: errorMessage(error),
     });
     return {
       action: "human_required",
-      rationale: `辅助模型不可用，自动审批已失败关闭并转人工审批：${errorMessage(error)}`,
-      policyMatches: ["auxiliary_model_unavailable"],
+      rationale: `审批模型不可用，自动审批已失败关闭并转人工审批：${errorMessage(error)}`,
+      policyMatches: ["approval_model_unavailable"],
     };
   }
 
@@ -19216,6 +19241,9 @@ async function reviewThreadToolApproval(
     envelope: built.envelope,
     serializedEnvelope: built.serialized,
     locale: currentAppLocale(),
+    ...(proxyBridgeSettingsStore.get().upstreamProxyUrl
+      ? { globalProxyUrl: proxyBridgeSettingsStore.get().upstreamProxyUrl! }
+      : {}),
   });
 }
 

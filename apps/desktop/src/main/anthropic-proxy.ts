@@ -99,6 +99,7 @@ export function runtimeRouteToProxyRoute(
   route: RuntimeRouteProxySource,
   options?: RuntimeRouteToProxyOptions,
 ): AnthropicProxyRoute {
+  resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat);
   const modelMax =
     resolveRouteMaxOutputTokens(route.manualSpec) ??
     (options?.catalogMaxOutputTokens !== undefined && options.catalogMaxOutputTokens > 0
@@ -475,7 +476,9 @@ export async function prepareGatewayBindingForwardRequest(input: {
       resolution: {
         providerId: route.provider.id,
         upstreamModelId: route.modelId,
-        upstreamKind: mapApiCompatToUpstreamKind(route.apiCompat),
+        upstreamKind: mapApiCompatToUpstreamKind(
+          resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat),
+        ),
       },
       clientModel,
       bridgeBindingId: binding.bindingId,

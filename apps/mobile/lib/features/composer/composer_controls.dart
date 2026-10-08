@@ -245,6 +245,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+      defaultApprovalModel: workflow.defaultApprovalModel,
       defaultVisionModel: workflow.defaultVisionModel,
       mcpServersEnabled: mcpServersEnabled,
       integrationsEnabled: workflow.integrationsEnabled,
@@ -272,6 +273,35 @@ Future<void> persistAuxiliaryModelWorkflowDefault(
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: selection,
+      defaultApprovalModel: workflow.defaultApprovalModel,
+      defaultVisionModel: workflow.defaultVisionModel,
+      mcpServersEnabled: workflow.mcpServersEnabled,
+      integrationsEnabled: workflow.integrationsEnabled,
+    ),
+  );
+  ref.invalidate(workflowSettingsProvider);
+}
+
+Future<void> persistApprovalModelWorkflowDefault(
+  WidgetRef ref, {
+  required ApprovalModelSelection? selection,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+  final workflow = await ref.read(workflowSettingsProvider.future);
+  if (workflow == null) return;
+  await rpc.saveWorkflowSettings(
+    WorkflowSettingsSnapshot(
+      sessionMode: workflow.sessionMode,
+      defaultCoreKind: workflow.defaultCoreKind,
+      acpCursorModelId: workflow.acpCursorModelId,
+      showBilling: workflow.showBilling,
+      defaultBashReviewMode: workflow.defaultBashReviewMode,
+      contextWindowLimitTokens: workflow.contextWindowLimitTokens,
+      maxOutputLimitTokens: workflow.maxOutputLimitTokens,
+      defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
+      defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+      defaultApprovalModel: selection,
       defaultVisionModel: workflow.defaultVisionModel,
       mcpServersEnabled: workflow.mcpServersEnabled,
       integrationsEnabled: workflow.integrationsEnabled,
@@ -299,6 +329,7 @@ Future<void> persistVisionModelWorkflowDefault(
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+      defaultApprovalModel: workflow.defaultApprovalModel,
       defaultVisionModel: selection,
       mcpServersEnabled: workflow.mcpServersEnabled,
       integrationsEnabled: workflow.integrationsEnabled,
@@ -355,6 +386,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
     this.rememberedMcp,
     this.showOrchestrationPickers = true,
     this.showAuxiliaryModelPicker = false,
+    this.showApprovalModelPicker = false,
     this.showVisionModelPicker = false,
   });
 
@@ -368,6 +400,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
   final Map<String, bool>? rememberedMcp;
   final bool showOrchestrationPickers;
   final bool showAuxiliaryModelPicker;
+  final bool showApprovalModelPicker;
   final bool showVisionModelPicker;
 
   @override
@@ -576,6 +609,30 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
           onTap: !canEdit
               ? null
               : () => showComposerAuxiliaryModelPickerSheet(
+                  context,
+                  runtimeConfig: runtimeConfig,
+                  threadId: threadId,
+                  canEdit: canEdit,
+                  onChanged: onChanged,
+                  mainAgentConfigId: mainAgentConfigId,
+                ),
+        ),
+      );
+    }
+    if (showApprovalModelPicker) {
+      if (children.isNotEmpty) {
+        children.add(const EcoGroupedDivider(indent: 16));
+      }
+      children.add(
+        _OrchestrationPickerRow(
+          label: context.l10n.composerApprovalModel,
+          value: runtimeConfig.approvalModel == null
+              ? context.l10n.commonNotConfigured
+              : shortenModelId(runtimeConfig.approvalModel!.modelId),
+          enabled: canEdit,
+          onTap: !canEdit
+              ? null
+              : () => showComposerApprovalModelPickerSheet(
                   context,
                   runtimeConfig: runtimeConfig,
                   threadId: threadId,
@@ -1638,7 +1695,6 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
       var next = option == null
           ? runtimeConfig.copyWith(clearAuxiliaryModel: true)
           : runtimeConfig.copyWith(auxiliaryModel: selection);
-      next = downgradeAuxiliaryDependentFeatures(next);
       persistRuntimeConfig(
         ref,
         threadId: threadId,
@@ -1757,6 +1813,187 @@ Future<void> showComposerAuxiliaryModelPickerSheet(
         padding: const EdgeInsets.only(bottom: 8),
         children: [
           ComposerAuxiliaryModelSection(
+            runtimeConfig: runtimeConfig,
+            threadId: threadId,
+            canEdit: canEdit,
+            onChanged: onChanged,
+            mainAgentConfigId: mainAgentConfigId,
+            topSpacing: 4,
+            showSectionHeader: false,
+            isAcp: isAcp,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class ComposerApprovalModelSection extends ConsumerWidget {
+  const ComposerApprovalModelSection({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+    required this.mainAgentConfigId,
+    this.closeOnSelect = true,
+    this.topSpacing = 20,
+    this.showSectionHeader = true,
+    this.isAcp = false,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String mainAgentConfigId;
+  final bool closeOnSelect;
+  final double topSpacing;
+  final bool showSectionHeader;
+  final bool isAcp;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(approvalModelOptionsProvider(mainAgentConfigId));
+
+    void select(CommitModelOptionView? option) {
+      final selection = option == null
+          ? null
+          : ApprovalModelSelection(
+              providerId: option.providerId,
+              modelId: option.modelId,
+              candidateModelId: option.candidateModelId,
+            );
+      var next = option == null
+          ? runtimeConfig.copyWith(clearApprovalModel: true)
+          : runtimeConfig.copyWith(approvalModel: selection);
+      next = downgradeApprovalDependentFeatures(next);
+      persistRuntimeConfig(
+        ref,
+        threadId: threadId,
+        config: next,
+        onChanged: onChanged,
+      );
+      persistApprovalModelWorkflowDefault(ref, selection: selection).catchError(
+        (Object error) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(error.toString())));
+          }
+        },
+      );
+      if (closeOnSelect) {
+        Navigator.pop(context);
+      }
+    }
+
+    return _approvalModelSection(
+      context,
+      child: Column(
+        children: [
+          EcoSheetOptionTile(
+            title: context.l10n.commonNotConfigured,
+            subtitle: context.l10n.composerApprovalModelManualFallback,
+            selected: runtimeConfig.approvalModel == null,
+            enabled: canEdit,
+            onTap: !canEdit ? null : () => select(null),
+          ),
+          options.when(
+            data: (items) => Column(
+              children: [
+                const EcoGroupedDivider(indent: 16),
+                // Unified provider → model cascade (search + grouped) instead
+                // of a flat model list.
+                EcoModelCascadeList(
+                  layout: EcoModelCascadeLayout.split,
+                  height: 360,
+                  options: [
+                    for (final option in items)
+                      ModelCascadeEntry(
+                        key: option.candidateModelId,
+                        providerKey: option.providerId,
+                        providerName: option.providerName,
+                        modelId: option.modelId,
+                        title: option.modelLabel,
+                        subtitle: option.modelId,
+                      ),
+                  ],
+                  selectedKey: runtimeConfig.approvalModel?.candidateModelId,
+                  enabled: canEdit,
+                  onSelected: (key) {
+                    for (final option in items) {
+                      if (option.candidateModelId == key) {
+                        select(option);
+                        break;
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+            loading: () => const Column(
+              children: [
+                EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                ),
+              ],
+            ),
+            error: (_, _) => Column(
+              children: [
+                const EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Text(context.l10n.composerModelLoadFailed),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _approvalModelSection(BuildContext context, {required Widget child}) {
+    return EcoGroupedSection(
+      label: showSectionHeader ? context.l10n.composerApprovalModel : null,
+      caption: showSectionHeader
+          ? (isAcp
+                ? context.l10n.composerApprovalModelHintAcp
+                : context.l10n.composerApprovalModelHint)
+          : null,
+      topSpacing: topSpacing,
+      child: child,
+    );
+  }
+}
+
+Future<void> showComposerApprovalModelPickerSheet(
+  BuildContext context, {
+  required ThreadRuntimeConfigInput runtimeConfig,
+  required String threadId,
+  required bool canEdit,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  required String mainAgentConfigId,
+  bool isAcp = false,
+}) {
+  return showEcoActionSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => EcoSheetScaffold(
+      title: context.l10n.composerApprovalModel,
+      subtitle: isAcp
+          ? context.l10n.composerApprovalModelHintAcp
+          : context.l10n.composerApprovalModelHint,
+      maxHeightFactor: 0.7,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          ComposerApprovalModelSection(
             runtimeConfig: runtimeConfig,
             threadId: threadId,
             canEdit: canEdit,
@@ -2769,7 +3006,7 @@ Future<void> showComposerBashReviewSheet(
                     onTap: () async {
                       final option = bashReviewUiOptions(context.l10n)[i];
                       if (option.value == 'auto' &&
-                          runtimeConfig.auxiliaryModel == null) {
+                          runtimeConfig.approvalModel == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(

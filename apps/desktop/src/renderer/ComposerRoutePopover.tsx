@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type {
   AuxiliaryModelSelection,
+  ApprovalModelSelection,
   CommitModelOptionView,
   MainAgentPromptSelection,
   ModelSettingsSnapshot,
@@ -45,6 +46,7 @@ interface CompositionControlHandlers {
   onSelectMainPrompt: (selection: MainAgentPromptSelection) => void | Promise<void>;
   onSelectSubagents: (selection: SubagentSelection) => void | Promise<void>;
   onSelectAuxiliaryModel: (selection: AuxiliaryModelSelection) => void | Promise<void>;
+  onSelectApprovalModel: (selection: ApprovalModelSelection) => void | Promise<void>;
   onSelectVisionModel: (selection: VisionModelSelection) => void | Promise<void>;
 }
 
@@ -122,6 +124,7 @@ export function ComposerRoutePopover({
   onSelectMainPrompt,
   onSelectSubagents,
   onSelectAuxiliaryModel,
+  onSelectApprovalModel,
   onSelectVisionModel,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
@@ -245,6 +248,7 @@ export function ComposerRoutePopover({
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
         onSelectAuxiliaryModel={onSelectAuxiliaryModel}
+        onSelectApprovalModel={onSelectApprovalModel}
         onSelectVisionModel={onSelectVisionModel}
       />
     </div>,
@@ -265,6 +269,7 @@ export function ComposerRouteCardBody({
   onSelectMainPrompt,
   onSelectSubagents,
   onSelectAuxiliaryModel,
+  onSelectApprovalModel,
   onSelectVisionModel,
   onOpenFullSettings,
 }: ComposerRouteCardBodyProps) {
@@ -284,6 +289,7 @@ export function ComposerRouteCardBody({
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
         onSelectAuxiliaryModel={onSelectAuxiliaryModel}
+        onSelectApprovalModel={onSelectApprovalModel}
         onSelectVisionModel={onSelectVisionModel}
       />
       <div className="composer-route-card-footer">
@@ -314,6 +320,7 @@ function ComposerRouteCompositionControls({
   onSelectMainPrompt,
   onSelectSubagents,
   onSelectAuxiliaryModel,
+  onSelectApprovalModel,
   onSelectVisionModel,
   coreKind,
 }: {
@@ -343,6 +350,17 @@ function ComposerRouteCompositionControls({
   const auxiliaryModelPricingExtra = useMemo(
     () => createCommitModelPricingExtra(auxiliaryModelOptions),
     [auxiliaryModelOptions],
+  );
+  const [approvalModelOptions, setApprovalModelOptions] = useState<CommitModelOptionView[]>([]);
+  const [approvalModelsLoading, setApprovalModelsLoading] = useState(false);
+  const [approvalModelsError, setApprovalModelsError] = useState<string>();
+  const approvalModelCascadeOptions = useMemo(
+    () => mapCommitModelOptions(approvalModelOptions),
+    [approvalModelOptions],
+  );
+  const approvalModelPricingExtra = useMemo(
+    () => createCommitModelPricingExtra(approvalModelOptions),
+    [approvalModelOptions],
   );
   const selection = runtimeConfig?.orchestrationSelection;
   const selectedMainAgentConfigId = selection?.mainAgentConfigId ?? "";
@@ -399,7 +417,39 @@ function ComposerRouteCompositionControls({
     return () => {
       cancelled = true;
     };
-  }, [mainAgentConfigId]);
+  }, [mainAgentConfigId, settings.providers]);
+  useEffect(() => {
+    if (!window.eco) {
+      setApprovalModelOptions([]);
+      setApprovalModelsLoading(false);
+      setApprovalModelsError(undefined);
+      return;
+    }
+    let cancelled = false;
+    setApprovalModelsLoading(true);
+    setApprovalModelsError(undefined);
+    void window.eco
+      .listApprovalModelOptions(mainAgentConfigId ? { mainAgentConfigId } : {})
+      .then((result) => {
+        if (!cancelled) {
+          setApprovalModelOptions(result.options);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setApprovalModelOptions([]);
+          setApprovalModelsError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setApprovalModelsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mainAgentConfigId, settings.providers]);
   const auxiliaryHint = showOrchestration
     ? t("composer.route.auxiliaryModelHint")
     : t("composer.route.auxiliaryModelHintAcp");
@@ -470,6 +520,25 @@ function ComposerRouteCompositionControls({
           }}
         />
         <span className="composer-route-prompt-hint">{auxiliaryHint}</span>
+      </div>
+      <div className="composer-route-prompt-control">
+        <span className="composer-route-prompt-label">{t("composer.route.approvalModel")}</span>
+        <ModelCascadeSelect
+          value={toModelCascadeSelection(runtimeConfig?.approvalModel)}
+          options={approvalModelCascadeOptions}
+          loading={approvalModelsLoading}
+          error={approvalModelsError}
+          disabled={disabled}
+          hint={t("composer.route.approvalModelHint")}
+          placeholder={t("composer.route.approvalModel")}
+          renderExtra={approvalModelPricingExtra}
+          onChange={(selection) => {
+            if (selection) {
+              void onSelectApprovalModel(toCandidateModelSelection(selection));
+            }
+          }}
+        />
+        <span className="composer-route-prompt-hint">{t("composer.route.approvalModelHint")}</span>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.visionModel")}</span>

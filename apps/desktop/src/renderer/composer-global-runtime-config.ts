@@ -32,6 +32,9 @@ export function buildComposerGlobalRuntimeConfig(input: {
       ...(workflowDefaults.defaultAuxiliaryModel
         ? { auxiliaryModel: workflowDefaults.defaultAuxiliaryModel }
         : {}),
+      ...(workflowDefaults.defaultApprovalModel
+        ? { approvalModel: workflowDefaults.defaultApprovalModel }
+        : {}),
       ...(workflowDefaults.defaultVisionModel ? { visionModel: workflowDefaults.defaultVisionModel } : {}),
       ...(workflowDefaults.mcpServersEnabled
         ? { mcpServersEnabled: workflowDefaults.mcpServersEnabled }

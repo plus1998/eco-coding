@@ -72,7 +72,10 @@ export function shouldIncludeActivityLine(line: ApprovalActivityLine): boolean {
   if (role === "user") {
     return true;
   }
-  if (BASH_APPROVAL_TYPE.test(message) || /辅助模型已允许|等待确认|已拒绝|已允许本次/.test(message)) {
+  if (
+    BASH_APPROVAL_TYPE.test(message) ||
+    /(?:辅助模型|审批模型)已允许|等待确认|已拒绝|已允许本次/.test(message)
+  ) {
     return false;
   }
   if (role === "thinking") {
@@ -250,7 +253,7 @@ export function buildApprovalEnvelope(input: {
 
   return {
     ok: false,
-    rationale: "审批证据超过字符硬顶，已按失败关闭策略转人工审批（未调用辅助模型）。",
+    rationale: "审批证据超过字符硬顶，已按失败关闭策略转人工审批（未调用审批模型）。",
     policyMatches: ["evidence_over_budget"],
   };
 }

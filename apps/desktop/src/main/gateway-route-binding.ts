@@ -1,3 +1,4 @@
+import { resolveUpstreamApiCompat } from "../shared/api-compat";
 /**
  * Attempt-scoped Gateway route binding control plane.
  * Claude-compatible (same credential/registry) but not Anthropic-Messages-only.
@@ -49,7 +50,7 @@ export function buildPiGatewayRequestHeaders(input: {
     [ECO_BRIDGE_BINDING_ID_HEADER]: input.bindingId,
     "x-gateway-provider-id": input.providerId,
     "x-gateway-requested-model": input.requestedModel,
-    "x-gateway-upstream-kind": mapApiCompatToUpstreamKind(input.apiCompat),
+    "x-gateway-upstream-kind": mapApiCompatToUpstreamKind(resolveUpstreamApiCompat(input.apiCompat)),
   };
   if (input.threadId?.trim()) {
     headers["x-gateway-thread-id"] = input.threadId.trim();

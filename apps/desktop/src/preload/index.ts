@@ -1090,6 +1090,11 @@ const api = {
   ): Promise<GitListCommitModelOptionsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitListCommitModelOptions, request);
   },
+  listApprovalModelOptions(
+    request: GitListCommitModelOptionsRequest,
+  ): Promise<GitListCommitModelOptionsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.approvalListModelOptions, request);
+  },
   commitGitChanges(request: GitCommitRequest): Promise<GitCommitResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitCommit, request);
   },

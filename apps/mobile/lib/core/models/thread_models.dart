@@ -124,6 +124,40 @@ class AuxiliaryModelSelection {
   final String candidateModelId;
 }
 
+class ApprovalModelSelection {
+  const ApprovalModelSelection({
+    required this.providerId,
+    required this.modelId,
+    required this.candidateModelId,
+  });
+
+  factory ApprovalModelSelection.fromJson(Map<String, dynamic> json) {
+    return ApprovalModelSelection(
+      providerId: _requiredCandidateModelString(
+        json,
+        'providerId',
+        'approvalModel',
+      ),
+      modelId: _requiredCandidateModelString(json, 'modelId', 'approvalModel'),
+      candidateModelId: _requiredCandidateModelString(
+        json,
+        'candidateModelId',
+        'approvalModel',
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'providerId': providerId,
+    'modelId': modelId,
+    'candidateModelId': candidateModelId,
+  };
+
+  final String providerId;
+  final String modelId;
+  final String candidateModelId;
+}
+
 class VisionModelSelection {
   const VisionModelSelection({
     required this.providerId,
@@ -169,6 +203,7 @@ class ThreadRuntimeConfig {
     this.skillsEnabled,
     this.mainAgentModelOverride,
     this.auxiliaryModel,
+    this.approvalModel,
     this.visionModel,
     required this.sessionMode,
     required this.bashReviewMode,
@@ -237,6 +272,12 @@ class ThreadRuntimeConfig {
         _requiredJsonObject(json['auxiliaryModel'], 'auxiliaryModel'),
       );
     }
+    ApprovalModelSelection? approvalModel;
+    if (json.containsKey('approvalModel')) {
+      approvalModel = ApprovalModelSelection.fromJson(
+        _requiredJsonObject(json['approvalModel'], 'approvalModel'),
+      );
+    }
     VisionModelSelection? visionModel;
     if (json.containsKey('visionModel')) {
       visionModel = VisionModelSelection.fromJson(
@@ -272,6 +313,7 @@ class ThreadRuntimeConfig {
       skillsEnabled: parsedSkills,
       mainAgentModelOverride: mainAgentModelOverride,
       auxiliaryModel: auxiliaryModel,
+      approvalModel: approvalModel,
       visionModel: visionModel,
       sessionMode: sessionMode,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
@@ -292,6 +334,7 @@ class ThreadRuntimeConfig {
     if (mainAgentModelOverride != null)
       'mainAgentModelOverride': mainAgentModelOverride!.toJson(),
     if (auxiliaryModel != null) 'auxiliaryModel': auxiliaryModel!.toJson(),
+    if (approvalModel != null) 'approvalModel': approvalModel!.toJson(),
     if (visionModel != null) 'visionModel': visionModel!.toJson(),
     'sessionMode': sessionMode,
     'bashReviewMode': bashReviewMode,
@@ -310,7 +353,9 @@ class ThreadRuntimeConfig {
     MainAgentModelOverride? mainAgentModelOverride,
     bool clearMainAgentModelOverride = false,
     AuxiliaryModelSelection? auxiliaryModel,
+    ApprovalModelSelection? approvalModel,
     bool clearAuxiliaryModel = false,
+    bool clearApprovalModel = false,
     VisionModelSelection? visionModel,
     bool clearVisionModel = false,
     SessionMode? sessionMode,
@@ -336,6 +381,9 @@ class ThreadRuntimeConfig {
       auxiliaryModel: clearAuxiliaryModel
           ? null
           : (auxiliaryModel ?? this.auxiliaryModel),
+      approvalModel: clearApprovalModel
+          ? null
+          : (approvalModel ?? this.approvalModel),
       visionModel: clearVisionModel ? null : (visionModel ?? this.visionModel),
       sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
@@ -351,6 +399,7 @@ class ThreadRuntimeConfig {
   final Map<String, bool>? skillsEnabled;
   final MainAgentModelOverride? mainAgentModelOverride;
   final AuxiliaryModelSelection? auxiliaryModel;
+  final ApprovalModelSelection? approvalModel;
   final VisionModelSelection? visionModel;
   final SessionMode sessionMode;
   final String bashReviewMode;
@@ -455,6 +504,7 @@ class WorkflowSettingsSnapshot {
     this.maxOutputLimitTokens = defaultMaxOutputLimitTokens,
     this.defaultOrchestrationSelection,
     this.defaultAuxiliaryModel,
+    this.defaultApprovalModel,
     this.defaultVisionModel,
     this.mcpServersEnabled,
     this.integrationsEnabled,
@@ -496,6 +546,15 @@ class WorkflowSettingsSnapshot {
         ),
       );
     }
+    ApprovalModelSelection? defaultApprovalModel;
+    if (json.containsKey('defaultApprovalModel')) {
+      defaultApprovalModel = ApprovalModelSelection.fromJson(
+        _requiredJsonObject(
+          json['defaultApprovalModel'],
+          'defaultApprovalModel',
+        ),
+      );
+    }
     VisionModelSelection? defaultVisionModel;
     if (json.containsKey('defaultVisionModel')) {
       defaultVisionModel = VisionModelSelection.fromJson(
@@ -526,6 +585,7 @@ class WorkflowSettingsSnapshot {
           defaultMaxOutputLimitTokens,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
       defaultAuxiliaryModel: defaultAuxiliaryModel,
+      defaultApprovalModel: defaultApprovalModel,
       defaultVisionModel: defaultVisionModel,
       mcpServersEnabled: parsedMcp,
       integrationsEnabled: integrationsEnabled,
@@ -546,6 +606,8 @@ class WorkflowSettingsSnapshot {
       'defaultOrchestrationSelection': defaultOrchestrationSelection!.toJson(),
     if (defaultAuxiliaryModel != null)
       'defaultAuxiliaryModel': defaultAuxiliaryModel!.toJson(),
+    if (defaultApprovalModel != null)
+      'defaultApprovalModel': defaultApprovalModel!.toJson(),
     if (defaultVisionModel != null)
       'defaultVisionModel': defaultVisionModel!.toJson(),
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
@@ -561,6 +623,7 @@ class WorkflowSettingsSnapshot {
   final int maxOutputLimitTokens;
   final OrchestrationSelection? defaultOrchestrationSelection;
   final AuxiliaryModelSelection? defaultAuxiliaryModel;
+  final ApprovalModelSelection? defaultApprovalModel;
   final VisionModelSelection? defaultVisionModel;
   final Map<String, bool>? mcpServersEnabled;
   final Map<String, bool>? integrationsEnabled;

@@ -259,6 +259,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("git:list-commit-model-options", "List commit message model options", "read", RPC_INVOKE, [
     objectArg([]),
   ]),
+  command("approval:list-model-options", "List approval model options", "read", RPC_INVOKE, [objectArg([])]),
   command(
     "git:save-commit-model-preference",
     "Save commit message model preference",

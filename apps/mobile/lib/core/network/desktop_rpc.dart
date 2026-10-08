@@ -1779,6 +1779,22 @@ class DesktopRpc {
     return GitListCommitModelOptionsResult.fromJson(result);
   }
 
+  Future<GitListCommitModelOptionsResult> listApprovalModelOptions({
+    String? mainAgentConfigId,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'approval:list-model-options',
+      [
+        {
+          if (mainAgentConfigId != null && mainAgentConfigId.trim().isNotEmpty)
+            'mainAgentConfigId': mainAgentConfigId.trim(),
+        },
+      ],
+    );
+    return GitListCommitModelOptionsResult.fromJson(result);
+  }
+
   Future<void> saveCommitModelPreference({
     required String candidateModelId,
     String? mainAgentConfigId,

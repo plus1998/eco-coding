@@ -9,7 +9,7 @@ import {
 } from "../src/main/codex-approval-bridge";
 import type { BashApprovalDecision, ThreadLiveEvent } from "../src/shared/ipc";
 
-test("Codex auto mode returns accept when the auxiliary reviewer allows the command", async () => {
+test("Codex auto mode returns accept when the approval reviewer allows the command", async () => {
   const events: ThreadLiveEvent[] = [];
   const deps: CodexApprovalBridgeDeps = {
     resolveEcoThreadId: () => "thread-1",
@@ -37,7 +37,7 @@ test("Codex auto mode returns accept when the auxiliary reviewer allows the comm
   ).resolves.toEqual({ decision: "accept" });
 
   expect(events.map((event) => event.type)).toEqual(["bash_approval.approved"]);
-  expect(events[0]?.message).toContain("辅助模型已允许");
+  expect(events[0]?.message).toContain("审批模型已允许");
   expect(events[0]?.bashApproval).toMatchObject({
     reason: "Sandbox requires approval",
     description: "Sandbox requires approval",

@@ -257,6 +257,7 @@ export const IPC_CHANNELS = {
   gitGenerateCommitMessage: "git:generate-commit-message",
   gitGenerateCommitMessageDelta: "git:generate-commit-message-delta",
   gitListCommitModelOptions: "git:list-commit-model-options",
+  approvalListModelOptions: "approval:list-model-options",
   gitSaveCommitModelPreference: "git:save-commit-model-preference",
   gitCommit: "git:commit",
   gitPush: "git:push",
@@ -965,6 +966,7 @@ export interface WorkflowSettingsSnapshot {
   followUpDeliveryMode: FollowUpDeliveryMode;
   defaultOrchestrationSelection?: import("./agent-orchestration").OrchestrationSelection;
   defaultAuxiliaryModel?: import("./auxiliary-model").AuxiliaryModelSelection;
+  defaultApprovalModel?: import("./approval-model").ApprovalModelSelection;
   defaultVisionModel?: import("./vision-model").VisionModelSelection;
   mcpServersEnabled?: Record<string, boolean>;
   integrationsEnabled?: IntegrationsEnabledSettings;
@@ -1466,6 +1468,7 @@ export {
 } from "./composer-mcp";
 export type {
   AuxiliaryModelSelection,
+  ApprovalModelSelection,
   MainAgentModelOverride,
   MainAgentSystemPromptPreset,
   McpServersEnabledSettings,

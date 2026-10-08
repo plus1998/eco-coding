@@ -98,6 +98,7 @@ import {
   type AsrProfileSnapshot,
   type AsrProfilesSnapshot,
   type AuxiliaryModelSelection,
+  type ApprovalModelSelection,
   type BackgroundTerminalTask,
   type BashApprovalRequest,
   buildThreadRuntimeConfigFromDefaults,
@@ -4586,6 +4587,9 @@ function App() {
           ...((current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel)
             ? { auxiliaryModel: current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel }
             : {}),
+          ...((current?.approvalModel ?? workflowSettings.defaultApprovalModel)
+            ? { approvalModel: current?.approvalModel ?? workflowSettings.defaultApprovalModel }
+            : {}),
           ...((current?.visionModel ?? workflowSettings.defaultVisionModel)
             ? { visionModel: current?.visionModel ?? workflowSettings.defaultVisionModel }
             : {}),
@@ -4723,6 +4727,9 @@ function App() {
         ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
         ...((base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel)
           ? { auxiliaryModel: base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel }
+          : {}),
+        ...((base?.approvalModel ?? workflowSettings.defaultApprovalModel)
+          ? { approvalModel: base?.approvalModel ?? workflowSettings.defaultApprovalModel }
           : {}),
         ...((base?.visionModel ?? workflowSettings.defaultVisionModel)
           ? { visionModel: base?.visionModel ?? workflowSettings.defaultVisionModel }
@@ -8875,6 +8882,38 @@ function App() {
     }
   }
 
+  async function selectComposerApprovalModel(selection: ApprovalModelSelection) {
+    if (!canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    const base =
+      composerRuntimeConfig ??
+      (composerCoreKind === "acp"
+        ? buildAcpThreadRuntimeConfig({
+            sessionMode: workflowSettings.sessionMode,
+            ...(workflowSettings.acpCursorModelId
+              ? { cursorModelId: workflowSettings.acpCursorModelId }
+              : {}),
+            ...(workflowSettings.defaultVisionModel
+              ? { visionModel: workflowSettings.defaultVisionModel }
+              : {}),
+          })
+        : null);
+    if (!base) {
+      return;
+    }
+    await persistComposerRuntimeConfig({ ...base, approvalModel: selection });
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        defaultApprovalModel: selection,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   async function selectComposerVisionModel(selection: VisionModelSelection) {
     if (!canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
       return;
@@ -8889,6 +8928,9 @@ function App() {
               : {}),
             ...(workflowSettings.defaultAuxiliaryModel
               ? { auxiliaryModel: workflowSettings.defaultAuxiliaryModel }
+              : {}),
+            ...(workflowSettings.defaultApprovalModel
+              ? { approvalModel: workflowSettings.defaultApprovalModel }
               : {}),
           })
         : null);
@@ -8918,6 +8960,9 @@ function App() {
         ...(workflowSettings.acpCursorModelId ? { cursorModelId: workflowSettings.acpCursorModelId } : {}),
         ...(workflowSettings.defaultAuxiliaryModel
           ? { auxiliaryModel: workflowSettings.defaultAuxiliaryModel }
+          : {}),
+        ...(workflowSettings.defaultApprovalModel
+          ? { approvalModel: workflowSettings.defaultApprovalModel }
           : {}),
         ...(workflowSettings.defaultVisionModel ? { visionModel: workflowSettings.defaultVisionModel } : {}),
         ...(modelId ? { cursorModelId: modelId } : {}),
@@ -9129,6 +9174,44 @@ function App() {
         setComposerRuntimeConfig({
           ...baseRuntimeConfig,
           ...(selection ? { auxiliaryModel: selection } : {}),
+        });
+      } else if (!activeThread && !composerRuntimeConfig && selection) {
+        const next = buildComposerDefaultConfig({
+          workflowDefaults: saved,
+        });
+        if (next) {
+          setComposerRuntimeConfig(next);
+        }
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function saveDefaultApprovalModel(selection: ApprovalModelSelection | undefined) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const nextWorkflowSettings: WorkflowSettingsSnapshot = {
+        ...workflowSettings,
+      };
+      if (selection) {
+        nextWorkflowSettings.defaultApprovalModel = selection;
+      } else {
+        delete nextWorkflowSettings.defaultApprovalModel;
+      }
+      const saved = await window.eco.saveWorkflowSettings(nextWorkflowSettings);
+      setWorkflowSettings(saved);
+      if (!activeThread && composerRuntimeConfig) {
+        const { approvalModel: _previous, ...baseRuntimeConfig } = composerRuntimeConfig;
+        setComposerRuntimeConfig({
+          ...baseRuntimeConfig,
+          ...(selection ? { approvalModel: selection } : {}),
         });
       } else if (!activeThread && !composerRuntimeConfig && selection) {
         const next = buildComposerDefaultConfig({
@@ -10648,6 +10731,7 @@ function App() {
       onSelectMainPrompt={selectComposerMainPrompt}
       onSelectSubagents={selectComposerSubagents}
       onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
+      onSelectApprovalModel={selectComposerApprovalModel}
       onSelectVisionModel={selectComposerVisionModel}
       coreKind={composerCoreKind}
       onResetToGlobalSettings={() => void resetComposerToGlobalSettings()}
@@ -10825,9 +10909,7 @@ function App() {
         ) : null}
         {/* The overlay band is shared: a queued follow-up panel or the landing context bar
             already owns it, and stacking the dots under either would just collide. */}
-        {composerAgentSilenceVisible && !showComposerInputOverlays ? (
-          <ComposerFloatingLoading />
-        ) : null}
+        {composerAgentSilenceVisible && !showComposerInputOverlays ? <ComposerFloatingLoading /> : null}
         <ComposerDockMorph
           showApproval={showComposerDockApproval}
           surfaceKey={composerDockSurfaceKey}
@@ -12222,6 +12304,9 @@ function App() {
                       {...(workflowSettings.defaultAuxiliaryModel && {
                         defaultAuxiliaryModel: workflowSettings.defaultAuxiliaryModel,
                       })}
+                      {...(workflowSettings.defaultApprovalModel && {
+                        defaultApprovalModel: workflowSettings.defaultApprovalModel,
+                      })}
                       {...(workflowSettings.defaultVisionModel && {
                         defaultVisionModel: workflowSettings.defaultVisionModel,
                       })}
@@ -12233,6 +12318,7 @@ function App() {
                         void saveDefaultOrchestrationSelection(selection)
                       }
                       onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
+                      onDefaultApprovalModelChange={(selection) => void saveDefaultApprovalModel(selection)}
                       onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
                       {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
                         ? {

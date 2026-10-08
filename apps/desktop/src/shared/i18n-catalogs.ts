@@ -1901,9 +1901,9 @@ export const i18nCatalogs = {
       "approval.bash.risk.medium": "中风险",
       "approval.bash.risk.low": "低风险",
       "approval.bash.autoReviewFailedTitle": "自动审批未通过",
-      "approval.bash.autoReviewFailedHint": "请先阅读辅助模型给出的风险说明，再决定是否放行。",
+      "approval.bash.autoReviewFailedHint": "请先阅读审批模型给出的风险说明，再决定是否放行。",
       "approval.bash.autoReviewErrorTitle": "自动审批请求失败",
-      "approval.bash.autoReviewErrorHint": "辅助模型未返回有效审批结果，已转人工审批。下方为原始错误信息。",
+      "approval.bash.autoReviewErrorHint": "审批模型未返回有效审批结果，已转人工审批。下方为原始错误信息。",
       "modelSelect.placeholder": "输入或选择模型",
       "modelSelect.collapse": "收起模型列表",
       "modelSelect.expand": "展开远程模型列表",
@@ -1991,7 +1991,9 @@ export const i18nCatalogs = {
       "composer.route.prompt": "提示词",
       "composer.route.subagentOrchestration": "子代理编排",
       "composer.route.auxiliaryModel": "辅助模型",
-      "composer.route.auxiliaryModelHint": "用于标题生成、命令自动审批、Git 提交信息",
+      "composer.route.approvalModel": "审批模型",
+      "composer.route.approvalModelHint": "用于工具自动审批，可选择普通模型或 SystemOne（Jev）决策模型",
+      "composer.route.auxiliaryModelHint": "用于标题生成、Git 提交信息",
       "composer.route.auxiliaryModelHintAcp": "用于 Git 提交信息生成",
       "composer.route.visionModel": "视觉模型",
       "composer.route.visionModelHint": "用于 image_view 工具；未配置时使用主模型",
@@ -2334,7 +2336,7 @@ export const i18nCatalogs = {
       "bash.review.always": "请求批准",
       "bash.review.alwaysDesc": "编辑工作区外文件或访问互联网时始终询问",
       "bash.review.auto": "替我审批",
-      "bash.review.autoDesc": "由辅助模型审批；检测到风险或审批失败时请求人工批准",
+      "bash.review.autoDesc": "由审批模型审批；检测到风险或审批失败时请求人工批准",
       "bash.review.allowAll": "完全访问",
       "bash.review.allowAllDesc": "可不受限制地访问互联网和您电脑上的任何文件",
       "bash.review.allowAllConfirm":
@@ -4414,8 +4416,10 @@ export const i18nCatalogs = {
       "composer.route.prompt": "Prompt",
       "composer.route.subagentOrchestration": "Sub-agent orchestration",
       "composer.route.auxiliaryModel": "Auxiliary model",
-      "composer.route.auxiliaryModelHint":
-        "Used for title generation, automatic command approval, and Git commit messages",
+      "composer.route.approvalModel": "Approval model",
+      "composer.route.approvalModelHint":
+        "Used for automatic tool reviews; supports chat models and SystemOne (Jev) decision models",
+      "composer.route.auxiliaryModelHint": "Used for title generation and Git commit messages",
       "composer.route.auxiliaryModelHintAcp": "Used to generate Git commit messages",
       "composer.route.visionModel": "Vision model",
       "composer.route.visionModelHint":
@@ -4778,7 +4782,7 @@ export const i18nCatalogs = {
       "bash.review.alwaysDesc":
         "Always ask before editing files outside the workspace or accessing the internet",
       "bash.review.auto": "Approve for me",
-      "bash.review.autoDesc": "Use the auxiliary model; ask you when risk is detected or review fails",
+      "bash.review.autoDesc": "Use the approval model; ask you when risk is detected or review fails",
       "bash.review.allowAll": "Full access",
       "bash.review.allowAllDesc": "Unrestricted access to the internet and any file on your computer",
       "bash.review.allowAllConfirm":
@@ -4962,7 +4966,8 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
     message.startsWith("候选模型所属 Provider 未配置或已禁用：") ||
     message.startsWith("Git 提交模型已不在候选模型列表中：") ||
     message.startsWith("未配置视觉模型") ||
-    message.startsWith("未配置辅助模型")
+    message.startsWith("未配置辅助模型") ||
+    message.startsWith("未配置审批模型")
   ) {
     return "native.error.modelConfiguration";
   }

@@ -2179,7 +2179,7 @@ function emitAutomaticApproval(
   deps.emitThreadLive({
     threadId: request.threadId,
     type: "bash_approval.approved",
-    message: `辅助模型已允许：${commandLabel}`,
+    message: `审批模型已允许：${commandLabel}`,
     role: "tool",
     bashApproval: request,
   });

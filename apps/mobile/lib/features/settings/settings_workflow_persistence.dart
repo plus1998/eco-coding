@@ -20,7 +20,9 @@ WorkflowSettingsSnapshot workflowSettingsWith({
   OrchestrationSelection? defaultOrchestrationSelection,
   bool clearDefaultOrchestrationSelection = false,
   AuxiliaryModelSelection? defaultAuxiliaryModel,
+  ApprovalModelSelection? defaultApprovalModel,
   bool clearDefaultAuxiliaryModel = false,
+  bool clearDefaultApprovalModel = false,
   VisionModelSelection? defaultVisionModel,
   bool clearDefaultVisionModel = false,
   Map<String, bool>? mcpServersEnabled,
@@ -51,6 +53,9 @@ WorkflowSettingsSnapshot workflowSettingsWith({
     defaultAuxiliaryModel: clearDefaultAuxiliaryModel
         ? null
         : (defaultAuxiliaryModel ?? workflow?.defaultAuxiliaryModel),
+    defaultApprovalModel: clearDefaultApprovalModel
+        ? null
+        : (defaultApprovalModel ?? workflow?.defaultApprovalModel),
     defaultVisionModel: clearDefaultVisionModel
         ? null
         : (defaultVisionModel ?? workflow?.defaultVisionModel),

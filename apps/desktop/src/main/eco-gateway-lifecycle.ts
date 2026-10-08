@@ -70,10 +70,18 @@ export interface EcoGatewayLifecycleOptions {
   /** Outbound SOCKS/HTTP proxy URL for gateway upstream fetch. */
   getUpstreamProxyUrl?: () => string | undefined;
   getGatewayCredentialResolver?: () =>
-    | ((input: { provider: GatewayProvider; request?: Request }) => Promise<{ accessToken: string; accountId?: string; upstreamProxyUrl?: string }>)
+    | ((input: {
+        provider: GatewayProvider;
+        request?: Request;
+      }) => Promise<{ accessToken: string; accountId?: string; upstreamProxyUrl?: string }>)
     | undefined;
   getGatewayCredentialReporter?: () =>
-    | ((input: { provider: GatewayProvider; accountId?: string; statusCode: number; errorCode?: string }) => void | Promise<void>)
+    | ((input: {
+        provider: GatewayProvider;
+        accountId?: string;
+        statusCode: number;
+        errorCode?: string;
+      }) => void | Promise<void>)
     | undefined;
   /** Hard ceiling for gateway modelMaxOutputTokens (default 32K). */
   getGlobalMaxOutputTokens?: () => number;
@@ -347,6 +355,8 @@ export async function probeLocalBridgeHealth(port: number): Promise<boolean> {
 
 export function mapApiCompatToUpstreamKind(apiCompat: UpstreamApiCompat): GatewayUpstreamKind {
   switch (apiCompat) {
+    case "system_one":
+      throw new Error("SystemOne 供应商仅可用于审批，不能注册到聊天 Gateway。");
     case "anthropic":
       return "anthropic-messages";
     case "openai_responses":

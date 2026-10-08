@@ -15,6 +15,11 @@ import {
   resolveOrchestrationSnapshot,
 } from "./agent-orchestration";
 import {
+  type ApprovalModelSelection,
+  isApprovalModelSelection,
+  normalizeApprovalModelSelection,
+} from "./approval-model";
+import {
   type AuxiliaryModelSelection,
   isAuxiliaryModelSelection,
   normalizeAuxiliaryModelSelection,
@@ -48,6 +53,7 @@ import {
 
 export type {
   AuxiliaryModelSelection,
+  ApprovalModelSelection,
   BashReviewMode,
   IntegrationsEnabledSettings,
   McpServersEnabledSettings,
@@ -79,6 +85,7 @@ export interface ThreadRuntimeConfig {
   resolvedOrchestrationSnapshot?: ResolvedOrchestrationSnapshot;
   mainAgentModelOverride?: MainAgentModelOverride;
   auxiliaryModel?: AuxiliaryModelSelection;
+  approvalModel?: ApprovalModelSelection;
   visionModel?: VisionModelSelection;
   mainAgentSystemPromptPresetOverride?: MainAgentSystemPromptPreset;
   subagentEnabled: SubagentEnabledSettings;
@@ -272,6 +279,9 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (record.auxiliaryModel !== undefined && !isAuxiliaryModelSelection(record.auxiliaryModel)) {
     return false;
   }
+  if (record.approvalModel !== undefined && !isApprovalModelSelection(record.approvalModel)) {
+    return false;
+  }
   if (record.visionModel !== undefined && !isVisionModelSelection(record.visionModel)) {
     return false;
   }
@@ -414,6 +424,7 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
     (typeof legacyBrowserEnabled === "boolean" ? { browser: legacyBrowserEnabled } : undefined);
   const skillsEnabled = normalizeSkillsEnabled(config.skillsEnabled);
   const auxiliaryModel = normalizeAuxiliaryModelSelection(config.auxiliaryModel);
+  const approvalModel = normalizeApprovalModelSelection(config.approvalModel);
   const visionModel = normalizeVisionModelSelection(config.visionModel);
   return {
     ...(typeof config.cursorModelId === "string" && config.cursorModelId.trim()
@@ -430,6 +441,7 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
       ? { mainAgentModelOverride: normalizeMainAgentModelOverride(config.mainAgentModelOverride) }
       : {}),
     ...(auxiliaryModel ? { auxiliaryModel } : {}),
+    ...(approvalModel ? { approvalModel } : {}),
     ...(visionModel ? { visionModel } : {}),
     ...(config.mainAgentSystemPromptPresetOverride
       ? { mainAgentSystemPromptPresetOverride: config.mainAgentSystemPromptPresetOverride }
@@ -485,6 +497,7 @@ export function buildAcpThreadRuntimeConfig(input?: {
   bashReviewMode?: BashReviewMode;
   subagentEnabled?: SubagentEnabledSettings;
   auxiliaryModel?: AuxiliaryModelSelection;
+  approvalModel?: ApprovalModelSelection;
   visionModel?: VisionModelSelection;
   mcpServersEnabled?: McpServersEnabledSettings;
   integrationsEnabled?: IntegrationsEnabledSettings;
@@ -493,6 +506,7 @@ export function buildAcpThreadRuntimeConfig(input?: {
   const cursorModelId =
     typeof input?.cursorModelId === "string" ? input.cursorModelId.trim().slice(0, 256) : "";
   const auxiliaryModel = normalizeAuxiliaryModelSelection(input?.auxiliaryModel);
+  const approvalModel = normalizeApprovalModelSelection(input?.approvalModel);
   const visionModel = normalizeVisionModelSelection(input?.visionModel);
   const mcpServersEnabled = normalizeMcpServersEnabled(input?.mcpServersEnabled);
   const integrationsEnabled = normalizeIntegrationsEnabled(input?.integrationsEnabled);
@@ -503,6 +517,7 @@ export function buildAcpThreadRuntimeConfig(input?: {
     sessionMode: normalizeSessionMode(input?.sessionMode),
     bashReviewMode: input?.bashReviewMode ?? "always",
     ...(auxiliaryModel ? { auxiliaryModel } : {}),
+    ...(approvalModel ? { approvalModel } : {}),
     ...(visionModel ? { visionModel } : {}),
     ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
     ...(integrationsEnabled ? { integrationsEnabled } : {}),
@@ -543,6 +558,9 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
       : {}),
     ...(input.workflowDefaults.defaultAuxiliaryModel
       ? { auxiliaryModel: input.workflowDefaults.defaultAuxiliaryModel }
+      : {}),
+    ...(input.workflowDefaults.defaultApprovalModel
+      ? { approvalModel: input.workflowDefaults.defaultApprovalModel }
       : {}),
     ...(input.workflowDefaults.defaultVisionModel
       ? { visionModel: input.workflowDefaults.defaultVisionModel }

@@ -34,6 +34,7 @@ enum _CascadeBranch {
   effort,
   agent,
   auxiliary,
+  approval,
   vision,
   cursorModel,
 }
@@ -162,7 +163,8 @@ class _ComposerCascadeOverlayState
       _CascadeBranch.prompt => 5,
       _CascadeBranch.arrangement => 6,
       _CascadeBranch.auxiliary => 7,
-      _CascadeBranch.vision => 8,
+      _CascadeBranch.approval => 8,
+      _CascadeBranch.vision => 9,
     };
     return index * (_rowHeight + 0.5);
   }
@@ -270,11 +272,16 @@ class _ComposerCascadeOverlayState
     required AppLocalizations l10n,
     required AsyncValue<List<CommitModelOptionView>>? auxOptions,
     required bool isVision,
+    bool isApproval = false,
   }) {
-    final selectedCandidateId = isVision
+    final selectedCandidateId = isApproval
+        ? _config.approvalModel?.candidateModelId
+        : isVision
         ? _config.visionModel?.candidateModelId
         : _config.auxiliaryModel?.candidateModelId;
-    final isNotConfigured = isVision
+    final isNotConfigured = isApproval
+        ? _config.approvalModel == null
+        : isVision
         ? _config.visionModel == null
         : _config.auxiliaryModel == null;
     final statusStyle = Theme.of(context)
@@ -308,7 +315,9 @@ class _ComposerCascadeOverlayState
                 for (final option in items) {
                   if (option.candidateModelId == key) {
                     HapticFeedback.selectionClick();
-                    if (isVision) {
+                    if (isApproval) {
+                      _selectApproval(option);
+                    } else if (isVision) {
                       _selectVision(option);
                     } else {
                       _selectAuxiliary(option);
@@ -338,7 +347,9 @@ class _ComposerCascadeOverlayState
           selected: isNotConfigured,
           onTap: () {
             HapticFeedback.selectionClick();
-            if (isVision) {
+            if (isApproval) {
+              _selectApproval(null);
+            } else if (isVision) {
               _selectVision(null);
             } else {
               _selectAuxiliary(null);
@@ -406,12 +417,35 @@ class _ComposerCascadeOverlayState
     var next = option == null
         ? _config.copyWith(clearAuxiliaryModel: true)
         : _config.copyWith(auxiliaryModel: selection);
-    next = downgradeAuxiliaryDependentFeatures(next);
     _persistConfig(next);
     persistAuxiliaryModelWorkflowDefault(
       ref,
       selection: selection,
     ).catchError((_) {});
+  }
+
+  void _selectApproval(CommitModelOptionView? option) {
+    final selection = option == null
+        ? null
+        : ApprovalModelSelection(
+            providerId: option.providerId,
+            modelId: option.modelId,
+            candidateModelId: option.candidateModelId,
+          );
+    var next = option == null
+        ? _config.copyWith(clearApprovalModel: true)
+        : _config.copyWith(approvalModel: selection);
+    next = downgradeApprovalDependentFeatures(next);
+    _persistConfig(next);
+    persistApprovalModelWorkflowDefault(ref, selection: selection).catchError((
+      Object error,
+    ) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    });
   }
 
   void _selectVision(CommitModelOptionView? option) {
@@ -464,6 +498,7 @@ class _ComposerCascadeOverlayState
               _branch == _CascadeBranch.arrangement ||
               _branch == _CascadeBranch.agent ||
               _branch == _CascadeBranch.auxiliary ||
+              _branch == _CascadeBranch.approval ||
               _branch == _CascadeBranch.vision)) {
         _branch = null;
       }
@@ -584,6 +619,7 @@ class _ComposerCascadeOverlayState
     final cascadeSubmenu = showSubmenu &&
         (branch == _CascadeBranch.cursorModel ||
             branch == _CascadeBranch.auxiliary ||
+            branch == _CascadeBranch.approval ||
             branch == _CascadeBranch.vision);
     final idealSubmenuWidth =
         cascadeSubmenu ? _cascadeSubmenuWidth : _submenuWidthIdeal;
@@ -632,11 +668,15 @@ class _ComposerCascadeOverlayState
 
     final auxVisionCascade =
         branch == _CascadeBranch.auxiliary ||
+                branch == _CascadeBranch.approval ||
                 branch == _CascadeBranch.vision
             ? _buildAuxVisionCascade(
                 l10n: l10n,
-                auxOptions: auxOptionsAsync,
+                auxOptions: branch == _CascadeBranch.approval
+                    ? ref.watch(approvalModelOptionsProvider(mainAgentConfigId))
+                    : auxOptionsAsync,
                 isVision: branch == _CascadeBranch.vision,
+                isApproval: branch == _CascadeBranch.approval,
               )
             : null;
 
@@ -922,6 +962,18 @@ class _ComposerCascadeOverlayState
             ),
             _Hairline(eco: eco),
             _PrimaryRow(
+              label: l10n.composerApprovalModel,
+              value: _config.approvalModel == null
+                  ? l10n.composerNone
+                  : composerModelDisplayName(_config.approvalModel!.modelId),
+              selected: _branch == _CascadeBranch.approval,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.approval);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
               label: l10n.composerVision,
               value: _modelSelectionLabel(l10n, vision: true),
               selected: _branch == _CascadeBranch.vision,
@@ -1059,6 +1111,18 @@ class _ComposerCascadeOverlayState
                 if (!canPickAuxVision) return;
                 HapticFeedback.selectionClick();
                 _setBranch(_CascadeBranch.auxiliary);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerApprovalModel,
+              value: _config.approvalModel == null
+                  ? l10n.composerNone
+                  : composerModelDisplayName(_config.approvalModel!.modelId),
+              selected: _branch == _CascadeBranch.approval,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.approval);
               },
             ),
             _Hairline(eco: eco),

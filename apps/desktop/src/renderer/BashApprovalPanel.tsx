@@ -35,7 +35,13 @@ const CIRCLED_OPTION_MARKERS = ["①", "②", "③", "④", "⑤"] as const;
 // unavailable). A genuine risk-control rejection rationale is written in the
 // user's locale and never contains them, so they reliably distinguish
 // "couldn't review" from "reviewed and declined" — regardless of locale.
-const REVIEW_REQUEST_ERROR_MARKERS = ["辅助模型审批失败", "辅助模型不可用", "审批失败或返回了无效 JSON"];
+const REVIEW_REQUEST_ERROR_MARKERS = [
+  "审批模型审批失败",
+  "审批模型不可用",
+  "辅助模型审批失败",
+  "辅助模型不可用",
+  "审批失败或返回了无效 JSON",
+];
 
 function isReviewRequestError(rationale: string): boolean {
   return REVIEW_REQUEST_ERROR_MARKERS.some((marker) => rationale.includes(marker));

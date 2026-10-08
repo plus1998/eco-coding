@@ -1,3 +1,4 @@
+import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -1678,7 +1679,7 @@ export async function runThreadRequestWithRuntimeProxy(
       requiredCatalogRoutes.push({
         providerId,
         modelId,
-        apiCompat: route.apiCompat,
+        apiCompat: resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat),
         displayName: `${route.provider.name} / ${modelId}`,
         ...(route.manualSpec
           ? {

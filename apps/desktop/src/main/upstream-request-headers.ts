@@ -38,7 +38,7 @@ export function buildProxyUpstreamHeaders(input: {
   upstreamUserAgent?: string;
 }): Record<string, string> {
   const { clientHeaders, apiKey, apiCompat, upstreamUserAgent } = input;
-  const isOpenAI = isOpenAICompat(apiCompat);
+  const isOpenAI = isOpenAICompat(apiCompat) || apiCompat === "system_one";
   const headers: Record<string, string> = {
     ...(isOpenAI ? buildOpenAIHeaders(apiKey) : buildAnthropicHeaders(apiKey)),
   };

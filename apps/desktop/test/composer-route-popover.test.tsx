@@ -17,6 +17,7 @@ const noopHandlers = {
   onSelectMainPrompt: async () => {},
   onSelectSubagents: async () => {},
   onSelectAuxiliaryModel: async () => {},
+  onSelectApprovalModel: async () => {},
   onSelectVisionModel: async () => {},
   onOpenFullSettings: () => {},
 };
@@ -64,6 +65,8 @@ test("ComposerRouteCardBody hides Eco orchestration fields for ACP", () => {
   );
 
   expect(markup).toContain("辅助模型");
+  expect(markup).toContain("审批模型");
+  expect(markup).toContain("SystemOne（Jev）");
   expect(markup).toContain("视觉模型");
   expect(markup).toContain("用于 Git 提交信息生成");
   expect(markup).toContain("ACP 没有 Eco 主模型可回退");

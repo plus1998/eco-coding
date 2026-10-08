@@ -44,6 +44,7 @@ import {
   parseBridgeProviderTestReply,
 } from "./bridge-provider-test";
 import { postJsonWithOpenAIResponsesUnsupportedParameterRetry } from "./openai-responses-compat";
+import { parseSystemOneChoiceAnswer, postSystemOneRequest } from "./system-one-request";
 import type { ProviderStore } from "./provider-store";
 import {
   headersToLoggable,
@@ -64,7 +65,7 @@ export interface ProviderCompatRoutingInfo {
   /** This code path always uses OpenAI-style model discovery. */
   modelsDiscoveryApi: "openai-get-v1-models";
   /** How agent/provider tests call the upstream. */
-  chatApi: "anthropic-v1-messages" | "openai-v1-responses" | "openai-v1-chat-completions";
+  chatApi: "anthropic-v1-messages" | "openai-v1-responses" | "openai-v1-chat-completions" | "system-one";
   requestPath: string;
   chatUrl: string;
   modelsListUrl: string;
@@ -348,6 +349,38 @@ async function postUpstreamCompatTest(
       return { ok: false, error: error.message };
     }
     throw error;
+  }
+  if (input.apiCompat === "system_one") {
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
+    try {
+      const answers = await postSystemOneRequest({
+        provider: {
+          baseUrl: input.baseUrl,
+          requestPath: input.requestPath ?? "",
+          version: input.version ?? "v1",
+          apiKey: input.apiKey,
+        },
+        modelId: input.modelId,
+        state: "Connection test: choose connected.",
+        questions: {
+          connection: {
+            type: "choice",
+            instructions: "Choose connected.",
+            criteria: { connected: "The API is reachable.", unavailable: "The API is unavailable." },
+          },
+        },
+        signal: controller.signal,
+        fetcher,
+      });
+      const answer = parseSystemOneChoiceAnswer(answers.connection, ["connected", "unavailable"]);
+      return { ok: true, reply: `SystemOne: ${answer.choice} (${answer.confidence})`, elapsedMs: Date.now() - startedAt };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat, input.version);
   const anthropicRequest = buildBridgeProviderTestAnthropicRequest(input.modelId, thinkingEffort);
@@ -779,6 +812,17 @@ export function describeProviderCompatRouting(
     throw error;
   }
 
+  if (apiCompat === "system_one") {
+    return {
+      apiCompat,
+      modelsDiscoveryApi: "openai-get-v1-models",
+      chatApi: "system-one",
+      requestPath: path,
+      chatUrl: buildMessagesUrl(baseUrl.trim(), path, ver).replace(/\/messages$/, "/systemone"),
+      modelsListUrl,
+      compatNotes: ["SystemOne 决策协议，仅用于审批；模型列表返回 models。"],
+    };
+  }
   const chatUrl =
     apiCompat === "openai_chat_completions"
       ? buildChatCompletionsUrl(baseUrl.trim(), path, ver)
@@ -904,7 +948,8 @@ export async function fetchUpstreamModelsFromCredentials(
       return { ok: false, error };
     }
 
-    const models = parseUpstreamModelsPayload(parsed);
+    const models =
+      apiCompat === "system_one" ? parseSystemOneModelsPayload(parsed) : parseUpstreamModelsPayload(parsed);
     if (models.length === 0) {
       const error = "上游未返回可用模型列表（data 为空或格式不兼容）。";
       logUpstreamError("models-list-error", {
@@ -944,6 +989,21 @@ export async function fetchUpstreamModelsFromCredentials(
 
 export function dedupeUpstreamModels(models: readonly UpstreamModelOption[]): UpstreamModelOption[] {
   return dedupeModels([...models]);
+}
+
+export function parseSystemOneModelsPayload(payload: unknown): UpstreamModelOption[] {
+  if (!payload || typeof payload !== "object") return [];
+  const models = (payload as { models?: unknown }).models;
+  if (!Array.isArray(models)) return [];
+  return models.flatMap((entry) => {
+    if (!entry || typeof entry.name !== "string" || !entry.name.trim()) return [];
+    return [
+      {
+        id: entry.name.trim(),
+        ...(typeof entry.displayName === "string" ? { displayName: entry.displayName } : {}),
+      },
+    ];
+  });
 }
 
 export function parseUpstreamModelsPayload(payload: unknown): UpstreamModelOption[] {
@@ -1089,12 +1149,7 @@ function resolveProviderCredentials(
       ("upstreamProxyUrl" in request && request.upstreamProxyUrl !== undefined
         ? request.upstreamProxyUrl
         : provider.upstreamProxyUrl) ?? "";
-    const resolvedApiCompat = resolveUpstreamApiCompat(
-      "apiCompat" in request && request.apiCompat !== undefined
-        ? normalizeUpstreamApiCompat(request.apiCompat)
-        : undefined,
-      provider.apiCompat,
-    );
+    const resolvedApiCompat = normalizeUpstreamApiCompat(request.apiCompat ?? provider.apiCompat);
     return {
       ok: true,
       baseUrl: resolvedBaseUrl,
@@ -1133,7 +1188,7 @@ function resolveProviderCredentials(
  * Run `run` with a fetcher that routes through `proxyUrl` (per-provider proxy
  * or the global outbound proxy). Without a proxy, `fallbackFetcher` is used as-is.
  */
-async function withUpstreamProxyFetch<T>(
+export async function withUpstreamProxyFetch<T>(
   proxyUrl: string | undefined,
   fallbackFetcher: typeof fetch,
   run: (fetcher: typeof fetch) => Promise<T>,
