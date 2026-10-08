@@ -12909,6 +12909,13 @@ button.default-agent-option:focus-visible {
   contain-intrinsic-size: 420px;
 }
 
+.run-log--virtualized .markdown-content .markdown-table-scroll {
+  /* Row virtualization already limits mounted tables. An intrinsic placeholder
+     inside a measured row can resize above the reader within that same row. */
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
 .markdown-content .markdown-table-block .markdown-table {
   display: table;
   width: max-content;
