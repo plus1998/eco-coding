@@ -17,6 +17,13 @@ import type { McpSettingsSnapshot } from "./mcp";
 import type { ThreadRunToolMetadata } from "./thread-run-events";
 
 export const IPC_CHANNELS = {
+  schedulingList: "scheduling:list",
+  schedulingCreate: "scheduling:create",
+  schedulingUpdate: "scheduling:update",
+  schedulingDelete: "scheduling:delete",
+  schedulingRunNow: "scheduling:run-now",
+  schedulingPreview: "scheduling:preview",
+  schedulingChanged: "scheduling:changed",
   appMenuCommand: "app:menu-command",
   appRendererReady: "app:renderer-ready",
   appScreenRecordingAppLabel: "app:screen-recording-app-label",

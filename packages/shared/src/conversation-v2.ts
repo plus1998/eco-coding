@@ -194,6 +194,21 @@ export interface ConversationSyncEffect {
   effect: ConversationEffect;
 }
 
+export interface ConversationMessageOrigin {
+  kind: "scheduled_message";
+  scheduleId: string;
+  name: string;
+}
+
+export function isConversationMessageOrigin(value: unknown): value is ConversationMessageOrigin {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const origin = value as Record<string, unknown>;
+  return origin.kind === "scheduled_message" &&
+    typeof origin.scheduleId === "string" && origin.scheduleId.trim().length > 0 && origin.scheduleId.length <= 200 &&
+    typeof origin.name === "string" && origin.name.trim().length > 0 && origin.name.length <= 200 &&
+    Object.keys(origin).every(key => key === "kind" || key === "scheduleId" || key === "name");
+}
+
 export interface ConversationMessage {
   messageId: string;
   conversationId: string;
@@ -205,6 +220,8 @@ export interface ConversationMessage {
   versionSeq: number;
   contentVersion: number;
   body: string;
+  /** UI provenance, kept separate from the text delivered to the provider. */
+  origin?: ConversationMessageOrigin;
   /** Small user-prompt image previews or durable attachment references. */
   attachments?: unknown[];
   /**

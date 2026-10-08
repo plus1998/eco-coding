@@ -10879,6 +10879,17 @@ button.default-agent-option:focus-visible {
   min-width: 0;
 }
 
+.run-log-user-prompt-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 85%;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .run-log-user-prompt-bubble {
   overflow: hidden;
   border-radius: 16px 16px 4px 16px;
@@ -37104,3 +37115,17 @@ body,
 .provider-fixed-connection p { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
 .provider-account-proxy-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 9px; background: rgba(145, 130, 255, 0.08); color: var(--text-muted); font-size: 11px; line-height: 1.45; }
 .provider-account-proxy-note svg { flex: 0 0 auto; margin-top: 1px; color: #aaa2ee; }
+
+.workspace-scheduled-messages { display: flex; flex-direction: column; gap: 12px; }
+.workspace-scheduled-message { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
+.workspace-scheduled-message:last-child { border-bottom: 0; padding-bottom: 0; }
+.workspace-scheduled-message-heading { display: flex; align-items: center; gap: 6px; }
+.workspace-scheduled-message-heading strong { min-width: 0; font-weight: 500; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.workspace-scheduled-message-heading > span { margin-left: auto; white-space: nowrap; font-size: 10px; color: var(--text-muted); }
+.workspace-scheduled-message time, .workspace-scheduled-message > small { display: block; margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+.workspace-scheduled-message-content { margin: 8px 0; line-height: 1.6; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.workspace-scheduled-message-error { font-size: 11px; line-height: 1.5; color: var(--danger); overflow-wrap: anywhere; }
+.workspace-scheduled-message-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.workspace-scheduled-message-actions button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.workspace-scheduled-message-actions button:hover { background: var(--nav-hover); color: var(--text-primary); }
+.workspace-scheduled-message-actions button:disabled { opacity: .5; cursor: default; }

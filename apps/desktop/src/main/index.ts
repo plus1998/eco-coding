@@ -7,6 +7,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { ConversationRecoveryGate } from "./conversation-recovery-gate";
+import { SchedulingStore } from "./scheduling-store";
+import { freezeSchedulingProfile } from "./scheduling-profile";
+import { SchedulingService } from "./scheduling-service";
+import { inspectScheduledRun } from "./scheduling-inspection";
+import { SchedulingMcpGateway } from "./scheduling-mcp-gateway";
+import { previewSchedule } from "./schedule-time";
+import { SCHEDULING_MCP_SERVER, SCHEDULING_PROMPT, type ScheduleCreateInput, type ScheduleUpdateInput, type ScheduleTrigger, type ScheduleExecutionProfile, type ScheduleOccurrence } from "../shared/scheduling";
 
 const execFileAsync = promisify(execFile);
 
@@ -328,6 +335,7 @@ import {
   type ThreadRuntimeConfigInput,
   type ThreadSessionBootstrapResult,
   type ThreadStartRequest,
+  type ThreadStartResult,
   type ThreadStatus,
   type ThreadSummary,
   type ThreadUpdateRuntimeConfigRequest,
@@ -1317,6 +1325,8 @@ let imageDisplayStore: ImageDisplayStore;
 let imageDisplayGateway: ImageDisplayMcpGateway;
 let htmlHostStore: HtmlHostStore;
 let htmlHostGateway: HtmlHostMcpGateway;
+let schedulingService: SchedulingService;
+let schedulingGateway: SchedulingMcpGateway;
 let integratedWebSearchGateway: IntegratedWebSearchMcpGateway;
 let promptImageFileStore: PromptImageFileStore;
 
@@ -2175,6 +2185,7 @@ app.whenReady().then(async () => {
     conversationStore,
     cleanupExternalState: cleanupThreadExternalState,
     onDeleted: ({ threadId, workspacePath }) => {
+      schedulingService?.threadDeleted(threadId);
       clearThreadRuntimeMemory(threadId);
       void requireBrowserHost().disposeThreadScope(threadId);
       emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false, {
@@ -3063,7 +3074,10 @@ app.whenReady().then(async () => {
   currentWorkspace = await ensureHomeProject();
   logStartupStage("home-workspace.ready");
   initializeGitAutoFetcher();
+  schedulingService = createSchedulingService(dbPath);
+  schedulingGateway = new SchedulingMcpGateway(schedulingService);
   registerIpcHandlers();
+  schedulingService.start();
   if (centerServerClient.getSnapshot().settings.enabled) {
     void centerServerClient.start();
   }
@@ -3191,6 +3205,7 @@ installApplicationShutdownHook(
       interactiveTerminalManager.killAll();
     },
     disposeBrowserHost: () => {
+      schedulingService?.stop();
       browserHost?.dispose();
       void computerUseGateway?.close();
     },
@@ -3203,6 +3218,8 @@ installApplicationShutdownHook(
     },
     closeImageDisplayGateway: async () => {
       await imageDisplayGateway?.close();
+      schedulingService?.stop();
+      await schedulingGateway?.close();
       await htmlHostGateway?.close();
     },
     closeIntegratedWebSearchGateway: async () => {
@@ -4032,6 +4049,17 @@ function showDesktopNotification(content: { title: string; body: string }, threa
 }
 
 function registerIpcHandlers(): void {
+  registerDesktopCommand(IPC_CHANNELS.schedulingList, () => schedulingService.store.snapshot());
+  registerDesktopCommand(IPC_CHANNELS.schedulingCreate, (input: ScheduleCreateInput) => {
+    if (input.kind === "scheduled_task") input = { ...input, executionProfile: pinSchedulingProfile(input.executionProfile) };
+    return schedulingService.create(input);
+  });
+  registerDesktopCommand(IPC_CHANNELS.schedulingUpdate, (input: ScheduleUpdateInput) => schedulingService.update({
+    ...input, ...(input.executionProfile ? { executionProfile: pinSchedulingProfile(input.executionProfile) } : {}),
+  }));
+  registerDesktopCommand(IPC_CHANNELS.schedulingDelete, (id: string) => schedulingService.remove(id));
+  registerDesktopCommand(IPC_CHANNELS.schedulingRunNow, (input: { id: string; requestId: string }) => schedulingService.runNow(input.id, input.requestId));
+  registerDesktopCommand(IPC_CHANNELS.schedulingPreview, (trigger: ScheduleTrigger) => previewSchedule(trigger));
   // Terminal paste reads through the main process: the renderer clipboard-read permission
   // stays denied, and Electron's clipboard is not gated on window focus.
   registerDesktopCommand(IPC_CHANNELS.clipboardReadText, async () => clipboard.readText());
@@ -7864,105 +7892,7 @@ function registerIpcHandlers(): void {
     return centerServerClient.getVaultStatus();
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadStart, async (payload: ThreadStartRequest) => {
-    const attachments = parsePromptImageAttachments(payload.attachments);
-    const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
-    if (!prompt) {
-      throw new Error("Task prompt is required.");
-    }
-    // Materialize path-only spool attachments before any slow await (e.g. ACP CLI probe).
-    // Otherwise a concurrent composer-draft delete can wipe spool and yield ENOENT.
-    const attachmentsForHandOff = attachments.length
-      ? await loadPromptAttachmentsForRuntime(attachments)
-      : [];
-    const coreKind = payload.coreKind ?? "claude";
-    if (!isCoreKind(coreKind)) {
-      throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
-    }
-    if (coreKind === "codex" && !isCodexCliAvailable()) {
-      throw new Error(
-        "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
-      );
-    }
-    if (coreKind === "pi") {
-      const pi = await probePiCoreAvailability();
-      if (!pi.available) {
-        throw new Error(pi.reason ?? "PI Core 不可用。");
-      }
-    }
-    if (coreKind === "acp") {
-      await assertAcpCursorRunnableForMain();
-    }
-
-    const workspace = await ensureWorkspace(payload.workspacePath);
-    const settings = getModelSettingsSnapshot();
-    const parsedRuntimeConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
-    const threadRuntime =
-      coreKind === "acp"
-        ? normalizeThreadRuntimeConfig(parsedRuntimeConfig)
-        : materializeThreadRuntimeConfig(settings, parsedRuntimeConfig);
-    const roleRoutes = coreKind === "acp" ? [] : roleRoutesForThreadConfig(settings, threadRuntime);
-    const resolvedRuntimeConfig =
-      coreKind === "acp"
-        ? { ok: true as const, routes: [] as RuntimeRoute[] }
-        : resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
-    const status: ThreadSummary["status"] = resolvedRuntimeConfig.ok ? "running" : "blocked";
-    const now = new Date().toISOString();
-    const acpAgentId = coreKind === "acp" ? ("cursor" as const) : undefined;
-    const thread: ThreadSummary = {
-      id: `thr_${Date.now()}`,
-      title: resolvePendingThreadTitle(currentAppLocale()),
-      prompt,
-      workspacePath: workspace.path,
-      status,
-      createdAt: now,
-      updatedAt: now,
-      coreKind,
-      ...(acpAgentId ? { acpAgentId } : {}),
-      hostUiFeatures: resolveAcpHostUiFeatures({
-        coreKind,
-        ...(acpAgentId ? { acpAgentId } : {}),
-      }),
-      coreLockedAt: now,
-      message: resolvedRuntimeConfig.ok ? "" : resolvedRuntimeConfig.reason,
-      runtimeConfig: threadRuntime,
-    };
-
-    conversationStore.saveThread(thread);
-    const recorded = await recordUserPrompt(thread.id, prompt, attachmentsForHandOff);
-    const attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
-      recorded.storedAttachments ?? attachmentsForHandOff,
-    );
-    emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
-
-    // Landing browsers opened before the first message must move onto this thread
-    // before the renderer setUiScope effect runs (otherwise pages look "left behind").
-    try {
-      await requireBrowserHost().adoptPersonalScopeToThread(thread.id);
-    } catch (error) {
-      console.warn(
-        `[eco-browser] adoptPersonalScopeToThread failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-
-    if (resolvedRuntimeConfig.ok) {
-      if (coreKind !== "acp") {
-        scheduleThreadTitleSummary(thread.id);
-      }
-      void threadRuntimeCoordinator.start(coreKind, {
-        thread,
-        workspace,
-        runtimeConfig: { routes: resolvedRuntimeConfig.routes },
-        prompt,
-        ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
-        roleRoutes,
-      });
-    }
-
-    return { thread };
-  });
+  registerDesktopCommand(IPC_CHANNELS.threadStart, (payload: ThreadStartRequest) => startNewThread(payload));
 
   registerDesktopCommand(IPC_CHANNELS.clarificationGetPending, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
@@ -9110,6 +9040,8 @@ function registerRemainingDesktopCommands(): void {
       v2: conversationStore.conversationV2(),
       errorMessage,
       cancel: async ({ threadId, worktreeDisposition }) => {
+        schedulingGateway.disposeThread(threadId);
+        schedulingService.pauseAutomaticMessages(threadId);
         // Explicit Stop revokes an earlier Guide; cleanup must pause queued rows.
         pendingEscalatedFollowUpDrain.delete(threadId);
         const owner = conversationStore.getThread(threadId)?.coreKind;
@@ -9728,6 +9660,18 @@ async function discardUnstartedAcpTurn(input: {
     (!input.continuation ? records[records.length - 1]?.activityLineId : undefined);
   if (!activityLineId) {
     markThreadInterrupted(input.threadId, input.reason);
+    return;
+  }
+  // Scheduled input belongs to a durable occurrence, not the user's composer.
+  // Keep its message and history when ACP fails before producing any output.
+  const scheduledMessage = conversationStore.conversationV2().listUserMessages(input.threadId).find(
+    (message) => message.messageId.startsWith("message_occ_") &&
+      message.historyTarget?.activityLineId === activityLineId,
+  );
+  if (scheduledMessage) {
+    const failureMessage = formatUserFacingRequestError(input.reason);
+    updateThread(input.threadId, { status: "failed", message: failureMessage });
+    emitThreadEvent(input.threadId, "thread.failed", failureMessage, "system", false);
     return;
   }
   const stored = conversationStore.getConversationUserMessageRecord(input.threadId, activityLineId);
@@ -10793,6 +10737,7 @@ async function startCodexThreadRun(
                 buildImageGenerationPromptAppend(imageGenerationStore.getActiveClientConfig()),
               );
             }
+            append = appendBrowserPrompt(append, SCHEDULING_PROMPT);
             append = appendBrowserPrompt(append, buildImageViewPromptAppend());
             append = appendBrowserPrompt(append, buildImageDisplayPromptAppend());
             if (centerServerClient.getHtmlHostingCapability().available) {
@@ -10892,6 +10837,8 @@ async function startCodexThreadRun(
               }
               registerBuiltin(ECO_WEB_SEARCH_MCP_SERVER, webSearchInject.sdkEntry);
             }
+            const schedulingInject = await schedulingGateway.resolveInjection(input.thread.id);
+            registerBuiltin(SCHEDULING_MCP_SERVER, schedulingInject.sdkEntry);
             const imageViewInject = await imageViewGateway.resolveInjection(input.thread.id);
             registerBuiltin(ECO_IMAGE_VIEW_MCP_SERVER, imageViewInject.sdkEntry);
             const imageDisplayInject = await imageDisplayGateway.resolveInjection(input.thread.id);
@@ -11230,6 +11177,7 @@ async function resolvePiSessionResourcesForThread(
     browserSkillDirectory = path.dirname(skillFile);
   }
 
+  const schedulingInject = await schedulingGateway.resolveInjection(threadId);
   const mcpSession = buildPiMcpSessionConfig({
     globalSdkConfig: mcpStore.buildSdkConfig(),
     enabledMcpServerKeys: enabledMcpServers,
@@ -11270,6 +11218,8 @@ async function resolvePiSessionResourcesForThread(
     ...(browserSkillDirectory ? { browserSkillDirectory } : {}),
   });
 
+  mcpSession.mcpServers[SCHEDULING_MCP_SERVER] = schedulingInject.sdkEntry;
+  mcpSession.appendSystemPrompt.push(SCHEDULING_PROMPT);
   const globalMcpConfig = mcpStore.buildSdkConfig();
   const hubServerKeys = enabledMcpServers.filter(
     (key) => Object.hasOwn(globalMcpConfig.mcpServers, key) && !key.startsWith("eco_"),
@@ -12109,6 +12059,9 @@ function recoverQueuedConversationV2Messages(): void {
 
   for (const message of queuedMessages) {
     if (abandonedIds.has(message.messageId)) continue;
+    // Scheduler accepted prompts are recovered from its persisted queue receipt.
+    // A crash between acceptance and enqueue must remain unknown, never start a second run here.
+    if (message.messageId.startsWith("message_occ_")) continue;
     if (conversationRecoveryGate.isBlocked(message.conversationId)) continue;
     let input: AcceptedConversationMessageSchedule;
     try {
@@ -12235,6 +12188,196 @@ function markAcceptedConversationMessageFailed(
     turnId: input.turnId,
     payload: { status: "failed", reason },
   });
+}
+
+function pinSchedulingProfile(profile: ScheduleExecutionProfile): ScheduleExecutionProfile {
+  const settings = getModelSettingsSnapshot();
+  return freezeSchedulingProfile(profile, settings, config => roleRoutesForThreadConfig(settings, config));
+}
+
+function validateSchedulingProfile(profile: ScheduleExecutionProfile): void {
+  if (!profile || !isCoreKind(profile.coreKind)) throw new Error("AgentCore 不可用。");
+  if (profile.coreKind === "acp") {
+    if (!profile.runtimeConfig.cursorModelId?.trim()) throw new Error("Cursor 任务缺少固定模型。");
+    return;
+  }
+  const routes = roleRoutesForThreadConfig(getModelSettingsSnapshot(), profile.runtimeConfig);
+  const resolution = resolveRuntimeConfigForThreadConfig(getModelSettingsSnapshot(), profile.runtimeConfig, routes);
+  if (!resolution.ok) throw new Error(resolution.reason);
+}
+
+function inspectScheduledOccurrence(occurrence: ScheduleOccurrence): { status: import("../shared/scheduling").ScheduleOccurrenceStatus; error?: string } {
+  const thread = occurrence.threadId ? conversationStore.getThread(occurrence.threadId) : undefined;
+  const followUp = thread && occurrence.definition.kind === "session_message"
+    ? conversationStore.listThreadFollowUps(thread.id).find(item => item.id === occurrence.followUpId || item.conversationMessageId === `message_${occurrence.id}`) : undefined;
+  // Queue itself owns idempotent delivery and recovery. Scheduling must never re-enqueue.
+  if (thread && followUp?.status === "queued" && !thread.followUpQueuePaused) void drainQueuedThreadFollowUpsAfterRun(thread.id);
+  return inspectScheduledRun({ kind: occurrence.definition.kind, thread, followUp,
+    hasAcceptedMessage: Boolean(thread && !followUp && conversationStore.conversationV2().getMessage(thread.id, `message_${occurrence.id}`)),
+    hasActiveRun: Boolean(thread && activeRunRuntimeState.hasRun(thread.id)),
+    isDraining: Boolean(thread && threadFollowUpDrainScheduler.isDraining(thread.id)),
+  });
+}
+
+function createSchedulingService(dbPath: string): SchedulingService {
+  return new SchedulingService(new SchedulingStore(dbPath), {
+    inheritProfile: (threadId) => {
+      const source = conversationStore.getThread(threadId);
+      if (!source) throw new Error("来源会话不存在。");
+      const thread = ensureThreadRuntimeConfig(source);
+      if (!thread?.coreKind || !thread.runtimeConfig) throw new Error("当前会话缺少运行配置。");
+      return { workspacePath: thread.workspacePath, executionProfile: pinSchedulingProfile({ coreKind: thread.coreKind, runtimeConfig: thread.runtimeConfig }) };
+    },
+    validateProfile: validateSchedulingProfile,
+    assertThread: (threadId) => { if (!conversationStore.getThread(threadId)) throw new Error("目标会话不存在。"); },
+    canDispatch: occurrence => {
+      if (occurrence.definition.kind === "scheduled_task") {
+        const workspacePath = occurrence.definition.workspacePath!;
+        return !conversationStore.listThreads().some(thread => path.resolve(thread.workspacePath) === path.resolve(workspacePath) &&
+          (activeRunRuntimeState.hasRun(thread.id) || thread.status === "running" || thread.status === "queued" || thread.status === "awaiting_plan"));
+      }
+      const thread = conversationStore.getThread(occurrence.definition.threadId!);
+      if (!thread) return true; // Dispatch reports a durable explicit error.
+      return !activeRunRuntimeState.hasRun(thread.id) && !contextMonitor.isCompactInFlight(thread.id) &&
+        (thread.status === "idle" || thread.status === "completed") && !thread.followUpQueuePaused &&
+        !getPendingPlanApprovalForThread(thread.id) && !getPendingBashApprovalForThread(thread.id) &&
+        !hasPendingBlockingClarificationForThread(thread.id) && !conversationStore.getPendingPlan(thread.id) &&
+        !editingThreadFollowUpByThread.has(thread.id);
+    },
+    dispatch: async occurrence => {
+      const definition = occurrence.definition;
+      if (definition.kind === "scheduled_task") {
+        const result = await startNewThread({ workspacePath: definition.workspacePath!, prompt: definition.prompt,
+          coreKind: definition.executionProfile!.coreKind, runtimeConfig: definition.executionProfile!.runtimeConfig,
+        }, { scheduled: true, threadId: occurrence.threadId!, title: definition.name, occurrenceId: occurrence.id });
+        return { threadId: result.thread.id };
+      }
+      const threadId = definition.threadId!;
+      if (!conversationStore.getThread(threadId)) throw new Error("目标会话已删除。");
+      const prompt = definition.prompt;
+      const accepted = conversationStore.conversationV2().sendMessage({
+        principalId: "eco-scheduler", conversationId: threadId, clientCommandId: occurrence.id,
+        messageId: `message_${occurrence.id}`, text: prompt,
+        origin: { kind: "scheduled_message", scheduleId: definition.id, name: definition.name },
+      });
+      const existing = conversationStore.listThreadFollowUps(threadId).find(item => item.conversationMessageId === accepted.messageId);
+      const followUp = existing ?? conversationStore.enqueueThreadFollowUp({ threadId, prompt,
+        conversationMessageId: accepted.messageId, deliveryMode: "queued", priority: "normal" });
+      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
+      void drainQueuedThreadFollowUpsAfterRun(threadId);
+      return { threadId, followUpId: followUp.id };
+    },
+    inspect: inspectScheduledOccurrence,
+    onChanged: () => BrowserWindow.getAllWindows().forEach(window => {
+      if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.schedulingChanged);
+    }),
+    onError: error => logEcoDiag("scheduling.error", { error: errorMessage(error) }),
+  });
+}
+
+async function startNewThread(payload: ThreadStartRequest, options: { scheduled?: boolean; threadId?: string; title?: string; occurrenceId?: string } = {}): Promise<ThreadStartResult> {
+  const attachments = parsePromptImageAttachments(payload.attachments);
+  const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
+  if (!prompt) {
+    throw new Error("Task prompt is required.");
+  }
+  // Materialize path-only spool attachments before any slow await (e.g. ACP CLI probe).
+  // Otherwise a concurrent composer-draft delete can wipe spool and yield ENOENT.
+  const attachmentsForHandOff = attachments.length
+    ? await loadPromptAttachmentsForRuntime(attachments)
+    : [];
+  const coreKind = payload.coreKind ?? "claude";
+  if (!isCoreKind(coreKind)) {
+    throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
+  }
+  if (coreKind === "codex" && !isCodexCliAvailable()) {
+    throw new Error(
+      "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
+    );
+  }
+  if (coreKind === "pi") {
+    const pi = await probePiCoreAvailability();
+    if (!pi.available) {
+      throw new Error(pi.reason ?? "PI Core 不可用。");
+    }
+  }
+  if (coreKind === "acp") {
+    await assertAcpCursorRunnableForMain();
+  }
+
+  const workspace = options.scheduled ? await inspectWorkspace(path.resolve(payload.workspacePath)) : await ensureWorkspace(payload.workspacePath);
+  const settings = getModelSettingsSnapshot();
+  const parsedRuntimeConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
+  const threadRuntime =
+    coreKind === "acp" || options.scheduled
+      ? normalizeThreadRuntimeConfig(parsedRuntimeConfig)
+      : materializeThreadRuntimeConfig(settings, parsedRuntimeConfig);
+  const roleRoutes = coreKind === "acp" ? [] : roleRoutesForThreadConfig(settings, threadRuntime);
+  const resolvedRuntimeConfig =
+    coreKind === "acp"
+      ? { ok: true as const, routes: [] as RuntimeRoute[] }
+      : resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
+  if (options.scheduled && !resolvedRuntimeConfig.ok) throw new Error(resolvedRuntimeConfig.reason);
+  const status: ThreadSummary["status"] = resolvedRuntimeConfig.ok ? "running" : "blocked";
+  const now = new Date().toISOString();
+  const acpAgentId = coreKind === "acp" ? ("cursor" as const) : undefined;
+  const thread: ThreadSummary = {
+    id: options.threadId ?? `thr_${randomUUID()}`,
+    title: options.title ?? resolvePendingThreadTitle(currentAppLocale()),
+    prompt,
+    workspacePath: workspace.path,
+    status,
+    createdAt: now,
+    updatedAt: now,
+    coreKind,
+    ...(acpAgentId ? { acpAgentId } : {}),
+    hostUiFeatures: resolveAcpHostUiFeatures({
+      coreKind,
+      ...(acpAgentId ? { acpAgentId } : {}),
+    }),
+    coreLockedAt: now,
+    message: resolvedRuntimeConfig.ok ? "" : resolvedRuntimeConfig.reason,
+    runtimeConfig: threadRuntime,
+  };
+
+  conversationStore.saveThread(thread);
+  const scheduledAccepted = options.occurrenceId ? conversationStore.conversationV2().sendMessage({
+    principalId: "eco-scheduler", conversationId: thread.id, clientCommandId: options.occurrenceId,
+    messageId: `message_${options.occurrenceId}`, text: prompt,
+  }) : undefined;
+  const recorded = await recordUserPrompt(thread.id, prompt, attachmentsForHandOff, scheduledAccepted ? [scheduledAccepted.messageId] : undefined);
+  const attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+    recorded.storedAttachments ?? attachmentsForHandOff,
+  );
+  emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
+
+  // Landing browsers opened before the first message must move onto this thread
+  // before the renderer setUiScope effect runs (otherwise pages look "left behind").
+  try {
+    if (!options.scheduled) await requireBrowserHost().adoptPersonalScopeToThread(thread.id);
+  } catch (error) {
+    console.warn(
+      `[eco-browser] adoptPersonalScopeToThread failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  if (resolvedRuntimeConfig.ok) {
+    if (coreKind !== "acp" && !options.scheduled) {
+      scheduleThreadTitleSummary(thread.id);
+    }
+    void threadRuntimeCoordinator.start(coreKind, {
+      thread,
+      workspace,
+      runtimeConfig: { routes: resolvedRuntimeConfig.routes },
+      prompt,
+      ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
+      roleRoutes,
+    }).catch(error => updateThread(thread.id, { status: "failed", message: errorMessage(error) }));
+  }
+
+  return { thread };
 }
 
 interface StartThreadContinuationInput {
@@ -14424,6 +14567,7 @@ function buildDesktopSdkRunInput(
     const config = imageGenerationStore.getActiveClientConfig();
     globalUserRules = appendBrowserPrompt(globalUserRules, buildImageGenerationPromptAppend(config));
   }
+  globalUserRules = appendBrowserPrompt(globalUserRules, SCHEDULING_PROMPT);
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageViewPromptAppend());
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageDisplayPromptAppend());
   if (centerServerClient.getHtmlHostingCapability().available) {
@@ -14658,6 +14802,7 @@ async function cleanupThreadExternalState(threadId: string): Promise<void> {
   imageViewGateway.disposeThread(threadId);
   imageDisplayGateway.disposeThread(threadId);
   htmlHostGateway.disposeThread(threadId);
+  schedulingGateway.disposeThread(threadId);
   computerUseGateway.disposeThread(threadId);
   integratedWebSearchGateway.disposeThread(threadId);
   disposeAcpThread(threadId);
@@ -16681,6 +16826,7 @@ async function buildSdkSessionOptions(
     ? htmlHostGateway.mergeIntoSdkConfig(withImageDisplayMcp, htmlHostInject)
     : withImageDisplayMcp;
   const withWebSearchMcp = integratedWebSearchGateway.mergeIntoSdkConfig(withHtmlHostMcp, webSearchInject);
+  withWebSearchMcp.mcpServers[SCHEDULING_MCP_SERVER] = (await schedulingGateway.resolveInjection(threadId)).sdkEntry;
   const hubBuiltinKeys = Object.keys(withWebSearchMcp.mcpServers).filter(
     (key) => key.startsWith("eco_") && key !== "eco_mcp",
   );

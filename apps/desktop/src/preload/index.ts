@@ -1,4 +1,5 @@
-﻿import type {
+import type { ScheduleCreateInput, ScheduleUpdateInput, ScheduleTrigger, ScheduleDefinition, ScheduleOccurrence, SchedulingSnapshot } from "../shared/scheduling";
+import type {
   ConversationBootstrap,
   ConversationCapabilities,
   ConversationDetailItem,
@@ -1243,6 +1244,17 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: string) => callback(payload);
     ipcRenderer.on(IPC_CHANNELS.appEcoDeepLinkOpen, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.appEcoDeepLinkOpen, listener);
+  },
+  listSchedules(): Promise<SchedulingSnapshot> { return ipcRenderer.invoke(IPC_CHANNELS.schedulingList); },
+  createSchedule(input: ScheduleCreateInput): Promise<ScheduleDefinition> { return ipcRenderer.invoke(IPC_CHANNELS.schedulingCreate, input); },
+  updateSchedule(input: ScheduleUpdateInput): Promise<ScheduleDefinition> { return ipcRenderer.invoke(IPC_CHANNELS.schedulingUpdate, input); },
+  deleteSchedule(id: string): Promise<void> { return ipcRenderer.invoke(IPC_CHANNELS.schedulingDelete, id); },
+  runScheduleNow(input: { id: string; requestId: string }): Promise<ScheduleOccurrence> { return ipcRenderer.invoke(IPC_CHANNELS.schedulingRunNow, input); },
+  previewSchedule(trigger: ScheduleTrigger): Promise<string[]> { return ipcRenderer.invoke(IPC_CHANNELS.schedulingPreview, trigger); },
+  onSchedulesChanged(callback: () => void): () => void {
+    const listener = () => callback();
+    ipcRenderer.on(IPC_CHANNELS.schedulingChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.schedulingChanged, listener);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

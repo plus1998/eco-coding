@@ -13,7 +13,7 @@ import type {
   ConversationToolCall,
   ConversationToolsPage,
 } from "@eco/shared";
-import { limitConversationToolSummaryPayload, stableHash, stableJson } from "@eco/shared";
+import { isConversationMessageOrigin, limitConversationToolSummaryPayload, stableHash, stableJson } from "@eco/shared";
 import type { ConversationV2ProjectionExtras } from "../shared/ipc";
 
 function isGenericToolLabel(name: string): boolean {
@@ -1004,6 +1004,7 @@ function validateMessage(
     !MESSAGE_CHANNELS.has(message.channel) ||
     !MESSAGE_STATUSES.has(message.status) ||
     typeof message.body !== "string" ||
+    (message.origin !== undefined && (message.role !== "user" || !isConversationMessageOrigin(message.origin))) ||
     (message.attachments !== undefined && !Array.isArray(message.attachments)) ||
     typeof message.isDeleted !== "boolean" ||
     message.isDeleted !== (message.status === "deleted") ||
@@ -1230,7 +1231,8 @@ function assertMessageIdentity(left: ConversationMessage, right: ConversationMes
     left.runId !== right.runId ||
     left.role !== right.role ||
     left.channel !== right.channel ||
-    left.createdSeq !== right.createdSeq
+    left.createdSeq !== right.createdSeq ||
+    stableJson(left.origin) !== stableJson(right.origin)
   ) {
     throw new Error(`Conversation V2 renderer message ${right.messageId} changed immutable identity.`);
   }
@@ -1324,6 +1326,7 @@ function sameMessage(left: ConversationMessage, right: ConversationMessage): boo
     left.versionSeq === right.versionSeq &&
     left.contentVersion === right.contentVersion &&
     left.body === right.body &&
+    stableJson(left.origin) === stableJson(right.origin) &&
     stableJson(left.attachments) === stableJson(right.attachments) &&
     left.status === right.status &&
     left.isDeleted === right.isDeleted

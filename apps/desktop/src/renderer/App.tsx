@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronUp,
   Cloud,
+  Clock3,
   Cog,
   CornerDownRight,
   Cpu,
@@ -360,6 +361,8 @@ import {
   LazyOpenAIAccountsPanel,
   LazyPersonalizationSettingsPanel,
   LazyProxySettingsPanel,
+  LazySchedulingPanel,
+  LazyScheduledMessageDialog,
   LazySkillsSettingsPanel,
   LazyStorageSettingsPanel,
   LazySubagentTaskDrawer,
@@ -483,6 +486,8 @@ import {
 import { installVitePreloadRecovery } from "./vite-preload-recovery";
 import { WebChatListPopover } from "./WebChatListPopover";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
+import { useSchedulingSnapshot } from "./use-scheduling-snapshot";
+import type { ScheduleDefinition } from "../shared/scheduling";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import {
   isAbsoluteLocalFilePath,
@@ -1145,6 +1150,11 @@ function ActivityUserMessageNavigator({
 function App() {
   const { t } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [schedulingOpen, setSchedulingOpen] = useState(false);
+  const scheduling = useSchedulingSnapshot();
+  const scheduledMessages = useMemo(() => scheduling.snapshot.schedules.filter(item => item.kind === "session_message"), [scheduling.snapshot.schedules]);
+  const [scheduledMessageEditor, setScheduledMessageEditor] = useState<{ threadId: string; definition?: ScheduleDefinition }>();
+  const [scheduledMessagesReveal, setScheduledMessagesReveal] = useState<{ threadId: string; requestId: number }>();
   const [ecoConnectLink, setEcoConnectLink] = useState<EcoConnectDeepLink>();
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(compactSidebarMediaQuery).matches);
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
@@ -3566,6 +3576,22 @@ function App() {
   useLayoutEffect(() => {
     setWorkspacePanelManualOverride(undefined);
   }, [activityWorkspaceLayoutMode, currentProjectPath, activeThread?.id]);
+  useLayoutEffect(() => {
+    if (scheduledMessagesReveal?.threadId !== activeThread?.id || !currentProjectPath) return;
+    setWorkspacePanelManualOverride({ layoutMode: activityWorkspaceLayoutMode, projectPath: currentProjectPath, threadId: activeThread?.id, open: true });
+    const panel = workspaceCardsPanelRef.current;
+    const scroller = panel?.querySelector<HTMLElement>(".workspace-floating-cards-sections") ?? panel;
+    if (!scroller) return;
+    const section = scroller
+      .querySelector<HTMLElement>("#workspace-scheduled-messages-body")
+      ?.closest<HTMLElement>(".workspace-panel-section");
+    if (section) {
+      const delta = section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTo({ top: scroller.scrollTop + delta });
+    } else {
+      scroller.scrollTo({ top: 0 });
+    }
+  }, [scheduledMessagesReveal, activeThread?.id, currentProjectPath, activityWorkspaceLayoutMode]);
   useEffect(() => {
     reviewDiffRequestRef.current += 1;
     setReviewDiff(undefined);
@@ -11067,6 +11093,7 @@ function App() {
                         saving={isSavingSettings}
                         onSelectMode={(mode) => void selectComposerSessionMode(mode)}
                         onPickImage={() => composerImageInputRef.current?.click()}
+                        onAddScheduledMessage={activeThread && window.eco ? () => setScheduledMessageEditor({ threadId: activeThread.id }) : undefined}
                         onOpenRoute={() => {
                           openComposerRoutePopover("plus");
                         }}
@@ -11373,6 +11400,10 @@ function App() {
               <MessageCirclePlus size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
               {t("nav.newThread")}
             </button>
+            <button type="button" className="sidebar-action muted" onClick={() => setSchedulingOpen(true)}>
+              <Clock3 size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+              {t("scheduling.title")}
+            </button>
             <div className="sidebar-section sidebar-section-grow">
               <button
                 type="button"
@@ -11475,9 +11506,16 @@ function App() {
         open={sidebarSearchOpen}
         threads={sidebarSearchThreads}
         projects={projects}
+        scheduledMessages={scheduledMessages}
+        schedulingError={scheduling.error}
         onClose={() => setSidebarSearchOpen(false)}
         onSelectThread={selectSearchThread}
         onSelectProject={selectSearchProject}
+        onSelectScheduledMessage={(_message, thread) => {
+          dismissTaskPanel();
+          selectSearchThread(thread);
+          setScheduledMessagesReveal({ threadId: thread.id, requestId: Date.now() });
+        }}
       />
 
       <section
@@ -11792,6 +11830,13 @@ function App() {
                 <WorkspaceFloatingCards
                   todos={activeThread ? coderTodos : []}
                   hasActiveThread={Boolean(activeThread)}
+                  scheduledMessages={activeThread ? scheduledMessages.filter(item => item.threadId === activeThread.id) : []}
+                  scheduleOccurrences={scheduling.snapshot.occurrences}
+                  schedulingError={scheduling.error}
+                  scheduledMessagesRevealKey={`${activeThread?.id ?? ""}:${scheduledMessagesReveal?.requestId ?? 0}`}
+                  onEditScheduledMessage={(definition) => { if (activeThread) setScheduledMessageEditor({ threadId: activeThread.id, definition }); }}
+                  onRefreshSchedules={scheduling.refresh}
+                  onScheduledMessageActionError={(message) => showAppMessageErrorRef.current(message)}
                   agentModelLabels={activeThread?.coreKind === "acp" ? [] : agentModelLabels}
                   {...(activeThread?.coreKind === "acp" && cursorAgentsSnapshot
                     ? {
@@ -11943,6 +11988,31 @@ function App() {
         />
       ) : null}
 
+      {schedulingOpen && window.eco && <SuspensePanel><LazySchedulingPanel
+        settings={settings} workflow={workflowSettings}
+        snapshot={scheduling.snapshot} loading={scheduling.loading} loadError={scheduling.error} onRefresh={scheduling.refresh}
+        workspacePath={currentProjectPath}
+        projects={projects}
+        defaultProfile={composerRuntimeConfig ? { coreKind: composerCoreKind, runtimeConfig: composerRuntimeConfig } : undefined}
+        onClose={() => setSchedulingOpen(false)}
+        onOpenThread={(id) => { void window.eco!.getThread(id).then(thread => {
+          if (!thread) throw new Error(t("scheduling.threadMissing"));
+          selectThread(thread); setSchedulingOpen(false);
+        }).catch(caught => setError(errorMessage(caught))); }}
+      /></SuspensePanel>}
+      {scheduledMessageEditor && window.eco && threads.find(thread => thread.id === scheduledMessageEditor.threadId) && <SuspensePanel><LazyScheduledMessageDialog
+        key={scheduledMessageEditor.definition?.id ?? scheduledMessageEditor.threadId}
+        thread={threads.find(thread => thread.id === scheduledMessageEditor.threadId)!}
+        definition={scheduledMessageEditor.definition}
+        occurrences={scheduling.snapshot.occurrences}
+        onClose={() => setScheduledMessageEditor(undefined)}
+        onSaved={() => {
+          dismissTaskPanel();
+          void scheduling.refresh();
+          setScheduledMessagesReveal({ threadId: scheduledMessageEditor.threadId, requestId: Date.now() });
+          setScheduledMessageEditor(undefined);
+        }}
+      /></SuspensePanel>}
       {settingsOpen && (
         <div className="settings-page" role="dialog" aria-modal="true" aria-label={t("settings.dialog")}>
           <aside className="settings-nav">

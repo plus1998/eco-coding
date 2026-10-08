@@ -15,9 +15,11 @@ import {
 import type {
   ConversationDetailItem,
   ConversationMessage,
+  ConversationMessageOrigin,
   ConversationRun,
   ConversationToolCall,
 } from "@eco/shared";
+import { isConversationMessageOrigin } from "@eco/shared";
 import {
   AppWindow,
   ArrowDownToLine,
@@ -28,6 +30,7 @@ import {
   CircleAlert,
   CircleDollarSign,
   CircleHelp,
+  Clock3,
   Copy,
   Database,
   ExternalLink,
@@ -641,6 +644,7 @@ function conversationV2MessageToTimelineItem(
       conversationV2ContentVersion: message.contentVersion,
       conversationV2Channel: message.channel,
       conversationV2Status: message.status,
+      ...(message.origin ? { messageOrigin: message.origin } : {}),
       ...(isNotice && message.providerRole === CONVERSATION_RUNTIME_EVENT_FAILURE_ROLE
         ? {
             activityOrigin: CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
@@ -4128,6 +4132,7 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <UserPromptBlock
         text={item.text}
+        {...(isConversationMessageOrigin(item.metadata?.messageOrigin) ? { origin: item.metadata.messageOrigin } : {})}
         images={readPromptImagePreviews(item.metadata)}
         anchorId={item.id}
         {...(item.at ? { createdAt: item.at } : {})}
@@ -5396,6 +5401,7 @@ function UnknownItemBlock({
 
 function UserPromptBlock({
   text,
+  origin,
   images = [],
   className,
   anchorId,
@@ -5408,6 +5414,7 @@ function UserPromptBlock({
   allowUserMessageRewrite = false,
 }: {
   text: string;
+  origin?: ConversationMessageOrigin;
   images?: readonly PromptImagePreview[];
   className?: string;
   anchorId?: string;
@@ -5683,6 +5690,7 @@ function UserPromptBlock({
       className={["run-log-user-prompt", className].filter(Boolean).join(" ")}
       {...(anchorId && { "data-user-message-anchor-id": anchorId })}
     >
+      {origin && <span className="run-log-user-prompt-origin"><Clock3 size={12} aria-hidden />{i18n.t("scheduling.messageOrigin")}</span>}
       {editing ? (
         <div
           className="run-log-user-prompt-edit"
