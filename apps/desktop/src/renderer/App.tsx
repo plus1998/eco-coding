@@ -7847,6 +7847,56 @@ function App() {
     await approvePendingPlanWithTarget({ kind: "main" });
   }
 
+  async function reviewPendingPlanCode() {
+    if (!activeThread || !pendingPlan || !window.eco || planActionBusy || isStarting) return;
+    const threadId = activeThread.id;
+    const planToRemember = pendingPlan;
+    const runtimeConfigForSend = resolveComposerRuntimeConfigForSend();
+    if (!runtimeConfigForSend) {
+      setError(t("app.configureOrchestration"));
+      return;
+    }
+    setError(undefined);
+    setPlanActionBusy(true);
+    try {
+      const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
+      // Awaiting-plan messages only queue. Resolve the gate before sending the review request.
+      const result = await window.eco.dismissPlan({
+        principalId: "desktop-local",
+        clientCommandId: `plan_resolve_${stableHash({
+          threadId,
+          resolution: "review-code",
+          expectedHistoryRevision,
+        })}`,
+        threadId,
+        expectedHistoryRevision,
+      });
+      rememberApprovedPlanForThread(threadId, planToRemember);
+      clearPendingPlanForThread(threadId);
+      const updatedThread = result.thread;
+      if (!updatedThread) {
+        throw new Error("计划待审批状态已结束，但未能获取当前会话，无法发送审查请求。");
+      }
+      setThreads((current) =>
+        current.map((thread) => (thread.id === updatedThread.id ? updatedThread : thread)),
+      );
+      await sendConversationV2Continuation({
+        thread: updatedThread,
+        prompt: "计划已经实施，请审查代码。",
+        runtimeConfig: { ...runtimeConfigForSend, sessionMode: "agent" },
+        commandScope: "plan_review",
+      });
+      requestActivityFeedForceScroll();
+    } catch (caught) {
+      setError(errorMessage(caught));
+      if (isWaitForRunError(caught)) {
+        void resyncThreadSummaryAfterWaitForRun(threadId);
+      }
+    } finally {
+      setPlanActionBusy(false);
+    }
+  }
+
   async function approvePendingPlanWithSubagent(agentKey: string, additionalMessage?: string) {
     await approvePendingPlanWithTarget({
       kind: "subagent",
@@ -10798,6 +10848,7 @@ function App() {
                 {...(planFailureMessage && { failureMessage: planFailureMessage })}
                 onApprove={() => void approvePendingPlan()}
                 onStartNewSession={() => startNewChatWithPlan(pendingPlan)}
+                onReviewCode={() => void reviewPendingPlanCode()}
                 onApproveWithSubagent={(agentKey, additionalMessage) =>
                   void approvePendingPlanWithSubagent(agentKey, additionalMessage)
                 }
