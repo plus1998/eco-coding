@@ -6391,6 +6391,12 @@ function App() {
   }, []);
 
   const clampActivityFeedOverscroll = useCallback((container: HTMLElement): boolean => {
+    // A reader mid-history may sit past the (shrinking) bottom: the rubber-band gap self-heals
+    // when the tail regrows, and snapping them back would lurch the content they are reading.
+    // Only the follow state needs the hard clamp.
+    if (userDetachedFromBottomRef.current) {
+      return false;
+    }
     const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
     if (container.scrollTop <= maxScrollTop) {
       return false;
@@ -6450,6 +6456,16 @@ function App() {
     [updateActiveActivityUserMessageNavId],
   );
 
+  // Hand scroll anchoring back to the browser while the reader is detached from the bottom.
+  // The follow state uses overflow-anchor: none so Chromium can't fight the JS stick-to-bottom
+  // on a growing tail — but with anchoring off, any content reflow *above* the viewport
+  // (thinking-block auto-collapse, lazy mounts, expanding blocks) lurches the reading position
+  // with no compensation. Anchoring on while detached keeps the content the user is reading
+  // stable; the class flips back off as soon as they return to the bottom (or force-scroll).
+  const setActivityFeedDetachedAnchor = useCallback((detached: boolean) => {
+    activityMessagesRef.current?.classList.toggle("is-reading-detached", detached);
+  }, []);
+
   const jumpToActivityUserMessage = useCallback(
     (anchorId: string) => {
       const container = activityMessagesRef.current;
@@ -6470,6 +6486,7 @@ function App() {
         const targetTop = Math.max(0, container.scrollTop + targetRect.top - containerRect.top - 18);
         userDetachedFromBottomRef.current = true;
         activityFeedUserScrollDirectionRef.current = targetTop < container.scrollTop ? "up" : "down";
+        setActivityFeedDetachedAnchor(true);
         programmaticActivityFeedScrollRef.current = true;
         updateActiveActivityUserMessageNavId(anchorId);
         container.scrollTo({ top: targetTop, behavior: "smooth" });
@@ -6493,6 +6510,7 @@ function App() {
         return;
       }
       userDetachedFromBottomRef.current = true;
+      setActivityFeedDetachedAnchor(true);
       updateActiveActivityUserMessageNavId(anchorId);
       window.setTimeout(() => {
         if (activityMessagesRef.current !== container) {
@@ -6504,7 +6522,7 @@ function App() {
         }
       }, 48);
     },
-    [syncActivityFeedScrollJump, syncActivityUserMessageNavigator, updateActiveActivityUserMessageNavId],
+    [syncActivityFeedScrollJump, syncActivityUserMessageNavigator, setActivityFeedDetachedAnchor, updateActiveActivityUserMessageNavId],
   );
 
   const scrollActivityFeedToEnd = useCallback(
@@ -6532,6 +6550,7 @@ function App() {
           if (distanceFromActivityFeedBottom(el) <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
             userDetachedFromBottomRef.current = false;
             activityFeedUserScrollDirectionRef.current = null;
+            setActivityFeedDetachedAnchor(false);
           }
           syncActivityFeedScrollJump(el);
         });
@@ -6551,11 +6570,12 @@ function App() {
     (direction: ActivityFeedUserScrollDirection = "up") => {
       userDetachedFromBottomRef.current = true;
       activityFeedUserScrollDirectionRef.current = direction;
+      setActivityFeedDetachedAnchor(true);
       // Stop stick-to-bottom timers so virtualization remounts cannot snap back mid-gesture.
       cancelActivityFeedLayoutScroll();
       forceActivityFeedScrollUntilRef.current = 0;
     },
-    [cancelActivityFeedLayoutScroll],
+    [cancelActivityFeedLayoutScroll, setActivityFeedDetachedAnchor],
   );
 
   const scheduleActivityFeedLayoutScroll = useCallback(() => {
@@ -6694,6 +6714,7 @@ function App() {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
     userDetachedFromBottomRef.current = false;
     activityFeedUserScrollDirectionRef.current = null;
+    setActivityFeedDetachedAnchor(false);
     activityFeedScrollJumpRef.current = null;
     setActivityFeedScrollJump(null);
     scrollActivityFeedToEnd(true);
@@ -6701,7 +6722,7 @@ function App() {
       scrollActivityFeedToEnd(true);
       requestAnimationFrame(() => scrollActivityFeedToEnd(true));
     });
-  }, [scrollActivityFeedToEnd]);
+  }, [scrollActivityFeedToEnd, setActivityFeedDetachedAnchor]);
 
   const jumpActivityFeedToTop = useCallback(() => {
     const container = activityMessagesRef.current;
@@ -6841,10 +6862,12 @@ function App() {
         activityFeedUserScrollDirectionRef.current = "down";
         if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
           userDetachedFromBottomRef.current = false;
+          setActivityFeedDetachedAnchor(false);
         }
       } else if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
         userDetachedFromBottomRef.current = false;
         activityFeedUserScrollDirectionRef.current = null;
+        setActivityFeedDetachedAnchor(false);
       }
       activityFeedScrollTopRef.current = scrollTop;
       if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
@@ -6875,6 +6898,7 @@ function App() {
     activeThread?.id,
     distanceFromActivityFeedBottom,
     markActivityFeedUserDetached,
+    setActivityFeedDetachedAnchor,
     syncActivityFeedBoot,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,

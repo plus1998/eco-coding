@@ -4273,6 +4273,14 @@ button.sidebar-settings-meta {
   -webkit-app-region: no-drag;
 }
 
+/* Detached reader (scrolled up to browse history): hand scroll anchoring back to the browser so
+   content reflow above the viewport (thinking-block auto-collapse, lazy mounts, expanding
+   blocks) can't lurch the reading position. The follow state keeps overflow-anchor: none so
+   Chromium doesn't fight the JS stick-to-bottom on a growing tail. */
+.activity-messages.is-reading-detached {
+  overflow-anchor: auto;
+}
+
 .activity-feed.is-booting .activity-messages {
   visibility: hidden;
 }
