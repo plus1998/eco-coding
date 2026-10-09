@@ -1245,11 +1245,18 @@ export {
   normalizeComputerUseSettingsSnapshot,
 } from "./computer-use";
 
+/** Agent cores that can carry their own upstream User-Agent. */
+export const UPSTREAM_AGENT_CORES = ["codex", "claude", "pi"] as const;
+
+export type UpstreamAgentCore = (typeof UPSTREAM_AGENT_CORES)[number];
+
 export interface ProxyBridgeSettingsSnapshot {
   /** 出站代理总开关；关闭时忽略 upstreamProxyUrl */
   enabled?: boolean;
-  /** 留空：透传 SDK User-Agent；非空：覆盖透传 */
+  /** 全局覆盖：未识别 Agent Core 时生效；留空 = 透传 SDK User-Agent */
   upstreamUserAgent?: string;
+  /** 按 Agent Core 单独覆盖；留空（或缺失）表示回到该项目 SDK 自己的 UA */
+  upstreamUserAgents?: Partial<Record<UpstreamAgentCore, string>>;
   /** 出站 HTTP/HTTPS/SOCKS5 代理 URL（gateway upstream + 在线升级）；留空直连 */
   upstreamProxyUrl?: string;
 }
@@ -1474,8 +1481,8 @@ export {
   listEnabledGlobalMcpServerKeys,
 } from "./composer-mcp";
 export type {
-  AuxiliaryModelSelection,
   ApprovalModelSelection,
+  AuxiliaryModelSelection,
   MainAgentModelOverride,
   MainAgentSystemPromptPreset,
   McpServersEnabledSettings,

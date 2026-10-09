@@ -27,7 +27,6 @@ import {
   Globe2,
   GripVertical,
   HardDrive,
-  Image as ImageIcon,
   LoaderCircle,
   type LucideIcon,
   KeyRound,
@@ -37,6 +36,7 @@ import {
   Mic,
   Minimize2,
   Monitor,
+  Palette,
   PanelBottom,
   PanelLeft,
   PanelRight,
@@ -168,6 +168,8 @@ import {
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceInfo,
+  type UpstreamAgentCore,
+  UPSTREAM_AGENT_CORES,
 } from "../shared/ipc";
 import type { AppLocalePreference } from "../shared/locale";
 import {
@@ -219,7 +221,7 @@ import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
 import { buildConversationV2OnlyProjection } from "./ActivityLogView";
 import type { PendingMainAgentConfigCreateSeed } from "./AgentCompositionResourcesSection";
 import { AppMessage, useAppMessage } from "./AppMessage";
-import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
+import { AsrMicButton, AsrVoiceComposer, isAsrComposerConfigured, useAsrRecorder } from "./AsrRecorder";
 import {
   type ActivityWorkspaceLayoutMode,
   activityUserMessageNavListMaxHeightPx,
@@ -1262,7 +1264,7 @@ function App() {
   const settingsNavGroups = useMemo<SettingsNavGroup[]>(
     () => [
       {
-        label: t("settings.group.personal"),
+        label: t("settings.group.general"),
         sections: [
           {
             id: "preferences",
@@ -1329,12 +1331,49 @@ function App() {
               "old chats",
             ],
           },
+          { id: "centerServer", label: t("settings.connection"), icon: Cloud },
+          {
+            id: "proxy",
+            label: t("settings.gateway"),
+            icon: Globe2,
+            keywords: [
+              "gateway",
+              "proxy",
+              "网关",
+              "代理",
+              "socks5",
+              "http",
+              "upgrade",
+              "升级",
+              "outbound",
+              "user-agent",
+              "ua",
+              "请求头",
+            ],
+          },
         ],
       },
       {
-        label: t("settings.group.integrations"),
+        label: t("settings.group.models"),
         sections: [
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
+          {
+            id: "orchestrationComponents",
+            label: t("settings.orchestrationComponents"),
+            icon: Workflow,
+          },
+          { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
+          {
+            id: "contextWindow",
+            label: t("settings.contextWindow"),
+            icon: Gauge,
+            keywords: ["context", "tokens", "compact", "上下文", "压缩"],
+          },
+        ],
+      },
+      {
+        label: t("settings.group.capabilities"),
+        sections: [
           { id: "mcp", label: t("settings.mcp.title"), icon: Unplug },
           {
             id: "browser",
@@ -1357,7 +1396,7 @@ function App() {
           {
             id: "imageGeneration",
             label: t("settings.imageGeneration.title"),
-            icon: ImageIcon,
+            icon: Palette,
             keywords: [
               t("settings.imageGeneration.masterTitle"),
               "creative drawing",
@@ -1366,7 +1405,6 @@ function App() {
               "创意绘画",
             ],
           },
-          { id: "centerServer", label: t("settings.connection"), icon: Cloud },
           { id: "asr", label: t("asr.title"), icon: Mic },
           {
             id: "integratedWebSearch",
@@ -1379,27 +1417,9 @@ function App() {
       {
         label: t("settings.group.coding"),
         sections: [
-          {
-            id: "orchestrationComponents",
-            label: t("settings.orchestrationComponents"),
-            icon: Workflow,
-          },
-          { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
-          {
-            id: "contextWindow",
-            label: t("settings.contextWindow"),
-            icon: Gauge,
-            keywords: ["context", "tokens", "compact", "上下文", "压缩"],
-          },
           { id: "agentLibrary", label: t("settings.agentLibrary"), icon: BookOpen },
           { id: "skills", label: t("settings.skills.store"), icon: Sparkles },
           { id: "git", label: "Git", icon: GitBranch },
-          {
-            id: "proxy",
-            label: t("settings.proxy"),
-            icon: Globe2,
-            keywords: ["proxy", "代理", "socks5", "http", "upgrade", "升级", "outbound"],
-          },
         ],
       },
     ],
@@ -10751,6 +10771,7 @@ function App() {
   const handleAsrError = useCallback((message: string) => {
     showAppMessageErrorRef.current(message);
   }, []);
+  const asrComposerConfigured = isAsrComposerConfigured(asrProfiles);
   const asrSession = useAsrRecorder({
     ...(asrProfiles.activeProfileId ? { activeProfileId: asrProfiles.activeProfileId } : {}),
     selectedInputDeviceId: asrProfiles.inputDeviceId ?? "",
@@ -11187,7 +11208,9 @@ function App() {
                         />
                       ) : null}
                       {composerModelControl}
-                      <AsrMicButton session={asrSession} disabled={composerDisabled} />
+                      {asrComposerConfigured ? (
+                        <AsrMicButton session={asrSession} disabled={composerDisabled} />
+                      ) : null}
                       <button
                         type="button"
                         className={composerActionClassName}
@@ -12130,19 +12153,6 @@ function App() {
                         setThinkingDisplayPreferences({ mode });
                       });
                     }}
-                    upstreamUserAgent={proxyBridgeSettings?.upstreamUserAgent}
-                    upstreamUserAgentSaving={isSavingProxyBridgeSettings}
-                    onUpstreamUserAgentChange={(value) => {
-                      const next: ProxyBridgeSettingsSnapshot = {
-                        ...(proxyBridgeSettings ?? {}),
-                      };
-                      if (value) {
-                        next.upstreamUserAgent = value;
-                      } else {
-                        delete next.upstreamUserAgent;
-                      }
-                      void saveProxyBridgeSettings(next);
-                    }}
                   />
                 )}
 
@@ -12357,7 +12367,10 @@ function App() {
                       busy={isSavingProxyBridgeSettings}
                       onSave={(next) => {
                         const merged: ProxyBridgeSettingsSnapshot = { ...(proxyBridgeSettings ?? {}) };
-                        merged.enabled = next.enabled === undefined ? true : next.enabled;
+                        // 缺省视为开启（兼容旧数据）；未携带该键表示本次保存不修改开关。
+                        if (next.enabled !== undefined) {
+                          merged.enabled = next.enabled;
+                        }
                         // 键存在与否表示是否修改：关闭开关时保留已保存 URL。
                         if (next.upstreamProxyUrl !== undefined) {
                           if (next.upstreamProxyUrl) {
@@ -12366,13 +12379,36 @@ function App() {
                             delete merged.upstreamProxyUrl;
                           }
                         }
+                        // 按 Agent Core 单独覆盖：空串 = 清除该 core，回退到 SDK 自己的 UA。
+                        if (next.upstreamUserAgents !== undefined) {
+                          const perCore: Partial<Record<UpstreamAgentCore, string>> = {};
+                          for (const core of UPSTREAM_AGENT_CORES) {
+                            const value = next.upstreamUserAgents[core]?.trim();
+                            if (value) {
+                              perCore[core] = value;
+                            }
+                          }
+                          if (Object.keys(perCore).length > 0) {
+                            merged.upstreamUserAgents = perCore;
+                          } else {
+                            delete merged.upstreamUserAgents;
+                          }
+                        }
+                        // 空串 = 清除已保存的兼底请求头。
+                        if (next.upstreamUserAgent !== undefined) {
+                          if (next.upstreamUserAgent) {
+                            merged.upstreamUserAgent = next.upstreamUserAgent;
+                          } else {
+                            delete merged.upstreamUserAgent;
+                          }
+                        }
                         void saveProxyBridgeSettings(merged);
                       }}
                       centerServerSyncVisible={centerServerSyncVisible}
                       onSyncDomain={syncCenterServerConfigDomain}
                     />
                   ) : (
-                    <p className="settings-empty-hint">{t("settings.proxy.loading")}</p>
+                    <p className="settings-empty-hint">{t("settings.gateway.loading")}</p>
                   ))}
 
                 {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&

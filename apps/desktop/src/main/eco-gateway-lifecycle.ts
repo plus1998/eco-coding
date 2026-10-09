@@ -13,6 +13,7 @@ import {
   resolveEcoGatewayPort,
 } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
+import type { UpstreamAgentCore } from "../shared/ipc";
 import {
   type BridgeRouteResolution,
   type EcoSdkBridgeOptions,
@@ -67,6 +68,10 @@ export interface EcoGatewayLifecycleOptions {
   listProviders: () => readonly EcoProviderForGateway[];
   /** Global Proxy Bridge User-Agent override; undefined = passthrough / Eco default. */
   getUpstreamUserAgent?: () => string | undefined;
+  /** Per agent core (codex/claude/pi) User-Agent overrides; empty = SDK UA. */
+  getUpstreamUserAgents?: () => Partial<Record<UpstreamAgentCore, string>> | undefined;
+  /** Eco fallback UA (`Eco-Coding/<version> (<platform> <release>; <arch>)`). */
+  getDefaultUpstreamUserAgent?: () => string | undefined;
   /** Outbound SOCKS/HTTP proxy URL for gateway upstream fetch. */
   getUpstreamProxyUrl?: () => string | undefined;
   getGatewayCredentialResolver?: () =>
@@ -166,6 +171,8 @@ export class EcoGatewayLifecycle {
       normalizeProvider(provider as GatewayProvider),
     );
     const upstreamUserAgent = this.options.getUpstreamUserAgent?.()?.trim() || undefined;
+    const upstreamUserAgents = this.options.getUpstreamUserAgents?.();
+    const userAgentDefault = this.options.getDefaultUpstreamUserAgent?.()?.trim() || undefined;
     const upstreamProxyUrl = this.options.getUpstreamProxyUrl?.()?.trim() || undefined;
     const credentialResolver = this.options.getGatewayCredentialResolver?.();
     const credentialReporter = this.options.getGatewayCredentialReporter?.();
@@ -184,6 +191,8 @@ export class EcoGatewayLifecycle {
           port: this.port,
           providers: gatewayProviders,
           ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+          ...(upstreamUserAgents && Object.keys(upstreamUserAgents).length > 0 ? { upstreamUserAgents } : {}),
+          ...(userAgentDefault ? { userAgentDefault } : {}),
           ...(upstreamProxyUrl ? { upstreamProxyUrl } : {}),
           ...(credentialResolver ? { resolveCredential: credentialResolver } : {}),
           ...(credentialReporter ? { reportCredentialResult: credentialReporter } : {}),
@@ -204,6 +213,7 @@ export class EcoGatewayLifecycle {
     } else {
       this.gateway.setProviders(gatewayProviders);
       this.gateway.setUpstreamUserAgent(upstreamUserAgent);
+      this.gateway.setUpstreamUserAgents(upstreamUserAgents, userAgentDefault);
       this.gateway.setUpstreamProxyUrl(upstreamProxyUrl);
       this.gateway.setCredentialResolver(credentialResolver);
       this.gateway.setCredentialReporter(credentialReporter);

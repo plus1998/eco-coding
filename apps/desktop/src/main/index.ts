@@ -812,6 +812,7 @@ import {
   type ProxyBridgeSettingsStore,
   resolveOutboundProxyUrl,
   resolveUpstreamUserAgentOverride,
+  resolveUpstreamUserAgentOverrides,
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE } from "./remote-thread-list";
@@ -972,6 +973,10 @@ import {
 } from "./thread-title";
 import { type SerializedThreadUsageState, ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import { getUpstreamLogFilePath, logUpstream } from "./upstream-log";
+import {
+  buildDefaultUpstreamUserAgent,
+  setDefaultUpstreamUserAgent,
+} from "./upstream-request-headers";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
 import {
@@ -2442,6 +2447,14 @@ app.whenReady().then(async () => {
   );
   agentLifecycle = new AgentLifecycleService(conversationStore);
   codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
+  const defaultUpstreamUserAgent = buildDefaultUpstreamUserAgent({
+    version: app.getVersion(),
+    platform: os.platform(),
+    release: os.release(),
+    arch: os.arch(),
+  });
+  // Provider probes / model lists run outside the gateway: give them the same fallback.
+  setDefaultUpstreamUserAgent(defaultUpstreamUserAgent);
   configureEcoGatewayLifecycle({
     ecoDataDir: app.getPath("userData"),
     listProviders: () => {
@@ -2483,6 +2496,8 @@ app.whenReady().then(async () => {
       });
     },
     getUpstreamUserAgent: () => resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+    getUpstreamUserAgents: () => resolveUpstreamUserAgentOverrides(proxyBridgeSettingsStore.get()),
+    getDefaultUpstreamUserAgent: () => defaultUpstreamUserAgent,
     getUpstreamProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
     getGatewayCredentialResolver: () => async ({ provider }) => {
       const service = await getChatGptSubscriptionService();
