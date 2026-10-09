@@ -2257,7 +2257,6 @@ app.whenReady().then(async () => {
     },
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
-  await reconcileAcpCursorAgainstProbe();
   logStartupStage("initial-settings.loaded");
   projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
   projectIntegrationsSettingsStore = await createProjectIntegrationsSettingsStore(dbPath);
@@ -3111,6 +3110,14 @@ app.whenReady().then(async () => {
     await createMainWindow();
   }
   logStartupStage("main-window.ready");
+  // The Cursor ACP probe spawns `agent acp` and runs a JSON-RPC handshake with it
+  // (~1.4s of subprocess + main-process work). It only repairs a stale "Cursor ACP
+  // enabled" setting, and the use-time path re-probes through
+  // assertAcpCursorRunnableForMain, so it runs after the window is up: measuring
+  // showed that overlapping it with startup only moved the cost downstream.
+  void reconcileAcpCursorAgainstProbe().catch((error: unknown) => {
+    logEcoDiag("acp-cursor.startup-reconcile-failed", { error: errorMessage(error) });
+  });
   desktopUpdateService.start();
   // Skill materials only when capability is ON (no CDP / no session inject at boot).
   if (browserSettingsStore.get().agentIntegrationEnabled) {
