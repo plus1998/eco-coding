@@ -10100,6 +10100,7 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
       const prepared = await resolvePiSessionResourcesForThread(threadId, workspacePath);
       return toAcpMcpServers(prepared.mcpServers);
     },
+    resolveAcpSystemPromptAppend: ({ threadId }) => mcpHubGateway.getThreadPromptAppend(threadId),
     resolvePromptImagesForMainContext,
     resolveAcpCreatePlanHandler: ({ threadId, workspacePath, userPrompt }) => {
       return async (request) => {
@@ -10770,6 +10771,7 @@ async function startCodexThreadRun(
                 ),
               );
             }
+            append = appendBrowserPrompt(append, mcpHubGateway.getThreadPromptAppend(input.thread.id));
             // Codex registers this thread's Hub under a per-thread server
             // name (shared app-server global pool + per-thread bearer token),
             // so rewrite the fixed `mcp__eco_mcp__*` names emitted by the Hub
@@ -11253,6 +11255,7 @@ async function resolvePiSessionResourcesForThread(
     config: globalMcpConfig,
     allowedServers: [...hubServerKeys, ...hubBuiltinKeys],
   });
+  if (hubInjection?.promptAppend) mcpSession.appendSystemPrompt.push(hubInjection.promptAppend);
   const resolvedMcpServers = { ...mcpSession.mcpServers };
   for (const key of hubServerKeys) delete resolvedMcpServers[key];
   for (const key of hubBuiltinKeys) delete resolvedMcpServers[key];
@@ -14585,6 +14588,9 @@ function buildDesktopSdkRunInput(
   globalUserRules = appendBrowserPrompt(globalUserRules, SCHEDULING_PROMPT);
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageViewPromptAppend());
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageDisplayPromptAppend());
+  if (threadId) {
+    globalUserRules = appendBrowserPrompt(globalUserRules, mcpHubGateway.getThreadPromptAppend(threadId));
+  }
   if (centerServerClient.getHtmlHostingCapability().available) {
     globalUserRules = appendBrowserPrompt(globalUserRules, buildHtmlHostPromptAppend());
   }

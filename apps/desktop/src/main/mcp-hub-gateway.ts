@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { McpSdkConfig } from "../shared/mcp";
+import { buildEcoMcpHubDirectoryPrompt } from "../shared/mcp-hub-tool-usage";
 import {
   ECO_IMAGE_GENERATION_MCP_SERVER,
   IMAGE_GENERATION_MCP_TOOL_TIMEOUT_MS,
@@ -20,6 +21,8 @@ const CONTROL_SECRET_HEADER = "X-Eco-Mcp-Hub-Control-Secret";
 export type McpHubThreadInjection = {
   token: string;
   sdkEntry: Record<string, unknown>;
+  /** Compact directory of this thread's selected external MCP capabilities. */
+  promptAppend?: string;
   /** Same server description for runtimes that still use Codex config sync. */
   codexServer: ReturnType<typeof buildEcoHttpInjection>["codexServer"];
   /** True when the global Codex pool needs one refresh for this descriptor. */
@@ -53,6 +56,7 @@ export class McpHubGateway {
   private readonly hub = new McpHub();
   private readonly servers = new Map<string, HubServerState>();
   private readonly threadTokens = new Map<string, string>();
+  private readonly threadPromptAppends = new Map<string, string>();
   private readonly threadCodexServers = new Map<
     string,
     ReturnType<typeof buildEcoHttpInjection>["codexServer"]
@@ -111,6 +115,7 @@ export class McpHubGateway {
 
   /** Remove all external adapters while retaining active thread credentials. */
   clearServers(): void {
+    this.threadPromptAppends.clear();
     for (const state of this.servers.values()) {
       if (state.threadProxy) continue;
       this.hub.unregisterServer(state.name);
@@ -211,6 +216,7 @@ export class McpHubGateway {
     allowedServers: Iterable<string>;
     runtimeName?: string;
   }): Promise<McpHubThreadInjection | undefined> {
+    this.threadPromptAppends.delete(input.threadId.trim());
     const allowedServers = [...input.allowedServers].map(normalizeServerName).filter(Boolean);
     if (allowedServers.length === 0) {
       // A thread can turn off its last MCP between turns. Retire its bearer,
@@ -232,12 +238,19 @@ export class McpHubGateway {
       const matches = [...configuredPatterns].filter((pattern) => patternMatchesServer(pattern, server));
       allowedTools.push(...(matches.length > 0 ? matches : [`mcp__${server}__*`]));
     }
-    return this.prepareThread({
+    const injection = await this.prepareThread({
       threadId: input.threadId,
       allowedServers,
       allowedTools,
       ...(input.runtimeName ? { runtimeName: input.runtimeName } : {}),
     });
+    const directory = await this.hub.listServiceDirectory({
+      token: injection.token,
+      servers: allowedServers.filter((name) => !name.startsWith("eco_")),
+    });
+    const promptAppend = buildEcoMcpHubDirectoryPrompt(directory);
+    if (promptAppend) this.threadPromptAppends.set(input.threadId.trim(), promptAppend);
+    return { ...injection, ...(promptAppend ? { promptAppend } : {}) };
   }
 
   /** Bind one thread and return the only MCP server the runtime needs. */
@@ -250,6 +263,7 @@ export class McpHubGateway {
   }): Promise<McpHubThreadInjection> {
     const threadId = input.threadId.trim();
     if (!threadId) throw new Error("MCP Hub thread id is required");
+    this.threadPromptAppends.delete(threadId);
     await this.start();
     // A running runtime may retain this descriptor across turns. Keep its
     // credential stable and update the bound permissions in place.
@@ -310,6 +324,11 @@ export class McpHubGateway {
     };
   }
 
+  /** Prepared before runtime prompt assembly; never reuse another thread's directory. */
+  getThreadPromptAppend(threadId: string): string | undefined {
+    return this.threadPromptAppends.get(threadId.trim());
+  }
+
   /** Return descriptors that must be present in Codex's process-global MCP pool. */
   listThreadCodexServers(): ReturnType<typeof buildEcoHttpInjection>["codexServer"][] {
     return [...this.threadCodexServers.values()];
@@ -322,6 +341,7 @@ export class McpHubGateway {
     const hadCodexServer = this.threadCodexServers.has(normalizedThreadId);
     if (token) this.hub.revokeToken(token);
     this.threadTokens.delete(normalizedThreadId);
+    this.threadPromptAppends.delete(normalizedThreadId);
     this.threadCodexServers.delete(normalizedThreadId);
     return Boolean(token || hadCodexServer);
   }
@@ -353,6 +373,7 @@ export class McpHubGateway {
     }
     for (const token of this.threadTokens.values()) this.hub.revokeToken(token);
     this.threadTokens.clear();
+    this.threadPromptAppends.clear();
     this.threadCodexServers.clear();
     const server = this.serverHttp;
     this.serverHttp = undefined;

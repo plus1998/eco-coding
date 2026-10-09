@@ -1,5 +1,6 @@
 import type { CoreKind } from "@eco/runtime";
 import type { ThreadRuntimeConfig } from "./thread-runtime-config";
+import { buildEcoMcpHubToolUsage } from "./mcp-hub-tool-usage";
 
 export type ScheduleTrigger =
   | { type: "at"; at: string }
@@ -81,4 +82,9 @@ export function isExpiredOneShotSchedule(definition: ScheduleDefinition, now = D
 }
 
 export const SCHEDULING_MCP_SERVER = "eco_scheduling";
-export const SCHEDULING_PROMPT = `Eco has two distinct scheduling capabilities. Use schedule_message to wake THIS conversation later with its latest context and settings; messages wait until the current turn finishes and never interrupt it. Agent wakeups are one-shot (minimum 60 seconds, maximum 24 hours, at most 24 per conversation per rolling 24 hours). Use create_scheduled_task for an independent, self-contained task; EVERY occurrence creates a NEW conversation and has no source conversation history. The host saves this conversation's effective AgentCore and model at creation. Users can change that task's Core/model in the scheduling panel; update_scheduled_task never changes them. Use five-field cron with an explicit IANA timezone, fixed intervals, or an ISO timestamp including timezone. Execution requires Eco running on an awake local computer. Do not claim a schedule exists until the tool succeeds. Use list_schedules to inspect and cancel_schedule to cancel. Do not create recurring tasks to continue this conversation; use schedule_message. If a task needs context, include it in its instructions.`;
+export const SCHEDULING_PROMPT = [
+  "Built-in scheduling (Eco): continue this conversation after a delay, or run independent scheduled tasks in new conversations; inspect, update and cancel schedules.",
+  buildEcoMcpHubToolUsage({ server: SCHEDULING_MCP_SERVER }),
+  "Choose a conversation wakeup to continue current work. Independent task prompts must include all required context because each occurrence starts a new conversation.",
+  "Execution requires Eco running on an awake local computer; a conversation wakeup does not wake a sleeping computer.",
+].join("\n");
