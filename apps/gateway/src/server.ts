@@ -5,11 +5,13 @@ import { handlePostChatCompletions } from "./routes/chat-completions.js";
 import { handleGetModels, handlePostMessages, handlePostMessagesCountTokens } from "./routes/messages.js";
 import { handleHealth, handlePostResponses, handlePostResponsesCompact } from "./routes/responses.js";
 import type {
+  GatewayAgentCore,
   GatewayConfig,
   GatewayProvider,
   GatewayRequestLifecycleObserver,
   GatewayUsageObserver,
 } from "./types.js";
+import { GATEWAY_AGENT_CORES } from "./upstream/user-agent.js";
 import {
   createUpstreamFetchController,
   parseUpstreamProxyUrl,
@@ -28,6 +30,11 @@ export interface EcoGatewayServer {
   setCredentialResolver: (resolver: GatewayConfig["resolveCredential"]) => void;
   setCredentialReporter: (reporter: GatewayConfig["reportCredentialResult"]) => void;
   setUpstreamUserAgent: (upstreamUserAgent: string | undefined) => void;
+  /** Per agent core UA overrides + Eco fallback UA (live update). */
+  setUpstreamUserAgents: (
+    upstreamUserAgents: Partial<Record<GatewayAgentCore, string>> | undefined,
+    userAgentDefault: string | undefined,
+  ) => void;
   setUpstreamProxyUrl: (proxyUrl: string | undefined) => void;
   getUpstreamProxyUrl: () => string | undefined;
 }
@@ -297,6 +304,26 @@ export async function startEcoGateway(
         config.upstreamUserAgent = trimmed;
       } else {
         delete config.upstreamUserAgent;
+      }
+    },
+    setUpstreamUserAgents: (upstreamUserAgents, userAgentDefault) => {
+      const normalized: Partial<Record<GatewayAgentCore, string>> = {};
+      for (const core of GATEWAY_AGENT_CORES) {
+        const trimmed = upstreamUserAgents?.[core]?.trim();
+        if (trimmed) {
+          normalized[core] = trimmed;
+        }
+      }
+      if (Object.keys(normalized).length > 0) {
+        config.upstreamUserAgents = normalized;
+      } else {
+        delete config.upstreamUserAgents;
+      }
+      const fallback = userAgentDefault?.trim();
+      if (fallback) {
+        config.userAgentDefault = fallback;
+      } else {
+        delete config.userAgentDefault;
       }
     },
     setUpstreamProxyUrl: (proxyUrl) => {

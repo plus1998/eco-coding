@@ -12,6 +12,11 @@ import {
   UnsupportedUpstreamKindError,
 } from "../provider-router.js";
 import { buildRequestLifecycleContext } from "../request-lifecycle.js";
+import {
+  credentialResolutionErrorResponse,
+  reportRouteCredentialResult,
+  resolveRouteCredential,
+} from "../route-credentials.js";
 import type { GatewayLogFn } from "../server.js";
 import type {
   GatewayConfig,
@@ -20,7 +25,7 @@ import type {
   ResolvedProviderRoute,
 } from "../types.js";
 import { forwardOpenAIChatPassthrough } from "../upstream/openai-chat-passthrough.js";
-import { credentialResolutionErrorResponse, reportRouteCredentialResult, resolveRouteCredential } from "../route-credentials.js";
+import { resolveUpstreamUserAgent } from "../upstream/user-agent.js";
 
 export async function handlePostChatCompletions(
   request: Request,
@@ -83,7 +88,11 @@ export async function handlePostChatCompletions(
     fetchImpl,
     onLog,
     onUsage,
-    config.upstreamUserAgent,
+    resolveUpstreamUserAgent(request.headers, {
+      override: config.upstreamUserAgent,
+      byCore: config.upstreamUserAgents,
+      fallback: config.userAgentDefault,
+    }),
     lifecycle,
   );
   await reportRouteCredentialResult(route, config, response);

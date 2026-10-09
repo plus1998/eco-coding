@@ -46,6 +46,9 @@ export interface ResolvedProviderRoute {
   credentialAccountId?: string;
 }
 
+/** Agent core that issued the upstream request. */
+export type GatewayAgentCore = "codex" | "claude" | "pi";
+
 export interface GatewayConfig {
   host: string;
   port: number;
@@ -67,6 +70,10 @@ export interface GatewayConfig {
    * When unset, passthrough client UA or fall back to Eco default.
    */
   upstreamUserAgent?: string;
+  /** Per agent core overrides; a cleared entry falls back to the SDK UA. */
+  upstreamUserAgents?: Partial<Record<GatewayAgentCore, string>>;
+  /** Eco fallback UA (app version + OS) for requests without any client UA. */
+  userAgentDefault?: string;
   /** Optional global outbound HTTP/HTTPS/SOCKS proxy URL for upstream fetch. */
   upstreamProxyUrl?: string;
 }
