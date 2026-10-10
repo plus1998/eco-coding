@@ -30,6 +30,7 @@ import {
 import type { ThreadRunImageViewMetadata, ThreadRunToolMetadata } from "../shared/ipc";
 import { resolvePiMcpProxyCall, resolvePiMcpProxyToolName } from "../shared/pi-mcp-proxy.js";
 import { parseThreadRunImageViewMetadata } from "../shared/thread-run-events.js";
+import { resolveCodemodeMetadata } from "../shared/thread-run-tool-projection.js";
 import {
   formatThreadRunGrepTargetLabel,
   formatThreadRunReadTargetLabel,
@@ -673,6 +674,16 @@ function resolveSdkMcpToolIdentity(
   };
 }
 
+/**
+ * PI's codemode sandbox issues tool calls from inside the script and marks each one with the script's
+ * own call id. The Feed needs that link to keep the script's calls inside the script's card instead of
+ * counting them as commands the model issued. It is display nesting, not ownership, so it stays off the
+ * event's `parentToolUseId` (Eco's subagent link).
+ */
+function readSdkNestedToolCallId(record: Record<string, unknown>): string | undefined {
+  return readString(record.parent_tool_call_id);
+}
+
 function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
@@ -712,6 +723,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   const outputPreview = output ? createToolOutputPreview(output) : undefined;
   const imageViewMeta = toImageViewMetadata(imageViewCall);
   const toolUseId = readString(record.tool_use_id);
+  const parentToolCallId = readSdkNestedToolCallId(record);
   const description =
     name === "Bash"
       ? (readString(record.description) ?? readBashDescriptionFromToolInput(toolInput))
@@ -749,6 +761,13 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   const htmlHostMeta = htmlHostCall
     ? readHtmlHostMetadataFromToolOutput(output ?? record.result ?? record.content)
     : undefined;
+  // PI's codemode: the script is the call and its return value is what the model saw.
+  const codemode = resolveCodemodeMetadata({
+    name: displayName,
+    callInput: toolInput,
+    ...(output ? { output } : {}),
+    ...(record.codemodeDetails !== undefined ? { details: record.codemodeDetails } : {}),
+  });
   return {
     name: displayName,
     ...(command && { detail: command }),
@@ -788,6 +807,8 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
       }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(webSearch && { webSearch }),
+    ...(parentToolCallId && { parentToolCallId }),
+    ...(codemode && { codemode }),
     status: "completed",
   };
 }
@@ -837,6 +858,13 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     ? resolveFileChangeFromToolInput(displayName, toolInput)
     : undefined;
   const failedImageViewMeta = toImageViewMetadata(imageViewCall);
+  const parentToolCallId = readSdkNestedToolCallId(record);
+  const failedCodemode = resolveCodemodeMetadata({
+    name: displayName,
+    callInput: toolInput,
+    ...(message ? { output: message } : {}),
+    ...(record.codemodeDetails !== undefined ? { details: record.codemodeDetails } : {}),
+  });
   return {
     name: displayName,
     ...(detail && { detail }),
@@ -849,6 +877,8 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     ...(failedImageViewMeta && { imageView: failedImageViewMeta }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(nonExecutionKind && { nonExecutionKind }),
+    ...(parentToolCallId && { parentToolCallId }),
+    ...(failedCodemode && { codemode: failedCodemode }),
     status: "failed",
   };
 }
@@ -1027,6 +1057,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
     resolveSdkToolDisplayDetail(displayName, toolInput);
   const toolUseId = readString(record.tool_use_id);
+  const parentToolCallId = readSdkNestedToolCallId(record);
   const description = displayName === "Bash" ? readBashDescriptionFromToolInput(toolInput) : undefined;
   const fileChange = isFileChangeToolName(displayName)
     ? resolveFileChangeFromToolInput(displayName, toolInput)
@@ -1046,6 +1077,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(imageViewMeta && { imageView: imageViewMeta }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(webSearch && { webSearch }),
+    ...(parentToolCallId && { parentToolCallId }),
     status: "started",
   };
 }

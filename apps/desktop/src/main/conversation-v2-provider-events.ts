@@ -6,7 +6,7 @@ import {
 } from "@eco/shared";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import type { ThreadRunEvent, ThreadRunEventInput } from "../shared/thread-run-events";
-import { isContextCompactionEventType } from "../shared/thread-run-events";
+import { isContextCompactionEventType, parseThreadRunCodemodeMetadata } from "../shared/thread-run-events";
 import {
   legacyMessageId,
   legacyNoticeMessageId,
@@ -96,9 +96,14 @@ export function appendProviderEventToConversationV2(
     suffix: string,
     payload: Record<string, unknown>,
     ids: { messageId?: string; toolCallId?: string } = {},
-    emitOptions: { omitAgentOwnership?: boolean } = {},
+    emitOptions: { omitAgentOwnership?: boolean; parentToolCallId?: string } = {},
   ): void => {
     const sourceEventKey = `${sourceBase}:${suffix}`;
+    // A codemode script's own calls carry their nesting link on the tool metadata, not on the
+    // event: `event.parentToolUseId` is the subagent-ownership link, and PI deliberately leaves it
+    // unset for these rows. V2 has one column for both, and the tool row's copy is what the Feed
+    // reads to keep a script's calls inside the script's card.
+    const parentToolCallId = emitOptions.parentToolCallId ?? event.parentToolUseId;
     const input: ConversationEventInput = {
       conversationId: event.threadId,
       eventId: `legacy_v2_${stableHash(sourceEventKey)}`,
@@ -113,7 +118,7 @@ export function appendProviderEventToConversationV2(
       ...(event.parentAgentId
         ? { parentAgentId: event.parentAgentId, parentAgentInstanceId: event.parentAgentId }
         : {}),
-      ...(event.parentToolUseId ? { parentToolCallId: event.parentToolUseId } : {}),
+      ...(parentToolCallId ? { parentToolCallId } : {}),
       payload,
     };
     const result = options.inCurrentTransaction
@@ -448,6 +453,7 @@ export function appendProviderEventToConversationV2(
         ...(descriptor.output !== undefined ? { output: descriptor.output } : {}),
       },
       { toolCallId: descriptor.toolCallId },
+      descriptor.parentToolCallId ? { parentToolCallId: descriptor.parentToolCallId } : {},
     );
     emitMissingLegacyToolSummary(descriptor, toolProviderRole);
     // Only the synthetic run this tool call invented may be closed here. A tool
@@ -621,6 +627,7 @@ function deriveLegacyToolDescriptor(
   toolCallId: string;
   input?: unknown;
   output?: unknown;
+  parentToolCallId?: string;
 } {
   const message = event.message.trim();
   const nameFromMetadata = typeof tool.name === "string" ? tool.name.trim() : "";
@@ -630,16 +637,36 @@ function deriveLegacyToolDescriptor(
   const metadataDetail = typeof tool.detail === "string" ? tool.detail.trim() : "";
   const messageDetail = message.split(/[·|]/).slice(1).join("·").trim();
   const detail = metadataDetail || messageDetail || undefined;
+  // A codemode script IS the tool's input, and the legacy row carries no `detail` for it, so the
+  // heuristics below would store nothing and the card could only ever show the output. `code` is
+  // the key the renderer reads for the script; the rest of PI's details ride under `codemode`
+  // because the tool row has no column of their own.
+  const codemode = parseThreadRunCodemodeMetadata(tool.codemode);
+  const codemodeInput = codemode
+    ? {
+        ...(codemode.script ? { code: codemode.script } : {}),
+        ...(codemode.calls || codemode.fullOutputPath
+          ? {
+              codemode: {
+                ...(codemode.calls ? { calls: codemode.calls } : {}),
+                ...(codemode.fullOutputPath ? { fullOutputPath: codemode.fullOutputPath } : {}),
+              },
+            }
+          : {}),
+      }
+    : undefined;
   const baseInput =
     tool.input !== undefined
       ? tool.input
-      : detail === undefined
-        ? undefined
-        : isLegacyCommandTool(name)
-          ? { command: detail }
-          : isLegacyPathTool(name)
-            ? { file_path: detail }
-            : { detail };
+      : codemodeInput !== undefined && (codemodeInput.code || codemodeInput.codemode)
+        ? codemodeInput
+        : detail === undefined
+          ? undefined
+          : isLegacyCommandTool(name)
+            ? { command: detail }
+            : isLegacyPathTool(name)
+              ? { file_path: detail }
+              : { detail };
   const input = mergeLegacyToolMetadata(baseInput, tool, event.metadata);
   const output =
     tool.output !== undefined
@@ -647,11 +674,13 @@ function deriveLegacyToolDescriptor(
       : typeof tool.outputPreview === "string"
         ? tool.outputPreview
         : undefined;
+  const parentToolCallId = typeof tool.parentToolCallId === "string" ? tool.parentToolCallId.trim() : "";
   return {
     name,
     toolCallId,
     ...(input !== undefined ? { input } : {}),
     ...(output !== undefined ? { output } : {}),
+    ...(parentToolCallId ? { parentToolCallId } : {}),
   };
 }
 

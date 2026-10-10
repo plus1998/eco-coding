@@ -610,6 +610,7 @@ export function mapPiSessionEventToAgentEvents(
       const resultText = formatToolResult(event.result);
       const parentToolCallId = readPiParentToolCallId(event) ?? pending?.parentToolCallId;
       const structuredContent = readPiStructuredContent(event.result);
+      const codemodeDetails = readPiCodemodeDetails(event.result);
       return [
         createAgentEvent({
           id: `${ctx.threadId}:pi:${seq}:tool_end:${toolCallId}`,
@@ -623,6 +624,7 @@ export function mapPiSessionEventToAgentEvents(
                 input,
                 message: resultText || "Tool execution failed.",
                 ...piNestedToolCallPayload(parentToolCallId),
+                ...(codemodeDetails ? { codemodeDetails } : {}),
               }
             : {
                 type: "tool_result",
@@ -632,6 +634,7 @@ export function mapPiSessionEventToAgentEvents(
                 content: resultText,
                 ...(structuredContent !== undefined && { structuredContent }),
                 ...piNestedToolCallPayload(parentToolCallId),
+                ...(codemodeDetails ? { codemodeDetails } : {}),
               },
         }),
       ];
@@ -1010,6 +1013,22 @@ function readPiStructuredContent(result: unknown): unknown {
     return undefined;
   }
   return result.structuredContent;
+}
+
+/**
+ * PI's codemode reports the calls its script made, plus the temp file holding untruncated output,
+ * in the tool result's `details` (`CodemodeToolDetails`). `formatToolResult` keeps only the text,
+ * so without this the script's card loses the calls that never produced their own tool event —
+ * calls cancelled when the script ended — and the pointer to the full output.
+ *
+ * Keyed on `details.calls` rather than the tool name: PI assigns each nested call the id of the
+ * tool event it caused, which is how the Feed tells these rows apart from the script's own.
+ */
+function readPiCodemodeDetails(result: unknown): unknown {
+  if (!isRecord(result) || !isRecord(result.details) || !Array.isArray(result.details.calls)) {
+    return undefined;
+  }
+  return result.details;
 }
 
 function formatToolResult(result: unknown): string {

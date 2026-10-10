@@ -201,6 +201,125 @@ test("native tools require explicit run ownership and never invent synthetic run
   }
 });
 
+test("a codemode script's own calls keep the script as their parent tool", () => {
+  const { db, v2, writer } = setup();
+  try {
+    writer.append({
+      threadId: "thread",
+      id: "script-start",
+      runAttemptId: "run",
+      eventType: "tool.started",
+      role: "tool",
+      scope: "main",
+      streamState: "final",
+      message: "Tool: codemode",
+      observedAt: "2026-09-18T00:00:01Z",
+      metadata: { tool: { toolUseId: "code_1", name: "codemode", input: { code: "tools.bash({});" } } },
+    });
+    // PI issues the nested call itself and names the script as its parent. The link must reach the
+    // tool row, or the Feed counts the script's own calls as commands the model issued.
+    writer.append({
+      threadId: "thread",
+      id: "nested-start",
+      runAttemptId: "run",
+      eventType: "tool.started",
+      role: "tool",
+      scope: "main",
+      streamState: "final",
+      message: "Tool: Bash",
+      observedAt: "2026-09-18T00:00:02Z",
+      metadata: {
+        tool: {
+          toolUseId: "code_1/1",
+          name: "Bash",
+          input: { command: "echo one" },
+          parentToolCallId: "code_1",
+        },
+      },
+    });
+    writer.append({
+      threadId: "thread",
+      id: "nested-end",
+      runAttemptId: "run",
+      eventType: "tool.completed",
+      role: "tool",
+      scope: "main",
+      streamState: "final",
+      message: "Tool: Bash",
+      observedAt: "2026-09-18T00:00:03Z",
+      metadata: { tool: { toolUseId: "code_1/1", name: "Bash", outputPreview: "one", parentToolCallId: "code_1" } },
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT tool_call_id, parent_tool_call_id, status FROM conversation_tool_calls_v2 ORDER BY tool_call_id",
+        )
+        .all(),
+    ).toEqual([
+      { tool_call_id: "code_1", parent_tool_call_id: null, status: "running" },
+      { tool_call_id: "code_1/1", parent_tool_call_id: "code_1", status: "completed" },
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
+test("the store's own append keeps a codemode call's link to the script that made it", () => {
+  // The live chain appends through ConversationStore, which sanitizes tool metadata field by field
+  // before the writer sees it. A link that survives the writer but not the sanitizer never reaches
+  // the row, and the Feed reads the script's own calls as commands the model issued.
+  const db = new DatabaseSync(":memory:");
+  try {
+    const store = new ConversationStore(db, { freshStorageMode: "v2_only" });
+    store.initialize();
+    store.conversationV2().ensureConversation("thread");
+    store.upsertRunAttempt({
+      threadId: "thread",
+      attemptId: "run",
+      phase: "execution",
+      retryIndex: 0,
+      status: "running",
+      startedAt: "2026-09-18T00:00:00Z",
+    });
+    store.appendConversationRuntimeEvent({
+      threadId: "thread",
+      id: "script-end",
+      runAttemptId: "run",
+      eventType: "tool.completed",
+      role: "tool",
+      scope: "main",
+      streamState: "final",
+      message: "Tool: codemode",
+      observedAt: "2026-09-18T00:00:02Z",
+      metadata: { tool: { toolUseId: "code_1", name: "codemode", outputPreview: "one" } },
+    });
+    store.appendConversationRuntimeEvent({
+      threadId: "thread",
+      id: "nested-end",
+      runAttemptId: "run",
+      eventType: "tool.completed",
+      role: "tool",
+      scope: "main",
+      streamState: "final",
+      message: "Tool: Bash",
+      observedAt: "2026-09-18T00:00:03Z",
+      metadata: { tool: { toolUseId: "code_1/1", name: "Bash", outputPreview: "one", parentToolCallId: "code_1" } },
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT tool_call_id, parent_tool_call_id FROM conversation_tool_calls_v2 ORDER BY tool_call_id",
+        )
+        .all(),
+    ).toEqual([
+      { tool_call_id: "code_1", parent_tool_call_id: null },
+      { tool_call_id: "code_1/1", parent_tool_call_id: "code_1" },
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
 test("a child lifecycle terminal event keeps its original run and role after the parent starts another run", () => {
   const { db, v2, writer } = setup();
   try {

@@ -48,6 +48,7 @@ import {
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import {
   mergeThreadRunImageViewMetadata,
+  parseThreadRunCodemodeMetadata,
   parseThreadRunImageViewMetadata,
 } from "../shared/thread-run-events";
 import { keepsOutputPreview, projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
@@ -9962,7 +9963,9 @@ function isRicherThreadRunToolMetadata(
         incoming.imageView ||
         incoming.imageDisplay ||
         incoming.htmlHost ||
-        incoming.mcpDiscovery,
+        incoming.mcpDiscovery ||
+        incoming.codemode ||
+        incoming.parentToolCallId,
     );
   }
   if (existing.name !== incoming.name) {
@@ -9983,7 +9986,9 @@ function isRicherThreadRunToolMetadata(
       (incoming.imageView && !isSameJsonValue(incoming.imageView, existing.imageView)) ||
       (incoming.imageDisplay && !isSameJsonValue(incoming.imageDisplay, existing.imageDisplay)) ||
       (incoming.htmlHost && !isSameJsonValue(incoming.htmlHost, existing.htmlHost)) ||
-      (incoming.mcpDiscovery && !isSameJsonValue(incoming.mcpDiscovery, existing.mcpDiscovery)),
+      (incoming.mcpDiscovery && !isSameJsonValue(incoming.mcpDiscovery, existing.mcpDiscovery)) ||
+      (incoming.codemode && !isSameJsonValue(incoming.codemode, existing.codemode)) ||
+      (incoming.parentToolCallId && incoming.parentToolCallId !== existing.parentToolCallId),
   );
 }
 
@@ -10011,6 +10016,7 @@ function readThreadRunToolMetadata(
   const htmlHost = parseThreadRunHtmlHostMetadata(raw.htmlHost);
   const mcpDiscovery = parseThreadRunMcpDiscoveryMetadata(raw.mcpDiscovery);
   const webSearch = parseThreadRunWebSearchMetadata(raw.webSearch);
+  const codemode = parseThreadRunCodemodeMetadata(raw.codemode);
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
@@ -10038,6 +10044,9 @@ function readThreadRunToolMetadata(
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(sendMessage && { sendMessage }),
     ...(webSearch && { webSearch }),
+    ...(typeof raw.parentToolCallId === "string" &&
+      raw.parentToolCallId.trim() && { parentToolCallId: raw.parentToolCallId.trim() }),
+    ...(codemode && { codemode }),
   };
 }
 

@@ -1894,3 +1894,114 @@ test("PiCodingAgentDriver passes planner thinkingEffort into PI session thinking
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+test("codemode reports its nested calls and full-output path on the tool result", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "code_1",
+      toolName: "codemode",
+      args: { code: 'await tools.bash({ command: "ls" });' },
+    },
+    ctx,
+  );
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "code_1",
+      toolName: "codemode",
+      result: {
+        content: [{ type: "text", text: "Script completed\nWall time 1.20 seconds\nOutput:\n12" }],
+        details: {
+          fullOutputPath: "/tmp/pi-out-1.txt",
+          calls: [
+            { id: "code_1/1", name: "bash", args: '{"command":"ls"}', status: "ok", durationMs: 120 },
+            // Cancelled when the script ended: it never produced its own tool event.
+            { id: "code_1/?", name: "read", args: '{"path":"a.ts"}', status: "cancelled" },
+          ],
+        },
+      },
+      isError: false,
+    },
+    ctx,
+  );
+  const payload = end[0]?.payload;
+  expect(isRecord(payload) ? payload.codemodeDetails : undefined).toEqual({
+    fullOutputPath: "/tmp/pi-out-1.txt",
+    calls: [
+      { id: "code_1/1", name: "bash", args: '{"command":"ls"}', status: "ok", durationMs: 120 },
+      { id: "code_1/?", name: "read", args: '{"path":"a.ts"}', status: "cancelled" },
+    ],
+  });
+});
+
+test("a failed codemode script keeps its nested-call details", () => {
+  const ctx = makeCtx();
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "code_2",
+      toolName: "codemode",
+      result: {
+        content: [
+          { type: "text", text: "Script failed\nWall time 0.40 seconds\nOutput:\n\nScript error: Error: boom" },
+        ],
+        details: { calls: [{ id: "code_2/1", name: "read", args: "{}", status: "error", error: "boom" }] },
+      },
+      isError: true,
+    },
+    ctx,
+  );
+  const payload = end[0]?.payload;
+  expect(end[0]?.type).toBe("tool.failed");
+  expect(isRecord(payload) ? payload.codemodeDetails : undefined).toEqual({
+    calls: [{ id: "code_2/1", name: "read", args: "{}", status: "error", error: "boom" }],
+  });
+});
+
+test("a call the codemode script made carries the script as its parent tool call", () => {
+  const ctx = makeCtx();
+  const start = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "code_1/1",
+      toolName: "bash",
+      args: { command: "ls" },
+      parentToolCallId: "code_1",
+    },
+    ctx,
+  );
+  expect(isRecord(start[0]?.payload) ? start[0]?.payload.parent_tool_call_id : undefined).toBe("code_1");
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "code_1/1",
+      toolName: "bash",
+      result: { content: [{ type: "text", text: "a.ts" }], details: {} },
+      isError: false,
+      parentToolCallId: "code_1",
+    },
+    ctx,
+  );
+  expect(isRecord(end[0]?.payload) ? end[0]?.payload.parent_tool_call_id : undefined).toBe("code_1");
+});
+
+test("a tool result with unrelated details carries no codemode details", () => {
+  const ctx = makeCtx();
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "tc_ws",
+      toolName: "web_search",
+      result: {
+        content: [{ type: "text", text: "ok" }],
+        details: { provider: "p", query: "q", results: [{ title: "t", url: "u" }] },
+      },
+      isError: false,
+    },
+    ctx,
+  );
+  const payload = end[0]?.payload;
+  expect(isRecord(payload) ? payload.codemodeDetails : undefined).toBeUndefined();
+});
