@@ -1,4 +1,4 @@
-import { RotateCcw, Search } from "lucide-react";
+import { RefreshCw, RotateCcw, Search } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDiffFileStatus, WorkspaceDiffResult } from "../shared/ipc";
@@ -21,6 +21,9 @@ interface WorkspaceDiffFileTreeProps {
   discardBusy: boolean;
   onSelectPath: (path: string) => void;
   onDiscardPath?: (path: string) => void | Promise<void>;
+  /** Manual reload of the changed-file list; omit to hide the refresh button. */
+  onRefresh?: () => void | Promise<void>;
+  refreshing?: boolean;
 }
 
 function compactSingleChildDirectories(
@@ -145,6 +148,8 @@ export function WorkspaceDiffFileTree({
   discardBusy,
   onSelectPath,
   onDiscardPath,
+  onRefresh,
+  refreshing = false,
 }: WorkspaceDiffFileTreeProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
@@ -164,27 +169,41 @@ export function WorkspaceDiffFileTree({
 
   return (
     <div className="workspace-diff-tree">
-      <label className="workspace-diff-tree__search">
-        <Search size={14} aria-hidden />
-        <input
-          type="search"
-          value={query}
-          placeholder={t("workspace.diff.filterFiles")}
-          aria-label={t("workspace.diff.filterFiles")}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {query ? (
+      <div className="workspace-diff-tree__toolbar" aria-busy={refreshing}>
+        <label className="workspace-diff-tree__search">
+          <Search size={14} aria-hidden />
+          <input
+            type="search"
+            value={query}
+            placeholder={t("workspace.diff.filterFiles")}
+            aria-label={t("workspace.diff.filterFiles")}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query ? (
+            <button
+              type="button"
+              className="workspace-diff-tree__clear"
+              aria-label={t("common.clear")}
+              title={t("common.clear")}
+              onClick={() => setQuery("")}
+            >
+              ×
+            </button>
+          ) : null}
+        </label>
+        {onRefresh ? (
           <button
             type="button"
-            className="workspace-diff-tree__clear"
-            aria-label={t("common.clear")}
-            title={t("common.clear")}
-            onClick={() => setQuery("")}
+            className="workspace-diff-tree__refresh"
+            aria-label={t("common.refresh")}
+            title={t("common.refresh")}
+            disabled={refreshing}
+            onClick={() => void onRefresh()}
           >
-            ×
+            <RefreshCw size={14} className={refreshing ? "spinning" : undefined} aria-hidden />
           </button>
         ) : null}
-      </label>
+      </div>
       {files.length === 0 || filteredFiles.length === 0 ? (
         <p className="workspace-diff-drawer-files-empty">{t("workspace.diff.noMatchingFiles")}</p>
       ) : (

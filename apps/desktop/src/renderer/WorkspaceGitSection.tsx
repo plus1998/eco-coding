@@ -112,6 +112,9 @@ export function WorkspaceGitSection({
   const [changesLoading, setChangesLoading] = useState(false);
   const [changesError, setChangesError] = useState<string | undefined>();
   const [changesDiff, setChangesDiff] = useState<WorkspaceDiffResult | undefined>();
+  const [changesRevision, setChangesRevision] = useState(0);
+  const changesDiffRef = useRef<WorkspaceDiffResult | undefined>(undefined);
+  changesDiffRef.current = changesDiff;
   const [selectedChangePath, setSelectedChangePath] = useState<string | undefined>();
   const [discardBusy, setDiscardBusy] = useState(false);
   const [remoteSyncOperation, setRemoteSyncOperation] = useState<"fetch" | "pull">();
@@ -268,7 +271,7 @@ export function WorkspaceGitSection({
     };
   }, [branchMenuOpen, closeBranchMenu]);
 
-  async function reloadChangesDiff(preferredPath?: string) {
+  async function reloadChangesDiff(preferredPath?: string, options?: { manual?: boolean }) {
     if (!workspacePath || !window.eco) {
       return;
     }
@@ -279,6 +282,10 @@ export function WorkspaceGitSection({
     try {
       const result = await window.eco.getWorkspaceDiff(workspacePath);
       setChangesDiff(result);
+      if (options?.manual) {
+        // A manual refresh must also drop the cached per-file diffs.
+        setChangesRevision((current) => current + 1);
+      }
       const nextPath =
         preferredPath && result.files.some((file) => file.path === preferredPath)
           ? preferredPath
@@ -289,8 +296,10 @@ export function WorkspaceGitSection({
       const message = caught instanceof Error ? caught.message : String(caught);
       setChangesError(message);
       onChangesDiffError?.(message);
-      setChangesDiff(undefined);
-      setSelectedChangePath(undefined);
+      if (!changesDiffRef.current) {
+        setChangesDiff(undefined);
+        setSelectedChangePath(undefined);
+      }
     } finally {
       setChangesLoading(false);
       onChangesDiffLoadingChange?.(false);
@@ -697,15 +706,18 @@ export function WorkspaceGitSection({
 
       <WorkspaceDiffDrawer
         open={changesDrawerOpen}
-        loading={changesLoading}
+        loading={changesLoading && !changesDiff}
+        refreshing={changesLoading}
         discardBusy={discardBusy}
         {...(changesError && { error: changesError })}
         {...(changesDiff && { diff: changesDiff })}
         {...(selectedChangePath && { selectedPath: selectedChangePath })}
         loadFileDiff={loadFileDiff}
+        revision={changesRevision}
         onSelectPath={setSelectedChangePath}
         onDiscardPath={(path) => void handleDiscardChange(path)}
         onDiscardAll={() => void handleDiscardAllChanges()}
+        onRefresh={() => void reloadChangesDiff(selectedChangePath, { manual: true })}
         onClose={closeChangesDrawer}
       />
 

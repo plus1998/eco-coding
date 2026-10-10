@@ -68,9 +68,12 @@ interface WorkspaceDiffDrawerProps {
   diff?: WorkspaceDiffResult;
   selectedPath?: string;
   loadFileDiff?: LoadWorkspaceFileDiff;
+  revision?: number;
   onSelectPath: (path: string) => void;
   onDiscardPath?: (path: string) => void | Promise<void>;
   onDiscardAll?: () => void | Promise<void>;
+  onRefresh?: () => void | Promise<void>;
+  refreshing?: boolean;
   onClose: () => void;
 }
 
@@ -82,9 +85,13 @@ export interface WorkspaceDiffPanelProps {
   selectedPath?: string;
   loadFileDiff?: LoadWorkspaceFileDiff;
   showHeader?: boolean;
+  /** Bump to drop the per-file diff cache (e.g. after a manual refresh). */
+  revision?: number;
   onSelectPath: (path: string) => void;
   onDiscardPath?: (path: string) => void | Promise<void>;
   onDiscardAll?: () => void | Promise<void>;
+  onRefresh?: () => void | Promise<void>;
+  refreshing?: boolean;
   onClose?: () => void;
 }
 
@@ -216,18 +223,21 @@ export function WorkspaceDiffPanel({
   selectedPath,
   loadFileDiff,
   showHeader = false,
+  revision = 0,
   onSelectPath,
   onDiscardPath,
   onDiscardAll,
+  onRefresh,
+  refreshing = false,
   onClose,
 }: WorkspaceDiffPanelProps) {
   const { t } = useTranslation();
   const files = diff?.files ?? [];
   const activePath = selectedPath ?? files[0]?.path;
   const activeFile = files.find((file) => file.path === activePath);
-  const listRevision = files
+  const listRevision = `${revision}|${files
     .map((file) => `${file.path}:${file.additions}:${file.deletions}:${file.status}`)
-    .join("|");
+    .join("|")}`;
 
   return (
     <>
@@ -272,44 +282,58 @@ export function WorkspaceDiffPanel({
 
       {loading ? (
         <div className="workspace-diff-drawer-state">{t("workspace.diff.loading")}</div>
-      ) : error ? (
+      ) : error && files.length === 0 ? (
         <div className="workspace-diff-drawer-state workspace-diff-drawer-error" role="alert">
           {error}
         </div>
       ) : (
-        <div className="workspace-diff-drawer-body">
-          <div className="workspace-diff-drawer-files">
-            <WorkspaceDiffFileTree
-              files={files}
-              {...(diff?.workspacePath && {
-                rootLabel: diff.workspacePath.split(/[\\/]/).filter(Boolean).slice(-2).join(" / "),
-              })}
-              {...(activePath && { activePath })}
-              discardBusy={discardBusy}
-              onSelectPath={onSelectPath}
-              {...(onDiscardPath && { onDiscardPath })}
-            />
-          </div>
-          <div className="workspace-diff-drawer-preview">
-            {files.length === 0 ? (
-              <div className="workspace-diff-empty-state" role="status">
-                <Diff className="workspace-diff-empty-state__icon" size={48} strokeWidth={1.25} aria-hidden />
-                <p className="workspace-diff-empty-state__title">{t("workspace.diff.emptyTitle")}</p>
-                <p className="workspace-diff-empty-state__hint">{t("workspace.diff.emptyHint")}</p>
-              </div>
-            ) : activePath ? (
-              <WorkspaceDiffFilePreview
-                {...(diff?.workspacePath && { workspacePath: diff.workspacePath })}
-                listRevision={listRevision}
-                activePath={activePath}
-                {...(activeFile && { activeFile })}
-                {...(loadFileDiff && { loadFileDiff })}
+        <>
+          {error ? (
+            <div className="workspace-diff-drawer-error-banner" role="alert">
+              {error}
+            </div>
+          ) : null}
+          <div className="workspace-diff-drawer-body">
+            <div className="workspace-diff-drawer-files">
+              <WorkspaceDiffFileTree
+                files={files}
+                {...(diff?.workspacePath && {
+                  rootLabel: diff.workspacePath.split(/[\\/]/).filter(Boolean).slice(-2).join(" / "),
+                })}
+                {...(activePath && { activePath })}
+                discardBusy={discardBusy}
+                onSelectPath={onSelectPath}
+                {...(onDiscardPath && { onDiscardPath })}
+                {...(onRefresh && { onRefresh })}
+                refreshing={refreshing}
               />
-            ) : (
-              <p className="workspace-diff-empty">{t("workspace.diff.selectFile")}</p>
-            )}
+            </div>
+            <div className="workspace-diff-drawer-preview">
+              {files.length === 0 ? (
+                <div className="workspace-diff-empty-state" role="status">
+                  <Diff
+                    className="workspace-diff-empty-state__icon"
+                    size={48}
+                    strokeWidth={1.25}
+                    aria-hidden
+                  />
+                  <p className="workspace-diff-empty-state__title">{t("workspace.diff.emptyTitle")}</p>
+                  <p className="workspace-diff-empty-state__hint">{t("workspace.diff.emptyHint")}</p>
+                </div>
+              ) : activePath ? (
+                <WorkspaceDiffFilePreview
+                  {...(diff?.workspacePath && { workspacePath: diff.workspacePath })}
+                  listRevision={listRevision}
+                  activePath={activePath}
+                  {...(activeFile && { activeFile })}
+                  {...(loadFileDiff && { loadFileDiff })}
+                />
+              ) : (
+                <p className="workspace-diff-empty">{t("workspace.diff.selectFile")}</p>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );
@@ -323,9 +347,12 @@ export function WorkspaceDiffDrawer({
   diff,
   selectedPath,
   loadFileDiff,
+  revision = 0,
   onSelectPath,
   onDiscardPath,
   onDiscardAll,
+  onRefresh,
+  refreshing = false,
   onClose,
 }: WorkspaceDiffDrawerProps) {
   const { t } = useTranslation();
@@ -363,9 +390,12 @@ export function WorkspaceDiffDrawer({
           {...(selectedPath && { selectedPath })}
           {...(loadFileDiff && { loadFileDiff })}
           showHeader
+          revision={revision}
           onSelectPath={onSelectPath}
           {...(onDiscardPath && { onDiscardPath })}
           {...(onDiscardAll && { onDiscardAll })}
+          {...(onRefresh && { onRefresh })}
+          refreshing={refreshing}
           onClose={onClose}
         />
       </aside>

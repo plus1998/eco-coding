@@ -5475,6 +5475,20 @@ button.sidebar-settings-meta {
   color: #f87171;
 }
 
+/* Refresh failed but the previous list is still on screen: report inline instead of
+   replacing the whole panel. */
+.workspace-diff-drawer-error-banner {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, #f87171 34%, var(--border-subtle));
+  background: color-mix(in srgb, #f87171 10%, transparent);
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .workspace-diff-drawer-body {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
@@ -5828,13 +5842,22 @@ button.sidebar-settings-meta {
   background: var(--bg-main, #fff);
 }
 
-.workspace-diff-tree__search {
+.workspace-diff-tree__toolbar {
   display: flex;
-  min-height: 38px;
   flex: 0 0 38px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin: 0 2px 14px;
+}
+
+.workspace-diff-tree__search {
+  display: flex;
+  min-width: 0;
+  min-height: 38px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
   padding: 0 13px;
   border: 1px solid color-mix(in srgb, var(--border-subtle) 88%, #d8d8d8);
   border-radius: 999px;
@@ -5887,6 +5910,43 @@ button.sidebar-settings-meta {
 .workspace-diff-tree__clear:hover {
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
+}
+
+.workspace-diff-tree__refresh {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    color 0.14s ease,
+    transform 0.1s ease-out;
+}
+
+.workspace-diff-tree__refresh:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.workspace-diff-tree__refresh:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.workspace-diff-tree__refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.workspace-diff-tree__refresh:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: 1px;
 }
 
 .workspace-diff-tree__scroll {
@@ -10651,7 +10711,9 @@ button.integrated-web-search-clear-key:disabled {
 .chat-item-loading .spinning,
 .run-log-reconnect-icon.spinning,
 .thread-info-workspace-git .spinning,
-.send-button .spinning {
+.send-button .spinning,
+.workspace-diff-tree__refresh .spinning,
+.workspace-file-browser__refresh .spinning {
   animation: eco-spin 0.8s linear infinite;
 }
 

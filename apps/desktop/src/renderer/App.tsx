@@ -2158,7 +2158,12 @@ function App() {
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
   const [reviewSelectedPath, setReviewSelectedPath] = useState<string>();
+  const [reviewDiffRevision, setReviewDiffRevision] = useState(0);
   const reviewDiffRequestRef = useRef(0);
+  const reviewDiffRef = useRef<WorkspaceDiffResult | undefined>(undefined);
+  /** Set by a manual refresh; the next successful load drops cached per-file diffs. */
+  const reviewDiffManualRefreshRef = useRef(false);
+  reviewDiffRef.current = reviewDiff;
   const [fileTarget, setFileTarget] = useState<
     (WorkspaceFileReference & { requestId: number; restricted?: boolean }) | undefined
   >();
@@ -3668,6 +3673,7 @@ function App() {
   }, [scheduledMessagesReveal, activeThread?.id, currentProjectPath, activityWorkspaceLayoutMode]);
   useEffect(() => {
     reviewDiffRequestRef.current += 1;
+    reviewDiffManualRefreshRef.current = false;
     setReviewDiff(undefined);
     setReviewDiffLoading(false);
     setReviewDiffError(undefined);
@@ -8655,6 +8661,12 @@ function App() {
   const handleChangesDiffLoaded = useCallback(
     async (diff: WorkspaceDiffResult) => {
       setReviewDiff(diff);
+      if (reviewDiffManualRefreshRef.current) {
+        reviewDiffManualRefreshRef.current = false;
+        // Only a manual refresh forces a per-file diff refetch: an automatic reload
+        // already invalidates the cache through its path/stat signature.
+        setReviewDiffRevision((current) => current + 1);
+      }
       setReviewDiffError(undefined);
       setReviewSelectedPath((current) =>
         current && diff.files.some((file) => file.path === current) ? current : diff.files[0]?.path,
@@ -8684,10 +8696,17 @@ function App() {
 
   const handleChangesDiffError = useCallback((message?: string) => {
     setReviewDiffError(message);
-    if (message) {
-      setReviewDiff(undefined);
-      setReviewSelectedPath(undefined);
+    if (!message) {
+      return;
     }
+    reviewDiffManualRefreshRef.current = false;
+    if (reviewDiffRef.current) {
+      // A failed refresh keeps the last good list on screen (shown as an inline error
+      // banner); wiping it would throw away the file the reviewer is reading.
+      return;
+    }
+    setReviewDiff(undefined);
+    setReviewSelectedPath(undefined);
   }, []);
 
   const refreshReviewDiff = useCallback(async () => {
@@ -8707,6 +8726,11 @@ function App() {
     });
   }, [currentProjectPath, handleChangesDiffError, handleChangesDiffLoaded, handleChangesDiffLoadingChange]);
   refreshReviewDiffRef.current = refreshReviewDiff;
+
+  const requestReviewDiffRefresh = useCallback(() => {
+    reviewDiffManualRefreshRef.current = true;
+    void refreshReviewDiff();
+  }, [refreshReviewDiff]);
 
   const openTaskPanelHomeTool = useCallback(
     async (sourceTabId: string, tool: TaskPanelHomeTool) => {
@@ -10576,6 +10600,8 @@ function App() {
             reviewLoading={reviewDiffLoading}
             {...(reviewDiffError && { reviewError: reviewDiffError })}
             {...(reviewSelectedPath && { reviewSelectedPath })}
+            reviewRevision={reviewDiffRevision}
+            onRefreshReview={requestReviewDiffRefresh}
             onSelectAgent={(agentId) => {
               setTaskPanelActiveTab(agentId);
               setSelectedSubagentAgentId(agentId);

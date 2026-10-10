@@ -704,6 +704,8 @@ export function SubagentTaskDrawer({
   reviewLoading,
   reviewError,
   reviewSelectedPath,
+  reviewRevision,
+  onRefreshReview,
   onSelectAgent,
   onSelectPlan,
   onCloseTab,
@@ -756,6 +758,9 @@ export function SubagentTaskDrawer({
   reviewLoading?: boolean;
   reviewError?: string;
   reviewSelectedPath?: string;
+  /** Bumped when the reviewer refreshes manually, to drop cached per-file diffs. */
+  reviewRevision?: number;
+  onRefreshReview?: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPlan: () => void;
   onCloseTab: (tabId: TaskPanelActiveTab) => void;
@@ -1303,12 +1308,15 @@ export function SubagentTaskDrawer({
             role="tabpanel"
           >
             <WorkspaceDiffPanel
-              loading={reviewLoading ?? false}
+              loading={(reviewLoading ?? false) && !reviewDiff}
+              refreshing={reviewLoading ?? false}
               {...(reviewError && { error: reviewError })}
               {...(reviewDiff && { diff: reviewDiff })}
               {...(reviewSelectedPath && { selectedPath: reviewSelectedPath })}
               loadFileDiff={loadFileDiff}
+              revision={reviewRevision ?? 0}
               onSelectPath={onSelectReviewPath}
+              {...(onRefreshReview && { onRefresh: onRefreshReview })}
             />
           </div>
         ) : null}
