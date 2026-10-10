@@ -42,6 +42,7 @@ export type ThreadRunEventType =
   | "thinking.delta"
   | "thinking.final"
   | "tool.started"
+  | "tool.writing"
   | "tool.completed"
   | "tool.failed"
   | "api.error"

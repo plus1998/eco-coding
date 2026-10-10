@@ -9,6 +9,7 @@ import type {
   GatewayConfig,
   GatewayProvider,
   GatewayRequestLifecycleObserver,
+  GatewayToolWriteObserver,
   GatewayUsageObserver,
 } from "./types.js";
 import { GATEWAY_AGENT_CORES } from "./upstream/user-agent.js";
@@ -45,6 +46,11 @@ export interface StartEcoGatewayOptions {
   onUsage?: GatewayUsageObserver;
   onRequestLifecycle?: GatewayRequestLifecycleObserver;
   /**
+   * The model began writing a tool call. Codex's app-server reports a tool only once its
+   * arguments are complete, so this is the only signal for the (often minute-long) write.
+   */
+  onToolWriteStarted?: GatewayToolWriteObserver;
+  /**
    * When true, do not bind a public TCP port. Desktop Bridge owns the public
    * listener and calls handleRequest in-process.
    */
@@ -64,6 +70,7 @@ export function createGatewayFetchHandler(
   onRequestLifecycle?: GatewayRequestLifecycleObserver,
   onProvidersChanged?: (providers: readonly GatewayProvider[]) => void,
   resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined,
+  onToolWriteStarted?: GatewayToolWriteObserver,
 ): (request: Request) => Response | Promise<Response> {
   return async (request: Request) => {
     const url = new URL(request.url);
@@ -97,6 +104,7 @@ export function createGatewayFetchHandler(
         onUsage,
         onRequestLifecycle,
         resolveEcoThreadIdFromCodex,
+        onToolWriteStarted,
       );
       onLog(`POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
@@ -235,6 +243,7 @@ export async function startEcoGateway(
         }
       : undefined,
     options?.resolveEcoThreadIdFromCodex,
+    options?.onToolWriteStarted,
   );
 
   let server: http.Server | undefined;

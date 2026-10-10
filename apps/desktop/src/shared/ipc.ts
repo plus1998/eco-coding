@@ -416,6 +416,8 @@ export type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
   ThreadRunProjectionUsage,
+  ThreadRunProjectionWritingTool,
+  ToolWritingActivity,
 } from "./conversation-v2-projection";
 export type {
   CursorAgentInfo,

@@ -897,36 +897,40 @@ test("emits failed Edit results with the original file change metadata", () => {
 
 test("defers streaming tool placeholder until input is complete", () => {
   const bridge = new SdkStreamActivityBridge();
-  const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];
+  const emitted: Array<{
+    type: string;
+    message: string;
+    stream: boolean;
+    tool?: { name: string; detail?: string };
+    metadata?: Record<string, unknown>;
+  }> = [];
   const emit = (
     _threadId: string,
-    _type: string,
+    type: string,
     message: string,
     _role: string,
-    _stream: boolean,
+    stream: boolean,
     _agentId?: string,
-    extras?: { tool?: { name: string; detail?: string } },
+    extras?: { tool?: { name: string; detail?: string }; metadata?: Record<string, unknown> },
   ) => {
     emitted.push({
+      type,
       message,
+      stream,
       ...(extras?.tool && { tool: extras.tool }),
+      ...(extras?.metadata && { metadata: extras.metadata }),
     });
   };
 
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.started",
-      role: "planner",
-      payload: {
-        type: "tool_use",
-        tool_name: "mcp__eco_plan__finalize_plan",
-        tool_use_id: "toolu_plan",
-        streaming: true,
-      },
-    },
-    emit,
-  );
+  const placeholder = {
+    type: "tool_use",
+    tool_name: "mcp__eco_plan__finalize_plan",
+    tool_use_id: "toolu_plan",
+    streaming: true,
+  } as const;
+  bridge.handleEvent("thr_1", { type: "tool.started", role: "planner", payload: placeholder }, emit);
+  // Providers stream one placeholder per argument fragment; the state changes once.
+  bridge.handleEvent("thr_1", { type: "tool.started", role: "planner", payload: placeholder }, emit);
   bridge.handleEvent(
     "thr_1",
     {
@@ -944,9 +948,43 @@ test("defers streaming tool placeholder until input is complete", () => {
     emit,
   );
 
-  expect(emitted).toHaveLength(1);
-  expect(emitted[0]?.message).toBe("Tool: mcp__eco_plan__finalize_plan");
-  expect(emitted[0]?.tool?.name).toBe("mcp__eco_plan__finalize_plan");
+  // One "still writing" fact, then the real tool row — never a card for the partial input.
+  expect(emitted.map((event) => event.type)).toEqual(["tool.writing", "tool.started"]);
+  expect(emitted[0]?.message).toBe("mcp__eco_plan__finalize_plan");
+  expect(emitted[0]?.tool).toBeUndefined();
+  expect(emitted[0]?.stream).toBe(false);
+  expect(emitted[0]?.metadata?.toolWriting).toEqual({
+    name: "mcp__eco_plan__finalize_plan",
+    kind: "tool",
+  });
+  expect(emitted[1]?.message).toBe("Tool: mcp__eco_plan__finalize_plan");
+  expect(emitted[1]?.tool?.name).toBe("mcp__eco_plan__finalize_plan");
+});
+
+test("announces a second tool call in the same run after the first one started", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const announced: string[] = [];
+  const emit = (_threadId: string, type: string, message: string, _role: string, _stream: boolean) => {
+    if (type === "tool.writing") {
+      announced.push(message);
+    }
+  };
+
+  for (const [id, name] of [
+    ["toolu_a", "Read"],
+    ["toolu_b", "Bash"],
+  ] as const) {
+    bridge.handleEvent(
+      "thr_1",
+      {
+        type: "tool.started",
+        role: "planner",
+        payload: { type: "tool_use", tool_name: name, tool_use_id: id, streaming: true },
+      },
+      emit,
+    );
+  }
+  expect(announced).toEqual(["Read", "Bash"]);
 });
 
 test("emits structured SDK tool metadata without parsing display text", () => {

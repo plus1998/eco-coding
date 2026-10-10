@@ -35,8 +35,15 @@ export interface ProbeSessionOptions {
   sessionFile?: string;
   sessionMode?: "agent" | "ask" | "plan";
   mcpStartupWaitMs?: number;
+  /** Explicit, scripted tool allowlist for the session. */
   toolsAllowlist?: string[];
   toolPermissionHandler?: SdkToolPermissionHandler;
+  /**
+   * Stream a tool call's arguments as N delayed `input_json_delta` fragments instead of
+   * one settled chunk. Models really write arguments token by token, and that window is
+   * what the Feed has to narrate — a single chunk would hide it.
+   */
+  streamToolArgs?: { fragments: number; delayMs: number };
 }
 
 export interface ProbeSessionResult {
@@ -53,11 +60,19 @@ export interface ProbeSessionResult {
   runAgain: (mcpServers?: Record<string, unknown>) => Promise<AgentEvent[]>;
 }
 
-function sse(res: http.ServerResponse, payload: ScriptedTurn): void {
+function sse(res: http.ServerResponse, payload: ScriptedTurn, options?: ProbeSessionOptions): void {
   const isText = payload.text !== undefined;
+  const chunked = !isText && options?.streamToolArgs !== undefined;
   const block = isText
     ? { type: "text", text: payload.text }
-    : { type: "tool_use", id: payload.id ?? "call_1", name: payload.tool, input: payload.input ?? {} };
+    : {
+        type: "tool_use",
+        id: payload.id ?? "call_1",
+        name: payload.tool,
+        // Streaming the arguments means the block must open empty; otherwise the call is
+        // already complete at content_block_start and there is no writing window to see.
+        input: chunked ? {} : (payload.input ?? {}),
+      };
   const events: Array<[string, Record<string, unknown>]> = [
     [
       "message_start",
@@ -102,8 +117,37 @@ function sse(res: http.ServerResponse, payload: ScriptedTurn): void {
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
-  for (const [event, data] of events) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  res.end();
+  const write = ([event, data]: [string, Record<string, unknown>]) =>
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const chunkedWrite = !isText && options?.streamToolArgs !== undefined;
+  if (!chunkedWrite) {
+    for (const entry of events) write(entry);
+    res.end();
+    return;
+  }
+  // Emit everything up to the argument delta, then drip the arguments in one fragment at
+  // a time, the way a real model writes them.
+  const deltaIndex = events.findIndex(([event]) => event === "content_block_delta");
+  for (const entry of events.slice(0, deltaIndex)) write(entry);
+  const json = JSON.stringify(payload.input ?? {});
+  const fragments = Math.max(1, options?.streamToolArgs?.fragments ?? 1);
+  const size = Math.max(1, Math.ceil(json.length / fragments));
+  const pieces: string[] = [];
+  for (let offset = 0; offset < json.length; offset += size) pieces.push(json.slice(offset, offset + size));
+  const pump = () => {
+    const piece = pieces.shift();
+    if (piece === undefined) {
+      for (const entry of events.slice(deltaIndex + 1)) write(entry);
+      res.end();
+      return;
+    }
+    write([
+      "content_block_delta",
+      { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: piece } },
+    ]);
+    setTimeout(pump, options?.streamToolArgs?.delayMs ?? 0);
+  };
+  pump();
 }
 
 /**
@@ -138,7 +182,7 @@ export async function runScriptedPiSession(options: ProbeSessionOptions): Promis
       // producing tool calls would otherwise spin forever.
       const turn = options.turns[Math.min(turnIndex, options.turns.length - 1)];
       turnIndex += 1;
-      sse(response, turn);
+      sse(response, turn, options);
     });
   });
   await new Promise<void>((resolve, reject) => {

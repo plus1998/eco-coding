@@ -75,14 +75,14 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import {
+  formatCodexAsyncQuestionReplySummary,
+  parseCodexAsyncQuestionReplyText,
+} from "../shared/codex-async-questions";
+import {
   CONVERSATION_RUNTIME_EVENT_FAILURE_ORIGIN,
   CONVERSATION_RUNTIME_EVENT_FAILURE_ROLE,
   CONVERSATION_RUNTIME_EVENT_FAILURE_TITLE,
 } from "../shared/conversation-runtime-event-failure";
-import {
-  formatCodexAsyncQuestionReplySummary,
-  parseCodexAsyncQuestionReplyText,
-} from "../shared/codex-async-questions";
 import {
   type ActionGroupBucket,
   type ActionKindPayload,
@@ -95,7 +95,6 @@ import { resolveFileChangeFromToolInput } from "../shared/file-change";
 import { isEcoImageDisplayToolName } from "../shared/image-display-tool";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import { isEcoWebSearchToolName } from "../shared/integrated-web-search";
-import { isContextCompactionEventType } from "../shared/thread-run-events";
 import type {
   PromptImageAttachment,
   ThreadActivityRewindTarget,
@@ -119,6 +118,7 @@ import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
 import { supportsHistoryRewrite } from "../shared/thread-request-retry";
+import { isContextCompactionEventType } from "../shared/thread-run-events";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import {
   type ActivityFeedLayoutChange,
@@ -200,6 +200,7 @@ import {
   type ThinkingDisplayMode,
   thinkingModeDefaultExpanded,
 } from "./thinking-display-preferences";
+import { resolveToolWritingIndicator, resolveToolWritingLabel } from "./tool-writing-indicator";
 import { UserPromptBodyContent } from "./UserPromptBodyContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
@@ -1558,13 +1559,13 @@ export function mergeConversationV2MessagesIntoProjection(
       (isDeferredAcceptedConversationV2Message(message)
         ? undefined
         : message.role === "user"
-        ? projection.timeline.find(
-            (item) =>
-              isConversationV2MessageTimelineItem(item) &&
-              item.role !== "user" &&
-              item.sequence >= message.createdSeq,
-          )
-        : undefined);
+          ? projection.timeline.find(
+              (item) =>
+                isConversationV2MessageTimelineItem(item) &&
+                item.role !== "user" &&
+                item.sequence >= message.createdSeq,
+            )
+          : undefined);
     const anchor = explicitAnchor ?? runPosition?.anchor ?? fallbackAnchor;
     const item = conversationV2MessageToTimelineItem(message, anchor?.at ?? projection.thread.generatedAt);
     if (anchor) {
@@ -1697,12 +1698,13 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
   // recovery condition; it must render loading/prompt UI instead of reopening the
   // retired projection path.
   const projection = useMemo(
-    () => props.conversationV2
-      ? reconcileActivityProjectionThreadStatus(
-          buildConversationV2OnlyProjection(props.conversationV2, props.thread),
-          props.thread,
-        )
-      : undefined,
+    () =>
+      props.conversationV2
+        ? reconcileActivityProjectionThreadStatus(
+            buildConversationV2OnlyProjection(props.conversationV2, props.thread),
+            props.thread,
+          )
+        : undefined,
     [props.conversationV2, props.thread?.createdAt, props.thread?.status],
   );
   if (!projection?.sourceEventCount) {
@@ -1820,6 +1822,18 @@ export function ConversationV2ProjectionActivityLogView({
     () => new Map(projection.requestSpans.map((span) => [span.requestId, span])),
     [projection.requestSpans],
   );
+  // The one wait the Feed cannot render as a row yet: the model is writing a tool call.
+  const toolWritingIndicator = useMemo(
+    () => resolveToolWritingIndicator(projection.requestSpans),
+    [projection.requestSpans],
+  );
+  const toolWritingLabel = useMemo(() => {
+    if (!toolWritingIndicator) {
+      return undefined;
+    }
+    const label = resolveToolWritingLabel(toolWritingIndicator);
+    return i18n.t(label.key, label.params);
+  }, [toolWritingIndicator, i18n]);
   const resolvedThinkingDisplayMode = thinkingDisplayMode ?? readStoredThinkingDisplayPreferences().mode;
   const viewModel = useMemo(
     () =>
@@ -1990,7 +2004,10 @@ export function ConversationV2ProjectionActivityLogView({
   useComposerAgentSilenceEffect(
     {
       active: conversationActive,
-      feedIndicatorVisible: waitingThinkingVisible || isTailThinkingStreamingLive(viewModel.mainFeedEntries),
+      feedIndicatorVisible:
+        waitingThinkingVisible ||
+        Boolean(toolWritingIndicator) ||
+        isTailThinkingStreamingLive(viewModel.mainFeedEntries),
       signature: layoutSignature,
     },
     onComposerAgentSilenceChange,
@@ -2105,14 +2122,25 @@ export function ConversationV2ProjectionActivityLogView({
               </div>
             ))
           )}
+          {/*
+            `latestContentIsToolGroup` keeps 「正在思考」 and Summary tips from stacking under a tool
+            row — that row owns the slot. It must not swallow the one state that outlives it: a
+            *settled* tool group is not an activity, and the model writing its next call is. A
+            10.9s write after a finished Edit was invisible because of this, with nothing else on
+            the wire to notice it.
+          */}
           {conversationActive &&
           !runningToolVisible &&
           !runningContextCompactionVisible &&
-          !latestContentIsToolGroup ? (
+          (!latestContentIsToolGroup || Boolean(toolWritingIndicator)) ? (
             <RunLogActiveTail
-              waiting={waitingThinkingVisible}
+              waiting={waitingThinkingVisible || Boolean(toolWritingIndicator)}
               stopping={Boolean(thread?.cancelling)}
-              {...(liveReasoningStageLabel ? { label: liveReasoningStageLabel } : {})}
+              {...(toolWritingLabel
+                ? { label: toolWritingLabel }
+                : liveReasoningStageLabel
+                  ? { label: liveReasoningStageLabel }
+                  : {})}
             />
           ) : null}
         </div>
@@ -4132,7 +4160,9 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <UserPromptBlock
         text={item.text}
-        {...(isConversationMessageOrigin(item.metadata?.messageOrigin) ? { origin: item.metadata.messageOrigin } : {})}
+        {...(isConversationMessageOrigin(item.metadata?.messageOrigin)
+          ? { origin: item.metadata.messageOrigin }
+          : {})}
         images={readPromptImagePreviews(item.metadata)}
         anchorId={item.id}
         {...(item.at ? { createdAt: item.at } : {})}
@@ -5690,7 +5720,12 @@ function UserPromptBlock({
       className={["run-log-user-prompt", className].filter(Boolean).join(" ")}
       {...(anchorId && { "data-user-message-anchor-id": anchorId })}
     >
-      {origin && <span className="run-log-user-prompt-origin"><Clock3 size={12} aria-hidden />{i18n.t("scheduling.messageOrigin")}</span>}
+      {origin && (
+        <span className="run-log-user-prompt-origin">
+          <Clock3 size={12} aria-hidden />
+          {i18n.t("scheduling.messageOrigin")}
+        </span>
+      )}
       {editing ? (
         <div
           className="run-log-user-prompt-edit"
@@ -6768,7 +6803,11 @@ function RunLogAction({
     <>
       <RunLogActionIcon icon={icon} {...(lifecycle && { lifecycle })} />
       <span ref={labelRef} className="run-log-action-label">
-        {icon === "context" && lifecycle === "running" ? <ShimmerText>{displayLabel}</ShimmerText> : displayLabel}
+        {icon === "context" && lifecycle === "running" ? (
+          <ShimmerText>{displayLabel}</ShimmerText>
+        ) : (
+          displayLabel
+        )}
         {elapsedInline && elapsedLabel ? (
           <span className="run-log-action-elapsed run-log-action-elapsed--inline">{elapsedLabel}</span>
         ) : null}

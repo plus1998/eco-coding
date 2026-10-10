@@ -15,8 +15,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
-  Cloud,
   Clock3,
+  Cloud,
   Cog,
   CornerDownRight,
   Cpu,
@@ -27,9 +27,9 @@ import {
   Globe2,
   GripVertical,
   HardDrive,
+  KeyRound,
   LoaderCircle,
   type LucideIcon,
-  KeyRound,
   Maximize2,
   MessageCirclePlus,
   MessageSquare,
@@ -95,11 +95,11 @@ import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shar
 import type { IntegrationId } from "../shared/integrations";
 import {
   type AppMenuCommand,
+  type ApprovalModelSelection,
   type AsrProfileSaveInput,
   type AsrProfileSnapshot,
   type AsrProfilesSnapshot,
   type AuxiliaryModelSelection,
-  type ApprovalModelSelection,
   type BackgroundTerminalTask,
   type BashApprovalRequest,
   buildThreadRuntimeConfigFromDefaults,
@@ -164,12 +164,12 @@ import {
   type ThreadSubagentMetricsSummary,
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
+  UPSTREAM_AGENT_CORES,
+  type UpstreamAgentCore,
   type VisionModelSelection,
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceInfo,
-  type UpstreamAgentCore,
-  UPSTREAM_AGENT_CORES,
 } from "../shared/ipc";
 import type { AppLocalePreference } from "../shared/locale";
 import {
@@ -183,6 +183,7 @@ import {
   resolvePromptCacheOrchestrationLabel,
 } from "../shared/prompt-cache-config";
 import { resolveDraftCoreKindWhenAcpHidden } from "../shared/resolve-draft-core-kind-when-acp-hidden";
+import type { ScheduleDefinition } from "../shared/scheduling";
 import {
   dedupeSkillsByName,
   isSkillAvailableForCore,
@@ -253,7 +254,6 @@ import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashAppro
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT, openPublishedHtmlInBrowser } from "./browser-link";
 import { browserStateStore, useBrowserInstanceIds } from "./browser-state-store";
 import { ClarificationPanel } from "./ClarificationPanel";
-import { createClarificationQueueSync } from "./clarification-queue-sync";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
@@ -275,6 +275,7 @@ import { ComposerSkillsControl } from "./ComposerSkillsControl";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
 import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
+import { createClarificationQueueSync } from "./clarification-queue-sync";
 import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
 import {
   COMPOSER_MAX_IMAGES,
@@ -290,11 +291,6 @@ import {
   captureComposerBeforeFollowUpEdit,
   resolveComposerAfterFollowUpEdit,
 } from "./composer-follow-up-edit-draft";
-import {
-  resolveComposerContextPrompt,
-  type ComposerPlanHandoff,
-  resolveComposerPlanRuntimeConfig,
-} from "./composer-plan-handoff";
 import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
   composerRequiresOrchestration,
@@ -302,6 +298,11 @@ import {
   isBuiltInOpenAiProvider,
   resolveComposerModelAvailability,
 } from "./composer-model-availability";
+import {
+  type ComposerPlanHandoff,
+  resolveComposerContextPrompt,
+  resolveComposerPlanRuntimeConfig,
+} from "./composer-plan-handoff";
 import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
 import {
   applySlashSkillSelection,
@@ -363,8 +364,8 @@ import {
   LazyOpenAIAccountsPanel,
   LazyPersonalizationSettingsPanel,
   LazyProxySettingsPanel,
-  LazySchedulingPanel,
   LazyScheduledMessageDialog,
+  LazySchedulingPanel,
   LazySkillsSettingsPanel,
   LazyStorageSettingsPanel,
   LazySubagentTaskDrawer,
@@ -392,11 +393,15 @@ import {
   sortThreadsForSidebar,
 } from "./project-sidebar-order";
 import {
+  shouldRefreshConversationV2ProjectionExtras,
+  TOOL_WRITING_REFRESH_LIVE_TYPES,
+} from "./projection-extras-refresh";
+import {
   type PromptCacheTipPreferences,
   persistPromptCacheTipPreferences,
   readStoredPromptCacheTipPreferences,
 } from "./prompt-cache-tip-preferences";
-import { readUserPromptRetryIdentity, type RequestFailureRetryTarget } from "./request-failure-retry";
+import { type RequestFailureRetryTarget, readUserPromptRetryIdentity } from "./request-failure-retry";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SettingsSyncControl } from "./SettingsSyncControl";
@@ -421,6 +426,8 @@ import {
   resolveTaskPanelReopenTab,
 } from "./task-panel-tab-state";
 import {
+  isNewTaskPanelTabId,
+  newTaskPanelTabId,
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
   TASK_PANEL_FILE_VIEWER_TAB_ID,
   TASK_PANEL_FILES_TAB_ID,
@@ -430,8 +437,6 @@ import {
   TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
   type TaskPanelActiveTab,
   type TaskPanelHomeTool,
-  isNewTaskPanelTabId,
-  newTaskPanelTabId,
 } from "./task-panel-tabs";
 import {
   createProjectTerminalState,
@@ -485,11 +490,10 @@ import {
   readStoredTypographyPreferences,
   type TypographyPreferences,
 } from "./typography-preferences";
+import { useSchedulingSnapshot } from "./use-scheduling-snapshot";
 import { installVitePreloadRecovery } from "./vite-preload-recovery";
 import { WebChatListPopover } from "./WebChatListPopover";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
-import { useSchedulingSnapshot } from "./use-scheduling-snapshot";
-import type { ScheduleDefinition } from "../shared/scheduling";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import {
   isAbsoluteLocalFilePath,
@@ -1154,9 +1158,18 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [schedulingOpen, setSchedulingOpen] = useState(false);
   const scheduling = useSchedulingSnapshot();
-  const scheduledMessages = useMemo(() => scheduling.snapshot.schedules.filter(item => item.kind === "session_message"), [scheduling.snapshot.schedules]);
-  const [scheduledMessageEditor, setScheduledMessageEditor] = useState<{ threadId: string; definition?: ScheduleDefinition }>();
-  const [scheduledMessagesReveal, setScheduledMessagesReveal] = useState<{ threadId: string; requestId: number }>();
+  const scheduledMessages = useMemo(
+    () => scheduling.snapshot.schedules.filter((item) => item.kind === "session_message"),
+    [scheduling.snapshot.schedules],
+  );
+  const [scheduledMessageEditor, setScheduledMessageEditor] = useState<{
+    threadId: string;
+    definition?: ScheduleDefinition;
+  }>();
+  const [scheduledMessagesReveal, setScheduledMessagesReveal] = useState<{
+    threadId: string;
+    requestId: number;
+  }>();
   const [ecoConnectLink, setEcoConnectLink] = useState<EcoConnectDeepLink>();
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(compactSidebarMediaQuery).matches);
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
@@ -1574,16 +1587,19 @@ function App() {
   const [pendingClarificationsByThread, setPendingClarificationsByThread] = useState<
     Record<string, ClarificationRequest>
   >({});
-  const [refreshPendingClarificationForThread] = useState(() => createClarificationQueueSync({
-    getPending: (threadId) => {
-      if (!window.eco) throw new Error("Desktop clarification bridge is unavailable.");
-      return window.eco.getPendingClarification(threadId);
-    },
-    apply: (threadId, request) => setPendingClarificationsByThread((current) => {
-      if (current[threadId]?.toolUseId === request?.toolUseId) return current;
-      return request ? { ...current, [threadId]: request } : removeRecordKey(current, threadId);
+  const [refreshPendingClarificationForThread] = useState(() =>
+    createClarificationQueueSync({
+      getPending: (threadId) => {
+        if (!window.eco) throw new Error("Desktop clarification bridge is unavailable.");
+        return window.eco.getPendingClarification(threadId);
+      },
+      apply: (threadId, request) =>
+        setPendingClarificationsByThread((current) => {
+          if (current[threadId]?.toolUseId === request?.toolUseId) return current;
+          return request ? { ...current, [threadId]: request } : removeRecordKey(current, threadId);
+        }),
     }),
-  }));
+  );
   const [clarificationBusy, setClarificationBusy] = useState(false);
   const [pendingBashApprovalsByThread, setPendingBashApprovalsByThread] = useState<
     Record<string, BashApprovalRequest>
@@ -1664,51 +1680,53 @@ function App() {
     });
     conversationV2RenderFramesRef.current.set(threadId, frame);
   }, []);
-  const scheduleConversationV2LiveFlush = useCallback((threadId: string, immediate = false) => {
-    const pendingTimer = conversationV2LiveFlushTimersRef.current.get(threadId);
-    if (pendingTimer !== undefined) {
-      if (!immediate) return;
-      // A user message can arrive while a stream batch is waiting. Do not
-      // let that older timer delay the prompt acknowledgement.
-      window.clearTimeout(pendingTimer);
-      conversationV2LiveFlushTimersRef.current.delete(threadId);
-    }
-    const pendingEffects = conversationV2LiveEffectsRef.current.get(threadId)?.length ?? 0;
-    const delayMs =
-      immediate
+  const scheduleConversationV2LiveFlush = useCallback(
+    (threadId: string, immediate = false) => {
+      const pendingTimer = conversationV2LiveFlushTimersRef.current.get(threadId);
+      if (pendingTimer !== undefined) {
+        if (!immediate) return;
+        // A user message can arrive while a stream batch is waiting. Do not
+        // let that older timer delay the prompt acknowledgement.
+        window.clearTimeout(pendingTimer);
+        conversationV2LiveFlushTimersRef.current.delete(threadId);
+      }
+      const pendingEffects = conversationV2LiveEffectsRef.current.get(threadId)?.length ?? 0;
+      const delayMs = immediate
         ? 0
         : pendingEffects >= 96
           ? CONVERSATION_V2_LIVE_FLUSH_BACKPRESSURE_MS
           : CONVERSATION_V2_LIVE_FLUSH_TARGET_MS;
-    const timer = window.setTimeout(() => {
-      conversationV2LiveFlushTimersRef.current.delete(threadId);
-      const effects = conversationV2LiveEffectsRef.current.get(threadId);
-      if (!effects || effects.length === 0) return;
-      conversationV2LiveEffectsRef.current.delete(threadId);
-      const existing = conversationV2ByThreadRef.current[threadId];
-      if (!existing) {
-        if (threadId === selectedThreadIdRef.current) {
-          for (const effect of effects) bufferConversationV2Event(threadId, effect);
+      const timer = window.setTimeout(() => {
+        conversationV2LiveFlushTimersRef.current.delete(threadId);
+        const effects = conversationV2LiveEffectsRef.current.get(threadId);
+        if (!effects || effects.length === 0) return;
+        conversationV2LiveEffectsRef.current.delete(threadId);
+        const existing = conversationV2ByThreadRef.current[threadId];
+        if (!existing) {
+          if (threadId === selectedThreadIdRef.current) {
+            for (const effect of effects) bufferConversationV2Event(threadId, effect);
+          }
+          return;
         }
-        return;
-      }
-      try {
-        const appliedState = applyConversationV2Effects(existing, effects);
-        conversationV2ByThreadRef.current = {
-          ...conversationV2ByThreadRef.current,
-          [threadId]: appliedState,
-        };
-        scheduleConversationV2Render(threadId, appliedState);
-        refreshConversationV2ProjectionExtras(threadId);
-      } catch (error) {
-        console.warn("[eco] conversation V2 live batch deferred:", error);
-        if (threadId === selectedThreadIdRef.current) {
-          for (const effect of effects) bufferConversationV2Event(threadId, effect);
+        try {
+          const appliedState = applyConversationV2Effects(existing, effects);
+          conversationV2ByThreadRef.current = {
+            ...conversationV2ByThreadRef.current,
+            [threadId]: appliedState,
+          };
+          scheduleConversationV2Render(threadId, appliedState);
+          refreshConversationV2ProjectionExtras(threadId);
+        } catch (error) {
+          console.warn("[eco] conversation V2 live batch deferred:", error);
+          if (threadId === selectedThreadIdRef.current) {
+            for (const effect of effects) bufferConversationV2Event(threadId, effect);
+          }
         }
-      }
-    }, delayMs);
-    conversationV2LiveFlushTimersRef.current.set(threadId, timer);
-  }, [scheduleConversationV2Render]);
+      }, delayMs);
+      conversationV2LiveFlushTimersRef.current.set(threadId, timer);
+    },
+    [scheduleConversationV2Render],
+  );
   const conversationV2DuplicateVerificationInFlightRef = useRef(new Set<string>());
   const conversationV2ProjectionExtrasInFlightRef = useRef(new Set<string>());
   const conversationV2ProjectionExtrasNextAllowedRef = useRef(new Map<string, number>());
@@ -1825,44 +1843,63 @@ function App() {
     },
     [queueConversationV2Recovery],
   );
-  const refreshConversationV2ProjectionExtras = useCallback((threadId: string) => {
-    const api = window.eco;
-    const current = conversationV2ByThreadRef.current[threadId];
-    const now = Date.now();
-    const nextAllowed = conversationV2ProjectionExtrasNextAllowedRef.current.get(threadId) ?? 0;
-    if (
-      !current ||
-      typeof api?.conversationV2Projection !== "function" ||
-      conversationV2ProjectionExtrasInFlightRef.current.has(threadId) ||
-      now < nextAllowed
-    ) {
-      return;
-    }
-    conversationV2ProjectionExtrasNextAllowedRef.current.set(threadId, now + 1000);
-    conversationV2ProjectionExtrasInFlightRef.current.add(threadId);
-    void api
-      .conversationV2Projection(threadId)
-      .then((extras) => {
-        const latest = conversationV2ByThreadRef.current[threadId];
-        if (!latest || latest.storeEpoch !== current.storeEpoch) {
-          return;
-        }
-        const next = installConversationV2ProjectionExtras(latest, extras);
-        setConversationV2ByThread((states) => {
-          const state = states[threadId];
-          if (!state || state.storeEpoch !== next.storeEpoch || state.appliedSeq !== next.appliedSeq) {
-            return state && state.appliedSeq > next.appliedSeq ? states : { ...states, [threadId]: next };
+  /**
+   * Refresh the mutable V2 panel facts. Normally effect-driven and throttled: they ride on the
+   * event stream, and `getConversationV2ProjectionExtras` re-derives request spans on every call,
+   * so paying for it per streamed token would be waste.
+   *
+   * `force` is for the one fact that has no stream of its own to ride: while the model writes a
+   * tool call's arguments, *nothing* happens on the wire until the arguments are complete. Relying
+   * on the next effect-driven refresh (up to a second away, and none at all if the throttle ate
+   * the call the fact itself triggered) is what left the Feed showing a still timeline for the
+   * whole write — measured at 12–17s on this endpoint.
+   */
+  const refreshConversationV2ProjectionExtras = useCallback(
+    (threadId: string, options?: { force?: boolean }) => {
+      const api = window.eco;
+      const current = conversationV2ByThreadRef.current[threadId];
+      const now = Date.now();
+      if (
+        !current ||
+        !api ||
+        !shouldRefreshConversationV2ProjectionExtras({
+          hasThreadState: true,
+          hasProjectionApi: typeof api.conversationV2Projection === "function",
+          inFlight: conversationV2ProjectionExtrasInFlightRef.current.has(threadId),
+          now,
+          nextAllowed: conversationV2ProjectionExtrasNextAllowedRef.current.get(threadId) ?? 0,
+          ...(options?.force !== undefined ? { force: options.force } : {}),
+        })
+      ) {
+        return;
+      }
+      conversationV2ProjectionExtrasNextAllowedRef.current.set(threadId, now + 1000);
+      conversationV2ProjectionExtrasInFlightRef.current.add(threadId);
+      void api
+        .conversationV2Projection(threadId)
+        .then((extras) => {
+          const latest = conversationV2ByThreadRef.current[threadId];
+          if (!latest || latest.storeEpoch !== current.storeEpoch) {
+            return;
           }
-          return { ...states, [threadId]: next };
+          const next = installConversationV2ProjectionExtras(latest, extras);
+          setConversationV2ByThread((states) => {
+            const state = states[threadId];
+            if (!state || state.storeEpoch !== next.storeEpoch || state.appliedSeq !== next.appliedSeq) {
+              return state && state.appliedSeq > next.appliedSeq ? states : { ...states, [threadId]: next };
+            }
+            return { ...states, [threadId]: next };
+          });
+        })
+        .catch((error: unknown) => {
+          console.warn("[eco] conversation V2 projection extras refresh failed:", error);
+        })
+        .finally(() => {
+          conversationV2ProjectionExtrasInFlightRef.current.delete(threadId);
         });
-      })
-      .catch((error: unknown) => {
-        console.warn("[eco] conversation V2 projection extras refresh failed:", error);
-      })
-      .finally(() => {
-        conversationV2ProjectionExtrasInFlightRef.current.delete(threadId);
-      });
-  }, []);
+    },
+    [],
+  );
   const recentlyViewedThreadIdsRef = useRef<string[]>([]);
   const projectionEvictTimersRef = useRef(new Map<string, number>());
   const threadsRef = useRef(threads);
@@ -2475,6 +2512,14 @@ function App() {
       if (!isThreadLiveEvent(event)) {
         return;
       }
+      // The tool-writing fact is the only thing that changes the Feed's request spans without
+      // producing events of its own: the model is writing a call's arguments, and nothing else
+      // happens on the wire until they are complete. Fetch the derived spans when *it* arrives
+      // (and when the call's row lands, or the turn ends, which clear it again) instead of
+      // waiting for the next event-driven refresh that this window never produces.
+      if (TOOL_WRITING_REFRESH_LIVE_TYPES.has(event.type)) {
+        refreshConversationV2ProjectionExtras(event.threadId, { force: true });
+      }
       // Main emits settings.updated with threadId "settings" after config pull/push
       // and local settings saves. Ignoring it left the renderer on stale React state
       // while the toast said pull succeeded — disk was updated, UI was not.
@@ -2685,7 +2730,9 @@ function App() {
 
       if (event.type.startsWith("clarification.")) {
         if (event.type === "clarification.requested" && event.clarification) {
-          void refreshPendingClarificationForThread(event.threadId).catch((error) => setError(errorMessage(error)));
+          void refreshPendingClarificationForThread(event.threadId).catch((error) =>
+            setError(errorMessage(error)),
+          );
           const activelyViewed = isThreadActivelyViewed(
             selectedThreadIdRef.current,
             event.threadId,
@@ -2701,7 +2748,9 @@ function App() {
           return;
         }
         if (window.eco) {
-          void refreshPendingClarificationForThread(event.threadId).catch((error) => setError(errorMessage(error)));
+          void refreshPendingClarificationForThread(event.threadId).catch((error) =>
+            setError(errorMessage(error)),
+          );
         }
       }
 
@@ -3598,7 +3647,12 @@ function App() {
   }, [activityWorkspaceLayoutMode, currentProjectPath, activeThread?.id]);
   useLayoutEffect(() => {
     if (scheduledMessagesReveal?.threadId !== activeThread?.id || !currentProjectPath) return;
-    setWorkspacePanelManualOverride({ layoutMode: activityWorkspaceLayoutMode, projectPath: currentProjectPath, threadId: activeThread?.id, open: true });
+    setWorkspacePanelManualOverride({
+      layoutMode: activityWorkspaceLayoutMode,
+      projectPath: currentProjectPath,
+      threadId: activeThread?.id,
+      open: true,
+    });
     const panel = workspaceCardsPanelRef.current;
     const scroller = panel?.querySelector<HTMLElement>(".workspace-floating-cards-sections") ?? panel;
     if (!scroller) return;
@@ -5340,7 +5394,8 @@ function App() {
     (activeThread.status === "failed" || activeThread.status === "blocked" || activeThread.status === "idle");
 
   const composerContinueTarget = useMemo(() => {
-    if (!lastRunInterrupted || !activeThread || !threadAcceptsInput || !latestContinueAttempt) return undefined;
+    if (!lastRunInterrupted || !activeThread || !threadAcceptsInput || !latestContinueAttempt)
+      return undefined;
     const timeline = displayProjection?.timeline ?? [];
     for (let i = timeline.length - 1; i >= 0; i -= 1) {
       const item = timeline[i];
@@ -5645,13 +5700,7 @@ function App() {
         showAppMessageError(error instanceof Error ? error.message : t("app.sshBookmarks.connectFailed"));
       }
     },
-    [
-      currentProjectPath,
-      dismissTaskPanel,
-      openTerminalSessionTab,
-      showAppMessageError,
-      t,
-    ],
+    [currentProjectPath, dismissTaskPanel, openTerminalSessionTab, showAppMessageError, t],
   );
 
   useEffect(() => {
@@ -6542,7 +6591,12 @@ function App() {
         }
       }, 48);
     },
-    [syncActivityFeedScrollJump, syncActivityUserMessageNavigator, setActivityFeedDetachedAnchor, updateActiveActivityUserMessageNavId],
+    [
+      syncActivityFeedScrollJump,
+      syncActivityUserMessageNavigator,
+      setActivityFeedDetachedAnchor,
+      updateActiveActivityUserMessageNavId,
+    ],
   );
 
   const scrollActivityFeedToEnd = useCallback(
@@ -7394,7 +7448,9 @@ function App() {
     return updated ?? configured.thread;
   }
 
-  async function continueInterruptedCodexTurn(target: RequestFailureRetryTarget & { sourceAttemptId: string }) {
+  async function continueInterruptedCodexTurn(
+    target: RequestFailureRetryTarget & { sourceAttemptId: string },
+  ) {
     if (!activeThread || isStarting || !window.eco) return;
     const threadId = activeThread.id;
     const expectedHistoryRevision = displayProjection?.historyRevision ?? 0;
@@ -7582,7 +7638,8 @@ function App() {
     if (
       editingFollowUpIdRef.current !== expectedFollowUpId ||
       editingFollowUpThreadIdRef.current !== threadId
-    ) return;
+    )
+      return;
     editingFollowUpIdRef.current = undefined;
     editingFollowUpThreadIdRef.current = undefined;
     setEditingFollowUpId(undefined);
@@ -11138,7 +11195,11 @@ function App() {
                         saving={isSavingSettings}
                         onSelectMode={(mode) => void selectComposerSessionMode(mode)}
                         onPickImage={() => composerImageInputRef.current?.click()}
-                        onAddScheduledMessage={activeThread && window.eco ? () => setScheduledMessageEditor({ threadId: activeThread.id }) : undefined}
+                        onAddScheduledMessage={
+                          activeThread && window.eco
+                            ? () => setScheduledMessageEditor({ threadId: activeThread.id })
+                            : undefined
+                        }
                         onOpenRoute={() => {
                           openComposerRoutePopover("plus");
                         }}
@@ -11877,11 +11938,15 @@ function App() {
                 <WorkspaceFloatingCards
                   todos={activeThread ? coderTodos : []}
                   hasActiveThread={Boolean(activeThread)}
-                  scheduledMessages={activeThread ? scheduledMessages.filter(item => item.threadId === activeThread.id) : []}
+                  scheduledMessages={
+                    activeThread ? scheduledMessages.filter((item) => item.threadId === activeThread.id) : []
+                  }
                   scheduleOccurrences={scheduling.snapshot.occurrences}
                   schedulingError={scheduling.error}
                   scheduledMessagesRevealKey={`${activeThread?.id ?? ""}:${scheduledMessagesReveal?.requestId ?? 0}`}
-                  onEditScheduledMessage={(definition) => { if (activeThread) setScheduledMessageEditor({ threadId: activeThread.id, definition }); }}
+                  onEditScheduledMessage={(definition) => {
+                    if (activeThread) setScheduledMessageEditor({ threadId: activeThread.id, definition });
+                  }}
                   onRefreshSchedules={scheduling.refresh}
                   onScheduledMessageActionError={(message) => showAppMessageErrorRef.current(message)}
                   agentModelLabels={activeThread?.coreKind === "acp" ? [] : agentModelLabels}
@@ -12035,31 +12100,58 @@ function App() {
         />
       ) : null}
 
-      {schedulingOpen && window.eco && <SuspensePanel><LazySchedulingPanel
-        settings={settings} workflow={workflowSettings}
-        snapshot={scheduling.snapshot} loading={scheduling.loading} loadError={scheduling.error} onRefresh={scheduling.refresh}
-        workspacePath={currentProjectPath}
-        projects={projects}
-        defaultProfile={composerRuntimeConfig ? { coreKind: composerCoreKind, runtimeConfig: composerRuntimeConfig } : undefined}
-        onClose={() => setSchedulingOpen(false)}
-        onOpenThread={(id) => { void window.eco!.getThread(id).then(thread => {
-          if (!thread) throw new Error(t("scheduling.threadMissing"));
-          selectThread(thread); setSchedulingOpen(false);
-        }).catch(caught => setError(errorMessage(caught))); }}
-      /></SuspensePanel>}
-      {scheduledMessageEditor && window.eco && threads.find(thread => thread.id === scheduledMessageEditor.threadId) && <SuspensePanel><LazyScheduledMessageDialog
-        key={scheduledMessageEditor.definition?.id ?? scheduledMessageEditor.threadId}
-        thread={threads.find(thread => thread.id === scheduledMessageEditor.threadId)!}
-        definition={scheduledMessageEditor.definition}
-        occurrences={scheduling.snapshot.occurrences}
-        onClose={() => setScheduledMessageEditor(undefined)}
-        onSaved={() => {
-          dismissTaskPanel();
-          void scheduling.refresh();
-          setScheduledMessagesReveal({ threadId: scheduledMessageEditor.threadId, requestId: Date.now() });
-          setScheduledMessageEditor(undefined);
-        }}
-      /></SuspensePanel>}
+      {schedulingOpen && window.eco && (
+        <SuspensePanel>
+          <LazySchedulingPanel
+            settings={settings}
+            workflow={workflowSettings}
+            snapshot={scheduling.snapshot}
+            loading={scheduling.loading}
+            loadError={scheduling.error}
+            onRefresh={scheduling.refresh}
+            workspacePath={currentProjectPath}
+            projects={projects}
+            defaultProfile={
+              composerRuntimeConfig
+                ? { coreKind: composerCoreKind, runtimeConfig: composerRuntimeConfig }
+                : undefined
+            }
+            onClose={() => setSchedulingOpen(false)}
+            onOpenThread={(id) => {
+              void window
+                .eco!.getThread(id)
+                .then((thread) => {
+                  if (!thread) throw new Error(t("scheduling.threadMissing"));
+                  selectThread(thread);
+                  setSchedulingOpen(false);
+                })
+                .catch((caught) => setError(errorMessage(caught)));
+            }}
+          />
+        </SuspensePanel>
+      )}
+      {scheduledMessageEditor &&
+        window.eco &&
+        threads.find((thread) => thread.id === scheduledMessageEditor.threadId) && (
+          <SuspensePanel>
+            <LazyScheduledMessageDialog
+              key={scheduledMessageEditor.definition?.id ?? scheduledMessageEditor.threadId}
+              thread={threads.find((thread) => thread.id === scheduledMessageEditor.threadId)!}
+              definition={scheduledMessageEditor.definition}
+              occurrences={scheduling.snapshot.occurrences}
+              onClose={() => setScheduledMessageEditor(undefined)}
+              onSaved={() => {
+                dismissTaskPanel();
+                void scheduling.refresh();
+                setScheduledMessagesReveal({
+                  threadId: scheduledMessageEditor.threadId,
+                  requestId: Date.now(),
+                });
+                setScheduledMessageEditor(undefined);
+              }}
+            />
+          </SuspensePanel>
+        )}
       {settingsOpen && (
         <div className="settings-page" role="dialog" aria-modal="true" aria-label={t("settings.dialog")}>
           <aside className="settings-nav">

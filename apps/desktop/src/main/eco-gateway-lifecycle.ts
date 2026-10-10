@@ -2,6 +2,7 @@ import {
   type EcoGatewayServer,
   type GatewayProvider,
   type GatewayRequestLifecycleObserver,
+  type GatewayToolWriteObserver,
   type GatewayUsageObserver,
   normalizeProvider,
   startEcoGateway,
@@ -94,6 +95,11 @@ export interface EcoGatewayLifecycleOptions {
   onStderr?: (chunk: string) => void;
   onUsage?: GatewayUsageObserver;
   onRequestLifecycle?: GatewayRequestLifecycleObserver;
+  /**
+   * The model began writing a tool call on the upstream stream. Codex reports a tool only
+   * once its arguments are complete, so this is the only signal for the write itself.
+   */
+  onToolWriteStarted?: GatewayToolWriteObserver;
   getTurnRouteRegistry?: () => CodexTurnRouteRegistry | undefined;
   /** Claude product-layer route resolution (stamp / role registry). */
   resolveMessagesRoute?: (input: {
@@ -206,6 +212,9 @@ export class EcoGatewayLifecycle {
           }),
           ...(this.options.resolveEcoThreadIdFromCodex && {
             resolveEcoThreadIdFromCodex: this.options.resolveEcoThreadIdFromCodex,
+          }),
+          ...(this.options.onToolWriteStarted && {
+            onToolWriteStarted: this.options.onToolWriteStarted,
           }),
         },
       );

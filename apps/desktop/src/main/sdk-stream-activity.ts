@@ -20,6 +20,8 @@ import {
   resolveSkillDisplayName,
 } from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
+import { classifyToolWriteKind } from "@eco/shared";
+import type { ToolWritingActivity } from "../shared/conversation-v2-projection";
 import {
   enrichFileChangeFromToolOutput,
   isFileChangeToolName,
@@ -84,6 +86,57 @@ export class SdkStreamActivityBridge {
   >();
 
   /**
+   * What was last said about each tool call being written: the tool, and the target once the
+   * arguments named it. Providers stream one placeholder per argument fragment, so the same
+   * call is announced once as「正在写入文件」and once more as「正在写入 /tmp/x.md」— and never
+   * per fragment.
+   */
+  private readonly announcedToolWrites = new Map<string, Map<string, string>>();
+
+  /**
+   * Surface the gap the Feed cannot narrate: the model is writing a tool call whose
+   * arguments are not complete yet, so no tool row exists to look at. Emitted as its own
+   * activity (`tool.writing`) instead of being dropped, because "the agent is busy" is a
+   * fact the stream states plainly — it is only the tool card that has to wait.
+   */
+  private announceToolWrite(
+    threadId: string,
+    payload: unknown,
+    emit: SdkActivityEmit,
+    activityAgentId: string | undefined,
+  ): void {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return;
+    }
+    const record = payload as Record<string, unknown>;
+    const toolName = readString(record.tool_name)?.trim();
+    const target = readString(record.tool_input_target)?.trim();
+    if (!toolName && !target) {
+      return;
+    }
+    // The call's own id is what tells two calls of the same tool apart. Without one — a provider
+    // that omits the block id — two calls of the same tool in one run collapse into a single key,
+    // and the second one stays silent (the SDK, π and ACP all name their calls, so this is the
+    // malformed-stream case rather than the common one).
+    const writeKey = readString(record.tool_use_id)?.trim() || toolName || target || "tool";
+    const announced = this.announcedToolWrites.get(threadId) ?? new Map<string, string>();
+    const signature = `${toolName ?? ""}\u0000${target ?? ""}`;
+    if (announced.get(writeKey) === signature) {
+      return;
+    }
+    announced.set(writeKey, signature);
+    this.announcedToolWrites.set(threadId, announced);
+    const writing: ToolWritingActivity = {
+      kind: toolName ? classifyToolWriteKind(toolName) : "tool",
+      ...(toolName && { name: toolName }),
+      ...(target && { target }),
+    };
+    emit(threadId, "tool.writing", toolName ?? target ?? "", "tool", false, activityAgentId, {
+      metadata: { activityOrigin: "sdk.tool_writing", toolWriting: writing },
+    });
+  }
+
+  /**
    * Flush throttled deltas and finalize any open narrative streams before clearing
    * bridge state. Dropping pending text here would lose the durable V2 tail.
    */
@@ -99,6 +152,7 @@ export class SdkStreamActivityBridge {
   }
 
   resetThread(threadId: string): void {
+    this.announcedToolWrites.delete(threadId);
     for (const key of [...this.lastStreamLine.keys()]) {
       if (key.startsWith(`${threadId}:`)) {
         this.lastStreamLine.delete(key);
@@ -146,6 +200,7 @@ export class SdkStreamActivityBridge {
 
     if (event.type === "tool.started") {
       if (isSdkToolInputPlaceholder(event.payload)) {
+        this.announceToolWrite(threadId, event.payload, emit, activityAgentId);
         return;
       }
       this.closeUnkeyedNarrativeBeforeTool({
@@ -798,7 +853,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   };
 }
 
-function isSdkToolInputPlaceholder(payload: unknown): boolean {
+export function isSdkToolInputPlaceholder(payload: unknown): boolean {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return false;
   }

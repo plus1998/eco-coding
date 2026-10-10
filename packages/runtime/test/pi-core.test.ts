@@ -151,6 +151,87 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
   expect(end[0]?.type).toBe("tool.completed");
 });
 
+/**
+ * The wait PI used to leave unnamed. `tool_execution_start` only fires once the arguments
+ * are complete, so between the last narrative token and that event the model was visibly
+ * idle while it wrote the call. PI does stream `toolcall_start` / `toolcall_delta` — those
+ * carry the tool name — so the adapter must hand that state over instead of dropping it.
+ */
+test("mapPiSessionEvent announces a tool call the model is still writing", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
+  const partial = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "call_1", name: "create_file", arguments: {}, partialJson: '{"pa' }],
+  };
+
+  const started = mapPiSessionEventToAgentEvents(
+    { type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial } },
+    ctx,
+  );
+  expect(started).toHaveLength(1);
+  expect(started[0]?.type).toBe("tool.started");
+  expect(started[0]?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "create_file",
+    tool_use_id: "call_1",
+    streaming: true,
+    input_complete: false,
+  });
+  // Still incomplete: the Feed must not treat this as a runnable tool row.
+  expect((started[0]?.payload as { input?: unknown }).input).toBeUndefined();
+
+  // PI streams one delta per argument fragment; the state changes once, not per fragment.
+  const fragment = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: 'th":', partial },
+    },
+    ctx,
+  );
+  expect(fragment).toHaveLength(0);
+
+  // A second call in the same message is a different state, so it must be announced too.
+  const secondPartial = {
+    role: "assistant",
+    content: [
+      partial.content[0],
+      { type: "toolCall", id: "call_2", name: "read_file", arguments: {}, partialJson: "{" },
+    ],
+  };
+  const second = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "toolcall_start", contentIndex: 1, partial: secondPartial },
+    },
+    ctx,
+  );
+  expect(second).toHaveLength(1);
+  expect((second[0]?.payload as { tool_name?: string }).tool_name).toBe("read_file");
+
+  // A new assistant message resets the announcement set.
+  mapPiSessionEventToAgentEvents({ type: "message_end", message: { role: "assistant", content: [] } }, ctx);
+  mapPiSessionEventToAgentEvents({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
+  const afterReset = mapPiSessionEventToAgentEvents(
+    { type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial } },
+    ctx,
+  );
+  expect(afterReset).toHaveLength(1);
+});
+
+test("mapPiSessionEvent ignores a tool call write with no name yet", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
+  const unnamed = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: { content: [] } },
+    },
+    ctx,
+  );
+  expect(unnamed).toHaveLength(0);
+});
+
 test("PI thinking close keeps the same reasoningDisplay as the open stream", () => {
   const anthropic = { ...makeCtx(), apiCompat: "anthropic" as const };
   mapPiSessionEventToAgentEvents(

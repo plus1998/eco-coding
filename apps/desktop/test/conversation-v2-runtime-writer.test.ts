@@ -3,11 +3,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { removeTempDirectory } from "./helpers/temp-directory";
 import { ConversationStore } from "../src/main/conversation-store";
 import { ConversationV2RuntimeWriter } from "../src/main/conversation-v2-runtime-writer";
 import { ConversationV2Store } from "../src/main/conversation-v2-store";
 import type { ThreadRunEventInput } from "../src/shared/thread-run-events";
+import { removeTempDirectory } from "./helpers/temp-directory";
 
 function setup() {
   const db = new DatabaseSync(":memory:");
@@ -255,8 +255,9 @@ test("a child lifecycle terminal event keeps its original run and role after the
     v2.rebuildReadModels("thread");
     expect(v2.agentsOf("thread")[0]).toMatchObject({ runId: "run", role: "explore", status: "completed" });
 
-    expect(() => writer.append({ ...stopped, id: "wrong-parent", parentToolUseId: "another-call" }))
-      .toThrow(/changed identity or ownership/);
+    expect(() => writer.append({ ...stopped, id: "wrong-parent", parentToolUseId: "another-call" })).toThrow(
+      /changed identity or ownership/,
+    );
     expect(v2.head("thread").lastSeq).toBe(head);
   } finally {
     db.close();
@@ -526,6 +527,65 @@ test("history invalidation hides provider identities and rejects late resurrecti
       expect(() => writer.append(snapshot("late result", true))).toThrow(/late updates are rejected/);
       expect(v2.head("thread").lastSeq).toBe(head);
     }
+  } finally {
+    db.close();
+  }
+});
+
+/**
+ * `tool.writing` is a real runtime fact ("the model is writing this call") that must be
+ * durable enough for the projection to read, but it is not a tool. If it ever landed as a
+ * tool row the Feed would show an empty card for a call that has not been made yet.
+ */
+test("a tool-writing fact persists for the projection without inventing a tool row", () => {
+  const { db, v2, writer } = setup();
+  try {
+    writer.append({
+      threadId: "thread",
+      id: "writing-fact",
+      runAttemptId: "run",
+      requestId: "req_1",
+      eventType: "tool.writing",
+      scope: "main",
+      role: "tool",
+      streamState: "none",
+      message: "create_file",
+      observedAt: "2026-09-18T00:00:01Z",
+      metadata: { liveType: "tool.writing" },
+    });
+
+    // Readable back as a runtime source, which is what the projection consumes.
+    const sources = db
+      .prepare("SELECT event_type, message FROM conversation_provider_events_v2 ORDER BY sequence ASC")
+      .all() as unknown as Array<{ event_type: string; message: string }>;
+    expect(sources).toEqual([{ event_type: "tool.writing", message: "create_file" }]);
+
+    // No tool summary, no message body, nothing the Feed can render as a card.
+    expect(db.prepare("SELECT tool_call_id FROM conversation_tool_calls_v2").all()).toEqual([]);
+    expect(v2.bootstrap("thread").messages).toHaveLength(0);
+    expect(
+      db
+        .prepare("SELECT type FROM conversation_events_v2 WHERE type IN ('tool.started','tool.updated')")
+        .all(),
+    ).toEqual([]);
+
+    // Replaying the same fact is a duplicate, not a second row.
+    expect(
+      writer.append({
+        threadId: "thread",
+        id: "writing-fact",
+        runAttemptId: "run",
+        requestId: "req_1",
+        eventType: "tool.writing",
+        scope: "main",
+        role: "tool",
+        streamState: "none",
+        message: "create_file",
+        observedAt: "2026-09-18T00:00:01Z",
+        metadata: { liveType: "tool.writing" },
+      }).duplicate,
+    ).toBe(true);
+    expect(db.prepare("SELECT * FROM conversation_provider_events_v2").all()).toHaveLength(1);
   } finally {
     db.close();
   }

@@ -1360,3 +1360,247 @@ test("ACP nested Agent tool mints a subagent card timeline from agent.started + 
   expect(projection.agents[0]?.timeline.some((item) => item.text === "1+1 = 2")).toBe(true);
   expect(projection.timeline.some((item) => item.eventType === "tool.started")).toBe(true);
 });
+
+/**
+ * The window between "the narrative stopped" and "the tool row exists". The model is
+ * writing the call's arguments; nothing renders. The stream names the state, so the
+ * projection carries it on the request span instead of leaving the Feed to infer a stall
+ * from an unmoving timeline — and it must not become a Feed row of its own.
+ */
+test("buildThreadRunProjection marks the request while the model writes a tool call", () => {
+  // Shape matters: the bridge keys tool facts by `tool:<callId>` and leaves `requestId` empty
+  // (a call outlives the request that wrote it). A fixture that helpfully fills the request id
+  // in hides the fact that tool events never reach the request-span pass at all.
+  const requestStarted = event({
+    id: "e1",
+    sequence: 1,
+    scope: "main",
+    role: "planner",
+    eventType: "request.started",
+    requestId: "req_1",
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+  const narrative = event({
+    id: "e2",
+    sequence: 2,
+    scope: "main",
+    role: "planner",
+    eventType: "message.delta",
+    requestId: "req_1",
+    streamState: "streaming",
+    message: "先创建文件",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+  const writing = event({
+    id: "e3",
+    sequence: 3,
+    scope: "main",
+    role: "tool",
+    eventType: "tool.writing",
+    streamKey: "tool:call_1",
+    message: "Write",
+    observedAt: "2026-01-01T00:00:03.000Z",
+    metadata: {
+      liveType: "tool.writing",
+      activityOrigin: "sdk.tool_writing",
+      toolWriting: { name: "Write", kind: "file", target: "/tmp/eco.md" },
+    },
+  });
+
+  const whileWriting = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: [requestStarted, narrative, writing],
+    nowMs: Date.parse("2026-01-01T00:00:03.500Z"),
+  });
+
+  // The fact carries what the arguments revealed: which file, and that it is a file write.
+  expect(whileWriting.requestSpans[0]?.writingTool).toEqual({
+    name: "Write",
+    kind: "file",
+    target: "/tmp/eco.md",
+    since: "2026-01-01T00:00:03.000Z",
+  });
+  // A fact about the turn, not a row: the tool card appears when its input lands.
+  expect(whileWriting.timeline.some((item) => item.eventType === "tool.writing")).toBe(false);
+  expect(whileWriting.timeline.some((item) => item.eventType === "message.delta")).toBe(true);
+
+  const afterToolRow = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: [
+      requestStarted,
+      narrative,
+      writing,
+      event({
+        id: "e4",
+        sequence: 4,
+        scope: "main",
+        role: "planner",
+        eventType: "tool.started",
+        streamKey: "tool:call_1",
+        message: "Tool: create_file",
+        observedAt: "2026-01-01T00:00:04.000Z",
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:04.500Z"),
+  });
+
+  // The real row exists, so the wait is over — the label must not linger over the card.
+  expect(afterToolRow.requestSpans[0]?.writingTool).toBeUndefined();
+  expect(afterToolRow.requestSpans[0]?.status).toBe("streaming");
+});
+
+test("the writing mark lands on the request the model wrote the call on, not the next one", () => {
+  // Production order, as persisted: the tool facts carry no requestId, and the request that
+  // wrote the call reports terminal milliseconds *before* the fact is observed. The next
+  // request of the turn only starts after the tool row lands.
+  const events = [
+    event({
+      id: "e1",
+      sequence: 1,
+      scope: "main",
+      role: "planner",
+      eventType: "request.started",
+      requestId: "req_1",
+      message: "Requesting model…",
+      observedAt: "2026-01-01T00:00:01.000Z",
+    }),
+    event({
+      id: "e2",
+      sequence: 2,
+      scope: "main",
+      role: "planner",
+      eventType: "message.final",
+      requestId: "req_1",
+      streamState: "finalized",
+      message: "我来创建文件",
+      observedAt: "2026-01-01T00:00:02.000Z",
+    }),
+    event({
+      id: "e3",
+      sequence: 3,
+      scope: "main",
+      role: "planner",
+      eventType: "request.completed",
+      requestId: "req_1",
+      observedAt: "2026-01-01T00:00:02.002Z",
+    }),
+    event({
+      id: "e4",
+      sequence: 4,
+      scope: "main",
+      role: "tool",
+      eventType: "tool.writing",
+      streamKey: "tool:call_1",
+      message: "Write",
+      observedAt: "2026-01-01T00:00:02.004Z",
+      metadata: { liveType: "tool.writing", activityOrigin: "sdk.tool_writing" },
+    }),
+    event({
+      id: "e5",
+      sequence: 5,
+      scope: "main",
+      role: "tool",
+      eventType: "tool.started",
+      streamKey: "tool:call_1",
+      message: "Tool: Write",
+      observedAt: "2026-01-01T00:00:12.900Z",
+    }),
+    event({
+      id: "e6",
+      sequence: 6,
+      scope: "main",
+      role: "planner",
+      eventType: "request.started",
+      requestId: "req_2",
+      message: "Requesting model…",
+      observedAt: "2026-01-01T00:00:13.100Z",
+    }),
+  ];
+
+  const midWrite = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: events.slice(0, 4),
+    nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+  });
+  expect(midWrite.requestSpans.find((span) => span.requestId === "req_1")?.writingTool).toEqual({
+    name: "Write",
+    since: "2026-01-01T00:00:02.004Z",
+  });
+  expect(midWrite.requestSpans.find((span) => span.requestId === "req_2")).toBeUndefined();
+
+  // Once the call is made and the next request begins, nothing is being written.
+  const settled = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events,
+    nowMs: Date.parse("2026-01-01T00:00:14.000Z"),
+  });
+  expect(settled.requestSpans.some((span) => span.writingTool)).toBe(false);
+});
+
+test("buildThreadRunProjection drops the writing mark when the thread is not running", () => {
+  const writing = event({
+    id: "e2",
+    sequence: 2,
+    scope: "main",
+    role: "tool",
+    eventType: "tool.writing",
+    streamKey: "tool:call_1",
+    message: "create_file",
+    observedAt: "2026-01-01T00:00:02.000Z",
+    metadata: { liveType: "tool.writing" },
+  });
+  const events = [
+    event({
+      id: "e1",
+      sequence: 1,
+      scope: "main",
+      role: "planner",
+      eventType: "request.started",
+      requestId: "req_1",
+      message: "Requesting model…",
+      observedAt: "2026-01-01T00:00:01.000Z",
+    }),
+    writing,
+  ];
+
+  // A write that never gets its tool row (cancelled or failed mid-arguments) must not leave the
+  // Feed saying "writing a tool call" forever.
+  for (const status of ["completed", "failed", "blocked", "idle", "awaiting_plan"] as const) {
+    expect(
+      buildThreadRunProjection({
+        threadId: "thr_projection",
+        status,
+        attempts: [attempt],
+        agents: [],
+        events,
+        nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+      }).requestSpans[0]?.writingTool,
+    ).toBeUndefined();
+  }
+
+  for (const status of ["running", "queued"] as const) {
+    expect(
+      buildThreadRunProjection({
+        threadId: "thr_projection",
+        status,
+        attempts: [attempt],
+        agents: [],
+        events,
+        nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+      }).requestSpans[0]?.writingTool,
+    ).toEqual({ name: "create_file", since: "2026-01-01T00:00:02.000Z" });
+  }
+});

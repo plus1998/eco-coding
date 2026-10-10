@@ -1,3 +1,4 @@
+import type { ToolWriteKind } from "@eco/shared";
 import type { ParsedUsage } from "./usage-normalize.js";
 
 export type UpstreamKind = "anthropic-messages" | "responses" | "openai-chat" | "gateway-delegated";
@@ -215,3 +216,29 @@ export type GatewayRequestLifecycleEvent =
     };
 
 export type GatewayRequestLifecycleObserver = (event: GatewayRequestLifecycleEvent) => void | Promise<void>;
+
+/**
+ * The model has begun writing a tool call, observed on the upstream stream.
+ *
+ * Codex is the only client that sends `x-codex-turn-metadata`, and its app-server
+ * publishes nothing for this period: the `item/started` it eventually emits already
+ * carries the finished arguments, and a large `apply_patch` takes minutes to write.
+ * The upstream stream states the fact plainly (`response.output_item.added` for a tool
+ * item lands milliseconds after the last text), so the gateway forwards it.
+ */
+export interface GatewayToolWriteObservation {
+  /** Client thread identity from `x-codex-turn-metadata`. */
+  codexThreadId: string;
+  turnId?: string;
+  /** Function name exactly as the model sent it (`apply_patch`, `shell`, `mcp__…`). */
+  toolName?: string;
+  /** What the call does, for the label while the arguments still have not named a target. */
+  kind: ToolWriteKind;
+  /** The file or command line the call names, once its arguments have revealed it. */
+  target?: string;
+  /** Provider call id, used to announce each call once. */
+  callId?: string;
+  observedAt: string;
+}
+
+export type GatewayToolWriteObserver = (observation: GatewayToolWriteObservation) => void | Promise<void>;

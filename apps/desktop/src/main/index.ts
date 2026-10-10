@@ -6,14 +6,22 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  SCHEDULING_MCP_SERVER,
+  SCHEDULING_PROMPT,
+  type ScheduleCreateInput,
+  type ScheduleExecutionProfile,
+  type ScheduleOccurrence,
+  type ScheduleTrigger,
+  type ScheduleUpdateInput,
+} from "../shared/scheduling";
 import { ConversationRecoveryGate } from "./conversation-recovery-gate";
-import { SchedulingStore } from "./scheduling-store";
-import { freezeSchedulingProfile } from "./scheduling-profile";
-import { SchedulingService } from "./scheduling-service";
+import { previewSchedule } from "./schedule-time";
 import { inspectScheduledRun } from "./scheduling-inspection";
 import { SchedulingMcpGateway } from "./scheduling-mcp-gateway";
-import { previewSchedule } from "./schedule-time";
-import { SCHEDULING_MCP_SERVER, SCHEDULING_PROMPT, type ScheduleCreateInput, type ScheduleUpdateInput, type ScheduleTrigger, type ScheduleExecutionProfile, type ScheduleOccurrence } from "../shared/scheduling";
+import { freezeSchedulingProfile } from "./scheduling-profile";
+import { SchedulingService } from "./scheduling-service";
+import { SchedulingStore } from "./scheduling-store";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,8 +30,10 @@ import {
   ACP_IMAGE_ONLY_PROMPT,
   type AgentEvent,
   acpSessionIdToDelete,
+  type CodexAsyncQuestionsInput,
   type CodexGatewayCatalogRoute,
   type CodexTurnTokenUsageBreakdown,
+  codexToolDisplayName,
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
@@ -32,7 +42,6 @@ import {
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
-  type CodexAsyncQuestionsInput,
   type EcoSubagentAttributionHooks,
   evaluateFilesystemReadConfirmation,
   evaluateFilesystemWriteConfirmation,
@@ -43,9 +52,9 @@ import {
   isWriteFilesystemTool,
   materializeEcoToolPolicy,
   normalizeSdkSubagentType,
+  type ParsedUsage,
   type PlanReadyPayload,
   parsePiUsage,
-  type ParsedUsage,
   probePiCoreAvailability,
   readFilesystemPath,
   resolveAcpHostUiFeatures,
@@ -94,17 +103,16 @@ import {
   type WorktreePlan,
 } from "@eco/workspace";
 import {
+  type AuthInfo,
   app,
   BrowserWindow,
-  type AuthInfo,
-  type Event,
   type BrowserWindowConstructorOptions,
   clipboard,
   dialog,
+  type Event,
   ipcMain,
   Menu,
   type NativeImage,
-  type WebContents,
   Notification,
   nativeImage,
   nativeTheme,
@@ -114,6 +122,7 @@ import {
   safeStorage,
   session,
   shell,
+  type WebContents,
 } from "electron";
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
 import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-decision";
@@ -188,6 +197,11 @@ import {
   isEcoComputerUseToolName,
   requiresComputerUseActionApproval,
 } from "../shared/computer-use";
+import {
+  describeFollowUpDelivery,
+  scheduledAcceptedMessageDelivery,
+  terminalAcceptedMessageDelivery,
+} from "../shared/conversation-message-delivery";
 import type { DesktopUpdateState } from "../shared/desktop-update";
 import { computeGlobalSettingsDigest } from "../shared/global-settings-digest";
 import {
@@ -271,8 +285,8 @@ import {
   isTerminalSpawnRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
-  MAX_CLIPBOARD_IMAGE_BASE64_CHARS,
   lockThreadRuntimeConfigSnapshotOnContinue,
+  MAX_CLIPBOARD_IMAGE_BASE64_CHARS,
   type MainAgentConfigResource,
   type MainAgentPromptResource,
   type McpServerConfigInput,
@@ -342,6 +356,7 @@ import {
   type ThreadUsageSnapshot,
   type ThreadUserMessageEditGetRequest,
   type ThreadUserMessageEditGetResult,
+  type ToolWritingActivity,
   type WorkspaceInfo,
   type WorktreeApplyResult,
   type WorktreeCancelDisposition,
@@ -357,6 +372,11 @@ import {
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { rewriteEcoMcpHubPromptForCodexServer } from "../shared/mcp-hub-tool-usage";
 import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
+import type {
+  OpenAIAccountAssistantAction,
+  OpenAIAccountCreateInput,
+  OpenAIAccountUpdateInput,
+} from "../shared/openai-account";
 import { parseThreadApprovePlanPayload, parseThreadDismissPlanPayload } from "../shared/plan-approval";
 import {
   buildMainAgentModelKey,
@@ -367,8 +387,8 @@ import {
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
 import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
-import { BUILTIN_VISION_AGENT_ROLE } from "../shared/prompt-image-vision";
 import { buildPromptWithImageReferences } from "../shared/prompt-image-reference";
+import { BUILTIN_VISION_AGENT_ROLE } from "../shared/prompt-image-vision";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
@@ -399,20 +419,6 @@ import {
   threadEnteredExecutionPhase,
   threadHasPriorAgentOutput,
 } from "../shared/thread-continuation";
-import {
-  configureCodexAsyncQuestionBridge,
-  deliverAsyncClarificationAnswers,
-  handleCodexAsyncQuestions,
-  isTrackedCodexAsyncQuestion,
-  markCodexAsyncQuestionDismissed,
-  prepareAsyncClarificationReply,
-  releasePendingClarification,
-} from "./codex-async-question-bridge";
-import {
-  describeFollowUpDelivery,
-  scheduledAcceptedMessageDelivery,
-  terminalAcceptedMessageDelivery,
-} from "../shared/conversation-message-delivery";
 import {
   buildPlanExecutionFailureMessage,
   persistThreadSummaryMessage,
@@ -490,10 +496,10 @@ import {
   collectRunningWorkSummary,
   hasRunningWork,
 } from "./application-shutdown-work";
+import { resolveApprovalModelRoute } from "./approval-model-route";
 import { transcribeAsr } from "./asr-client";
 import { type AsrSecretCodec, type AsrSettingsStore, createAsrSettingsStore } from "./asr-settings-store";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
-import { resolveApprovalModelRoute } from "./approval-model-route";
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
@@ -539,6 +545,11 @@ import {
   createElectronSafeStorageCenterServerSecretCodec,
 } from "./center-server-store";
 import {
+  createChatGptSubscriptionFetch,
+  createChatGptSubscriptionFetchForProxy,
+} from "./chatgpt-subscription-fetch";
+import type { ChatGptSubscriptionService } from "./chatgpt-subscription-service";
+import {
   buildAskUserQuestionUpdatedInput,
   buildClarificationToolMetadata,
   buildIgnoredClarificationAnswers,
@@ -552,17 +563,24 @@ import {
 } from "./clarification-bridge";
 import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
 import {
+  configureCodexAsyncQuestionBridge,
+  deliverAsyncClarificationAnswers,
+  handleCodexAsyncQuestions,
+  isTrackedCodexAsyncQuestion,
+  markCodexAsyncQuestionDismissed,
+  prepareAsyncClarificationReply,
+  releasePendingClarification,
+} from "./codex-async-question-bridge";
+import {
   CodexGatewayUsageDeduplicator,
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
-import type { OpenAIAccount, OpenAIAccountService } from "./openai-account-service";
-import { OpenAIAccountAssistant } from "./openai-account-assistant";
-import type { OpenAIAccountAssistantAction } from "../shared/openai-account";
-import type { OpenAIAccountCreateInput, OpenAIAccountUpdateInput } from "../shared/openai-account";
-import type { ChatGptSubscriptionService } from "./chatgpt-subscription-service";
-import { createChatGptSubscriptionFetch, createChatGptSubscriptionFetchForProxy } from "./chatgpt-subscription-fetch";
-import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle, setCodexAccountProxyUrlGetter } from "./codex-runtime-lifecycle";
+import {
+  getGlobalCodexRuntimeLifecycle,
+  setCodexAccountProxyUrlGetter,
+  stopGlobalCodexRuntimeLifecycle,
+} from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
   configureCodexApprovalBridge,
@@ -571,19 +589,18 @@ import {
   ensureCodexControlPlaneClient,
   forkCodexThreadForEcoThread,
   getCodexTurnRouteRegistry,
+  invalidateGlobalCodexRuntimeFingerprints,
   isCodexCliAvailable,
   queryCodexThreadStatusForEcoThread,
   registerResolvedCodexGatewayTurnRoute,
   resolveCodexExecutable,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
-  invalidateGlobalCodexRuntimeFingerprints,
   scheduleCodexGlobalRuntimeRefresh,
   shutdownCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
-import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { ComputerUseMcpGateway } from "./computer-use-mcp-gateway";
 import { detectScreenRecordingAppLabel } from "./computer-use-screen-host-native";
@@ -615,7 +632,6 @@ import {
   executeFollowUpMutationCommand,
   failInterruptedFollowUpCommands,
 } from "./conversation-follow-up-command";
-import { ThreadFollowUpDrainScheduler } from "./thread-follow-up-drain-scheduler";
 import {
   executeBashApprovalResolutionCommand,
   executeClarificationResolutionCommand,
@@ -627,12 +643,12 @@ import {
   resolveNonRewindRetryUserMessage,
 } from "./conversation-nonrewind-retry-command";
 import { executePlanResolutionCommand, recoverInterruptedPlanCommands } from "./conversation-plan-command";
-import { reportConversationRuntimeEventFailure } from "./conversation-runtime-event-failure";
 import { executeConversationRewriteCommand } from "./conversation-rewrite-command";
 import {
   executeRuntimeConfigMutationCommand,
   failInterruptedRuntimeConfigCommands,
 } from "./conversation-runtime-config-command";
+import { reportConversationRuntimeEventFailure } from "./conversation-runtime-event-failure";
 import {
   type ConversationStore,
   createConversationStore,
@@ -669,14 +685,14 @@ import {
   ensureGlobalEcoGateway,
   stopGlobalEcoGateway,
 } from "./eco-gateway-lifecycle";
+import { hasStructuredThreadEventExtras, resolveEmitThreadEventMessage } from "./emit-thread-event-message";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
-import { sendToLiveRenderer } from "./renderer-send";
 import {
   armForcedPlanDelegation,
   buildForcedPlanDelegationHookConfig,
   clearStaleForcedPlanDelegationState,
-  confirmForcedPlanDelegationFromRuntimeEvent,
   configureForcedPlanDelegationCodexHome,
+  confirmForcedPlanDelegationFromRuntimeEvent,
   forcedPlanDelegationStore,
   releaseForcedPlanDelegation,
   restrictAgentRuntimeConfigToForcedDelegation,
@@ -738,6 +754,8 @@ import {
   type NotificationSettingsStore,
   normalizeNotificationSettingsSnapshot,
 } from "./notification-settings-store";
+import { OpenAIAccountAssistant } from "./openai-account-assistant";
+import type { OpenAIAccount, OpenAIAccountService } from "./openai-account-service";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { PackageJsonWatcher } from "./package-json-watcher";
 import { createPackageScriptArgsStore, type PackageScriptArgsStore } from "./package-script-args-store";
@@ -816,6 +834,7 @@ import {
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE } from "./remote-thread-list";
+import { sendToLiveRenderer } from "./renderer-send";
 import { formatUserFacingRequestError, type RequestAttemptResult } from "./request-retry";
 import { resolveCommandExecutable } from "./resolve-command-executable";
 import { resolveThreadWebSearchPlan } from "./resolve-thread-web-search";
@@ -867,6 +886,7 @@ import { SupabaseCloudDeployment } from "./supabase-cloud-deployment";
 import { readSupabaseDeploymentBundle } from "./supabase-deployment-bundle";
 import { createDesktopSettingsSyncHooks } from "./supabase-settings-sync-hooks";
 import { SystemSleepBlocker } from "./system-sleep-blocker";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { resolveThreadApprovePlanRoute } from "./thread-approve-plan-route";
 import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
 import {
@@ -878,6 +898,7 @@ import {
   shouldKeepThreadCancelling,
 } from "./thread-cancelling-state";
 import { requireThreadCore } from "./thread-core-routing";
+import { ThreadFollowUpDrainScheduler } from "./thread-follow-up-drain-scheduler";
 import {
   applyExactLogicalRequestLateBind,
   applyLogicalRequestTerminal,
@@ -973,11 +994,8 @@ import {
 } from "./thread-title";
 import { type SerializedThreadUsageState, ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import { getUpstreamLogFilePath, logUpstream } from "./upstream-log";
-import {
-  buildDefaultUpstreamUserAgent,
-  setDefaultUpstreamUserAgent,
-} from "./upstream-request-headers";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
+import { buildDefaultUpstreamUserAgent, setDefaultUpstreamUserAgent } from "./upstream-request-headers";
 import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
 import {
   applySdkRunBillingEffects,
@@ -988,7 +1006,7 @@ import {
 import { createUsageContextService } from "./usage-context-effects";
 import type { RunAttemptCommandDispatch, RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import { runImageView, type ImageViewHost } from "./vision-analysis";
+import { type ImageViewHost, runImageView } from "./vision-analysis";
 import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
 import {
   createWebChatListStore,
@@ -1085,7 +1103,9 @@ const initialDesktopRendererReady = new Promise<void>((resolve) => {
 });
 
 function getMainWindow(): BrowserWindow | undefined {
-  return BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && !startupSplashWindows.has(window));
+  return BrowserWindow.getAllWindows().find(
+    (window) => !window.isDestroyed() && !startupSplashWindows.has(window),
+  );
 }
 
 /**
@@ -1124,7 +1144,13 @@ async function configureChatGptOAuthSessionProxy(
   const proxyUrl = rawProxyUrl?.trim();
   let socksBridge: { close: () => void } | undefined;
   let proxyAuthListener:
-    | ((event: Event, webContents: WebContents, request: string, authInfo: AuthInfo, callback: (username?: string, password?: string) => void) => void)
+    | ((
+        event: Event,
+        webContents: WebContents,
+        request: string,
+        authInfo: AuthInfo,
+        callback: (username?: string, password?: string) => void,
+      ) => void)
     | undefined;
   try {
     if (!proxyUrl) {
@@ -1145,8 +1171,7 @@ async function configureChatGptOAuthSessionProxy(
 
     const pacContent = `function FindProxyForURL(url, host) { return "PROXY ${proxyHost}"; }`;
     const pacDataUri =
-      "data:application/x-ns-proxy-autoconfig;base64," +
-      Buffer.from(pacContent, "utf8").toString("base64");
+      "data:application/x-ns-proxy-autoconfig;base64," + Buffer.from(pacContent, "utf8").toString("base64");
     if (parsed.username || parsed.password) {
       const username = decodeURIComponent(parsed.username);
       const password = decodeURIComponent(parsed.password);
@@ -1177,7 +1202,9 @@ async function configureChatGptOAuthSessionProxy(
 }
 
 function getStartupSplashWindow(): BrowserWindow | undefined {
-  return BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && startupSplashWindows.has(window));
+  return BrowserWindow.getAllWindows().find(
+    (window) => !window.isDestroyed() && startupSplashWindows.has(window),
+  );
 }
 
 // Deliver a deep link to the primary window: immediately when the renderer is
@@ -1882,7 +1909,9 @@ function setWindowControlsOverlayMode(mode: "landing" | "conversation"): void {
   }
 }
 
-async function createMainWindow(options: { startupSplash?: boolean; show?: boolean } = {}): Promise<BrowserWindow> {
+async function createMainWindow(
+  options: { startupSplash?: boolean; show?: boolean } = {},
+): Promise<BrowserWindow> {
   const isMac = process.platform === "darwin";
   const isStartupSplash = options.startupSplash === true;
   const windowControlsOverlay = usesWindowControlsOverlay();
@@ -2046,7 +2075,10 @@ async function waitForInitialDesktopRendererReady(timeoutMs = 180_000): Promise<
     await Promise.race([
       initialDesktopRendererReady,
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new Error("The desktop interface did not finish initializing.")), timeoutMs);
+        timeout = setTimeout(
+          () => reject(new Error("The desktop interface did not finish initializing.")),
+          timeoutMs,
+        );
       }),
     ]);
   } finally {
@@ -2065,1117 +2097,1146 @@ function isExternalHttpUrl(url: string): boolean {
   }
 }
 
-app.whenReady().then(async () => {
-  const startupStartedAt = Date.now();
-  let startupWindow: BrowserWindow | undefined;
-  const logStartupStage = (stage: string): void => {
-    const elapsedMs = Date.now() - startupStartedAt;
-    const fields = { stage, elapsedMs };
-    if (app.isPackaged) {
-      logUpstream("desktop.startup-stage", fields);
-    } else {
-      logEcoDiag("desktop.startup-stage", fields);
-    }
-    const splashLabels: Record<string, string> = {
-      ready: "正在准备启动…",
-      "startup-window.ready": "正在恢复本地数据…",
-      "conversation-store.initialized": "正在恢复对话…",
-      "conversation-reconciliation.completed": "正在加载设置…",
-      "initial-settings.loaded": "正在恢复任务…",
-      "home-workspace.ready": "正在打开 Eco Coding…",
-      "main-window.ready": "即将完成…",
-    };
-    if (startupWindow && !startupWindow.isDestroyed()) {
-      try {
-        void startupWindow.webContents
-          .executeJavaScript(
-            `(() => { const status = document.getElementById("status"); if (status) status.textContent = ${JSON.stringify(splashLabels[stage] ?? "正在准备应用…")}; })();`,
-          )
-          .catch(() => undefined);
-      } catch {
-        // The splash may still be navigating while a startup stage completes.
+app
+  .whenReady()
+  .then(async () => {
+    const startupStartedAt = Date.now();
+    let startupWindow: BrowserWindow | undefined;
+    const logStartupStage = (stage: string): void => {
+      const elapsedMs = Date.now() - startupStartedAt;
+      const fields = { stage, elapsedMs };
+      if (app.isPackaged) {
+        logUpstream("desktop.startup-stage", fields);
+      } else {
+        logEcoDiag("desktop.startup-stage", fields);
       }
-    }
-  };
-
-  logStartupStage("ready");
-  if (!hasSingleInstanceLock) {
-    return;
-  }
-  startupWindow = await createMainWindow({ startupSplash: true });
-  logStartupStage("startup-window.ready");
-  // Let the OS hand eco://... deep links to this app.
-  // Packaged only: in dev the scheme would register against the bare electron.exe,
-  // which treats the URL as an app path and fails to launch.
-  if (app.isPackaged) {
-    app.setAsDefaultProtocolClient("eco");
-  }
-  if (appIcon && process.platform === "darwin") {
-    app.dock?.setIcon(appIcon);
-  }
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate(
-      buildApplicationMenuTemplate(app.name, process.platform, (command, browserWindow) => {
-        if (browserWindow instanceof BrowserWindow) {
-          browserWindow.webContents.send(IPC_CHANNELS.appMenuCommand, command);
+      const splashLabels: Record<string, string> = {
+        ready: "正在准备启动…",
+        "startup-window.ready": "正在恢复本地数据…",
+        "conversation-store.initialized": "正在恢复对话…",
+        "conversation-reconciliation.completed": "正在加载设置…",
+        "initial-settings.loaded": "正在恢复任务…",
+        "home-workspace.ready": "正在打开 Eco Coding…",
+        "main-window.ready": "即将完成…",
+      };
+      if (startupWindow && !startupWindow.isDestroyed()) {
+        try {
+          void startupWindow.webContents
+            .executeJavaScript(
+              `(() => { const status = document.getElementById("status"); if (status) status.textContent = ${JSON.stringify(splashLabels[stage] ?? "正在准备应用…")}; })();`,
+            )
+            .catch(() => undefined);
+        } catch {
+          // The splash may still be navigating while a startup stage completes.
         }
-      }),
-    ),
-  );
-  const isLocalRendererWebContents = (webContents: Electron.WebContents | null): boolean => {
-    if (!webContents) {
-      return false;
+      }
+    };
+
+    logStartupStage("ready");
+    if (!hasSingleInstanceLock) {
+      return;
     }
-    try {
-      return isLocalRendererUrl(webContents.getURL());
-    } catch {
-      return false;
+    startupWindow = await createMainWindow({ startupSplash: true });
+    logStartupStage("startup-window.ready");
+    // Let the OS hand eco://... deep links to this app.
+    // Packaged only: in dev the scheme would register against the bare electron.exe,
+    // which treats the URL as an app path and fails to launch.
+    if (app.isPackaged) {
+      app.setAsDefaultProtocolClient("eco");
     }
-  };
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const mediaTypes = (details as { mediaTypes?: string[] }).mediaTypes;
-    callback(isAllowedSessionPermission(isLocalRendererWebContents(webContents), permission, mediaTypes));
-  });
-  session.defaultSession.setPermissionCheckHandler((webContents, permission, _requestingOrigin, details) => {
-    const mediaType = (details as { mediaType?: string }).mediaType;
-    return isAllowedSessionPermission(
-      isLocalRendererWebContents(webContents),
-      permission,
-      mediaType ? [mediaType] : undefined,
+    if (appIcon && process.platform === "darwin") {
+      app.dock?.setIcon(appIcon);
+    }
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(
+        buildApplicationMenuTemplate(app.name, process.platform, (command, browserWindow) => {
+          if (browserWindow instanceof BrowserWindow) {
+            browserWindow.webContents.send(IPC_CHANNELS.appMenuCommand, command);
+          }
+        }),
+      ),
     );
-  });
-  const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
-  providerStore = await createProviderStore(dbPath);
-  agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
-  mcpStore = await createMcpStore(dbPath);
-  mcpHubGateway = new McpHubGateway();
-  // The image store must be available before ConversationStore.initialize():
-  // opening a legacy thread may need to materialize an attachment during its
-  // lazy V2 migration.
-  promptImageFileStore = new PromptImageFileStore(app.getPath("userData"));
-  conversationStore = await createConversationStore(dbPath, {
-    freshStorageMode: "v2_only",
-    requiredStorageMode: null,
-    promptImageFileStore,
-  });
-  logStartupStage("conversation-store.initialized");
-  // Run reconciliation happens per conversation (conversationBootstrap and
-  // repairConversationV2OnLoad). The startup sweep that walked every thread was
-  // redundant with it.
-  const startupToolRecovery = conversationStore.reconcileAllConversationV2TerminalRunTools();
-  if (startupToolRecovery.settled > 0) {
-    logEcoDiag("conversation-v2.startup-terminal-run-tool-recovery", startupToolRecovery);
-  }
-  const startupLedgerAttributionReconcile =
-    conversationStore.reconcileAllConversationV2UsageLedgerAttribution();
-  if (startupLedgerAttributionReconcile.attributed > 0 || startupLedgerAttributionReconcile.ambiguous > 0) {
-    logEcoDiag("conversation-v2.startup-ledger-attribution-reconcile", startupLedgerAttributionReconcile);
-  }
-  // The accepted-prompt repair stays on the startup path because queue recovery
-  // below delivers queued prompts without anyone opening the conversation. Its
-  // candidates are only the conversations holding a queued user message.
-  const startupAcceptedPromptDuplicateReconcile =
-    conversationStore.reconcileAllConversationV2AcceptedPromptDuplicates();
-  if (
-    startupAcceptedPromptDuplicateReconcile.repaired > 0 ||
-    startupAcceptedPromptDuplicateReconcile.ambiguous > 0
-  ) {
-    logEcoDiag(
-      "conversation-v2.startup-accepted-prompt-duplicate-reconcile",
-      startupAcceptedPromptDuplicateReconcile,
+    const isLocalRendererWebContents = (webContents: Electron.WebContents | null): boolean => {
+      if (!webContents) {
+        return false;
+      }
+      try {
+        return isLocalRendererUrl(webContents.getURL());
+      } catch {
+        return false;
+      }
+    };
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      const mediaTypes = (details as { mediaTypes?: string[] }).mediaTypes;
+      callback(isAllowedSessionPermission(isLocalRendererWebContents(webContents), permission, mediaTypes));
+    });
+    session.defaultSession.setPermissionCheckHandler(
+      (webContents, permission, _requestingOrigin, details) => {
+        const mediaType = (details as { mediaType?: string }).mediaType;
+        return isAllowedSessionPermission(
+          isLocalRendererWebContents(webContents),
+          permission,
+          mediaType ? [mediaType] : undefined,
+        );
+      },
     );
-  }
-  logStartupStage("conversation-reconciliation.completed");
-  executeThreadDeleteCommand = createThreadDeleteCommandCoordinator({
-    conversationStore,
-    cleanupExternalState: cleanupThreadExternalState,
-    onDeleted: ({ threadId, workspacePath }) => {
-      schedulingService?.threadDeleted(threadId);
-      clearThreadRuntimeMemory(threadId);
-      void requireBrowserHost().disposeThreadScope(threadId);
-      emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false, {
-        workspacePath,
-      });
-    },
-  });
-  conversationStore.conversationV2().onCommitted(({ event, effect }) => {
-    desktopEventCenter.publish({
-      kind: "conversation.sync_effect",
-      threadId: event.conversationId,
-      aggregateKey: `conversation:${event.conversationId}`,
-      payload: {
-        conversationId: event.conversationId,
-        storeEpoch: event.storeEpoch,
-        effect,
+    const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
+    providerStore = await createProviderStore(dbPath);
+    agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
+    mcpStore = await createMcpStore(dbPath);
+    mcpHubGateway = new McpHubGateway();
+    // The image store must be available before ConversationStore.initialize():
+    // opening a legacy thread may need to materialize an attachment during its
+    // lazy V2 migration.
+    promptImageFileStore = new PromptImageFileStore(app.getPath("userData"));
+    conversationStore = await createConversationStore(dbPath, {
+      freshStorageMode: "v2_only",
+      requiredStorageMode: null,
+      promptImageFileStore,
+    });
+    logStartupStage("conversation-store.initialized");
+    // Run reconciliation happens per conversation (conversationBootstrap and
+    // repairConversationV2OnLoad). The startup sweep that walked every thread was
+    // redundant with it.
+    const startupToolRecovery = conversationStore.reconcileAllConversationV2TerminalRunTools();
+    if (startupToolRecovery.settled > 0) {
+      logEcoDiag("conversation-v2.startup-terminal-run-tool-recovery", startupToolRecovery);
+    }
+    const startupLedgerAttributionReconcile =
+      conversationStore.reconcileAllConversationV2UsageLedgerAttribution();
+    if (startupLedgerAttributionReconcile.attributed > 0 || startupLedgerAttributionReconcile.ambiguous > 0) {
+      logEcoDiag("conversation-v2.startup-ledger-attribution-reconcile", startupLedgerAttributionReconcile);
+    }
+    // The accepted-prompt repair stays on the startup path because queue recovery
+    // below delivers queued prompts without anyone opening the conversation. Its
+    // candidates are only the conversations holding a queued user message.
+    const startupAcceptedPromptDuplicateReconcile =
+      conversationStore.reconcileAllConversationV2AcceptedPromptDuplicates();
+    if (
+      startupAcceptedPromptDuplicateReconcile.repaired > 0 ||
+      startupAcceptedPromptDuplicateReconcile.ambiguous > 0
+    ) {
+      logEcoDiag(
+        "conversation-v2.startup-accepted-prompt-duplicate-reconcile",
+        startupAcceptedPromptDuplicateReconcile,
+      );
+    }
+    logStartupStage("conversation-reconciliation.completed");
+    executeThreadDeleteCommand = createThreadDeleteCommandCoordinator({
+      conversationStore,
+      cleanupExternalState: cleanupThreadExternalState,
+      onDeleted: ({ threadId, workspacePath }) => {
+        schedulingService?.threadDeleted(threadId);
+        clearThreadRuntimeMemory(threadId);
+        void requireBrowserHost().disposeThreadScope(threadId);
+        emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false, {
+          workspacePath,
+        });
       },
     });
-  });
-  conversationStore.setPromptImageFileStore(promptImageFileStore);
-  if (conversationStore.getConversationStorageMode() === "v2_only") {
-    void promptImageFileStore
-      .sweepUnreferencedContentObjects({
-        resolveReferencedContentRefs: () => conversationStore.listReferencedPromptImageContentRefs(),
-      })
-      .then((result) => {
-        if (result.removed > 0 || result.retainedReferenced > 0) {
-          logEcoDiag("conversation-v2.prompt-image-object-gc", { ...result });
-        }
-      })
-      .catch((error) => {
-        process.stderr.write(`[eco] prompt image object GC failed: ${errorMessage(error)}\n`);
-      });
-  }
-  await fs.rm(path.join(app.getPath("userData"), "codex-file-checkpoints"), {
-    recursive: true,
-    force: true,
-  });
-  // "指定子代理执行已批准计划": point the Codex hook-file arming at the resolved
-  // CODEX_HOME, and drop any arm left over from a previous process.
-  configureForcedPlanDelegationCodexHome(() => resolveCodexHomeDir(app.getPath("userData")));
-  clearStaleForcedPlanDelegationState();
-  subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
-  usageLedgerCoordinator = new UsageLedgerCoordinator({
-    store: conversationStore,
-    metrics: subagentMetricsRegistry,
-    logDiag: logEcoDiag,
-    logDiagThrottled: logEcoDiagThrottled,
-    onProxyAttributionSettled: async (threadId, settlements) => {
-      await reconcileProxyAttributionContexts(
-        {
-          context: createUsageContextService({
-            monitor: contextMonitor,
-            emitLiveContext: (targetThreadId: string) => contextScheduler.emitLiveFromMonitor(targetThreadId),
-          }),
-          subagentMetrics: subagentMetricsRegistry,
-          schedulePersistThreadMetrics,
-          logDiag: logEcoDiag,
+    conversationStore.conversationV2().onCommitted(({ event, effect }) => {
+      desktopEventCenter.publish({
+        kind: "conversation.sync_effect",
+        threadId: event.conversationId,
+        aggregateKey: `conversation:${event.conversationId}`,
+        payload: {
+          conversationId: event.conversationId,
+          storeEpoch: event.storeEpoch,
+          effect,
         },
-        threadId,
-        settlements,
-      );
-      emitSubagentTimingUpdated(threadId);
-    },
-  });
-  workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
-  logStartupStage("initial-settings.loaded");
-  projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
-  projectIntegrationsSettingsStore = await createProjectIntegrationsSettingsStore(dbPath);
-  projectOrchestrationSettingsStore = await createProjectOrchestrationSettingsStore(dbPath);
-  projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
-  gitSettingsStore = await createGitSettingsStore(dbPath);
-  personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
-  browserSettingsStore = await createBrowserSettingsStore(dbPath);
-  computerUseSettingsStore = await createComputerUseSettingsStore(dbPath);
-  computerUseGateway = new ComputerUseMcpGateway(() => computerUseSettingsStore.get());
-  webChatListStore = await createWebChatListStore(dbPath);
-  sshBookmarkStore = await createSshBookmarkStore(dbPath, createLocalSecretCodec());
-  notificationSettingsStore = await createNotificationSettingsStore(dbPath);
-  browserHost = new BrowserHost({
-    getMainWindow,
-    getSettings: () => browserSettingsStore,
-    broadcast: (state: BrowserViewState) => {
-      BrowserWindow.getAllWindows().forEach((window) => {
-        if (!window.isDestroyed()) {
-          window.webContents.send(IPC_CHANNELS.browserStateChanged, state);
-        }
       });
-    },
-    broadcastAgentPresence: (event) => {
-      BrowserWindow.getAllWindows().forEach((window) => {
-        if (!window.isDestroyed()) {
-          window.webContents.send(IPC_CHANNELS.browserAgentPresence, event);
-        }
-      });
-    },
-    resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
-  });
-  const imageSecretCodec: ImageGenerationSecretCodec = {
-    isAvailable: () => safeStorage.isEncryptionAvailable(),
-    encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
-    decrypt: (value) => {
-      if (!value.startsWith("safe-v1:")) throw new Error("创意绘画 API Key 存储格式无效。");
-      return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
-    },
-  };
-  imageGenerationStore = await createImageGenerationStore(dbPath, imageSecretCodec);
-  imageGenerationGateway = new ImageGenerationMcpGateway({
-    store: imageGenerationStore,
-    resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
-    resolveGenerationRoot: (threadId) =>
-      activeRunRuntimeState.worktreePlan(threadId)?.worktreePath ??
-      conversationStore.getThread(threadId)?.sdkCwd ??
-      conversationStore.getThread(threadId)?.workspacePath,
-    onArtifactChanged: (artifact) => {
-      BrowserWindow.getAllWindows().forEach((window) => {
-        if (!window.isDestroyed())
-          window.webContents.send(IPC_CHANNELS.imageGenerationArtifactChanged, artifact);
-      });
-    },
-  });
-  imageViewGateway = new ImageViewMcpGateway({
-    analyze: async ({ threadId, path: imagePath = "", ref, prompt, question, signal }) => {
-      signal?.throwIfAborted();
-      const requestedPrompt = prompt?.trim() || question?.trim() || "";
-      if (!requestedPrompt) {
-        throw new Error("image_view 调用必须提供 prompt。");
-      }
-      const file = ref
-        ? (() => {
-            const contextKey = `thread:${threadId}`;
-            if (!conversationStore.isPromptImageContentRefAuthorized(contextKey, ref)) {
-              throw new Error("图片 ref 未授权给当前线程。");
-            }
-            return promptImageFileStore.readContentRefAttachment(ref).then((resolved) => ({
-              mimeType: resolved.mediaType,
-              dataBase64: resolved.dataBase64,
-            }));
-          })()
-        : readImageViewFile(imagePath);
-      const resolvedFile = await file;
-      signal?.throwIfAborted();
-      if (!isPromptImageMediaType(resolvedFile.mimeType)) {
-        throw new Error(`Unsupported image media type: ${resolvedFile.mimeType}`);
-      }
-      const attachments: PromptImageAttachment[] = [
-        { mediaType: resolvedFile.mimeType, data: resolvedFile.dataBase64 },
-      ];
-      const agentId = `image_view:${threadId}:${randomUUID()}`;
-      const runAttemptId = agentLifecycle.currentRunAttemptId(threadId);
-      return runImageView(
-        {
+    });
+    conversationStore.setPromptImageFileStore(promptImageFileStore);
+    if (conversationStore.getConversationStorageMode() === "v2_only") {
+      void promptImageFileStore
+        .sweepUnreferencedContentObjects({
+          resolveReferencedContentRefs: () => conversationStore.listReferencedPromptImageContentRefs(),
+        })
+        .then((result) => {
+          if (result.removed > 0 || result.retainedReferenced > 0) {
+            logEcoDiag("conversation-v2.prompt-image-object-gc", { ...result });
+          }
+        })
+        .catch((error) => {
+          process.stderr.write(`[eco] prompt image object GC failed: ${errorMessage(error)}\n`);
+        });
+    }
+    await fs.rm(path.join(app.getPath("userData"), "codex-file-checkpoints"), {
+      recursive: true,
+      force: true,
+    });
+    // "指定子代理执行已批准计划": point the Codex hook-file arming at the resolved
+    // CODEX_HOME, and drop any arm left over from a previous process.
+    configureForcedPlanDelegationCodexHome(() => resolveCodexHomeDir(app.getPath("userData")));
+    clearStaleForcedPlanDelegationState();
+    subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
+    usageLedgerCoordinator = new UsageLedgerCoordinator({
+      store: conversationStore,
+      metrics: subagentMetricsRegistry,
+      logDiag: logEcoDiag,
+      logDiagThrottled: logEcoDiagThrottled,
+      onProxyAttributionSettled: async (threadId, settlements) => {
+        await reconcileProxyAttributionContexts(
+          {
+            context: createUsageContextService({
+              monitor: contextMonitor,
+              emitLiveContext: (targetThreadId: string) =>
+                contextScheduler.emitLiveFromMonitor(targetThreadId),
+            }),
+            subagentMetrics: subagentMetricsRegistry,
+            schedulePersistThreadMetrics,
+            logDiag: logEcoDiag,
+          },
           threadId,
-          prompt: requestedPrompt,
-          attachments,
-          billingAgentId: agentId,
-          ...(signal ? { signal } : {}),
-          ...(runAttemptId ? { runAttemptId } : {}),
-        },
-        createThreadImageViewHost(runAttemptId),
-      );
-    },
-  });
-  imageDisplayStore = await createImageDisplayStore(
-    dbPath,
-    path.join(app.getPath("userData"), "image-display"),
-  );
-  imageDisplayGateway = new ImageDisplayMcpGateway({
-    store: imageDisplayStore,
-    onArtifactChanged: (artifact) => {
-      BrowserWindow.getAllWindows().forEach((window) => {
-        if (!window.isDestroyed()) {
-          window.webContents.send(IPC_CHANNELS.imageDisplayArtifactChanged, artifact);
-        }
-      });
-    },
-  });
-  htmlHostStore = new HtmlHostStore();
-  htmlHostGateway = new HtmlHostMcpGateway({
-    store: htmlHostStore,
-    api: {
-      probeCapability: () => centerServerClient.refreshHtmlHostingCapability({ force: true }),
-      publish: (input) => centerServerClient.publishHtmlPage(input),
-    },
-    getCapability: () => centerServerClient.refreshHtmlHostingCapability(),
-    onArtifactChanged: (artifact) => {
-      BrowserWindow.getAllWindows().forEach((window) => {
-        if (!window.isDestroyed()) {
-          window.webContents.send(IPC_CHANNELS.htmlHostArtifactChanged, artifact);
-        }
-      });
-    },
-  });
-  const asrSecretCodec: AsrSecretCodec = {
-    isAvailable: () => safeStorage.isEncryptionAvailable(),
-    encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
-    decrypt: (value) => {
-      if (!value.startsWith("safe-v1:")) {
-        throw new Error("ASR API key 存储格式无效。");
-      }
-      return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
-    },
-  };
-  asrSettingsStore = await createAsrSettingsStore(dbPath, asrSecretCodec);
-  packageScriptArgsStore = createPackageScriptArgsStore(
-    path.join(app.getPath("userData"), "package-script-args.json"),
-  );
-  await packageScriptArgsStore.warmCache();
-  proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
-  const integratedWebSearchSecretCodec = {
-    isAvailable: () => safeStorage.isEncryptionAvailable(),
-    encrypt: (value: string) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
-    decrypt: (value: string) => {
-      if (!value.startsWith("safe-v1:")) {
-        throw new Error("Integrated Web Search API key is stored in an unsupported format.");
-      }
-      return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
-    },
-  };
-  integratedWebSearchSettingsStore = await createIntegratedWebSearchSettingsStore(
-    dbPath,
-    integratedWebSearchSecretCodec,
-  );
-  integratedWebSearchGateway = new IntegratedWebSearchMcpGateway({
-    store: integratedWebSearchSettingsStore,
-    getApiKey: () => integratedWebSearchSettingsStore.getApiKey() ?? undefined,
-  });
-  const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
-  centerServerClient = new SupabaseCenterDesktopClient({
-    store: await createCenterServerStore(dbPath, {
-      ...(centerServerSecretCodec ? { secretCodec: centerServerSecretCodec } : {}),
-    }),
-    eventCenter: desktopEventCenter,
-    log: (message) => process.stderr.write(message),
-    onStatusChange: emitCenterServerStatus,
-    onHtmlHostingCapabilityChange: () => scheduleCodexGlobalRuntimeRefresh(),
-  });
-  centerServerClient.setSettingsSyncHooks(
-    createDesktopSettingsSyncHooks({
-      providerStore,
-      asrSettingsStore,
-      imageGenerationStore,
-      workflowSettingsStore,
-      agentOrchestrationStore,
-      proxyBridgeSettingsStore,
-      integratedWebSearchSettingsStore,
-      gitSettingsStore,
-      personalizationSettingsStore,
-      packageScriptArgsStore,
-      projectOrchestrationSettingsStore,
-      sshBookmarkStore,
-    }),
-  );
-  agentLifecycle = new AgentLifecycleService(conversationStore);
-  codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
-  const defaultUpstreamUserAgent = buildDefaultUpstreamUserAgent({
-    version: app.getVersion(),
-    platform: os.platform(),
-    release: os.release(),
-    arch: os.arch(),
-  });
-  // Provider probes / model lists run outside the gateway: give them the same fallback.
-  setDefaultUpstreamUserAgent(defaultUpstreamUserAgent);
-  configureEcoGatewayLifecycle({
-    ecoDataDir: app.getPath("userData"),
-    listProviders: () => {
-      // The built-in ChatGPT provider may have been persisted by an older
-      // version. Migrate it before every Gateway sync so stale auth metadata
-      // cannot bypass the subscription Responses contract.
-      ensureChatGptSubscriptionProvider();
-      const routeModels = new Map<string, string[]>();
-      for (const profile of providerStore.listRouteProfiles()) {
-        for (const route of profile.routes) {
-          const models = routeModels.get(route.providerId) ?? [];
-          models.push(route.modelId);
-          routeModels.set(route.providerId, models);
-        }
-      }
-      return providerStore.listProvidersWithSecrets().filter((provider) => provider.apiCompat !== "system_one").map((provider) => {
-        const candidates = providerStore.listCandidateModels(provider.id);
-        return {
-          id: provider.id,
-          name: provider.name,
-          enabled: provider.enabled,
-          baseUrl: provider.baseUrl,
-          requestPath: provider.requestPath,
-          version: provider.version,
-          apiKey: provider.apiKey,
-          ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
-          ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
-          ...(provider.upstreamProxyUrl ? { upstreamProxyUrl: provider.upstreamProxyUrl } : {}),
-          apiCompat: resolveUpstreamApiCompat(undefined, provider.apiCompat),
-          defaultModel: provider.defaultModel,
-          models: candidates.map((model) => ({
-            modelId: model.modelId,
-            ...(model.manualSpec?.maxOutputTokens !== undefined
-              ? { maxOutputTokens: model.manualSpec.maxOutputTokens }
-              : {}),
-          })),
-          modelIds: routeModels.get(provider.id) ?? [],
-        };
-      });
-    },
-    getUpstreamUserAgent: () => resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
-    getUpstreamUserAgents: () => resolveUpstreamUserAgentOverrides(proxyBridgeSettingsStore.get()),
-    getDefaultUpstreamUserAgent: () => defaultUpstreamUserAgent,
-    getUpstreamProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
-    getGatewayCredentialResolver: () => async ({ provider }) => {
-      const service = await getChatGptSubscriptionService();
-      return service.resolveCredential(provider);
-    },
-    getGatewayCredentialReporter: () => async ({ accountId, statusCode, errorCode }) => {
-      const service = await getChatGptSubscriptionService();
-      await service.reportCredentialResult({ ...(accountId ? { accountId } : {}), statusCode, ...(errorCode ? { errorCode } : {}) });
-    },
-    getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
-    resolveEcoThreadIdFromCodex: (codexThreadId) =>
-      codexThreadMap.getEcoThreadId(codexThreadId) ??
-      resolveCodexThreadAttribution(codexThreadMap, codexThreadId)?.ecoThreadId,
-    prepareClaudeMessages: async ({ path, body, model, headers }) => {
-      const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
-      return prepareClaudeBridgeMessagesRequest({
-        path,
-        body,
-        requestedModel: model,
-        headers,
-      });
-    },
-    resolveMessagesRoute: ({ model, headers }) => {
-      const resolved = resolveClaudeBridgeRoute(model, headers);
-      if (!resolved) return undefined;
-      return {
-        providerId: resolved.providerId,
-        upstreamModelId: resolved.upstreamModelId,
-        upstreamKind: resolved.upstreamKind,
-      };
-    },
-    getGlobalMaxOutputTokens: () => workflowSettingsStore.get().maxOutputLimitTokens,
-    onUsage: async (event) => {
-      const dispatch = classifyGatewayUsageEvent(event);
-      if (dispatch.kind === "claude_messages") {
-        // Synchronously reserve settle before any await so proxy.close() cannot race past billing.
-        const releaseUsageSettle = globalClaudeBridgeBindingRegistry.reserveUsageSettle(
-          event.bridgeBindingId,
+          settlements,
         );
-        try {
-          const binding = event.bridgeBindingId?.trim()
-            ? globalClaudeBridgeBindingRegistry.getByBindingId(event.bridgeBindingId)
-            : undefined;
-          const stampThreadId = event.threadId?.trim() || binding?.threadId?.trim();
-          const logicalRequestId = event.logicalRequestId?.trim();
-          const frozen =
-            stampThreadId && logicalRequestId
-              ? resolveFrozenLiveRequestAttribution(
-                  threadLiveRequestRegistry,
-                  stampThreadId,
-                  logicalRequestId,
-                )
-              : undefined;
-          const stampedAgentId = frozen?.agentId?.trim();
-          const stampedBillingRole = frozen?.role?.trim() as RuntimeAgentRole | undefined;
-          const handled = await emitClaudeGatewayUsageIfSession({
-            providerId: event.providerId,
-            requestedModel: event.requestedModel,
-            upstreamModelId: event.upstreamModelId,
-            usage: event.usage,
-            ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
-            ...(event.bridgeBindingId ? { bridgeBindingId: event.bridgeBindingId } : {}),
-            ...(logicalRequestId ? { logicalRequestId } : {}),
-            ...(event.ttftMs !== undefined && { ttftMs: event.ttftMs }),
-            ...(event.generationMs !== undefined && {
-              generationMs: event.generationMs,
-            }),
-            ...(event.firstHeadersMs !== undefined && {
-              firstHeadersMs: event.firstHeadersMs,
-            }),
-            ...(event.firstTokenMs !== undefined && {
-              firstTokenMs: event.firstTokenMs,
-            }),
-            ...(stampedAgentId ? { stampedAgentId } : {}),
-            ...(stampedBillingRole ? { stampedBillingRole } : {}),
+        emitSubagentTimingUpdated(threadId);
+      },
+    });
+    workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
+    logStartupStage("initial-settings.loaded");
+    projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
+    projectIntegrationsSettingsStore = await createProjectIntegrationsSettingsStore(dbPath);
+    projectOrchestrationSettingsStore = await createProjectOrchestrationSettingsStore(dbPath);
+    projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
+    gitSettingsStore = await createGitSettingsStore(dbPath);
+    personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
+    browserSettingsStore = await createBrowserSettingsStore(dbPath);
+    computerUseSettingsStore = await createComputerUseSettingsStore(dbPath);
+    computerUseGateway = new ComputerUseMcpGateway(() => computerUseSettingsStore.get());
+    webChatListStore = await createWebChatListStore(dbPath);
+    sshBookmarkStore = await createSshBookmarkStore(dbPath, createLocalSecretCodec());
+    notificationSettingsStore = await createNotificationSettingsStore(dbPath);
+    browserHost = new BrowserHost({
+      getMainWindow,
+      getSettings: () => browserSettingsStore,
+      broadcast: (state: BrowserViewState) => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          if (!window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.browserStateChanged, state);
+          }
+        });
+      },
+      broadcastAgentPresence: (event) => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          if (!window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.browserAgentPresence, event);
+          }
+        });
+      },
+      resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
+    });
+    const imageSecretCodec: ImageGenerationSecretCodec = {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+      decrypt: (value) => {
+        if (!value.startsWith("safe-v1:")) throw new Error("创意绘画 API Key 存储格式无效。");
+        return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+      },
+    };
+    imageGenerationStore = await createImageGenerationStore(dbPath, imageSecretCodec);
+    imageGenerationGateway = new ImageGenerationMcpGateway({
+      store: imageGenerationStore,
+      resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
+      resolveGenerationRoot: (threadId) =>
+        activeRunRuntimeState.worktreePlan(threadId)?.worktreePath ??
+        conversationStore.getThread(threadId)?.sdkCwd ??
+        conversationStore.getThread(threadId)?.workspacePath,
+      onArtifactChanged: (artifact) => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          if (!window.isDestroyed())
+            window.webContents.send(IPC_CHANNELS.imageGenerationArtifactChanged, artifact);
+        });
+      },
+    });
+    imageViewGateway = new ImageViewMcpGateway({
+      analyze: async ({ threadId, path: imagePath = "", ref, prompt, question, signal }) => {
+        signal?.throwIfAborted();
+        const requestedPrompt = prompt?.trim() || question?.trim() || "";
+        if (!requestedPrompt) {
+          throw new Error("image_view 调用必须提供 prompt。");
+        }
+        const file = ref
+          ? (() => {
+              const contextKey = `thread:${threadId}`;
+              if (!conversationStore.isPromptImageContentRefAuthorized(contextKey, ref)) {
+                throw new Error("图片 ref 未授权给当前线程。");
+              }
+              return promptImageFileStore.readContentRefAttachment(ref).then((resolved) => ({
+                mimeType: resolved.mediaType,
+                dataBase64: resolved.dataBase64,
+              }));
+            })()
+          : readImageViewFile(imagePath);
+        const resolvedFile = await file;
+        signal?.throwIfAborted();
+        if (!isPromptImageMediaType(resolvedFile.mimeType)) {
+          throw new Error(`Unsupported image media type: ${resolvedFile.mimeType}`);
+        }
+        const attachments: PromptImageAttachment[] = [
+          { mediaType: resolvedFile.mimeType, data: resolvedFile.dataBase64 },
+        ];
+        const agentId = `image_view:${threadId}:${randomUUID()}`;
+        const runAttemptId = agentLifecycle.currentRunAttemptId(threadId);
+        return runImageView(
+          {
+            threadId,
+            prompt: requestedPrompt,
+            attachments,
+            billingAgentId: agentId,
+            ...(signal ? { signal } : {}),
+            ...(runAttemptId ? { runAttemptId } : {}),
+          },
+          createThreadImageViewHost(runAttemptId),
+        );
+      },
+    });
+    imageDisplayStore = await createImageDisplayStore(
+      dbPath,
+      path.join(app.getPath("userData"), "image-display"),
+    );
+    imageDisplayGateway = new ImageDisplayMcpGateway({
+      store: imageDisplayStore,
+      onArtifactChanged: (artifact) => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          if (!window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.imageDisplayArtifactChanged, artifact);
+          }
+        });
+      },
+    });
+    htmlHostStore = new HtmlHostStore();
+    htmlHostGateway = new HtmlHostMcpGateway({
+      store: htmlHostStore,
+      api: {
+        probeCapability: () => centerServerClient.refreshHtmlHostingCapability({ force: true }),
+        publish: (input) => centerServerClient.publishHtmlPage(input),
+      },
+      getCapability: () => centerServerClient.refreshHtmlHostingCapability(),
+      onArtifactChanged: (artifact) => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          if (!window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.htmlHostArtifactChanged, artifact);
+          }
+        });
+      },
+    });
+    const asrSecretCodec: AsrSecretCodec = {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+      decrypt: (value) => {
+        if (!value.startsWith("safe-v1:")) {
+          throw new Error("ASR API key 存储格式无效。");
+        }
+        return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+      },
+    };
+    asrSettingsStore = await createAsrSettingsStore(dbPath, asrSecretCodec);
+    packageScriptArgsStore = createPackageScriptArgsStore(
+      path.join(app.getPath("userData"), "package-script-args.json"),
+    );
+    await packageScriptArgsStore.warmCache();
+    proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
+    const integratedWebSearchSecretCodec = {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value: string) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+      decrypt: (value: string) => {
+        if (!value.startsWith("safe-v1:")) {
+          throw new Error("Integrated Web Search API key is stored in an unsupported format.");
+        }
+        return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+      },
+    };
+    integratedWebSearchSettingsStore = await createIntegratedWebSearchSettingsStore(
+      dbPath,
+      integratedWebSearchSecretCodec,
+    );
+    integratedWebSearchGateway = new IntegratedWebSearchMcpGateway({
+      store: integratedWebSearchSettingsStore,
+      getApiKey: () => integratedWebSearchSettingsStore.getApiKey() ?? undefined,
+    });
+    const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
+    centerServerClient = new SupabaseCenterDesktopClient({
+      store: await createCenterServerStore(dbPath, {
+        ...(centerServerSecretCodec ? { secretCodec: centerServerSecretCodec } : {}),
+      }),
+      eventCenter: desktopEventCenter,
+      log: (message) => process.stderr.write(message),
+      onStatusChange: emitCenterServerStatus,
+      onHtmlHostingCapabilityChange: () => scheduleCodexGlobalRuntimeRefresh(),
+    });
+    centerServerClient.setSettingsSyncHooks(
+      createDesktopSettingsSyncHooks({
+        providerStore,
+        asrSettingsStore,
+        imageGenerationStore,
+        workflowSettingsStore,
+        agentOrchestrationStore,
+        proxyBridgeSettingsStore,
+        integratedWebSearchSettingsStore,
+        gitSettingsStore,
+        personalizationSettingsStore,
+        packageScriptArgsStore,
+        projectOrchestrationSettingsStore,
+        sshBookmarkStore,
+      }),
+    );
+    agentLifecycle = new AgentLifecycleService(conversationStore);
+    codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
+    const defaultUpstreamUserAgent = buildDefaultUpstreamUserAgent({
+      version: app.getVersion(),
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+    });
+    // Provider probes / model lists run outside the gateway: give them the same fallback.
+    setDefaultUpstreamUserAgent(defaultUpstreamUserAgent);
+    configureEcoGatewayLifecycle({
+      ecoDataDir: app.getPath("userData"),
+      listProviders: () => {
+        // The built-in ChatGPT provider may have been persisted by an older
+        // version. Migrate it before every Gateway sync so stale auth metadata
+        // cannot bypass the subscription Responses contract.
+        ensureChatGptSubscriptionProvider();
+        const routeModels = new Map<string, string[]>();
+        for (const profile of providerStore.listRouteProfiles()) {
+          for (const route of profile.routes) {
+            const models = routeModels.get(route.providerId) ?? [];
+            models.push(route.modelId);
+            routeModels.set(route.providerId, models);
+          }
+        }
+        return providerStore
+          .listProvidersWithSecrets()
+          .filter((provider) => provider.apiCompat !== "system_one")
+          .map((provider) => {
+            const candidates = providerStore.listCandidateModels(provider.id);
+            return {
+              id: provider.id,
+              name: provider.name,
+              enabled: provider.enabled,
+              baseUrl: provider.baseUrl,
+              requestPath: provider.requestPath,
+              version: provider.version,
+              apiKey: provider.apiKey,
+              ...(provider.authMethod ? { authMethod: provider.authMethod } : {}),
+              ...(provider.credentialPoolId ? { credentialPoolId: provider.credentialPoolId } : {}),
+              ...(provider.upstreamProxyUrl ? { upstreamProxyUrl: provider.upstreamProxyUrl } : {}),
+              apiCompat: resolveUpstreamApiCompat(undefined, provider.apiCompat),
+              defaultModel: provider.defaultModel,
+              models: candidates.map((model) => ({
+                modelId: model.modelId,
+                ...(model.manualSpec?.maxOutputTokens !== undefined
+                  ? { maxOutputTokens: model.manualSpec.maxOutputTokens }
+                  : {}),
+              })),
+              modelIds: routeModels.get(provider.id) ?? [],
+            };
           });
-          if (!handled) {
-            // Title/approval/aux or closed binding — do not fall into Codex turn billing.
-            logEcoDiag("messages.usage_unattributed", {
+      },
+      getUpstreamUserAgent: () => resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+      getUpstreamUserAgents: () => resolveUpstreamUserAgentOverrides(proxyBridgeSettingsStore.get()),
+      getDefaultUpstreamUserAgent: () => defaultUpstreamUserAgent,
+      getUpstreamProxyUrl: () => resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
+      getGatewayCredentialResolver:
+        () =>
+        async ({ provider }) => {
+          const service = await getChatGptSubscriptionService();
+          return service.resolveCredential(provider);
+        },
+      getGatewayCredentialReporter:
+        () =>
+        async ({ accountId, statusCode, errorCode }) => {
+          const service = await getChatGptSubscriptionService();
+          await service.reportCredentialResult({
+            ...(accountId ? { accountId } : {}),
+            statusCode,
+            ...(errorCode ? { errorCode } : {}),
+          });
+        },
+      getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
+      resolveEcoThreadIdFromCodex: (codexThreadId) =>
+        codexThreadMap.getEcoThreadId(codexThreadId) ??
+        resolveCodexThreadAttribution(codexThreadMap, codexThreadId)?.ecoThreadId,
+      onToolWriteStarted: (observation) => {
+        emitCodexToolWriteActivity(observation);
+      },
+      prepareClaudeMessages: async ({ path, body, model, headers }) => {
+        const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
+        return prepareClaudeBridgeMessagesRequest({
+          path,
+          body,
+          requestedModel: model,
+          headers,
+        });
+      },
+      resolveMessagesRoute: ({ model, headers }) => {
+        const resolved = resolveClaudeBridgeRoute(model, headers);
+        if (!resolved) return undefined;
+        return {
+          providerId: resolved.providerId,
+          upstreamModelId: resolved.upstreamModelId,
+          upstreamKind: resolved.upstreamKind,
+        };
+      },
+      getGlobalMaxOutputTokens: () => workflowSettingsStore.get().maxOutputLimitTokens,
+      onUsage: async (event) => {
+        const dispatch = classifyGatewayUsageEvent(event);
+        if (dispatch.kind === "claude_messages") {
+          // Synchronously reserve settle before any await so proxy.close() cannot race past billing.
+          const releaseUsageSettle = globalClaudeBridgeBindingRegistry.reserveUsageSettle(
+            event.bridgeBindingId,
+          );
+          try {
+            const binding = event.bridgeBindingId?.trim()
+              ? globalClaudeBridgeBindingRegistry.getByBindingId(event.bridgeBindingId)
+              : undefined;
+            const stampThreadId = event.threadId?.trim() || binding?.threadId?.trim();
+            const logicalRequestId = event.logicalRequestId?.trim();
+            const frozen =
+              stampThreadId && logicalRequestId
+                ? resolveFrozenLiveRequestAttribution(
+                    threadLiveRequestRegistry,
+                    stampThreadId,
+                    logicalRequestId,
+                  )
+                : undefined;
+            const stampedAgentId = frozen?.agentId?.trim();
+            const stampedBillingRole = frozen?.role?.trim() as RuntimeAgentRole | undefined;
+            const handled = await emitClaudeGatewayUsageIfSession({
               providerId: event.providerId,
               requestedModel: event.requestedModel,
               upstreamModelId: event.upstreamModelId,
-              sourceEventId: event.sourceEventId,
-              reason: "no_claude_bridge_binding_or_route",
+              usage: event.usage,
+              ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
+              ...(event.bridgeBindingId ? { bridgeBindingId: event.bridgeBindingId } : {}),
+              ...(logicalRequestId ? { logicalRequestId } : {}),
+              ...(event.ttftMs !== undefined && { ttftMs: event.ttftMs }),
+              ...(event.generationMs !== undefined && {
+                generationMs: event.generationMs,
+              }),
+              ...(event.firstHeadersMs !== undefined && {
+                firstHeadersMs: event.firstHeadersMs,
+              }),
+              ...(event.firstTokenMs !== undefined && {
+                firstTokenMs: event.firstTokenMs,
+              }),
+              ...(stampedAgentId ? { stampedAgentId } : {}),
+              ...(stampedBillingRole ? { stampedBillingRole } : {}),
             });
-            process.stderr.write(
-              `[eco] messages usage not billed: no Claude bridge binding route ` +
-                `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
-            );
+            if (!handled) {
+              // Title/approval/aux or closed binding — do not fall into Codex turn billing.
+              logEcoDiag("messages.usage_unattributed", {
+                providerId: event.providerId,
+                requestedModel: event.requestedModel,
+                upstreamModelId: event.upstreamModelId,
+                sourceEventId: event.sourceEventId,
+                reason: "no_claude_bridge_binding_or_route",
+              });
+              process.stderr.write(
+                `[eco] messages usage not billed: no Claude bridge binding route ` +
+                  `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
+              );
+            }
+          } finally {
+            releaseUsageSettle?.();
           }
-        } finally {
-          releaseUsageSettle?.();
+          return;
         }
-        return;
-      }
-      if (dispatch.kind === "unbillable") {
-        logEcoDiag("gateway.usage_unbillable", {
-          source: event.source,
-          reason: dispatch.reason,
-          providerId: event.providerId,
-          requestedModel: event.requestedModel,
-          sourceEventId: event.sourceEventId,
-        });
-        process.stderr.write(
-          `[eco] ${event.source} usage will not be billed: ${dispatch.reason} ` +
-            `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
-        );
-        return;
-      }
-      await handleCodexGatewayUsage(event);
-    },
-    onRequestLifecycle: (event) => {
-      handleGatewayRequestLifecycleEvent(event, {
-        onUpstreamRequestId: ({ threadId, role, requestId, logicalRequestId }) => {
-          adoptLiveProviderRequestId(threadId, logicalRequestId, requestId);
-        },
-        onUpstreamConnectionError: (input) => {
-          emitUpstreamConnectionErrorActivity(input);
-        },
-        onLogicalCompleted: ({ threadId, role, logicalRequestId }) => {
-          emitLogicalRequestTerminal(threadId, role, logicalRequestId, "completed");
-        },
-        onLogicalFailed: ({ threadId, role, error, statusCode, logicalRequestId }) => {
-          const detail = statusCode ? `HTTP ${statusCode}` : error;
-          emitLogicalRequestTerminal(threadId, role, logicalRequestId, "failed", detail);
-        },
-        onLogicalCancelled: ({ threadId, role, reason, logicalRequestId }) => {
-          emitLogicalRequestTerminal(threadId, role, logicalRequestId, "cancelled", reason);
-        },
-      });
-    },
-    onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
-  });
-  configureCodexRuntimeRun({
-    ecoDataDir: app.getPath("userData"),
-    getGlobalUserRules: () => personalizationSettingsStore.get().globalRules,
-    getGlobalContextWindowLimit: () => workflowSettingsStore.get().contextWindowLimitTokens,
-    enrichCatalogRoutes: async (routes) => {
-      const providers = providerStore.listProviders();
-      const byId = new Map(providers.map((provider) => [provider.id, provider]));
-      const enriched: CodexGatewayCatalogRoute[] = [];
-      for (const route of routes) {
-        if (typeof route.manualSpec?.contextTokens === "number" && route.manualSpec.contextTokens > 0) {
-          enriched.push(route);
-          continue;
-        }
-        const provider = byId.get(route.providerId);
-        if (!provider) {
-          enriched.push(route);
-          continue;
-        }
-        const candidate = providerStore
-          .listCandidateModels(provider.id)
-          .find((model) => model.modelId === route.modelId);
-        const manualContext = candidate?.manualSpec?.contextTokens;
-        const mapping = candidate?.modelsDevMapping;
-        let contextTokens: number | undefined =
-          typeof manualContext === "number" && manualContext > 0 ? manualContext : undefined;
-        if (contextTokens === undefined) {
-          const lookup = await pricingCache.lookupLimitsForRoute({
-            baseUrl: provider.baseUrl,
-            modelId: route.modelId,
-            ...(mapping && { mapping }),
+        if (dispatch.kind === "unbillable") {
+          logEcoDiag("gateway.usage_unbillable", {
+            source: event.source,
+            reason: dispatch.reason,
+            providerId: event.providerId,
+            requestedModel: event.requestedModel,
+            sourceEventId: event.sourceEventId,
           });
-          if (lookup?.limits.contextTokens && lookup.limits.contextTokens > 0) {
-            contextTokens = lookup.limits.contextTokens;
-          }
+          process.stderr.write(
+            `[eco] ${event.source} usage will not be billed: ${dispatch.reason} ` +
+              `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
+          );
+          return;
         }
-        if (contextTokens === undefined) {
-          enriched.push(route);
-          continue;
-        }
-        enriched.push({
-          ...route,
-          manualSpec: {
-            ...(route.manualSpec ?? {}),
-            contextTokens,
+        await handleCodexGatewayUsage(event);
+      },
+      onRequestLifecycle: (event) => {
+        handleGatewayRequestLifecycleEvent(event, {
+          onUpstreamRequestId: ({ threadId, role, requestId, logicalRequestId }) => {
+            adoptLiveProviderRequestId(threadId, logicalRequestId, requestId);
+          },
+          onUpstreamConnectionError: (input) => {
+            emitUpstreamConnectionErrorActivity(input);
+          },
+          onLogicalCompleted: ({ threadId, role, logicalRequestId }) => {
+            emitLogicalRequestTerminal(threadId, role, logicalRequestId, "completed");
+          },
+          onLogicalFailed: ({ threadId, role, error, statusCode, logicalRequestId }) => {
+            const detail = statusCode ? `HTTP ${statusCode}` : error;
+            emitLogicalRequestTerminal(threadId, role, logicalRequestId, "failed", detail);
+          },
+          onLogicalCancelled: ({ threadId, role, reason, logicalRequestId }) => {
+            emitLogicalRequestTerminal(threadId, role, logicalRequestId, "cancelled", reason);
           },
         });
-      }
-      return enriched;
-    },
-    listProviders: () =>
-      providerStore.listProviders().filter((provider) => provider.apiCompat !== "system_one").map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        enabled: provider.enabled,
-        apiCompat: resolveUpstreamApiCompat(undefined, provider.apiCompat),
-        defaultModel: provider.defaultModel,
-        models: providerStore.listCandidateModels(provider.id).map((model) => ({
-          modelId: model.modelId,
-          ...(model.displayName ? { displayName: model.displayName } : {}),
-          ...(model.manualSpec
-            ? {
-                manualSpec: {
-                  ...(model.manualSpec.contextTokens !== undefined
-                    ? { contextTokens: model.manualSpec.contextTokens }
-                    : {}),
-                  ...(model.manualSpec.supportsImageInput !== undefined
-                    ? {
-                        supportsImageInput: model.manualSpec.supportsImageInput,
-                      }
-                    : {}),
-                },
-              }
-            : {}),
-        })),
-      })),
-    listCatalogRouteConfigs: () => {
-      const routes: {
-        providerId: string;
-        modelId: string;
-        apiCompat: import("../shared/api-compat").ChatApiCompat;
-        displayName?: string;
-        manualSpec?: { contextTokens?: number; supportsImageInput?: boolean };
-      }[] = [];
-      for (const profile of providerStore.listRouteProfiles()) {
-        for (const route of profile.routes) {
-          const provider = providerStore.listProviders().find((p) => p.id === route.providerId);
-          if (!provider || !route.modelId.trim()) {
+      },
+      onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
+    });
+    configureCodexRuntimeRun({
+      ecoDataDir: app.getPath("userData"),
+      getGlobalUserRules: () => personalizationSettingsStore.get().globalRules,
+      getGlobalContextWindowLimit: () => workflowSettingsStore.get().contextWindowLimitTokens,
+      enrichCatalogRoutes: async (routes) => {
+        const providers = providerStore.listProviders();
+        const byId = new Map(providers.map((provider) => [provider.id, provider]));
+        const enriched: CodexGatewayCatalogRoute[] = [];
+        for (const route of routes) {
+          if (typeof route.manualSpec?.contextTokens === "number" && route.manualSpec.contextTokens > 0) {
+            enriched.push(route);
             continue;
           }
-          routes.push({
-            providerId: route.providerId,
-            modelId: route.modelId,
-            apiCompat: resolveUpstreamApiCompat(route.apiCompat, provider.apiCompat),
-            displayName: `${provider.name} / ${route.modelId}`,
-            ...(route.manualSpec
-              ? {
-                  manualSpec: {
-                    ...(route.manualSpec.contextTokens !== undefined
-                      ? { contextTokens: route.manualSpec.contextTokens }
-                      : {}),
-                    ...(route.manualSpec.supportsImageInput !== undefined
-                      ? {
-                          supportsImageInput: route.manualSpec.supportsImageInput,
-                        }
-                      : {}),
-                  },
-                }
-              : {}),
+          const provider = byId.get(route.providerId);
+          if (!provider) {
+            enriched.push(route);
+            continue;
+          }
+          const candidate = providerStore
+            .listCandidateModels(provider.id)
+            .find((model) => model.modelId === route.modelId);
+          const manualContext = candidate?.manualSpec?.contextTokens;
+          const mapping = candidate?.modelsDevMapping;
+          let contextTokens: number | undefined =
+            typeof manualContext === "number" && manualContext > 0 ? manualContext : undefined;
+          if (contextTokens === undefined) {
+            const lookup = await pricingCache.lookupLimitsForRoute({
+              baseUrl: provider.baseUrl,
+              modelId: route.modelId,
+              ...(mapping && { mapping }),
+            });
+            if (lookup?.limits.contextTokens && lookup.limits.contextTokens > 0) {
+              contextTokens = lookup.limits.contextTokens;
+            }
+          }
+          if (contextTokens === undefined) {
+            enriched.push(route);
+            continue;
+          }
+          enriched.push({
+            ...route,
+            manualSpec: {
+              ...(route.manualSpec ?? {}),
+              contextTokens,
+            },
           });
         }
-      }
-      return routes;
-    },
-    listCatalogOrchestrationAgents: () => listCodexCatalogRoutesFromSettings(),
-    listCatalogThreadRoutes: () => listCodexCatalogRoutesFromThreadSnapshots(),
-    listGlobalMcpServers: resolveCodexGlobalMcpServers,
-    threadMap: codexThreadMap,
-    resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
-    appendConversationRuntimeEvent: (event) => {
-      try {
-        if (!conversationStore.getThread(event.threadId)) {
-          throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
-        }
-        maybeRevealBrowserFromThreadRunEvent(event);
-        const persisted = conversationStore.appendConversationRuntimeEvent(event);
-        confirmForcedPlanDelegationFromRuntimeEvent(persisted);
-        if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
-          const codexThreadId =
-            typeof persisted.metadata.codexThreadId === "string" ? persisted.metadata.codexThreadId.trim() : "";
-          const turnId = typeof persisted.metadata.turnId === "string" ? persisted.metadata.turnId.trim() : "";
-          const attribution = codexThreadId
-            ? resolveCodexThreadAttribution(codexThreadMap, codexThreadId)
-            : undefined;
-          if (codexThreadId && turnId && attribution?.isSubagentThread) {
-            codexSubagentRuntimeLimit.start({
-              threadId: persisted.threadId,
-              agentId: codexThreadId,
-              turnId,
-            });
-          }
-        } else if (
-          (persisted.eventType === "agent.stopped" || persisted.eventType === "agent.abandoned") &&
-          persisted.agentId
-        ) {
-          codexSubagentRuntimeLimit.stop(persisted.agentId);
-        }
-        applyCodexSubagentLifecycleEvent(persisted, {
-          getAgentState: (threadId, agentId) => {
-            const agent = conversationStore
-              .listAgentInstances(threadId)
-              .find((candidate) => candidate.agentId === agentId);
-            return agent
-              ? {
-                  status: agent.status,
-                  ...(agent.parentToolUseId && {
-                    parentToolUseId: agent.parentToolUseId,
-                  }),
-                }
-              : undefined;
-          },
-          resolvePhase: (threadId) => {
-            const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
-            return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
-          },
-          startSession: (input) => conversationStore.upsertSubagentSessionActive(input),
-          stopSession: (threadId, agentId) => conversationStore.markSubagentSessionStopped(threadId, agentId),
-          startMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStart(threadId, input),
-          stopMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStop(threadId, input),
-          startAgent: (input) => {
-            agentLifecycle.startSubagent(input);
-          },
-          stopAgent: (input) => agentLifecycle.stopSubagent(input),
-          abandonAgent: (input) => agentLifecycle.abandonSubagent(input),
-        });
-      } catch (error) {
-        reportConversationRuntimeEventFailure({
-          event,
-          error,
-          appendEvent: (failure) => {
-            conversationStore.appendConversationRuntimeEvent(failure);
-          },
-          onProjectionUpdated: (threadId) => {
-            scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
-          },
-          logError: (message) => process.stderr.write(`${message}\n`),
-        });
-      }
-    },
-    bindLatestUserPromptToCodexItem: (threadId, itemId) => {
-      return Boolean(conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId));
-    },
-    resolveCodexForkTurnIndex: (threadId, itemId) =>
-      conversationStore.resolveCodexUserTurnIndex(threadId, itemId),
-    pruneThreadAfterCodexFork: (threadId, itemId) => {
-      conversationStore.rewindThreadToActivityLine(threadId, sdkActivityLineId(itemId));
-      resetThreadRuntimeAfterHistoryRewrite(threadId);
-      scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
-    },
-    scheduleThreadRunProjectionUpdated,
-    onCodexThreadMapped: flushPendingCodexGatewayUsage,
-    onCodexThreadAttributionRecorded: flushPendingCodexGatewayUsage,
-    onCodexTurnTokenUsage: ({ threadId, codexThreadId, turnId, appServerTokenUsage }) => {
-      void handleCodexAppServerTurnUsage({ threadId, codexThreadId, turnId, appServerTokenUsage }).catch(
-        (error) => {
-          process.stderr.write(
-            `[eco-codex] app-server turn usage billing failed thread=${threadId}: ${errorMessage(error)}\n`,
-          );
-        },
-      );
-    },
-    onCodexContextUpdated: (resolution) => {
-      void contextMonitor
-        .updateOccupied(resolution.ecoThreadId, resolution.billingRole, resolution.contextOccupied, {
-          limit: resolution.context.limit,
-        })
-        .then(() => contextScheduler.emitLiveFromMonitor(resolution.ecoThreadId))
-        .catch((error) => {
-          process.stderr.write(
-            `[eco-codex] context update failed thread=${resolution.ecoThreadId}: ${errorMessage(error)}\n`,
-          );
-        });
-    },
-    onCodexTurnPlanUpdated: ({ ecoThreadId, plan }) => {
-      if (!conversationStore.getThread(ecoThreadId)) {
-        process.stderr.write(`[eco-codex] turn/plan/updated references unknown Eco thread ${ecoThreadId}\n`);
-        return;
-      }
-      applyCodexTurnPlanProgress({
-        threadId: ecoThreadId,
-        plan,
-        services: {
-          listTodos: (threadId) => conversationStore.listCoderTodos(threadId),
-          replaceTodos: (threadId, todos) => conversationStore.replaceCoderTodos(threadId, todos),
-          emitTodoList,
-        },
-      });
-    },
-    onCodexPlanReady: ({ ecoThreadId, plan, planFilePath }) => {
-      const thread = conversationStore.getThread(ecoThreadId);
-      const worktreePath = resolveThreadWorktreePath(ecoThreadId);
-      const runtime = resolveRuntimeConfigForThreadId(ecoThreadId);
-      if (!thread) {
-        markThreadInterrupted(ecoThreadId, "Codex Plan completed for an unknown Eco thread.");
-        return;
-      }
-      if (!worktreePath) {
-        markThreadInterrupted(ecoThreadId, "Codex Plan completed without a persisted worktree path.");
-        return;
-      }
-      if (!runtime.ok) {
-        markThreadInterrupted(ecoThreadId, runtime.reason);
-        return;
-      }
-      const activityLines = conversationStore.listActivityLines(ecoThreadId);
-      const latestUserPrompt = [...activityLines]
-        .reverse()
-        .find((line) => line.role === "user" && line.message.trim())
-        ?.message.trim();
-      captureThreadPlanReady({
-        threadId: ecoThreadId,
-        workspacePath: thread.workspacePath,
-        worktreePath,
-        routesJson: JSON.stringify(runtime.routes),
-        payload: {
-          userPrompt: latestUserPrompt || thread.prompt,
-          analysis: "",
-          plan,
-          ...(planFilePath ? { planFilePath } : {}),
-        },
-        awaitingPlanMessage: "",
-      });
-      updateThread(ecoThreadId, {
-        status: "awaiting_plan",
-        message: "",
-      });
-    },
-    onCodexAsyncQuestions: (input) => handleCodexAsyncQuestions(input),
-    onStderr: (message) => process.stderr.write(`${message}\n`),
-  });
-  configureCodexApprovalBridge({
-    resolveEcoThreadId: (codexThreadId) => codexThreadMap.getEcoThreadId(codexThreadId) ?? codexThreadId,
-    getThread: (threadId) => {
-      const thread = conversationStore.getThread(threadId);
-      return thread ? { prompt: thread.prompt, workspacePath: thread.workspacePath } : undefined;
-    },
-    getWorktreePath: (threadId) => activeRunRuntimeState.worktreePlan(threadId)?.worktreePath,
-    getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
-    getApprovalMode: (threadId) => {
-      const thread = conversationStore.getThread(threadId);
-      return thread
-        ? (ensureThreadRuntimeConfig(thread).runtimeConfig?.bashReviewMode ?? "always")
-        : "always";
-    },
-    getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
-    getComputerUseActionApprovalMode: () => computerUseSettingsStore.get().actionApprovalMode,
-    getWebSearchApprovalMode: () => integratedWebSearchSettingsStore.get().approvalMode,
-    noteUpcomingImageGenerationTool: (threadId, toolName, toolUseId) => {
-      imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
-    },
-    reviewApproval: (threadId, request, tool) => reviewThreadToolApproval(threadId, request, tool, "codex"),
-    injectCodexApprovalFeedback: async ({ ecoThreadId, codexThreadId, turnId, toolUseId, text }) => {
-      const phase = codexMidTurnPorts.getPhase(ecoThreadId);
-      if (phase === "accepting") {
-        const pushed = await codexMidTurnPorts.tryPushUserText(ecoThreadId, text, {
-          clientUserMessageId: `approval-feedback:${toolUseId}`,
-        });
-        if (!pushed.ok) {
-          throw new Error(`Codex approval feedback was not delivered: ${pushed.reason}`);
-        }
-        return;
-      }
-      if (phase === "closing" || phase === "closed") {
-        throw new Error(`Codex approval feedback arrived after turn ingress closed (${phase}).`);
-      }
-      const client = getGlobalCodexRuntimeLifecycle()?.getClient();
-      if (!client) {
-        throw new Error("Codex approval feedback cannot be delivered because Codex is not running.");
-      }
-      await steerCodexTurn(client, {
-        threadId: codexThreadId,
-        turnId,
-        input: [{ type: "text", text }],
-        clientUserMessageId: `approval-feedback:${toolUseId}`,
-      });
-    },
-    getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
-    savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
-    emitThreadLive: (event) => {
-      if (event.type.startsWith("clarification.")) {
-        const clarificationToolUseId =
-          event.clarification?.toolUseId?.trim() || event.tool?.toolUseId?.trim();
-        emitThreadEvent(
-          event.threadId,
-          event.type,
-          event.message,
-          event.role ?? "system",
-          event.stream ?? false,
-          {
-            ...(event.clarification ? { clarification: event.clarification } : {}),
-            ...(event.tool
-              ? { tool: event.tool }
-              : clarificationToolUseId
+        return enriched;
+      },
+      listProviders: () =>
+        providerStore
+          .listProviders()
+          .filter((provider) => provider.apiCompat !== "system_one")
+          .map((provider) => ({
+            id: provider.id,
+            name: provider.name,
+            enabled: provider.enabled,
+            apiCompat: resolveUpstreamApiCompat(undefined, provider.apiCompat),
+            defaultModel: provider.defaultModel,
+            models: providerStore.listCandidateModels(provider.id).map((model) => ({
+              modelId: model.modelId,
+              ...(model.displayName ? { displayName: model.displayName } : {}),
+              ...(model.manualSpec
                 ? {
-                    tool: buildClarificationToolMetadata(
-                      clarificationToolUseId,
-                      event.type === "clarification.answered" ? "completed" : "started",
-                    ),
+                    manualSpec: {
+                      ...(model.manualSpec.contextTokens !== undefined
+                        ? { contextTokens: model.manualSpec.contextTokens }
+                        : {}),
+                      ...(model.manualSpec.supportsImageInput !== undefined
+                        ? {
+                            supportsImageInput: model.manualSpec.supportsImageInput,
+                          }
+                        : {}),
+                    },
                   }
                 : {}),
+            })),
+          })),
+      listCatalogRouteConfigs: () => {
+        const routes: {
+          providerId: string;
+          modelId: string;
+          apiCompat: import("../shared/api-compat").ChatApiCompat;
+          displayName?: string;
+          manualSpec?: { contextTokens?: number; supportsImageInput?: boolean };
+        }[] = [];
+        for (const profile of providerStore.listRouteProfiles()) {
+          for (const route of profile.routes) {
+            const provider = providerStore.listProviders().find((p) => p.id === route.providerId);
+            if (!provider || !route.modelId.trim()) {
+              continue;
+            }
+            routes.push({
+              providerId: route.providerId,
+              modelId: route.modelId,
+              apiCompat: resolveUpstreamApiCompat(route.apiCompat, provider.apiCompat),
+              displayName: `${provider.name} / ${route.modelId}`,
+              ...(route.manualSpec
+                ? {
+                    manualSpec: {
+                      ...(route.manualSpec.contextTokens !== undefined
+                        ? { contextTokens: route.manualSpec.contextTokens }
+                        : {}),
+                      ...(route.manualSpec.supportsImageInput !== undefined
+                        ? {
+                            supportsImageInput: route.manualSpec.supportsImageInput,
+                          }
+                        : {}),
+                    },
+                  }
+                : {}),
+            });
+          }
+        }
+        return routes;
+      },
+      listCatalogOrchestrationAgents: () => listCodexCatalogRoutesFromSettings(),
+      listCatalogThreadRoutes: () => listCodexCatalogRoutesFromThreadSnapshots(),
+      listGlobalMcpServers: resolveCodexGlobalMcpServers,
+      threadMap: codexThreadMap,
+      resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
+      appendConversationRuntimeEvent: (event) => {
+        try {
+          if (!conversationStore.getThread(event.threadId)) {
+            throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
+          }
+          maybeRevealBrowserFromThreadRunEvent(event);
+          const persisted = conversationStore.appendConversationRuntimeEvent(event);
+          confirmForcedPlanDelegationFromRuntimeEvent(persisted);
+          if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
+            const codexThreadId =
+              typeof persisted.metadata.codexThreadId === "string"
+                ? persisted.metadata.codexThreadId.trim()
+                : "";
+            const turnId =
+              typeof persisted.metadata.turnId === "string" ? persisted.metadata.turnId.trim() : "";
+            const attribution = codexThreadId
+              ? resolveCodexThreadAttribution(codexThreadMap, codexThreadId)
+              : undefined;
+            if (codexThreadId && turnId && attribution?.isSubagentThread) {
+              codexSubagentRuntimeLimit.start({
+                threadId: persisted.threadId,
+                agentId: codexThreadId,
+                turnId,
+              });
+            }
+          } else if (
+            (persisted.eventType === "agent.stopped" || persisted.eventType === "agent.abandoned") &&
+            persisted.agentId
+          ) {
+            codexSubagentRuntimeLimit.stop(persisted.agentId);
+          }
+          applyCodexSubagentLifecycleEvent(persisted, {
+            getAgentState: (threadId, agentId) => {
+              const agent = conversationStore
+                .listAgentInstances(threadId)
+                .find((candidate) => candidate.agentId === agentId);
+              return agent
+                ? {
+                    status: agent.status,
+                    ...(agent.parentToolUseId && {
+                      parentToolUseId: agent.parentToolUseId,
+                    }),
+                  }
+                : undefined;
+            },
+            resolvePhase: (threadId) => {
+              const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
+              return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
+            },
+            startSession: (input) => conversationStore.upsertSubagentSessionActive(input),
+            stopSession: (threadId, agentId) =>
+              conversationStore.markSubagentSessionStopped(threadId, agentId),
+            startMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStart(threadId, input),
+            stopMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStop(threadId, input),
+            startAgent: (input) => {
+              agentLifecycle.startSubagent(input);
+            },
+            stopAgent: (input) => agentLifecycle.stopSubagent(input),
+            abandonAgent: (input) => agentLifecycle.abandonSubagent(input),
+          });
+        } catch (error) {
+          reportConversationRuntimeEventFailure({
+            event,
+            error,
+            appendEvent: (failure) => {
+              conversationStore.appendConversationRuntimeEvent(failure);
+            },
+            onProjectionUpdated: (threadId) => {
+              scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
+            },
+            logError: (message) => process.stderr.write(`${message}\n`),
+          });
+        }
+      },
+      bindLatestUserPromptToCodexItem: (threadId, itemId) => {
+        return Boolean(conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId));
+      },
+      resolveCodexForkTurnIndex: (threadId, itemId) =>
+        conversationStore.resolveCodexUserTurnIndex(threadId, itemId),
+      pruneThreadAfterCodexFork: (threadId, itemId) => {
+        conversationStore.rewindThreadToActivityLine(threadId, sdkActivityLineId(itemId));
+        resetThreadRuntimeAfterHistoryRewrite(threadId);
+        scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
+      },
+      scheduleThreadRunProjectionUpdated,
+      onCodexThreadMapped: flushPendingCodexGatewayUsage,
+      onCodexThreadAttributionRecorded: flushPendingCodexGatewayUsage,
+      onCodexTurnTokenUsage: ({ threadId, codexThreadId, turnId, appServerTokenUsage }) => {
+        void handleCodexAppServerTurnUsage({ threadId, codexThreadId, turnId, appServerTokenUsage }).catch(
+          (error) => {
+            process.stderr.write(
+              `[eco-codex] app-server turn usage billing failed thread=${threadId}: ${errorMessage(error)}\n`,
+            );
           },
         );
-        return;
-      }
-      desktopEventCenter.publishThreadLiveEvent(event);
-    },
-    updateThreadStatus: (threadId, patch) =>
-      updateThread(threadId, {
-        status: patch.status as ThreadSummary["status"],
-        message: patch.message,
-      }),
-  });
-  configureCodexAsyncQuestionBridge({
-    getThread: (threadId) => conversationStore.getThread(threadId),
-    emitEvent: (threadId, type, message, role, extras) =>
-      emitThreadEvent(threadId, type, message, role, false, extras),
-    registerPending: (threadId, toolUseId, parsed) =>
-      registerPendingClarification(threadId, toolUseId, parsed),
-    getPending: (toolUseId) => getPendingClarificationByToolUseId(toolUseId),
-    submitPending: (toolUseId, answers) => submitClarification(toolUseId, answers),
-    headHistoryRevision: (threadId) => conversationStore.conversationV2().head(threadId).historyRevision,
-    enqueueFollowUp: (request) => enqueueThreadFollowUpCommand(request),
-    sendMessage: (input) => {
-      const accepted = conversationStore.conversationV2().sendMessage({
-        principalId: input.principalId,
-        conversationId: input.conversationId,
-        clientCommandId: input.clientCommandId,
-        text: input.text,
-      });
-      return { messageId: accepted.messageId, turnId: accepted.turnId };
-    },
-    scheduleAcceptedMessage: (input) => scheduleAcceptedConversationMessage(input),
-    errorMessage: (error) => errorMessage(error),
-    logDiag: (event, payload) => logEcoDiag(event, payload),
-  });
-  pricingCache = new ModelsDevPricingCache({
-    cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
-    // Chromium net stack honors OS system proxy (Clash / PAC / etc.); Node fetch does not.
-    fetchImpl: net.fetch.bind(net) as typeof fetch,
-  });
-  pricingCatalogReady = pricingCache.getCatalog().then(() => {
-    const loadError = pricingCache.getLastLoadError();
-    if (loadError) {
-      process.stderr.write(`[eco] models.dev pricing cache unavailable: ${loadError}\n`);
-    }
-  });
-  billingRuntimeEnvironment = createBillingRuntimeEnvironment({
-    waitUntilReady: () => pricingCatalogReady,
-    resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
-    lookupPricing: lookupUsageBillingPricing,
-  });
-  contextMonitor = new ContextWindowMonitor(
-    pricingCache,
-    () => workflowSettingsStore.get().contextWindowLimitTokens,
-  );
-  threadPromptCacheMonitor = new ThreadPromptCacheMonitor();
-  threadPromptCacheEpisodeMonitor = new ThreadPromptCacheEpisodeMonitor();
-  promptCacheRunEventEmitter = createPromptCacheRunEventEmitter(
-    {
-      getThread: (threadId) => conversationStore.getThread(threadId),
-      appendConversationRuntimeEvent: (event) => conversationStore.appendConversationRuntimeEvent(event),
-      scheduleProjectionUpdated: (threadId) => scheduleThreadRunProjectionUpdated(threadId),
-      emitThreadEvent: (threadId, type, message) => emitThreadEvent(threadId, type, message, "system"),
-      resolveCurrentRunAttemptId: (threadId) => resolveCurrentRunAttemptId(threadId),
-      writeStderr: (message) => process.stderr.write(message),
-    },
-    threadPromptCacheEpisodeMonitor,
-  );
-  threadCacheHitMonitor = new ThreadCacheHitMonitor();
-  contextScheduler = new ContextSnapshotScheduler({
-    monitor: contextMonitor,
-    emitContext: emitThreadContextUpdated,
-  });
-  contextLifecycle = createContextLifecycleService({
-    monitor: {
-      markCompactCompleted: (threadId, postTokens) => {
-        const snapshot = contextMonitor.markCompactCompleted(threadId, postTokens);
-        syncSystemSleepBlocker();
-        return snapshot;
       },
-      noteCompactionObserved: (threadId) => {
-        contextMonitor.noteCompactionObserved(threadId);
-        syncSystemSleepBlocker();
+      onCodexContextUpdated: (resolution) => {
+        void contextMonitor
+          .updateOccupied(resolution.ecoThreadId, resolution.billingRole, resolution.contextOccupied, {
+            limit: resolution.context.limit,
+          })
+          .then(() => contextScheduler.emitLiveFromMonitor(resolution.ecoThreadId))
+          .catch((error) => {
+            process.stderr.write(
+              `[eco-codex] context update failed thread=${resolution.ecoThreadId}: ${errorMessage(error)}\n`,
+            );
+          });
       },
-    },
-    emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
-    applySdkContextUsageBreakdown: (threadId, payload) => {
-      contextScheduler.applySdkContextUsageBreakdown(threadId, payload);
-    },
-    recordCompactionBoundary: (threadId, payload) => {
-      const postTokens = extractCompactPostTokens(payload);
-      emitContextCompactionStatus(threadId, {
-        stage: "completed",
-        trigger: "auto",
-        ...(postTokens !== undefined && { postTokens }),
-      });
-    },
-  });
-  initializeSdkStreamActivityPipeline();
-  loadThreadMetricsFromStore();
-  logStartupStage("thread-metrics.restored");
-  recoverOrphanedRunningThreads(logStartupStage);
-  logStartupStage("orphaned-threads.recovered");
-  recoverQueuedConversationV2Messages();
-  logStartupStage("queued-v2-messages.recovered");
-  syncSystemSleepBlocker();
-  currentWorkspace = await ensureHomeProject();
-  logStartupStage("home-workspace.ready");
-  initializeGitAutoFetcher();
-  schedulingService = createSchedulingService(dbPath);
-  schedulingGateway = new SchedulingMcpGateway(schedulingService);
-  registerIpcHandlers();
-  schedulingService.start();
-  if (centerServerClient.getSnapshot().settings.enabled) {
-    void centerServerClient.start();
-  }
-  if (startupWindow && !startupWindow.isDestroyed()) {
-    const mainWindow = await createMainWindow({ show: false });
-    await waitForInitialDesktopRendererReady();
-    if (!startupWindow.isDestroyed()) {
-      startupWindow.close();
-    }
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.show();
-    mainWindow.focus();
-  } else {
-    await createMainWindow();
-  }
-  logStartupStage("main-window.ready");
-  // The Cursor ACP probe spawns `agent acp` and runs a JSON-RPC handshake with it
-  // (~1.4s of subprocess + main-process work). It only repairs a stale "Cursor ACP
-  // enabled" setting, and the use-time path re-probes through
-  // assertAcpCursorRunnableForMain, so it runs after the window is up: measuring
-  // showed that overlapping it with startup only moved the cost downstream.
-  void reconcileAcpCursorAgainstProbe().catch((error: unknown) => {
-    logEcoDiag("acp-cursor.startup-reconcile-failed", { error: errorMessage(error) });
-  });
-  desktopUpdateService.start();
-  // Skill materials only when capability is ON (no CDP / no session inject at boot).
-  if (browserSettingsStore.get().agentIntegrationEnabled) {
-    void ensureClaudeUserEcoAgentBrowserSkill().catch((error) => {
-      process.stderr.write(
-        `[eco-browser] skill ensure failed: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      onCodexTurnPlanUpdated: ({ ecoThreadId, plan }) => {
+        if (!conversationStore.getThread(ecoThreadId)) {
+          process.stderr.write(
+            `[eco-codex] turn/plan/updated references unknown Eco thread ${ecoThreadId}\n`,
+          );
+          return;
+        }
+        applyCodexTurnPlanProgress({
+          threadId: ecoThreadId,
+          plan,
+          services: {
+            listTodos: (threadId) => conversationStore.listCoderTodos(threadId),
+            replaceTodos: (threadId, todos) => conversationStore.replaceCoderTodos(threadId, todos),
+            emitTodoList,
+          },
+        });
+      },
+      onCodexPlanReady: ({ ecoThreadId, plan, planFilePath }) => {
+        const thread = conversationStore.getThread(ecoThreadId);
+        const worktreePath = resolveThreadWorktreePath(ecoThreadId);
+        const runtime = resolveRuntimeConfigForThreadId(ecoThreadId);
+        if (!thread) {
+          markThreadInterrupted(ecoThreadId, "Codex Plan completed for an unknown Eco thread.");
+          return;
+        }
+        if (!worktreePath) {
+          markThreadInterrupted(ecoThreadId, "Codex Plan completed without a persisted worktree path.");
+          return;
+        }
+        if (!runtime.ok) {
+          markThreadInterrupted(ecoThreadId, runtime.reason);
+          return;
+        }
+        const activityLines = conversationStore.listActivityLines(ecoThreadId);
+        const latestUserPrompt = [...activityLines]
+          .reverse()
+          .find((line) => line.role === "user" && line.message.trim())
+          ?.message.trim();
+        captureThreadPlanReady({
+          threadId: ecoThreadId,
+          workspacePath: thread.workspacePath,
+          worktreePath,
+          routesJson: JSON.stringify(runtime.routes),
+          payload: {
+            userPrompt: latestUserPrompt || thread.prompt,
+            analysis: "",
+            plan,
+            ...(planFilePath ? { planFilePath } : {}),
+          },
+          awaitingPlanMessage: "",
+        });
+        updateThread(ecoThreadId, {
+          status: "awaiting_plan",
+          message: "",
+        });
+      },
+      onCodexAsyncQuestions: (input) => handleCodexAsyncQuestions(input),
+      onStderr: (message) => process.stderr.write(`${message}\n`),
     });
-  }
-  desktopInitializationComplete = true;
-
-  // On Windows/Linux a deep link that cold-started the app arrives via argv
-  // (the "open-url" event only fires for an already-running instance). Seed
-  // the pending link so it is flushed to the renderer once it is ready.
-  const argvDeepLink = process.argv.find((arg) => arg.startsWith("eco://"));
-  if (argvDeepLink && !pendingEcoDeepLink) {
-    pendingEcoDeepLink = argvDeepLink;
-  }
-
-  nativeTheme.on("updated", () => {
-    syncWindowControlsOverlays();
-  });
-
-  app.on("browser-window-focus", () => {
-    gitAutoFetcher?.setWindowFocused(true);
-    void centerServerClient?.recoverAfterIdle("focus");
-  });
-  app.on("browser-window-blur", () => {
-    gitAutoFetcher?.setWindowFocused(false);
-  });
-
-  powerMonitor.on("resume", () => {
-    void centerServerClient?.recoverAfterIdle("resume");
-  });
-  powerMonitor.on("unlock-screen", () => {
-    void centerServerClient?.recoverAfterIdle("unlock-screen");
-  });
-
-  app.on("activate", async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    configureCodexApprovalBridge({
+      resolveEcoThreadId: (codexThreadId) => codexThreadMap.getEcoThreadId(codexThreadId) ?? codexThreadId,
+      getThread: (threadId) => {
+        const thread = conversationStore.getThread(threadId);
+        return thread ? { prompt: thread.prompt, workspacePath: thread.workspacePath } : undefined;
+      },
+      getWorktreePath: (threadId) => activeRunRuntimeState.worktreePlan(threadId)?.worktreePath,
+      getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
+      getApprovalMode: (threadId) => {
+        const thread = conversationStore.getThread(threadId);
+        return thread
+          ? (ensureThreadRuntimeConfig(thread).runtimeConfig?.bashReviewMode ?? "always")
+          : "always";
+      },
+      getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
+      getComputerUseActionApprovalMode: () => computerUseSettingsStore.get().actionApprovalMode,
+      getWebSearchApprovalMode: () => integratedWebSearchSettingsStore.get().approvalMode,
+      noteUpcomingImageGenerationTool: (threadId, toolName, toolUseId) => {
+        imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+      },
+      reviewApproval: (threadId, request, tool) => reviewThreadToolApproval(threadId, request, tool, "codex"),
+      injectCodexApprovalFeedback: async ({ ecoThreadId, codexThreadId, turnId, toolUseId, text }) => {
+        const phase = codexMidTurnPorts.getPhase(ecoThreadId);
+        if (phase === "accepting") {
+          const pushed = await codexMidTurnPorts.tryPushUserText(ecoThreadId, text, {
+            clientUserMessageId: `approval-feedback:${toolUseId}`,
+          });
+          if (!pushed.ok) {
+            throw new Error(`Codex approval feedback was not delivered: ${pushed.reason}`);
+          }
+          return;
+        }
+        if (phase === "closing" || phase === "closed") {
+          throw new Error(`Codex approval feedback arrived after turn ingress closed (${phase}).`);
+        }
+        const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+        if (!client) {
+          throw new Error("Codex approval feedback cannot be delivered because Codex is not running.");
+        }
+        await steerCodexTurn(client, {
+          threadId: codexThreadId,
+          turnId,
+          input: [{ type: "text", text }],
+          clientUserMessageId: `approval-feedback:${toolUseId}`,
+        });
+      },
+      getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
+      savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
+      emitThreadLive: (event) => {
+        if (event.type.startsWith("clarification.")) {
+          const clarificationToolUseId =
+            event.clarification?.toolUseId?.trim() || event.tool?.toolUseId?.trim();
+          emitThreadEvent(
+            event.threadId,
+            event.type,
+            event.message,
+            event.role ?? "system",
+            event.stream ?? false,
+            {
+              ...(event.clarification ? { clarification: event.clarification } : {}),
+              ...(event.tool
+                ? { tool: event.tool }
+                : clarificationToolUseId
+                  ? {
+                      tool: buildClarificationToolMetadata(
+                        clarificationToolUseId,
+                        event.type === "clarification.answered" ? "completed" : "started",
+                      ),
+                    }
+                  : {}),
+            },
+          );
+          return;
+        }
+        desktopEventCenter.publishThreadLiveEvent(event);
+      },
+      updateThreadStatus: (threadId, patch) =>
+        updateThread(threadId, {
+          status: patch.status as ThreadSummary["status"],
+          message: patch.message,
+        }),
+    });
+    configureCodexAsyncQuestionBridge({
+      getThread: (threadId) => conversationStore.getThread(threadId),
+      emitEvent: (threadId, type, message, role, extras) =>
+        emitThreadEvent(threadId, type, message, role, false, extras),
+      registerPending: (threadId, toolUseId, parsed) =>
+        registerPendingClarification(threadId, toolUseId, parsed),
+      getPending: (toolUseId) => getPendingClarificationByToolUseId(toolUseId),
+      submitPending: (toolUseId, answers) => submitClarification(toolUseId, answers),
+      headHistoryRevision: (threadId) => conversationStore.conversationV2().head(threadId).historyRevision,
+      enqueueFollowUp: (request) => enqueueThreadFollowUpCommand(request),
+      sendMessage: (input) => {
+        const accepted = conversationStore.conversationV2().sendMessage({
+          principalId: input.principalId,
+          conversationId: input.conversationId,
+          clientCommandId: input.clientCommandId,
+          text: input.text,
+        });
+        return { messageId: accepted.messageId, turnId: accepted.turnId };
+      },
+      scheduleAcceptedMessage: (input) => scheduleAcceptedConversationMessage(input),
+      errorMessage: (error) => errorMessage(error),
+      logDiag: (event, payload) => logEcoDiag(event, payload),
+    });
+    pricingCache = new ModelsDevPricingCache({
+      cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
+      // Chromium net stack honors OS system proxy (Clash / PAC / etc.); Node fetch does not.
+      fetchImpl: net.fetch.bind(net) as typeof fetch,
+    });
+    pricingCatalogReady = pricingCache.getCatalog().then(() => {
+      const loadError = pricingCache.getLastLoadError();
+      if (loadError) {
+        process.stderr.write(`[eco] models.dev pricing cache unavailable: ${loadError}\n`);
+      }
+    });
+    billingRuntimeEnvironment = createBillingRuntimeEnvironment({
+      waitUntilReady: () => pricingCatalogReady,
+      resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
+      lookupPricing: lookupUsageBillingPricing,
+    });
+    contextMonitor = new ContextWindowMonitor(
+      pricingCache,
+      () => workflowSettingsStore.get().contextWindowLimitTokens,
+    );
+    threadPromptCacheMonitor = new ThreadPromptCacheMonitor();
+    threadPromptCacheEpisodeMonitor = new ThreadPromptCacheEpisodeMonitor();
+    promptCacheRunEventEmitter = createPromptCacheRunEventEmitter(
+      {
+        getThread: (threadId) => conversationStore.getThread(threadId),
+        appendConversationRuntimeEvent: (event) => conversationStore.appendConversationRuntimeEvent(event),
+        scheduleProjectionUpdated: (threadId) => scheduleThreadRunProjectionUpdated(threadId),
+        emitThreadEvent: (threadId, type, message) => emitThreadEvent(threadId, type, message, "system"),
+        resolveCurrentRunAttemptId: (threadId) => resolveCurrentRunAttemptId(threadId),
+        writeStderr: (message) => process.stderr.write(message),
+      },
+      threadPromptCacheEpisodeMonitor,
+    );
+    threadCacheHitMonitor = new ThreadCacheHitMonitor();
+    contextScheduler = new ContextSnapshotScheduler({
+      monitor: contextMonitor,
+      emitContext: emitThreadContextUpdated,
+    });
+    contextLifecycle = createContextLifecycleService({
+      monitor: {
+        markCompactCompleted: (threadId, postTokens) => {
+          const snapshot = contextMonitor.markCompactCompleted(threadId, postTokens);
+          syncSystemSleepBlocker();
+          return snapshot;
+        },
+        noteCompactionObserved: (threadId) => {
+          contextMonitor.noteCompactionObserved(threadId);
+          syncSystemSleepBlocker();
+        },
+      },
+      emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
+      applySdkContextUsageBreakdown: (threadId, payload) => {
+        contextScheduler.applySdkContextUsageBreakdown(threadId, payload);
+      },
+      recordCompactionBoundary: (threadId, payload) => {
+        const postTokens = extractCompactPostTokens(payload);
+        emitContextCompactionStatus(threadId, {
+          stage: "completed",
+          trigger: "auto",
+          ...(postTokens !== undefined && { postTokens }),
+        });
+      },
+    });
+    initializeSdkStreamActivityPipeline();
+    loadThreadMetricsFromStore();
+    logStartupStage("thread-metrics.restored");
+    recoverOrphanedRunningThreads(logStartupStage);
+    logStartupStage("orphaned-threads.recovered");
+    recoverQueuedConversationV2Messages();
+    logStartupStage("queued-v2-messages.recovered");
+    syncSystemSleepBlocker();
+    currentWorkspace = await ensureHomeProject();
+    logStartupStage("home-workspace.ready");
+    initializeGitAutoFetcher();
+    schedulingService = createSchedulingService(dbPath);
+    schedulingGateway = new SchedulingMcpGateway(schedulingService);
+    registerIpcHandlers();
+    schedulingService.start();
+    if (centerServerClient.getSnapshot().settings.enabled) {
+      void centerServerClient.start();
+    }
+    if (startupWindow && !startupWindow.isDestroyed()) {
+      const mainWindow = await createMainWindow({ show: false });
+      await waitForInitialDesktopRendererReady();
+      if (!startupWindow.isDestroyed()) {
+        startupWindow.close();
+      }
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
       await createMainWindow();
     }
+    logStartupStage("main-window.ready");
+    // The Cursor ACP probe spawns `agent acp` and runs a JSON-RPC handshake with it
+    // (~1.4s of subprocess + main-process work). It only repairs a stale "Cursor ACP
+    // enabled" setting, and the use-time path re-probes through
+    // assertAcpCursorRunnableForMain, so it runs after the window is up: measuring
+    // showed that overlapping it with startup only moved the cost downstream.
+    void reconcileAcpCursorAgainstProbe().catch((error: unknown) => {
+      logEcoDiag("acp-cursor.startup-reconcile-failed", { error: errorMessage(error) });
+    });
+    desktopUpdateService.start();
+    // Skill materials only when capability is ON (no CDP / no session inject at boot).
+    if (browserSettingsStore.get().agentIntegrationEnabled) {
+      void ensureClaudeUserEcoAgentBrowserSkill().catch((error) => {
+        process.stderr.write(
+          `[eco-browser] skill ensure failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      });
+    }
+    desktopInitializationComplete = true;
+
+    // On Windows/Linux a deep link that cold-started the app arrives via argv
+    // (the "open-url" event only fires for an already-running instance). Seed
+    // the pending link so it is flushed to the renderer once it is ready.
+    const argvDeepLink = process.argv.find((arg) => arg.startsWith("eco://"));
+    if (argvDeepLink && !pendingEcoDeepLink) {
+      pendingEcoDeepLink = argvDeepLink;
+    }
+
+    nativeTheme.on("updated", () => {
+      syncWindowControlsOverlays();
+    });
+
+    app.on("browser-window-focus", () => {
+      gitAutoFetcher?.setWindowFocused(true);
+      void centerServerClient?.recoverAfterIdle("focus");
+    });
+    app.on("browser-window-blur", () => {
+      gitAutoFetcher?.setWindowFocused(false);
+    });
+
+    powerMonitor.on("resume", () => {
+      void centerServerClient?.recoverAfterIdle("resume");
+    });
+    powerMonitor.on("unlock-screen", () => {
+      void centerServerClient?.recoverAfterIdle("unlock-screen");
+    });
+
+    app.on("activate", async () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        await createMainWindow();
+      }
+    });
+  })
+  .catch((error: unknown) => {
+    const startupError = error instanceof Error ? error : new Error(String(error));
+    logUpstream("desktop.startup-failed", {
+      message: startupError.message,
+      ...(startupError.stack && { stack: startupError.stack }),
+    });
+    try {
+      dialog.showErrorBox(
+        "Eco Coding 启动失败",
+        `${startupError.message}\n\n详细日志：${getUpstreamLogFilePath()}`,
+      );
+    } finally {
+      app.quit();
+    }
   });
-}).catch((error: unknown) => {
-  const startupError = error instanceof Error ? error : new Error(String(error));
-  logUpstream("desktop.startup-failed", {
-    message: startupError.message,
-    ...(startupError.stack && { stack: startupError.stack }),
-  });
-  try {
-    dialog.showErrorBox(
-      "Eco Coding 启动失败",
-      `${startupError.message}\n\n详细日志：${getUpstreamLogFilePath()}`,
-    );
-  } finally {
-    app.quit();
-  }
-});
 
 app.on("window-all-closed", () => {
   // Main-window close already runs full shutdownApplication (stops eco-gateway).
@@ -3301,9 +3362,10 @@ function getModelSettingsSnapshot(): ModelSettingsSnapshot {
   try {
     const authJsonPath = path.join(app.getPath("userData"), "codex", "auth.json");
     openAiAccountActive = existsSync(authJsonPath);
-  } catch { /* app not ready yet */ }
-  const chatGptSubscriptionModelId = providerStore
-    .listCandidateModels("eco-coding-chatgpt")[0]?.modelId;
+  } catch {
+    /* app not ready yet */
+  }
+  const chatGptSubscriptionModelId = providerStore.listCandidateModels("eco-coding-chatgpt")[0]?.modelId;
   return {
     ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore, {
       openAiAccountActive,
@@ -4073,15 +4135,23 @@ function showDesktopNotification(content: { title: string; body: string }, threa
 function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.schedulingList, () => schedulingService.store.snapshot());
   registerDesktopCommand(IPC_CHANNELS.schedulingCreate, (input: ScheduleCreateInput) => {
-    if (input.kind === "scheduled_task") input = { ...input, executionProfile: pinSchedulingProfile(input.executionProfile) };
+    if (input.kind === "scheduled_task")
+      input = { ...input, executionProfile: pinSchedulingProfile(input.executionProfile) };
     return schedulingService.create(input);
   });
-  registerDesktopCommand(IPC_CHANNELS.schedulingUpdate, (input: ScheduleUpdateInput) => schedulingService.update({
-    ...input, ...(input.executionProfile ? { executionProfile: pinSchedulingProfile(input.executionProfile) } : {}),
-  }));
+  registerDesktopCommand(IPC_CHANNELS.schedulingUpdate, (input: ScheduleUpdateInput) =>
+    schedulingService.update({
+      ...input,
+      ...(input.executionProfile ? { executionProfile: pinSchedulingProfile(input.executionProfile) } : {}),
+    }),
+  );
   registerDesktopCommand(IPC_CHANNELS.schedulingDelete, (id: string) => schedulingService.remove(id));
-  registerDesktopCommand(IPC_CHANNELS.schedulingRunNow, (input: { id: string; requestId: string }) => schedulingService.runNow(input.id, input.requestId));
-  registerDesktopCommand(IPC_CHANNELS.schedulingPreview, (trigger: ScheduleTrigger) => previewSchedule(trigger));
+  registerDesktopCommand(IPC_CHANNELS.schedulingRunNow, (input: { id: string; requestId: string }) =>
+    schedulingService.runNow(input.id, input.requestId),
+  );
+  registerDesktopCommand(IPC_CHANNELS.schedulingPreview, (trigger: ScheduleTrigger) =>
+    previewSchedule(trigger),
+  );
   // Terminal paste reads through the main process: the renderer clipboard-read permission
   // stays denied, and Electron's clipboard is not gated on window focus.
   registerDesktopCommand(IPC_CHANNELS.clipboardReadText, async () => clipboard.readText());
@@ -4656,10 +4726,14 @@ function registerIpcHandlers(): void {
     if (!isSavePackageScriptArgsRequest(payload)) {
       throw new Error("Invalid save package script args request.");
     }
-    const overrides = await packageScriptArgsStore.saveScriptOverrides(payload.workspacePath, payload.script, {
-      ...(payload.args !== undefined ? { args: payload.args } : {}),
-      ...(payload.prefix !== undefined ? { prefix: payload.prefix } : {}),
-    });
+    const overrides = await packageScriptArgsStore.saveScriptOverrides(
+      payload.workspacePath,
+      payload.script,
+      {
+        ...(payload.args !== undefined ? { args: payload.args } : {}),
+        ...(payload.prefix !== undefined ? { prefix: payload.prefix } : {}),
+      },
+    );
     return {
       workspacePath: path.resolve(payload.workspacePath),
       scriptArgs: overrides.args,
@@ -5662,158 +5736,187 @@ function registerIpcHandlers(): void {
     return service.listAccounts();
   });
 
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountCreate, async (payload: { displayName?: string; proxyUrl?: string }) => {
-    ensureChatGptSubscriptionProvider();
-    const service = await getChatGptSubscriptionService();
-    return service.createAccount(payload?.displayName ?? "ChatGPT 账号", payload?.proxyUrl);
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountSetProxy, async (payload: { accountId: string; proxyUrl?: string }) => {
-    const service = await getChatGptSubscriptionService();
-    return service.setProxyUrl(payload.accountId, payload.proxyUrl);
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountTest, async (payload: { accountId: string; modelId?: string }) => {
-    try {
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountCreate,
+    async (payload: { displayName?: string; proxyUrl?: string }) => {
+      ensureChatGptSubscriptionProvider();
       const service = await getChatGptSubscriptionService();
-      return await service.testAccount(payload.accountId, payload.modelId ?? "");
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : String(error) };
-    }
-  });
+      return service.createAccount(payload?.displayName ?? "ChatGPT 账号", payload?.proxyUrl);
+    },
+  );
 
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountDelete, async (payload: { accountId: string }) => {
-    const service = await getChatGptSubscriptionService();
-    await service.deleteAccount(payload.accountId);
-    return { success: true };
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountSetProxy,
+    async (payload: { accountId: string; proxyUrl?: string }) => {
+      const service = await getChatGptSubscriptionService();
+      return service.setProxyUrl(payload.accountId, payload.proxyUrl);
+    },
+  );
 
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountSetEnabled, async (payload: { accountId: string; enabled: boolean }) => {
-    const service = await getChatGptSubscriptionService();
-    return service.setEnabled(payload.accountId, payload.enabled);
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountTest,
+    async (payload: { accountId: string; modelId?: string }) => {
+      try {
+        const service = await getChatGptSubscriptionService();
+        return await service.testAccount(payload.accountId, payload.modelId ?? "");
+      } catch (error) {
+        return { success: false, message: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  );
 
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountResetAvailability, async (payload: { accountId: string }) => {
-    const service = await getChatGptSubscriptionService();
-    return service.resetAvailability(payload.accountId);
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountDelete,
+    async (payload: { accountId: string }) => {
+      const service = await getChatGptSubscriptionService();
+      await service.deleteAccount(payload.accountId);
+      return { success: true };
+    },
+  );
+
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountSetEnabled,
+    async (payload: { accountId: string; enabled: boolean }) => {
+      const service = await getChatGptSubscriptionService();
+      return service.setEnabled(payload.accountId, payload.enabled);
+    },
+  );
+
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountResetAvailability,
+    async (payload: { accountId: string }) => {
+      const service = await getChatGptSubscriptionService();
+      return service.resetAvailability(payload.accountId);
+    },
+  );
 
   const observeChatGptSubscriptionLogin = (
     login: Awaited<ReturnType<ChatGptSubscriptionService["beginLogin"]>>,
   ): void => {
-    void login.result.then((account) => {
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("chatgpt-subscription:login-result", { success: true, account });
-        }
-      });
-      emitSettingsUpdated();
-    }).catch((error) => {
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("chatgpt-subscription:login-result", {
-            success: false,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
-    });
-  };
-
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountAuthorizationUrl, async (payload: { accountId: string }) => {
-    try {
-      const service = await getChatGptSubscriptionService();
-      // Do not put id_token_hint in a copied URL. The user can select the
-      // already logged-in browser account, and the ID token stays out of
-      // clipboard/history. The saved client ID still preserves its workspace
-      // binding during the code exchange.
-      const login = await service.beginLogin(payload.accountId, { includeAccountHints: false });
-      observeChatGptSubscriptionLogin(login);
-      return {
-        success: true,
-        message: "授权链接已生成，打开后请完成 ChatGPT 授权。",
-        authorizationUrl: login.authorizationUrl,
-      };
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.chatGptSubscriptionAccountLogin, async (payload: { accountId: string }) => {
-    const service = await getChatGptSubscriptionService();
-    const login = await service.beginLogin(payload.accountId);
-    const mainWin = getMainWindow();
-    // Keep each ChatGPT account's browser cookies and proxy session isolated.
-    // Reusing one Electron partition can silently submit a second account's
-    // existing ChatGPT session during OAuth authorization.
-    const authPartition = `oauth-chatgpt-${payload.accountId}`;
-    const authSession = session.fromPartition(authPartition);
-    const account = service.listAccounts().find((entry) => entry.accountId === payload.accountId);
-    let closeProxy = () => {};
-    let authWindow: BrowserWindow | undefined;
-    let loginSettled = false;
-    try {
-      closeProxy = await configureChatGptOAuthSessionProxy(
-        authSession,
-        account?.proxyUrl || resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
-      );
-      authWindow = createOAuthAuthWindow(mainWin, authPartition);
-      authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
-      const cancelLogin = () => {
-        if (loginSettled) return;
-        loginSettled = true;
-        service.cancelLogin(payload.accountId);
-        closeProxy();
-        for (const win of BrowserWindow.getAllWindows()) {
+    void login.result
+      .then((account) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send("chatgpt-subscription:login-result", { success: true, account });
+          }
+        });
+        emitSettingsUpdated();
+      })
+      .catch((error) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
           if (!win.isDestroyed()) {
             win.webContents.send("chatgpt-subscription:login-result", {
               success: false,
-              message: "ChatGPT 登录已取消",
+              message: error instanceof Error ? error.message : String(error),
             });
           }
-        }
-      };
-      authWindow.on("close", cancelLogin);
-      authWindow.on("closed", () => {
-        cancelLogin();
+        });
+      });
+  };
+
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountAuthorizationUrl,
+    async (payload: { accountId: string }) => {
+      try {
+        const service = await getChatGptSubscriptionService();
+        // Do not put id_token_hint in a copied URL. The user can select the
+        // already logged-in browser account, and the ID token stays out of
+        // clipboard/history. The saved client ID still preserves its workspace
+        // binding during the code exchange.
+        const login = await service.beginLogin(payload.accountId, { includeAccountHints: false });
+        observeChatGptSubscriptionLogin(login);
+        return {
+          success: true,
+          message: "授权链接已生成，打开后请完成 ChatGPT 授权。",
+          authorizationUrl: login.authorizationUrl,
+        };
+      } catch (error) {
+        return { success: false, message: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  );
+
+  registerDesktopCommand(
+    IPC_CHANNELS.chatGptSubscriptionAccountLogin,
+    async (payload: { accountId: string }) => {
+      const service = await getChatGptSubscriptionService();
+      const login = await service.beginLogin(payload.accountId);
+      const mainWin = getMainWindow();
+      // Keep each ChatGPT account's browser cookies and proxy session isolated.
+      // Reusing one Electron partition can silently submit a second account's
+      // existing ChatGPT session during OAuth authorization.
+      const authPartition = `oauth-chatgpt-${payload.accountId}`;
+      const authSession = session.fromPartition(authPartition);
+      const account = service.listAccounts().find((entry) => entry.accountId === payload.accountId);
+      let closeProxy = () => {};
+      let authWindow: BrowserWindow | undefined;
+      let loginSettled = false;
+      try {
+        closeProxy = await configureChatGptOAuthSessionProxy(
+          authSession,
+          account?.proxyUrl || resolveOutboundProxyUrl(proxyBridgeSettingsStore.get()),
+        );
+        authWindow = createOAuthAuthWindow(mainWin, authPartition);
+        authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+        const cancelLogin = () => {
+          if (loginSettled) return;
+          loginSettled = true;
+          service.cancelLogin(payload.accountId);
+          closeProxy();
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              win.webContents.send("chatgpt-subscription:login-result", {
+                success: false,
+                message: "ChatGPT 登录已取消",
+              });
+            }
+          }
+        };
+        authWindow.on("close", cancelLogin);
+        authWindow.on("closed", () => {
+          cancelLogin();
+          closeProxy();
+        });
+        await authWindow.loadURL(login.authorizationUrl);
+      } catch (error) {
+        loginSettled = true;
+        service.cancelLogin(payload.accountId, error instanceof Error ? error.message : String(error));
         closeProxy();
-      });
-      await authWindow.loadURL(login.authorizationUrl);
-    } catch (error) {
-      loginSettled = true;
-      service.cancelLogin(payload.accountId, error instanceof Error ? error.message : String(error));
-      closeProxy();
-      if (authWindow && !authWindow.isDestroyed()) authWindow.destroy();
-      return {
-        success: false,
-        message: `打开 ChatGPT 登录页面失败：${error instanceof Error ? error.message : String(error)}`,
-      };
-    }
-    void login.result.then((account) => {
-      if (loginSettled) return;
-      loginSettled = true;
-      closeProxy();
-      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) win.webContents.send("chatgpt-subscription:login-result", { success: true, account });
-      });
-      emitSettingsUpdated();
-    }).catch((error) => {
-      if (loginSettled) return;
-      loginSettled = true;
-      closeProxy();
-      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("chatgpt-subscription:login-result", {
-            success: false,
-            message: error instanceof Error ? error.message : String(error),
+        if (authWindow && !authWindow.isDestroyed()) authWindow.destroy();
+        return {
+          success: false,
+          message: `打开 ChatGPT 登录页面失败：${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      void login.result
+        .then((account) => {
+          if (loginSettled) return;
+          loginSettled = true;
+          closeProxy();
+          if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.isDestroyed())
+              win.webContents.send("chatgpt-subscription:login-result", { success: true, account });
           });
-        }
-      });
-    });
-    return { success: true, message: "ChatGPT OAuth 登录已在内置窗口打开" };
-  });
+          emitSettingsUpdated();
+        })
+        .catch((error) => {
+          if (loginSettled) return;
+          loginSettled = true;
+          closeProxy();
+          if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.isDestroyed()) {
+              win.webContents.send("chatgpt-subscription:login-result", {
+                success: false,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          });
+        });
+      return { success: true, message: "ChatGPT OAuth 登录已在内置窗口打开" };
+    },
+  );
 
   // ─── Codex OAuth Login ──────────────────────────────────────────────────────
 
@@ -5828,153 +5931,160 @@ function registerIpcHandlers(): void {
     return service.getStatus();
   });
 
-  registerDesktopCommand(IPC_CHANNELS.codexOAuthStartLogin, async (payload: { upstreamProxyUrl?: string }) => {
-    const codexHomeDir = resolveCodexHomeDir(app.getPath("userData"));
-    const { CodexOAuthLoginService } = await import("./codex-oauth-login");
-    const codexExecutable = resolveCodexExecutable();
-    if (!codexExecutable) {
-      return { success: false, message: "Codex CLI not found" };
-    }
-
-    // Use the proxy URL passed from the form, or fall back to provider settings
-    let upstreamProxyUrl = payload?.upstreamProxyUrl?.trim() || undefined;
-    process.stderr.write(`[codex-oauth] payload.upstreamProxyUrl: ${JSON.stringify(payload?.upstreamProxyUrl)}\n`);
-    if (!upstreamProxyUrl) {
-      try {
-        const providers = providerStore.listProvidersWithSecrets();
-        const openaiProvider = providers.find((p) => p.id === "openai");
-        upstreamProxyUrl = openaiProvider?.upstreamProxyUrl?.trim() || undefined;
-        process.stderr.write(`[codex-oauth] stored provider proxy: ${JSON.stringify(upstreamProxyUrl)}\n`);
-      } catch {
-        // ignore
+  registerDesktopCommand(
+    IPC_CHANNELS.codexOAuthStartLogin,
+    async (payload: { upstreamProxyUrl?: string }) => {
+      const codexHomeDir = resolveCodexHomeDir(app.getPath("userData"));
+      const { CodexOAuthLoginService } = await import("./codex-oauth-login");
+      const codexExecutable = resolveCodexExecutable();
+      if (!codexExecutable) {
+        return { success: false, message: "Codex CLI not found" };
       }
-    }
-    if (!upstreamProxyUrl) {
-      upstreamProxyUrl = proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim() || undefined;
-      process.stderr.write(`[codex-oauth] global proxy: ${JSON.stringify(upstreamProxyUrl)}\n`);
-    }
-    process.stderr.write(`[codex-oauth] final upstreamProxyUrl: ${JSON.stringify(upstreamProxyUrl)}\n`);
 
-    const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable, upstreamProxyUrl);
-    const authInfo = await service.startLogin();
+      // Use the proxy URL passed from the form, or fall back to provider settings
+      let upstreamProxyUrl = payload?.upstreamProxyUrl?.trim() || undefined;
+      process.stderr.write(
+        `[codex-oauth] payload.upstreamProxyUrl: ${JSON.stringify(payload?.upstreamProxyUrl)}\n`,
+      );
+      if (!upstreamProxyUrl) {
+        try {
+          const providers = providerStore.listProvidersWithSecrets();
+          const openaiProvider = providers.find((p) => p.id === "openai");
+          upstreamProxyUrl = openaiProvider?.upstreamProxyUrl?.trim() || undefined;
+          process.stderr.write(`[codex-oauth] stored provider proxy: ${JSON.stringify(upstreamProxyUrl)}\n`);
+        } catch {
+          // ignore
+        }
+      }
+      if (!upstreamProxyUrl) {
+        upstreamProxyUrl = proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim() || undefined;
+        process.stderr.write(`[codex-oauth] global proxy: ${JSON.stringify(upstreamProxyUrl)}\n`);
+      }
+      process.stderr.write(`[codex-oauth] final upstreamProxyUrl: ${JSON.stringify(upstreamProxyUrl)}\n`);
 
-    if (!authInfo) {
-      return { success: false, message: "Failed to start login" };
-    }
+      const service = new CodexOAuthLoginService(codexHomeDir, codexExecutable, upstreamProxyUrl);
+      const authInfo = await service.startLogin();
 
-    // Log for debugging
-    process.stderr.write(`[codex-oauth] authUrl: ${authInfo.authUrl}\n`);
+      if (!authInfo) {
+        return { success: false, message: "Failed to start login" };
+      }
 
-    // Create a custom session with proxy for the auth window
-    const { session: electronSession } = await import("electron");
-    const mainWin = getMainWindow();
+      // Log for debugging
+      process.stderr.write(`[codex-oauth] authUrl: ${authInfo.authUrl}\n`);
 
-    const authSession = electronSession.fromPartition("oauth-auth-session");
+      // Create a custom session with proxy for the auth window
+      const { session: electronSession } = await import("electron");
+      const mainWin = getMainWindow();
 
-    if (upstreamProxyUrl) {
-      try {
-        const parsed = new URL(upstreamProxyUrl);
-        const protocol = parsed.protocol.replace(":", "");
+      const authSession = electronSession.fromPartition("oauth-auth-session");
 
-        if (protocol.startsWith("socks")) {
-          process.stderr.write(`[codex-oauth] SOCKS5 proxy not supported by Chromium\n`);
-        } else {
-          const pacContent = `function FindProxyForURL(url, host) {
+      if (upstreamProxyUrl) {
+        try {
+          const parsed = new URL(upstreamProxyUrl);
+          const protocol = parsed.protocol.replace(":", "");
+
+          if (protocol.startsWith("socks")) {
+            process.stderr.write(`[codex-oauth] SOCKS5 proxy not supported by Chromium\n`);
+          } else {
+            const pacContent = `function FindProxyForURL(url, host) {
             return "PROXY ${parsed.host}";
           }`;
             const pacDataUri =
               "data:application/x-ns-proxy-autoconfig;base64," +
               Buffer.from(pacContent, "utf8").toString("base64");
-          await authSession.setProxy({
-            mode: "pac_script",
-            pacScript: pacDataUri,
-          });
+            await authSession.setProxy({
+              mode: "pac_script",
+              pacScript: pacDataUri,
+            });
+          }
+        } catch (error) {
+          process.stderr.write(`[codex-oauth] failed to set proxy: ${error}\n`);
         }
-      } catch (error) {
-        process.stderr.write(`[codex-oauth] failed to set proxy: ${error}\n`);
       }
-    }
 
-    const authWindow = createOAuthAuthWindow(mainWin);
-    let loginCancelled = false;
+      const authWindow = createOAuthAuthWindow(mainWin);
+      let loginCancelled = false;
 
-    const cancelLogin = () => {
-      if (loginCancelled) return;
-      loginCancelled = true;
-      authInfo.cancel();
-      process.stderr.write(`[codex-oauth] auth window closed\n`);
-      // Notify UI that login was cancelled.
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("codex-oauth:login-result", {
-            success: false,
-            message: "登录已取消",
-          });
-        }
-      });
-    };
-
-    // Register before loadURL: the user can close the native window while the
-    // OAuth page is still loading.
-    authWindow.on("close", cancelLogin);
-    authWindow.on("closed", () => {
-      // `destroy()` and application shutdown may skip the `close` event.
-      cancelLogin();
-    });
-
-    // Prevent WebRTC IP leak (bypasses HTTP proxy)
-    authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
-    process.stderr.write(`[codex-oauth] WebRTC IP handling: disable_non_proxied_udp\n`);
-
-    // Load the URL
-    process.stderr.write(`[codex-oauth] loading URL: ${authInfo.authUrl}\n`);
-    try {
-      await authWindow.loadURL(authInfo.authUrl);
-    } catch (error) {
-      cancelLogin();
-      if (!authWindow.isDestroyed()) authWindow.destroy();
-      return {
-        success: false,
-        message: `打开登录页面失败: ${error instanceof Error ? error.message : String(error)}`,
+      const cancelLogin = () => {
+        if (loginCancelled) return;
+        loginCancelled = true;
+        authInfo.cancel();
+        process.stderr.write(`[codex-oauth] auth window closed\n`);
+        // Notify UI that login was cancelled.
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send("codex-oauth:login-result", {
+              success: false,
+              message: "登录已取消",
+            });
+          }
+        });
       };
-    }
 
-    // Store the pending login result so we can notify when it completes
-    void authInfo.result.then((res) => {
-      if (loginCancelled) return;
-      // Mark the flow as settled before closing so the close listener does not
-      // report a successful login as a cancellation.
-      loginCancelled = true;
-      if (!authWindow.isDestroyed()) authWindow.close();
-      process.stderr.write(`[codex-oauth] login result: ${JSON.stringify(res)}\n`);
-      if (res.success) {
-        // This flow logs straight into CODEX_HOME/auth.json, which gates the virtual
-        // Codex Auth provider/model in the settings snapshot.
-        emitSettingsUpdated();
+      // Register before loadURL: the user can close the native window while the
+      // OAuth page is still loading.
+      authWindow.on("close", cancelLogin);
+      authWindow.on("closed", () => {
+        // `destroy()` and application shutdown may skip the `close` event.
+        cancelLogin();
+      });
+
+      // Prevent WebRTC IP leak (bypasses HTTP proxy)
+      authWindow.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+      process.stderr.write(`[codex-oauth] WebRTC IP handling: disable_non_proxied_udp\n`);
+
+      // Load the URL
+      process.stderr.write(`[codex-oauth] loading URL: ${authInfo.authUrl}\n`);
+      try {
+        await authWindow.loadURL(authInfo.authUrl);
+      } catch (error) {
+        cancelLogin();
+        if (!authWindow.isDestroyed()) authWindow.destroy();
+        return {
+          success: false,
+          message: `打开登录页面失败: ${error instanceof Error ? error.message : String(error)}`,
+        };
       }
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("codex-oauth:login-result", res);
-        }
-      });
-    }).catch((error) => {
-      if (loginCancelled) return;
-      loginCancelled = true;
-      authInfo.cancel();
-      if (!authWindow.isDestroyed()) authWindow.close();
-      process.stderr.write(`[codex-oauth] login error: ${error}\n`);
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("codex-oauth:login-result", {
-            success: false,
-            message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
-      });
-    });
 
-    return { success: true, message: "Login started" };
-  });
+      // Store the pending login result so we can notify when it completes
+      void authInfo.result
+        .then((res) => {
+          if (loginCancelled) return;
+          // Mark the flow as settled before closing so the close listener does not
+          // report a successful login as a cancellation.
+          loginCancelled = true;
+          if (!authWindow.isDestroyed()) authWindow.close();
+          process.stderr.write(`[codex-oauth] login result: ${JSON.stringify(res)}\n`);
+          if (res.success) {
+            // This flow logs straight into CODEX_HOME/auth.json, which gates the virtual
+            // Codex Auth provider/model in the settings snapshot.
+            emitSettingsUpdated();
+          }
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.isDestroyed()) {
+              win.webContents.send("codex-oauth:login-result", res);
+            }
+          });
+        })
+        .catch((error) => {
+          if (loginCancelled) return;
+          loginCancelled = true;
+          authInfo.cancel();
+          if (!authWindow.isDestroyed()) authWindow.close();
+          process.stderr.write(`[codex-oauth] login error: ${error}\n`);
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.isDestroyed()) {
+              win.webContents.send("codex-oauth:login-result", {
+                success: false,
+                message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
+              });
+            }
+          });
+        });
+
+      return { success: true, message: "Login started" };
+    },
+  );
 
   registerDesktopCommand(IPC_CHANNELS.codexOAuthLogout, async () => {
     const codexHomeDir = resolveCodexHomeDir(app.getPath("userData"));
@@ -5999,15 +6109,11 @@ function registerIpcHandlers(): void {
     if (!openaiAccountServicePromise) {
       openaiAccountServicePromise = (async () => {
         const { OpenAIAccountService } = await import("./openai-account-service");
-        const service = new OpenAIAccountService(
-          app.getPath("userData"),
-          resolveCodexExecutable,
-          (state) => {
-            for (const window of BrowserWindow.getAllWindows()) {
-              if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.openAIAccountsChanged, state);
-            }
-          },
-        );
+        const service = new OpenAIAccountService(app.getPath("userData"), resolveCodexExecutable, (state) => {
+          for (const window of BrowserWindow.getAllWindows()) {
+            if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.openAIAccountsChanged, state);
+          }
+        });
         await service.initialize();
         openaiAccountService = service;
         return service;
@@ -6029,7 +6135,9 @@ function registerIpcHandlers(): void {
         url.searchParams.set("accountId", accountId);
         await window.loadURL(url.href);
       } else {
-        await window.loadFile(path.join(__dirname, "../renderer/codex-account-assistant.html"), { query: { accountId } });
+        await window.loadFile(path.join(__dirname, "../renderer/codex-account-assistant.html"), {
+          query: { accountId },
+        });
       }
     },
   });
@@ -6040,12 +6148,18 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsOpenAssistant, async (payload: { accountId: string }) => {
     await requireAccountAssistant().open(payload.accountId);
   });
-  registerDesktopCommand(IPC_CHANNELS.openAIAccountsAssistantState, async (payload: { accountId: string }) => {
-    return requireAccountAssistant().state(payload.accountId);
-  });
-  registerDesktopCommand(IPC_CHANNELS.openAIAccountsAssistantAction, async (payload: { accountId: string; action: OpenAIAccountAssistantAction }) => {
-    return requireAccountAssistant().action(payload.accountId, payload.action);
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.openAIAccountsAssistantState,
+    async (payload: { accountId: string }) => {
+      return requireAccountAssistant().state(payload.accountId);
+    },
+  );
+  registerDesktopCommand(
+    IPC_CHANNELS.openAIAccountsAssistantAction,
+    async (payload: { accountId: string; action: OpenAIAccountAssistantAction }) => {
+      return requireAccountAssistant().action(payload.accountId, payload.action);
+    },
+  );
 
   const scheduleOpenAIAccountTransition = (service: OpenAIAccountService) => {
     invalidateGlobalCodexRuntimeFingerprints();
@@ -6117,7 +6231,10 @@ function registerIpcHandlers(): void {
       releaseProxy = await configureChatGptOAuthSessionProxy(authSession, account?.proxyUrl);
     } catch (error) {
       authInfo.cancel();
-      return { success: false, message: `登录代理配置失败：${error instanceof Error ? error.message : String(error)}` };
+      return {
+        success: false,
+        message: `登录代理配置失败：${error instanceof Error ? error.message : String(error)}`,
+      };
     }
     const authWindow = createOAuthAuthWindow(mainWin, partition);
     authWindow.setTitle(`Codex 登录 · ${account?.name ?? "账号"}`);
@@ -6167,76 +6284,91 @@ function registerIpcHandlers(): void {
       };
     }
 
-    void authInfo.result.then(async (res) => {
-      if (loginCancelled) return;
-      // Settle before closing so the close listener does not turn a completed
-      // login into a cancellation notification.
-      loginCancelled = true;
-      closeSocksBridge();
-      if (!authWindow.isDestroyed()) authWindow.close();
-      // `codex login` only writes the account's own CODEX_HOME. When this account is
-      // already active, its fresh credentials are staged in SQLite and then applied
-      // by the idle transition scheduler without replacing a newer switch request.
-      if (res.success && payload.accountId === (await svc.getActiveAccountId())) {
-        try {
-          scheduleOpenAIAccountTransition(svc);
-        } catch (error) {
-          console.error(
-            `[openai-accounts] Failed to sync fresh auth.json to CODEX_HOME: ${error instanceof Error ? error.message : String(error)}`,
-          );
+    void authInfo.result
+      .then(async (res) => {
+        if (loginCancelled) return;
+        // Settle before closing so the close listener does not turn a completed
+        // login into a cancellation notification.
+        loginCancelled = true;
+        closeSocksBridge();
+        if (!authWindow.isDestroyed()) authWindow.close();
+        // `codex login` only writes the account's own CODEX_HOME. When this account is
+        // already active, its fresh credentials are staged in SQLite and then applied
+        // by the idle transition scheduler without replacing a newer switch request.
+        if (res.success && payload.accountId === (await svc.getActiveAccountId())) {
+          try {
+            scheduleOpenAIAccountTransition(svc);
+          } catch (error) {
+            console.error(
+              `[openai-accounts] Failed to sync fresh auth.json to CODEX_HOME: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         }
-      }
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("codex-oauth:login-result", { ...res, accountId: payload.accountId });
-        }
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send("codex-oauth:login-result", { ...res, accountId: payload.accountId });
+          }
+        });
+      })
+      .catch((error) => {
+        if (loginCancelled) return;
+        loginCancelled = true;
+        authInfo.cancel();
+        closeSocksBridge();
+        if (!authWindow.isDestroyed()) authWindow.close();
+        console.error(
+          `[openai-accounts] Login failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send("codex-oauth:login-result", {
+              accountId: payload.accountId,
+              success: false,
+              message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
+        });
       });
-    }).catch((error) => {
-      if (loginCancelled) return;
-      loginCancelled = true;
-      authInfo.cancel();
-      closeSocksBridge();
-      if (!authWindow.isDestroyed()) authWindow.close();
-      console.error(`[openai-accounts] Login failed: ${error instanceof Error ? error.message : String(error)}`);
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send("codex-oauth:login-result", {
-            accountId: payload.accountId,
-            success: false,
-            message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
-      });
-    });
 
     return { success: true, message: "Login started" };
   });
 
-  registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetActive, async (payload: { accountId: string | null }) => {
-    const svc = await getOpenAIAccountService();
-    const prevPendingAccountId = svc.getPendingAccountId();
-    await svc.setActiveAccount(payload.accountId);
-    const pending = svc.getPendingAccountId() !== undefined;
-    if (pending || prevPendingAccountId !== undefined) scheduleOpenAIAccountTransition(svc);
-    return { success: true, pending };
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.openAIAccountsSetActive,
+    async (payload: { accountId: string | null }) => {
+      const svc = await getOpenAIAccountService();
+      const prevPendingAccountId = svc.getPendingAccountId();
+      await svc.setActiveAccount(payload.accountId);
+      const pending = svc.getPendingAccountId() !== undefined;
+      if (pending || prevPendingAccountId !== undefined) scheduleOpenAIAccountTransition(svc);
+      return { success: true, pending };
+    },
+  );
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsGetActive, async () => {
     const svc = await getOpenAIAccountService();
     const activeId = await svc.getActiveAccountId();
     const status = await svc.getActiveStatus();
     const pendingAccountId = svc.getPendingAccountId();
-    return { activeAccountId: activeId, ...(pendingAccountId !== undefined ? { pendingAccountId } : {}), syncStatus: svc.getSyncStatus(), ...status };
+    return {
+      activeAccountId: activeId,
+      ...(pendingAccountId !== undefined ? { pendingAccountId } : {}),
+      syncStatus: svc.getSyncStatus(),
+      ...status,
+    };
   });
 
-  registerDesktopCommand(IPC_CHANNELS.openAIAccountsSetAuthJson, async (payload: { accountId: string; content: string }) => {
-    const svc = await getOpenAIAccountService();
-    const result = await svc.setAuthJson(payload.accountId, payload.content);
-    if (result.success && svc.getPendingAccountId() !== undefined) {
-      scheduleOpenAIAccountTransition(svc);
-    }
-    return result;
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.openAIAccountsSetAuthJson,
+    async (payload: { accountId: string; content: string }) => {
+      const svc = await getOpenAIAccountService();
+      const result = await svc.setAuthJson(payload.accountId, payload.content);
+      if (result.success && svc.getPendingAccountId() !== undefined) {
+        scheduleOpenAIAccountTransition(svc);
+      }
+      return result;
+    },
+  );
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsQueryQuota, async (payload: { accountId: string }) => {
     const svc = await getOpenAIAccountService();
@@ -6246,9 +6378,7 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.openAIAccountsUpdate, async (payload: OpenAIAccountUpdateInput) => {
     const svc = await getOpenAIAccountService();
-    const prevAccount = (await svc.listAccounts()).find(
-      (a: OpenAIAccount) => a.id === payload.accountId,
-    );
+    const prevAccount = (await svc.listAccounts()).find((a: OpenAIAccount) => a.id === payload.accountId);
     const result = await svc.updateAccount(payload);
     if (
       prevAccount &&
@@ -6505,7 +6635,10 @@ function registerIpcHandlers(): void {
       throw new Error("主 Agent 配置 id 不能为空。");
     }
     if (config.modelRef) {
-      resolveUpstreamApiCompat(config.modelRef.apiCompat, providerStore.getProviderWithSecret(config.modelRef.providerId)?.apiCompat);
+      resolveUpstreamApiCompat(
+        config.modelRef.apiCompat,
+        providerStore.getProviderWithSecret(config.modelRef.providerId)?.apiCompat,
+      );
     }
     const saved = agentOrchestrationStore.saveMainAgentConfig(config);
     emitSettingsUpdated();
@@ -6560,7 +6693,10 @@ function registerIpcHandlers(): void {
       throw new Error("子代理编排 id 不能为空。");
     }
     for (const agent of orchestration.agents ?? []) {
-      resolveUpstreamApiCompat(agent.modelRef.apiCompat, providerStore.getProviderWithSecret(agent.modelRef.providerId)?.apiCompat);
+      resolveUpstreamApiCompat(
+        agent.modelRef.apiCompat,
+        providerStore.getProviderWithSecret(agent.modelRef.providerId)?.apiCompat,
+      );
     }
     const saved = agentOrchestrationStore.saveSubagentOrchestration(orchestration);
     emitSettingsUpdated();
@@ -6797,7 +6933,11 @@ function registerIpcHandlers(): void {
     const previous = workflowSettingsStore.get();
     const normalized = normalizeWorkflowSettingsSnapshot(payload);
     for (const selection of [normalized.defaultAuxiliaryModel, normalized.defaultVisionModel]) {
-      if (selection) resolveUpstreamApiCompat(undefined, providerStore.getProviderWithSecret(selection.providerId)?.apiCompat);
+      if (selection)
+        resolveUpstreamApiCompat(
+          undefined,
+          providerStore.getProviderWithSecret(selection.providerId)?.apiCompat,
+        );
     }
     // Legacy acpAgentsEnabled.cursor is no longer a user-facing gate; Cursor ACP
     // is allowed whenever the CLI probe succeeds (checked below for default=acp).
@@ -7742,10 +7882,13 @@ function registerIpcHandlers(): void {
   });
 
   const supabaseDeployment = new SupabaseCloudDeployment({
-    loadBundle: () => readSupabaseDeploymentBundle(
-      app.isPackaged ? path.join(process.resourcesPath, "supabase") : path.resolve(app.getAppPath(), "../../supabase"),
-      app.getVersion(),
-    ),
+    loadBundle: () =>
+      readSupabaseDeploymentBundle(
+        app.isPackaged
+          ? path.join(process.resourcesPath, "supabase")
+          : path.resolve(app.getAppPath(), "../../supabase"),
+        app.getVersion(),
+      ),
     onChange: (snapshot) => {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.supabaseDeploymentChanged, snapshot);
@@ -7753,11 +7896,21 @@ function registerIpcHandlers(): void {
     },
   });
   registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentGet, async () => supabaseDeployment.getSnapshot());
-  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentAuthorize, async (token: unknown) => supabaseDeployment.authorize(token));
-  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentForget, async () => supabaseDeployment.forgetAuthorization());
-  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentInspect, async (ref: unknown) => supabaseDeployment.inspect(ref));
-  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentRun, async (ref: unknown) => supabaseDeployment.deploy(ref));
-  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentConnection, async (ref: unknown) => supabaseDeployment.getConnection(ref));
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentAuthorize, async (token: unknown) =>
+    supabaseDeployment.authorize(token),
+  );
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentForget, async () =>
+    supabaseDeployment.forgetAuthorization(),
+  );
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentInspect, async (ref: unknown) =>
+    supabaseDeployment.inspect(ref),
+  );
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentRun, async (ref: unknown) =>
+    supabaseDeployment.deploy(ref),
+  );
+  registerDesktopCommand(IPC_CHANNELS.supabaseDeploymentConnection, async (ref: unknown) =>
+    supabaseDeployment.getConnection(ref),
+  );
 
   registerDesktopCommand(IPC_CHANNELS.centerServerSettingsGet, async () => centerServerClient.getSnapshot());
 
@@ -8655,124 +8808,116 @@ function enqueueThreadFollowUpCommand(
       v2: conversationStore.conversationV2(),
       errorMessage,
       execute: async () => {
-          const thread = conversationStore.getThread(request.threadId);
-          if (!thread) {
-            throw new Error("Thread was not found.");
-          }
-          if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
-            throw new Error("Thread is not accepting queued follow-up messages.");
-          }
-          if (contextMonitor.isCompactInFlight(thread.id)) {
-            throw new Error("上下文正在压缩中，请稍候。");
-          }
-          const followUpPendingActivityLineId = `follow-up:${randomUUID()}`;
-          const persistedAttachments = request.attachments?.length
-            ? await promptImageFileStore.persistMessageAttachments(
-                thread.id,
-                followUpPendingActivityLineId,
-                request.attachments,
-              )
-            : undefined;
-          const acceptedMessage = conversationStore.conversationV2().sendMessage({
-            principalId: request.principalId,
-            conversationId: thread.id,
-            clientCommandId: request.clientCommandId,
-            text: request.prompt,
-            ...(persistedAttachments?.length ? { attachments: persistedAttachments } : {}),
-          });
-          const existingAcceptedFollowUp = conversationStore
-            .listThreadFollowUps(thread.id)
-            .find((candidate) => candidate.conversationMessageId === acceptedMessage.messageId);
-          if (existingAcceptedFollowUp) {
-            return buildThreadFollowUpMutationResult(existingAcceptedFollowUp);
-          }
-          const deliveryMode =
-            request.followUpDeliveryMode ?? workflowSettingsStore.get().followUpDeliveryMode ?? "steer";
-          const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
-          const queuePaused = Boolean(thread.followUpQueuePaused);
-          // ACP has no mid-turn: steer means interrupt + resume. Escalated priority always interrupts.
-          // While the queue is paused, never auto-deliver — new rows must wait for Resume.
-          const preferInterrupt =
-            !queuePaused &&
-            (request.priority === "escalated" ||
-              (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer"));
-          const followUp = conversationStore.enqueueThreadFollowUp({
-            threadId: thread.id,
-            prompt: request.prompt,
-            ...(persistedAttachments?.length ? { attachments: persistedAttachments } : {}),
-            conversationMessageId: acceptedMessage.messageId,
-            ...(preferInterrupt
-              ? { priority: "escalated" }
-              : request.priority
-                ? { priority: request.priority }
-                : {}),
-            deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
-            ...metadata,
-          });
+        const thread = conversationStore.getThread(request.threadId);
+        if (!thread) {
+          throw new Error("Thread was not found.");
+        }
+        if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
+          throw new Error("Thread is not accepting queued follow-up messages.");
+        }
+        if (contextMonitor.isCompactInFlight(thread.id)) {
+          throw new Error("上下文正在压缩中，请稍候。");
+        }
+        const followUpPendingActivityLineId = `follow-up:${randomUUID()}`;
+        const persistedAttachments = request.attachments?.length
+          ? await promptImageFileStore.persistMessageAttachments(
+              thread.id,
+              followUpPendingActivityLineId,
+              request.attachments,
+            )
+          : undefined;
+        const acceptedMessage = conversationStore.conversationV2().sendMessage({
+          principalId: request.principalId,
+          conversationId: thread.id,
+          clientCommandId: request.clientCommandId,
+          text: request.prompt,
+          ...(persistedAttachments?.length ? { attachments: persistedAttachments } : {}),
+        });
+        const existingAcceptedFollowUp = conversationStore
+          .listThreadFollowUps(thread.id)
+          .find((candidate) => candidate.conversationMessageId === acceptedMessage.messageId);
+        if (existingAcceptedFollowUp) {
+          return buildThreadFollowUpMutationResult(existingAcceptedFollowUp);
+        }
+        const deliveryMode =
+          request.followUpDeliveryMode ?? workflowSettingsStore.get().followUpDeliveryMode ?? "steer";
+        const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
+        const queuePaused = Boolean(thread.followUpQueuePaused);
+        // ACP has no mid-turn: steer means interrupt + resume. Escalated priority always interrupts.
+        // While the queue is paused, never auto-deliver — new rows must wait for Resume.
+        const preferInterrupt =
+          !queuePaused &&
+          (request.priority === "escalated" ||
+            (coreUsesInterruptForSteer(thread.coreKind) && deliveryMode === "steer"));
+        const followUp = conversationStore.enqueueThreadFollowUp({
+          threadId: thread.id,
+          prompt: request.prompt,
+          ...(persistedAttachments?.length ? { attachments: persistedAttachments } : {}),
+          conversationMessageId: acceptedMessage.messageId,
+          ...(preferInterrupt
+            ? { priority: "escalated" }
+            : request.priority
+              ? { priority: request.priority }
+              : {}),
+          deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
+          ...metadata,
+        });
 
-          if (queuePaused || deliveryMode === "queue") {
-            // Keep queued while paused or when the user chose queue delivery.
-            emitThreadFollowUpEvent(
-              followUp,
-              "thread.follow_up.queued",
-              formatFollowUpQueuedMessage(followUp),
-            );
-            return buildThreadFollowUpMutationResult(
-              conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
-            );
-          }
+        if (queuePaused || deliveryMode === "queue") {
+          // Keep queued while paused or when the user chose queue delivery.
+          emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
+          return buildThreadFollowUpMutationResult(
+            conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+          );
+        }
 
-          if (preferInterrupt) {
-            const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
-            if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
-              return buildThreadFollowUpMutationResult(midTurnResult);
-            }
-            // Mid-turn was skipped (blocking approval, editing row, or a port that is not
-            // accepting) and the row is still `queued`: "handle now" must fall through to the
-            // interrupt instead of reporting a silent no-op. A starting run keeps the
-            // request armed until startActiveRun registers its controller.
-            const progressThread = conversationStore.getThread(thread.id);
-            if (!progressThread) throw new Error("Thread was not found.");
-            if (
-              !canEscalatedFollowUpProgressNow({
-                hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
-                status: progressThread.status,
-              })
-            ) {
-              pendingEscalatedFollowUpDrain.add(thread.id);
-              const settled =
-                midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
-              if (settled.status === "queued") {
-                emitThreadFollowUpEvent(
-                  settled,
-                  "thread.follow_up.queued",
-                  formatFollowUpQueuedMessage(settled),
-                );
-              }
-              return buildThreadFollowUpMutationResult(settled);
-            }
-            const current = await requestEscalatedFollowUpInterrupt(
-              thread,
-              midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
-            );
-            if (current.status === "queued") {
+        if (preferInterrupt) {
+          const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
+          if (isFollowUpMidTurnResultDelivered(midTurnResult)) {
+            return buildThreadFollowUpMutationResult(midTurnResult);
+          }
+          // Mid-turn was skipped (blocking approval, editing row, or a port that is not
+          // accepting) and the row is still `queued`: "handle now" must fall through to the
+          // interrupt instead of reporting a silent no-op. A starting run keeps the
+          // request armed until startActiveRun registers its controller.
+          const progressThread = conversationStore.getThread(thread.id);
+          if (!progressThread) throw new Error("Thread was not found.");
+          if (
+            !canEscalatedFollowUpProgressNow({
+              hasActiveRun: activeRunRuntimeState.hasRun(thread.id),
+              status: progressThread.status,
+            })
+          ) {
+            pendingEscalatedFollowUpDrain.add(thread.id);
+            const settled =
+              midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
+            if (settled.status === "queued") {
               emitThreadFollowUpEvent(
-                current,
+                settled,
                 "thread.follow_up.queued",
-                formatFollowUpQueuedMessage(current),
+                formatFollowUpQueuedMessage(settled),
               );
             }
-            return buildThreadFollowUpMutationResult(current);
+            return buildThreadFollowUpMutationResult(settled);
           }
+          const current = await requestEscalatedFollowUpInterrupt(
+            thread,
+            midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+          );
+          if (current.status === "queued") {
+            emitThreadFollowUpEvent(current, "thread.follow_up.queued", formatFollowUpQueuedMessage(current));
+          }
+          return buildThreadFollowUpMutationResult(current);
+        }
 
-          const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
-          const settled =
-            midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
-          // Announce queue only when the row is still waiting (mid-turn skipped/rejected and requeued).
-          if (settled.status === "queued") {
-            emitThreadFollowUpEvent(settled, "thread.follow_up.queued", formatFollowUpQueuedMessage(settled));
-          }
-          return buildThreadFollowUpMutationResult(settled);
+        const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
+        const settled =
+          midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp;
+        // Announce queue only when the row is still waiting (mid-turn skipped/rejected and requeued).
+        if (settled.status === "queued") {
+          emitThreadFollowUpEvent(settled, "thread.follow_up.queued", formatFollowUpQueuedMessage(settled));
+        }
+        return buildThreadFollowUpMutationResult(settled);
       },
     },
   );
@@ -9576,9 +9721,10 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
     const queued = conversationStore.listThreadFollowUps(threadId, {
       statuses: ["queued"],
     });
-    const claimPriority = forceEscalatedDrain || queued.some((followUp) => followUp.priority === "escalated")
-      ? "escalated"
-      : undefined;
+    const claimPriority =
+      forceEscalatedDrain || queued.some((followUp) => followUp.priority === "escalated")
+        ? "escalated"
+        : undefined;
     const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
       deliveryMode: "resume",
       deliveryBoundary: forceEscalatedDrain ? "forced_interrupt" : "safe_boundary",
@@ -9686,10 +9832,14 @@ async function discardUnstartedAcpTurn(input: {
   }
   // Scheduled input belongs to a durable occurrence, not the user's composer.
   // Keep its message and history when ACP fails before producing any output.
-  const scheduledMessage = conversationStore.conversationV2().listUserMessages(input.threadId).find(
-    (message) => message.messageId.startsWith("message_occ_") &&
-      message.historyTarget?.activityLineId === activityLineId,
-  );
+  const scheduledMessage = conversationStore
+    .conversationV2()
+    .listUserMessages(input.threadId)
+    .find(
+      (message) =>
+        message.messageId.startsWith("message_occ_") &&
+        message.historyTarget?.activityLineId === activityLineId,
+    );
   if (scheduledMessage) {
     const failureMessage = formatUserFacingRequestError(input.reason);
     updateThread(input.threadId, { status: "failed", message: failureMessage });
@@ -10556,7 +10706,9 @@ async function startCodexThreadContinuation(
   // Cold start has no Codex remote history — carry original task + follow-up into the first turn.
   const runPrompt = input.codexEmptyInput
     ? ""
-    : strategy.kind === "cold_start" ? buildThreadTurnPrompt(activeThread.prompt, prompt) : prompt;
+    : strategy.kind === "cold_start"
+      ? buildThreadTurnPrompt(activeThread.prompt, prompt)
+      : prompt;
 
   updateThread(thread.id, { status: "running", message: "" });
   const workspace = await ensureWorkspace(thread.workspacePath);
@@ -10783,10 +10935,7 @@ async function startCodexThreadRun(
             // name (shared app-server global pool + per-thread bearer token),
             // so rewrite the fixed `mcp__eco_mcp__*` names emitted by the Hub
             // usage builders to the exact names Codex will register.
-            return rewriteEcoMcpHubPromptForCodexServer(
-              append,
-              codexHubServerName(input.thread.id),
-            );
+            return rewriteEcoMcpHubPromptForCodexServer(append, codexHubServerName(input.thread.id));
           },
           resolveWebSearchOverride: () =>
             sessionIntegratedWebSearchEnabled ? ("disabled" as const) : undefined,
@@ -10842,7 +10991,11 @@ async function startCodexThreadRun(
                 threadId: input.thread.id,
                 sessionEnabled: true,
               });
-              if (!computerUseInject.enabled || !computerUseInject.codexServer || !computerUseInject.sdkEntry) {
+              if (
+                !computerUseInject.enabled ||
+                !computerUseInject.codexServer ||
+                !computerUseInject.sdkEntry
+              ) {
                 throw new Error(
                   `本会话已开启电脑操控，但不可用：${computerUseInject.unavailableReason ?? "未知原因"}`,
                 );
@@ -10889,7 +11042,8 @@ async function startCodexThreadRun(
           resolveEnabledMcpServerKeys: async () => {
             const codexHubName = codexHubServerName(input.thread.id);
             const keys = resolveCodexThreadMcpServerKeys(input.thread.id).filter(
-              (key) => !key.startsWith("eco_ab_") && !Object.hasOwn(mcpStore.buildSdkConfig().mcpServers, key),
+              (key) =>
+                !key.startsWith("eco_ab_") && !Object.hasOwn(mcpStore.buildSdkConfig().mcpServers, key),
             );
             const hasCodexHub = mcpHubGateway
               .listThreadCodexServers()
@@ -10897,11 +11051,7 @@ async function startCodexThreadRun(
             if (hasCodexHub && !keys.includes(codexHubName)) {
               keys.push(codexHubName);
             }
-            return keys.filter(
-              (key) =>
-                !key.startsWith("eco_") ||
-                key === codexHubName,
-            );
+            return keys.filter((key) => !key.startsWith("eco_") || key === codexHubName);
           },
           resolveSkillConfig: () => {
             const base = codexSkills.map(({ skill, enabled }) => ({
@@ -12217,7 +12367,7 @@ function markAcceptedConversationMessageFailed(
 
 function pinSchedulingProfile(profile: ScheduleExecutionProfile): ScheduleExecutionProfile {
   const settings = getModelSettingsSnapshot();
-  return freezeSchedulingProfile(profile, settings, config => roleRoutesForThreadConfig(settings, config));
+  return freezeSchedulingProfile(profile, settings, (config) => roleRoutesForThreadConfig(settings, config));
 }
 
 function validateSchedulingProfile(profile: ScheduleExecutionProfile): void {
@@ -12227,18 +12377,40 @@ function validateSchedulingProfile(profile: ScheduleExecutionProfile): void {
     return;
   }
   const routes = roleRoutesForThreadConfig(getModelSettingsSnapshot(), profile.runtimeConfig);
-  const resolution = resolveRuntimeConfigForThreadConfig(getModelSettingsSnapshot(), profile.runtimeConfig, routes);
+  const resolution = resolveRuntimeConfigForThreadConfig(
+    getModelSettingsSnapshot(),
+    profile.runtimeConfig,
+    routes,
+  );
   if (!resolution.ok) throw new Error(resolution.reason);
 }
 
-function inspectScheduledOccurrence(occurrence: ScheduleOccurrence): { status: import("../shared/scheduling").ScheduleOccurrenceStatus; error?: string } {
+function inspectScheduledOccurrence(occurrence: ScheduleOccurrence): {
+  status: import("../shared/scheduling").ScheduleOccurrenceStatus;
+  error?: string;
+} {
   const thread = occurrence.threadId ? conversationStore.getThread(occurrence.threadId) : undefined;
-  const followUp = thread && occurrence.definition.kind === "session_message"
-    ? conversationStore.listThreadFollowUps(thread.id).find(item => item.id === occurrence.followUpId || item.conversationMessageId === `message_${occurrence.id}`) : undefined;
+  const followUp =
+    thread && occurrence.definition.kind === "session_message"
+      ? conversationStore
+          .listThreadFollowUps(thread.id)
+          .find(
+            (item) =>
+              item.id === occurrence.followUpId || item.conversationMessageId === `message_${occurrence.id}`,
+          )
+      : undefined;
   // Queue itself owns idempotent delivery and recovery. Scheduling must never re-enqueue.
-  if (thread && followUp?.status === "queued" && !thread.followUpQueuePaused) void drainQueuedThreadFollowUpsAfterRun(thread.id);
-  return inspectScheduledRun({ kind: occurrence.definition.kind, thread, followUp,
-    hasAcceptedMessage: Boolean(thread && !followUp && conversationStore.conversationV2().getMessage(thread.id, `message_${occurrence.id}`)),
+  if (thread && followUp?.status === "queued" && !thread.followUpQueuePaused)
+    void drainQueuedThreadFollowUpsAfterRun(thread.id);
+  return inspectScheduledRun({
+    kind: occurrence.definition.kind,
+    thread,
+    followUp,
+    hasAcceptedMessage: Boolean(
+      thread &&
+        !followUp &&
+        conversationStore.conversationV2().getMessage(thread.id, `message_${occurrence.id}`),
+    ),
     hasActiveRun: Boolean(thread && activeRunRuntimeState.hasRun(thread.id)),
     isDraining: Boolean(thread && threadFollowUpDrainScheduler.isDraining(thread.id)),
   });
@@ -12251,56 +12423,105 @@ function createSchedulingService(dbPath: string): SchedulingService {
       if (!source) throw new Error("来源会话不存在。");
       const thread = ensureThreadRuntimeConfig(source);
       if (!thread?.coreKind || !thread.runtimeConfig) throw new Error("当前会话缺少运行配置。");
-      return { workspacePath: thread.workspacePath, executionProfile: pinSchedulingProfile({ coreKind: thread.coreKind, runtimeConfig: thread.runtimeConfig }) };
+      return {
+        workspacePath: thread.workspacePath,
+        executionProfile: pinSchedulingProfile({
+          coreKind: thread.coreKind,
+          runtimeConfig: thread.runtimeConfig,
+        }),
+      };
     },
     validateProfile: validateSchedulingProfile,
-    assertThread: (threadId) => { if (!conversationStore.getThread(threadId)) throw new Error("目标会话不存在。"); },
-    canDispatch: occurrence => {
+    assertThread: (threadId) => {
+      if (!conversationStore.getThread(threadId)) throw new Error("目标会话不存在。");
+    },
+    canDispatch: (occurrence) => {
       if (occurrence.definition.kind === "scheduled_task") {
         const workspacePath = occurrence.definition.workspacePath!;
-        return !conversationStore.listThreads().some(thread => path.resolve(thread.workspacePath) === path.resolve(workspacePath) &&
-          (activeRunRuntimeState.hasRun(thread.id) || thread.status === "running" || thread.status === "queued" || thread.status === "awaiting_plan"));
+        return !conversationStore
+          .listThreads()
+          .some(
+            (thread) =>
+              path.resolve(thread.workspacePath) === path.resolve(workspacePath) &&
+              (activeRunRuntimeState.hasRun(thread.id) ||
+                thread.status === "running" ||
+                thread.status === "queued" ||
+                thread.status === "awaiting_plan"),
+          );
       }
       const thread = conversationStore.getThread(occurrence.definition.threadId!);
       if (!thread) return true; // Dispatch reports a durable explicit error.
-      return !activeRunRuntimeState.hasRun(thread.id) && !contextMonitor.isCompactInFlight(thread.id) &&
-        (thread.status === "idle" || thread.status === "completed") && !thread.followUpQueuePaused &&
-        !getPendingPlanApprovalForThread(thread.id) && !getPendingBashApprovalForThread(thread.id) &&
-        !hasPendingBlockingClarificationForThread(thread.id) && !conversationStore.getPendingPlan(thread.id) &&
-        !editingThreadFollowUpByThread.has(thread.id);
+      return (
+        !activeRunRuntimeState.hasRun(thread.id) &&
+        !contextMonitor.isCompactInFlight(thread.id) &&
+        (thread.status === "idle" || thread.status === "completed") &&
+        !thread.followUpQueuePaused &&
+        !getPendingPlanApprovalForThread(thread.id) &&
+        !getPendingBashApprovalForThread(thread.id) &&
+        !hasPendingBlockingClarificationForThread(thread.id) &&
+        !conversationStore.getPendingPlan(thread.id) &&
+        !editingThreadFollowUpByThread.has(thread.id)
+      );
     },
-    dispatch: async occurrence => {
+    dispatch: async (occurrence) => {
       const definition = occurrence.definition;
       if (definition.kind === "scheduled_task") {
-        const result = await startNewThread({ workspacePath: definition.workspacePath!, prompt: definition.prompt,
-          coreKind: definition.executionProfile!.coreKind, runtimeConfig: definition.executionProfile!.runtimeConfig,
-        }, { scheduled: true, threadId: occurrence.threadId!, title: definition.name, occurrenceId: occurrence.id });
+        const result = await startNewThread(
+          {
+            workspacePath: definition.workspacePath!,
+            prompt: definition.prompt,
+            coreKind: definition.executionProfile!.coreKind,
+            runtimeConfig: definition.executionProfile!.runtimeConfig,
+          },
+          {
+            scheduled: true,
+            threadId: occurrence.threadId!,
+            title: definition.name,
+            occurrenceId: occurrence.id,
+          },
+        );
         return { threadId: result.thread.id };
       }
       const threadId = definition.threadId!;
       if (!conversationStore.getThread(threadId)) throw new Error("目标会话已删除。");
       const prompt = definition.prompt;
       const accepted = conversationStore.conversationV2().sendMessage({
-        principalId: "eco-scheduler", conversationId: threadId, clientCommandId: occurrence.id,
-        messageId: `message_${occurrence.id}`, text: prompt,
+        principalId: "eco-scheduler",
+        conversationId: threadId,
+        clientCommandId: occurrence.id,
+        messageId: `message_${occurrence.id}`,
+        text: prompt,
         origin: { kind: "scheduled_message", scheduleId: definition.id, name: definition.name },
       });
-      const existing = conversationStore.listThreadFollowUps(threadId).find(item => item.conversationMessageId === accepted.messageId);
-      const followUp = existing ?? conversationStore.enqueueThreadFollowUp({ threadId, prompt,
-        conversationMessageId: accepted.messageId, deliveryMode: "queued", priority: "normal" });
+      const existing = conversationStore
+        .listThreadFollowUps(threadId)
+        .find((item) => item.conversationMessageId === accepted.messageId);
+      const followUp =
+        existing ??
+        conversationStore.enqueueThreadFollowUp({
+          threadId,
+          prompt,
+          conversationMessageId: accepted.messageId,
+          deliveryMode: "queued",
+          priority: "normal",
+        });
       emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
       void drainQueuedThreadFollowUpsAfterRun(threadId);
       return { threadId, followUpId: followUp.id };
     },
     inspect: inspectScheduledOccurrence,
-    onChanged: () => BrowserWindow.getAllWindows().forEach(window => {
-      if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.schedulingChanged);
-    }),
-    onError: error => logEcoDiag("scheduling.error", { error: errorMessage(error) }),
+    onChanged: () =>
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.schedulingChanged);
+      }),
+    onError: (error) => logEcoDiag("scheduling.error", { error: errorMessage(error) }),
   });
 }
 
-async function startNewThread(payload: ThreadStartRequest, options: { scheduled?: boolean; threadId?: string; title?: string; occurrenceId?: string } = {}): Promise<ThreadStartResult> {
+async function startNewThread(
+  payload: ThreadStartRequest,
+  options: { scheduled?: boolean; threadId?: string; title?: string; occurrenceId?: string } = {},
+): Promise<ThreadStartResult> {
   const attachments = parsePromptImageAttachments(payload.attachments);
   const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
   if (!prompt) {
@@ -12308,17 +12529,13 @@ async function startNewThread(payload: ThreadStartRequest, options: { scheduled?
   }
   // Materialize path-only spool attachments before any slow await (e.g. ACP CLI probe).
   // Otherwise a concurrent composer-draft delete can wipe spool and yield ENOENT.
-  const attachmentsForHandOff = attachments.length
-    ? await loadPromptAttachmentsForRuntime(attachments)
-    : [];
+  const attachmentsForHandOff = attachments.length ? await loadPromptAttachmentsForRuntime(attachments) : [];
   const coreKind = payload.coreKind ?? "claude";
   if (!isCoreKind(coreKind)) {
     throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
   }
   if (coreKind === "codex" && !isCodexCliAvailable()) {
-    throw new Error(
-      "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
-    );
+    throw new Error("Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。");
   }
   if (coreKind === "pi") {
     const pi = await probePiCoreAvailability();
@@ -12330,7 +12547,9 @@ async function startNewThread(payload: ThreadStartRequest, options: { scheduled?
     await assertAcpCursorRunnableForMain();
   }
 
-  const workspace = options.scheduled ? await inspectWorkspace(path.resolve(payload.workspacePath)) : await ensureWorkspace(payload.workspacePath);
+  const workspace = options.scheduled
+    ? await inspectWorkspace(path.resolve(payload.workspacePath))
+    : await ensureWorkspace(payload.workspacePath);
   const settings = getModelSettingsSnapshot();
   const parsedRuntimeConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
   const threadRuntime =
@@ -12366,11 +12585,21 @@ async function startNewThread(payload: ThreadStartRequest, options: { scheduled?
   };
 
   conversationStore.saveThread(thread);
-  const scheduledAccepted = options.occurrenceId ? conversationStore.conversationV2().sendMessage({
-    principalId: "eco-scheduler", conversationId: thread.id, clientCommandId: options.occurrenceId,
-    messageId: `message_${options.occurrenceId}`, text: prompt,
-  }) : undefined;
-  const recorded = await recordUserPrompt(thread.id, prompt, attachmentsForHandOff, scheduledAccepted ? [scheduledAccepted.messageId] : undefined);
+  const scheduledAccepted = options.occurrenceId
+    ? conversationStore.conversationV2().sendMessage({
+        principalId: "eco-scheduler",
+        conversationId: thread.id,
+        clientCommandId: options.occurrenceId,
+        messageId: `message_${options.occurrenceId}`,
+        text: prompt,
+      })
+    : undefined;
+  const recorded = await recordUserPrompt(
+    thread.id,
+    prompt,
+    attachmentsForHandOff,
+    scheduledAccepted ? [scheduledAccepted.messageId] : undefined,
+  );
   const attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
     recorded.storedAttachments ?? attachmentsForHandOff,
   );
@@ -12392,14 +12621,16 @@ async function startNewThread(payload: ThreadStartRequest, options: { scheduled?
     if (coreKind !== "acp" && !options.scheduled) {
       scheduleThreadTitleSummary(thread.id);
     }
-    void threadRuntimeCoordinator.start(coreKind, {
-      thread,
-      workspace,
-      runtimeConfig: { routes: resolvedRuntimeConfig.routes },
-      prompt,
-      ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
-      roleRoutes,
-    }).catch(error => updateThread(thread.id, { status: "failed", message: errorMessage(error) }));
+    void threadRuntimeCoordinator
+      .start(coreKind, {
+        thread,
+        workspace,
+        runtimeConfig: { routes: resolvedRuntimeConfig.routes },
+        prompt,
+        ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
+        roleRoutes,
+      })
+      .catch((error) => updateThread(thread.id, { status: "failed", message: errorMessage(error) }));
   }
 
   return { thread };
@@ -12459,9 +12690,16 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   if (input.rewindTarget && !resolvedTarget) {
     throw new Error("该节点缺少当前 SDK 消息映射，无法安全改写。");
   }
-  const currentTarget = resolvedTarget && thread.coreKind === "claude"
-    ? { ...resolvedTarget, userMessageId: await resolveCurrentClaudeUserMessageId(input.threadId, resolvedTarget.activityLineId) }
-    : resolvedTarget;
+  const currentTarget =
+    resolvedTarget && thread.coreKind === "claude"
+      ? {
+          ...resolvedTarget,
+          userMessageId: await resolveCurrentClaudeUserMessageId(
+            input.threadId,
+            resolvedTarget.activityLineId,
+          ),
+        }
+      : resolvedTarget;
   return threadRuntimeCoordinator.continue(thread.coreKind, {
     ...input,
     ...(currentTarget ? { rewindTarget: currentTarget } : {}),
@@ -12957,8 +13195,10 @@ async function tryDeliverFollowUpViaMidTurn(
     if (!currentThread) throw new Error("Thread was not found.");
     const currentFollowUp = conversationStore.getThreadFollowUp(thread.id, followUp.id);
     if (
-      !currentFollowUp || currentFollowUp.status !== "queued" ||
-      (currentFollowUp.attachments?.length ?? 0) > 0 || !currentFollowUp.prompt.trim()
+      !currentFollowUp ||
+      currentFollowUp.status !== "queued" ||
+      (currentFollowUp.attachments?.length ?? 0) > 0 ||
+      !currentFollowUp.prompt.trim()
     ) {
       return undefined;
     }
@@ -13912,8 +14152,18 @@ async function getThreadUserMessageEdit(
     try {
       upstreamMessageId = await resolveCurrentClaudeUserMessageId(threadId, record.activityLineId);
     } catch (error) {
-      return { threadId, activityLineId, text: record.text, attachments: record.attachments,
-        historyRevision: historyRevision(), capability: { status: "unavailable", reasonCode: "missing_upstream_mapping", reason: errorMessage(error) } };
+      return {
+        threadId,
+        activityLineId,
+        text: record.text,
+        attachments: record.attachments,
+        historyRevision: historyRevision(),
+        capability: {
+          status: "unavailable",
+          reasonCode: "missing_upstream_mapping",
+          reason: errorMessage(error),
+        },
+      };
     }
   }
   return {
@@ -14064,7 +14314,9 @@ async function retryThreadFromFailedRequest(input: {
       );
     }
     retryPrompt = typeof existing.request.prompt === "string" ? existing.request.prompt.trim() : "";
-    storedAttachments = input.continueInterrupted ? [] : parsePromptImageAttachments(existing.request.attachments);
+    storedAttachments = input.continueInterrupted
+      ? []
+      : parsePromptImageAttachments(existing.request.attachments);
     if (
       !input.continueInterrupted &&
       (!Array.isArray(existing.request.attachments) ||
@@ -14086,7 +14338,12 @@ async function retryThreadFromFailedRequest(input: {
     if (input.continueInterrupted) {
       const attempts = conversationStore.listRunAttempts(input.threadId);
       const latest = attempts.at(-1);
-      if (!latest || latest.attemptId !== input.sourceAttemptId || latest.status === "running" || latest.status === "completed") {
+      if (
+        !latest ||
+        latest.attemptId !== input.sourceAttemptId ||
+        latest.status === "running" ||
+        latest.status === "completed"
+      ) {
         throw new Error("该执行已变化或尚未中断，请刷新后再继续。");
       }
       const binding = conversationStore.getThreadCoreSession(input.threadId);
@@ -14128,7 +14385,9 @@ async function retryThreadFromFailedRequest(input: {
       requestedPrompt: prompt,
       attachments: storedAttachments,
       hasImages: input.hasImages,
-      ...(input.continueInterrupted ? { continueInterrupted: true, sourceAttemptId: input.sourceAttemptId } : {}),
+      ...(input.continueInterrupted
+        ? { continueInterrupted: true, sourceAttemptId: input.sourceAttemptId }
+        : {}),
       expectedHistoryRevision: input.expectedHistoryRevision,
       ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
     },
@@ -14883,7 +15142,10 @@ async function prepareThreadRewindForContinue(input: {
   command?: ThreadHistoryCommandContext;
 }): Promise<EcoSdkResumeOptions | undefined> {
   const storedTarget = conversationStore.getActivityRewindTarget(input.threadId, input.target.activityLineId);
-  const currentUserMessageId = await resolveCurrentClaudeUserMessageId(input.threadId, input.target.activityLineId);
+  const currentUserMessageId = await resolveCurrentClaudeUserMessageId(
+    input.threadId,
+    input.target.activityLineId,
+  );
   if (
     !storedTarget?.userMessageId ||
     (input.target.userMessageId && currentUserMessageId !== input.target.userMessageId)
@@ -16057,8 +16319,7 @@ async function handleCodexAppServerTurnUsage(input: {
   // because it joins providers from the ProviderStore, which has no auth.json entry.
   const roleRoute = resolveRoleRoutesForThread(threadId).find(
     (candidate) =>
-      normalizeTelemetryBillingRole(candidate.role) === billingRole &&
-      candidate.providerId === "openai",
+      normalizeTelemetryBillingRole(candidate.role) === billingRole && candidate.providerId === "openai",
   );
   if (!roleRoute) {
     process.stderr.write(
@@ -16068,9 +16329,7 @@ async function handleCodexAppServerTurnUsage(input: {
   }
   // A real API-key OpenAI provider goes through eco-gateway; only the virtual
   // built-in (auth.json) route is billed from app-server usage.
-  const storedOpenAi = providerStore
-    .listProvidersWithSecrets()
-    .find((provider) => provider.id === "openai");
+  const storedOpenAi = providerStore.listProvidersWithSecrets().find((provider) => provider.id === "openai");
   if (storedOpenAi?.hasApiKey) {
     return;
   }
@@ -16854,7 +17113,9 @@ async function buildSdkSessionOptions(
     ? htmlHostGateway.mergeIntoSdkConfig(withImageDisplayMcp, htmlHostInject)
     : withImageDisplayMcp;
   const withWebSearchMcp = integratedWebSearchGateway.mergeIntoSdkConfig(withHtmlHostMcp, webSearchInject);
-  withWebSearchMcp.mcpServers[SCHEDULING_MCP_SERVER] = (await schedulingGateway.resolveInjection(threadId)).sdkEntry;
+  withWebSearchMcp.mcpServers[SCHEDULING_MCP_SERVER] = (
+    await schedulingGateway.resolveInjection(threadId)
+  ).sdkEntry;
   const hubBuiltinKeys = Object.keys(withWebSearchMcp.mcpServers).filter(
     (key) => key.startsWith("eco_") && key !== "eco_mcp",
   );
@@ -16877,9 +17138,7 @@ async function buildSdkSessionOptions(
   for (const key of hubBuiltinKeys) delete hubRuntimeConfig.mcpServers[key];
   if (hubInjection) hubRuntimeConfig.mcpServers.eco_mcp = hubInjection.sdkEntry;
   const runtimeMcp = prepareMcpSdkConfigForRuntime(hubRuntimeConfig);
-  const runtimeMcpServers = [
-    ...(hubInjection ? ["eco_mcp"] : []),
-  ];
+  const runtimeMcpServers = [...(hubInjection ? ["eco_mcp"] : [])];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
     thread?.workspacePath ??
@@ -17390,6 +17649,42 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
   });
 }
 
+/**
+ * The model has begun writing a tool call.
+ *
+ * Codex's app-server publishes a tool only once its arguments are complete, and a large
+ * `apply_patch` is written for minutes: measured 65.8s and 125.3s of complete silence between
+ * the last visible text and the tool row, with nothing on the wire to notice. The upstream
+ * stream does state the fact (the tool item is added milliseconds after the last text), so the
+ * gateway forwards it and it lands in the same Feed slot the SDK cores use.
+ */
+function emitCodexToolWriteActivity(observation: {
+  codexThreadId: string;
+  toolName?: string;
+  kind: ToolWritingActivity["kind"];
+  target?: string;
+}): void {
+  const ecoThreadId =
+    codexThreadMap.getEcoThreadId(observation.codexThreadId) ??
+    resolveCodexThreadAttribution(codexThreadMap, observation.codexThreadId)?.ecoThreadId;
+  if (!ecoThreadId) {
+    return;
+  }
+  // `apply_patch` is announced as the card the Feed will open for it ("Edit"), not as the
+  // function name the model sent.
+  const toolName = observation.toolName ? codexToolDisplayName(observation.toolName) : undefined;
+  const writing: ToolWritingActivity = {
+    ...(observation.kind && { kind: observation.kind }),
+    ...(toolName && { name: toolName }),
+    ...(observation.target && { target: observation.target }),
+  };
+  // The Feed reads the fact from `toolWriting`; the message is the closest thing to a label for
+  // any consumer that still reads one (empty for a provider-side call with neither name nor target).
+  emitThreadEvent(ecoThreadId, "tool.writing", toolName ?? observation.target ?? "", "tool", false, {
+    metadata: { activityOrigin: "gateway.codex_tool_writing", toolWriting: writing },
+  });
+}
+
 function emitThreadEvent(
   threadId: string,
   type: string,
@@ -17440,30 +17735,17 @@ function emitThreadEvent(
   }
   const { text: normalizedMessage } = repairActivityText(message);
   const trimmed = normalizedMessage.trim();
-  const isThreadStatusEvent = type.startsWith("thread.");
-  const isUsageEvent = type === "thread.usage_updated";
-  const isContextEvent = type === "thread.context_updated";
-  const isSubagentTimingEvent = type === "thread.subagent_timing_updated";
-  const allowEmptyStream = stream && trimmed.length === 0;
-  if (
-    !trimmed &&
-    !allowEmptyStream &&
-    !extras?.plan &&
-    !extras?.planApproval &&
-    !extras?.clarification &&
-    !extras?.bashApproval &&
-    !extras?.followUp &&
-    !extras?.subagentSessions?.length &&
-    !isThreadStatusEvent &&
-    !isUsageEvent &&
-    !isContextEvent &&
-    !isSubagentTimingEvent
-  ) {
+  const messageDecision = resolveEmitThreadEventMessage({
+    type,
+    message: trimmed,
+    stream,
+    hasStructuredExtras: hasStructuredThreadEventExtras(extras),
+    hasPlan: Boolean(extras?.plan),
+  });
+  if (messageDecision.drop) {
     return undefined;
   }
-
-  const isSilentFollowUpEvent = type.startsWith("thread.follow_up.");
-  const displayMessage = isSilentFollowUpEvent ? "" : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
+  const displayMessage = messageDecision.persistedMessage;
 
   if (!isMetricsOnlyThreadLiveEvent(type)) {
     const persistExtras = extras
@@ -17512,7 +17794,7 @@ function emitThreadEvent(
   const payload: ThreadLiveEvent = {
     threadId,
     type,
-    message: isSilentFollowUpEvent ? "" : displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
+    message: messageDecision.liveMessage,
     role,
     stream,
     ...(isThreadCancelling(threadId) ? { cancelling: true } : {}),
@@ -18964,8 +19246,7 @@ async function registerSdkHintApproval(
   request: BashApprovalRequest,
 ): Promise<BashApprovalResolution> {
   const resolution = await registerPendingBashApproval(threadId, request);
-  if (request.defaultToNo || request.suppressAlwaysAllowRule)
-    sdkHintApprovalsHandled.add(request.toolUseId);
+  if (request.defaultToNo || request.suppressAlwaysAllowRule) sdkHintApprovalsHandled.add(request.toolUseId);
   return resolution;
 }
 async function requestSdkHintApproval(

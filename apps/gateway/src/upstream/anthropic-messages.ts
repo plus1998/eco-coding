@@ -32,8 +32,10 @@ import {
   parseAnthropicStreamEventBlock,
   splitSseBlocks,
 } from "../sse.js";
+import { GatewayToolWriteAnnouncer } from "../tool-write-observation.js";
 import type {
   GatewayCodexTurnMetadata,
+  GatewayToolWriteObserver,
   GatewayUsageEvent,
   GatewayUsageObserver,
   ResolvedProviderRoute,
@@ -327,6 +329,7 @@ export async function forwardAnthropicMessages(
   codexTurnMetadata?: GatewayCodexTurnMetadata,
   upstreamUserAgent?: string,
   lifecycle?: RequestLifecycleContext,
+  onToolWriteStarted?: GatewayToolWriteObserver,
 ): Promise<Response> {
   const toolContext = buildCodexToolContextFromRequest(responsesBody);
   let anthropicBody: AnthropicRequest;
@@ -361,6 +364,7 @@ export async function forwardAnthropicMessages(
     toolContext,
     upstreamUserAgent,
     lifecycle,
+    onToolWriteStarted,
   );
 }
 
@@ -376,6 +380,7 @@ export async function forwardAnthropicMessagesBody(
   toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
   upstreamUserAgent?: string,
   lifecycle?: RequestLifecycleContext,
+  onToolWriteStarted?: GatewayToolWriteObserver,
 ): Promise<Response> {
   const upstreamUrl = buildUpstreamUrl(route.provider, "anthropic-messages");
   const upstreamHeaders = buildAnthropicUpstreamHeaders(
@@ -511,11 +516,17 @@ export async function forwardAnthropicMessagesBody(
         });
       };
 
+      // Codex's app-server reports a tool only once its arguments are complete, so the write
+      // itself is announced from here — the converted stream carries the same
+      // `response.output_item.added` the native Responses providers send.
+      const toolWriteAnnouncer = new GatewayToolWriteAnnouncer(onToolWriteStarted, codexTurnMetadata, onLog);
+
       const writeResponsesEvents = (events: ReturnType<typeof anthropicEventToResponsesEvents>) => {
         if (cancelled || terminalSettled) {
           return;
         }
         for (const evt of events) {
+          toolWriteAnnouncer.observeEvent(evt);
           controller.enqueue(encoder.encode(responsesEventToSse(evt)));
         }
       };
@@ -590,6 +601,25 @@ export async function forwardAnthropicMessagesBody(
               anthropicEvent.delta.thinking))
         ) {
           lifecycle?.tracker.noteFirstToken();
+        }
+        // Freeform custom tools (`apply_patch`) are buffered by the conversion until the block
+        // stops, so their arguments never reach the converted events this announcer reads.
+        const partialToolJson =
+          anthropicEvent.type === "content_block_delta" &&
+          anthropicEvent.delta?.type === "input_json_delta" &&
+          typeof anthropicEvent.delta.partial_json === "string"
+            ? anthropicEvent.delta.partial_json
+            : "";
+        if (partialToolJson) {
+          const itemId = state.currentItemId || undefined;
+          const callId = state.currentCallId || undefined;
+          const name = state.currentName || undefined;
+          toolWriteAnnouncer.pushArguments({
+            text: partialToolJson,
+            ...(itemId && { itemId }),
+            ...(callId && { callId }),
+            ...(name && { name }),
+          });
         }
         const responsesEvents = anthropicEventToResponsesEvents(anthropicEvent, state);
         trackAnthropicStreamUsage(usageTracker, anthropicEvent);

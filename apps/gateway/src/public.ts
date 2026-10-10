@@ -51,6 +51,8 @@ export type {
   GatewayRequestLifecycleEvent,
   GatewayRequestLifecycleObserver,
   GatewayRequestLifecycleSource,
+  GatewayToolWriteObservation,
+  GatewayToolWriteObserver,
   GatewayUsageEvent,
   GatewayUsageObserver,
   ResolvedProviderRoute,

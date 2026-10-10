@@ -11,8 +11,10 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
   ThreadRunProjectionUsage,
+  ThreadRunProjectionWritingTool,
   ThreadStatus,
   ThreadSubagentSessionTiming,
+  ToolWritingActivity,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
@@ -47,6 +49,7 @@ interface MutableRequestSpan {
   endedAt?: string;
   error?: string;
   providerRequestId?: string;
+  writingTool?: ThreadRunProjectionWritingTool;
   sawStreamStart: boolean;
 }
 
@@ -66,7 +69,11 @@ export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): 
     attempts.find((attempt) => attempt.status === "running")?.attemptId ??
     attempts[attempts.length - 1]?.attemptId;
 
-  const timeline = events.map((event) => eventToTimelineItem(event));
+  // Facts that only exist to drive projection state (request spans, timings) must not grow
+  // a Feed row; every other feed path already filters them the same way.
+  const timeline = events
+    .filter((event) => !isMetricsOnlyThreadRunEvent(event))
+    .map((event) => eventToTimelineItem(event));
   const diagnostics: ThreadRunProjectionDiagnostic[] = [];
   const agentsById = new Map<string, ThreadRunProjectionAgent>();
   const eventsByAgentId = new Map<string, ThreadRunProjectionTimelineItem[]>();
@@ -570,6 +577,107 @@ function latestActivity(items: readonly ThreadRunProjectionTimelineItem[]): stri
   return undefined;
 }
 
+/**
+ * Attach "the model is writing a tool call" to the request the model was on when it wrote it.
+ *
+ * Tool facts are the one event family that carries no `requestId` — the bridge keys them by
+ * `tool:<callId>` and a call outlives the request that wrote it — so the per-span pass above
+ * never sees them. They still belong to a request: the call is written *by* the model's last
+ * request, and it is observed milliseconds after that request reports terminal, before the
+ * tool row lands. The span in flight when the fact was observed is therefore the latest one
+ * that had started, which is what this resolves.
+ *
+ * State is cleared by the real tool row landing (the wait is over even when the call itself
+ * keeps running) and by the thread leaving `running`, so a write interrupted before its call
+ * is ever made cannot leave the Feed naming it forever.
+ */
+function applyToolWritingState(
+  spans: ReadonlyMap<string, MutableRequestSpan>,
+  events: readonly ThreadRunEvent[],
+  threadStatus: string,
+): void {
+  if (!ACTIVE_THREAD_STATUSES.has(threadStatus)) {
+    return;
+  }
+  const ordered = [...spans.values()].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+  let attached: MutableRequestSpan | undefined;
+  for (const event of events) {
+    if (event.eventType === "tool.writing") {
+      const writing = resolveToolWritingActivity(event);
+      if (!writing) {
+        continue;
+      }
+      const target = latestSpanStartedBy(ordered, event.observedAt);
+      if (!target) {
+        continue;
+      }
+      target.writingTool = { ...writing, since: event.observedAt };
+      attached = target;
+      continue;
+    }
+    if (
+      event.eventType === "tool.started" ||
+      event.eventType === "tool.completed" ||
+      event.eventType === "tool.failed"
+    ) {
+      // Any tool row ends the wait, not only the row of the call being written: the fact carries no
+      // call or agent identity — it is attributed to the latest started span — and a subagent
+      // writes its arguments into the same thread. Matching rows to facts by agent would be
+      // guessing under that attribution, and a label naming the wrong file is worse than one that
+      // stops a little early: while the Feed is quiet the Composer's own loading state still says
+      // the run is working.
+      if (attached) {
+        delete attached.writingTool;
+        attached = undefined;
+      }
+    }
+  }
+}
+
+const ACTIVE_THREAD_STATUSES = new Set(["running", "queued"]);
+
+/**
+ * The `tool.writing` fact carries what is known about the call in `metadata.toolWriting`. Rows
+ * written before the fact was refined carry only the tool name in their message, so they are
+ * still read — the Feed shows the tier that fact supports rather than nothing.
+ */
+function resolveToolWritingActivity(event: ThreadRunEvent): ToolWritingActivity | undefined {
+  const metadata = event.metadata?.toolWriting;
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const record = metadata as Record<string, unknown>;
+    const kind = record.kind;
+    const activity: ToolWritingActivity = {
+      ...(typeof record.name === "string" && record.name.trim() ? { name: record.name.trim() } : {}),
+      ...(isToolWriteKind(kind) ? { kind } : {}),
+      ...(typeof record.target === "string" && record.target.trim() ? { target: record.target.trim() } : {}),
+    };
+    if (activity.name || activity.kind || activity.target) {
+      return activity;
+    }
+  }
+  const name = event.message.trim();
+  return name ? { name } : undefined;
+}
+
+function isToolWriteKind(value: unknown): value is "file" | "read" | "command" | "tool" {
+  return value === "file" || value === "read" || value === "command" || value === "tool";
+}
+
+/** The span in flight when `at` was observed: the latest one that had already started. */
+function latestSpanStartedBy(
+  orderedSpans: readonly MutableRequestSpan[],
+  at: string,
+): MutableRequestSpan | undefined {
+  let found: MutableRequestSpan | undefined;
+  for (const span of orderedSpans) {
+    if (span.startedAt > at) {
+      break;
+    }
+    found = span;
+  }
+  return found;
+}
+
 function buildRequestSpans(
   events: readonly ThreadRunEvent[],
   threadStatus: string,
@@ -589,6 +697,8 @@ function buildRequestSpans(
     spans.set(requestId, span);
     applyEventToRequestSpan(span, event, diagnostics, seenStreamingKeys, historyComplete);
   }
+
+  applyToolWritingState(spans, events, threadStatus);
 
   closeRequestSpansForTerminalAgents(spans, agents);
 
@@ -619,6 +729,7 @@ function buildRequestSpans(
       ...(span.endedAt && { endedAt: span.endedAt }),
       ...(span.error && { error: span.error }),
       ...(span.providerRequestId && { providerRequestId: span.providerRequestId }),
+      ...(span.writingTool && { writingTool: span.writingTool }),
     });
   }
   return output.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
@@ -659,6 +770,8 @@ function closeRequestSpansForTerminalAgents(
         span.status = "completed";
       }
       span.endedAt = span.endedAt ?? agent.endedAt ?? agent.updatedAt;
+      // A stopped agent is not still writing anything.
+      delete span.writingTool;
     }
   }
 }
@@ -672,6 +785,8 @@ function closeRequestSpanForTerminalThread(
   threadStatus: string,
   terminalAt: string | undefined,
 ): void {
+  // Once the request is over nothing is being written, so the wait label must not outlive it.
+  delete span.writingTool;
   if (threadStatus === "failed" || threadStatus === "blocked") {
     span.status = "failed";
     span.error = span.error ?? `Thread ended with status ${threadStatus}.`;

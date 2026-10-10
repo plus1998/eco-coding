@@ -41,6 +41,7 @@ import type {
   GatewayCodexTurnMetadata,
   GatewayConfig,
   GatewayRequestLifecycleObserver,
+  GatewayToolWriteObserver,
   GatewayUsageEvent,
   GatewayUsageObserver,
   ResolvedProviderRoute,
@@ -64,6 +65,7 @@ export async function handlePostResponses(
   onUsage?: GatewayUsageObserver,
   onRequestLifecycle?: GatewayRequestLifecycleObserver,
   resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined,
+  onToolWriteStarted?: GatewayToolWriteObserver,
 ): Promise<Response> {
   let body: ResponsesRequest;
   try {
@@ -184,6 +186,7 @@ export async function handlePostResponses(
         codexTurnMetadata,
         upstreamUserAgent,
         lifecycle,
+        onToolWriteStarted,
       );
       break;
     case "responses":
@@ -198,6 +201,7 @@ export async function handlePostResponses(
         codexTurnMetadata,
         upstreamUserAgent,
         lifecycle,
+        onToolWriteStarted,
       );
       break;
     case "openai-chat":

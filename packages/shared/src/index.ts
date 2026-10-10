@@ -2,8 +2,62 @@ export type AgentRole = "planner" | "explore" | "architect" | "coder" | "reviewe
 export type RuntimeAgentRole = string;
 
 export * from "./codex-gateway-model-alias";
+export type {
+  ConversationAgent,
+  ConversationBootstrap,
+  ConversationCapabilities,
+  ConversationCursor,
+  ConversationDetailItem,
+  ConversationDetailsPage,
+  ConversationEffect,
+  ConversationEventInput,
+  ConversationEventRecord,
+  ConversationEventType,
+  ConversationHead,
+  ConversationMessage,
+  ConversationMessageChannel,
+  ConversationMessageHistoryTarget,
+  ConversationMessageOrigin,
+  ConversationMessageRole,
+  ConversationMessageStatus,
+  ConversationMessagesPage,
+  ConversationRun,
+  ConversationRunStatus,
+  ConversationSendMessageResult,
+  ConversationSyncEffect,
+  ConversationSyncPage,
+  ConversationTodo,
+  ConversationTodoStatus,
+  ConversationToolCall,
+  ConversationToolStatus,
+  ConversationToolsPage,
+  ConversationTurnSummary,
+  ConversationV2ErrorCode,
+} from "./conversation-v2";
+export {
+  CONVERSATION_V2_DEFAULT_MAX_BYTES,
+  CONVERSATION_V2_EFFECT_VERSION,
+  CONVERSATION_V2_ERROR,
+  CONVERSATION_V2_MAX_PAGE_SIZE,
+  CONVERSATION_V2_MAX_SYNC_EVENTS,
+  CONVERSATION_V2_PROTOCOL_VERSION,
+  CONVERSATION_V2_SCHEMA_VERSION,
+  ConversationV2Error,
+  compareConversationMessagePosition,
+  decodeConversationCursor,
+  encodeConversationCursor,
+  estimateConversationBytes,
+  isConversationMessageOrigin,
+  limitConversationToolSummaryPayload,
+  stableHash,
+  stableJson,
+} from "./conversation-v2";
 export { definedProps } from "./defined-props";
-
+export {
+  ECO_MCP_HUB_TOOL_NAMES,
+  ecoMcpHubNamespace,
+  ecoMcpHubServerName,
+} from "./eco-mcp-hub";
 export type {
   EcoCommandRisk,
   EcoDeviceCapability,
@@ -75,62 +129,8 @@ export {
 } from "./remote-command-registry";
 export type { EventStore, SecretStore, ThreadRecord } from "./store";
 export { InMemoryEventStore, InMemorySecretStore, redactSecrets } from "./store";
-
-export {
-  CONVERSATION_V2_DEFAULT_MAX_BYTES,
-  CONVERSATION_V2_EFFECT_VERSION,
-  CONVERSATION_V2_ERROR,
-  CONVERSATION_V2_MAX_PAGE_SIZE,
-  CONVERSATION_V2_MAX_SYNC_EVENTS,
-  CONVERSATION_V2_PROTOCOL_VERSION,
-  CONVERSATION_V2_SCHEMA_VERSION,
-  ConversationV2Error,
-  compareConversationMessagePosition,
-  decodeConversationCursor,
-  encodeConversationCursor,
-  estimateConversationBytes,
-  isConversationMessageOrigin,
-  limitConversationToolSummaryPayload,
-  stableHash,
-  stableJson,
-} from "./conversation-v2";
-export {
-  ECO_MCP_HUB_TOOL_NAMES,
-  ecoMcpHubNamespace,
-  ecoMcpHubServerName,
-} from "./eco-mcp-hub";
-export type {
-  ConversationAgent,
-  ConversationBootstrap,
-  ConversationCapabilities,
-  ConversationCursor,
-  ConversationDetailItem,
-  ConversationDetailsPage,
-  ConversationEffect,
-  ConversationEventInput,
-  ConversationEventRecord,
-  ConversationEventType,
-  ConversationHead,
-  ConversationMessage,
-  ConversationMessageHistoryTarget,
-  ConversationMessageOrigin,
-  ConversationMessageChannel,
-  ConversationMessageRole,
-  ConversationMessageStatus,
-  ConversationMessagesPage,
-  ConversationRun,
-  ConversationRunStatus,
-  ConversationSendMessageResult,
-  ConversationSyncEffect,
-  ConversationSyncPage,
-  ConversationToolsPage,
-  ConversationToolCall,
-  ConversationToolStatus,
-  ConversationTodo,
-  ConversationTodoStatus,
-  ConversationTurnSummary,
-  ConversationV2ErrorCode,
-} from "./conversation-v2";
+export * from "./tool-write-target";
+export * from "./tool-write-target-tracker";
 
 export type {
   PasswordWrappedVaultKey,
