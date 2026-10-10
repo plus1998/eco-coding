@@ -1927,7 +1927,11 @@ async function createMainWindow(
     y,
     width,
     height,
-    show: options.show ?? true,
+    // The boot splash is a progress indicator: it is shown explicitly (and
+    // inactive) below, so it never becomes the key window. Otherwise launching
+    // Eco steals keyboard focus from the app the user was already typing in.
+    show: options.show ?? !isStartupSplash,
+    ...(isStartupSplash ? { focusable: false } : {}),
     minWidth: 480,
     minHeight: 600,
     // macOS: frameless + traffic lights inset.
@@ -2000,6 +2004,8 @@ async function createMainWindow(
   });
   if (isStartupSplash) {
     startupSplashWindows.add(window);
+    // On screen right away, but ordered front without activating the app.
+    window.showInactive();
     window.on("closed", () => {
       if (!desktopRendererReady && !desktopInitializationComplete) {
         app.quit();
@@ -2049,8 +2055,9 @@ async function loadMainWindow(window: BrowserWindow): Promise<BrowserWindow> {
       revealWindowControls(window);
       throw error;
     }
-    // Auto-open devtools in detached mode during development
-    window.webContents.openDevTools({ mode: "detach" });
+    // Auto-open devtools in detached mode during development. `activate: false`
+    // keeps the detached devtools window from grabbing focus a third time.
+    window.webContents.openDevTools({ mode: "detach", activate: false });
   } else {
     try {
       await window.loadFile(path.join(__dirname, "../renderer/index.html"));
@@ -3158,14 +3165,19 @@ app
     if (startupWindow && !startupWindow.isDestroyed()) {
       const mainWindow = await createMainWindow({ show: false });
       await waitForInitialDesktopRendererReady();
-      if (!startupWindow.isDestroyed()) {
-        startupWindow.close();
-      }
       if (mainWindow.isMinimized()) {
         mainWindow.restore();
       }
-      mainWindow.show();
-      mainWindow.focus();
+      // Hand over in this order: showing the real window first keeps a visible
+      // window on screen throughout. Closing the splash first leaves the app
+      // window-less for a moment, macOS hands focus back to the previous app,
+      // and the window that follows takes it again — the second focus grab.
+      // Neither window steals focus on launch; the OS still activates the app
+      // when the user starts it from Finder or the Dock.
+      mainWindow.showInactive();
+      if (!startupWindow.isDestroyed()) {
+        startupWindow.close();
+      }
     } else {
       await createMainWindow();
     }
