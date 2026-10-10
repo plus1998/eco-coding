@@ -55,7 +55,7 @@ import {
   isThreadFollowUpActivityMessage,
   isThreadFollowUpLiveEvent,
 } from "../shared/thread-follow-up-events";
-import { isContextCompactionEventType, parseThreadRunImageViewMetadata } from "../shared/thread-run-events";
+import { isContextCompactionEventType, parseThreadRunCodemodeMetadata, parseThreadRunImageViewMetadata } from "../shared/thread-run-events";
 import {
   formatThreadRunToolDetailLabel,
   parseThreadRunGrepToolTarget,
@@ -3056,6 +3056,7 @@ function buildProjectionToolActionBlock(
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const toolOutput = metadataTool?.outputPreview?.trim();
+  const codemodeRun = metadataTool?.codemode;
   return {
     kind: "action",
     icon: iconForToolName(input.toolName),
@@ -3074,6 +3075,7 @@ function buildProjectionToolActionBlock(
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
+    ...(codemodeRun && { codemodeRun }),
     ...(toolOutput && { toolOutput }),
     ...(subagent && { subagent }),
     ...(item.agentId && { agentId: item.agentId }),
@@ -3704,6 +3706,7 @@ export function readProjectionToolMetadata(
       ? { kind: "search" as const }
       : undefined;
   const webSearch = parseProjectionWebSearchMetadata(record.webSearch);
+  const codemode = parseThreadRunCodemodeMetadata(record.codemode);
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
@@ -3727,6 +3730,7 @@ export function readProjectionToolMetadata(
     ...(imageDisplay && { imageDisplay }),
     ...(htmlHost && { htmlHost }),
     ...(mcpDiscovery && { mcpDiscovery }),
+    ...(codemode && { codemode }),
   };
 }
 

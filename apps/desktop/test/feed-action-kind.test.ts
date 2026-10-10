@@ -211,3 +211,31 @@ test("summarizeActionGroup icon priority uses network for mcp-only and browser f
     ).icon,
   ).toBe("read");
 });
+
+test("resolveActionKind classifies PI codemode as its own action", () => {
+  const resolved = resolveActionKind({ toolName: "codemode" });
+  expect(resolved.kind).toBe("codemode");
+  expect(resolved.icon).toBe("code");
+  expect(resolved.bucket).toBe("scripts");
+  expect(resolveActionKind({ toolName: "CodeMode" }).kind).toBe("codemode");
+  expect(
+    resolveActionKind({ toolName: "run_script", payload: { codemodeRun: { script: "return 1;" } } }).kind,
+  ).toBe("codemode");
+});
+
+test("codemode labels say what ran instead of falling back to 执行了工具", () => {
+  const resolved = resolveActionKind({ toolName: "codemode" });
+  expect(formatActionLine({ resolved, phase: "done" }, tZh)).toBe("运行了代码脚本");
+  expect(formatActionLine({ resolved, phase: "running" }, tZh)).toBe("正在运行代码脚本");
+  expect(formatActionLine({ resolved, phase: "done" }, tEn)).toBe("Ran a code script");
+});
+
+test("summarizeActionGroup counts codemode scripts apart from generic tools", () => {
+  const items = [
+    resolveActionKind({ toolName: "codemode" }),
+    resolveActionKind({ toolName: "read" }),
+    resolveActionKind({ toolName: "read" }),
+  ];
+  expect(summarizeActionGroup(items, tZh).label).toBe("已读取 2 个文件和已运行 1 个代码脚本");
+  expect(summarizeActionGroup([resolveActionKind({ toolName: "codemode" })], tZh).icon).toBe("code");
+});

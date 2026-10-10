@@ -3140,7 +3140,7 @@ test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubb
         scope: "agent",
         role: "coder",
         requestId: "req_follow_up",
-        text: "状态确认：请立刻停止当前等待，直接汇报你现在的情况：\n\n1. 已执行过哪些命令？是否已成功拿到广州天气数据？\n2. 如果卡在 require_escalated 审批上，请说明具体命令；不要继续无限等待。\n3. 如果已有真实数据，立刻按原格式返回结果；如果没有，明确说\"未获取到\"，并附上失败命令与报错原文。",
+        text: '状态确认：请立刻停止当前等待，直接汇报你现在的情况：\n\n1. 已执行过哪些命令？是否已成功拿到广州天气数据？\n2. 如果卡在 require_escalated 审批上，请说明具体命令；不要继续无限等待。\n3. 如果已有真实数据，立刻按原格式返回结果；如果没有，明确说"未获取到"，并附上失败命令与报错原文。',
         // Persisted V2 user messages can retain only itemType. They are still
         // messages sent by the parent agent and must render as outgoing prompts.
         metadata: { itemType: "userMessage" },
@@ -3558,4 +3558,225 @@ test("iconForToolName maps eco browser and image generation tools", () => {
   expect(iconForToolName("WebSearch")).toBe("network");
   expect(iconForToolName("Read")).toBe("read");
   expect(iconForToolName("TotallyUnknown")).toBe("tool");
+});
+
+test("codemode keeps the calls its script made inside the script's card", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "codemode-row",
+          eventType: "tool.completed",
+          text: "Tool: codemode",
+          metadata: {
+            tool: {
+              name: "codemode",
+              toolUseId: "code_1",
+              status: "completed",
+              durationMs: 3_400,
+              codemode: {
+                script: 'const a = await tools.read({ path: "a.ts" });\nreturn a.length;',
+                output: "1234",
+              },
+            },
+          },
+        }),
+        item({
+          id: "codemode-nested-1",
+          eventType: "tool.completed",
+          text: "Tool: read · a.ts",
+          metadata: {
+            conversationV2ParentToolCallId: "code_1",
+            tool: {
+              name: "read",
+              toolUseId: "code_1/1",
+              status: "completed",
+              readTarget: { filePath: "a.ts", fileName: "a.ts" },
+            },
+          },
+        }),
+        item({
+          id: "codemode-nested-2",
+          eventType: "tool.completed",
+          text: "Tool: read · b.ts",
+          metadata: {
+            conversationV2ParentToolCallId: "code_1",
+            tool: {
+              name: "read",
+              toolUseId: "code_1/2",
+              status: "completed",
+              readTarget: { filePath: "b.ts", fileName: "b.ts" },
+            },
+          },
+        }),
+        item({
+          id: "codemode-sibling",
+          eventType: "tool.completed",
+          text: "Tool: read · c.ts",
+          metadata: {
+            tool: {
+              name: "read",
+              toolUseId: "toolu_sibling",
+              status: "completed",
+              readTarget: { filePath: "c.ts", fileName: "c.ts" },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("codemode tool group missing");
+  }
+
+  // The header describes what the model asked for: one script and one read, not "已执行 3 个工具".
+  const display = resolveToolGroupDisplayState(entry.entries, Date.now());
+  expect(display.summary.label).toBe("已读取 1 个文件和已运行 1 个代码脚本");
+  // A script alone gets the code icon; next to a file read the group keeps the read icon.
+  expect(display.summary.icon).toBe("read");
+
+  const html = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+  expect(html).toContain("run-log-codemode");
+  expect(html).toContain("运行了代码脚本");
+  expect(html).toContain("const a = await tools.read");
+  expect(html).toContain("1234");
+  expect(html).toContain("脚本里的调用");
+  expect(html).toContain("run-log-codemode-calls-list");
+  // The script's own calls appear once, nested — not again as siblings of the script.
+  expect(html.match(/读取了 a\.ts/g)?.length).toBe(1);
+  expect(html.match(/读取了 b\.ts/g)?.length).toBe(1);
+  expect(html).toContain("读取了 c.ts");
+});
+
+test("codemode nests its calls when the legacy row carries the link on the tool metadata", () => {
+  // A legacy thread-run row has no column for the nesting link, so it rides inside `metadata.tool`.
+  // Reading only the conversationV2 key would leave the script's calls as siblings of the script.
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "legacy-codemode-row",
+          eventType: "tool.completed",
+          text: "Tool: codemode",
+          metadata: {
+            tool: {
+              name: "codemode",
+              toolUseId: "code_9",
+              status: "completed",
+              codemode: { script: "tools.bash({ command: \"echo one\" });", output: "one" },
+            },
+          },
+        }),
+        item({
+          id: "legacy-codemode-nested",
+          eventType: "tool.completed",
+          text: "Tool: Bash · echo one",
+          metadata: {
+            tool: {
+              name: "Bash",
+              toolUseId: "code_9/1",
+              status: "completed",
+              parentToolCallId: "code_9",
+              detail: "echo one",
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("codemode tool group missing");
+  }
+  // Nesting worked: the header describes the script alone, not the command it ran.
+  expect(resolveToolGroupDisplayState(entry.entries, Date.now()).summary.label).toBe("运行了代码脚本");
+});
+
+test("codemode card caps the height of its script, call list and output panes", () => {
+  // One knob for all three panes: a 300-line script or 60 nested calls must not stretch the Feed.
+  expect(styles).toMatch(/\.run-log-codemode-details\s*\{[^}]*--codemode-pane-max-height:\s*240px;/s);
+  expect(styles).toMatch(
+    /\.run-log-codemode-script \.run-log-bash-command-text\s*\{[^}]*max-height:\s*var\(--codemode-pane-max-height/s,
+  );
+  expect(styles).toMatch(
+    /\.run-log-codemode-calls-list\s*\{[^}]*max-height:\s*var\(--codemode-pane-max-height[^}]*overflow-y:\s*auto;/s,
+  );
+  // RunLogBashOutput renders the scroll wrap without the .run-log-bash-terminal shell, so a cap on
+  // the shell silently never matches — the cap belongs on the wrap.
+  expect(styles).toMatch(
+    /\.run-log-codemode-output \.run-log-bash-output-wrap\s*\{[^}]*max-height:\s*var\(--codemode-pane-max-height[^}]*overflow-y:\s*auto;/s,
+  );
+  expect(styles).not.toMatch(/\.run-log-codemode-output \.run-log-bash-terminal/);
+});
+
+test("codemode lists each call once when PI's details duplicate its own tool rows", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "codemode-row",
+          eventType: "tool.completed",
+          text: "Tool: codemode",
+          metadata: {
+            tool: {
+              name: "codemode",
+              toolUseId: "code_9",
+              status: "completed",
+              codemode: {
+                script: 'await tools.read({ path: "a.ts" });',
+                output: "done",
+                calls: [
+                  // Same id as the tool event PI ran: it already has its own row.
+                  { id: "code_9/1", name: "read", args: '{"path":"a.ts"}', status: "ok", durationMs: 90 },
+                  // Cancelled at script end: no tool event, so only PI's record shows it.
+                  { id: "code_9/?", name: "bash", args: '{"command":"ls"}', status: "cancelled" },
+                ],
+              },
+            },
+          },
+        }),
+        item({
+          id: "codemode-nested",
+          eventType: "tool.completed",
+          text: "Tool: read · a.ts",
+          metadata: {
+            conversationV2ParentToolCallId: "code_9",
+            tool: {
+              name: "read",
+              toolUseId: "code_9/1",
+              status: "completed",
+              readTarget: { filePath: "a.ts", fileName: "a.ts" },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("codemode tool group missing");
+  }
+  const html = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+  // The tool row wins; PI's record of the same call adds nothing.
+  expect(html.match(/读取了 a\.ts/g)?.length).toBe(1);
+  expect(html).toContain("run-log-codemode-call");
+  expect(html).toContain("bash");
+  // One row from the tool event plus one record with no row, not 2 + 2.
+  expect(html).toContain("2 次调用");
 });

@@ -30,7 +30,8 @@ import {
   CircleAlert,
   CircleDollarSign,
   CircleHelp,
-  Clock3,
+Clock3,
+  Code,
   Copy,
   Database,
   ExternalLink,
@@ -95,6 +96,8 @@ import { resolveFileChangeFromToolInput } from "../shared/file-change";
 import { isEcoImageDisplayToolName } from "../shared/image-display-tool";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import { isEcoWebSearchToolName } from "../shared/integrated-web-search";
+import { parseThreadRunCodemodeMetadata, type ThreadRunCodemodeMetadata } from "../shared/thread-run-events";
+import { isCodemodeToolName, resolveCodemodeMetadata } from "../shared/thread-run-tool-projection";
 import type {
   PromptImageAttachment,
   ThreadActivityRewindTarget,
@@ -1217,6 +1220,20 @@ function conversationV2ToolPresentation(tool: ConversationToolCall): {
     presentation.imageView = rawImageView ?? { path: imagePath };
   }
 
+  // PI's codemode: the script is the call and its return value is what the model saw, so both
+  // belong on the row. Without them the row can only ever read "执行了工具".
+  const codemode = mergeCodemodeMetadata(
+    resolveCodemodeMetadata({
+      name: tool.name,
+      callInput: values,
+      output: typeof tool.output === "string" ? tool.output : (outputPreview ?? ""),
+    }),
+    // PI's nested calls and full-output path are stored on the row itself: the tool table has no
+    // column for them, so they ride inside `input`.
+    parseThreadRunCodemodeMetadata(conversationV2ToolValue(values, "codemode")),
+  );
+  if (codemode) presentation.codemode = codemode;
+
   return {
     ...(detail ? { detail } : {}),
     ...(outputPreview ? { outputPreview } : {}),
@@ -1296,6 +1313,40 @@ function conversationV2ToolToTimelineItem(
   };
 }
 
+/**
+ * Two copies of one script's metadata reach the Feed from different places: the live tool event
+ * carries PI's nested calls and the full-output path, while a persisted conversationV2 row rebuilds
+ * only the script and its output from `input`/`output`. Union them by field so neither reader drops
+ * what the other has.
+ */
+function mergeCodemodeMetadata(
+  existing: ThreadRunCodemodeMetadata | undefined,
+  incoming: ThreadRunCodemodeMetadata | undefined,
+): ThreadRunCodemodeMetadata | undefined {
+  if (!existing) {
+    return incoming;
+  }
+  if (!incoming) {
+    return existing;
+  }
+  const longerText = (left: string | undefined, right: string | undefined): string | undefined =>
+    (left?.length ?? 0) >= (right?.length ?? 0) ? left : right;
+  const richerCalls = (
+    left: ThreadRunCodemodeMetadata["calls"],
+    right: ThreadRunCodemodeMetadata["calls"],
+  ) => ((left?.length ?? 0) >= (right?.length ?? 0) ? left : right);
+  const script = longerText(existing.script, incoming.script);
+  const output = longerText(existing.output, incoming.output);
+  const fullOutputPath = existing.fullOutputPath ?? incoming.fullOutputPath;
+  const calls = richerCalls(existing.calls, incoming.calls);
+  return {
+    ...(script ? { script } : {}),
+    ...(output ? { output } : {}),
+    ...(fullOutputPath ? { fullOutputPath } : {}),
+    ...(calls && calls.length > 0 ? { calls } : {}),
+  };
+}
+
 function mergeConversationV2ToolIntoTimelineItem(
   item: ThreadRunProjectionTimelineItem,
   tool: ConversationToolCall,
@@ -1303,6 +1354,10 @@ function mergeConversationV2ToolIntoTimelineItem(
   const existingTool = readProjectionToolMetadata(item);
   const presentation = conversationV2ToolPresentation(tool);
   const eventType = conversationV2ToolEventType(tool.status);
+  const codemode = mergeCodemodeMetadata(
+    existingTool?.codemode,
+    parseThreadRunCodemodeMetadata(presentation.metadata.codemode),
+  );
   return {
     ...item,
     eventType,
@@ -1324,6 +1379,7 @@ function mergeConversationV2ToolIntoTimelineItem(
       tool: {
         ...(existingTool ?? {}),
         ...presentation.metadata,
+        ...(codemode ? { codemode } : {}),
         status: conversationV2ToolProjectionStatus(tool.status),
       },
       ...(presentation.metadata.bashApproval ? { bashApproval: presentation.metadata.bashApproval } : {}),
@@ -2513,6 +2569,26 @@ export function readImageDisplayToolUseId(item: ThreadRunProjectionTimelineItem)
   return name && toolUseId && isEcoImageDisplayToolName(name) ? toolUseId : undefined;
 }
 
+/**
+ * PI marks a call a tool issued itself (today only a codemode script) with `parentToolCallId`.
+ * It is deliberately not `parentToolUseId`, which everywhere else means "owned by a subagent".
+ */
+function readProjectionParentToolCallId(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const raw = item.metadata?.conversationV2ParentToolCallId;
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim();
+  }
+  // The legacy row has no column for the link, so it rides on the tool metadata instead.
+  const rawTool = item.metadata?.tool;
+  if (rawTool && typeof rawTool === "object" && !Array.isArray(rawTool)) {
+    const nested = (rawTool as Record<string, unknown>).parentToolCallId;
+    if (typeof nested === "string" && nested.trim()) {
+      return nested.trim();
+    }
+  }
+  return undefined;
+}
+
 function readProjectionToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
   const rawTool = item.metadata?.tool;
   if (rawTool && typeof rawTool === "object" && !Array.isArray(rawTool)) {
@@ -2688,6 +2764,10 @@ export function ProjectionToolGroupEntry({
     return entry.at;
   }, [entry]);
   const runningElapsedMs = useTurnDurationMs(runningStartedAt, undefined, lifecycle === "running");
+  const { topLevel, nestedByParent } = useMemo(
+    () => partitionCodemodeToolGroupChildren(entry.entries),
+    [entry.entries],
+  );
   useEffect(() => {
     if (remainingMs <= 0) {
       return;
@@ -2738,16 +2818,21 @@ export function ProjectionToolGroupEntry({
       />
       {expanded ? (
         <div className="run-log-tool-group-details">
-          {entry.entries.map((child) => (
-            <ProjectionToolGroupChildEntry
-              key={child.key}
-              entry={child}
-              requestSpansById={requestSpansById}
-              {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
-              {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
-              {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
-            />
-          ))}
+          {topLevel.map((child) => {
+            const toolUseId = child.kind === "timeline" ? readProjectionToolUseId(child.item) : undefined;
+            const nestedChildren = toolUseId ? nestedByParent.get(toolUseId) : undefined;
+            return (
+              <ProjectionToolGroupChildEntry
+                key={child.key}
+                entry={child}
+                requestSpansById={requestSpansById}
+                {...(nestedChildren && nestedChildren.length > 0 ? { nestedChildren } : {})}
+                {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+                {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
+                {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+              />
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -2769,11 +2854,58 @@ export interface ToolGroupDisplayState {
  * the feed tail can share the exact same window: a settling tool row must never
  * render alongside the「正在思考」tail state.
  */
+type ToolGroupChildEntry = ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
+
+/**
+ * A codemode script calls the tools itself, so PI emits those calls as tool events carrying the
+ * script's `parentToolCallId`. They are not model-issued calls: they belong inside the script's
+ * card. Left as siblings they dominate the group header ("已执行 12 个工具") and the one thing
+ * that actually happened — the script — disappears from the summary.
+ */
+function partitionCodemodeToolGroupChildren(entries: readonly ToolGroupChildEntry[]): {
+  topLevel: ToolGroupChildEntry[];
+  nestedByParent: Map<string, ToolGroupChildEntry[]>;
+} {
+  const scriptIds = new Set<string>();
+  for (const child of entries) {
+    if (child.kind !== "timeline") {
+      continue;
+    }
+    const tool = readProjectionToolMetadata(child.item);
+    if (!tool || !isCodemodeToolName(tool.name)) {
+      continue;
+    }
+    const toolUseId = readProjectionToolUseId(child.item);
+    if (toolUseId) {
+      scriptIds.add(toolUseId);
+    }
+  }
+  if (scriptIds.size === 0) {
+    return { topLevel: [...entries], nestedByParent: new Map() };
+  }
+  const topLevel: ToolGroupChildEntry[] = [];
+  const nestedByParent = new Map<string, ToolGroupChildEntry[]>();
+  for (const child of entries) {
+    const parentId = child.kind === "timeline" ? readProjectionParentToolCallId(child.item) : undefined;
+    if (parentId && scriptIds.has(parentId)) {
+      const siblings = nestedByParent.get(parentId) ?? [];
+      siblings.push(child);
+      nestedByParent.set(parentId, siblings);
+      continue;
+    }
+    topLevel.push(child);
+  }
+  return { topLevel, nestedByParent };
+}
+
 export function resolveToolGroupDisplayState(
   entries: readonly (ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry)[],
   nowMs: number,
 ): ToolGroupDisplayState {
-  const blocks = entries
+  // The header describes what the model asked for; a script's own calls are described by the
+  // script's card, so they stay out of the count and out of the lifecycle.
+  const { topLevel } = partitionCodemodeToolGroupChildren(entries);
+  const blocks = topLevel
     .map((child) => projectionItemToDetailBlock(child.item))
     .filter(
       (block): block is ToolGroupDetailBlock => block?.kind === "action" || block?.kind === "tool-failed",
@@ -2783,10 +2915,10 @@ export function resolveToolGroupDisplayState(
   if (lifecycle === "running") {
     return { summary, lifecycle, remainingMs: 0 };
   }
-  const extensionEndMs = resolveToolGroupSettledExtensionEndMs(entries);
+  const extensionEndMs = resolveToolGroupSettledExtensionEndMs(topLevel);
   if (extensionEndMs !== undefined && extensionEndMs > nowMs) {
     return {
-      summary: resolveToolGroupRunningLabel(entries) ?? summary,
+      summary: resolveToolGroupRunningLabel(topLevel) ?? summary,
       lifecycle: "running",
       remainingMs: extensionEndMs - nowMs,
     };
@@ -2849,12 +2981,15 @@ function resolveToolGroupRunningLabel(
 function ProjectionToolGroupChildEntry({
   entry,
   requestSpansById,
+  nestedChildren,
   onOpenImageGenerationTool,
   onOpenImageDisplayTool,
   onLoadProjectionDetail,
 }: {
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  /** Tool calls a codemode script made; rendered inside that script's card. */
+  nestedChildren?: ToolGroupChildEntry[];
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
   onLoadProjectionDetail?: ProjectionDetailLoader;
@@ -2877,6 +3012,18 @@ function ProjectionToolGroupChildEntry({
         block={block}
         {...(toolUseId && { toolUseId })}
         detailLoaded={entry.item.contentLoaded === true}
+        {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+      />
+    );
+  }
+  if (block?.kind === "action" && block.codemodeRun) {
+    return (
+      <ProjectionToolGroupCodemodeChild
+        block={block}
+        {...(nestedChildren ? { nestedChildren } : {})}
+        requestSpansById={requestSpansById}
+        {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+        {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
         {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
       />
     );
@@ -3006,11 +3153,185 @@ function ProjectionToolGroupBashChild({
   );
 }
 
+/**
+ * PI's codemode card: the script the model wrote, the calls that script made, and what the script
+ * returned. PI's own TUI shows the same three things, because a script row carries no information
+ * without them — the tool name is identical for every script, and the nested calls never reach the
+ * model as tool calls, so this card is their only record.
+ */
+function ProjectionToolGroupCodemodeChild({
+  block,
+  nestedChildren = [],
+  requestSpansById,
+  onOpenImageGenerationTool,
+  onOpenImageDisplayTool,
+  onLoadProjectionDetail,
+}: {
+  block: Extract<ActivityDetailBlock, { kind: "action" }>;
+  nestedChildren?: ToolGroupChildEntry[];
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onOpenImageDisplayTool?: OpenImageDisplayToolHandler;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
+}) {
+  // The group's own disclosure already means "show me this step", so the script opens with it:
+  // a second collapsed layer would hide the only content that explains what the script did.
+  const [expanded, setExpanded] = useState(true);
+  const script = block.codemodeRun?.script?.trim() ?? "";
+  const output = block.codemodeRun?.output?.trim() ?? "";
+  const fullOutputPath = block.codemodeRun?.fullOutputPath?.trim() ?? "";
+  // PI gives each nested call the id of the tool event it caused, so any call that reached the tool
+  // pipeline is in both lists: as a full row, and as one of the script's own records. Keep the row,
+  // and keep only the records with no row — the calls cancelled when the script ended, which never
+  // produced one. A record with no id is kept: it cannot be matched, and losing it is worse.
+  const nestedCallIds = new Set(
+    nestedChildren
+      .map((child) => (child.kind === "timeline" ? readProjectionToolUseId(child.item) : undefined))
+      .filter((id): id is string => Boolean(id)),
+  );
+  const detailCallRows = (block.codemodeRun?.calls ?? [])
+    .filter((call) => !call.id || !nestedCallIds.has(call.id))
+    .map((call, index) => ({
+      call,
+      key: call.id ?? `${call.name}:${index}`,
+    }));
+  const callCount = nestedChildren.length + detailCallRows.length;
+  const summary = formatToolGroupChildDetail(block);
+  const lifecycle = block.lifecycle;
+  const hasDetails = Boolean(script || output || callCount > 0);
+  return (
+    <div className={`run-log-tool-group-child run-log-codemode${expanded ? " is-expanded" : ""}`}>
+      <button
+        type="button"
+        className={[
+          "run-log-tool-group-trigger",
+          "run-log-tool-group-child-trigger",
+          lifecycle === "running" ? "is-running" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={hasDetails ? expanded : undefined}
+      >
+        <RunLogActionIcon icon={block.icon} {...(lifecycle && { lifecycle })} />
+        <span className="run-log-tool-group-summary">
+          {lifecycle === "running" ? <ShimmerText>{summary}</ShimmerText> : summary}
+        </span>
+        {callCount > 0 ? (
+          <span className="run-log-codemode-count">
+            {i18n.t("activity.codemode.callCount", { count: callCount })}
+          </span>
+        ) : null}
+        {lifecycle === "failed" ? (
+          <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
+        ) : null}
+        {hasDetails ? (
+          <ChevronRight
+            size={15}
+            className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
+            aria-hidden
+          />
+        ) : null}
+      </button>
+      {expanded ? (
+        <div className="run-log-codemode-details">
+          {script ? <RunLogCodemodeScript script={script} /> : null}
+          {callCount > 0 ? (
+            <div className="run-log-codemode-calls">
+              <div className="run-log-codemode-section-label">{i18n.t("activity.codemode.callsLabel")}</div>
+              {/* The label stays put and only the rows scroll: a 60-call script must not push the
+                  script and its output out of view. */}
+              <div className="run-log-codemode-calls-list">
+                {nestedChildren.map((child) => (
+                  <ProjectionToolGroupChildEntry
+                    key={child.key}
+                    entry={child}
+                    requestSpansById={requestSpansById}
+                    {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+                    {...(onOpenImageDisplayTool && { onOpenImageDisplayTool })}
+                    {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+                  />
+                ))}
+                {detailCallRows.map(({ call, key }) => (
+                  <div className="run-log-codemode-call" key={key}>
+                    <span className={`run-log-codemode-call-status is-${call.status ?? "ok"}`} aria-hidden>
+                      {codemodeCallGlyph(call.status)}
+                    </span>
+                    <span className="run-log-codemode-call-name">{call.name}</span>
+                    {call.args ? <span className="run-log-codemode-call-args">{call.args}</span> : null}
+                    {call.durationMs !== undefined ? (
+                      <span className="run-log-codemode-call-meta">{formatDuration(call.durationMs)}</span>
+                    ) : null}
+                    {call.cost !== undefined ? (
+                      <span className="run-log-codemode-call-meta">
+                        {i18n.t("activity.codemode.modelCost", { cost: call.cost.toFixed(3) })}
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {output ? (
+            <div className="run-log-codemode-output">
+              <div className="run-log-codemode-section-label">{i18n.t("activity.codemode.outputLabel")}</div>
+              <RunLogBashOutput output={output} />
+            </div>
+          ) : null}
+          {fullOutputPath ? (
+            <div className="run-log-codemode-full-output">
+              {i18n.t("activity.codemode.fullOutput", { path: fullOutputPath })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Same glyphs PI's TUI uses for the calls a script made. */
+function codemodeCallGlyph(status: "running" | "ok" | "error" | "cancelled" | undefined): string {
+  switch (status) {
+    case "running":
+      return "…";
+    case "error":
+      return "✗";
+    case "cancelled":
+      return "⊘";
+    default:
+      return "✓";
+  }
+}
+
+function RunLogCodemodeScript({ script }: { script: string }) {
+  return (
+    <div className="run-log-codemode-script">
+      <div className="run-log-codemode-script-head">
+        <span className="run-log-codemode-section-label">{i18n.t("activity.codemode.scriptLabel")}</span>
+        <button
+          type="button"
+          className="run-log-bash-copy"
+          onClick={(event) => {
+            event.stopPropagation();
+            copyRunLogMessageText(script);
+          }}
+          aria-label={i18n.t("activity.codemode.copyScript")}
+          title={i18n.t("activity.codemode.copyScript")}
+        >
+          <Copy size={13} aria-hidden />
+        </button>
+      </div>
+      <pre className="run-log-bash-command-text">{script}</pre>
+    </div>
+  );
+}
+
 function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   label: string;
   icon: ActivityActionIcon;
 } {
   const actionBlocks = blocks.filter(
+
     (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action",
   );
   const failedBlocks = blocks.filter(
@@ -7250,6 +7571,7 @@ const actionIcons = {
   context: Minimize2,
   network: Globe2,
   computer: Monitor,
+  code: Code,
   tool: Wrench,
 } as const;
 

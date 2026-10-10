@@ -13,6 +13,7 @@ import {
   resolveSubagentRunDisplayTitle as resolveSharedSubagentRunDisplayTitle,
 } from "../shared/subagent-roles";
 import type { GrepToolTargetDisplay, ReadToolTargetDisplay } from "../shared/tool-target";
+import type { ThreadRunCodemodeMetadata } from "../shared/thread-run-events";
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
 import { i18n } from "./i18n";
 
@@ -124,6 +125,8 @@ export type ActivityDetailBlock =
       mcpDiscovery?: { kind: "search" };
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
+      /** PI `codemode`: script + script output + the calls the script made. */
+      codemodeRun?: ThreadRunCodemodeMetadata;
       toolOutput?: string;
     }
   | {

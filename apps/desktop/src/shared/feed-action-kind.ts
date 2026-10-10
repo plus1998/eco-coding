@@ -19,6 +19,7 @@ export type ActivityActionIcon =
   | "context"
   | "network"
   | "computer"
+  | "code"
   | "tool";
 
 export type ActionKind =
@@ -41,6 +42,7 @@ export type ActionKind =
   | "imageCreate"
   | "browser"
   | "computerUse"
+  | "codemode"
   | "tool";
 
 export type ActionGroupBucket =
@@ -58,6 +60,7 @@ export type ActionGroupBucket =
   | "images"
   | "browser"
   | "computerUse"
+  | "scripts"
   | "otherTools";
 
 export interface ActionKindPayload {
@@ -70,6 +73,8 @@ export interface ActionKindPayload {
   imageDisplay?: { artifactId?: string };
   htmlHost?: { pageId?: string; publicUrl?: string; title?: string };
   bashRun?: { command?: string };
+  /** PI `codemode`: a script the model wrote; its nested calls are not model-issued calls. */
+  codemodeRun?: { script?: string };
 }
 
 export interface ResolvedAction {
@@ -105,6 +110,7 @@ const ALIASES: Record<string, ActionKind> = {
   taskcreate: "taskCreate",
   taskupdate: "taskUpdate",
   todowrite: "taskUpdate",
+  codemode: "codemode",
   skill: "skill",
   skills: "skill",
   readskill: "skill",
@@ -139,6 +145,7 @@ const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
   imageCreate: "image",
   browser: "browser",
   computerUse: "computer",
+  codemode: "code",
   tool: "tool",
 };
 
@@ -162,6 +169,7 @@ const KIND_BUCKET: Record<ActionKind, ActionGroupBucket> = {
   imageCreate: "images",
   browser: "browser",
   computerUse: "computerUse",
+  codemode: "scripts",
   tool: "otherTools",
 };
 
@@ -201,6 +209,9 @@ function kindFromPayload(payload: ActionKindPayload | undefined): ActionKind | u
   }
   if (payload.bashRun) {
     return "command";
+  }
+  if (payload.codemodeRun) {
+    return "codemode";
   }
   return undefined;
 }
@@ -268,6 +279,7 @@ export const ACTION_GROUP_ICON_PRIORITY: readonly ActivityActionIcon[] = [
   "search",
   "network",
   "terminal",
+  "code",
   "browser",
   "computer",
   "images",
@@ -283,6 +295,7 @@ const SUMMARY_BUCKET_ORDER: readonly ActionGroupBucket[] = [
   "searches",
   "web",
   "commands",
+  "scripts",
   "taskCreates",
   "taskUpdates",
   "agents",
@@ -309,6 +322,7 @@ const SUMMARY_I18N_KEY: Record<ActionGroupBucket, string> = {
   images: "activity.summary.images",
   browser: "activity.summary.browser",
   computerUse: "activity.summary.computerUse",
+  scripts: "activity.summary.scripts",
   otherTools: "activity.summary.tools",
 };
 

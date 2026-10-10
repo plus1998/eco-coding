@@ -15433,6 +15433,147 @@ button.markdown-file-ref.run-log-user-prompt-file-ref {
   margin: 7px 0 0 22px;
 }
 
+/* PI codemode: one card holds the script, the calls it made, and what it returned. */
+.run-log-codemode-count {
+  flex: 0 0 auto;
+  color: var(--codex-log-muted, #9a9a9a);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-codemode-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 7px 0 0 22px;
+  /* 脚本、脚本里的调用、脚本输出共用一个限高：一个 300 行的脚本或 60 次调用不能把 Feed 撑开。 */
+  --codemode-pane-max-height: 240px;
+}
+
+.run-log-codemode-section-label {
+  color: var(--codex-log-muted, #9a9a9a);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.run-log-codemode-script {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 1px solid var(--codex-log-line, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--codex-log-bg, #181818) 94%, transparent);
+  overflow: hidden;
+}
+
+.run-log-codemode-script-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 0 10px;
+}
+
+.run-log-codemode-script .run-log-bash-command-text {
+  display: block;
+  max-height: var(--codemode-pane-max-height, 240px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 6px 10px 10px;
+  color: var(--codex-log-text, #e5e5e5);
+  -webkit-line-clamp: unset;
+}
+
+.run-log-codemode-calls,
+.run-log-codemode-output {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* RunLogBashOutput renders the scroll wrap without the .run-log-bash-terminal shell, so the
+   cap belongs on the wrap itself — a rule on the shell silently never matches. */
+.run-log-codemode-output .run-log-bash-output-wrap {
+  max-height: var(--codemode-pane-max-height, 240px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.run-log-codemode-output .run-log-bash-output {
+  padding-left: 10px;
+}
+
+.run-log-codemode-calls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  max-height: var(--codemode-pane-max-height, 240px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+.run-log-codemode-call {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 0;
+  font-size: 12px;
+}
+
+.run-log-codemode-call-status {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+}
+
+.run-log-codemode-call-status.is-ok {
+  color: var(--success, #4ade80);
+}
+
+.run-log-codemode-call-status.is-error {
+  color: var(--codex-status-error, #ef6461);
+}
+
+.run-log-codemode-call-status.is-running,
+.run-log-codemode-call-status.is-cancelled {
+  color: var(--codex-log-muted, #9a9a9a);
+}
+
+.run-log-codemode-call-name {
+  flex: 0 1 auto;
+  color: var(--codex-log-text, #e5e5e5);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.run-log-codemode-call-args {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--codex-log-muted, #9a9a9a);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-codemode-call-meta {
+  flex: 0 0 auto;
+  color: var(--codex-log-muted, #9a9a9a);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-codemode-full-output {
+  color: var(--codex-log-muted, #9a9a9a);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .run-log-tool-detail-error {
   display: flex;
   align-items: center;
